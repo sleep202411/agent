@@ -1,3 +1,4 @@
+import { requireNonReceiptAsset } from './media-receipt-policy';
 import {
   BadRequestException,
   ForbiddenException,
@@ -517,21 +518,6 @@ export class MediaAccessService {
       url: signed.url,
       expiresAt: signed.expiresAt,
     };
-  }
-}
-
-/** Expense evidence is readable only through its claim/revision authorization. */
-function requireNonReceiptAsset(metadata: Prisma.JsonValue): void {
-  if (
-    metadata &&
-    typeof metadata === 'object' &&
-    !Array.isArray(metadata) &&
-    metadata.uploadKind === 'crew_expense_receipt'
-  ) {
-    throw new ForbiddenException({
-      code: 'EXPENSE_RECEIPT_ACCESS_REQUIRED',
-      message: 'Open this receipt through its expense claim.',
-    });
   }
 }
 

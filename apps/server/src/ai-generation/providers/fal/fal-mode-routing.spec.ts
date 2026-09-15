@@ -361,9 +361,11 @@ describe('FalProviderAdapter edit-endpoint config reverse-map', () => {
     // First tries the edit endpoint, then falls back to the text-to-image key.
     expect(getRuntimeConfig).toHaveBeenCalledWith(
       'fal-ai/bytedance/seedream/v4.5/edit',
+      { forSubmission: false },
     );
     expect(getRuntimeConfig).toHaveBeenCalledWith(
       'fal-ai/bytedance/seedream/v4.5/text-to-image',
+      { forSubmission: false },
     );
   });
 });
@@ -387,6 +389,8 @@ describe('FalCatalogService multi-endpoint registration', () => {
       providerEndpointId: `ep-${endpointId}`,
       canonicalModelId: 'cm-seedance-2-0',
       canonicalModel: {
+        status: 'active',
+        archivedAt: null,
         id: 'cm-seedance-2-0',
         slug: 'seedance-2-0',
         displayName: 'Seedance 2.0',
@@ -405,6 +409,8 @@ describe('FalCatalogService multi-endpoint registration', () => {
       },
       providerAccount: { id: 'acct-1', status: 'active' },
       providerEndpoint: {
+        status: 'active',
+        archivedAt: null,
         maxConcurrentRequests: null,
         maxRequestsPerMinute: null,
         requestTimeoutSeconds: 2700,

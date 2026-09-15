@@ -12,6 +12,7 @@ import {
   CharacterKind,
   CharacterStatus,
   PlatformProjectStatus,
+  Prisma,
   ProjectMemberRole,
   ProjectMemberStatus,
 } from '@prisma/client';
@@ -54,24 +55,31 @@ export class CharacterCastingService {
     input: CreateCastingInviteInput,
   ): Promise<CastingInviteCreatedDto> {
     this.requireRealPersonEnabled();
-    const project = await this.requireActiveProject(projectId);
-    await this.requireProjectEditor(user, projectId);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM project_members WHERE project_id = ${projectId}::uuid AND user_id = ${user.userId} FOR UPDATE`;
+      const project = await this.requireActiveProject(projectId, tx);
+      await this.requireProjectEditor(user, projectId, tx);
 
-    const token = randomBytes(24).toString('base64url');
-    const tokenHash = createHash('sha256').update(token).digest('hex');
-    const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
-    const invite = await this.prisma.characterCastingInvite.create({
-      data: {
-        projectId: project.id,
-        invitedByUserId: user.userId,
-        inviteeUserId: input.inviteeUserId ?? null,
-        inviteeContact: input.inviteeContact ?? null,
-        tokenHash,
-        status: CharacterCastingInviteStatus.pending,
-        expiresAt,
-      },
+      const token = randomBytes(24).toString('base64url');
+      const tokenHash = createHash('sha256').update(token).digest('hex');
+      const [{ now }] = await tx.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT clock_timestamp() AS now`;
+      const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
+      const invite = await tx.characterCastingInvite.create({
+        data: {
+          projectId: project.id,
+          invitedByUserId: user.userId,
+          inviteeUserId: input.inviteeUserId ?? null,
+          inviteeContact: input.inviteeContact ?? null,
+          tokenHash,
+          status: CharacterCastingInviteStatus.pending,
+          expiresAt,
+        },
+      });
+      return { id: invite.id, token, expiresAt: expiresAt.toISOString() };
     });
-    return { id: invite.id, token, expiresAt: expiresAt.toISOString() };
   }
 
   async listInvites(
@@ -92,18 +100,23 @@ export class CharacterCastingService {
     projectId: string,
     inviteId: string,
   ): Promise<void> {
-    await this.requireProjectEditor(user, projectId);
-    // Only a still-pending invite can be revoked (idempotent otherwise).
-    await this.prisma.characterCastingInvite.updateMany({
-      where: {
-        id: inviteId,
-        projectId,
-        status: CharacterCastingInviteStatus.pending,
-      },
-      data: {
-        status: CharacterCastingInviteStatus.revoked,
-        respondedAt: new Date(),
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM character_casting_invites WHERE id = ${inviteId}::uuid AND project_id = ${projectId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM project_members WHERE project_id = ${projectId}::uuid AND user_id = ${user.userId} FOR UPDATE`;
+      await this.requireProjectEditor(user, projectId, tx);
+      // Only a still-pending invite can be revoked (idempotent otherwise).
+      await tx.characterCastingInvite.updateMany({
+        where: {
+          id: inviteId,
+          projectId,
+          status: CharacterCastingInviteStatus.pending,
+        },
+        data: {
+          status: CharacterCastingInviteStatus.revoked,
+          respondedAt: new Date(),
+        },
+      });
     });
   }
 
@@ -145,67 +158,81 @@ export class CharacterCastingService {
     consent: GrantConsent,
     context: { ip?: string; userAgent?: string } = {},
   ): Promise<void> {
-    const invite = await this.requireLiveInvite(user, token);
-    const project = await this.requireActiveProject(invite.projectId);
+    await this.prisma.$transaction(async (tx) => {
+      const tokenHash = createHash('sha256').update(token.trim()).digest('hex');
+      await tx.$queryRaw`SELECT id FROM character_casting_invites WHERE token_hash = ${tokenHash} FOR UPDATE`;
+      const invite = await this.requireLiveInvite(user, token, tx);
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${invite.projectId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+      const project = await this.requireActiveProject(invite.projectId, tx);
 
-    const character = await this.prisma.studioCharacter.findFirst({
-      where: { id: characterId, deletedAt: null },
-      select: { id: true, kind: true, status: true, subjectUserId: true },
-    });
-    if (!character || character.subjectUserId !== user.userId) {
-      throw new ForbiddenException({
-        code: 'CHARACTER_SUBJECT_MISMATCH',
-        message: 'You can only lend your own verified likeness.',
+      const character = await tx.studioCharacter.findFirst({
+        where: { id: characterId, deletedAt: null },
+        select: { id: true, kind: true, status: true, subjectUserId: true },
       });
-    }
-    if (character.kind !== CharacterKind.real_person) {
-      throw new BadRequestException({
-        code: 'CHARACTER_NOT_REAL_PERSON',
-        message: 'Casting applies to real-person characters only.',
-      });
-    }
-    if (character.status !== CharacterStatus.active) {
-      throw new ConflictException({
-        code: 'ENROLLMENT_REQUIRED',
-        message: 'Complete identity verification before accepting a casting.',
-      });
-    }
+      if (!character || character.subjectUserId !== user.userId) {
+        throw new ForbiddenException({
+          code: 'CHARACTER_SUBJECT_MISMATCH',
+          message: 'You can only lend your own verified likeness.',
+        });
+      }
+      if (character.kind !== CharacterKind.real_person) {
+        throw new BadRequestException({
+          code: 'CHARACTER_NOT_REAL_PERSON',
+          message: 'Casting applies to real-person characters only.',
+        });
+      }
+      if (character.status !== CharacterStatus.active) {
+        throw new ConflictException({
+          code: 'ENROLLMENT_REQUIRED',
+          message: 'Complete identity verification before accepting a casting.',
+        });
+      }
 
-    // Atomically CLAIM the single-use token (pending→accepted) BEFORE minting
-    // the grant — two concurrent accepts of one invite must not both create a
-    // grant. The guarded updateMany is the barrier: exactly one wins.
-    const claimed = await this.prisma.characterCastingInvite.updateMany({
-      where: { id: invite.id, status: CharacterCastingInviteStatus.pending },
-      data: {
-        status: CharacterCastingInviteStatus.accepted,
-        respondedAt: new Date(),
-        // Bind an open-link invite to the accepting user on first claim.
-        inviteeUserId: invite.inviteeUserId ?? user.userId,
-      },
-    });
-    if (claimed.count !== 1) {
-      throw new ConflictException({
-        code: 'CASTING_INVITE_NOT_PENDING',
-        message: 'This casting invite is no longer open.',
+      // Claim and consent-backed grant commit together; failed consent/storage leaves the token open.
+      const [{ now }] = await tx.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT clock_timestamp() AS now`;
+      const claimed = await tx.characterCastingInvite.updateMany({
+        where: {
+          id: invite.id,
+          status: CharacterCastingInviteStatus.pending,
+          expiresAt: { gt: now },
+        },
+        data: {
+          status: CharacterCastingInviteStatus.accepted,
+          respondedAt: now,
+          // Bind an open-link invite to the accepting user on first claim.
+          inviteeUserId: invite.inviteeUserId ?? user.userId,
+        },
       });
-    }
-    // grantViaAcceptedInvite is itself idempotent (active-grant re-read), so a
-    // partial failure after the claim is safe to retry.
-    await this.grants.grantViaAcceptedInvite({
-      user,
-      characterId,
-      project,
-      inviteId: invite.id,
-      consent,
-      context,
+      if (claimed.count !== 1) {
+        throw new ConflictException({
+          code: 'CASTING_INVITE_NOT_PENDING',
+          message: 'This casting invite is no longer open.',
+        });
+      }
+      await this.grants.grantViaAcceptedInvite({
+        user,
+        characterId,
+        project,
+        inviteId: invite.id,
+        consent,
+        context,
+        tx,
+      });
     });
   }
 
   // ── Internals ────────────────────────────────────────────────────────────
 
-  private async requireLiveInvite(user: AuthUser, token: string) {
+  private async requireLiveInvite(
+    user: AuthUser,
+    token: string,
+    client: Prisma.TransactionClient = this.prisma,
+  ) {
     const tokenHash = createHash('sha256').update(token.trim()).digest('hex');
-    const invite = await this.prisma.characterCastingInvite.findUnique({
+    const invite = await client.characterCastingInvite.findUnique({
       where: { tokenHash },
     });
     if (!invite) {
@@ -218,7 +245,7 @@ export class CharacterCastingService {
       invite.status === CharacterCastingInviteStatus.pending &&
       invite.expiresAt < new Date()
     ) {
-      await this.prisma.characterCastingInvite.updateMany({
+      await client.characterCastingInvite.updateMany({
         where: { id: invite.id, status: CharacterCastingInviteStatus.pending },
         data: { status: CharacterCastingInviteStatus.expired },
       });
@@ -240,8 +267,11 @@ export class CharacterCastingService {
     return invite;
   }
 
-  private async requireActiveProject(projectId: string) {
-    const project = await this.prisma.platformProject.findFirst({
+  private async requireActiveProject(
+    projectId: string,
+    client: Prisma.TransactionClient = this.prisma,
+  ) {
+    const project = await client.platformProject.findFirst({
       where: {
         id: projectId,
         status: PlatformProjectStatus.active,
@@ -261,8 +291,9 @@ export class CharacterCastingService {
   private async requireProjectEditor(
     user: AuthUser,
     projectId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
-    const member = await this.prisma.projectMember.findFirst({
+    const member = await client.projectMember.findFirst({
       where: {
         projectId,
         userId: user.userId,

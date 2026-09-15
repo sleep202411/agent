@@ -28,9 +28,9 @@ function setup(slug: string) {
     ...entry.binding,
     id: entry.endpoint.endpointId,
     canonicalModelId: slug,
-    canonicalModel: { ...plan.canonical, id: slug },
+    canonicalModel: { ...plan.canonical, archivedAt: null, id: slug },
     providerAccount: { id: 'fal', status: 'active' },
-    providerEndpoint: entry.endpoint,
+    providerEndpoint: { ...entry.endpoint, archivedAt: null },
   }));
   const config = {
     config: { enabled: true, catalogRefreshMs: 60000, pollDelayMs: 5000 },

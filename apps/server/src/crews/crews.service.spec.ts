@@ -231,7 +231,7 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
       JSON.stringify(create.data.productionPage.create.document),
     ).toContain('制作目标');
     expect(create.data.productionActivity.create.payload).toEqual({
-      productionTemplateVersion: 3,
+      productionTemplateVersion: 4,
       productionTemplateLocale: 'zh-CN',
     });
     expect(

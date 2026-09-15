@@ -34,6 +34,7 @@ export class StoryGenerationBatchContinuationWorkerService
   );
   private timer: NodeJS.Timeout | null = null;
   private draining = false;
+  private stopping = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -41,6 +42,7 @@ export class StoryGenerationBatchContinuationWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopping || this.timer) return;
     const intervalMs = positiveInt(
       process.env.STORY_GENERATION_CONTINUATION_WORKER_INTERVAL_MS,
       DEFAULT_INTERVAL_MS,
@@ -54,19 +56,23 @@ export class StoryGenerationBatchContinuationWorkerService
   }
 
   onModuleDestroy(): void {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
 
   async drainOnce(limit = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (this.draining) return;
+    if (this.stopping || this.draining) return;
     this.draining = true;
     try {
       for (let index = 0; index < Math.max(1, Math.trunc(limit)); index += 1) {
+        if (this.stopping) break;
         let dispatch: AgentOsJournalDispatch | null;
         try {
           dispatch = await this.prisma.$transaction((tx) =>
-            this.deliverNextInTransaction(tx),
+            this.stopping
+              ? Promise.resolve(null)
+              : this.deliverNextInTransaction(tx),
           );
         } catch (error) {
           if (!(error instanceof AgentOsContinuationNotReadyError)) {

@@ -1362,8 +1362,8 @@ export class ConversationsService {
         .map((item) => item.mediaAssetId);
 
       await lockCrewAssetUploads(tx, uploadIds);
-      const [nodes, uploadedMedia] = await Promise.all([
-        tx.crewAssetNode.findMany({
+      const [nodes, uploadedMedia] = [
+        await tx.crewAssetNode.findMany({
           where: {
             id: { in: existingIds },
             crewId,
@@ -1374,7 +1374,7 @@ export class ConversationsService {
           },
           include: { mediaAsset: true },
         }),
-        tx.mediaAsset.findMany({
+        await tx.mediaAsset.findMany({
           where: {
             id: { in: uploadIds },
             status: MediaAssetStatus.ready,
@@ -1389,7 +1389,7 @@ export class ConversationsService {
             metadata: true,
           },
         }),
-      ]);
+      ];
       if (nodes.length !== existingIds.length) {
         throw new BadRequestException({
           message: 'One or more attached crew assets are unavailable.',

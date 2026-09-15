@@ -1,3 +1,4 @@
+import { providerBindingAdmissionEligible } from '../../provider-catalog-eligibility';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
@@ -24,6 +25,7 @@ import {
 interface AgnesCatalogCache {
   expiresAt: number;
   models: AiModelDefinition[];
+  lookupModels: AiModelDefinition[];
   runtimeByModelId: Map<string, AgnesRuntimeConfig>;
   runtimeByEndpointId: Map<string, AgnesRuntimeConfig>;
 }
@@ -32,6 +34,7 @@ interface AgnesCatalogCache {
 export class AgnesCatalogService {
   private readonly logger = new Logger(AgnesCatalogService.name);
   private cache: AgnesCatalogCache | null = null;
+  private cacheRead: Promise<AgnesCatalogCache> | null = null;
 
   constructor(
     private readonly configService: AgnesConfigService,
@@ -46,7 +49,7 @@ export class AgnesCatalogService {
   async getModel(modelId: string): Promise<AiModelDefinition | null> {
     const cache = await this.getCache();
     return (
-      cache.models.find(
+      cache.lookupModels.find(
         (model) =>
           model.id === modelId ||
           model.deployment === modelId ||
@@ -55,7 +58,11 @@ export class AgnesCatalogService {
     );
   }
 
-  async getRuntimeConfig(modelId: string): Promise<AgnesRuntimeConfig | null> {
+  async getRuntimeConfig(
+    modelId: string,
+    options?: { forSubmission?: boolean },
+  ): Promise<AgnesRuntimeConfig | null> {
+    if (options?.forSubmission && !(await this.getModel(modelId))) return null;
     const cache = await this.getCache();
     return (
       cache.runtimeByModelId.get(modelId) ??
@@ -67,23 +74,50 @@ export class AgnesCatalogService {
 
   private async getCache(): Promise<AgnesCatalogCache> {
     if (this.cache && this.cache.expiresAt > Date.now()) return this.cache;
+    if (this.cacheRead) return this.cacheRead;
+    const pending = this.loadCache().finally(() => {
+      if (this.cacheRead === pending) this.cacheRead = null;
+    });
+    this.cacheRead = pending;
+    return pending;
+  }
+
+  private async loadCache(): Promise<AgnesCatalogCache> {
     const config = this.configService.config;
     const runtimeByModelId = new Map<string, AgnesRuntimeConfig>();
     const runtimeByEndpointId = new Map<string, AgnesRuntimeConfig>();
-    const entries = await this.dbRuntimeConfigs();
-    const models = entries.map((entry) => {
-      const model = toAgnesModelDefinition({
-        config: entry.runtime,
-        modelId: entry.modelId,
-        source: 'agnes-config',
-        ops: entry.ops,
-      });
-      runtimeByModelId.set(model.id, entry.runtime);
-      runtimeByModelId.set(model.deployment, entry.runtime);
-      runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
-      runtimeByModelId.set(`agnes/${entry.runtime.endpointId}`, entry.runtime);
-      runtimeByEndpointId.set(entry.runtime.endpointId, entry.runtime);
-      return model;
+    const entries = (await this.dbRuntimeConfigs()).sort(
+      (a, b) => Number(b.admissionEligible) - Number(a.admissionEligible),
+    );
+    const seenModelIds = new Set<string>();
+    const lookupModels = entries
+      .map((entry) => {
+        const model = toAgnesModelDefinition({
+          config: entry.runtime,
+          modelId: entry.modelId,
+          source: 'agnes-config',
+          ops: entry.ops,
+        });
+        if (!runtimeByModelId.has(model.id))
+          runtimeByModelId.set(model.id, entry.runtime);
+        if (!runtimeByModelId.has(model.deployment))
+          runtimeByModelId.set(model.deployment, entry.runtime);
+        if (!runtimeByModelId.has(entry.runtime.endpointId))
+          runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
+        if (!runtimeByModelId.has(`agnes/${entry.runtime.endpointId}`))
+          runtimeByModelId.set(
+            `agnes/${entry.runtime.endpointId}`,
+            entry.runtime,
+          );
+        if (!runtimeByEndpointId.has(entry.runtime.endpointId))
+          runtimeByEndpointId.set(entry.runtime.endpointId, entry.runtime);
+        return model;
+      })
+      .filter((_model, index) => entries[index].admissionEligible);
+    const models = lookupModels.filter((model) => {
+      if (seenModelIds.has(model.id)) return false;
+      seenModelIds.add(model.id);
+      return true;
     });
 
     if (config.enabled && entries.length === 0) {
@@ -95,6 +129,7 @@ export class AgnesCatalogService {
     this.cache = {
       expiresAt: Date.now() + config.catalogRefreshMs,
       models,
+      lookupModels,
       runtimeByModelId,
       runtimeByEndpointId,
     };
@@ -160,6 +195,7 @@ export class AgnesCatalogService {
         parameterPolicy: row.canonicalModel.parameterPolicy as AiJsonValue,
       });
       return {
+        admissionEligible: providerBindingAdmissionEligible(row),
         runtime,
         modelId: row.canonicalModel.slug,
         ops: {
@@ -178,6 +214,7 @@ export class AgnesCatalogService {
 }
 
 type AgnesRuntimeEntry = {
+  admissionEligible: boolean;
   runtime: AgnesRuntimeConfig;
   modelId: string;
   ops: NonNullable<AiModelDefinition['ops']>;

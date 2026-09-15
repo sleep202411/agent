@@ -41,11 +41,13 @@ function makeHarness(opts: {
   const prisma = {
     mediaModerationAction: {
       findMany: jest.fn().mockImplementation(() => {
+        const index = Math.floor(claimPhase / 2);
+        const candidates = claimPhase % 2 === 0;
         claimPhase += 1;
-        if (claimPhase === 1) {
-          return Promise.resolve(opts.claimed.map((a) => ({ id: a.id })));
-        }
-        return Promise.resolve(opts.claimed);
+        const row = opts.claimed[index];
+        return Promise.resolve(
+          row ? (candidates ? [{ id: row.id }] : [row]) : [],
+        );
       }),
       updateMany: actionUpdateMany,
     },

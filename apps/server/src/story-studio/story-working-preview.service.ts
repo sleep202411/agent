@@ -118,13 +118,13 @@ export class StoryWorkingPreviewService {
     projectId: string,
     chapterId: string | undefined,
   ): Promise<StoryWorkingPreviewDto> {
-    const [draft, chapters] = await Promise.all([
-      tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
-      tx.storyChapter.findMany({
+    const [draft, chapters] = [
+      await tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+      await tx.storyChapter.findMany({
         where: { storyProjectId: projectId, archivedAt: null },
         orderBy: [{ rank: 'asc' }, { id: 'asc' }],
       }),
-    ]);
+    ];
     if (!draft) {
       throw new NotFoundException({
         code: 'STORY_DRAFT_NOT_FOUND',

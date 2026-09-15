@@ -1133,6 +1133,7 @@ export class AiGenerationWorkerService
 
     try {
       const result = await adapter.startGeneration(modelId, providerInput, {
+        expectedExecutionBinding: job.routingSnapshot?.executionBindingIdentity,
         jobId: job.id,
         userId: job.userId,
         publicBaseUrl: process.env.PUBLIC_BASE_URL,

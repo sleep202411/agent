@@ -30,6 +30,7 @@ export class AgentOsExternalHandoffReconcilerService
   );
   private timer: ReturnType<typeof setInterval> | null = null;
   private draining = false;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -37,18 +38,20 @@ export class AgentOsExternalHandoffReconcilerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), SWEEP_INTERVAL_MS);
     this.timer.unref();
     queueMicrotask(() => void this.drainOnce());
   }
 
   onModuleDestroy(): void {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
 
   async drainOnce(): Promise<void> {
-    if (this.draining) return;
+    if (this.stopped || this.draining) return;
     this.draining = true;
     try {
       const candidates = await this.prisma.$queryRaw<
@@ -74,6 +77,7 @@ export class AgentOsExternalHandoffReconcilerService
         LIMIT ${BATCH_SIZE}
       `);
       for (const candidate of candidates) {
+        if (this.stopped) break;
         try {
           await this.journal.reconcileExternalHandoff(candidate.externalJobId);
         } catch (error) {

@@ -57,7 +57,7 @@ export class MiniMaxProviderAdapter implements ProviderAdapter {
     ctx: ProviderGenerationContext,
   ): Promise<StartResult> {
     void ctx;
-    const runtime = await this.requireRuntime(modelId);
+    const runtime = await this.requireRuntime(modelId, true);
     const payload = mapMiniMaxVideoProviderRequest(input);
     const submittedAt = new Date().toISOString();
     const response = await this.client.createVideoTask(
@@ -159,8 +159,10 @@ export class MiniMaxProviderAdapter implements ProviderAdapter {
     return mapMiniMaxUnknownError(err);
   }
 
-  private async requireRuntime(modelId: string) {
-    const runtime = await this.catalog.getRuntimeConfig(modelId);
+  private async requireRuntime(modelId: string, forSubmission = false) {
+    const runtime = await this.catalog.getRuntimeConfig(modelId, {
+      forSubmission,
+    });
     if (!runtime?.enabled) {
       throw minimaxError(
         'PROVIDER_NOT_CONFIGURED',

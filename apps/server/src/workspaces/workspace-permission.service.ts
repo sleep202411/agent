@@ -136,6 +136,7 @@ export class WorkspacePermissionService {
         id: projectId,
         status: PlatformProjectStatus.active,
         deletedAt: null,
+        workspace: { status: WorkspaceStatus.active, deletedAt: null },
       },
     });
     if (!project) {
@@ -177,8 +178,8 @@ export class WorkspacePermissionService {
   }
 
   /**
-   * The caller's effective ProjectMemberRole for a project: their direct
-   * ProjectMember role if any, else their WorkspaceMember role mapped onto the
+   * The caller's effective ProjectMemberRole for a project: the stronger of
+   * their direct ProjectMember role and WorkspaceMember role mapped onto the
    * project ladder (the same fallback `requireProjectRole` grants by). Returns
    * null when the user has neither. Read-only — surfaced to clients so they can
    * gate (e.g. viewer read-only); the server remains the source of truth.
@@ -187,6 +188,15 @@ export class WorkspacePermissionService {
     userId: string,
     project: PlatformProject,
   ): Promise<ProjectMemberRole | null> {
+    const current = await this.prisma.platformProject.findFirst({
+      where: {
+        id: project.id,
+        status: PlatformProjectStatus.active,
+        deletedAt: null,
+        workspace: { status: WorkspaceStatus.active, deletedAt: null },
+      },
+    });
+    if (!current) return null;
     const projectMember = await this.prisma.projectMember.findFirst({
       where: {
         projectId: project.id,
@@ -195,11 +205,10 @@ export class WorkspacePermissionService {
         removedAt: null,
       },
     });
-    if (projectMember) return projectMember.role;
 
     const workspaceMember = await this.prisma.workspaceMember.findFirst({
       where: {
-        workspaceId: project.workspaceId,
+        workspaceId: current.workspaceId,
         userId,
         status: WorkspaceMemberStatus.active,
         removedAt: null,
@@ -207,7 +216,14 @@ export class WorkspacePermissionService {
         workspace: { status: WorkspaceStatus.active, deletedAt: null },
       },
     });
-    if (!workspaceMember) return null;
-    return WORKSPACE_TO_PROJECT_ROLE[workspaceMember.role];
+    const direct = projectMember?.role ?? null;
+    const inherited = workspaceMember
+      ? WORKSPACE_TO_PROJECT_ROLE[workspaceMember.role]
+      : null;
+    if (!direct) return inherited;
+    if (!inherited) return direct;
+    return PROJECT_ROLE_RANK[direct] >= PROJECT_ROLE_RANK[inherited]
+      ? direct
+      : inherited;
   }
 }

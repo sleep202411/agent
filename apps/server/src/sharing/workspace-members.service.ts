@@ -299,8 +299,8 @@ export class WorkspaceMembersService {
       });
     }
     const removal = await this.prisma.$transaction(async (tx) => {
-      const [projectAccess, storyAccess] = await Promise.all([
-        tx.projectMember.findFirst({
+      const [projectAccess, storyAccess] = [
+        await tx.projectMember.findFirst({
           where: {
             userId: member.userId,
             removedAt: null,
@@ -309,7 +309,7 @@ export class WorkspaceMembersService {
           },
           select: { id: true },
         }),
-        tx.storyProjectMember.findFirst({
+        await tx.storyProjectMember.findFirst({
           where: {
             userId: member.userId,
             removedAt: null,
@@ -318,7 +318,7 @@ export class WorkspaceMembersService {
           },
           select: { id: true },
         }),
-      ]);
+      ];
       const keepRosterPresence = Boolean(projectAccess || storyAccess);
       const updatedMember = await tx.workspaceMember.update({
         where: { id: memberId },
