@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading,
   } = useQuery({
     queryKey: ME_KEY,
-    queryFn: getAuthUser,
+    queryFn: ({ signal }) => getAuthUser(signal),
     staleTime: 5 * 60_000,
     retry: (failureCount, err) => isAuthUnavailableError(err) && failureCount < 3,
   });
@@ -90,9 +90,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
-    await javaLogout();
+    const revocation = javaLogout();
+    pendingActionRef.current = null;
+    setDialogOpen(false);
+    void queryClient.cancelQueries({ queryKey: ME_KEY });
     queryClient.setQueryData(ME_KEY, null);
-    void queryClient.invalidateQueries();
+    void queryClient.invalidateQueries({
+      predicate: (query) =>
+        !(
+          query.queryKey.length === ME_KEY.length &&
+          query.queryKey.every((part, index) => part === ME_KEY[index])
+        ),
+    });
+    await revocation;
   }, [queryClient]);
 
   const closeDialog = useCallback(() => {
