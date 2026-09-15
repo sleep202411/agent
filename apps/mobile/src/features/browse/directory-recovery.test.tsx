@@ -1,8 +1,8 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import CrewsScreen from "./crews";
-import CreatorsScreen from "./creators";
+import CrewsScreen from "@/app/(tabs)/crews";
+import CreatorsScreen from "@/app/(tabs)/creators";
 
 const h = vi.hoisted(() => ({
   feed: vi.fn(),
