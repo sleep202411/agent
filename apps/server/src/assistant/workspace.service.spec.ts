@@ -48,6 +48,15 @@ describe('WorkspaceService request integrity', () => {
     },
   );
 
+  it('encodes the project identifier during context retrieval', async () => {
+    const projectId = 'project/one?other=two#part';
+    fetchMock.mockImplementation(() => Promise.resolve(response({})));
+    await service.getProjectContextSummary(headers, { projectId });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `https://workspace.fixture.invalid/api/user/project/detail/${encodeURIComponent(projectId)}`,
+    );
+  });
+
   it.each([{ list: [] }, { list: [{ id: 'other' }] }])(
     'stops replacement when the current episode is missing: %j',
     async ({ list }) => {
@@ -82,7 +91,7 @@ describe('WorkspaceService request integrity', () => {
       id: 'episode',
       title: 'new',
     });
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toEqual({
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
       ...current,
       title: 'new',
     });

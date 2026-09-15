@@ -230,7 +230,7 @@ export class WorkspaceService {
   ) {
     const detail = await this.request<WorkspaceRecord>(
       headers,
-      `/api/user/project/detail/${context.projectId}`,
+      `/api/user/project/detail/${encodeURIComponent(context.projectId)}`,
     );
     const worldId =
       context.worldId ||
