@@ -163,11 +163,21 @@ describe("episode video upload", () => {
     expect(completeCalls).toBe(1);
   });
 
-  it("rejects a same-name, same-size, same-timestamp file with different bytes", async () => {
+  it("rejects changed bytes in an uploaded part when file metadata matches", async () => {
     const { uploadEpisodeVideo } = await import("./episode-upload");
-    failPart = 3;
-    await expect(uploadEpisodeVideo(file(), options())).rejects.toThrow();
-    failPart = undefined;
+    const controller = new AbortController();
+    // Native hashing can settle in any order. Persist part one's fingerprint
+    // before interrupting the upload, so this retry changes verified evidence.
+    await expect(
+      uploadEpisodeVideo(file(), {
+        ...options(),
+        signal: controller.signal,
+        onProgress: () => {
+          if (stored.has(1)) controller.abort();
+        },
+      })
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(stored.has(1)).toBe(true);
     await expect(uploadEpisodeVideo(file("XXXXXXXXabcdefghijk"), options())).rejects.toThrow(
       "differs from the original"
     );

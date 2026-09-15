@@ -53,8 +53,8 @@ vi.mock("../../_hooks/use-accountability", () => ({
   useAccountabilityAction: () => ({ mutateAsync: state.mutate, isPending: false }),
 }));
 vi.mock("@/components/ui/native-select", () => ({
-  // eslint-disable-next-line no-restricted-syntax -- NativeSelect test double exposes controlled selection.
   NativeSelect: ({ onChange, ...props }: { onChange: (value: string) => void }) => (
+    // eslint-disable-next-line no-restricted-syntax -- NativeSelect test double exposes controlled selection.
     <select {...props} onChange={(e) => onChange(e.target.value)} />
   ),
   NativeSelectOption: (props: object) => <option {...props} />,
