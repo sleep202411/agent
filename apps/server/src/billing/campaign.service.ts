@@ -85,20 +85,23 @@ export class CampaignService {
     campaignId: string,
     status: UpdateCreditCampaignStatusInput['status'],
   ) {
-    const existing = await this.prisma.creditCampaign.findUnique({
-      where: { id: campaignId },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'CREDIT_CAMPAIGN_NOT_FOUND',
-        msg: 'Campaign not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM credit_campaigns WHERE id=${campaignId}::uuid FOR UPDATE`;
+      const existing = await tx.creditCampaign.findUnique({
+        where: { id: campaignId },
       });
-    }
-    const updated = await this.prisma.creditCampaign.update({
-      where: { id: campaignId },
-      data: { status: status as CreditCampaignStatus },
+      if (!existing) {
+        throw new NotFoundException({
+          code: 'CREDIT_CAMPAIGN_NOT_FOUND',
+          msg: 'Campaign not found.',
+        });
+      }
+      const updated = await tx.creditCampaign.update({
+        where: { id: campaignId },
+        data: { status: status as CreditCampaignStatus },
+      });
+      return this.campaignDto(updated);
     });
-    return this.campaignDto(updated);
   }
 
   // --- user ----------------------------------------------------------------

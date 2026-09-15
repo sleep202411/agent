@@ -79,16 +79,18 @@ export class VoucherService {
         createdById: adminId,
       }));
       try {
-        await this.prisma.voucher.createMany({ data });
-        const created = await this.prisma.voucher.findMany({
-          where: { batchId },
-          orderBy: { createdAt: 'asc' },
+        return await this.prisma.$transaction(async (tx) => {
+          await tx.voucher.createMany({ data });
+          const created = await tx.voucher.findMany({
+            where: { batchId },
+            orderBy: { createdAt: 'asc' },
+          });
+          return {
+            batchId,
+            count: created.length,
+            vouchers: created.map((v) => this.voucherDto(v)),
+          };
         });
-        return {
-          batchId,
-          count: created.length,
-          vouchers: created.map((v) => this.voucherDto(v)),
-        };
       } catch (err) {
         if (isUniqueViolation(err) && attempt < 4) continue;
         throw err;
