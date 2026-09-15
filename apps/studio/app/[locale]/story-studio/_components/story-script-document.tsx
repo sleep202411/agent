@@ -10,7 +10,7 @@ import { useTranslations } from "next-intl";
 import type * as Y from "yjs";
 import { useAuth } from "@/app/_components/auth-provider";
 import { toCollabUser } from "@/lib/collab/collab-user";
-import { ensureStoryScriptDocument } from "@/lib/collab/projects-api";
+import { useStoryScriptDocument } from "../_lib/use-story-documents";
 import { RICH_TEXT_DOC_ROOT_SCHEMA } from "@/lib/collab/protocol";
 import { useCollabDoc } from "@/lib/collab/use-collab-doc";
 import { getStoryWorkbench } from "@/lib/story-projects-api";
@@ -38,12 +38,7 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
   });
   const canEdit = workbenchQuery.data?.project.capabilities.includes("story.edit") ?? false;
 
-  const documentQuery = useQuery({
-    queryKey: ["story-studio", "script-document", projectId, activeChapterId],
-    queryFn: () => ensureStoryScriptDocument(projectId, activeChapterId as string),
-    enabled: Boolean(activeChapterId),
-    retry: false,
-  });
+  const documentQuery = useStoryScriptDocument(projectId, activeChapterId);
   const { doc, status: connStatus } = useCollabDoc(
     documentQuery.data?.id ?? null,
     collabUser,

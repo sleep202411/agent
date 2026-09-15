@@ -229,9 +229,13 @@ export async function ensureModeDocument(
 }
 
 /** Story's canvas and storyboard are two projections of this same document. */
-export async function ensureStoryCanvasDocument(storyProjectId: string): Promise<ModeDocumentRef> {
+export async function ensureStoryCanvasDocument(
+  storyProjectId: string,
+  signal?: AbortSignal
+): Promise<ModeDocumentRef> {
   const data = await api.post<{ document: ModeDocumentRef }>(
-    `/aurora/story-projects/${storyProjectId}/documents/canvas/ensure`
+    `/aurora/story-projects/${storyProjectId}/documents/canvas/ensure`,
+    { signal }
   );
   return data.document;
 }
@@ -239,10 +243,12 @@ export async function ensureStoryCanvasDocument(storyProjectId: string): Promise
 /** One chapter's free-form screenplay — the chapter pipeline's source. */
 export async function ensureStoryScriptDocument(
   storyProjectId: string,
-  storyChapterId: string
+  storyChapterId: string,
+  signal?: AbortSignal
 ): Promise<ModeDocumentRef> {
   const data = await api.post<{ document: ModeDocumentRef }>(
-    `/aurora/story-projects/${storyProjectId}/chapters/${storyChapterId}/documents/script/ensure`
+    `/aurora/story-projects/${storyProjectId}/chapters/${storyChapterId}/documents/script/ensure`,
+    { signal }
   );
   return data.document;
 }
