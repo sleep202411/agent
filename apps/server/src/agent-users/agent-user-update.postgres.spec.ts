@@ -125,4 +125,84 @@ integration('Agent-user administration (owned PostgreSQL)', () => {
       disabledAt,
     });
   });
+  it('retains the first archive timestamp after a competing archive commits', async () => {
+    const memory = await db.agentMemory.create({
+      data: { agentUserId: agentId, type: 'fact', summary: 'Original' },
+    });
+    let release!: () => void;
+    let ready!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const acquired = new Promise<void>((r) => {
+      ready = r;
+    });
+    const archivedAt = new Date('2026-01-01T00:00:00Z');
+    const holder = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_memories WHERE id=${memory.id}::uuid FOR UPDATE`;
+      ready();
+      await gate;
+      await tx.agentMemory.update({
+        where: { id: memory.id },
+        data: { status: 'archived', archivedAt, summary: 'Concurrent' },
+      });
+    });
+    await acquired;
+    const pending = service.updateMemory(agentId, memory.id, {
+      status: 'archived',
+      weight: 42,
+    });
+    void pending.catch(() => undefined);
+    try {
+      await waitForLock();
+    } finally {
+      release();
+    }
+    await holder;
+    await pending;
+    expect(
+      await db.agentMemory.findUniqueOrThrow({ where: { id: memory.id } }),
+    ).toMatchObject({
+      status: 'archived',
+      archivedAt,
+      summary: 'Concurrent',
+      weight: 42,
+    });
+    await service.updateMemory(agentId, memory.id, { status: 'active' });
+    expect(
+      await db.agentMemory.findUniqueOrThrow({ where: { id: memory.id } }),
+    ).toMatchObject({ status: 'active', archivedAt: null });
+  });
+  it('rejects foreign memories and source actions without changing the memory', async () => {
+    const other = await db.agentUser.create({
+      data: { handle: `${handle}-other`, displayName: 'Other' },
+    });
+    const memory = await db.agentMemory.create({
+      data: { agentUserId: agentId, type: 'fact', summary: 'Original' },
+    });
+    const foreignAction = await db.agentAction.create({
+      data: { agentUserId: other.id, actionType: 'fixture' },
+    });
+    await expect(
+      service.updateMemory(other.id, memory.id, { summary: 'Wrong' }),
+    ).rejects.toMatchObject({ status: 404 });
+    await expect(
+      service.updateMemory(agentId, memory.id, {
+        summary: 'Wrong',
+        sourceActionIds: [foreignAction.id],
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(
+      await db.agentMemory.findUniqueOrThrow({ where: { id: memory.id } }),
+    ).toMatchObject({ summary: 'Original', sourceActionIds: [] });
+    const ownedAction = await db.agentAction.create({
+      data: { agentUserId: agentId, actionType: 'fixture' },
+    });
+    await service.updateMemory(agentId, memory.id, {
+      sourceActionIds: [ownedAction.id, ownedAction.id],
+    });
+    expect(
+      await db.agentMemory.findUniqueOrThrow({ where: { id: memory.id } }),
+    ).toMatchObject({ sourceActionIds: [ownedAction.id] });
+  });
 });

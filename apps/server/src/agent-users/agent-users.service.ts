@@ -538,43 +538,48 @@ export class AgentUsersService {
     memoryId: string,
     input: UpdateAgentMemoryInput,
   ) {
-    const existing = await this.findMemory(agentUserId, memoryId);
-    const sourceActionIds =
-      input.sourceActionIds !== undefined
-        ? uniqueStrings(input.sourceActionIds)
-        : undefined;
-    if (sourceActionIds) {
-      await this.assertActionOwnership(agentUserId, sourceActionIds);
-    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_memories WHERE id=${memoryId}::uuid AND agent_user_id=${agentUserId}::uuid FOR UPDATE`;
+      const existing = await this.findMemory(agentUserId, memoryId, tx);
+      const sourceActionIds =
+        input.sourceActionIds !== undefined
+          ? uniqueStrings(input.sourceActionIds)
+          : undefined;
+      if (sourceActionIds) {
+        await this.assertActionOwnership(agentUserId, sourceActionIds, tx);
+      }
 
-    const nextStatus = input.status
-      ? (input.status as AgentMemoryStatus)
-      : existing.status;
-    const data: Prisma.AgentMemoryUpdateInput = {
-      ...(input.status !== undefined
-        ? {
-            status: nextStatus,
-            archivedAt:
-              nextStatus === AgentMemoryStatus.archived
-                ? (existing.archivedAt ?? new Date())
-                : null,
-          }
-        : {}),
-      ...(input.summary !== undefined ? { summary: input.summary } : {}),
-      ...(input.content !== undefined ? { content: json(input.content) } : {}),
-      ...(input.confidence !== undefined
-        ? { confidence: input.confidence }
-        : {}),
-      ...(input.weight !== undefined ? { weight: input.weight } : {}),
-      ...(sourceActionIds !== undefined
-        ? { sourceActionIds: { set: sourceActionIds } }
-        : {}),
-    };
-    const memory = await this.prisma.agentMemory.update({
-      where: { id: existing.id },
-      data,
+      const nextStatus = input.status
+        ? (input.status as AgentMemoryStatus)
+        : existing.status;
+      const data: Prisma.AgentMemoryUpdateInput = {
+        ...(input.status !== undefined
+          ? {
+              status: nextStatus,
+              archivedAt:
+                nextStatus === AgentMemoryStatus.archived
+                  ? (existing.archivedAt ?? new Date())
+                  : null,
+            }
+          : {}),
+        ...(input.summary !== undefined ? { summary: input.summary } : {}),
+        ...(input.content !== undefined
+          ? { content: json(input.content) }
+          : {}),
+        ...(input.confidence !== undefined
+          ? { confidence: input.confidence }
+          : {}),
+        ...(input.weight !== undefined ? { weight: input.weight } : {}),
+        ...(sourceActionIds !== undefined
+          ? { sourceActionIds: { set: sourceActionIds } }
+          : {}),
+      };
+      const memory = await tx.agentMemory.update({
+        where: { id: existing.id },
+        data,
+      });
+      return this.toAgentMemoryDto(memory);
     });
-    return this.toAgentMemoryDto(memory);
   }
 
   private buildAdminWhere(
@@ -620,8 +625,12 @@ export class AgentUsersService {
     return agent;
   }
 
-  private async findMemory(agentUserId: string, memoryId: string) {
-    const memory = await this.prisma.agentMemory.findFirst({
+  private async findMemory(
+    agentUserId: string,
+    memoryId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const memory = await db.agentMemory.findFirst({
       where: { id: memoryId, agentUserId },
     });
     if (!memory) {
@@ -636,9 +645,10 @@ export class AgentUsersService {
   private async assertActionOwnership(
     agentUserId: string,
     actionIds: string[],
+    db: Prisma.TransactionClient = this.prisma,
   ) {
     if (!actionIds.length) return;
-    const ownedCount = await this.prisma.agentAction.count({
+    const ownedCount = await db.agentAction.count({
       where: { agentUserId, id: { in: actionIds } },
     });
     if (ownedCount !== actionIds.length) {
