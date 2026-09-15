@@ -32,9 +32,15 @@ export function wechatUniversalLink(): string {
   return extraPaywall().wechatUniversalLink?.trim() ?? "";
 }
 
-/** Dev / Expo web always mock. Production native requires keys then the SDK. */
-export function mustUseMockPayments(_channel: CheckoutChannel): boolean {
+/** Prefer live StoreKit/Play when a public SDK key is baked in; else mock (dev / no key). */
+export function mustUseMockPayments(channel: CheckoutChannel): boolean {
   if (Platform.OS === "web") return true;
+  if (channel === "apple_iap" || channel === "google_play_iap") {
+    // Production never mocks IAP — missing keys fail in assertPaymentReady / purchase.
+    if (isProductionApp) return false;
+    return revenueCatApiKey(channel).length === 0;
+  }
+  // WeChat APP pay still needs Nest providerData — mock until that ships in production.
   return !isProductionApp;
 }
 
@@ -56,10 +62,8 @@ export function missingPaymentKeyMessage(channel: CheckoutChannel): string {
 
 export function assertPaymentReady(channel: CheckoutChannel): void {
   if (channel === "web") return;
-  if (!isProductionApp || Platform.OS === "web") return;
-  if (mustUseMockPayments(channel)) {
-    throw new Error(missingPaymentKeyMessage(channel));
-  }
+  if (Platform.OS === "web") return;
+  if (mustUseMockPayments(channel)) return;
   if (channel === "wechat" && !wechatAppId()) {
     throw new Error(missingPaymentKeyMessage(channel));
   }

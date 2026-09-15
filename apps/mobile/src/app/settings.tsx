@@ -45,6 +45,11 @@ export default function SettingsScreen() {
       onPress: () => void checkForUpdate({ manual: true }),
     },
     {
+      key: "about",
+      label: t("settings.about"),
+      onPress: () => router.push("/about"),
+    },
+    {
       key: "delete",
       label: t("settings.deleteAccount"),
       danger: true,
