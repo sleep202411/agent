@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  defaultScheduler,
+  notifyManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { CrewSaveActions } from "./crew-save-actions";
 import {
@@ -46,19 +51,18 @@ function view(canEdit = true, kind: "image" | "video" | "audio" = "image") {
 afterEach(async () => {
   await act(async () => root.unmount());
   client.clear();
+  notifyManager.setScheduler(defaultScheduler);
   host.remove();
   vi.clearAllMocks();
 });
 async function mount(kind: "image" | "video" | "audio" = "image") {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  notifyManager.setScheduler(queueMicrotask);
   document.body.append(host);
   root = createRoot(host);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
     root.render(view(true, kind));
-  });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
   });
 }
 it.each(["image", "video"] as const)(

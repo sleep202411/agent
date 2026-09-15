@@ -2,7 +2,12 @@
 import { act } from "react";
 import { ApiRequestError } from "@/lib/api";
 import { createRoot, type Root } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  defaultScheduler,
+  notifyManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProjectCrewAssetLibrary } from "./project-crew-asset-library";
 import { useProjectAssets } from "@/lib/canvas-authoring/use-project-assets";
@@ -56,6 +61,7 @@ let client: QueryClient;
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
+  notifyManager.setScheduler(queueMicrotask);
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   session.id = "alice";
   vi.mocked(getProjectCrewAssetContext).mockResolvedValue(context("crew-a"));
@@ -74,6 +80,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   client.clear();
+  notifyManager.setScheduler(defaultScheduler);
   host.remove();
   vi.resetAllMocks();
 });
@@ -93,9 +100,6 @@ async function render(inventory = false) {
       </QueryClientProvider>
     )
   );
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  });
 }
 it("resets the folder and cancels its read when the linked Crew changes", async () => {
   await render();
