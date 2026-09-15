@@ -670,45 +670,52 @@ export class IpCommerceService {
     const code =
       normalizeTaxonomyCodes(input.code ? [input.code] : [], 1)[0] ??
       generateTaxonomyCode(input.type as IpTaxonomyTermType, localizations);
-
-    const existing = await this.prisma.ipTaxonomyTerm.findUnique({
-      where: {
-        type_code: {
-          type: input.type as IpTaxonomyTermType,
-          code,
-        },
-      },
-      select: { id: true },
-    });
-    if (existing) {
-      throw new ConflictException({
+    const conflict = () =>
+      new ConflictException({
         code: 'IP_TAXONOMY_TERM_CODE_EXISTS',
         msg: `Taxonomy code already exists: ${code}.`,
       });
-    }
-
-    const term = await this.prisma.ipTaxonomyTerm.create({
-      data: {
-        type: input.type as IpTaxonomyTermType,
-        code,
-        status: input.status as IpTaxonomyTermStatus,
-        displayOrder: input.displayOrder,
-        createdById: user.userId,
-        updatedById: user.userId,
-        archivedAt:
-          input.status === IpTaxonomyTermStatus.archived ? new Date() : null,
-        localizations: {
-          createMany: {
-            data: localizations,
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.ipTaxonomyTerm.findUnique({
+          where: {
+            type_code: { type: input.type as IpTaxonomyTermType, code },
           },
-        },
-      },
-      include: adminTaxonomyTermInclude,
-    });
-
-    return {
-      term: adminTaxonomyTermDto(term, input.localizations[0]?.locale),
-    };
+          select: { id: true },
+        });
+        if (existing) throw conflict();
+        const term = await tx.ipTaxonomyTerm.create({
+          data: {
+            type: input.type as IpTaxonomyTermType,
+            code,
+            status: input.status as IpTaxonomyTermStatus,
+            displayOrder: input.displayOrder,
+            createdById: user.userId,
+            updatedById: user.userId,
+            archivedAt:
+              input.status === IpTaxonomyTermStatus.archived
+                ? new Date()
+                : null,
+            localizations: { createMany: { data: localizations } },
+          },
+          include: adminTaxonomyTermInclude,
+        });
+        return {
+          term: adminTaxonomyTermDto(term, input.localizations[0]?.locale),
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const existing = await this.prisma.ipTaxonomyTerm.findUnique({
+          where: {
+            type_code: { type: input.type as IpTaxonomyTermType, code },
+          },
+          select: { id: true },
+        });
+        if (existing) throw conflict();
+      }
+      throw error;
+    }
   }
 
   async updateAdminTaxonomyTerm(
@@ -716,45 +723,32 @@ export class IpCommerceService {
     termId: string,
     input: UpdateAdminIpTaxonomyTermInput,
   ) {
-    const existing = await this.prisma.ipTaxonomyTerm.findUnique({
-      where: { id: termId },
-      select: { id: true },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'IP_TAXONOMY_TERM_NOT_FOUND',
-        msg: 'Taxonomy term not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ip_taxonomy_terms WHERE id=${termId}::uuid FOR UPDATE`;
+      const existing = await tx.ipTaxonomyTerm.findUnique({
+        where: { id: termId },
+        select: { id: true },
       });
-    }
-
-    const term = await this.prisma.$transaction(async (tx) => {
+      if (!existing)
+        throw new NotFoundException({
+          code: 'IP_TAXONOMY_TERM_NOT_FOUND',
+          msg: 'Taxonomy term not found.',
+        });
       const localizations = input.localizations
         ? normalizeAdminTaxonomyLocalizations(input.localizations)
         : [];
-
-      if (localizations.length) {
-        for (const localization of localizations) {
-          await tx.ipTaxonomyTermLocalization.upsert({
-            where: {
-              termId_locale: {
-                termId,
-                locale: localization.locale,
-              },
-            },
-            create: {
-              termId,
-              ...localization,
-            },
-            update: {
-              label: localization.label,
-              description: localization.description,
-              aliases: localization.aliases,
-            },
-          });
-        }
+      for (const localization of localizations) {
+        await tx.ipTaxonomyTermLocalization.upsert({
+          where: { termId_locale: { termId, locale: localization.locale } },
+          create: { termId, ...localization },
+          update: {
+            label: localization.label,
+            description: localization.description,
+            aliases: localization.aliases,
+          },
+        });
       }
-
-      return tx.ipTaxonomyTerm.update({
+      const term = await tx.ipTaxonomyTerm.update({
         where: { id: termId },
         data: {
           ...(input.status !== undefined
@@ -773,11 +767,10 @@ export class IpCommerceService {
         },
         include: adminTaxonomyTermInclude,
       });
+      return {
+        term: adminTaxonomyTermDto(term, input.localizations?.[0]?.locale),
+      };
     });
-
-    return {
-      term: adminTaxonomyTermDto(term, input.localizations?.[0]?.locale),
-    };
   }
 
   // -------------------------------------------------------------------------
