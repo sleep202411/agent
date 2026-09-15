@@ -22,6 +22,7 @@ import {
   type ProjectCrewAssetContext,
 } from "@/lib/collab/project-crew-assets-api";
 import { cn } from "@/lib/utils";
+import { ApiRequestError } from "@/lib/api";
 import { AssetThumb } from "./asset-library-thumb";
 
 interface FolderCrumb {
@@ -207,7 +208,12 @@ function CrewLibraryContents({
       </div>
     );
   }
-  if (context.isError || (Boolean(context.data?.crew) && listing.isError)) {
+  const accessUnavailable =
+    listing.error instanceof ApiRequestError && [401, 403, 404, 410].includes(listing.error.status);
+  if (
+    context.isError ||
+    (Boolean(context.data?.crew) && listing.isError && (items.length === 0 || accessUnavailable))
+  ) {
     const error = context.error ?? listing.error;
     return (
       <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
@@ -274,7 +280,7 @@ function CrewLibraryContents({
             <button
               type="button"
               disabled={listing.isFetchingNextPage}
-              onClick={() => void listing.fetchNextPage()}
+              onClick={() => void listing.fetchNextPage({ cancelRefetch: false })}
               className="col-span-3 h-8 rounded-xl text-[11px] text-white/42 transition-colors hover:bg-white/[0.05] hover:text-white/70"
             >
               {listing.isFetchingNextPage ? t("loadingMore") : t("loadMore")}

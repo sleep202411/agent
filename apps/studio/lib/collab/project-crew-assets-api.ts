@@ -70,15 +70,28 @@ export function listProjectCrewAssets(
 
 export async function listAllProjectCrewAssets(projectId: string, signal?: AbortSignal) {
   const items: ProjectCrewAssetNode[] = [];
+  const seenIds = new Set<string>();
+  const seenCursors = new Set<string>();
   let cursor: string | undefined;
   do {
+    signal?.throwIfAborted();
     const page = await api.get<ProjectCrewAssetList>(crewAssetPath(projectId), {
       params: { source: "recent", sort: "modified", limit: 200, cursor },
       signal,
       requestScope: "project",
     });
-    items.push(...page.items);
+    signal?.throwIfAborted();
+    for (const item of page.items) {
+      if (!seenIds.has(item.id)) {
+        seenIds.add(item.id);
+        items.push(item);
+      }
+    }
     cursor = page.nextCursor ?? undefined;
+    if (cursor) {
+      if (seenCursors.has(cursor)) throw new Error("Crew asset pagination repeated a cursor.");
+      seenCursors.add(cursor);
+    }
   } while (cursor);
   return items;
 }

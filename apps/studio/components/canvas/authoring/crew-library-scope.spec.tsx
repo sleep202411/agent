@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from "react";
+import { ApiRequestError } from "@/lib/api";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -146,3 +147,57 @@ it("starts at the root folder after account replacement", async () => {
   await render();
   expect(vi.mocked(listProjectCrewAssets).mock.calls.at(-1)?.[1].parentId).toBeUndefined();
 });
+it("keeps loaded folders after next-page failure and retries the same cursor", async () => {
+  vi.mocked(listProjectCrewAssets)
+    .mockResolvedValueOnce({ items: [folder], parentId: null, source: "all", nextCursor: "page-2" })
+    .mockRejectedValueOnce(new Error("temporarily unavailable"))
+    .mockResolvedValueOnce({
+      items: [{ ...folder, id: "new-folder", name: "New folder" }],
+      parentId: null,
+      source: "all",
+      nextCursor: null,
+    });
+  await render();
+  const more = () =>
+    Array.from(host.querySelectorAll("button")).find(
+      (button) => button.textContent === "loadMore"
+    )!;
+  await act(async () => more().click());
+  await render();
+  expect(host.textContent).toContain("Old folder");
+  expect(more()).toBeDefined();
+  await act(async () => more().click());
+  await render();
+  expect(host.textContent).toContain("Old folder");
+  expect(host.textContent).toContain("New folder");
+  expect(
+    vi
+      .mocked(listProjectCrewAssets)
+      .mock.calls.slice(1)
+      .map((call) => call[1].cursor)
+  ).toEqual(["page-2", "page-2"]);
+});
+
+it.each([401, 403, 404, 410])(
+  "removes loaded folders after access becomes unavailable (%s)",
+  async (status) => {
+    vi.mocked(listProjectCrewAssets)
+      .mockResolvedValueOnce({
+        items: [folder],
+        parentId: null,
+        source: "all",
+        nextCursor: "page-2",
+      })
+      .mockRejectedValueOnce(new ApiRequestError("ACCESS_UNAVAILABLE", "Unavailable", status));
+    await render();
+    expect(host.textContent).toContain("Old folder");
+    await act(async () =>
+      Array.from(host.querySelectorAll("button"))
+        .find((button) => button.textContent === "loadMore")!
+        .click()
+    );
+    await render();
+    expect(host.textContent).not.toContain("Old folder");
+    expect(host.textContent).toContain("errorTitle");
+  }
+);
