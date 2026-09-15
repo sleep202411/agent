@@ -125,57 +125,34 @@ export class ApplicationsService {
     applicantId: string,
     input: ApplyInput,
   ) {
-    const [crew, position, existingMembership] = await Promise.all([
-      this.prisma.crew.findFirst({
-        where: { id: crewId, deletedAt: null },
-        select: {
-          id: true,
-          name: true,
-          ownership: { select: { member: { select: { userId: true } } } },
-        },
-      }),
-      this.prisma.crewPosition.findFirst({
-        where: { id: positionId, crewId, deletedAt: null },
-        select: { id: true, status: true, positionType: true },
-      }),
-      this.prisma.crewMember.findFirst({
-        where: {
-          crewId,
-          userId: applicantId,
-          status: {
-            in: [CrewMembershipStatus.active, CrewMembershipStatus.suspended],
-          },
-        },
-        select: { id: true },
-      }),
-    ]);
-
-    if (!crew) throw new NotFoundException('Crew not found');
-    if (!crew.ownership) throw new NotFoundException('Crew owner not found');
-    const ownerUserId = crew.ownership.member.userId;
-    if (!position) throw new NotFoundException('Position not found');
-    if (position.status !== 'open') {
-      throw new BadRequestException({
-        message: 'Position is not accepting applications',
-        positionStatus: position.status,
-      });
-    }
-    if (existingMembership) {
-      throw new ConflictException({
-        message: 'You are already a member of this crew',
-      });
-    }
-    if (applicantId === ownerUserId) {
-      throw new BadRequestException({
-        message: 'The crew owner cannot apply to their own crew',
-      });
-    }
+    await this.applicationEligibility(
+      crewId,
+      positionId,
+      applicantId,
+      this.prisma,
+    );
 
     const expected = normalizeExpectedCompensation(input);
     assertAllowedCurrency(expected?.currency, 'expectedCompensation.currency');
 
     try {
       const created = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM crew_positions WHERE id=${positionId} AND crew_id=${crewId} FOR UPDATE`;
+        const { crew, position, ownerUserId } =
+          await this.applicationEligibility(
+            crewId,
+            positionId,
+            applicantId,
+            tx,
+          );
+        const pending = await tx.crewApplication.findFirst({
+          where: { positionId, applicantId, status: 'pending' },
+          select: { id: true },
+        });
+        if (pending)
+          throw new ConflictException({
+            message: 'You already have a pending application for this position',
+          });
         const app = await tx.crewApplication.create({
           data: {
             id: newCrewDomainId(),
@@ -224,6 +201,7 @@ export class ApplicationsService {
           },
           tx,
         );
+        await this.applicationEligibility(crewId, positionId, applicantId, tx);
         return app;
       });
       return toApplicationDTO(created);
@@ -238,6 +216,69 @@ export class ApplicationsService {
       }
       throw err;
     }
+  }
+
+  private async applicationEligibility(
+    crewId: string,
+    positionId: string,
+    applicantId: string,
+    db: Prisma.TransactionClient,
+  ) {
+    const [crew, position, existingMembership] = await Promise.all([
+      db.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          moderationStatus: true,
+          ownership: { select: { member: { select: { userId: true } } } },
+        },
+      }),
+      db.crewPosition.findFirst({
+        where: { id: positionId, crewId, deletedAt: null },
+        select: {
+          id: true,
+          status: true,
+          positionType: true,
+          moderationStatus: true,
+        },
+      }),
+      db.crewMember.findFirst({
+        where: {
+          crewId,
+          userId: applicantId,
+          status: {
+            in: [CrewMembershipStatus.active, CrewMembershipStatus.suspended],
+          },
+        },
+        select: { id: true },
+      }),
+    ]);
+
+    if (!crew || crew.moderationStatus === 'taken_down')
+      throw new NotFoundException('Crew not found');
+    if (!crew.ownership) throw new NotFoundException('Crew owner not found');
+    const ownerUserId = crew.ownership.member.userId;
+    if (!position || position.moderationStatus === 'taken_down')
+      throw new NotFoundException('Position not found');
+    if (position.status !== 'open') {
+      throw new BadRequestException({
+        message: 'Position is not accepting applications',
+        positionStatus: position.status,
+      });
+    }
+    if (existingMembership) {
+      throw new ConflictException({
+        message: 'You are already a member of this crew',
+      });
+    }
+    if (applicantId === ownerUserId) {
+      throw new BadRequestException({
+        message: 'The crew owner cannot apply to their own crew',
+      });
+    }
+
+    return { crew, position, ownerUserId };
   }
 
   async approve(applicationId: string, reviewerId: string) {
