@@ -8186,18 +8186,16 @@ async function settleIpReviewSubmissionsForPublication(
     data: reviewPatch,
   });
 
-  await Promise.all(
-    submissions.map((submission) =>
-      tx.ipReviewEvent.create({
-        data: {
-          submissionId: submission.id,
-          eventType,
-          actorUserId: input.reviewerId,
-          message: input.reason,
-        },
-      }),
-    ),
-  );
+  for (const submission of submissions) {
+    await tx.ipReviewEvent.create({
+      data: {
+        submissionId: submission.id,
+        eventType,
+        actorUserId: input.reviewerId,
+        message: input.reason,
+      },
+    });
+  }
 }
 
 function moderationActionForPublicationStatus(status: IpPublicationStatus) {
