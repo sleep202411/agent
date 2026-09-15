@@ -51,9 +51,11 @@ export function getProjectCrewAssetContext(projectId: string, signal?: AbortSign
 
 export function listProjectCrewAssets(
   projectId: string,
-  input: { parentId?: string; query?: string; cursor?: string; recursive?: boolean }
+  input: { parentId?: string; query?: string; cursor?: string; recursive?: boolean },
+  signal?: AbortSignal
 ) {
   return api.get<ProjectCrewAssetList>(crewAssetPath(projectId), {
+    signal,
     requestScope: "project",
     params: {
       parentId: input.parentId,

@@ -3,7 +3,7 @@
 import { useAuth } from "@/app/_components/auth-provider";
 
 import { useDeferredValue, useMemo, useState } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
   IconArrowLeft,
   IconFile,
@@ -19,6 +19,7 @@ import {
   getProjectCrewAssetContext,
   listProjectCrewAssets,
   type ProjectCrewAssetNode,
+  type ProjectCrewAssetContext,
 } from "@/lib/collab/project-crew-assets-api";
 import { cn } from "@/lib/utils";
 import { AssetThumb } from "./asset-library-thumb";
@@ -133,28 +134,64 @@ export function ProjectCrewAssetLibrary({
   query: string;
   floating: boolean;
 }) {
+  const { user } = useAuth();
+  const userId = user?.id;
+  const context = useQuery({
+    queryKey: ["project-crew-assets", projectId, "context", userId],
+    queryFn: ({ signal }) => getProjectCrewAssetContext(projectId, signal),
+    enabled: Boolean(projectId && userId),
+    staleTime: 30_000,
+    retry: false,
+  });
+  return (
+    <CrewLibraryContents
+      key={`${projectId}:${userId}:${context.data?.crew?.id}`}
+      projectId={projectId}
+      query={query}
+      floating={floating}
+      userId={userId}
+      context={context}
+    />
+  );
+}
+function CrewLibraryContents({
+  projectId,
+  query,
+  floating,
+  userId,
+  context,
+}: {
+  projectId: string;
+  query: string;
+  floating: boolean;
+  userId: string | number | undefined;
+  context: UseQueryResult<ProjectCrewAssetContext, Error>;
+}) {
   const t = useTranslations("canvasNodes.asset.crew");
   const deferredQuery = useDeferredValue(query.trim());
   const [path, setPath] = useState<FolderCrumb[]>([]);
   const parentId = path.at(-1)?.id;
-
-  const { user } = useAuth();
-  const context = useQuery({
-    queryKey: ["project-crew-assets", projectId, "context", user?.id],
-    queryFn: () => getProjectCrewAssetContext(projectId),
-    staleTime: 30_000,
-    retry: false,
-  });
   const listing = useInfiniteQuery({
-    queryKey: ["project-crew-assets", projectId, parentId ?? "root", deferredQuery, user?.id],
-    enabled: Boolean(context.data?.crew && user?.id),
+    queryKey: [
+      "project-crew-assets",
+      projectId,
+      parentId ?? "root",
+      deferredQuery,
+      userId,
+      context.data?.crew?.id,
+    ],
+    enabled: Boolean(context.data?.crew && userId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
-      listProjectCrewAssets(projectId, {
-        parentId,
-        query: deferredQuery || undefined,
-        cursor: pageParam,
-      }),
+    queryFn: ({ pageParam, signal }) =>
+      listProjectCrewAssets(
+        projectId,
+        {
+          parentId,
+          query: deferredQuery || undefined,
+          cursor: pageParam,
+        },
+        signal
+      ),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     retry: false,
   });
