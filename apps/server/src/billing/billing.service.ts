@@ -1394,80 +1394,84 @@ export class BillingService {
     adminId: string,
     input: UpdateAdminMembershipPlanInput,
   ) {
-    const existing = await this.prisma.billingMembershipPlan.findUnique({
-      where: { id: planId },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'BILLING_MEMBERSHIP_PLAN_NOT_FOUND',
-        msg: 'Membership plan not found.',
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_membership_plans WHERE id=${planId}::uuid FOR UPDATE`;
+      const existing = await tx.billingMembershipPlan.findUnique({
+        where: { id: planId },
       });
-    }
-    const nextProductType =
-      (input.productType as BillingProductType | undefined) ??
-      existing.productType;
-    const nextSubjectType =
-      (input.subjectType as BillingSubjectType | undefined) ??
-      existing.subjectType;
-    assertMembershipPlanShape(nextProductType, nextSubjectType);
-    const nextIncludedSeats = input.includedSeats ?? existing.includedSeats;
-    const nextMaxSeats =
-      input.maxSeats === undefined ? existing.maxSeats : input.maxSeats;
-    if (nextMaxSeats != null && nextMaxSeats < nextIncludedSeats) {
-      throw new BadRequestException({
-        code: 'BILLING_MEMBERSHIP_PLAN_SEATS_INVALID',
-        msg: 'Maximum seats cannot be below included seats.',
-      });
-    }
-    const archivedAt =
-      input.status === undefined
-        ? undefined
-        : input.status === 'archived'
-          ? new Date()
-          : null;
+      if (!existing) {
+        throw new NotFoundException({
+          code: 'BILLING_MEMBERSHIP_PLAN_NOT_FOUND',
+          msg: 'Membership plan not found.',
+        });
+      }
+      const nextProductType =
+        (input.productType as BillingProductType | undefined) ??
+        existing.productType;
+      const nextSubjectType =
+        (input.subjectType as BillingSubjectType | undefined) ??
+        existing.subjectType;
+      assertMembershipPlanShape(nextProductType, nextSubjectType);
+      const nextIncludedSeats = input.includedSeats ?? existing.includedSeats;
+      const nextMaxSeats =
+        input.maxSeats === undefined ? existing.maxSeats : input.maxSeats;
+      if (nextMaxSeats != null && nextMaxSeats < nextIncludedSeats) {
+        throw new BadRequestException({
+          code: 'BILLING_MEMBERSHIP_PLAN_SEATS_INVALID',
+          msg: 'Maximum seats cannot be below included seats.',
+        });
+      }
+      const archivedAt =
+        input.status === undefined
+          ? undefined
+          : input.status === 'archived'
+            ? new Date()
+            : null;
 
-    const plan = await this.prisma.billingMembershipPlan.update({
-      where: { id: planId },
-      data: {
-        productType: input.productType as BillingProductType | undefined,
-        subjectType: input.subjectType as BillingSubjectType | undefined,
-        status: input.status as BillingMembershipPlanStatus | undefined,
-        rank: input.rank,
-        name: input.name,
-        description:
-          input.description === undefined ? undefined : input.description,
-        includedComputeCredits: input.includedComputeCredits,
-        includedSeats: input.includedSeats,
-        maxSeats: input.maxSeats === undefined ? undefined : input.maxSeats,
-        seatOverageAllowed: input.seatOverageAllowed,
-        billingIntervalDefault:
-          input.billingIntervalDefault === undefined
-            ? undefined
-            : (input.billingIntervalDefault as BillingPriceInterval),
-        marketing: input.marketing
-          ? (input.marketing as Prisma.InputJsonValue)
-          : undefined,
-        metadata: input.metadata
-          ? (input.metadata as Prisma.InputJsonValue)
-          : undefined,
-        archivedAt,
-        updatedById: adminId,
-      },
-    });
-    const prices = await this.prisma.billingPrice.findMany({
-      where: { grantsPlanKey: plan.planKey },
-      include: {
-        item: true,
-        providerBindings: {
-          where: { archivedAt: null },
-          orderBy: [{ provider: 'asc' }, { createdAt: 'desc' }],
+      const plan = await tx.billingMembershipPlan.update({
+        where: { id: planId },
+        data: {
+          productType: input.productType as BillingProductType | undefined,
+          subjectType: input.subjectType as BillingSubjectType | undefined,
+          status: input.status as BillingMembershipPlanStatus | undefined,
+          rank: input.rank,
+          name: input.name,
+          description:
+            input.description === undefined ? undefined : input.description,
+          includedComputeCredits: input.includedComputeCredits,
+          includedSeats: input.includedSeats,
+          maxSeats: input.maxSeats === undefined ? undefined : input.maxSeats,
+          seatOverageAllowed: input.seatOverageAllowed,
+          billingIntervalDefault:
+            input.billingIntervalDefault === undefined
+              ? undefined
+              : (input.billingIntervalDefault as BillingPriceInterval),
+          marketing: input.marketing
+            ? (input.marketing as Prisma.InputJsonValue)
+            : undefined,
+          metadata: input.metadata
+            ? (input.metadata as Prisma.InputJsonValue)
+            : undefined,
+          archivedAt,
+          updatedById: adminId,
         },
-        _count: { select: { orders: true, subscriptions: true } },
-      },
+      });
+      const prices = await tx.billingPrice.findMany({
+        where: { grantsPlanKey: plan.planKey },
+        include: {
+          item: true,
+          providerBindings: {
+            where: { archivedAt: null },
+            orderBy: [{ provider: 'asc' }, { createdAt: 'desc' }],
+          },
+          _count: { select: { orders: true, subscriptions: true } },
+        },
+      });
+      // Status/rank edits change entitlement resolution + upgrade ordering.
+      return this.adminMembershipPlanDto(plan, prices);
     });
-    // Status/rank edits change entitlement resolution + upgrade ordering.
     this.entitlements.invalidatePlanCache();
-    return this.adminMembershipPlanDto(plan, prices);
+    return result;
   }
 
   async getAdminOverview() {
