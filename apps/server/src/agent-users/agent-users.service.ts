@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   BadRequestException,
   ConflictException,
@@ -6,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   AgentActionStatus,
+  type AgentAction,
   AgentMemoryStatus,
   AgentMemoryType,
   AgentRunStatus,
@@ -158,8 +160,11 @@ export class AgentUsersService {
     return this.toAgentUserDetailDto(agent);
   }
 
-  async ensureRunnable(agentUserId: string) {
-    const agent = await this.findAgentUser(agentUserId);
+  async ensureRunnable(
+    agentUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const agent = await this.findAgentUser(agentUserId, db);
     if (agent.status !== AgentUserStatus.active) {
       throw new BadRequestException({
         code: 'AGENT_USER_NOT_RUNNABLE',
@@ -365,9 +370,10 @@ export class AgentUsersService {
   }
 
   async createRun(agentUserId: string, input: CreateAgentRunInput) {
-    await this.ensureRunnable(agentUserId);
-    const now = new Date();
     const run = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_users WHERE id=${agentUserId}::uuid FOR UPDATE`;
+      await this.ensureRunnable(agentUserId, tx);
+      const now = new Date();
       const created = await tx.agentRun.create({
         data: {
           agentUserId,
@@ -388,24 +394,25 @@ export class AgentUsersService {
   }
 
   async completeRun(runId: string, input: CompleteAgentRunInput) {
-    const existing = await this.prisma.agentRun.findUnique({
-      where: { id: runId },
-      select: { id: true, agentUserId: true, status: true, startedAt: true },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'AGENT_RUN_NOT_FOUND',
-        msg: 'Agent 运行记录不存在。',
-      });
-    }
-    if (isTerminalRunStatus(existing.status)) {
-      throw new BadRequestException({
-        code: 'AGENT_RUN_ALREADY_TERMINAL',
-        msg: 'Agent 运行记录已结束，不能重复完成。',
-      });
-    }
-    const now = new Date();
     const run = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_runs WHERE id=${runId}::uuid FOR UPDATE`;
+      const existing = await tx.agentRun.findUnique({
+        where: { id: runId },
+        select: { id: true, agentUserId: true, status: true, startedAt: true },
+      });
+      if (!existing) {
+        throw new NotFoundException({
+          code: 'AGENT_RUN_NOT_FOUND',
+          msg: 'Agent 运行记录不存在。',
+        });
+      }
+      if (isTerminalRunStatus(existing.status)) {
+        throw new BadRequestException({
+          code: 'AGENT_RUN_ALREADY_TERMINAL',
+          msg: 'Agent 运行记录已结束，不能重复完成。',
+        });
+      }
+      const now = new Date();
       const updated = await tx.agentRun.update({
         where: { id: runId },
         data: {
@@ -434,7 +441,10 @@ export class AgentUsersService {
       const existing = await this.prisma.agentAction.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
       });
-      if (existing) return this.toAgentActionDto(existing);
+      if (existing) {
+        this.assertActionReceipt(existing, agentUserId, input);
+        return this.toAgentActionDto(existing);
+      }
     }
     if (input.runId) {
       const run = await this.prisma.agentRun.findUnique({
@@ -475,10 +485,33 @@ export class AgentUsersService {
         const existing = await this.prisma.agentAction.findUniqueOrThrow({
           where: { idempotencyKey: input.idempotencyKey },
         });
+        this.assertActionReceipt(existing, agentUserId, input);
         return this.toAgentActionDto(existing);
       }
       throw error;
     }
+  }
+
+  // The runner may observe a different result/status when retrying an already
+  // executed action (for example a view becomes "already recorded"). Preserve
+  // the first receipt; compare its identity and command, not later observations.
+  private assertActionReceipt(
+    existing: AgentAction,
+    agentUserId: string,
+    input: CreateAgentActionInput,
+  ) {
+    if (
+      existing.agentUserId !== agentUserId ||
+      existing.runId !== (input.runId ?? null) ||
+      existing.actionType !== input.actionType ||
+      existing.targetType !== (input.targetType ?? null) ||
+      existing.targetId !== (input.targetId ?? null) ||
+      !isDeepStrictEqual(existing.input, input.input)
+    )
+      throw new ConflictException({
+        code: 'AGENT_ACTION_RETRY_CONFLICT',
+        msg: 'Agent action retry key was already used for a different action.',
+      });
   }
 
   async upsertMemory(agentUserId: string, input: UpsertAgentMemoryInput) {

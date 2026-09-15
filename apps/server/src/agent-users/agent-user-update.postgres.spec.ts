@@ -3,6 +3,11 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { encodeUserId } from '@repo/shared';
 import type { PrismaService } from '../infra/db/db.module';
+import {
+  CompleteAgentRunSchema,
+  CreateAgentRunSchema,
+  CreateAgentActionSchema,
+} from './dto';
 import { AgentUsersService } from './agent-users.service';
 const databaseUrl =
   process.env.TASK01_TEST_DATABASE_URL ??
@@ -204,5 +209,154 @@ integration('Agent-user administration (owned PostgreSQL)', () => {
     expect(
       await db.agentMemory.findUniqueOrThrow({ where: { id: memory.id } }),
     ).toMatchObject({ sourceActionIds: [ownedAction.id] });
+  });
+  it('allows only one terminal run completion across concurrent callers', async () => {
+    const run = await db.agentRun.create({
+      data: {
+        agentUserId: agentId,
+        trigger: 'fixture',
+        status: 'running',
+        startedAt: new Date('2026-01-01'),
+      },
+    });
+    const results = await Promise.allSettled(
+      ['succeeded', 'failed'].map((status) =>
+        service.completeRun(
+          run.id,
+          CompleteAgentRunSchema.parse({ status, summary: status }),
+        ),
+      ),
+    );
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      results.find((result) => result.status === 'rejected'),
+    ).toMatchObject({ reason: { status: 400 } });
+    const stored = await db.agentRun.findUniqueOrThrow({
+      where: { id: run.id },
+    });
+    expect(stored.summary).toBe(stored.status);
+    await expect(
+      service.completeRun(
+        run.id,
+        CompleteAgentRunSchema.parse({ status: 'cancelled' }),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(
+      (await db.agentRun.findUniqueOrThrow({ where: { id: run.id } }))
+        .completedAt,
+    ).toEqual(stored.completedAt);
+  });
+
+  it('recovers identical action receipts and rejects another agent or changed terms', async () => {
+    const other = await db.agentUser.create({
+      data: { handle: `${handle}-other`, displayName: 'Other' },
+    });
+    const input = CreateAgentActionSchema.parse({
+      actionType: 'fixture',
+      idempotencyKey: randomUUID(),
+      input: { longField: 1, a: 2 },
+    });
+    const [first, second] = await Promise.all([
+      service.createAction(agentId, input),
+      service.createAction(agentId, input),
+    ]);
+    expect(first.id).toBe(second.id);
+    expect(
+      (
+        await service.createAction(agentId, {
+          ...input,
+          input: { a: 2, longField: 1 },
+        })
+      ).id,
+    ).toBe(first.id);
+    expect(
+      await service.createAction(agentId, {
+        ...input,
+        status: 'skipped',
+        result: { recorded: false },
+        metadata: { retry: true },
+      }),
+    ).toMatchObject({
+      id: first.id,
+      status: first.status,
+      result: first.result,
+    });
+    await expect(service.createAction(other.id, input)).rejects.toMatchObject({
+      status: 409,
+    });
+    for (const changed of [
+      { actionType: 'other' },
+      { targetId: 'changed' },
+      { input: { a: 3 } },
+    ]) {
+      await expect(
+        service.createAction(agentId, { ...input, ...changed }),
+      ).rejects.toMatchObject({ status: 409 });
+    }
+    expect(
+      await db.agentAction.count({
+        where: { idempotencyKey: input.idempotencyKey },
+      }),
+    ).toBe(1);
+  });
+
+  it('rejects conflicting action receipts recovered through concurrent inserts', async () => {
+    const other = await db.agentUser.create({
+      data: { handle: `${handle}-other`, displayName: 'Other' },
+    });
+    const input = CreateAgentActionSchema.parse({
+      actionType: 'fixture',
+      idempotencyKey: randomUUID(),
+    });
+    const results = await Promise.allSettled(
+      [agentId, other.id].map((id) => service.createAction(id, input)),
+    );
+    expect(
+      results.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      results.find((result) => result.status === 'rejected'),
+    ).toMatchObject({ reason: { status: 409 } });
+  });
+  it('does not create a run after a competing disablement commits', async () => {
+    await db.agentUser.update({
+      where: { id: agentId },
+      data: { status: 'active' },
+    });
+    let release!: () => void;
+    let ready!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const acquired = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const holder = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_users WHERE id=${agentId}::uuid FOR UPDATE`;
+      ready();
+      await gate;
+      await tx.agentUser.update({
+        where: { id: agentId },
+        data: { status: 'disabled', disabledAt: new Date() },
+      });
+    });
+    await acquired;
+    const pending = service.createRun(
+      agentId,
+      CreateAgentRunSchema.parse({ status: 'running' }),
+    );
+    const rejected = expect(pending).rejects.toMatchObject({ status: 400 });
+    try {
+      await waitForLock();
+    } finally {
+      release();
+    }
+    await holder;
+    await rejected;
+    expect(await db.agentRun.count({ where: { agentUserId: agentId } })).toBe(
+      0,
+    );
   });
 });
