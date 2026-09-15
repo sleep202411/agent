@@ -31,8 +31,10 @@ export function useCrewList(pageSize = 24) {
   const { user, isLoading } = useCurrentUser();
   return useInfiniteQuery({
     queryKey: ["crew", "list", "infinite", pageSize, user?.id ?? null] as const,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<ListResult>("/crews", {
+        signal,
+        cache: "no-store",
         query: { limit: pageSize, cursor: pageParam },
       }),
     enabled: !isLoading,
@@ -46,7 +48,7 @@ export function useMyCrews(enabled = true) {
   const { user } = useCurrentUser();
   return useQuery({
     queryKey: [...crewKeys.mine, user?.id ?? null],
-    queryFn: () => crewApi.get<MyCrewsResult>("/crews/my"),
+    queryFn: ({ signal }) => crewApi.get<MyCrewsResult>("/crews/my", { signal, cache: "no-store" }),
     enabled: enabled && Boolean(user),
   });
 }
@@ -60,7 +62,11 @@ export function usePublicCreatorCrews(userId: string, enabled = true) {
   const { user, isLoading } = useCurrentUser();
   return useQuery({
     queryKey: [...crewKeys.byUser(userId), user?.id ?? null],
-    queryFn: () => crewApi.get<CreatorCrewsResult>(`/crews/by-user/${encodeURIComponent(userId)}`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CreatorCrewsResult>(`/crews/by-user/${encodeURIComponent(userId)}`, {
+        signal,
+        cache: "no-store",
+      }),
     enabled: enabled && !!userId && !isLoading,
   });
 }

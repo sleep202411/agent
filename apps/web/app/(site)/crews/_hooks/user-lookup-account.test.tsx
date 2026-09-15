@@ -122,3 +122,34 @@ it("retains actionable lookup validation details", async () => {
   expect(view.current()).toEqual({ kind: "error", status: 400, message: error.message });
   expect(error.message).toContain("Use a supported email address");
 });
+
+it("cancels lookup and every display-name chunk after account replacement", async () => {
+  const reads: Array<{ signal: AbortSignal; resolve: (value: unknown) => void }> = [];
+  vi.mocked(crewApi.get).mockImplementation((_path, options) => {
+    expect(options?.cache).toBe("no-store");
+    return new Promise((resolve) =>
+      reads.push({ signal: options!.signal as AbortSignal, resolve })
+    );
+  });
+  const ids = Array.from({ length: 101 }, (_, i) => String(i));
+  const view = mount(() => ({
+    lookup: useUserLookup({ query: "person@example.com", checkCrewId: "crew" }),
+    displays: useUserDisplays(ids),
+  }));
+  expect(reads).toHaveLength(4);
+  session.id = "bob";
+  view.render();
+  expect(reads).toHaveLength(8);
+  expect(reads.slice(0, 4).every((read) => read.signal.aborted)).toBe(true);
+  expect(reads.slice(4).every((read) => !read.signal.aborted)).toBe(true);
+  await act(async () =>
+    reads.slice(0, 4).forEach((read) => read.resolve({ userId: "old", users: [{ userId: "old" }] }))
+  );
+  expect(view.current().displays.size).toBe(0);
+  expect(
+    client
+      .getQueryCache()
+      .findAll()
+      .every((query) => query.state.data === undefined)
+  ).toBe(true);
+});
