@@ -3281,95 +3281,100 @@ export class IpCommerceService {
     const targetType = input.targetType as IpTargetType;
     // The dialog sends the encoded public id; entitlements store the raw id.
     const targetUserId = decodeUserId(input.userId);
-    const ip = await this.prisma.ip.findFirst({
-      where: { id: input.ipId, deletedAt: null },
-      include: {
-        episodes: {
-          where: input.episodeId ? { id: input.episodeId } : undefined,
-          include: {
-            localizations: {
-              where: { archivedAt: null },
-              orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ips WHERE id = ${input.ipId}::uuid FOR SHARE`;
+      const ip = await tx.ip.findFirst({
+        where: { id: input.ipId, deletedAt: null },
+        include: {
+          episodes: {
+            where: input.episodeId ? { id: input.episodeId } : undefined,
+            include: {
+              localizations: {
+                where: { archivedAt: null },
+                orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+              },
             },
           },
-        },
-        localizations: {
-          where: { archivedAt: null },
-          orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
-        },
-      },
-    });
-    if (!ip) {
-      throw new NotFoundException({
-        code: 'IP_NOT_FOUND',
-        msg: 'IP not found.',
-      });
-    }
-    if (targetType === IpTargetType.episode) {
-      const episode = ip.episodes.find((item) => item.id === input.episodeId);
-      if (!episode) {
-        throw new NotFoundException({
-          code: 'IP_EPISODE_NOT_FOUND',
-          msg: 'Episode not found for this IP.',
-        });
-      }
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const existing = await findCurrentOrPendingEntitlementTx(tx, {
-        userId: targetUserId,
-        ipId: ip.id,
-        targetType,
-        episodeId: input.episodeId ?? null,
-      });
-      if (existing) {
-        return {
-          entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
-            where: { id: existing.id },
-            include: commerceEntitlementInclude,
-          }),
-          alreadyGranted: true,
-        };
-      }
-
-      const [{ now }] = await tx.$queryRaw<
-        Array<{ now: Date }>
-      >`SELECT clock_timestamp() AS now`;
-      const entitlement = await tx.ipContentEntitlement.create({
-        data: {
-          userId: targetUserId,
-          ipId: ip.id,
-          episodeId:
-            targetType === IpTargetType.episode
-              ? (input.episodeId ?? null)
-              : null,
-          targetType,
-          status: IpEntitlementStatus.active,
-          sourceType: 'admin_grant',
-          sourceId: randomUUID(),
-          startsAt: input.startsAt ?? now,
-          endsAt: input.endsAt ?? null,
-          metadata: {
-            reason: input.reason,
-            grantedById: user.userId,
-            grantedByName: user.userName ?? user.email ?? null,
+          localizations: {
+            where: { archivedAt: null },
+            orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
           },
         },
       });
-      await ensureCollectionItemTx(tx, targetUserId, entitlement);
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      if (targetType === IpTargetType.episode) {
+        const episode = ip.episodes.find((item) => item.id === input.episodeId);
+        if (!episode) {
+          throw new NotFoundException({
+            code: 'IP_EPISODE_NOT_FOUND',
+            msg: 'Episode not found for this IP.',
+          });
+        }
+      }
+
+      const result = await (async () => {
+        const existing = await findCurrentOrPendingEntitlementTx(tx, {
+          userId: targetUserId,
+          ipId: ip.id,
+          targetType,
+          episodeId: input.episodeId ?? null,
+        });
+        if (existing) {
+          return {
+            entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
+              where: { id: existing.id },
+              include: commerceEntitlementInclude,
+            }),
+            alreadyGranted: true,
+          };
+        }
+
+        const [{ now }] = await tx.$queryRaw<
+          Array<{ now: Date }>
+        >`SELECT clock_timestamp() AS now`;
+        const entitlement = await tx.ipContentEntitlement.create({
+          data: {
+            userId: targetUserId,
+            ipId: ip.id,
+            episodeId:
+              targetType === IpTargetType.episode
+                ? (input.episodeId ?? null)
+                : null,
+            targetType,
+            status: IpEntitlementStatus.active,
+            sourceType: 'admin_grant',
+            sourceId: randomUUID(),
+            startsAt: input.startsAt ?? now,
+            endsAt: input.endsAt ?? null,
+            metadata: {
+              reason: input.reason,
+              grantedById: user.userId,
+              grantedByName: user.userName ?? user.email ?? null,
+            },
+          },
+        });
+        await ensureCollectionItemTx(tx, targetUserId, entitlement);
+        return {
+          entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
+            where: { id: entitlement.id },
+            include: commerceEntitlementInclude,
+          }),
+          alreadyGranted: false,
+        };
+      })();
       return {
-        entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
-          where: { id: entitlement.id },
-          include: commerceEntitlementInclude,
-        }),
-        alreadyGranted: false,
+        entitlement: commerceEntitlementDto(
+          result.entitlement,
+          ip.sourceLocale,
+        ),
+        alreadyGranted: result.alreadyGranted,
       };
     });
-
-    return {
-      entitlement: commerceEntitlementDto(result.entitlement, ip.sourceLocale),
-      alreadyGranted: result.alreadyGranted,
-    };
   }
 
   async revokeAdminEntitlement(

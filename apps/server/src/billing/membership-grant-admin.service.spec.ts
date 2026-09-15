@@ -47,6 +47,7 @@ function grantRow(overrides: Partial<EntitlementGrant> = {}): EntitlementGrant {
 describe('MembershipGrantAdminService', () => {
   let prisma: {
     $transaction: jest.Mock;
+    $queryRaw: jest.Mock;
     entitlementGrant: {
       findMany: jest.Mock;
       findUnique: jest.Mock;
@@ -64,6 +65,7 @@ describe('MembershipGrantAdminService', () => {
   beforeEach(() => {
     prisma = {
       $transaction: jest.fn(),
+      $queryRaw: jest.fn().mockResolvedValue([]),
       entitlementGrant: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
@@ -158,6 +160,7 @@ describe('MembershipGrantAdminService', () => {
           subjectId: '01900000-0000-7000-8000-000000000010',
           planKey: 'team',
         }),
+        prisma,
       );
     });
 
