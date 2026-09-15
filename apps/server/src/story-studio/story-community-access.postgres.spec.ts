@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { buildPrisma, type PrismaService } from '../infra/db/db.module';
+import type { PrismaService } from '../infra/db/db.module';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
 import {
   StoryCommunityAccessService,
@@ -8,14 +10,15 @@ import {
 import { compileStoryExperienceManifest } from './story-experience-manifest-compiler';
 import { InteractiveFilmReleaseSchema } from '@repo/shared/interactive-film-runtime';
 import type { AuthUser } from '../auth';
-import { config } from 'dotenv';
-import { resolve } from 'node:path';
 
-config({ path: resolve(__dirname, '../../.env'), quiet: true });
-const integration =
-  process.env.STORY_COMMERCE_POSTGRES_TEST === '1' ? describe : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.STORY_COMMERCE_POSTGRES_TEST === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const integration = databaseUrl ? describe : describe.skip;
 integration('Story Community Points atomic purchase (local PostgreSQL)', () => {
-  let prisma: ReturnType<typeof buildPrisma>;
+  let prisma: PrismaClient;
   let service: StoryCommunityAccessService;
   let ledger: WalletLedgerService;
   const projectId = randomUUID();
@@ -73,13 +76,24 @@ integration('Story Community Points atomic purchase (local PostgreSQL)', () => {
     mediaIdentities: [],
   }).manifest;
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL ?? '');
+    const url = new URL(databaseUrl!);
     if (
       !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
-      url.port !== '5433'
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw new Error('Tests require local PostgreSQL on port 5433.');
-    prisma = buildPrisma();
+      throw new Error(
+        'Explicitly allowed named loopback test database required.',
+      );
+    prisma = new PrismaClient({
+      adapter: new PrismaPg({
+        connectionString: databaseUrl,
+        options: '-c timezone=UTC',
+      }),
+      transactionOptions: { timeout: 15000 },
+    });
     await prisma.$connect();
     ledger = new WalletLedgerService(prisma as PrismaService);
     // Only release lookup is stubbed; wallet writes use the real transaction.

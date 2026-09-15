@@ -9,14 +9,14 @@
  * Asserting the shape of a `where` object proves the shape; only a
  * server proves the behaviour.
  *
- * Opt-in, and refuses every database except a local one:
+ * Opt-in, and restricted to the named loopback test databases:
  *
  *   docker run -d --name pg17-r1 -e POSTGRES_PASSWORD=x \
- *     -e POSTGRES_DB=x -p 55433:5432 postgres:17-alpine
- *   DATABASE_URL='postgres://postgres:x@localhost:55433/x' \
+ *     -e POSTGRES_DB=fizzdragon_outbox_test -p 5433:5432 postgres:17-alpine
+ *   DATABASE_URL='postgres://postgres:x@localhost:5433/fizzdragon_outbox_test' \
  *     npx prisma migrate deploy
  *   CONVERSATIONS_POSTGRES_INTEGRATION=1 \
- *     DATABASE_URL='postgres://postgres:x@localhost:55433/x' \
+ *     DATABASE_URL='postgres://postgres:x@localhost:5433/fizzdragon_outbox_test' \
  *     npx jest --runInBand --runTestsByPath \
  *     src/conversations/conversations.postgres.integration.spec.ts
  *   docker rm -f pg17-r1
