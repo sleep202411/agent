@@ -9970,6 +9970,9 @@
     "normal": "正常（1×）"
   },
   "crewWorkspaceLink": {
+    "legacyProject": "项目：{name}",
+    "legacyDescription": "目前仅关联 {name}，现有剧组素材访问仍限于此画布项目。选择您拥有的工作区以替换此关联，并与该工作区内的项目共享。",
+    "unlinkProject": "取消项目关联",
     "link": "关联工作区",
     "description": "仅剧组管理员可关联自己拥有的工作区。其中的项目可使用共享剧组资产；受限文件夹保留原有权限。",
     "failed": "工作区关联保存失败。",
