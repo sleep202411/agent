@@ -1,3 +1,4 @@
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import { ConversationsService } from '../conversations/conversations.service';
 import { joinCrewFanTx } from '../crews/fan-community';
 import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
@@ -6232,23 +6233,11 @@ async function debitCommunityPointTx(
     orderNo: string;
   },
 ) {
-  const account = await tx.walletAccount.upsert({
-    where: {
-      ownerType_ownerId_currency_balanceKind: {
-        ownerType: WalletOwnerType.user,
-        ownerId: input.userId,
-        currency: WalletCurrencyType.community_point,
-        balanceKind: WalletBalanceKind.consumable,
-      },
-    },
-    create: {
-      ownerType: WalletOwnerType.user,
-      ownerId: input.userId,
-      currency: WalletCurrencyType.community_point,
-      balanceKind: WalletBalanceKind.consumable,
-      status: WalletAccountStatus.active,
-    },
-    update: {},
+  const account = await ensureWalletAccount(tx, {
+    ownerType: WalletOwnerType.user,
+    ownerId: input.userId,
+    currency: WalletCurrencyType.community_point,
+    balanceKind: WalletBalanceKind.consumable,
   });
   await tx.$executeRaw`
     SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)
@@ -6410,23 +6399,11 @@ async function creditWithdrawableCommunityPointTx(
   // Withdrawable accounts are only ever created here (always active); nothing
   // closes them in the earning-only loop, so a status gate that could roll back
   // the buyer's purchase is intentionally omitted.
-  const account = await tx.walletAccount.upsert({
-    where: {
-      ownerType_ownerId_currency_balanceKind: {
-        ownerType: WalletOwnerType.user,
-        ownerId: input.userId,
-        currency: WalletCurrencyType.community_point,
-        balanceKind: WalletBalanceKind.withdrawable,
-      },
-    },
-    create: {
-      ownerType: WalletOwnerType.user,
-      ownerId: input.userId,
-      currency: WalletCurrencyType.community_point,
-      balanceKind: WalletBalanceKind.withdrawable,
-      status: WalletAccountStatus.active,
-    },
-    update: {},
+  const account = await ensureWalletAccount(tx, {
+    ownerType: WalletOwnerType.user,
+    ownerId: input.userId,
+    currency: WalletCurrencyType.community_point,
+    balanceKind: WalletBalanceKind.withdrawable,
   });
   await tx.$executeRaw`
     SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)

@@ -1,7 +1,7 @@
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   Prisma,
-  WalletAccountStatus,
   WalletBalanceKind,
   WalletCreditGrantType,
   WalletCurrencyType,
@@ -266,44 +266,20 @@ export class InternalPointsService {
   }
 
   private async account(workspaceId: string): Promise<WalletAccount> {
-    return this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.workspace,
-          ownerId: workspaceId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: workspaceId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    return ensureWalletAccount(this.prisma, {
+      ownerType: WalletOwnerType.workspace,
+      ownerId: workspaceId,
+      currency: WalletCurrencyType.compute_point,
+      balanceKind: WalletBalanceKind.consumable,
     });
   }
 
   private async communityAccount(userId: string): Promise<WalletAccount> {
-    return this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.user,
-          ownerId: userId,
-          currency: WalletCurrencyType.community_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: WalletOwnerType.user,
-        ownerId: userId,
-        currency: WalletCurrencyType.community_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    return ensureWalletAccount(this.prisma, {
+      ownerType: WalletOwnerType.user,
+      ownerId: userId,
+      currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.consumable,
     });
   }
 

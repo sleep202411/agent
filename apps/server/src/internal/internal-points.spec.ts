@@ -57,7 +57,8 @@ describe('Java points bridge compatibility contract', () => {
         create: jest.fn().mockResolvedValue({}),
       },
       walletAccount: {
-        upsert: jest.fn().mockResolvedValue({
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
           id: 'account-1',
           availableBalance: 0n,
         }),
@@ -115,7 +116,10 @@ describe('Java points bridge compatibility contract', () => {
   it('credits community grants to the USER-owned community_point account', async () => {
     const prisma = {
       walletAccount: {
-        upsert: jest.fn().mockResolvedValue({ id: 'community-account-1' }),
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest
+          .fn()
+          .mockResolvedValue({ id: 'community-account-1' }),
       },
     };
     const walletLedger = {
@@ -140,13 +144,15 @@ describe('Java points bridge compatibility contract', () => {
     });
 
     // user-owned account, NOT a personal-workspace pot
-    expect(prisma.walletAccount.upsert).toHaveBeenCalledWith(
+    expect(prisma.walletAccount.createMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        create: expect.objectContaining({
-          ownerType: 'user',
-          ownerId: '10086',
-          currency: 'community_point',
-        }) as unknown,
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            ownerType: 'user',
+            ownerId: '10086',
+            currency: 'community_point',
+          }),
+        ]) as unknown,
       }),
     );
     // The server key MUST embed the userId — the ledger idempotency_key is
@@ -168,7 +174,12 @@ describe('Java points bridge compatibility contract', () => {
   });
 
   it('rejects community grants above the per-call cap without touching the ledger', async () => {
-    const prisma = { walletAccount: { upsert: jest.fn() } };
+    const prisma = {
+      walletAccount: {
+        createMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn(),
+      },
+    };
     const walletLedger = { postEntry: jest.fn() };
     const service = new InternalPointsService(
       prisma as never,
@@ -189,7 +200,7 @@ describe('Java points bridge compatibility contract', () => {
         code: 'AMOUNT_EXCEEDS_CAP',
       }) as unknown,
     });
-    expect(prisma.walletAccount.upsert).not.toHaveBeenCalled();
+    expect(prisma.walletAccount.createMany).not.toHaveBeenCalled();
     expect(walletLedger.postEntry).not.toHaveBeenCalled();
   });
 

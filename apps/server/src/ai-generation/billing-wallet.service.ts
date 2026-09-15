@@ -1,3 +1,4 @@
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import {
   ConflictException,
   Injectable,
@@ -152,23 +153,11 @@ export class AiGenerationBillingWalletService {
 
     const tx = args.tx;
     const payer = resolvePayer(args.job);
-    const account = await tx.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: payer.ownerType,
-          ownerId: payer.ownerId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: payer.ownerType,
-        ownerId: payer.ownerId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    const account = await ensureWalletAccount(tx, {
+      ownerType: payer.ownerType,
+      ownerId: payer.ownerId,
+      currency: WalletCurrencyType.compute_point,
+      balanceKind: WalletBalanceKind.consumable,
     });
 
     // Job-scoped (not request-scoped): each reserve is for exactly one NEW job
