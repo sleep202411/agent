@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useCurrentUser } from "./use-user";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
@@ -19,20 +20,22 @@ import {
  * 在项目详情页顶层调用一次即可。
  */
 export function useStoryboardData() {
+  const { user } = useCurrentUser();
+  const viewer = user?.id ?? null;
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
   const activeEpisodeId = useAppSelector((s) => selectCurrentInstance(s).activeEpisodeId);
   const columns = useAppSelector((s) => selectCurrentInstance(s).columns);
   const rows = useAppSelector((s) => selectCurrentInstance(s).rows);
   const isStoryboardLoading = useAppSelector((s) => selectCurrentInstance(s).isStoryboardLoading);
   const storyboardVersion = useAppSelector((s) => selectCurrentInstance(s).storyboardVersion);
 
-  const loadingKeyRef = useRef<string | null>(null);
-
   useEffect(() => {
-    if (!activeEpisodeId) return;
-
-    const requestKey = `${activeEpisodeId}:${storyboardVersion}`;
-    if (requestKey === loadingKeyRef.current) return;
-    loadingKeyRef.current = requestKey;
+    if (!activeEpisodeId || !projectId || !viewer) return;
+    const controller = new AbortController();
+    const owns = () =>
+      !controller.signal.aborted &&
+      store.getState().project.currentProjectId === projectId &&
+      selectCurrentInstance(store.getState()).activeEpisodeId === activeEpisodeId;
 
     store.dispatch(setStoryboardLoading(true));
 
@@ -40,8 +43,12 @@ export function useStoryboardData() {
 
     // 并行获取列定义和镜头数据
     Promise.all([
-      backendApi.post<ShotColumn[]>("/api/user/shotColumn/list", { data: { storyBoardId } }),
+      backendApi.post<ShotColumn[]>("/api/user/shotColumn/list", {
+        signal: controller.signal,
+        data: { storyBoardId },
+      }),
       backendApi.post<Paginated<ShotRow>>("/api/user/shot/queryPage", {
+        signal: controller.signal,
         data: {
           storyBoardId,
           page: 1,
@@ -53,17 +60,18 @@ export function useStoryboardData() {
     ])
       .then(([columnsData, shotsData]) => {
         // 防止切换后旧请求覆盖新数据
-        if (loadingKeyRef.current !== requestKey) return;
+        if (!owns()) return;
 
         store.dispatch(setColumns(Array.isArray(columnsData) ? columnsData : []));
         store.dispatch(setRows(shotsData?.list ?? []));
       })
       .catch((err) => {
+        if (!owns()) return;
         console.error("[useStoryboardData] 加载分镜表失败:", err);
-        if (loadingKeyRef.current !== requestKey) return;
         store.dispatch(setStoryboardLoading(false));
       });
-  }, [activeEpisodeId, storyboardVersion]);
+    return () => controller.abort();
+  }, [activeEpisodeId, storyboardVersion, projectId, viewer]);
 
   return { columns, rows, isStoryboardLoading };
 }
