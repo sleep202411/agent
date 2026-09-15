@@ -5,6 +5,10 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { encodeUserId } from '@repo/shared';
 import type { PrismaService } from '../infra/db/db.module';
 import {
+  ListAdminAgentUsersQuerySchema,
+  ListAgentRunsQuerySchema,
+  ListAgentActionsQuerySchema,
+  ListAgentMemoriesQuerySchema,
   CompleteAgentRunSchema,
   CreateAgentRunSchema,
   CreateAgentActionSchema,
@@ -359,5 +363,106 @@ integration('Agent-user administration (owned PostgreSQL)', () => {
     expect(await db.agentRun.count({ where: { agentUserId: agentId } })).toBe(
       0,
     );
+  });
+  it.each(['runs', 'actions', 'memories'] as const)(
+    'keeps tied %s stable across pages and detail previews',
+    async (kind) => {
+      const ids = Array.from({ length: 7 }, () => randomUUID());
+      const at = new Date('2026-01-01');
+      if (kind === 'runs')
+        await db.agentRun.createMany({
+          data: ids.map((id) => ({
+            id,
+            agentUserId: agentId,
+            trigger: 'fixture',
+            createdAt: at,
+            updatedAt: at,
+          })),
+        });
+      else if (kind === 'actions')
+        await db.agentAction.createMany({
+          data: ids.map((id) => ({
+            id,
+            agentUserId: agentId,
+            actionType: 'fixture',
+            createdAt: at,
+            updatedAt: at,
+          })),
+        });
+      else
+        await db.agentMemory.createMany({
+          data: ids.map((id) => ({
+            id,
+            agentUserId: agentId,
+            type: 'fact',
+            summary: 'Fixture',
+            createdAt: at,
+            updatedAt: at,
+          })),
+        });
+      const found: string[] = [];
+      for (let page = 1; page <= 4; page++) {
+        const query = { page, pageSize: 2 };
+        const result =
+          kind === 'runs'
+            ? await service.listRuns(
+                agentId,
+                ListAgentRunsQuerySchema.parse(query),
+              )
+            : kind === 'actions'
+              ? await service.listActions(
+                  agentId,
+                  ListAgentActionsQuerySchema.parse(query),
+                )
+              : await service.listMemories(
+                  agentId,
+                  ListAgentMemoriesQuerySchema.parse(query),
+                );
+        expect(result.total).toBe(ids.length);
+        found.push(...result.items.map((item: { id: string }) => item.id));
+      }
+      expect(found).toEqual([...ids].sort().reverse());
+      expect(new Set(found).size).toBe(ids.length);
+      const detail = await service.getAdmin(agentId);
+      const preview =
+        kind === 'runs'
+          ? detail.recentRuns
+          : kind === 'actions'
+            ? detail.recentActions
+            : detail.recentMemories;
+      expect(preview.map((item: { id: string }) => item.id)).toEqual(
+        [...ids]
+          .sort()
+          .reverse()
+          .slice(0, kind === 'runs' ? 5 : 7),
+      );
+    },
+  );
+
+  it('keeps tied administrator agent pages stable', async () => {
+    const at = new Date('2026-01-01');
+    await db.agentUser.update({
+      where: { id: agentId },
+      data: { createdAt: at, updatedAt: at },
+    });
+    const ids = [agentId, ...Array.from({ length: 4 }, () => randomUUID())];
+    await db.agentUser.createMany({
+      data: ids.slice(1).map((id, i) => ({
+        id,
+        handle: `${handle}-${i}`,
+        displayName: 'Fixture',
+        createdAt: at,
+        updatedAt: at,
+      })),
+    });
+    const found: string[] = [];
+    for (let page = 1; page <= 3; page++) {
+      const result = await service.listAdmin(
+        ListAdminAgentUsersQuerySchema.parse({ q: handle, page, pageSize: 2 }),
+      );
+      expect(result.total).toBe(ids.length);
+      found.push(...result.items.map((item: { id: string }) => item.id));
+    }
+    expect(found).toEqual([...ids].sort().reverse());
   });
 });

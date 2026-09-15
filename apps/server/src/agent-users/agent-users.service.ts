@@ -34,7 +34,7 @@ import type {
 
 const agentUserListInclude = {
   runs: {
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 1,
   },
   _count: {
@@ -48,16 +48,16 @@ const agentUserListInclude = {
 
 const agentUserDetailInclude = {
   runs: {
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 5,
   },
   actions: {
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 10,
   },
   memories: {
     where: { status: AgentMemoryStatus.active },
-    orderBy: { updatedAt: 'desc' },
+    orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
     take: 20,
   },
   _count: {
@@ -97,7 +97,7 @@ export class AgentUsersService {
       this.prisma.agentUser.findMany({
         where,
         include: agentUserListInclude,
-        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
       }),
@@ -298,7 +298,7 @@ export class AgentUsersService {
       this.prisma.agentRun.count({ where }),
       this.prisma.agentRun.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }],
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
         include: { _count: { select: { actions: true } } },
@@ -329,7 +329,7 @@ export class AgentUsersService {
       this.prisma.agentAction.count({ where }),
       this.prisma.agentAction.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }],
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
       }),
@@ -356,7 +356,7 @@ export class AgentUsersService {
       this.prisma.agentMemory.count({ where }),
       this.prisma.agentMemory.findMany({
         where,
-        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
       }),
