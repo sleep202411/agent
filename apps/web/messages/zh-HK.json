@@ -9628,7 +9628,7 @@
     "awardPoints": "驗證貢獻並發放積分",
     "previous": "上一頁",
     "next": "下一頁",
-    "page": "第 {{page}} 頁",
+    "page": "第 {page} 頁",
     "saved": "已記錄",
     "contextRequired": "請具體說明貢獻、原因或交接情況。",
     "scheduleChanges": "計劃變更"
