@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconAdjustments, IconEdit, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -70,70 +71,80 @@ export function BillingMembershipsPanel({
   const [createOpen, setCreateOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<BillingMembershipPlanRow | null>(null);
   const [benefitsPlan, setBenefitsPlan] = useState<BillingMembershipPlanRow | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
-  function queryString() {
-    const params = new URLSearchParams();
-    // Load all types; the family tab filters client-side.
-    if (status) params.set("status", status);
-    const query = params.toString();
-    return query ? `?${query}` : "";
-  }
-
+  const loadPlans = useCallback(
+    (signal: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      return requestEnvelope<AdminBillingMembershipPlansData>(
+        `/api/admin/billing/membership-plans?${params}`,
+        signal
+      );
+    },
+    [status]
+  );
   async function refreshPlans() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setPlans(
-        await requestEnvelope<AdminBillingMembershipPlansData>(
-          `/api/admin/billing/membership-plans${queryString()}`
-        )
-      );
+      const data = await loadPlans(operation.signal);
+      if (operation.current()) setPlans(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handleCreatePlan(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     const formElement = event.currentTarget;
     try {
       await mutateEnvelope(
         "/api/admin/billing/membership-plans",
-        membershipPlanPayload(new FormData(formElement), "create")
+        membershipPlanPayload(new FormData(formElement), "create"),
+        "POST",
+        operation.signal
       );
+      if (!operation.current()) return;
       formElement.reset();
       setCreateOpen(false);
-      await refreshPlans();
+      const data = await loadPlans(operation.signal);
+      if (operation.current()) setPlans(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handleUpdatePlan(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingPlan) return;
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
       await mutateEnvelope(
         `/api/admin/billing/membership-plans/${editingPlan.id}`,
         membershipPlanPayload(new FormData(event.currentTarget), "update"),
-        "PATCH"
+        "PATCH",
+        operation.signal
       );
+      if (!operation.current()) return;
       setEditingPlan(null);
-      await refreshPlans();
+      const data = await loadPlans(operation.signal);
+      if (operation.current()) setPlans(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
@@ -202,7 +213,9 @@ export function BillingMembershipsPanel({
         open={createOpen}
         title="新建会员计划"
         description="先创建计划策略，再到套餐商品中新建会员价格并填写相同 grantsPlanKey。"
-        onClose={() => setCreateOpen(false)}
+        onClose={() => {
+          if (!loading) setCreateOpen(false);
+        }}
       >
         <MembershipPlanForm mode="create" loading={loading} onSubmit={handleCreatePlan} />
       </AdminDialog>
@@ -211,10 +224,13 @@ export function BillingMembershipsPanel({
         open={Boolean(editingPlan)}
         title="编辑会员计划"
         description="编辑只影响之后解析的权益策略；历史订单和已发放钱包 grant 仍保留原始审计记录。"
-        onClose={() => setEditingPlan(null)}
+        onClose={() => {
+          if (!loading) setEditingPlan(null);
+        }}
       >
         {editingPlan ? (
           <MembershipPlanForm
+            key={editingPlan.id}
             mode="update"
             loading={loading}
             plan={editingPlan}
@@ -368,11 +384,21 @@ function MembershipPlansTable({
         meta: { pin: "right", cellClassName: "w-[176px]" },
         cell: ({ row }) => (
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" onClick={() => onEditBenefits(row.original)}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={() => onEditBenefits(row.original)}
+            >
               <IconAdjustments className="size-4" />
               权益
             </Button>
-            <Button variant="outline" size="sm" onClick={() => onEditPlan(row.original)}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={() => onEditPlan(row.original)}
+            >
               <IconEdit className="size-4" />
               编辑
             </Button>
@@ -380,7 +406,7 @@ function MembershipPlansTable({
         ),
       },
     ],
-    [onEditPlan, onEditBenefits]
+    [onEditPlan, onEditBenefits, loading]
   );
 
   return (
@@ -411,7 +437,7 @@ function MembershipPlanForm({
     metadata: stringifyJson(plan?.metadata ?? {}),
   };
   return (
-    <form className="space-y-5" onSubmit={onSubmit}>
+    <form inert={loading} className="space-y-5" onSubmit={onSubmit}>
       <div className="grid gap-3 md:grid-cols-2">
         {mode === "create" ? (
           <FormLabel
@@ -718,48 +744,48 @@ function MembershipPlanBenefitsForm({
 }) {
   const [draft, setDraft] = useState<BenefitsDraft | null>(null);
   const [issues, setIssues] = useState<string[] | null>(null);
-  const [saving, setSaving] = useState(false);
+  const { busy: saving, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(null);
 
-  // The form is mounted per plan (key={plan.id}), so initial state is
-  // always the pristine loading state here — the effect only fetches.
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        // Always re-fetch: another admin may have edited benefits since the
-        // table snapshot was loaded.
-        const data = await requestEnvelope<MembershipPlanBenefitsData>(
-          `/api/admin/billing/membership-plans/${plan.id}/benefits`
-        );
-        if (cancelled) return;
-        setDraft(benefitsDraft((data.benefits ?? {}) as Record<string, unknown>));
-        setIssues(data.issues);
-      } catch (err) {
-        if (!cancelled) setError(toErrorMessage(err));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [plan.id]);
+    const operation = begin("read");
+    if (!operation) return;
+    void requestEnvelope<MembershipPlanBenefitsData>(
+      `/api/admin/billing/membership-plans/${plan.id}/benefits`,
+      operation.signal
+    )
+      .then(
+        (data) => {
+          if (!operation.current()) return;
+          setDraft(benefitsDraft((data.benefits ?? {}) as Record<string, unknown>));
+          setIssues(data.issues);
+        },
+        (err: unknown) => {
+          if (operation.current()) setError(toErrorMessage(err));
+        }
+      )
+      .finally(operation.finish);
+    return operation.cancel;
+  }, [begin, plan.id]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft) return;
-    setSaving(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
       await mutateEnvelope(
         `/api/admin/billing/membership-plans/${plan.id}/benefits`,
         { benefits: benefitsPayload(draft) },
-        "PUT"
+        "PUT",
+        operation.signal
       );
-      await onSaved();
+      if (operation.current()) await onSaved();
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setSaving(false);
+      operation.finish();
     }
   }
 
@@ -785,7 +811,7 @@ function MembershipPlanBenefitsForm({
   }
 
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
+    <form inert={saving} className="space-y-5" onSubmit={handleSubmit}>
       {error ? <ErrorBanner message={error} /> : null}
       {issues?.length ? (
         <ErrorBanner message={`当前存储的权益不合法，保存将整体覆盖修复：${issues.join("；")}`} />
