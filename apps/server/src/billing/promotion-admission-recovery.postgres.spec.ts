@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -19,7 +20,7 @@ integration('Promotional administration recovery (owned PostgreSQL)', () => {
   const input = () =>
     GenerateVouchersSchema.parse({ count: 3, computeCreditAmount: 17 });
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['127.0.0.1', 'localhost'].includes(url.hostname) ||
       url.port !== '55439' ||

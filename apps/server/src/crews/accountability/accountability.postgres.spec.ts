@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -26,7 +27,7 @@ suite('Crew accountability on isolated PostgreSQL', () => {
   const oldApprovers = process.env.CREW_COMPLETION_REWARD_APPROVER_IDS;
   let number = 0;
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(

@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -29,7 +30,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
   let replacementId: string;
   beforeAll(async () => {
     process.env.REFERRAL_INVITE_BASE_URL = 'https://fixture.invalid';
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['127.0.0.1', 'localhost'].includes(url.hostname) ||
       url.port !== '55439' ||

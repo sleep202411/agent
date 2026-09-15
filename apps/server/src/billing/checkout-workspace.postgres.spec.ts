@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -18,7 +19,7 @@ const url =
   () => {
     let db: PrismaClient, workspaceId: string, userId: string;
     beforeAll(async () => {
-      const target = new URL(url!);
+      const target = postgresFixtureUrl(url!);
       if (
         !['127.0.0.1', 'localhost'].includes(target.hostname) ||
         target.port !== '55439' ||

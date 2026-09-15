@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { ConflictException, Logger } from '@nestjs/common';
 import { AgentOsExternalHandoffReconcilerService } from './agent-os-external-handoff-reconciler.service';
 import { Prisma } from '@prisma/client';
@@ -72,7 +73,7 @@ describePostgres(
 
     it('preserves Date instants even when the connection URL requests Asia/Shanghai', async () => {
       const original = process.env.DATABASE_URL;
-      const url = new URL(databaseUrl);
+      const url = postgresFixtureUrl(databaseUrl);
       url.searchParams.set('options', '-c timezone=Asia/Shanghai');
       const client = buildPrisma(url.toString());
       expect(process.env.DATABASE_URL).toBe(original);
@@ -1584,7 +1585,7 @@ async function withCheckpointExecutionLock<T>(
 }
 
 function assertDedicatedLocalPostgres(rawUrl: string): void {
-  const url = new URL(rawUrl);
+  const url = postgresFixtureUrl(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
     !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||

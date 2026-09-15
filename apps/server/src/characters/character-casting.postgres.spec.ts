@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { MediaAssetProviderSyncService } from '../ai-generation/providers/byteplus/assets/media-asset-provider-sync.service';
 import { CharacterProviderSyncService } from '../ai-generation/providers/byteplus/assets/character-provider-sync.service';
 import { createHash, randomUUID } from 'node:crypto';
@@ -44,7 +45,7 @@ suite(
     const service = (grantService = grants()) =>
       new CharacterCastingService(db as never, flags as never, grantService);
     beforeAll(async () => {
-      const target = new URL(url!);
+      const target = postgresFixtureUrl(url!);
       if (
         !['localhost', '127.0.0.1'].includes(target.hostname) ||
         target.port !== '55439' ||

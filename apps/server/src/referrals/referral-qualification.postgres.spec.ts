@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -20,7 +21,7 @@ integration('Referral qualification admission (owned PostgreSQL)', () => {
   let itemId: string;
   beforeAll(async () => {
     process.env.REFERRAL_INVITE_BASE_URL = 'https://fixture.invalid';
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       url.port !== '55439' ||

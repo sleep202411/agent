@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomInt, randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -18,7 +19,7 @@ integration('App release partial updates (owned PostgreSQL)', () => {
   let base: number;
   const ids: string[] = [];
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(

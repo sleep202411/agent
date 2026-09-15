@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import type { AuthUser } from '../auth';
 import { PrismaClient } from '@prisma/client';
@@ -19,7 +20,7 @@ integration('IP entitlement concurrency (owned PostgreSQL)', () => {
   let admin: AuthUser;
   const viewer = 'entitlement-test-viewer';
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(

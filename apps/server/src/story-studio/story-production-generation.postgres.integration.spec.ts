@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import {
   AiJobStage,
   AiJobStatus,
@@ -2125,7 +2126,7 @@ async function cleanupFixtures(
 }
 
 function assertDedicatedLocalPostgres(rawUrl: string): void {
-  const url = new URL(rawUrl);
+  const url = postgresFixtureUrl(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
     !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||

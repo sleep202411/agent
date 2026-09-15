@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -18,7 +19,7 @@ const url =
       voucherId: string,
       code: string;
     beforeAll(async () => {
-      const target = new URL(url!);
+      const target = postgresFixtureUrl(url!);
       if (
         !['localhost', '127.0.0.1'].includes(target.hostname) ||
         target.port !== '55439' ||

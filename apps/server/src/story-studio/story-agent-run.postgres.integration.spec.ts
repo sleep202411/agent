@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { ensureStoryVisualStyleFixture } from '../../test/story-visual-style-fixture';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import {
@@ -3115,7 +3116,7 @@ async function expectErrorResponse(
 }
 
 function assertDedicatedLocalPostgres(rawUrl: string): void {
-  const url = new URL(rawUrl);
+  const url = postgresFixtureUrl(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
     !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||

@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID, createHash, createHmac } from 'node:crypto';
 import { encryptTotpSecret } from './admin-mfa';
 import { PrismaClient } from '@prisma/client';
@@ -24,7 +25,7 @@ integration(
     const currentPassword = 'Original-Pass-827!X';
     const newPassword = 'Replacement-Pass-827!X';
     beforeAll(async () => {
-      const url = new URL(databaseUrl!);
+      const url = postgresFixtureUrl(databaseUrl!);
       if (
         !['localhost', '127.0.0.1'].includes(url.hostname) ||
         !(

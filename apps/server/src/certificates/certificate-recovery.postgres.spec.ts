@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -29,7 +30,7 @@ integration('Certificate update recovery (owned PostgreSQL)', () => {
     certNo: `FD-TEST-2026-${randomUUID().slice(0, 6).toUpperCase()}`,
   });
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['127.0.0.1', 'localhost'].includes(url.hostname) ||
       url.port !== '55439' ||

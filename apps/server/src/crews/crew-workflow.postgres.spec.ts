@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { CrewTrustAppealService } from './tasks/trust-appeals';
 import { CreatorTrustController } from '../ip-commerce/creator-trust.controller';
 import { postApprovedTaskTrustTx } from './tasks/task-timeliness';
@@ -43,7 +44,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
     const notifications = { send: jest.fn().mockResolvedValue(undefined) };
 
     beforeAll(() => {
-      const target = new URL(url!);
+      const target = postgresFixtureUrl(url!);
       if (
         target.hostname !== '127.0.0.1' ||
         !(

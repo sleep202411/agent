@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
@@ -19,7 +20,7 @@ const suite = databaseUrl ? describe : describe.skip;
 suite('Studio linking authorization on PostgreSQL', () => {
   let db: PrismaClient;
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(

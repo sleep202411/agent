@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import type { PrismaService } from '../infra/db/db.module';
 import { PrismaClient } from '@prisma/client';
@@ -19,7 +20,7 @@ jest.setTimeout(60000);
 integration('Creator earnings read model (local PostgreSQL)', () => {
   let prisma: PrismaClient;
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
       !(

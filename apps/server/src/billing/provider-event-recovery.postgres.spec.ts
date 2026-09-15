@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, type BillingPaymentProviderEvent } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -44,7 +45,7 @@ integration('Provider event recovery (owned PostgreSQL)', () => {
     );
   const internals = (svc = service()) => svc as unknown as Internals;
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['127.0.0.1', 'localhost'].includes(url.hostname) ||
       url.port !== '55439' ||
