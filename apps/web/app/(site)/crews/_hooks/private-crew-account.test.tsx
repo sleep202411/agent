@@ -5,6 +5,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { crewApi } from "./api";
 import { useCrewApplications, useCrewApplication } from "./use-applications";
 import { useCrewAgreements } from "./use-agreements";
+import { useCrewMembers, useCrewMembership } from "./use-members";
+import { useCrewInvitations, useMyCrewInvitation } from "./use-invitations";
 import { useCrewInviteLinks } from "./use-invite-links";
 
 const session = vi.hoisted(() => ({ id: "alice" as string | null }));
@@ -95,3 +97,39 @@ it.each(["applications", "agreements", "invite-links"] as const)(
     expect(crewApi.get).toHaveBeenCalledTimes(initialReads * 2);
   }
 );
+
+it("cancels private membership, application, invitation and agreement reads when the account leaves", async () => {
+  const reads: Array<{ signal: AbortSignal; resolve: (value: unknown) => void }> = [];
+  vi.mocked(crewApi.get).mockImplementation((_path, options) => {
+    expect(options?.cache).toBe("no-store");
+    return new Promise((resolve) =>
+      reads.push({ signal: options!.signal as AbortSignal, resolve })
+    );
+  });
+  const view = mount(() => [
+    useCrewMembers("crew-1"),
+    useCrewMembership("crew-1"),
+    useCrewApplications("crew-1"),
+    useCrewApplication("crew-1", "application-1"),
+    useCrewInvitations("crew-1"),
+    useMyCrewInvitation("invitation-1"),
+    useCrewInviteLinks("crew-1"),
+    useCrewAgreements("crew-1"),
+  ]);
+  expect(reads).toHaveLength(8);
+  session.id = null;
+  view.render();
+  expect(reads.every((read) => read.signal.aborted)).toBe(true);
+  await act(async () => reads.forEach((read) => read.resolve({ items: [], nextCursor: null })));
+  expect(
+    client
+      .getQueryCache()
+      .findAll()
+      .filter((query) => query.queryKey.at(-1) === "alice")
+      .every((query) => query.state.data === undefined)
+  ).toBe(true);
+  session.id = "bob";
+  view.render();
+  expect(reads).toHaveLength(16);
+  expect(reads.slice(8).every((read) => !read.signal.aborted)).toBe(true);
+});

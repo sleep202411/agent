@@ -24,8 +24,10 @@ export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
   const query = useInfiniteQuery({
     queryKey: [...crewKeys.members(crewId ?? ""), "list", pageSize, user?.id ?? null],
     enabled: !!crewId && Boolean(user),
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewMemberPageDTO>(`/crews/${encodeURIComponent(crewId!)}/members`, {
+        signal,
+        cache: "no-store",
         query: { limit: pageSize, cursor: pageParam },
       }),
     initialPageParam: undefined as string | undefined,
@@ -55,8 +57,11 @@ export function useCrewMembership(crewId: string | undefined) {
   return useQuery({
     queryKey: [...crewKeys.membership(crewId ?? ""), user?.id ?? null],
     enabled: !!crewId && Boolean(user),
-    queryFn: () =>
-      crewApi.get<CrewMembershipDTO>(`/crews/${encodeURIComponent(crewId!)}/members/me`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewMembershipDTO>(`/crews/${encodeURIComponent(crewId!)}/members/me`, {
+        signal,
+        cache: "no-store",
+      }),
     retry: (failureCount, error) =>
       failureCount < 2 && !(error instanceof CrewApiError && error.status < 500),
   });

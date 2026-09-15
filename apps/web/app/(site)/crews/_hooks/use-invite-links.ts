@@ -34,8 +34,11 @@ export function useCrewInviteLinks(crewId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.inviteLinks(crewId), user?.id ?? null],
     enabled: enabled && !!crewId && Boolean(user),
-    queryFn: () =>
-      crewApi.get<CrewInviteLinkDTO[]>(`/crews/${encodeURIComponent(crewId)}/invite-links`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewInviteLinkDTO[]>(`/crews/${encodeURIComponent(crewId)}/invite-links`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
