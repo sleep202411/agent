@@ -4,7 +4,7 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { useAdminSessionRequests } from "./admin-session-boundary";
 
 /** New reads replace old reads; a mutation excludes all overlapping work. */
-export function useAdminOperation() {
+export function useAdminOperation(enabled = true) {
   const scope = useAdminSessionRequests();
   const active = useRef(false);
   const pending = useRef<{
@@ -12,14 +12,19 @@ export function useAdminOperation() {
     lease: NonNullable<ReturnType<typeof scope.begin>>;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [previousEnabled, setPreviousEnabled] = useState(enabled);
+  if (previousEnabled !== enabled) {
+    setPreviousEnabled(enabled);
+    setBusy(false);
+  }
   useLayoutEffect(() => {
-    active.current = true;
+    active.current = enabled;
     return () => {
       active.current = false;
       pending.current?.lease.cancel();
       pending.current = null;
     };
-  }, [scope]);
+  }, [scope, enabled]);
   const begin = useCallback(
     (kind: "read" | "write" = "write") => {
       if (!active.current || pending.current?.kind === "write") return null;
