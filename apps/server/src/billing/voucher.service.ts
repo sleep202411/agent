@@ -130,31 +130,51 @@ export class VoucherService {
   async redeemVoucher(user: AuthUser, input: RedeemVoucherInput) {
     const code = input.code.trim().toUpperCase();
     const userId = String(user.userId);
-    const now = new Date();
-
-    const voucher = await this.prisma.voucher.findUnique({ where: { code } });
-    if (!voucher) {
-      throw new NotFoundException({
-        code: 'VOUCHER_NOT_FOUND',
-        msg: 'Redemption code is invalid.',
+    const voucher = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM vouchers WHERE code=${code} FOR UPDATE`;
+      const current = await tx.voucher.findUnique({ where: { code } });
+      if (!current) {
+        throw new NotFoundException({
+          code: 'VOUCHER_NOT_FOUND',
+          msg: 'Redemption code is invalid.',
+        });
+      }
+      if (current.status !== VoucherStatus.active) return current;
+      const [{ now }] = await tx.$queryRaw<
+        { now: Date }[]
+      >`SELECT clock_timestamp() AS now`;
+      if (current.expiresAt && current.expiresAt <= now) {
+        return tx.voucher.update({
+          where: { id: current.id },
+          data: { status: VoucherStatus.expired },
+        });
+      }
+      if (current.grantType !== VoucherGrantType.compute_credits) {
+        throw new BadRequestException({
+          code: 'VOUCHER_GRANT_TYPE_UNSUPPORTED',
+          msg: 'Unsupported voucher grant type.',
+        });
+      }
+      const workspace = await tx.workspace.findFirst({
+        where: { defaultForUserId: userId, deletedAt: null },
+        select: { id: true },
       });
-    }
-
-    // Lazy expiry: an active code past its window flips to expired on touch.
-    if (
-      voucher.status === VoucherStatus.active &&
-      voucher.expiresAt &&
-      voucher.expiresAt <= now
-    ) {
-      await this.prisma.voucher.updateMany({
-        where: { id: voucher.id, status: VoucherStatus.active },
-        data: { status: VoucherStatus.expired },
+      if (!workspace) {
+        throw new ConflictException({
+          code: 'DEFAULT_WORKSPACE_MISSING',
+          msg: 'No default workspace to receive the credits yet.',
+        });
+      }
+      return tx.voucher.update({
+        where: { id: current.id },
+        data: {
+          status: VoucherStatus.redeemed,
+          redeemedByUserId: userId,
+          redeemedWorkspaceId: workspace.id,
+          redeemedAt: now,
+        },
       });
-      throw new GoneException({
-        code: 'VOUCHER_EXPIRED',
-        msg: 'This redemption code has expired.',
-      });
-    }
+    });
     if (voucher.status === VoucherStatus.expired) {
       throw new GoneException({
         code: 'VOUCHER_EXPIRED',
@@ -168,7 +188,7 @@ export class VoucherService {
       });
     }
     if (
-      voucher.status === VoucherStatus.redeemed &&
+      voucher.status !== VoucherStatus.redeemed ||
       voucher.redeemedByUserId !== userId
     ) {
       throw new ConflictException({
@@ -176,51 +196,12 @@ export class VoucherService {
         msg: 'This redemption code has already been used.',
       });
     }
-
-    // compute_point is workspace-owned -> credits land in the redeemer's defaultWorkspace
-    // workspace pot (matches admin grants / the wallet the user reads + spends).
-    const defaultWorkspace = await this.prisma.workspace.findFirst({
-      where: {
-        defaultForUserId: userId,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    if (!defaultWorkspace) {
+    if (!voucher.redeemedWorkspaceId) {
       throw new ConflictException({
-        code: 'DEFAULT_WORKSPACE_MISSING',
-        msg: 'No default workspace to receive the credits yet.',
+        code: 'VOUCHER_REDEMPTION_WORKSPACE_MISSING',
+        msg: 'The recorded redemption has no destination workspace.',
       });
     }
-
-    // Claim: flip active->redeemed exactly once. The WHERE status=active guard
-    // makes this a row-locked atomic claim; a concurrent redeemer gets count=0.
-    if (voucher.status === VoucherStatus.active) {
-      const claim = await this.prisma.voucher.updateMany({
-        where: { id: voucher.id, status: VoucherStatus.active },
-        data: {
-          status: VoucherStatus.redeemed,
-          redeemedByUserId: userId,
-          redeemedWorkspaceId: defaultWorkspace.id,
-          redeemedAt: now,
-        },
-      });
-      if (claim.count === 0) {
-        const fresh = await this.prisma.voucher.findUnique({
-          where: { id: voucher.id },
-          select: { redeemedByUserId: true },
-        });
-        if (fresh?.redeemedByUserId && fresh.redeemedByUserId !== userId) {
-          throw new ConflictException({
-            code: 'VOUCHER_ALREADY_REDEEMED',
-            msg: 'This redemption code has already been used.',
-          });
-        }
-        // else: a concurrent call by THIS user won the claim -> fall through to
-        // the idempotent credit (recovery path).
-      }
-    }
-
     if (voucher.grantType !== VoucherGrantType.compute_credits) {
       throw new BadRequestException({
         code: 'VOUCHER_GRANT_TYPE_UNSUPPORTED',
@@ -230,8 +211,7 @@ export class VoucherService {
 
     // Credit. Idempotent by voucher id: a retry / same-user re-redeem (e.g. after
     // a crash between claim and credit) credits exactly once (postEntry dedupes).
-    const targetWorkspaceId =
-      voucher.redeemedWorkspaceId ?? defaultWorkspace.id;
+    const targetWorkspaceId = voucher.redeemedWorkspaceId;
     const amount = BigInt(voucher.computeCreditAmount ?? 0);
     const account = await this.prisma.walletAccount.upsert({
       where: {
