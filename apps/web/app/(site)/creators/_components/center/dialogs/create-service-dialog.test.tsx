@@ -104,11 +104,11 @@ const button = (label: string) =>
 async function preview() {
   for (let i = 0; i < 3; i++) await act(async () => button("wizardNext").click());
 }
-async function fill(placeholder: string, value: string) {
+async function fill(placeholder: string, value: string, index = 0) {
   await act(async () => {
-    const input = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+    const input = container.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
       `[placeholder="${placeholder}"]`
-    )!;
+    )[index]!;
     const proto =
       input.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(input, value);
@@ -264,4 +264,84 @@ it.each([
   await fill("0", "10");
   await act(async () => button("saveDraft").click());
   expect(mocks.create.mock.calls[0]![0].packages[0].currency).toBe(expectedCurrency);
+});
+
+async function questionsStep() {
+  await act(async () => render());
+  await act(async () => button("wizardNext").click());
+  await act(async () => button("wizardNext").click());
+  await act(async () => button("+ questionAddFirst").click());
+}
+const confirmedQuestions = [
+  { id: "saved-first", prompt: "First", helpText: "", required: false, displayOrder: 0 },
+  { id: "saved-second", prompt: "Second", helpText: "", required: false, displayOrder: 1 },
+];
+it("keeps confirmed question IDs through pending edits and reordering without remounting rows", async () => {
+  let finish!: (result: CreatorServiceDTO) => void;
+  mocks.update.mockReturnValueOnce(
+    new Promise<CreatorServiceDTO>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await questionsStep();
+  await fill("questionPromptPlaceholder", "First");
+  await act(async () => button("+ questionAdd").click());
+  await fill("questionPromptPlaceholder", "Second", 1);
+  await act(async () => button("saveDraft").click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="questionMoveDown"]')!.click()
+  );
+  await fill("questionPromptPlaceholder", "Second edited");
+  const input = container.querySelector('[placeholder="questionPromptPlaceholder"]');
+  await act(async () =>
+    finish({ ...service, version: 2, requirementQuestions: [...confirmedQuestions].reverse() })
+  );
+  expect(container.querySelector('[placeholder="questionPromptPlaceholder"]')).toBe(input);
+  await act(async () => button("saveDraft").click());
+  expect(mocks.update.mock.calls[1]![0].body.requirementQuestions).toEqual([
+    { ...confirmedQuestions[1], prompt: "Second edited", displayOrder: 0 },
+    { ...confirmedQuestions[0], displayOrder: 1 },
+  ]);
+});
+it("does not restore deleted questions or assign their IDs to newly added rows", async () => {
+  let finish!: (result: CreatorServiceDTO) => void;
+  mocks.update.mockReturnValueOnce(
+    new Promise<CreatorServiceDTO>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await questionsStep();
+  await fill("questionPromptPlaceholder", "First");
+  await act(async () => button("saveDraft").click());
+  await act(async () => button("questionRemove").click());
+  await act(async () => button("+ questionAddFirst").click());
+  await fill("questionPromptPlaceholder", "Replacement");
+  await act(async () =>
+    finish({ ...service, version: 2, requirementQuestions: [confirmedQuestions[0]!] })
+  );
+  await act(async () => button("saveDraft").click());
+  expect(mocks.update.mock.calls[1]![0].body.requirementQuestions).toEqual([
+    { prompt: "Replacement", helpText: "", required: false, displayOrder: 0 },
+  ]);
+});
+it("matches confirmation by original display order when blank questions were omitted", async () => {
+  let finish!: (result: CreatorServiceDTO) => void;
+  mocks.update.mockReturnValueOnce(
+    new Promise<CreatorServiceDTO>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await questionsStep();
+  await act(async () => button("+ questionAdd").click());
+  await fill("questionPromptPlaceholder", "Second", 1);
+  await act(async () => button("saveDraft").click());
+  expect(mocks.update.mock.calls[0]![0].body.requirementQuestions).toHaveLength(1);
+  await act(async () =>
+    finish({ ...service, version: 2, requirementQuestions: [confirmedQuestions[1]!] })
+  );
+  await act(async () => button("saveDraft").click());
+  expect(mocks.update.mock.calls[1]![0].body.requirementQuestions[0]).toMatchObject({
+    id: "saved-second",
+    displayOrder: 1,
+  });
 });

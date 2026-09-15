@@ -187,6 +187,8 @@ const STEPS: StepId[] = ["overview", "pricing", "questions", "preview"];
  */
 interface QuestionFormState {
   id: string;
+  /** Keep the local row key stable when the server assigns its persistent ID. */
+  persistedId?: string;
   prompt: string;
   helpText: string;
   required: boolean;
@@ -229,7 +231,7 @@ function questionsToWire(qs: QuestionFormState[]) {
       // local- prefix sentinel signals "new — mint one".
       const isLocal = q.id.startsWith("local-");
       return {
-        ...(isLocal ? {} : { id: q.id }),
+        ...(isLocal ? (q.persistedId ? { id: q.persistedId } : {}) : { id: q.id }),
         prompt,
         helpText: q.helpText.trim(),
         required: q.required,
@@ -454,6 +456,7 @@ function CreateServiceDialogContent({
       );
       return null;
     }
+    const submittedQuestions = questions;
     try {
       let saved: CreatorServiceDTO;
       if (savedRecord.current.id) {
@@ -466,6 +469,22 @@ function CreateServiceDialogContent({
       }
       if (!active.current) return null;
       savedRecord.current = { id: saved.id, version: saved.version };
+      const confirmedIds = new Map<string, string>();
+      submittedQuestions.forEach((question, displayOrder) => {
+        if (!question.id.startsWith("local-") || !question.prompt.trim()) return;
+        const confirmed = saved.requirementQuestions.find(
+          (q) => q.displayOrder === displayOrder && q.prompt === question.prompt.trim()
+        );
+        if (confirmed) confirmedIds.set(question.id, confirmed.id);
+      });
+      if (confirmedIds.size) {
+        setQuestions((current) =>
+          current.map((q) => {
+            const persistedId = confirmedIds.get(q.id);
+            return persistedId ? { ...q, persistedId } : q;
+          })
+        );
+      }
       setSavedId(saved.id);
       return saved;
     } catch (err) {
