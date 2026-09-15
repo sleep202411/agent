@@ -220,6 +220,33 @@ describe("MembersManager project access", () => {
     expect(api.add).toHaveBeenCalledTimes(2);
     expect(api.success).toHaveBeenCalledTimes(1);
   });
+  it("locks member and invite draft controls during a write and restores retry after failure", async () => {
+    api.list.mockResolvedValue([]);
+    let reject!: (error: Error) => void;
+    api.add.mockImplementation(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        })
+    );
+    await render(true);
+    await fillAccount("member@example.test");
+    await act(async () => {
+      submit();
+    });
+    const account = container.querySelector<HTMLInputElement>(
+      'input[placeholder="addByEmailOrPhone"]'
+    )!;
+    expect(account.disabled).toBe(true);
+    expect([...container.querySelectorAll("select")].every((select) => select.disabled)).toBe(true);
+    await act(async () => reject(new Error("Please retry")));
+    expect(account.disabled).toBe(false);
+    expect(account.value).toBe("member@example.test");
+    expect([...container.querySelectorAll("select")].every((select) => !select.disabled)).toBe(
+      true
+    );
+    expect(api.error).toHaveBeenCalled();
+  });
   it("ignores an old add result after switching accounts and preserves replacement drafts", async () => {
     api.list.mockResolvedValue([]);
     let resolve!: (value: { nickname: string }) => void;

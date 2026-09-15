@@ -302,11 +302,13 @@ function MembersManagerView({
         >
           <Input
             placeholder={t("addByEmailOrPhone")}
+            disabled={pending}
             value={account}
             onChange={(event) => setAccount(event.target.value)}
             className="flex-1"
           />
           <select
+            disabled={pending}
             value={role}
             onChange={(event) => setRole(event.target.value as AssignableShareRole)}
             className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
@@ -378,6 +380,7 @@ function MembersManagerView({
               member.accessScope !== "project_only" ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
+                    disabled={pending}
                     aria-label={t("memberActions")}
                     className="flex size-7 items-center justify-center rounded-md text-white/55 outline-none transition-colors hover:bg-white/[0.08] hover:text-white"
                   >
@@ -433,7 +436,13 @@ function MembersManagerView({
               <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {inviteUrl(created.token)}
               </code>
-              <Button type="button" size="sm" variant="secondary" onClick={() => copyMut.mutate()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={pending}
+                onClick={() => copyMut.mutate()}
+              >
                 <IconCopy className="size-4" />
                 {tc("copy")}
               </Button>
@@ -442,6 +451,7 @@ function MembersManagerView({
 
           <div className="flex items-center gap-2">
             <select
+              disabled={pending}
               value={linkRole}
               onChange={(event) => setLinkRole(event.target.value as AssignableShareRole)}
               className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
