@@ -188,19 +188,26 @@ export class AdminUsersService {
   }
 
   async resetMfa(userId: string, exceptSessionId?: string) {
-    await this.findExisting(userId);
-    await this.prisma.adminUser.update({
-      where: { id: userId },
-      data: {
-        requireMfa: true,
-        mfaSecretHash: null,
-        mfaEnabledAt: null,
-        failedLoginCount: 0,
-        lockedUntil: null,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${userId}::uuid FOR UPDATE`;
+      await tx.adminMfaChallenge.updateMany({
+        where: { userId, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      await this.findExisting(userId, tx);
+      await tx.adminUser.update({
+        where: { id: userId },
+        data: {
+          requireMfa: true,
+          mfaSecretHash: null,
+          mfaEnabledAt: null,
+          failedLoginCount: 0,
+          lockedUntil: null,
+        },
+      });
+      await this.revokeSessionsInTransaction(userId, exceptSessionId, tx);
+      return this.getById(userId, tx);
     });
-    await this.revokeSessions(userId, exceptSessionId);
-    return this.getById(userId);
   }
 
   async resetPassword(
@@ -208,32 +215,50 @@ export class AdminUsersService {
     password: string,
     exceptSessionId?: string,
   ) {
-    const existing = await this.findExisting(userId);
-    const previousHashes = await this.recentPasswordHashes(userId);
-    this.assertPasswordPolicy({
-      password,
-      email: existing.email,
-      displayName: existing.displayName,
-      previousHashes,
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${userId}::uuid FOR UPDATE`;
+      await tx.adminMfaChallenge.updateMany({
+        where: { userId, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      const existing = await this.findExisting(userId, tx);
+      const previousHashes = await this.recentPasswordHashes(userId, tx);
+      this.assertPasswordPolicy({
+        password,
+        email: existing.email,
+        displayName: existing.displayName,
+        previousHashes,
+      });
+      const passwordHash = hashAdminPassword(password);
+      await tx.adminUser.update({
+        where: { id: userId },
+        data: {
+          passwordHash,
+          passwordChangedAt: new Date(),
+          failedLoginCount: 0,
+          lockedUntil: null,
+        },
+      });
+      await this.recordPasswordHistory(userId, passwordHash, tx);
+      await this.revokeSessionsInTransaction(userId, exceptSessionId, tx);
+      return this.getById(userId, tx);
     });
-    const passwordHash = hashAdminPassword(password);
-    await this.prisma.adminUser.update({
-      where: { id: userId },
-      data: {
-        passwordHash,
-        passwordChangedAt: new Date(),
-        failedLoginCount: 0,
-        lockedUntil: null,
-      },
-    });
-    await this.recordPasswordHistory(userId, passwordHash);
-    await this.revokeSessions(userId, exceptSessionId);
-    return this.getById(userId);
   }
 
   async revokeSessions(userId: string, exceptSessionId?: string) {
-    await this.findExisting(userId);
-    const result = await this.prisma.adminSession.updateMany({
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${userId}::uuid FOR UPDATE`;
+      return this.revokeSessionsInTransaction(userId, exceptSessionId, tx);
+    });
+  }
+
+  private async revokeSessionsInTransaction(
+    userId: string,
+    exceptSessionId: string | undefined,
+    tx: Prisma.TransactionClient,
+  ) {
+    await this.findExisting(userId, tx);
+    const result = await tx.adminSession.updateMany({
       where: {
         userId,
         status: AdminSessionStatus.active,
@@ -247,8 +272,8 @@ export class AdminUsersService {
     return { revokedCount: result.count };
   }
 
-  async getById(userId: string) {
-    const user = await this.prisma.adminUser.findUnique({
+  async getById(userId: string, tx: Prisma.TransactionClient = this.prisma) {
+    const user = await tx.adminUser.findUnique({
       where: { id: userId },
       include: adminUserListInclude,
     });
@@ -258,7 +283,7 @@ export class AdminUsersService {
         msg: '后台账号不存在。',
       });
     }
-    const activeSessionCount = await this.prisma.adminSession.count({
+    const activeSessionCount = await tx.adminSession.count({
       where: {
         userId,
         status: AdminSessionStatus.active,
@@ -399,8 +424,11 @@ export class AdminUsersService {
     };
   }
 
-  private async findExisting(userId: string) {
-    const existing = await this.prisma.adminUser.findUnique({
+  private async findExisting(
+    userId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const existing = await tx.adminUser.findUnique({
       where: { id: userId },
     });
     if (!existing) {
@@ -474,8 +502,11 @@ export class AdminUsersService {
     }
   }
 
-  private async recentPasswordHashes(userId: string) {
-    const history = await this.prisma.adminPasswordHistory.findMany({
+  private async recentPasswordHashes(
+    userId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const history = await tx.adminPasswordHistory.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: 5,
@@ -484,8 +515,12 @@ export class AdminUsersService {
     return history.map((item) => item.passwordHash);
   }
 
-  private async recordPasswordHistory(userId: string, passwordHash: string) {
-    await this.prisma.adminPasswordHistory.create({
+  private async recordPasswordHistory(
+    userId: string,
+    passwordHash: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    await tx.adminPasswordHistory.create({
       data: { userId, passwordHash },
     });
   }
