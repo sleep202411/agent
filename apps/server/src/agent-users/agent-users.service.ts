@@ -211,70 +211,75 @@ export class AgentUsersService {
     input: UpdateAdminAgentUserInput,
     adminId: string,
   ) {
-    const existing = await this.findAgentUser(agentUserId);
-    const nextIdentityStatus =
-      input.identityStatus ??
-      (input.platformUserId === undefined
-        ? existing.identityStatus
-        : input.platformUserId
-          ? AgentUserIdentityStatus.bound
-          : AgentUserIdentityStatus.shadow);
-    const nextPlatformUserId =
-      input.platformUserId === undefined
-        ? existing.platformUserId
-        : input.platformUserId
-          ? decodeUserId(input.platformUserId)
-          : input.platformUserId;
-    this.assertIdentityBinding(nextIdentityStatus, nextPlatformUserId);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_users WHERE id=${agentUserId}::uuid FOR UPDATE`;
+      const existing = await this.findAgentUser(agentUserId, tx);
+      const nextIdentityStatus =
+        input.identityStatus ??
+        (input.platformUserId === undefined
+          ? existing.identityStatus
+          : input.platformUserId
+            ? AgentUserIdentityStatus.bound
+            : AgentUserIdentityStatus.shadow);
+      const nextPlatformUserId =
+        input.platformUserId === undefined
+          ? existing.platformUserId
+          : input.platformUserId
+            ? decodeUserId(input.platformUserId)
+            : input.platformUserId;
+      this.assertIdentityBinding(nextIdentityStatus, nextPlatformUserId);
 
-    const nextStatus = input.status ?? existing.status;
-    const data: Prisma.AgentUserUpdateInput = {
-      updatedByAdminId: adminId,
-      ...(input.displayName !== undefined
-        ? { displayName: input.displayName }
-        : {}),
-      ...(input.avatarUrl !== undefined
-        ? { avatarUrl: input.avatarUrl ?? null }
-        : {}),
-      ...(input.status !== undefined
-        ? { status: input.status as AgentUserStatus }
-        : {}),
-      ...(nextIdentityStatus !== existing.identityStatus ||
-      input.identityStatus !== undefined
-        ? { identityStatus: nextIdentityStatus }
-        : {}),
-      ...(input.platformUserId !== undefined
-        ? { platformUserId: input.platformUserId ?? null }
-        : {}),
-      ...(input.simulatedEmail !== undefined
-        ? { simulatedEmail: input.simulatedEmail ?? null }
-        : {}),
-      ...(input.locale !== undefined ? { locale: input.locale } : {}),
-      ...(input.region !== undefined ? { region: input.region ?? null } : {}),
-      ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
-      ...(input.persona !== undefined ? { persona: json(input.persona) } : {}),
-      ...(input.schedule !== undefined
-        ? { schedule: json(input.schedule) }
-        : {}),
-      ...(input.policy !== undefined ? { policy: json(input.policy) } : {}),
-      ...(input.notes !== undefined ? { notes: input.notes ?? null } : {}),
-      disabledAt:
-        nextStatus === AgentUserStatus.disabled
-          ? (existing.disabledAt ?? new Date())
-          : null,
-    };
+      const nextStatus = input.status ?? existing.status;
+      const data: Prisma.AgentUserUpdateInput = {
+        updatedByAdminId: adminId,
+        ...(input.displayName !== undefined
+          ? { displayName: input.displayName }
+          : {}),
+        ...(input.avatarUrl !== undefined
+          ? { avatarUrl: input.avatarUrl ?? null }
+          : {}),
+        ...(input.status !== undefined
+          ? { status: input.status as AgentUserStatus }
+          : {}),
+        ...(nextIdentityStatus !== existing.identityStatus ||
+        input.identityStatus !== undefined
+          ? { identityStatus: nextIdentityStatus }
+          : {}),
+        ...(input.platformUserId !== undefined
+          ? { platformUserId: nextPlatformUserId ?? null }
+          : {}),
+        ...(input.simulatedEmail !== undefined
+          ? { simulatedEmail: input.simulatedEmail ?? null }
+          : {}),
+        ...(input.locale !== undefined ? { locale: input.locale } : {}),
+        ...(input.region !== undefined ? { region: input.region ?? null } : {}),
+        ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
+        ...(input.persona !== undefined
+          ? { persona: json(input.persona) }
+          : {}),
+        ...(input.schedule !== undefined
+          ? { schedule: json(input.schedule) }
+          : {}),
+        ...(input.policy !== undefined ? { policy: json(input.policy) } : {}),
+        ...(input.notes !== undefined ? { notes: input.notes ?? null } : {}),
+        disabledAt:
+          nextStatus === AgentUserStatus.disabled
+            ? (existing.disabledAt ?? new Date())
+            : null,
+      };
 
-    try {
-      const agent = await this.prisma.agentUser.update({
-        where: { id: agentUserId },
-        data,
-        include: agentUserDetailInclude,
-      });
-      return this.toAgentUserDetailDto(agent);
-    } catch (error) {
-      this.throwUniqueConflict(error);
-      throw error;
-    }
+      try {
+        const agent = await tx.agentUser.update({
+          where: { id: agentUserId },
+          data,
+          include: agentUserDetailInclude,
+        });
+        return this.toAgentUserDetailDto(agent);
+      } catch (error) {
+        this.throwUniqueConflict(error);
+        throw error;
+      }
+    });
   }
 
   async listRuns(agentUserId: string, query: ListAgentRunsQuery) {
@@ -599,8 +604,11 @@ export class AgentUsersService {
     return where;
   }
 
-  private async findAgentUser(agentUserId: string) {
-    const agent = await this.prisma.agentUser.findUnique({
+  private async findAgentUser(
+    agentUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const agent = await db.agentUser.findUnique({
       where: { id: agentUserId },
     });
     if (!agent) {

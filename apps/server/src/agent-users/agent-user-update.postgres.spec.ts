@@ -1,0 +1,128 @@
+import { randomUUID, randomInt } from 'node:crypto';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { encodeUserId } from '@repo/shared';
+import type { PrismaService } from '../infra/db/db.module';
+import { AgentUsersService } from './agent-users.service';
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.DATABASE_POSTGRES_INTEGRATION === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const integration = databaseUrl ? describe : describe.skip;
+const applicationName = `agent-user-admin-${randomUUID()}`;
+jest.setTimeout(30000);
+integration('Agent-user administration (owned PostgreSQL)', () => {
+  let db: PrismaClient;
+  let service: AgentUsersService;
+  const adminId = randomUUID();
+  let agentId: string;
+  let handle: string;
+  beforeAll(async () => {
+    const url = new URL(databaseUrl!);
+    if (
+      !['127.0.0.1', 'localhost'].includes(url.hostname) ||
+      url.port !== '55439' ||
+      url.pathname !== '/task01'
+    )
+      throw new Error('Owned task01 fixture required');
+    db = new PrismaClient({
+      adapter: new PrismaPg({
+        connectionString: databaseUrl,
+        options: '-c timezone=UTC',
+        application_name: applicationName,
+      }),
+      transactionOptions: { timeout: 15000 },
+    });
+    await db.$connect();
+    service = new AgentUsersService(db as PrismaService);
+  });
+  beforeEach(async () => {
+    handle = `fixture-${randomUUID()}`;
+    agentId = (
+      await db.agentUser.create({ data: { handle, displayName: 'Original' } })
+    ).id;
+  });
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await db.agentUser.deleteMany({
+      where: { handle: { startsWith: handle } },
+    });
+  });
+  afterAll(async () => {
+    await db?.$disconnect();
+  });
+  const waitForLock = async () => {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const [row] = await db.$queryRaw<
+        { count: bigint }[]
+      >`SELECT count(*) FROM pg_stat_activity WHERE application_name=${applicationName} AND wait_event_type='Lock'`;
+      if (Number(row.count)) return;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error('Expected agent administrator write wait');
+  };
+  it('persists the decoded binding consistently with creation', async () => {
+    const raw = String(randomInt(100000000, 2000000000));
+    const encoded = encodeUserId(raw);
+    expect(encoded).not.toBe(raw);
+    await service.updateAdmin(agentId, { platformUserId: encoded }, adminId);
+    expect(
+      (await db.agentUser.findUniqueOrThrow({ where: { id: agentId } }))
+        .platformUserId,
+    ).toBe(raw);
+  });
+  it('preserves identity and disablement committed during a competing update', async () => {
+    let release!: () => void;
+    let ready!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const acquired = new Promise<void>((r) => {
+      ready = r;
+    });
+    const raw = String(randomInt(100000000, 2000000000));
+    const disabledAt = new Date('2026-01-01T00:00:00Z');
+    const holder = db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_users WHERE id=${agentId}::uuid FOR UPDATE`;
+      ready();
+      await gate;
+      await tx.agentUser.update({
+        where: { id: agentId },
+        data: {
+          platformUserId: raw,
+          identityStatus: 'bound',
+          displayName: 'Concurrent',
+          status: 'disabled',
+          disabledAt,
+        },
+      });
+    });
+    await acquired;
+    const pending = service.updateAdmin(
+      agentId,
+      { notes: 'New notes' },
+      adminId,
+    );
+    void pending.catch(() => undefined);
+    try {
+      await waitForLock();
+    } finally {
+      release();
+    }
+    await holder;
+    await pending;
+    const current = await db.agentUser.findUniqueOrThrow({
+      where: { id: agentId },
+    });
+    expect(current).toMatchObject({
+      platformUserId: raw,
+      identityStatus: 'bound',
+      displayName: 'Concurrent',
+      notes: 'New notes',
+      status: 'disabled',
+      disabledAt,
+    });
+  });
+});
