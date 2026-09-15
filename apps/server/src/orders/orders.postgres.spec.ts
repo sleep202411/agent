@@ -336,6 +336,196 @@ jest.setTimeout(15000);
       }),
     ).toBe(0);
   });
+  const proposalInput = (clientKey: string) => ({
+    clientKey,
+    note: 'Offer',
+    packageTier: 'basic' as const,
+    price: 10,
+    currency: 'CNY' as const,
+    deliveryDays: 1,
+    revisions: 0,
+    scope: ['One scene'],
+  });
+  it('recovers one proposal and outbox from concurrent identical retries', async () => {
+    const conv = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    const [a, b] = await Promise.all([
+      conversations.sendProposal(conv.id, owner, proposalInput('retry')),
+      conversations.sendProposal(conv.id, owner, proposalInput('retry')),
+    ]);
+    expect(a).toEqual(b);
+    expect(await db.message.count({ where: { conversationId: conv.id } })).toBe(
+      1,
+    );
+    expect(
+      await db.conversationRealtimeOutbox.count({
+        where: { message: { conversationId: conv.id } },
+      }),
+    ).toBe(1);
+    expect(messageBroadcast).toHaveBeenCalledTimes(1);
+    await expect(
+      conversations.sendProposal(conv.id, owner, {
+        ...proposalInput('retry'),
+        price: 11,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+  it('returns the accepted receipt after order conversion without reopening or broadcasting it', async () => {
+    const conv = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    const proposal = await conversations.sendProposal(
+      conv.id,
+      owner,
+      proposalInput('accepted'),
+    );
+    const order = await svc.acceptProposal(buyer, conv.id, proposal.id);
+    const count = messageBroadcast.mock.calls.length;
+    const replay = await conversations.sendProposal(
+      conv.id,
+      owner,
+      proposalInput('accepted'),
+    );
+    expect(replay.id).toBe(proposal.id);
+    expect(replay.payload).toMatchObject({
+      proposal: { status: 'accepted', orderId: order.id },
+    });
+    expect(messageBroadcast).toHaveBeenCalledTimes(count);
+    await expect(
+      conversations.sendProposal(
+        conv.id,
+        owner,
+        proposalInput('new-after-order'),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+  it('retains declined proposal status and rejects unavailable receipts', async () => {
+    const conv = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    const proposal = await conversations.sendProposal(
+      conv.id,
+      owner,
+      proposalInput('declined'),
+    );
+    await conversations.declineProposal(conv.id, buyer, proposal.id);
+    const replay = await conversations.sendProposal(
+      conv.id,
+      owner,
+      proposalInput('declined'),
+    );
+    expect(replay.payload).toMatchObject({ proposal: { status: 'declined' } });
+    await db.message.update({
+      where: { id: proposal.id },
+      data: { deletedAt: new Date() },
+    });
+    await expect(
+      conversations.sendProposal(conv.id, owner, proposalInput('declined')),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(
+      await db.message.count({
+        where: { conversationId: conv.id, type: 'proposal' },
+      }),
+    ).toBe(1);
+  });
+  it('does not expose a proposal receipt to a departed creator', async () => {
+    const conv = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    await conversations.sendProposal(conv.id, owner, proposalInput('departed'));
+    await db.conversationParticipant.update({
+      where: {
+        conversationId_userId: { conversationId: conv.id, userId: owner },
+      },
+      data: { leftAt: new Date() },
+    });
+    await expect(
+      conversations.sendProposal(conv.id, owner, proposalInput('departed')),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+  it('admits only one message kind for a key shared concurrently with a text send', async () => {
+    const conv = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    const results = await Promise.allSettled([
+      conversations.sendProposal(conv.id, owner, proposalInput('shared-kind')),
+      conversations.sendText(conv.id, owner, 'Text instead', 'shared-kind'),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toEqual([
+      expect.objectContaining({
+        reason: expect.any(ConflictException) as unknown,
+      }),
+    ]);
+    expect(await db.message.count({ where: { conversationId: conv.id } })).toBe(
+      1,
+    );
+  });
+  it('rolls back a keyed caller transaction and permits the same proposal to retry', async () => {
+    const conv = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    await expect(
+      db.$transaction(async (tx) => {
+        await conversations.persistProposal(
+          conv.id,
+          owner,
+          proposalInput('rollback'),
+          tx,
+        );
+        throw new Error('Caller failed');
+      }),
+    ).rejects.toThrow('Caller failed');
+    const message = await conversations.sendProposal(
+      conv.id,
+      owner,
+      proposalInput('rollback'),
+    );
+    expect(message.clientKey).toBe('rollback');
+    expect(await db.message.count({ where: { conversationId: conv.id } })).toBe(
+      1,
+    );
+  });
+  it('keeps proposal keys conversation scoped and preserves unkeyed callers', async () => {
+    const a = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    const b = await conversations.openServiceConversation({
+      serviceId: randomUUID(),
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    const one = await conversations.sendProposal(
+      a.id,
+      owner,
+      proposalInput('scoped'),
+    );
+    const two = await conversations.sendProposal(
+      b.id,
+      owner,
+      proposalInput('scoped'),
+    );
+    expect(one.id).not.toBe(two.id);
+    const legacy = { ...proposalInput('legacy'), clientKey: undefined };
+    const x = await conversations.sendProposal(a.id, owner, legacy);
+    const y = await conversations.sendProposal(a.id, owner, legacy);
+    expect(x.id).not.toBe(y.id);
+  });
   it('concurrent retries retain one order, conversation, message pair and broadcast set', async () => {
     await conversations.openServiceConversation({
       serviceId: id,

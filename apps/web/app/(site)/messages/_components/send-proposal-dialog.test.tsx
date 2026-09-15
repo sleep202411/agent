@@ -192,3 +192,30 @@ it.each([false, true])(
     }
   }
 );
+
+it("reuses proposal identity after failure and replaces it for edited terms", async () => {
+  mocks.send.mockRejectedValue(new Error("Response lost"));
+  await act(async () => render());
+  await fill(0, "10");
+  await act(async () => send().click());
+  await act(async () => send().click());
+  const original = mocks.send.mock.calls[0]![1].clientKey;
+  expect(mocks.send.mock.calls[1]![1].clientKey).toBe(original);
+  await fill(0, "11");
+  await act(async () => send().click());
+  expect(mocks.send.mock.calls[2]![1].clientKey).not.toBe(original);
+});
+it.each(["reopen", "success"])("starts a fresh proposal intent after %s", async (mode) => {
+  mocks.send.mockResolvedValue({});
+  await act(async () => render());
+  await fill(0, "10");
+  await act(async () => send().click());
+  const original = mocks.send.mock.calls[0]![1].clientKey;
+  if (mode === "reopen") {
+    await act(async () => render("chat-a", false));
+    await act(async () => render());
+    await fill(0, "10");
+  }
+  await act(async () => send().click());
+  expect(mocks.send.mock.calls[1]![1].clientKey).not.toBe(original);
+});

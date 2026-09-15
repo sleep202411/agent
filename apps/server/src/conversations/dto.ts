@@ -154,6 +154,7 @@ export type SendAttachmentsInput = z.infer<typeof SendAttachmentsSchema>;
  * ProposalPayload in @repo/shared/conversation.
  */
 export const SendProposalSchema = z.object({
+  clientKey: z.string().trim().min(1).max(64).optional(),
   /// Free-form note rendered above the structured block. Optional
   /// but recommended.
   note: z.string().trim().max(2000).default(''),

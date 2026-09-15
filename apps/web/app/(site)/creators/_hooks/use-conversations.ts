@@ -131,6 +131,7 @@ export interface OpenConversationBody {
 }
 
 export interface SendProposalBody {
+  clientKey?: string;
   note?: string;
   packageTier: ServiceTier;
   price: number;

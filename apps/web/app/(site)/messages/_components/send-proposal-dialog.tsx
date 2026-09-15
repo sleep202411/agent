@@ -95,6 +95,7 @@ function SendProposalDialogContent({
 }: SendProposalDialogProps) {
   const active = useRef(false);
   const admitted = useRef(false);
+  const intent = useRef<{ serialized: string; key: string } | null>(null);
   useLayoutEffect(() => {
     active.current = open;
     return () => {
@@ -154,7 +155,7 @@ function SendProposalDialogContent({
     }
     admitted.current = true;
     try {
-      await send.mutateAsync({
+      const body = {
         note: note.trim() || undefined,
         packageTier: tier,
         price: priceNumber,
@@ -165,8 +166,20 @@ function SendProposalDialogContent({
           .split("\n")
           .map((s) => s.trim())
           .filter(Boolean),
-      });
+      };
+      const serialized = JSON.stringify(body);
+      if (!intent.current || intent.current.serialized !== serialized) {
+        intent.current = {
+          serialized,
+          key:
+            globalThis.crypto?.randomUUID?.() ??
+            `proposal-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        };
+      }
+      await send.mutateAsync({ ...body, clientKey: intent.current.key });
+
       if (!active.current) return;
+      intent.current = null;
       toast.success(t("proposalSentToast"));
       onOpenChange(false);
     } catch (err) {
