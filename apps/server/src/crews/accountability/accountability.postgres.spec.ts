@@ -6,10 +6,12 @@ import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewTasksService } from '../tasks/tasks.service';
 import type { PrismaService } from '../../infra/db/db.module';
 
-const suite =
-  process.env.CREW_ACCOUNTABILITY_POSTGRES_INTEGRATION === '1'
-    ? describe
-    : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.CREW_ACCOUNTABILITY_POSTGRES_INTEGRATION === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const suite = databaseUrl ? describe : describe.skip;
 suite('Crew accountability on isolated PostgreSQL', () => {
   let db: PrismaClient;
   let service: CrewAccountabilityService;
@@ -24,15 +26,21 @@ suite('Crew accountability on isolated PostgreSQL', () => {
   const oldApprovers = process.env.CREW_COMPLETION_REWARD_APPROVER_IDS;
   let number = 0;
   beforeAll(async () => {
-    const url = process.env.DATABASE_URL;
+    const url = new URL(databaseUrl!);
     if (
-      !url ||
-      !['127.0.0.1', 'localhost'].includes(new URL(url).hostname) ||
-      !new URL(url).pathname.endsWith('_test')
+      !['localhost', '127.0.0.1'].includes(url.hostname) ||
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw new Error('Use a dedicated local *_test database.');
+      throw new Error('Named loopback test database required');
     db = new PrismaClient({
-      adapter: new PrismaPg({ connectionString: url, max: 6 }),
+      adapter: new PrismaPg({
+        connectionString: databaseUrl,
+        max: 6,
+        options: '-c timezone=UTC',
+      }),
     });
     const prisma = db as PrismaService;
     authorization = new CrewAuthorizationService(prisma);
