@@ -9630,7 +9630,7 @@
     "awardPoints": "Verify contribution and award points",
     "previous": "Previous",
     "next": "Next",
-    "page": "Page {{page}}",
+    "page": "Page {page}",
     "saved": "Recorded",
     "contextRequired": "Describe the contribution, reason or handover with specific details.",
     "scheduleChanges": "Schedule changes"
