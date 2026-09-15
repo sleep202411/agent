@@ -15,6 +15,8 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import type { OrderBindings, OrderCardDTO, OrderDTO, OrderStatus } from "@repo/shared/order";
 import type { ServiceTier } from "@repo/shared/creator-service";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
+
 const BASE = "/aurora";
 
 export class OrderApiError extends Error {
@@ -32,6 +34,7 @@ export class OrderApiError extends Error {
 }
 
 interface CallOpts {
+  signal?: AbortSignal;
   body?: unknown;
   query?: Record<string, string | number | undefined>;
 }
@@ -40,6 +43,8 @@ async function call<T>(method: string, path: string, opts: CallOpts = {}): Promi
   const url = buildUrl(path, opts.query);
   const init: RequestInit = {
     method,
+    cache: "no-store",
+    signal: opts.signal,
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
@@ -106,9 +111,17 @@ interface ListResponse {
 export const orderKeys = {
   all: ["order"] as const,
   lists: () => ["order", "list"] as const,
-  list: (params: ListOrdersParams) =>
-    ["order", "list", params.role ?? "both", params.status ?? "", params.limit ?? ""] as const,
-  detail: (id: string) => ["order", "detail", id] as const,
+  list: (params: ListOrdersParams, ownerId?: string | null) =>
+    [
+      "order",
+      "list",
+      params.role ?? "both",
+      params.status ?? "",
+      params.limit ?? "",
+      ...(ownerId === undefined ? [] : [ownerId]),
+    ] as const,
+  detail: (id: string, ownerId?: string | null) =>
+    ["order", "detail", id, ...(ownerId === undefined ? [] : [ownerId])] as const,
 };
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
@@ -118,6 +131,7 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
 // ─── Queries ───────────────────────────────────────────────
 
 export function useOrders(params: ListOrdersParams = {}) {
+  const { user } = useCurrentUser();
   return useInfiniteQuery<
     ListResponse,
     OrderApiError,
@@ -125,10 +139,12 @@ export function useOrders(params: ListOrdersParams = {}) {
     ReturnType<typeof orderKeys.list>,
     string | null
   >({
-    queryKey: orderKeys.list(params),
+    queryKey: orderKeys.list(params, user?.id ?? null),
+    enabled: !!user?.id,
     initialPageParam: null,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       api.get<ListResponse>("/orders", {
+        signal,
         query: {
           role: params.role ?? "both",
           ...(params.status ? { status: params.status } : {}),
@@ -154,86 +170,130 @@ export function useOrders(params: ListOrdersParams = {}) {
 }
 
 export function useOrder(id: string | null) {
+  const { user } = useCurrentUser();
   return useQuery<OrderDTO, OrderApiError>({
-    queryKey: id ? orderKeys.detail(id) : ["order", "detail", "_none"],
-    enabled: !!id,
-    queryFn: () => api.get<OrderDTO>(`/orders/${id}`),
+    queryKey: orderKeys.detail(id ?? "_none", user?.id ?? null),
+    enabled: !!id && !!user?.id,
+    queryFn: ({ signal }) => api.get<OrderDTO>(`/orders/${id}`, { signal }),
   });
 }
 
 // ─── Mutations ─────────────────────────────────────────────
 
-function applyOrderResult(qc: ReturnType<typeof useQueryClient>, order: OrderDTO) {
-  qc.setQueryData(orderKeys.detail(order.id), order);
+interface OrderMutationContext {
+  ownerId: string | null;
+}
+
+function applyOrderResult(
+  qc: ReturnType<typeof useQueryClient>,
+  order: OrderDTO,
+  ownerId: string | null
+) {
+  if (ownerId != null) qc.setQueryData(orderKeys.detail(order.id, ownerId), order);
   invalidateAll(qc);
 }
 
 export function useSubmitOrder() {
   const qc = useQueryClient();
-  return useMutation<OrderDTO, OrderApiError, SubmitOrderBody>({
+  const { user } = useCurrentUser();
+  return useMutation<OrderDTO, OrderApiError, SubmitOrderBody, OrderMutationContext>({
     mutationFn: (body) => api.post<OrderDTO>("/orders", { body }),
-    onSuccess: (order) => applyOrderResult(qc, order),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (order, _variables, context) =>
+      applyOrderResult(qc, order, context?.ownerId ?? null),
   });
 }
 
 export function useAcceptProposal() {
   const qc = useQueryClient();
-  return useMutation<OrderDTO, OrderApiError, { conversationId: string; messageId: string }>({
+  const { user } = useCurrentUser();
+  return useMutation<
+    OrderDTO,
+    OrderApiError,
+    { conversationId: string; messageId: string },
+    OrderMutationContext
+  >({
     mutationFn: ({ conversationId, messageId }) =>
       api.post<OrderDTO>(`/orders/from-proposal/${conversationId}/${messageId}`),
-    onSuccess: (order) => applyOrderResult(qc, order),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (order, _variables, context) =>
+      applyOrderResult(qc, order, context?.ownerId ?? null),
   });
 }
 
 export function useAcceptOrder() {
   const qc = useQueryClient();
-  return useMutation<OrderDTO, OrderApiError, { id: string }>({
+  const { user } = useCurrentUser();
+  return useMutation<OrderDTO, OrderApiError, { id: string }, OrderMutationContext>({
     mutationFn: ({ id }) => api.post<OrderDTO>(`/orders/${id}/accept`),
-    onSuccess: (order) => applyOrderResult(qc, order),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (order, _variables, context) =>
+      applyOrderResult(qc, order, context?.ownerId ?? null),
   });
 }
 
 export function useDeclineOrder() {
   const qc = useQueryClient();
-  return useMutation<OrderDTO, OrderApiError, { id: string; reason: string }>({
-    mutationFn: ({ id, reason }) =>
-      api.post<OrderDTO>(`/orders/${id}/decline`, { body: { reason } }),
-    onSuccess: (order) => applyOrderResult(qc, order),
-  });
+  const { user } = useCurrentUser();
+  return useMutation<OrderDTO, OrderApiError, { id: string; reason: string }, OrderMutationContext>(
+    {
+      mutationFn: ({ id, reason }) =>
+        api.post<OrderDTO>(`/orders/${id}/decline`, { body: { reason } }),
+      onMutate: () => ({ ownerId: user?.id ?? null }),
+      onSuccess: (order, _variables, context) =>
+        applyOrderResult(qc, order, context?.ownerId ?? null),
+    }
+  );
 }
 
 export function useDeliverOrder() {
   const qc = useQueryClient();
-  return useMutation<OrderDTO, OrderApiError, { id: string }>({
+  const { user } = useCurrentUser();
+  return useMutation<OrderDTO, OrderApiError, { id: string }, OrderMutationContext>({
     mutationFn: ({ id }) => api.post<OrderDTO>(`/orders/${id}/deliver`),
-    onSuccess: (order) => applyOrderResult(qc, order),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (order, _variables, context) =>
+      applyOrderResult(qc, order, context?.ownerId ?? null),
   });
 }
 
 export function useAcceptDelivery() {
   const qc = useQueryClient();
-  return useMutation<OrderDTO, OrderApiError, { id: string }>({
+  const { user } = useCurrentUser();
+  return useMutation<OrderDTO, OrderApiError, { id: string }, OrderMutationContext>({
     mutationFn: ({ id }) => api.post<OrderDTO>(`/orders/${id}/accept-delivery`),
-    onSuccess: (order) => applyOrderResult(qc, order),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (order, _variables, context) =>
+      applyOrderResult(qc, order, context?.ownerId ?? null),
   });
 }
 
 export function useRequestRevision() {
   const qc = useQueryClient();
-  return useMutation<OrderDTO, OrderApiError, { id: string; reason: string }>({
-    mutationFn: ({ id, reason }) =>
-      api.post<OrderDTO>(`/orders/${id}/request-revision`, {
-        body: { reason },
-      }),
-    onSuccess: (order) => applyOrderResult(qc, order),
-  });
+  const { user } = useCurrentUser();
+  return useMutation<OrderDTO, OrderApiError, { id: string; reason: string }, OrderMutationContext>(
+    {
+      mutationFn: ({ id, reason }) =>
+        api.post<OrderDTO>(`/orders/${id}/request-revision`, {
+          body: { reason },
+        }),
+      onMutate: () => ({ ownerId: user?.id ?? null }),
+      onSuccess: (order, _variables, context) =>
+        applyOrderResult(qc, order, context?.ownerId ?? null),
+    }
+  );
 }
 
 export function useCancelOrder() {
   const qc = useQueryClient();
-  return useMutation<OrderDTO, OrderApiError, { id: string; reason: string }>({
-    mutationFn: ({ id, reason }) =>
-      api.post<OrderDTO>(`/orders/${id}/cancel`, { body: { reason } }),
-    onSuccess: (order) => applyOrderResult(qc, order),
-  });
+  const { user } = useCurrentUser();
+  return useMutation<OrderDTO, OrderApiError, { id: string; reason: string }, OrderMutationContext>(
+    {
+      mutationFn: ({ id, reason }) =>
+        api.post<OrderDTO>(`/orders/${id}/cancel`, { body: { reason } }),
+      onMutate: () => ({ ownerId: user?.id ?? null }),
+      onSuccess: (order, _variables, context) =>
+        applyOrderResult(qc, order, context?.ownerId ?? null),
+    }
+  );
 }
