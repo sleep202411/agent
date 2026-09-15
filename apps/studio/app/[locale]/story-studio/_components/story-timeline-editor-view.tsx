@@ -1294,6 +1294,7 @@ function TimelineClipInspector({
         </Button>
       </div>
       <StoryCandidateAssetPickerDialog
+        projectId={projectId}
         open={assetPickerOpen}
         onOpenChange={setAssetPickerOpen}
         items={candidateAssets.items}

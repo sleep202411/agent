@@ -96,7 +96,8 @@ function VideoComposeView({
 }) {
   const t = useTranslations("storyboard");
   const { catalog, owner } = useProjectContext();
-  const crewProjectId = owner.kind === "platform_project" ? owner.projectId : "";
+  const crewProjectId =
+    owner.kind === "platform_project" ? owner.projectId : `story:${owner.projectId}`;
   const promptId = useId();
   const [pickerOpen, setPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);

@@ -686,6 +686,7 @@ function StoryAssetSpecCardMediaPicker({
 
   return (
     <StoryCandidateAssetPickerDialog
+      projectId={projectId}
       open={open}
       onOpenChange={(next) => {
         if (!replaceMutation.isPending) onOpenChange(next);

@@ -109,6 +109,7 @@ export class CrewProductionService {
         this.prisma.crew.findUniqueOrThrow({
           where: { id: crewId },
           select: {
+            studioWorkspace: { select: { id: true, name: true } },
             studioProject: {
               select: {
                 id: true,
@@ -127,11 +128,15 @@ export class CrewProductionService {
       labelOptions: labelOptions.map(productionLabelDto),
       resources: resources.map(productionResourceDto),
       latestUpdate: latestUpdate ? productionActivityDto(latestUpdate) : null,
+      studioWorkspace: crew.studioWorkspace,
       studioProject: crew.studioProject
         ? studioProjectSummary(crew.studioProject)
         : null,
       capabilities: {
         manage: context.permissions.includes('production.manage'),
+        linkWorkspace:
+          context.permissions.includes('production.manage') &&
+          (context.isOwner || context.policyKeys.includes('admin')),
       },
     };
   }
@@ -225,6 +230,7 @@ export class CrewProductionService {
     } | null;
     try {
       linked = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-workspace:${crewId}`})::bigint)`;
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-project:${crewId}`})::bigint)
         `;
@@ -247,7 +253,7 @@ export class CrewProductionService {
         await recheckAuthority();
         const crew = await tx.crew.findFirstOrThrow({
           where: { id: crewId, deletedAt: null },
-          select: { studioProjectId: true },
+          select: { studioProjectId: true, studioWorkspaceId: true },
         });
         let project: {
           id: string;
@@ -276,10 +282,16 @@ export class CrewProductionService {
           project = candidate;
         }
 
-        if (crew.studioProjectId !== (project?.id ?? null)) {
+        if (
+          crew.studioProjectId !== (project?.id ?? null) ||
+          crew.studioWorkspaceId
+        ) {
           await tx.crew.update({
             where: { id: crewId },
-            data: { studioProjectId: project?.id ?? null },
+            data: {
+              studioProjectId: project?.id ?? null,
+              ...(crew.studioWorkspaceId ? { studioWorkspaceId: null } : {}),
+            },
           });
           await tx.crewProductionActivity.create({
             data: {
@@ -292,6 +304,15 @@ export class CrewProductionService {
                     from: crew.studioProjectId,
                     to: project?.id ?? null,
                   },
+                  ...(crew.studioWorkspaceId
+                    ? [
+                        {
+                          field: 'studio_workspace_id',
+                          from: crew.studioWorkspaceId,
+                          to: null,
+                        },
+                      ]
+                    : []),
                 ],
               },
               createdByUserId: userId,

@@ -1468,6 +1468,11 @@
         "generated": "Generations in this project show up here.",
         "uploaded": "Media you upload to this project shows up here."
       }
+    },
+    "crewSave": {
+      "save": "Save to Crew assets",
+      "saved": "Saved to {folder}",
+      "failed": "Could not save. Try again."
     }
   },
   "canvasOps": {
@@ -3610,7 +3615,8 @@
         "clear": "Deselect",
         "metadataIncomplete": "Details incomplete · still usable",
         "selectError": "This candidate media could not be applied.",
-        "clearError": "The current media could not be deselected."
+        "clearError": "The current media could not be deselected.",
+        "sharedDescription": "Choose from this project's media and linked Crew assets, or upload a file."
       },
       "mediaCreation": "Media creation",
       "interactionEditor": {

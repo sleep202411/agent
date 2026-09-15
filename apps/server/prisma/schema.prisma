@@ -933,6 +933,7 @@ model Workspace {
   billingOrders             BillingOrder[]
   subscriptions             BillingSubscription[]
   crew                      Crew?                      @relation("CrewWorkspace")
+  studioCrew                Crew?                      @relation("CrewStudioWorkspace")
 
   @@index([ownerUserId, deletedAt], map: "workspaces_owner_idx")
   @@index([status, updatedAt(sort: Desc)], map: "workspaces_status_recent_idx")
@@ -986,6 +987,7 @@ model WorkspaceInvite {
 }
 
 model PlatformProject {
+  crewAssetFolders CrewAssetNode[] @relation("CrewCanvasAssetFolder")
   id           String                @id @default(uuid(7)) @db.Uuid
   workspaceId  String                @map("workspace_id") @db.Uuid
   name         String                @db.VarChar(160)
@@ -4847,9 +4849,10 @@ model Crew {
   /// one main production project; task projects branch from this context.
   workspaceId         String?                    @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
   productionProjectId String?                    @unique(map: "crews_production_project_unique") @map("production_project_id") @db.Uuid
-  /// User-selected FizzStudio project that consumes this crew's asset library.
-  /// This is intentionally separate from productionProjectId: linking an
-  /// existing Studio project must never mutate the crew's task/canvas trunk.
+  /// Explicit external Studio workspace link; the internal Crew task workspace is unchanged.
+  studioWorkspaceId   String?                    @unique(map: "crews_studio_workspace_unique") @map("studio_workspace_id") @db.Uuid
+  studioWorkspace     Workspace?                 @relation("CrewStudioWorkspace", fields: [studioWorkspaceId], references: [id], onDelete: SetNull)
+  /// Historical single-project link, cleared when a workspace is explicitly selected.
   studioProjectId     String?                    @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
   /// Optimistic concurrency control. Bumped on every update; readers
   /// supply the version they saw in the WHERE clause via
@@ -4905,6 +4908,10 @@ model CrewAssetNode {
   /// `inherit` uses the closest ancestor policy (or the crew-member default);
   /// `restricted` starts a new explicit ACL boundary for this subtree.
   accessMode        CrewAssetAccessMode @default(inherit) @map("access_mode")
+  /// Only explicit canvas saves grant Crew consumption of Studio-owned media.
+  sharedFromStudio  Boolean             @default(false) @map("shared_from_studio")
+  sourceCanvasProjectId String?         @map("source_canvas_project_id") @db.Uuid
+  sourceCanvasProject PlatformProject?  @relation("CrewCanvasAssetFolder", fields: [sourceCanvasProjectId], references: [id], onDelete: SetNull)
   permissionVersion Int                 @default(1) @map("permission_version")
   name              String              @db.VarChar(256)
   mediaAssetId      String?             @map("media_asset_id") @db.Uuid
@@ -4930,6 +4937,7 @@ model CrewAssetNode {
   signedAgreements     CrewAgreement[]           @relation("CrewAgreementSignedAsset")
   agreementAuditTrails CrewAgreement[]           @relation("CrewAgreementAuditAsset")
 
+  @@unique([crewId, sourceCanvasProjectId], map: "crew_asset_canvas_folder_unique")
   @@unique([id, crewId], name: "uniq_crew_asset_node_id_crew", map: "crew_asset_nodes_id_crew_unique")
   @@index([crewId, parentId, status, updatedAt(sort: Desc)], map: "crew_asset_nodes_folder_listing_idx")
   @@index([crewId, status, updatedAt(sort: Desc)], map: "crew_asset_nodes_source_listing_idx")

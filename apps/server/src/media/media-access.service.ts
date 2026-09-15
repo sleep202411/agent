@@ -405,6 +405,9 @@ export class MediaAccessService {
         if (!(err instanceof ForbiddenException)) throw err;
       }
     }
+    // Only explicit canvas-save references extend consumption to Crew members.
+    if (await this.crewAssetAccess.canReadStudioReference(userId, asset.id))
+      return;
     if (await this.hasCharacterReferenceAccess(userId, asset.id)) return;
     if (await this.hasStoryReferenceAccess(userId, asset.id)) return;
     throw new ForbiddenException({

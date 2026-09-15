@@ -111,6 +111,8 @@ function build() {
   );
   const authorization = {
     require: jest.fn().mockResolvedValue({
+      isOwner: false,
+      policyKeys: [],
       permissions: [
         'production.view',
         'production.manage',
@@ -347,7 +349,10 @@ describe('CrewProductionService', () => {
 
     const overview = await t.service.overview(CREW_ID, USER_ID);
 
-    expect(overview.capabilities).toEqual({ manage: true });
+    expect(overview.capabilities).toEqual({
+      manage: true,
+      linkWorkspace: false,
+    });
     expect(overview.project).toMatchObject({
       status: CrewProductionStatus.backlog,
       priority: null,

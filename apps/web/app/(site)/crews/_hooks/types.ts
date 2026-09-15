@@ -801,7 +801,8 @@ export interface CrewProductionOverviewDTO {
   resources: CrewProductionResourceDTO[];
   latestUpdate: CrewProductionUpdateDTO | null;
   studioProject: CrewStudioProjectSummaryDTO | null;
-  capabilities: { manage: boolean };
+  studioWorkspace?: { id: string; name: string } | null;
+  capabilities: { manage: boolean; linkWorkspace?: boolean };
 }
 
 export interface CrewStudioProjectSummaryDTO {
