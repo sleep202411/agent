@@ -529,7 +529,7 @@ function PressHoldControl({
     setTimelinePressed(true);
   };
 
-  const stopTimelinePress = () => {
+  const stopTimelinePress = useCallback(() => {
     if (!timelinePressedRef.current) return;
     timelinePressedRef.current = false;
     setTimelinePressed(false);
@@ -545,7 +545,7 @@ function PressHoldControl({
         },
       },
     ]);
-  };
+  }, [gesture.durationMs, gesture.gestureId, onEvents, timelineProgress, timelineResolved]);
 
   useEffect(() => {
     latestRef.current = { gesture, runtimeState, sceneTimeMs };
@@ -631,7 +631,7 @@ function PressHoldControl({
     pointerInsideRef.current = true;
     step(0);
     ensureAnimationFrame();
-  }, [ensureAnimationFrame, step, timelineControl, timelineProgress]);
+  }, [ensureAnimationFrame, step, stopTimelinePress, timelineControl]);
 
   useEffect(
     () => () => {
