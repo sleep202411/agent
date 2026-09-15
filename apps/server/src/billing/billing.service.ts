@@ -662,12 +662,13 @@ export class BillingService {
       ? Prisma.sql`AND t.project_id = ${query.projectId}::uuid`
       : Prisma.empty;
     const rows = await this.prisma.$queryRaw<
-      Array<{ day: Date; credits: bigint }>
+      Array<{ day: Date; credits: string }>
     >(Prisma.sql`
-      SELECT (e.created_at AT TIME ZONE 'UTC')::date AS day, SUM(e.amount)::bigint AS credits
+      SELECT (e.created_at AT TIME ZONE 'UTC')::date AS day, SUM(e.amount)::text AS credits
       FROM wallet_ledger_entries e
       JOIN wallet_transactions t ON t.id = e.transaction_id
       WHERE e.account_id IN (${Prisma.join(accountIds)})
+        AND t.status = 'posted'
         AND e.entry_type::text IN ('settle','debit')
         AND e.created_at >= ${from}
         ${projectFilter}
@@ -737,17 +738,18 @@ export class BillingService {
       Array<{
         actorUserId: string | null;
         projectId: string | null;
-        credits: bigint;
+        credits: string;
         jobs: bigint;
       }>
     >(Prisma.sql`
       SELECT t.actor_user_id AS "actorUserId",
              t.project_id AS "projectId",
-             SUM(e.amount)::bigint AS credits,
+             SUM(e.amount)::text AS credits,
              COUNT(*)::bigint AS jobs
       FROM wallet_ledger_entries e
       JOIN wallet_transactions t ON t.id = e.transaction_id
       WHERE e.account_id IN (${Prisma.join(accountIds)})
+        AND t.status = 'posted'
         AND e.entry_type::text IN ('settle','debit')
         AND e.created_at >= ${from}
         ${projectFilter}
@@ -763,7 +765,7 @@ export class BillingService {
     ];
     const projects = projectIds.length
       ? await this.prisma.platformProject.findMany({
-          where: { id: { in: projectIds } },
+          where: { id: { in: projectIds }, workspaceId, deletedAt: null },
           select: { id: true, name: true },
         })
       : [];
@@ -790,26 +792,38 @@ export class BillingService {
         byMember.set(userId, member);
       }
       const jobs = Number(row.jobs);
-      member.totalCredits += row.credits;
+      member.totalCredits += BigInt(row.credits);
       member.totalJobs += jobs;
       member.projects.push({
         projectId: row.projectId,
         projectName: row.projectId
           ? (projectNameById.get(row.projectId) ?? null)
           : null,
-        credits: row.credits,
+        credits: BigInt(row.credits),
         jobs,
       });
     }
 
     const members = [...byMember.values()]
-      .sort((a, b) => (b.totalCredits > a.totalCredits ? 1 : -1))
+      .sort((a, b) =>
+        a.totalCredits === b.totalCredits
+          ? a.userId.localeCompare(b.userId)
+          : b.totalCredits > a.totalCredits
+            ? 1
+            : -1,
+      )
       .map((member) => ({
         userId: member.userId,
         totalCredits: member.totalCredits.toString(),
         totalJobs: member.totalJobs,
         projects: member.projects
-          .sort((a, b) => (b.credits > a.credits ? 1 : -1))
+          .sort((a, b) =>
+            a.credits === b.credits
+              ? (a.projectId ?? '').localeCompare(b.projectId ?? '')
+              : b.credits > a.credits
+                ? 1
+                : -1,
+          )
           .map((project) => ({
             projectId: project.projectId,
             projectName: project.projectName,
@@ -867,7 +881,7 @@ export class BillingService {
 
     const from = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
     const workspaceIdFilter = query.workspaceId
-      ? Prisma.sql`AND a.owner_id = ${query.workspaceId}::uuid`
+      ? Prisma.sql`AND a.owner_id = ${query.workspaceId}`
       : Prisma.empty;
     const actorFilter = rawActorUserId
       ? Prisma.sql`AND t.actor_user_id = ${rawActorUserId}`
@@ -878,36 +892,57 @@ export class BillingService {
         : query.workspaceKind === 'shared'
           ? Prisma.sql`AND w.default_for_user_id IS NULL`
           : Prisma.empty;
-    // Cap raw pairs so a busy window cannot blow memory before rollup.
-    const pairLimit = Math.min(query.limit * 20, 2000);
-
+    // Aggregate before limiting display rows. Member ranking and headline
+    // totals must include every matching ledger entry, not just the top pairs.
     const rows = await this.prisma.$queryRaw<
       Array<{
-        actorUserId: string | null;
+        actorUserId: string;
         workspaceId: string;
-        credits: bigint;
-        jobs: bigint;
+        credits: string;
+        jobs: string;
+        memberCredits: string;
+        memberJobs: string;
+        memberWorkspaces: string;
+        totalCredits: string;
+        memberCount: string;
+        workspaceCount: string;
       }>
     >(Prisma.sql`
-      SELECT t.actor_user_id AS "actorUserId",
-             a.owner_id AS "workspaceId",
-             SUM(e.amount)::bigint AS credits,
-             COUNT(*)::bigint AS jobs
-      FROM wallet_ledger_entries e
-      JOIN wallet_transactions t ON t.id = e.transaction_id
-      JOIN wallet_accounts a ON a.id = e.account_id
-      JOIN workspaces w ON w.id = a.owner_id AND w.deleted_at IS NULL
-      WHERE a.owner_type = 'workspace'
-        AND a.currency = 'compute_point'
-        AND a.balance_kind = 'consumable'
-        AND e.entry_type::text IN ('settle', 'debit')
-        AND e.created_at >= ${from}
-        ${workspaceIdFilter}
-        ${actorFilter}
-        ${kindFilter}
-      GROUP BY t.actor_user_id, a.owner_id
-      ORDER BY credits DESC
-      LIMIT ${pairLimit}
+      WITH pairs AS (
+        SELECT COALESCE(t.actor_user_id, 'unknown') AS actor,
+               a.owner_id AS workspace, SUM(e.amount) AS credits, COUNT(*) AS jobs
+        FROM wallet_ledger_entries e
+        JOIN wallet_transactions t ON t.id = e.transaction_id
+        JOIN wallet_accounts a ON a.id = e.account_id
+        JOIN workspaces w ON w.id::text = a.owner_id AND w.deleted_at IS NULL
+        WHERE a.owner_type = 'workspace'
+          AND a.currency = 'compute_point'
+          AND a.balance_kind = 'consumable'
+          AND t.status = 'posted'
+          AND e.entry_type::text IN ('settle', 'debit')
+          AND e.created_at >= ${from}
+          ${workspaceIdFilter} ${actorFilter} ${kindFilter}
+        GROUP BY COALESCE(t.actor_user_id, 'unknown'), a.owner_id
+      ), totals AS (
+        SELECT SUM(credits)::text AS credits,
+               COUNT(DISTINCT actor)::text AS members,
+               COUNT(DISTINCT workspace)::text AS workspaces FROM pairs
+      ), selected AS (
+        SELECT actor, SUM(credits) AS credits, SUM(jobs) AS jobs, COUNT(*) AS workspaces
+        FROM pairs GROUP BY actor ORDER BY credits DESC, actor ASC LIMIT ${query.limit}
+      ), details AS (
+        SELECT p.*, s.credits AS member_credits, s.jobs AS member_jobs,
+               s.workspaces AS member_workspaces,
+               ROW_NUMBER() OVER (PARTITION BY p.actor ORDER BY p.credits DESC, p.workspace ASC) AS ordinal
+        FROM pairs p JOIN selected s ON s.actor = p.actor
+      )
+      SELECT d.actor AS "actorUserId", d.workspace AS "workspaceId",
+             d.credits::text AS credits, d.jobs::text AS jobs,
+             d.member_credits::text AS "memberCredits", d.member_jobs::text AS "memberJobs",
+             d.member_workspaces::text AS "memberWorkspaces",
+             t.credits AS "totalCredits", t.members AS "memberCount", t.workspaces AS "workspaceCount"
+      FROM details d CROSS JOIN totals t WHERE d.ordinal <= 20
+      ORDER BY d.member_credits DESC, d.actor ASC, d.credits DESC, d.workspace ASC
     `);
 
     if (rows.length === 0) {
@@ -967,6 +1002,7 @@ export class BillingService {
       rawUserId: string;
       totalCredits: bigint;
       totalJobs: number;
+      workspaceCount: number;
       workspaces: WorkspaceAgg[];
     };
     const byMember = new Map<string, MemberAgg>();
@@ -976,24 +1012,29 @@ export class BillingService {
       if (!member) {
         member = {
           rawUserId,
-          totalCredits: 0n,
-          totalJobs: 0,
+          totalCredits: BigInt(row.memberCredits),
+          totalJobs: Number(row.memberJobs),
+          workspaceCount: Number(row.memberWorkspaces),
           workspaces: [],
         };
         byMember.set(rawUserId, member);
       }
       const jobs = Number(row.jobs);
-      member.totalCredits += row.credits;
-      member.totalJobs += jobs;
       member.workspaces.push({
         workspaceId: row.workspaceId,
-        credits: row.credits,
+        credits: BigInt(row.credits),
         jobs,
       });
     }
 
     const members = [...byMember.values()]
-      .sort((a, b) => (b.totalCredits > a.totalCredits ? 1 : -1))
+      .sort((a, b) =>
+        a.totalCredits === b.totalCredits
+          ? a.rawUserId.localeCompare(b.rawUserId)
+          : b.totalCredits > a.totalCredits
+            ? 1
+            : -1,
+      )
       .slice(0, query.limit)
       .map((member) => {
         const legacy =
@@ -1011,7 +1052,13 @@ export class BillingService {
           totalCredits: member.totalCredits.toString(),
           totalJobs: member.totalJobs,
           workspaces: member.workspaces
-            .sort((a, b) => (b.credits > a.credits ? 1 : -1))
+            .sort((a, b) =>
+              a.credits === b.credits
+                ? a.workspaceId.localeCompare(b.workspaceId)
+                : b.credits > a.credits
+                  ? 1
+                  : -1,
+            )
             .map((ws) => {
               const meta = workspaceById.get(ws.workspaceId);
               return {
@@ -1026,20 +1073,13 @@ export class BillingService {
         };
       });
 
-    let totalCredits = 0n;
-    const workspaceSet = new Set<string>();
-    for (const member of members) {
-      totalCredits += BigInt(member.totalCredits);
-      for (const ws of member.workspaces) workspaceSet.add(ws.workspaceId);
-    }
-
     return {
       rangeDays: query.days,
       workspaceKind: query.workspaceKind,
       workspaceId: query.workspaceId ?? null,
-      totalCredits: totalCredits.toString(),
-      memberCount: members.length,
-      workspaceCount: workspaceSet.size,
+      totalCredits: rows[0].totalCredits,
+      memberCount: Number(rows[0].memberCount),
+      workspaceCount: Number(rows[0].workspaceCount),
       members,
     };
   }
