@@ -137,7 +137,9 @@ function installFetch() {
       });
       if (method === "GET" && url.endsWith("/production-overview")) {
         return jsonResponse({
-          studioProject: legacyProject,
+          studioProject: legacyProject
+            ? { ...legacyProject, workspace: { id: "legacy-workspace", name: "Legacy workspace" } }
+            : null,
           studioWorkspace: linkedWorkspaceId ? { id: linkedWorkspaceId, name: "Studio" } : null,
           capabilities: { linkWorkspace: canLink },
         });
