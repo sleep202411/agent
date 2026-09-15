@@ -181,12 +181,14 @@ export function Select({
   onChange,
   title,
   children,
+  disabled,
 }: {
   name?: string;
   value?: string;
   defaultValue?: string;
   onChange?: (value: string) => void;
   title?: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   const options = optionsFromChildren(children);
@@ -211,7 +213,7 @@ export function Select({
         };
 
   return (
-    <ShadSelect {...rootProps}>
+    <ShadSelect {...rootProps} disabled={disabled}>
       {name ? <input type="hidden" name={name} value={currentValue} /> : null}
       <SelectTrigger
         title={title}
