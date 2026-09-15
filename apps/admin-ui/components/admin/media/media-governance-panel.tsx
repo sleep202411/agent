@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import {
   IconCircleCheck,
   IconCircleOff,
@@ -52,7 +53,11 @@ import {
 } from "@/components/admin/billing/shared";
 import { PageHeader } from "@/components/admin/page-header";
 
-export function MediaGovernancePanel({
+export function MediaGovernancePanel(props: Parameters<typeof MediaGovernanceContent>[0]) {
+  return <MediaGovernanceContent key={props.view} {...props} />;
+}
+
+function MediaGovernanceContent({
   view,
   siteLabel,
   databaseLabel,
@@ -64,7 +69,7 @@ export function MediaGovernancePanel({
   initialData: AdminMediaInitialData;
 }) {
   const [data, setData] = useState(initialData);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [mutatingId, setMutatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialData.error);
   const [selectedAsset, setSelectedAsset] = useState<AdminMediaAsset | null>(null);
@@ -76,82 +81,81 @@ export function MediaGovernancePanel({
   const page = MEDIA_PAGES[view];
 
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setData(await fetchMediaView(view));
+      const next = await fetchMediaView(view, operation.signal);
+      if (operation.current()) setData(next);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.cancel();
+      operation.finish();
+    }
+  }
+
+  async function runAction<T>(
+    id: string,
+    url: string,
+    body: Record<string, unknown>,
+    method: "POST" | "PATCH" = "POST",
+    onAccepted?: (data: T) => void
+  ) {
+    const operation = begin();
+    if (!operation) return;
+    setMutatingId(id);
+    setError(null);
+    try {
+      const result = await mutateEnvelope<T>(url, body, method, operation.signal);
+      if (!operation.current()) return;
+      onAccepted?.(result);
+      const next = await fetchMediaView(view, operation.signal);
+      if (operation.current()) setData(next);
+    } catch (err) {
+      if (operation.current()) setError(toErrorMessage(err));
+    } finally {
+      if (operation.current()) setMutatingId(null);
+      operation.cancel();
+      operation.finish();
     }
   }
 
   async function retryPurge(actionId: string) {
-    setMutatingId(actionId);
-    setError(null);
-    try {
-      await mutateEnvelope(`/api/admin/media/moderation-actions/${actionId}/retry`, {});
-      await refresh();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setMutatingId(null);
-    }
+    await runAction(
+      actionId,
+      `/api/admin/media/moderation-actions/${encodeURIComponent(actionId)}/retry`,
+      {}
+    );
   }
-
   async function retryProcessingJob(jobId: string) {
-    setMutatingId(jobId);
-    setError(null);
-    try {
-      await mutateEnvelope(`/api/admin/media/processing-jobs/${jobId}/retry`, {});
-      await refresh();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setMutatingId(null);
-    }
+    await runAction(
+      jobId,
+      `/api/admin/media/processing-jobs/${encodeURIComponent(jobId)}/retry`,
+      {}
+    );
   }
-
   async function backfillOriginalPlacement(assetId: string) {
-    setMutatingId(assetId);
-    setError(null);
-    try {
-      await mutateEnvelope(`/api/admin/media/assets/${assetId}/processing-jobs`, {
-        jobType: "backfill_original_placement",
-        priority: 10,
-      });
-      await refresh();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setMutatingId(null);
-    }
+    await runAction(
+      assetId,
+      `/api/admin/media/assets/${encodeURIComponent(assetId)}/processing-jobs`,
+      { jobType: "backfill_original_placement", priority: 10 }
+    );
   }
-
   async function updateAssetModeration(
     asset: AdminMediaAsset,
     moderationStatus: AdminMediaModerationStatus,
     reason: string | null
   ) {
-    setMutatingId(`moderation:${asset.id}`);
-    setError(null);
-    try {
-      const updated = await mutateEnvelope<AdminMediaAsset>(
-        `/api/admin/media/assets/${asset.id}/moderation`,
-        {
-          moderationStatus,
-          reason,
-        },
-        "PATCH"
-      );
-      setSelectedAsset(updated);
-      await refresh();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setMutatingId(null);
-    }
+    await runAction<AdminMediaAsset>(
+      `moderation:${asset.id}`,
+      `/api/admin/media/assets/${encodeURIComponent(asset.id)}/moderation`,
+      { moderationStatus, reason },
+      "PATCH",
+      (updated) => {
+        setSelectedAsset((current) => (current?.id === asset.id ? updated : current));
+      }
+    );
   }
 
   return (
@@ -256,7 +260,7 @@ export function MediaGovernancePanel({
 
       <AssetDetailSheet
         asset={selectedAsset}
-        moderating={selectedAsset ? mutatingId === `moderation:${selectedAsset.id}` : false}
+        moderating={loading}
         onClose={() => setSelectedAsset(null)}
         onModerationChange={updateAssetModeration}
       />
@@ -288,18 +292,24 @@ const MEDIA_PAGES: Record<AdminMediaView, { title: string; description: string; 
     },
   };
 
-async function fetchMediaView(view: AdminMediaView): Promise<AdminMediaInitialData> {
+async function fetchMediaView(
+  view: AdminMediaView,
+  signal: AbortSignal
+): Promise<AdminMediaInitialData> {
   if (view === "overview") {
     const [overview, assets, moderationActions, processingJobs] = await Promise.all([
-      requestEnvelope<AdminMediaInitialData["overview"]>("/api/admin/media/overview"),
+      requestEnvelope<AdminMediaInitialData["overview"]>("/api/admin/media/overview", signal),
       requestEnvelope<NonNullable<AdminMediaInitialData["assets"]>>(
-        "/api/admin/media/assets?limit=12"
+        "/api/admin/media/assets?limit=12",
+        signal
       ),
       requestEnvelope<NonNullable<AdminMediaInitialData["moderationActions"]>>(
-        "/api/admin/media/moderation-actions?actionType=purge_cdn&limit=12"
+        "/api/admin/media/moderation-actions?actionType=purge_cdn&limit=12",
+        signal
       ),
       requestEnvelope<NonNullable<AdminMediaInitialData["processingJobs"]>>(
-        "/api/admin/media/processing-jobs?limit=12"
+        "/api/admin/media/processing-jobs?limit=12",
+        signal
       ),
     ]);
     return { overview, assets, moderationActions, processingJobs, error: null };
@@ -308,7 +318,8 @@ async function fetchMediaView(view: AdminMediaView): Promise<AdminMediaInitialDa
     return {
       overview: null,
       assets: await requestEnvelope<NonNullable<AdminMediaInitialData["assets"]>>(
-        "/api/admin/media/assets?limit=80"
+        "/api/admin/media/assets?limit=80",
+        signal
       ),
       moderationActions: null,
       processingJobs: null,
@@ -321,7 +332,7 @@ async function fetchMediaView(view: AdminMediaView): Promise<AdminMediaInitialDa
       assets: null,
       moderationActions: await requestEnvelope<
         NonNullable<AdminMediaInitialData["moderationActions"]>
-      >("/api/admin/media/moderation-actions?actionType=purge_cdn&limit=80"),
+      >("/api/admin/media/moderation-actions?actionType=purge_cdn&limit=80", signal),
       processingJobs: null,
       error: null,
     };
@@ -331,7 +342,8 @@ async function fetchMediaView(view: AdminMediaView): Promise<AdminMediaInitialDa
     assets: null,
     moderationActions: null,
     processingJobs: await requestEnvelope<NonNullable<AdminMediaInitialData["processingJobs"]>>(
-      "/api/admin/media/processing-jobs?limit=80"
+      "/api/admin/media/processing-jobs?limit=80",
+      signal
     ),
     error: null,
   };
@@ -450,7 +462,7 @@ function AssetTable({
                     <Button
                       variant="outline"
                       size="xs"
-                      disabled={mutatingId === asset.id}
+                      disabled={Boolean(mutatingId)}
                       onClick={() => void onBackfillOriginalPlacement(asset.id)}
                     >
                       <IconRotateClockwise2 className="size-3" />
@@ -522,7 +534,7 @@ function PurgeActionTable({
                 <Button
                   variant="outline"
                   size="xs"
-                  disabled={mutatingId === action.id}
+                  disabled={Boolean(mutatingId)}
                   onClick={() => void onRetry(action.id)}
                 >
                   <IconRotateClockwise2 className="size-3" />
@@ -588,7 +600,7 @@ function ProcessingJobTable({
                 <Button
                   variant="outline"
                   size="xs"
-                  disabled={mutatingId === job.id}
+                  disabled={Boolean(mutatingId)}
                   onClick={() => void onRetry(job.id)}
                 >
                   <IconRotateClockwise2 className="size-3" />
@@ -793,6 +805,7 @@ function ModerationForm({
         <Status value={asset.moderationStatus} />
       </div>
       <Textarea
+        disabled={moderating}
         value={moderationReason}
         onChange={(event) => {
           setModerationReason(event.currentTarget.value);
