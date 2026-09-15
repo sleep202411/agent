@@ -116,3 +116,46 @@ it("hides the previous account's tasks and unread counts during logout and accou
     state.userId = "alice";
   }
 });
+
+it("cancels all abandoned task-center and marker reads without caching their late results", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  const reads: Array<{ signal: AbortSignal; resolve: (value: unknown) => void }> = [];
+  state.userId = "alice";
+  state.get.mockImplementation((_url: string, options: { signal: AbortSignal; cache: string }) => {
+    expect(options.cache).toBe("no-store");
+    return new Promise((resolve) => reads.push({ signal: options.signal, resolve }));
+  });
+  const render = () =>
+    act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <CrewTaskCenter />
+          <CrewUnreadMarker crewId="crew-a" />
+          <TaskUnreadMarker taskId="private-task" />
+        </QueryClientProvider>
+      )
+    );
+  try {
+    await render();
+    expect(reads).toHaveLength(3);
+    expect(reads.every((read) => !read.signal.aborted)).toBe(true);
+    state.userId = "bob";
+    await render();
+    expect(reads).toHaveLength(6);
+    expect(reads.slice(0, 3).every((read) => read.signal.aborted)).toBe(true);
+    expect(reads.slice(3).every((read) => !read.signal.aborted)).toBe(true);
+    await act(async () => {
+      reads.slice(0, 3).forEach((read) => read.resolve({ items: [], nextCursor: null }));
+    });
+    expect(client.getQueryData(["notifications", "crew-unread", "alice"])).toBeUndefined();
+    expect(client.getQueryData(["notifications", "crew-task-unread", "alice"])).toBeUndefined();
+    act(() => root.unmount());
+    expect(reads.every((read) => read.signal.aborted)).toBe(true);
+  } finally {
+    client.clear();
+    state.get.mockReset();
+    state.userId = "alice";
+  }
+});
