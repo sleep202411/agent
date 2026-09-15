@@ -1,5 +1,6 @@
 "use client";
 
+import { useStoryOperationScope } from "../_lib/use-story-operation-scope";
 import { useAuth } from "@/app/_components/auth-provider";
 
 import { IconPlus } from "@tabler/icons-react";
@@ -41,6 +42,9 @@ export function StoryAssetSpecCreateDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { user } = useAuth();
+  const isCurrent = useStoryOperationScope(
+    JSON.stringify([projectId, chapterId, user?.id, initialKind, open])
+  );
   const t = useTranslations("storyStudio.assetsPage.createDialog");
   const addT = useTranslations("storyStudio.assetsPage.addByKind");
   const queryClient = useQueryClient();
@@ -51,6 +55,7 @@ export function StoryAssetSpecCreateDialog({
   const mutation = useMutation({
     retry: false,
     onMutate: () => ({
+      isCurrent,
       cacheKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
     }),
     mutationFn: () =>
@@ -70,13 +75,15 @@ export function StoryAssetSpecCreateDialog({
         ...(current ?? []),
         created,
       ]);
+      if (!context.isCurrent()) return;
       onOpenChange(false);
       toast.success(t("created"));
       await queryClient.invalidateQueries({
         queryKey: storyProductionKeys.state(projectId, chapterId),
       });
     },
-    onError: (error) => {
+    onError: (error, _input, context) => {
+      if (!context?.isCurrent()) return;
       toast.error(storyApiErrorMessage(error, t("createError")));
     },
   });

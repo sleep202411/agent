@@ -1,5 +1,6 @@
 "use client";
 
+import { useStoryOperationScope } from "../_lib/use-story-operation-scope";
 import { useAuth } from "@/app/_components/auth-provider";
 
 import {
@@ -79,6 +80,9 @@ export function StoryAssetSpecCard({
   eagerMedia?: boolean;
 }) {
   const { user } = useAuth();
+  const isCurrent = useStoryOperationScope(
+    JSON.stringify([projectId, chapterId, user?.id, asset.id, allowEditing, allowMediaReplacement])
+  );
   const detailT = useTranslations("storyStudio.assetsPage.detailDialog");
   const workbenchT = useTranslations("storyStudio.assetsPage.workbench");
   const mediaT = useTranslations("storyStudio.assetsPage.mediaAction");
@@ -143,13 +147,16 @@ export function StoryAssetSpecCard({
       updateCachedAsset(updated);
       return updated.version;
     },
-    onError: (error) => toast.error(storyApiErrorMessage(error, detailT("saveError"))),
+    onError: (error) => {
+      if (isCurrent()) toast.error(storyApiErrorMessage(error, detailT("saveError")));
+    },
   });
   const { name, imagePrompt: prompt } = values;
   const formValid = name.trim().length > 0 && prompt.trim().length > 0;
 
   const selectVersionMutation = useMutation({
     retry: false,
+    onMutate: () => ({ isCurrent }),
     mutationFn: (mediaVersion: StoryCreativeMediaVersion) =>
       runWithSavedValues(async (version) => {
         const updated = await patchStoryAssetSpec(
@@ -165,15 +172,20 @@ export function StoryAssetSpecCard({
         updateCachedAsset(updated);
         return updated;
       }),
-    onSuccess: () => {
+    onSuccess: (_result, _input, context) => {
+      if (!context?.isCurrent()) return;
       toast.success(workbenchT("versionSelected"));
     },
-    onError: (error) => toast.error(storyApiErrorMessage(error, workbenchT("versionSelectError"))),
+    onError: (error, _input, context) => {
+      if (context?.isCurrent())
+        toast.error(storyApiErrorMessage(error, workbenchT("versionSelectError")));
+    },
   });
 
   const archiveMutation = useMutation({
     retry: false,
     onMutate: () => ({
+      isCurrent,
       cacheKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
       assetId: asset.id,
     }),
@@ -192,12 +204,15 @@ export function StoryAssetSpecCard({
       queryClient.setQueryData<StoryAssetSpec[]>(context.cacheKey, (current) =>
         current?.filter((item) => item.id !== context.assetId)
       );
+      if (!context.isCurrent()) return;
       toast.success(detailT("deleted"));
       await queryClient.invalidateQueries({
         queryKey: storyProductionKeys.state(projectId, chapterId),
       });
     },
-    onError: (error) => toast.error(storyApiErrorMessage(error, detailT("deleteError"))),
+    onError: (error, _input, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, detailT("deleteError")));
+    },
   });
 
   const busy = selectVersionMutation.isPending || archiveMutation.isPending;
@@ -637,6 +652,9 @@ function StoryAssetSpecCardMediaPicker({
   onOpenChange: (open: boolean) => void;
 }) {
   const { user } = useAuth();
+  const isCurrent = useStoryOperationScope(
+    JSON.stringify([projectId, chapterId, user?.id, asset.id, open, purpose])
+  );
   const t = useTranslations("storyStudio.assetsPage.mediaAction");
   const queryClient = useQueryClient();
   const candidateAssets = useStoryCandidateAssets({ projectId, canEdit: true });
@@ -644,6 +662,7 @@ function StoryAssetSpecCardMediaPicker({
   const replaceMutation = useMutation({
     retry: false,
     onMutate: () => ({
+      isCurrent,
       cacheKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
     }),
     mutationFn: (candidate: StoryCandidateAsset) =>
@@ -663,19 +682,22 @@ function StoryAssetSpecCardMediaPicker({
       queryClient.setQueryData<StoryAssetSpec[]>(context.cacheKey, (current) =>
         current?.map((item) => (item.id === updated.id ? updated : item))
       );
+      if (!context.isCurrent()) return;
       onOpenChange(false);
       toast.success(purpose === "turnaround" ? t("turnaroundReplaceSuccess") : t("replaceSuccess"));
       await queryClient.invalidateQueries({
         queryKey: storyProductionKeys.storyboard(projectId, chapterId),
       });
     },
-    onError: (error) =>
+    onError: (error, _input, context) => {
+      if (!context?.isCurrent()) return;
       toast.error(
         storyApiErrorMessage(
           error,
           purpose === "turnaround" ? t("turnaroundReplaceError") : t("replaceError")
         )
-      ),
+      );
+    },
   });
 
   const uploadReplacement = async (

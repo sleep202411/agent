@@ -34,6 +34,17 @@ const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
  * before any media exists; this view never starts paid generation on load. */
 export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   const { user } = useAuth();
+  const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
+  return (
+    <StoryAssetsGalleryContent
+      key={JSON.stringify([projectId, chapterId, user?.id ?? null])}
+      projectId={projectId}
+    />
+  );
+}
+
+function StoryAssetsGalleryContent({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.assetsPage");
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const router = useRouter();
