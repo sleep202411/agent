@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import {
@@ -12,10 +12,14 @@ import { backendApi } from "@/src/lib/api";
 import { normalizeAiModel, type RawAiModel } from "@/components/ui/schema-field/schema";
 import { ALL_AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 
-const idle =
-  typeof requestIdleCallback === "function"
-    ? requestIdleCallback
-    : (cb: () => void) => setTimeout(cb, 1000);
+function idle(callback: () => void) {
+  if (typeof requestIdleCallback === "function") {
+    const id = requestIdleCallback(callback);
+    return () => cancelIdleCallback(id);
+  }
+  const id = setTimeout(callback, 1000);
+  return () => clearTimeout(id);
+}
 
 /**
  * Preload all AI models after essential data is loaded.
@@ -24,46 +28,42 @@ const idle =
  */
 export function useAiModelsPreload() {
   const projectId = useAppSelector((s) => s.project.currentProjectId);
-  const aiModelCache = useAppSelector((s) => s.aiModelCache.aiModelCache);
-  // Guards the in-flight window: the `aiModelCache` check catches the
-  // "already loaded" case, but under React Strict Mode in dev the
-  // effect fires twice before the first batch resolves — so both
-  // fires see an empty cache and fire a second full batch of requests.
-  // A ref survives the double-invoke and dedupes correctly.
-  const startedRef = useRef(false);
-
   useEffect(() => {
     if (!projectId) return;
-    if (startedRef.current) return;
-    // Already loaded (e.g., remounted after cache was populated).
-    if (Object.keys(aiModelCache).length > 0) {
-      startedRef.current = true;
-      return;
-    }
-    startedRef.current = true;
-
+    const cache = store.getState().aiModelCache.aiModelCache;
+    const paths = ALL_AI_MODEL_PATHS.filter((path) => !Object.hasOwn(cache, path));
+    if (!paths.length) return;
+    const controller = new AbortController();
     store.dispatch(setAiModelCacheLoading(true));
-
-    idle(() => {
-      const promises = ALL_AI_MODEL_PATHS.map(async (path) => {
+    const cancelIdle = idle(() => {
+      if (controller.signal.aborted) return;
+      const promises = paths.map(async (path) => {
         try {
           const raw = await backendApi.post<RawAiModel[]>(
-            `/api/ai/record/model/list?path=${encodeURIComponent(path)}`
+            `/api/ai/record/model/list?path=${encodeURIComponent(path)}`,
+            { signal: controller.signal }
           );
-          const rawModels = (raw ?? []) as RawAiModel[];
+          if (controller.signal.aborted) return;
+          const rawModels = raw ?? [];
+          if (!Array.isArray(rawModels)) throw new Error("Invalid model catalog response");
+          const models = rawModels.map((model) => normalizeAiModel(model));
           store.dispatch(setAiRawModelCache({ path, models: rawModels }));
-          const models = rawModels.map((m) => normalizeAiModel(m));
           store.dispatch(setAiModelCache({ path, models }));
         } catch (err) {
-          console.error(`[useAiModelsPreload] Failed to load models for ${path}:`, err);
+          if (!controller.signal.aborted)
+            console.error(`[useAiModelsPreload] Failed to load models for ${path}:`, err);
         }
       });
-
-      Promise.allSettled(promises).then(() => {
-        store.dispatch(setAiModelCacheLoading(false));
+      void Promise.allSettled(promises).then(() => {
+        if (!controller.signal.aborted) store.dispatch(setAiModelCacheLoading(false));
       });
     });
-  }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      controller.abort();
+      cancelIdle();
+      store.dispatch(setAiModelCacheLoading(false));
+    };
+  }, [projectId]);
 }
 
 const EMPTY_MODELS: never[] = [];
@@ -91,33 +91,36 @@ export function useAiModels(path: string) {
  * `useAiModelsPreload` so all paths warm in one idle pass.
  */
 export function useEnsureAiModels(path: string) {
-  const cached = useAppSelector((s) => s.aiModelCache.aiModelCache[path] ?? EMPTY_MODELS);
+  const cached = useAppSelector((s) => s.aiModelCache.aiModelCache[path]);
 
   useEffect(() => {
     if (!path) return;
-    if (cached.length > 0) return;
-    let cancelled = false;
+    if (cached !== undefined) return;
+    const controller = new AbortController();
 
     const load = async () => {
       try {
         const raw = await backendApi.post<RawAiModel[]>(
-          `/api/ai/record/model/list?path=${encodeURIComponent(path)}`
+          `/api/ai/record/model/list?path=${encodeURIComponent(path)}`,
+          { signal: controller.signal }
         );
-        if (cancelled) return;
-        const rawModels = (raw ?? []) as RawAiModel[];
-        store.dispatch(setAiRawModelCache({ path, models: rawModels }));
+        if (controller.signal.aborted) return;
+        const rawModels = raw ?? [];
+        if (!Array.isArray(rawModels)) throw new Error("Invalid model catalog response");
         const models = rawModels.map((m) => normalizeAiModel(m));
+        store.dispatch(setAiRawModelCache({ path, models: rawModels }));
         store.dispatch(setAiModelCache({ path, models }));
       } catch (err) {
-        console.error(`[useEnsureAiModels] Failed to load models for ${path}:`, err);
+        if (!controller.signal.aborted)
+          console.error(`[useEnsureAiModels] Failed to load models for ${path}:`, err);
       }
     };
 
     void load();
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [path, cached.length]);
+  }, [path, cached]);
 }
 
 /**
