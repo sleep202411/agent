@@ -24,6 +24,7 @@
  */
 
 import { useEffect, useRef } from "react";
+import { orderKeys, orderListQueries } from "@/app/(site)/creators/_hooks/use-orders";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -74,6 +75,16 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     const recovery = createConversationRecoveryCoordinator(qc, uid);
     clientRef.current = openConversationRealtime(uid, {
       onMessage: (data) => {
+        if (!active) return;
+        qc.invalidateQueries(orderListQueries(uid));
+        const payload = data.message.payload;
+        const orderId =
+          payload?.kind === "system" && payload.system.kind.startsWith("order.")
+            ? payload.system.params.orderId
+            : null;
+        if (typeof orderId === "string" && orderId) {
+          qc.invalidateQueries({ queryKey: orderKeys.detail(orderId, uid) });
+        }
         // Do not patch a realtime frame directly over an in-flight
         // recovery response. The coordinator buffers by message id,
         // awaits the authoritative REST order, then replays and repeats
@@ -123,6 +134,8 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         });
       },
       onReadAdvanced: () => {
+        if (!active) return;
+        qc.invalidateQueries(orderListQueries(uid));
         // The other side's "read" advanced; inbox row may render a
         // read indicator in the future, so invalidate cheaply.
         qc.invalidateQueries({
@@ -131,6 +144,11 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         });
       },
       onContextChanged: (data) => {
+        if (!active) return;
+        if (data.to === "order") {
+          qc.invalidateQueries(orderListQueries(uid));
+          qc.invalidateQueries({ queryKey: orderKeys.detail(data.contextId, uid) });
+        }
         qc.invalidateQueries({
           queryKey: conversationKeys.detail(data.conversationId, uid),
         });
@@ -259,6 +277,12 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         });
       },
       onReady: () => {
+        if (!active) return;
+        qc.invalidateQueries(orderListQueries(uid));
+        qc.invalidateQueries({
+          queryKey: orderKeys.all,
+          predicate: (query) => query.queryKey[1] === "detail" && query.queryKey[3] === uid,
+        });
         // The server sends ready only after auth + user-channel
         // registration. A buffered, awaited recovery here (including
         // on the first connection) closes both startup and reconnect

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act } from "react";
+import { useMarkRead, conversationKeys } from "./use-conversations";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -146,6 +147,8 @@ it.each(Object.keys(mutations) as Array<keyof typeof mutations>)(
     await act(async () => container.querySelector("button")!.click());
     expect(request).toHaveBeenCalledOnce();
     session.id = "bob";
+    client.setQueryData(orderKeys.list({}, "alice"), { fixture: true });
+    client.setQueryData(orderKeys.list({}, "bob"), { fixture: true });
     const replacement = { id: "order-1", note: "Bob cache" };
     client.setQueryData(orderKeys.detail("order-1", "bob"), replacement);
     await act(async () => render());
@@ -154,5 +157,48 @@ it.each(Object.keys(mutations) as Array<keyof typeof mutations>)(
     expect(client.getQueryData(orderKeys.detail("order-1", "alice"))).toEqual(result);
     expect(client.getQueryData(orderKeys.detail("order-1", "bob"))).toEqual(replacement);
     expect(client.getQueryData(orderKeys.detail("order-1"))).toBeUndefined();
+    expect(client.getQueryState(orderKeys.list({}, "alice"))?.isInvalidated).toBe(true);
+    expect(client.getQueryState(orderKeys.list({}, "bob"))?.isInvalidated).toBe(false);
   }
 );
+
+it("refreshes order badges and only the original conversation after a delayed read acknowledgement", async () => {
+  let conversationId = "chat-a";
+  function Probe() {
+    const read = useMarkRead(conversationId);
+    return <button onClick={() => read.mutate({ lastReadMessageId: "message" })}>read</button>;
+  }
+  const render = () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>
+    );
+  const affected = [
+    orderKeys.list({}, "alice"),
+    [...conversationKeys.inbox(), "all", "alice"],
+    conversationKeys.detail("chat-a", "alice"),
+  ];
+  const unaffected = [
+    orderKeys.list({}, "bob"),
+    [...conversationKeys.inbox(), "all", "bob"],
+    conversationKeys.detail("chat-b", "bob"),
+    conversationKeys.detail("chat-b", "alice"),
+  ];
+  for (const key of [...affected, ...unaffected]) client.setQueryData(key, { fixture: true });
+  let finish!: (response: Response) => void;
+  request.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await act(async () => render());
+  await act(async () => container.querySelector("button")!.click());
+  session.id = "bob";
+  conversationId = "chat-b";
+  await act(async () => render());
+  await act(async () => finish(Response.json({ lastReadMessageId: "message" })));
+  for (const key of affected) expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+  for (const key of unaffected) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+});

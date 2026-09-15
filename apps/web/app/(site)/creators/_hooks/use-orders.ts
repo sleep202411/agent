@@ -11,7 +11,13 @@
 
 "use client";
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type Query,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import type { OrderBindings, OrderCardDTO, OrderDTO, OrderStatus } from "@repo/shared/order";
 import type { ServiceTier } from "@repo/shared/creator-service";
 
@@ -127,8 +133,11 @@ export const orderKeys = {
     ["order", "detail", id, ...(ownerId === undefined ? [] : [ownerId])] as const,
 };
 
-function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: orderKeys.lists() });
+export function orderListQueries(ownerId: string) {
+  return {
+    queryKey: orderKeys.lists(),
+    predicate: (query: Query) => query.queryKey[5] === ownerId,
+  };
 }
 
 // ─── Queries ───────────────────────────────────────────────
@@ -192,8 +201,9 @@ function applyOrderResult(
   order: OrderDTO,
   ownerId: string | null
 ) {
-  if (ownerId != null) qc.setQueryData(orderKeys.detail(order.id, ownerId), order);
-  invalidateAll(qc);
+  if (ownerId == null) return;
+  qc.setQueryData(orderKeys.detail(order.id, ownerId), order);
+  qc.invalidateQueries(orderListQueries(ownerId));
 }
 
 export function useSubmitOrder() {
