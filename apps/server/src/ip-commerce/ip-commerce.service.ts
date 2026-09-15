@@ -46,7 +46,6 @@ import {
   MediaAssetVariantStatus,
   MediaAssetVisibility,
   MediaObjectPlacementStatus,
-  MediaStorageProvider,
   Prisma,
   WalletAccountStatus,
   WalletBalanceKind,
@@ -171,7 +170,6 @@ const IP_MEDIA_UPLOAD_LIMITS: Record<MediaAssetKind, number> = {
   [MediaAssetKind.document]: 20 * 1024 * 1024,
   [MediaAssetKind.other]: 20 * 1024 * 1024,
 };
-const DEFAULT_AZURE_BLOB_CONTAINER = 'foundry-outputs';
 
 /// Admin-editable platform default for the creator revenue share (basis points
 /// of each sale routed to the creator pool). Seeded at 5000 (50%) by migration.
@@ -1154,9 +1152,9 @@ export class IpCommerceService {
     const asset = await this.prisma.mediaAsset.create({
       data: {
         kind: assetKind,
-        storageProvider: MediaStorageProvider.azure_blob,
-        bucket: azureBlobContainerName(),
-        region: azureBlobRegion(),
+        storageProvider: uploaded.provider,
+        bucket: uploaded.bucket,
+        region: uploaded.region,
         objectKey: uploaded.storagePath,
         contentType: file.mimetype || 'application/octet-stream',
         sizeBytes: BigInt(uploaded.bytes),
@@ -8831,25 +8829,6 @@ function deriveAssetTitle(objectKey: string | null): string {
     '',
   );
   return sanitizeFilename(stripped || base) || 'Source material';
-}
-
-function azureBlobContainerName() {
-  return (
-    cleanSegment(process.env.AZURE_BLOB_CONTAINER) ??
-    DEFAULT_AZURE_BLOB_CONTAINER
-  );
-}
-
-function azureBlobRegion() {
-  return (
-    cleanSegment(process.env.AZURE_BLOB_REGION) ??
-    cleanSegment(process.env.AZURE_STORAGE_REGION)
-  );
-}
-
-function cleanSegment(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed || null;
 }
 
 function userBlockDto(block: {

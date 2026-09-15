@@ -10,7 +10,6 @@ import {
   MediaAssetKind,
   MediaAssetStatus,
   MediaAssetVisibility,
-  MediaStorageProvider,
   Prisma,
 } from '@prisma/client';
 import { decodeUserId, encodeUserId } from '@repo/shared';
@@ -405,9 +404,9 @@ export class CertificatesService {
     const asset = await this.prisma.mediaAsset.create({
       data: {
         kind: MediaAssetKind.image,
-        storageProvider: MediaStorageProvider.azure_blob,
-        bucket: azureBlobContainerName(),
-        region: azureBlobRegion(),
+        storageProvider: uploaded.provider,
+        bucket: uploaded.bucket,
+        region: uploaded.region,
         objectKey: uploaded.storagePath,
         contentType: file.mimetype || 'application/octet-stream',
         sizeBytes: BigInt(uploaded.bytes),
@@ -507,7 +506,6 @@ export class CertificatesService {
 
 // ─────────────────────────────── helpers ─────────────────────────────────
 
-const DEFAULT_AZURE_BLOB_CONTAINER = 'foundry-outputs';
 // Cert-no random alphabet: uppercase A-Z + 0-9, matching CERT_NO_RE's final
 // group. Opaque by design — never encodes user / db id / name / level.
 const CERT_NO_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -535,25 +533,6 @@ function sanitizeFilename(value: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
   return clean || 'upload.bin';
-}
-
-function cleanSegment(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : null;
-}
-
-function azureBlobContainerName(): string {
-  return (
-    cleanSegment(process.env.AZURE_BLOB_CONTAINER) ??
-    DEFAULT_AZURE_BLOB_CONTAINER
-  );
-}
-
-function azureBlobRegion(): string | null {
-  return (
-    cleanSegment(process.env.AZURE_BLOB_REGION) ??
-    cleanSegment(process.env.AZURE_STORAGE_REGION)
-  );
 }
 
 function isUniqueCertNoViolation(err: unknown): boolean {
