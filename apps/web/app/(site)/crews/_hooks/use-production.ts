@@ -14,8 +14,6 @@ import type {
   CrewProductionOverviewDTO,
   CrewProductionPageDTO,
   CrewProductionResourceDTO,
-  CrewStudioProjectOptionsDTO,
-  LinkCrewStudioProjectResult,
   CrewProductionActivityDTO,
   CrewProductionActivityPageDTO,
   UpdateCrewProductionProjectInput,
@@ -42,41 +40,6 @@ export function useCrewProductionOverview(crewId: string, enabled = true) {
       crewApi.get<CrewProductionOverviewDTO>(
         `/crews/${encodeURIComponent(crewId)}/production-overview`
       ),
-  });
-}
-
-export function useCrewStudioProjectOptions(crewId: string, enabled = true) {
-  const { user } = useCurrentUser();
-  return useQuery({
-    queryKey: [...crewKeys.studioProjectOptions(crewId), user?.id ?? null],
-    enabled: enabled && Boolean(crewId) && Boolean(user),
-    queryFn: () =>
-      crewApi.get<CrewStudioProjectOptionsDTO>(
-        `/crews/${encodeURIComponent(crewId)}/studio-project-options`
-      ),
-  });
-}
-
-export function useLinkCrewStudioProject(crewId: string) {
-  const queryClient = useQueryClient();
-  const initiatingContext = useProductionContext(crewId);
-  return useMutation({
-    onMutate: () => initiatingContext,
-    mutationFn: (projectId: string | null) =>
-      crewApi.patch<LinkCrewStudioProjectResult>(
-        `/crews/${encodeURIComponent(crewId)}/studio-project`,
-        { body: { projectId } }
-      ),
-    onSuccess: (result, _input, context) => {
-      if (!context?.accountUserId) return;
-      queryClient.setQueryData<CrewProductionOverviewDTO>(
-        [...crewKeys.productionOverview(context.crewId), context.accountUserId],
-        (current) => (current ? { ...current, studioProject: result.studioProject } : current)
-      );
-      void queryClient.invalidateQueries({
-        queryKey: [...crewKeys.studioProjectOptions(context.crewId), context.accountUserId],
-      });
-    },
   });
 }
 

@@ -132,12 +132,6 @@ vi.mock("@/app/(site)/crews/_hooks/use-production", () => ({
   useCrewProductionOverview: () => ({
     data: { studioProject: null, capabilities: { manage: true } },
   }),
-  useCrewStudioProjectOptions: () => ({
-    data: { workspaces: [] },
-    isLoading: false,
-    isError: false,
-  }),
-  useLinkCrewStudioProject: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/app/(site)/crews/_hooks/use-crew-permissions", () => ({

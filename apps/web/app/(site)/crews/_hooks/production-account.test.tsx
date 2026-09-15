@@ -7,7 +7,6 @@ import {
   useCrewProductionOverview,
   useCrewProductionActivity,
   useCrewEpisodes,
-  useCrewStudioProjectOptions,
   useSaveCrewProductionDocument,
   useReorderCrewEpisode,
 } from "./use-production";
@@ -60,7 +59,6 @@ it("hides production reads after logout and while another account loads", async 
     useCrewProductionOverview("crew"),
     useCrewProductionActivity("crew"),
     useCrewEpisodes("crew"),
-    useCrewStudioProjectOptions("crew"),
   ]);
   await settle();
   expect(view.current().every((q) => q.data !== undefined)).toBe(true);
@@ -68,13 +66,13 @@ it("hides production reads after logout and while another account loads", async 
   view.render();
   expect(view.current().every((q) => q.data === undefined)).toBe(true);
   await settle();
-  expect(crewApi.get).toHaveBeenCalledTimes(4);
+  expect(crewApi.get).toHaveBeenCalledTimes(3);
   vi.mocked(crewApi.get).mockImplementation(() => new Promise(() => {}));
   session.id = "bob";
   view.render();
   expect(view.current().every((q) => q.data === undefined)).toBe(true);
   await settle();
-  expect(crewApi.get).toHaveBeenCalledTimes(8);
+  expect(crewApi.get).toHaveBeenCalledTimes(6);
 });
 
 it("applies delayed document saves only to the initiating account and Crew", async () => {
