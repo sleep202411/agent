@@ -1,3 +1,4 @@
+import { assertOutboxTestDatabase } from './outbox-test-database';
 /**
  * ConversationsService against a real PostgreSQL server.
  *
@@ -58,7 +59,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
   let service: ConversationsService;
 
   beforeAll(async () => {
-    assertLocalPostgres(databaseUrl);
+    assertOutboxTestDatabase(databaseUrl, true);
     prisma = buildPrisma(databaseUrl);
     await prisma.$connect();
     await assertCrewChatMigrationsPresent(prisma);
@@ -782,22 +783,6 @@ async function orderedIds(
   });
   // Returned oldest-first so callers can read [older, newer].
   return rows.map((r) => r.id).reverse();
-}
-
-function assertLocalPostgres(rawUrl: string): void {
-  const url = new URL(rawUrl);
-  if (
-    !['postgres:', 'postgresql:'].includes(url.protocol) ||
-    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
-    !(
-      (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
-      (url.port === '55439' && url.pathname === '/task01')
-    )
-  ) {
-    throw new Error(
-      'Explicitly selected named loopback test database required.',
-    );
-  }
 }
 
 async function assertCrewChatMigrationsPresent(

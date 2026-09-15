@@ -1,3 +1,4 @@
+import { assertOutboxTestDatabase } from '../conversations/outbox-test-database';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -17,17 +18,7 @@ suite('Unread Crew markers against local PostgreSQL', () => {
   const owner = `unread-test-${randomUUID()}`;
   const stranger = `unread-test-${randomUUID()}`;
   beforeAll(async () => {
-    const url = new URL(connectionString!);
-    if (
-      !['localhost', '127.0.0.1'].includes(url.hostname) ||
-      !(
-        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
-        (url.port === '55439' && url.pathname === '/task01')
-      )
-    )
-      throw new Error(
-        'Explicitly allowed named loopback test database required.',
-      );
+    assertOutboxTestDatabase(connectionString!);
     db = new PrismaClient({
       adapter: new PrismaPg({
         connectionString,
