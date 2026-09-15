@@ -12,9 +12,9 @@ import {
 } from "./story-candidate-asset-picker-dialog";
 
 vi.mock("@/app/_components/auth-provider", () => ({
-  useAuth: () => ({ user: { id: "review-user" } }),
+  useAuth: () => ({ user: { id: shared.userId } }),
 }));
-const shared = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn() }));
+const shared = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn(), userId: "review-user" }));
 vi.mock("@/lib/collab/project-crew-assets-api", () => ({ listAllProjectCrewAssets: shared.list }));
 vi.mock("@/lib/story-projects-api", async (original) => ({
   ...(await original<object>()),
@@ -98,6 +98,9 @@ describe("StoryCandidateAssetPickerDialog", () => {
   let root: Root;
 
   beforeEach(() => {
+    shared.userId = "review-user";
+    shared.list.mockReset();
+    shared.add.mockReset();
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -159,7 +162,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
     await click(buttonByLabel("Select Video 2"));
 
     expect(onSelect).toHaveBeenCalledOnce();
-    expect(onSelect).toHaveBeenCalledWith(otherVideoCandidate);
+    expect(onSelect).toHaveBeenCalledWith(otherVideoCandidate, expect.any(AbortSignal));
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -295,11 +298,95 @@ describe("StoryCandidateAssetPickerDialog", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
     await click(buttonByLabel("Select Video 1"));
-    expect(shared.add).toHaveBeenCalledWith("story-project", otherVideoCandidate.asset.id);
-    expect(onSelect).toHaveBeenCalledWith(otherVideoCandidate);
+    expect(shared.add).toHaveBeenCalledWith(
+      "story-project",
+      otherVideoCandidate.asset.id,
+      expect.any(AbortSignal)
+    );
+    expect(onSelect).toHaveBeenCalledWith(otherVideoCandidate, expect.any(AbortSignal));
     expect(onSelect.mock.calls[0][0].videoVariant).not.toBeNull();
   });
 
+  it.each(["account", "project", "close", "authority"])(
+    "abandons Crew import before binding after %s changes",
+    async (change) => {
+      shared.list.mockResolvedValue([
+        {
+          id: "crew-file",
+          name: "Shared clip",
+          kind: "file",
+          parentId: null,
+          media: otherVideoCandidate.asset,
+        },
+      ]);
+      let finish!: (value: StoryCandidateAsset) => void;
+      shared.add.mockReturnValue(
+        new Promise<StoryCandidateAsset>((resolve) => {
+          finish = resolve;
+        })
+      );
+      const onSelect = vi.fn().mockResolvedValue(undefined);
+      const onOpenChange = vi.fn();
+      await renderDialog({
+        projectId: "story-project",
+        allowedKinds: ["video"],
+        onSelect,
+        onOpenChange,
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      const button = buttonByLabel("Select Video 1");
+      await act(async () => {
+        button.click();
+        button.click();
+      });
+      expect(shared.add).toHaveBeenCalledTimes(1);
+      const signal = shared.add.mock.calls[0]![2] as AbortSignal;
+      if (change === "account") shared.userId = "replacement";
+      await renderDialog({
+        projectId: change === "project" ? "other-project" : "story-project",
+        open: change !== "close",
+        canSelect: change !== "authority",
+        allowedKinds: ["video"],
+        onSelect,
+        onOpenChange,
+      });
+      expect(signal.aborted).toBe(true);
+      await act(async () => finish(otherVideoCandidate));
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    }
+  );
+  it("aborts an upload after closing and ignores its delayed success", async () => {
+    let finish!: () => void;
+    const onUpload = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const onOpenChange = vi.fn();
+    await renderDialog({ onUpload, onOpenChange, allowedKinds: ["video"] });
+    const input = document.querySelector('input[type="file"]')!;
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", {
+      value: {
+        files: [new File(["video"], "scene.mp4", { type: "video/mp4" })],
+        dropEffect: "none",
+      },
+    });
+    await act(async () => {
+      input.parentElement!.dispatchEvent(drop);
+      input.parentElement!.dispatchEvent(drop);
+    });
+    expect(onUpload).toHaveBeenCalledTimes(1);
+    const signal = (onUpload.mock.calls[0] as unknown as [File, unknown, AbortSignal])[2];
+    await renderDialog({ open: false, onUpload, onOpenChange, allowedKinds: ["video"] });
+    expect(signal.aborted).toBe(true);
+    await act(async () => finish());
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
   async function renderDialog(overrides: Partial<StoryCandidateAssetPickerDialogProps> = {}) {
     await act(async () => {
       root.render(

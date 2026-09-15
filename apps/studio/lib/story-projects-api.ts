@@ -614,11 +614,12 @@ export async function getStoryCandidateAssets(
 
 export async function addStoryCandidateAsset(
   projectId: string,
-  mediaAssetId: string
+  mediaAssetId: string,
+  signal?: AbortSignal
 ): Promise<StoryCandidateAsset> {
   const value = await api.put<unknown>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/candidate-assets/${encodeURIComponent(mediaAssetId)}`,
-    { requestScope: "project" }
+    { requestScope: "project", signal }
   );
   assertStoryCandidateAsset(value);
   return value;
