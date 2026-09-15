@@ -48,11 +48,13 @@ export type DiskCachePool = {
   enqueueEviction: (protectFileNames?: ReadonlySet<string>) => Promise<void>;
 };
 
-export function deleteQuietly(file: File): void {
+export function deleteQuietly(file: File): boolean {
   try {
     if (file.exists) file.delete();
+    return !file.exists;
   } catch {
-    // Concurrent cleanup / unreadable entry — nothing to recover.
+    // Do not report reclaimed bytes when deletion failed.
+    return false;
   }
 }
 
@@ -95,9 +97,9 @@ export function createDiskCachePool(options: DiskCachePoolOptions): DiskCachePoo
   const flushAccessIndex = (): void => {
     accessIndexFlushTimer = null;
     if (!accessIndexCache) return;
-    ensureDirectory();
-    const index = file(ACCESS_INDEX_NAME);
     try {
+      ensureDirectory();
+      const index = file(ACCESS_INDEX_NAME);
       if (!index.exists) index.create({ intermediates: true, overwrite: true });
       index.write(JSON.stringify(accessIndexCache));
     } catch (error: unknown) {
@@ -190,9 +192,10 @@ export function createDiskCachePool(options: DiskCachePoolOptions): DiskCachePoo
     for (const entry of entries) {
       if (totalBytes <= options.budgetBytes) break;
       if (protectFileNames.has(entry.file.name)) continue;
-      deleteQuietly(entry.file);
-      delete index[entry.file.name];
-      totalBytes -= entry.size;
+      if (deleteQuietly(entry.file)) {
+        delete index[entry.file.name];
+        totalBytes -= entry.size;
+      }
     }
     pruneStaleAccessKeys(index, listManagedEntries(index));
     flushAccessIndex();
