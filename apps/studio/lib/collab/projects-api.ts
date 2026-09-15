@@ -93,21 +93,27 @@ export interface ProjectSectionsCollection {
 }
 
 /** Idempotent — the user's default workspace, created on first call. */
-export async function ensureDefaultWorkspace(): Promise<WorkspaceRef> {
-  const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces/default/ensure");
+export async function ensureDefaultWorkspace(signal?: AbortSignal): Promise<WorkspaceRef> {
+  const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces/default/ensure", {
+    signal,
+  });
   return data.workspace;
 }
 
 /** Every workspace the user belongs to, with their role. */
-export async function listWorkspaces(): Promise<WorkspaceRef[]> {
-  const data = await api.get<{ workspaces: WorkspaceRef[] }>("/aurora/workspaces");
+export async function listWorkspaces(signal?: AbortSignal): Promise<WorkspaceRef[]> {
+  const data = await api.get<{ workspaces: WorkspaceRef[] }>("/aurora/workspaces", { signal });
   return data.workspaces;
 }
 
 /** Create a workspace (the user becomes its owner). */
-export async function createWorkspace(input: CreateWorkspaceInput): Promise<WorkspaceRef> {
+export async function createWorkspace(
+  input: CreateWorkspaceInput,
+  signal?: AbortSignal
+): Promise<WorkspaceRef> {
   const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces", {
     data: input,
+    signal,
   });
   return data.workspace;
 }
@@ -128,9 +134,13 @@ export async function deleteWorkspace(workspaceId: string): Promise<void> {
   await api.delete(`/aurora/workspaces/${workspaceId}`, { data: {} });
 }
 
-export async function listProjects(workspaceId: string): Promise<ProjectRef[]> {
+export async function listProjects(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<ProjectRef[]> {
   const data = await api.get<{ projects: ProjectRef[] }>(
-    `/aurora/workspaces/${workspaceId}/projects`
+    `/aurora/workspaces/${workspaceId}/projects`,
+    { signal }
   );
   return data.projects;
 }
@@ -146,8 +156,8 @@ export async function createProject(
   return data.project;
 }
 
-export async function getProject(projectId: string): Promise<ProjectRef> {
-  const data = await api.get<{ project: ProjectRef }>(`/aurora/projects/${projectId}`);
+export async function getProject(projectId: string, signal?: AbortSignal): Promise<ProjectRef> {
+  const data = await api.get<{ project: ProjectRef }>(`/aurora/projects/${projectId}`, { signal });
   return data.project;
 }
 
