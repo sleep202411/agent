@@ -34,7 +34,7 @@
  *   that's proven for this exact category of UX.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IconChevronDown, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -47,6 +47,7 @@ import {
   type ServiceTier,
 } from "@repo/shared/creator-service";
 import { ZERO_DECIMAL_CURRENCIES, type CurrencyCode } from "@repo/shared/crew";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -236,12 +237,32 @@ interface CreateServiceDialogProps {
   onSaved?: (service: CreatorServiceDTO) => void;
 }
 
-export function CreateServiceDialog({
+export function CreateServiceDialog(props: CreateServiceDialogProps) {
+  const { user } = useCurrentUser();
+  return (
+    <CreateServiceDialogContent
+      key={JSON.stringify([props.open, props.initial?.id, user?.id])}
+      {...props}
+    />
+  );
+}
+
+function CreateServiceDialogContent({
   open,
   onOpenChange,
-  initial,
+  initial: initialProp,
   onSaved,
 }: CreateServiceDialogProps) {
+  const [initial] = useState(initialProp);
+  const active = useRef(false);
+  const admitted = useRef(false);
+  const savedRecord = useRef({ id: initial?.id ?? null, version: initial?.version });
+  useLayoutEffect(() => {
+    active.current = open;
+    return () => {
+      active.current = false;
+    };
+  }, [open]);
   const t = useTranslations("creatorService");
   const tc = useTranslations("common");
 
@@ -274,14 +295,10 @@ export function CreateServiceDialog({
   // Pre-order questionnaire — list of rows the creator pre-defines
   // for buyers to answer at order time.
   const [questions, setQuestions] = useState<QuestionFormState[]>([]);
-  // Concurrency token for PATCH.
-  const [expectedVersion, setExpectedVersion] = useState<number | undefined>(undefined);
 
   // ─── Reset / prefill on open ─────────────────────
-  // Intentional setState-in-effect: the trigger is the `open`
-  // prop flipping false→true. A key-prop remount would also work
-  // but would lose the parent's hold on the dialog instance. See
-  // contact-creator-dialog.tsx for the same pattern.
+  // Prefill once per keyed editor lifetime. Background cache refreshes
+  // must not reset the current draft or advance its concurrency token.
   useEffect(() => {
     if (!open) return;
     /* eslint-disable react-hooks/set-state-in-effect */
@@ -301,7 +318,7 @@ export function CreateServiceDialog({
       for (const p of initial.packages) byTier[p.tier] = tierFromDTO(p);
       setTiers(byTier);
       setQuestions(initial.requirementQuestions.map(questionFromDTO));
-      setExpectedVersion(initial.version);
+      savedRecord.current = { id: initial.id, version: initial.version };
     } else {
       setStep("overview");
       setSavedId(null);
@@ -321,7 +338,7 @@ export function CreateServiceDialog({
         premium: blankTier(),
       });
       setQuestions([]);
-      setExpectedVersion(undefined);
+      savedRecord.current = { id: null, version: undefined };
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, initial, defaultCurrency]);
@@ -366,8 +383,8 @@ export function CreateServiceDialog({
       packages,
       requirementQuestions,
     };
-    if (forUpdate && expectedVersion !== undefined) {
-      return { ...base, expectedVersion } satisfies UpdateServiceBody;
+    if (forUpdate && savedRecord.current.version !== undefined) {
+      return { ...base, expectedVersion: savedRecord.current.version } satisfies UpdateServiceBody;
     }
     return base;
   };
@@ -394,6 +411,7 @@ export function CreateServiceDialog({
    * the current step so the user can keep editing.
    */
   const persist = async (): Promise<CreatorServiceDTO | null> => {
+    if (!active.current) return null;
     if (!overviewReady) {
       toast.error(t("missingRequired"));
       return null;
@@ -415,44 +433,58 @@ export function CreateServiceDialog({
     }
     try {
       let saved: CreatorServiceDTO;
-      if (savedId) {
+      if (savedRecord.current.id) {
         saved = await update.mutateAsync({
-          id: savedId,
+          id: savedRecord.current.id,
           body: buildBody(true) as UpdateServiceBody,
         });
       } else {
         saved = await create.mutateAsync(buildBody(false) as CreateServiceBody);
-        setSavedId(saved.id);
       }
-      setExpectedVersion(saved.version);
+      if (!active.current) return null;
+      savedRecord.current = { id: saved.id, version: saved.version };
+      setSavedId(saved.id);
       return saved;
     } catch (err) {
-      reportError(err, savedId ? t("saveFailed") : t("createFailed"));
+      if (active.current) reportError(err, savedId ? t("saveFailed") : t("createFailed"));
       return null;
     }
   };
 
   const handleSaveDraft = async () => {
-    const saved = await persist();
-    if (!saved) return;
-    toast.success(savedId ? t("savedToast") : t("createdToast"));
+    if (!active.current || admitted.current) return;
+    admitted.current = true;
+    try {
+      const existed = !!savedRecord.current.id;
+      const saved = await persist();
+      if (!saved || !active.current) return;
+      toast.success(existed ? t("savedToast") : t("createdToast"));
+    } finally {
+      admitted.current = false;
+    }
   };
 
   const handlePublish = async () => {
+    if (!active.current || admitted.current) return;
     if (!canPublish) {
       toast.error(t("publishNeedsTier"));
       return;
     }
-    const saved = await persist();
-    if (!saved) return;
+    admitted.current = true;
     try {
+      const saved = await persist();
+      if (!saved || !active.current) return;
       const published =
         saved.status === "listed" ? saved : await publish.mutateAsync({ id: saved.id });
+      if (!active.current) return;
+      savedRecord.current = { id: published.id, version: published.version };
       toast.success(t("publishedToast"));
       onSaved?.(published);
       onOpenChange(false);
     } catch (err) {
-      reportError(err, t("saveFailed"));
+      if (active.current) reportError(err, t("saveFailed"));
+    } finally {
+      admitted.current = false;
     }
   };
 

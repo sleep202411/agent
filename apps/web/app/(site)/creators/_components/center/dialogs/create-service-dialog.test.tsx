@@ -1,0 +1,205 @@
+// @vitest-environment jsdom
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import type { CreatorServiceDTO } from "@repo/shared/creator-service";
+import { CreateServiceDialog } from "./create-service-dialog";
+const mocks = vi.hoisted(() => ({
+  account: "alice",
+  create: vi.fn(),
+  update: vi.fn(),
+  publish: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+}));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: mocks.account } }),
+}));
+vi.mock("@/src/i18n/i18n", () => ({
+  useTranslations: () => (key: string) => key,
+  useLocale: () => "en-US",
+}));
+vi.mock("sonner", () => ({ toast: { success: mocks.success, error: mocks.error } }));
+vi.mock("@/app/(site)/creators/_hooks/use-creator-services", async (original) => ({
+  ...(await original<typeof import("@/app/(site)/creators/_hooks/use-creator-services")>()),
+  useCreateService: () => ({ mutateAsync: mocks.create, isPending: false }),
+  useUpdateService: () => ({ mutateAsync: mocks.update, isPending: false }),
+  usePublishService: () => ({ mutateAsync: mocks.publish, isPending: false }),
+}));
+vi.mock("@/components/ui/dialog", () => {
+  const Wrap = ({ children }: { children: ReactNode }) => <div>{children}</div>;
+  return {
+    Dialog: Wrap,
+    DialogBody: Wrap,
+    DialogContent: Wrap,
+    DialogFooter: Wrap,
+    DialogHero: () => null,
+  };
+});
+vi.mock("./service-detail-sections", () => ({ ServiceDetailSections: () => <div>Preview</div> }));
+const service: CreatorServiceDTO = {
+  id: "service-1",
+  creatorId: "alice",
+  title: "Service",
+  summary: "Fixture",
+  coverPath: "",
+  category: "other",
+  tags: [],
+  status: "draft",
+  publishedAt: null,
+  createdAt: "2026-09-15T00:00:00Z",
+  updatedAt: "2026-09-15T00:00:00Z",
+  version: 1,
+  packages: [
+    {
+      id: "package",
+      tier: "basic",
+      title: "Basic",
+      description: "Fixture",
+      price: 10,
+      currency: "USD",
+      deliveryDays: 1,
+      revisions: 1,
+      scope: [],
+    },
+  ],
+  requirementQuestions: [],
+};
+let root: Root, container: HTMLDivElement;
+const close = vi.fn(),
+  saved = vi.fn();
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.account = "alice";
+  mocks.create.mockResolvedValue({ ...service, version: 2 });
+  mocks.update.mockResolvedValue({ ...service, version: 2 });
+  mocks.publish.mockResolvedValue({ ...service, status: "listed", version: 3 });
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+});
+const render = (initial: CreatorServiceDTO | null = service, open = true) =>
+  root.render(
+    <CreateServiceDialog initial={initial} open={open} onOpenChange={close} onSaved={saved} />
+  );
+const button = (label: string) =>
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
+    (b) => b.textContent === label
+  )!;
+async function preview() {
+  for (let i = 0; i < 3; i++) await act(async () => button("wizardNext").click());
+}
+async function fill(placeholder: string, value: string) {
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+      `[placeholder="${placeholder}"]`
+    )!;
+    const proto =
+      input.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it.each(["account", "service", "close", "unmount", "active"])(
+  "owns save-to-publish continuation after %s",
+  async (mode) => {
+    let finish!: (result: CreatorServiceDTO) => void;
+    mocks.update.mockReturnValueOnce(
+      new Promise<CreatorServiceDTO>((resolve) => {
+        finish = resolve;
+      })
+    );
+    await act(async () => render());
+    await preview();
+    await act(async () => {
+      button("savePublish").click();
+      button("savePublish").click();
+    });
+    expect(mocks.update).toHaveBeenCalledOnce();
+    await act(async () => {
+      if (mode === "account") {
+        mocks.account = "bob";
+        render();
+      }
+      if (mode === "service") render({ ...service, id: "service-2" });
+      if (mode === "close") render(service, false);
+      if (mode === "unmount") root.render(null);
+    });
+    await act(async () => finish({ ...service, version: 2 }));
+    expect(mocks.publish).toHaveBeenCalledTimes(mode === "active" ? 1 : 0);
+    expect(saved).toHaveBeenCalledTimes(mode === "active" ? 1 : 0);
+    expect(close).toHaveBeenCalledTimes(mode === "active" ? 1 : 0);
+    expect(mocks.success).toHaveBeenCalledTimes(mode === "active" ? 1 : 0);
+  }
+);
+it("preserves local edits and original version after background refresh", async () => {
+  await act(async () => render());
+  await fill("fieldTitlePlaceholder", "Unsaved title");
+  await act(async () => render({ ...service, title: "Background title", version: 9 }));
+  expect(
+    container.querySelector<HTMLInputElement>('[placeholder="fieldTitlePlaceholder"]')!.value
+  ).toBe("Unsaved title");
+  await act(async () => button("saveDraft").click());
+  expect(mocks.update.mock.calls[0]![0]).toMatchObject({
+    id: service.id,
+    body: { title: "Unsaved title", expectedVersion: 1 },
+  });
+});
+it("blocks duplicate creates and saves the next edit to the confirmed row", async () => {
+  let finish!: (result: CreatorServiceDTO) => void;
+  mocks.create.mockReturnValueOnce(
+    new Promise<CreatorServiceDTO>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await act(async () => render(null));
+  await fill("fieldTitlePlaceholder", "Title");
+  await fill("fieldSummaryPlaceholder", "Summary");
+  await act(async () => {
+    button("saveDraft").click();
+    button("saveDraft").click();
+  });
+  expect(mocks.create).toHaveBeenCalledOnce();
+  await act(async () => finish({ ...service, version: 2 }));
+  await act(async () => button("saveDraft").click());
+  expect(mocks.create).toHaveBeenCalledOnce();
+  expect(mocks.update.mock.calls[0]![0]).toMatchObject({
+    id: service.id,
+    body: { expectedVersion: 2 },
+  });
+});
+it("retains the saved version for retry after publish failure", async () => {
+  mocks.publish.mockRejectedValueOnce(new Error("Unavailable"));
+  await act(async () => render());
+  await preview();
+  await act(async () => button("savePublish").click());
+  expect(close).not.toHaveBeenCalled();
+  expect(mocks.error).toHaveBeenCalledOnce();
+  await act(async () => button("savePublish").click());
+  expect(mocks.update.mock.calls[1]![0].body.expectedVersion).toBe(2);
+  expect(close).toHaveBeenCalledOnce();
+});
+it("ignores an abandoned publish completion", async () => {
+  let finish!: (result: CreatorServiceDTO) => void;
+  mocks.publish.mockReturnValueOnce(
+    new Promise<CreatorServiceDTO>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await act(async () => render());
+  await preview();
+  await act(async () => button("savePublish").click());
+  await act(async () => {
+    mocks.account = "bob";
+    render(null);
+  });
+  await act(async () => finish({ ...service, status: "listed" }));
+  expect(close).not.toHaveBeenCalled();
+  expect(saved).not.toHaveBeenCalled();
+  expect(mocks.success).not.toHaveBeenCalled();
+});
