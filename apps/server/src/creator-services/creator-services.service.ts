@@ -137,8 +137,12 @@ export class CreatorServicesService {
    *     else 404s so we don't leak that a draft / paused / archived
    *     service exists at this id.
    */
-  async detail(id: string, viewerId: string | null = null) {
-    const row = await this.prisma.creatorService.findUnique({
+  async detail(
+    id: string,
+    viewerId: string | null = null,
+    db: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
+    const row = await db.creatorService.findUnique({
       where: { id },
       include: { packages: true, requirementQuestions: true },
     });
@@ -198,13 +202,11 @@ export class CreatorServicesService {
   }
 
   async update(id: string, actorId: string, input: UpdateServiceInput) {
-    const existing = await this.requireOwned(id, actorId);
-    this.assertVersionMatches(existing, input.expectedVersion);
-    if (input.packages !== undefined) {
-      this.assertPackagesValid(input.packages);
-    }
-
     const row = await this.prisma.$transaction(async (tx) => {
+      const existing = await this.requireOwned(id, actorId, tx);
+      this.assertVersionMatches(existing, input.expectedVersion);
+      if (input.packages !== undefined)
+        this.assertPackagesValid(input.packages);
       await tx.creatorService.update({
         where: { id },
         data: {
@@ -275,55 +277,61 @@ export class CreatorServicesService {
   // ─── Transitions ─────────────────────────────────────────
 
   async publish(id: string, actorId: string) {
-    const existing = await this.requireOwned(id, actorId);
-    if (existing.status === 'listed') return this.detail(id, actorId);
-    if (existing.status === 'archived') {
-      throw new ConflictException('archived services cannot be republished');
-    }
-    const pkgCount = await this.prisma.servicePackage.count({
-      where: { serviceId: id },
-    });
-    if (pkgCount === 0) {
-      throw new BadRequestException({
-        message: 'Cannot publish a service with no packages',
-        field: 'packages',
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await this.requireOwned(id, actorId, tx);
+      if (existing.status === 'listed') return this.detail(id, actorId, tx);
+      if (existing.status === 'archived') {
+        throw new ConflictException('archived services cannot be republished');
+      }
+      const pkgCount = await tx.servicePackage.count({
+        where: { serviceId: id },
       });
-    }
-    await this.prisma.creatorService.update({
-      where: { id },
-      data: {
-        status: 'listed',
-        publishedAt: existing.publishedAt ?? new Date(),
-        version: { increment: 1 },
-      },
+      if (pkgCount === 0) {
+        throw new BadRequestException({
+          message: 'Cannot publish a service with no packages',
+          field: 'packages',
+        });
+      }
+      await tx.creatorService.update({
+        where: { id },
+        data: {
+          status: 'listed',
+          publishedAt: existing.publishedAt ?? new Date(),
+          version: { increment: 1 },
+        },
+      });
+      return this.detail(id, actorId, tx);
     });
-    return this.detail(id, actorId);
   }
 
   async pause(id: string, actorId: string) {
-    const existing = await this.requireOwned(id, actorId);
-    if (existing.status === 'paused') return this.detail(id, actorId);
-    if (existing.status !== 'listed') {
-      throw new ConflictException('only listed services can be paused');
-    }
-    await this.prisma.creatorService.update({
-      where: { id },
-      data: { status: 'paused', version: { increment: 1 } },
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await this.requireOwned(id, actorId, tx);
+      if (existing.status === 'paused') return this.detail(id, actorId, tx);
+      if (existing.status !== 'listed') {
+        throw new ConflictException('only listed services can be paused');
+      }
+      await tx.creatorService.update({
+        where: { id },
+        data: { status: 'paused', version: { increment: 1 } },
+      });
+      return this.detail(id, actorId, tx);
     });
-    return this.detail(id, actorId);
   }
 
   async resume(id: string, actorId: string) {
-    const existing = await this.requireOwned(id, actorId);
-    if (existing.status === 'listed') return this.detail(id, actorId);
-    if (existing.status !== 'paused') {
-      throw new ConflictException('only paused services can be resumed');
-    }
-    await this.prisma.creatorService.update({
-      where: { id },
-      data: { status: 'listed', version: { increment: 1 } },
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await this.requireOwned(id, actorId, tx);
+      if (existing.status === 'listed') return this.detail(id, actorId, tx);
+      if (existing.status !== 'paused') {
+        throw new ConflictException('only paused services can be resumed');
+      }
+      await tx.creatorService.update({
+        where: { id },
+        data: { status: 'listed', version: { increment: 1 } },
+      });
+      return this.detail(id, actorId, tx);
     });
-    return this.detail(id, actorId);
   }
 
   /**
@@ -332,23 +340,32 @@ export class CreatorServicesService {
    * never hard-delete.
    */
   async archive(id: string, actorId: string) {
-    const existing = await this.requireOwned(id, actorId);
-    if (existing.status === 'archived') return this.detail(id, actorId);
-    await this.prisma.creatorService.update({
-      where: { id },
-      data: {
-        status: 'archived',
-        deletedAt: new Date(),
-        version: { increment: 1 },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await this.requireOwned(id, actorId, tx);
+      if (existing.status === 'archived') return this.detail(id, actorId, tx);
+      await tx.creatorService.update({
+        where: { id },
+        data: {
+          status: 'archived',
+          deletedAt: new Date(),
+          version: { increment: 1 },
+        },
+      });
+      return this.detail(id, actorId, tx);
     });
-    return this.detail(id, actorId);
   }
 
   // ─── Helpers ─────────────────────────────────────────────
 
-  private async requireOwned(id: string, actorId: string) {
-    const row = await this.prisma.creatorService.findUnique({ where: { id } });
+  private async requireOwned(
+    id: string,
+    actorId: string,
+    tx: Prisma.TransactionClient,
+  ) {
+    // Serialize every owner write before reading its version/state and children.
+    // The row lock also orders these writes against other database writers.
+    await tx.$queryRaw`SELECT id FROM creator_services WHERE id = ${id} AND creator_id = ${actorId} FOR UPDATE`;
+    const row = await tx.creatorService.findUnique({ where: { id } });
     if (!row || row.deletedAt) {
       // 404 instead of 403 — don't leak that an archived service
       // exists at this id.
