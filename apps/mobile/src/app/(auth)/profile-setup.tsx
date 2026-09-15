@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useOnboardingAction } from "@/auth/use-onboarding-action";
 import { useAuth } from "@/auth";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTranslations } from "@/i18n";
@@ -24,28 +25,32 @@ export default function ProfileSetupScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [nickname, setNickname] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const action = useOnboardingAction("profile-setup");
+  const { busy, error } = action;
+  const [previousScope, setPreviousScope] = useState(action.scope);
+  if (previousScope !== action.scope) {
+    setPreviousScope(action.scope);
+    setNickname("");
+  }
 
   const canSubmit = nickname.trim().length > 0 && !busy;
 
   async function goInvite() {
-    router.replace("/invite-code");
+    await action.run(
+      () => Promise.resolve(),
+      () => router.replace("/invite-code"),
+      t("auth.errorServer")
+    );
   }
 
   async function handleSubmit() {
     const value = nickname.trim();
     if (!value) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await auth.saveOnboardingNickname(value);
-      await goInvite();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("auth.errorServer"));
-    } finally {
-      setBusy(false);
-    }
+    await action.run(
+      () => auth.saveOnboardingNickname(value),
+      () => router.replace("/invite-code"),
+      t("auth.errorServer")
+    );
   }
 
   return (
@@ -74,7 +79,7 @@ export default function ProfileSetupScreen() {
                 editable={!busy}
                 onChangeText={(value) => {
                   setNickname(value);
-                  setError(undefined);
+                  action.clearError();
                 }}
                 placeholder={t("auth.nicknamePlaceholder")}
                 placeholderTextColor="rgba(255,255,255,0.34)"
