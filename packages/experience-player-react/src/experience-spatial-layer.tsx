@@ -584,6 +584,9 @@ function PressHoldControl({
     createExperiencePressHoldState()
   );
   const stateRef = useRef(state);
+  const activeInputRef = useRef<
+    { kind: "pointer"; id: number } | { kind: "keyboard"; key: string } | null
+  >(null);
   const pressedRef = useRef(false);
   const pointerInsideRef = useRef(true);
   const animationFrameRef = useRef<number | null>(null);
@@ -789,6 +792,8 @@ function PressHoldControl({
   };
 
   const updatePointerInside = (event: PointerEvent<HTMLButtonElement>) => {
+    const input = activeInputRef.current;
+    if (input?.kind !== "pointer" || input.id !== event.pointerId) return;
     const viewport = viewportElementRef.current?.getBoundingClientRect();
     if (!viewport) return;
     pointerInsideRef.current = hitTestExperienceGeometry(
@@ -799,21 +804,39 @@ function PressHoldControl({
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !presentation.available || activeInputRef.current) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    activeInputRef.current = { kind: "pointer", id: event.pointerId };
     startPress();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if ((event.key !== " " && event.key !== "Enter") || event.repeat) return;
+    if (
+      (event.key !== " " && event.key !== "Enter") ||
+      event.repeat ||
+      !presentation.available ||
+      activeInputRef.current
+    )
+      return;
     event.preventDefault();
+    activeInputRef.current = { kind: "keyboard", key: event.key };
     startPress();
   };
 
   const handleKeyUp = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== " " && event.key !== "Enter") return;
+    const input = activeInputRef.current;
+    if (input?.kind !== "keyboard" || input.key !== event.key) return;
     event.preventDefault();
+    activeInputRef.current = null;
+    stopPress();
+  };
+
+  const stopPointerPress = (event: PointerEvent<HTMLButtonElement>) => {
+    const input = activeInputRef.current;
+    if (input?.kind !== "pointer" || input.id !== event.pointerId) return;
+    if (event.type === "pointerup") updatePointerInside(event);
+    activeInputRef.current = null;
     stopPress();
   };
 
@@ -846,15 +869,15 @@ function PressHoldControl({
       aria-disabled={!presentation.available}
       onPointerDown={handlePointerDown}
       onPointerMove={updatePointerInside}
-      onPointerUp={(event) => {
-        updatePointerInside(event);
-        stopPress();
-      }}
-      onPointerCancel={stopPress}
-      onLostPointerCapture={stopPress}
+      onPointerUp={stopPointerPress}
+      onPointerCancel={stopPointerPress}
+      onLostPointerCapture={stopPointerPress}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
-      onBlur={stopPress}
+      onBlur={() => {
+        activeInputRef.current = null;
+        stopPress();
+      }}
       onClick={(event) => event.preventDefault()}
     >
       <span
