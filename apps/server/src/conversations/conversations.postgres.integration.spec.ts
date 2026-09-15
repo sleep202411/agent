@@ -26,6 +26,10 @@
  * messages.
  */
 import { randomUUID } from 'node:crypto';
+import { ConflictException } from '@nestjs/common';
+import { CrewTasksService } from '../crews/tasks/tasks.service';
+import { CrewAuthorizationService } from '../crews/crew-authorization.service';
+import type { ConversationTaskReferencePayload } from '@repo/shared/conversation';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { ConversationsService, crewLookupKey } from './conversations.service';
 
@@ -465,6 +469,186 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
 
   // ─── idempotency ───────────────────────────────────────────
 
+  it.each(['text', 'attachment'] as const)(
+    'recovers unchanged %s references after JSONB object-key reordering',
+    async (kind) => {
+      const s = scope('jsonb-replay');
+      await seedCrew(s);
+      const cid = await openChatWith(s, [s.ownerUserId, s.memberId]);
+      const workflow = await prisma.crewTaskWorkflowState.create({
+        data: {
+          crewId: s.crewId,
+          name: 'Open',
+          color: '#888888',
+          semantic: 'open',
+          position: 0,
+          createdByUserId: s.ownerUserId,
+        },
+      });
+      const tasks: ConversationTaskReferencePayload[] = [];
+      for (const number of [1, 2]) {
+        const task = await prisma.crewTask.create({
+          data: {
+            crewId: s.crewId,
+            title: `Scene ${number}`,
+            number,
+            workflowStateId: workflow.id,
+            createdByUserId: s.ownerUserId,
+          },
+        });
+        tasks.push({
+          taskId: task.id,
+          crewId: s.crewId,
+          number,
+          label: `TASK-${number} Scene ${number}`,
+        });
+      }
+      const mentions = [{ userId: s.memberId, label: 'Teammate' }];
+      const body = '@Teammate #TASK-1 Scene 1 #TASK-2 Scene 2';
+      const clientKey = 'structured-retry';
+      let originalId: string;
+      if (kind === 'text') {
+        originalId = (
+          await service.sendText(
+            cid,
+            s.ownerUserId,
+            body,
+            clientKey,
+            mentions,
+            tasks,
+          )
+        ).id;
+      } else {
+        const message = await prisma.message.create({
+          data: {
+            id: randomUUID(),
+            conversationId: cid,
+            authorId: s.ownerUserId,
+            clientKey,
+            type: 'file',
+            body,
+            payload: {
+              kind: 'attachments',
+              attachments: [
+                {
+                  assetNodeId: 'saved-node',
+                  mediaAssetId: 'saved-media',
+                  name: 'Evidence.pdf',
+                  mediaKind: 'document',
+                  contentType: 'application/pdf',
+                  sizeBytes: 10,
+                },
+              ],
+              mentions,
+              tasks: tasks.map((task) => ({ ...task })),
+            },
+          },
+        });
+        originalId = message.id;
+      }
+      const retry = (references = tasks) =>
+        kind === 'text'
+          ? service.sendText(
+              cid,
+              s.ownerUserId,
+              body,
+              clientKey,
+              mentions,
+              references,
+            )
+          : service.sendAttachments(cid, s.ownerUserId, {
+              body,
+              clientKey,
+              attachments: [{ source: 'asset', assetNodeId: 'saved-node' }],
+              mentions,
+              tasks: references,
+            });
+      const original = await prisma.message.findUniqueOrThrow({
+        where: { id: originalId },
+      });
+      // Re-read from PostgreSQL rather than reusing the in-memory payload.
+      expect((await retry()).id).toBe(original.id);
+      await expect(retry([...tasks].reverse())).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      await prisma.message.update({
+        where: { id: originalId },
+        data: { deletedAt: new Date() },
+      });
+      await expect(retry()).rejects.toBeInstanceOf(ConflictException);
+      expect(
+        await prisma.message.count({
+          where: { conversationId: cid, clientKey },
+        }),
+      ).toBe(1);
+    },
+  );
+  it('recovers a Crew task comment with stored mentions without duplicate notifications', async () => {
+    const s = scope('comment-jsonb');
+    await seedCrew(s);
+    const workflow = await prisma.crewTaskWorkflowState.create({
+      data: {
+        crewId: s.crewId,
+        name: 'Open',
+        color: '#888888',
+        semantic: 'open',
+        position: 0,
+        createdByUserId: s.ownerUserId,
+      },
+    });
+    const task = await prisma.crewTask.create({
+      data: {
+        crewId: s.crewId,
+        title: 'Scene',
+        number: 1,
+        workflowStateId: workflow.id,
+        createdByUserId: s.ownerUserId,
+      },
+    });
+    const send = jest.fn().mockResolvedValue({});
+    const broadcast = jest.fn().mockResolvedValue(undefined);
+    const comments = new CrewTasksService(
+      prisma as unknown as PrismaService,
+      new CrewAuthorizationService(prisma as unknown as PrismaService),
+      {} as never,
+      { send } as never,
+      { broadcastCrewTaskChange: broadcast } as never,
+      {} as never,
+    );
+    const request = {
+      body: '@Teammate @Colleague please review',
+      mentions: [{ userId: s.memberId, label: 'Teammate' }],
+      attachments: [],
+      clientKey: 'comment-retry',
+    };
+    const first = await comments.createComment(task.id, s.ownerUserId, request);
+    const replay = await comments.createComment(
+      task.id,
+      s.ownerUserId,
+      request,
+    );
+    expect(replay.id).toBe(first.id);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(broadcast).toHaveBeenCalledTimes(1);
+    await expect(
+      comments.createComment(task.id, s.ownerUserId, {
+        ...request,
+        mentions: [{ userId: s.memberId, label: 'Colleague' }],
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    await prisma.crewTaskTimelineItem.update({
+      where: { id: first.id },
+      data: { deletedAt: new Date() },
+    });
+    await expect(
+      comments.createComment(task.id, s.ownerUserId, request),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(
+      await prisma.crewTaskTimelineItem.count({
+        where: { taskId: task.id, kind: 'comment' },
+      }),
+    ).toBe(1);
+  });
   it('collapses a retried send onto one row and lets unkeyed sends repeat freely', async () => {
     const s = scope('idem');
     await seedCrew(s);

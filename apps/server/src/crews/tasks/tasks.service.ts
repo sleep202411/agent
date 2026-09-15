@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   readTaskDeliveryTemplate,
   validateProfessionalDelivery,
@@ -3981,8 +3982,7 @@ export class CrewTasksService {
     existing: TimelineRow,
     input: CreateCrewTaskCommentInput,
   ): void {
-    const sameMentions =
-      JSON.stringify(existing.mentions) === JSON.stringify(input.mentions);
+    const sameMentions = isDeepStrictEqual(existing.mentions, input.mentions);
     const sameAttachments =
       existing.attachments.length === input.attachments.length &&
       input.attachments.every((attachment, index) => {
@@ -3992,6 +3992,7 @@ export class CrewTasksService {
           : stored?.mediaAssetId === attachment.mediaAssetId;
       });
     if (
+      existing.deletedAt !== null ||
       existing.kind !== 'comment' ||
       existing.body !== input.body ||
       existing.replyToId !== (input.replyToId ?? null) ||

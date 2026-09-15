@@ -117,6 +117,7 @@ import {
   type SystemMessagePayload,
 } from '@repo/shared/conversation';
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { newShortId } from '../common/id';
 import { conversationUnreadCounts } from './unread-counts';
 import { PrismaService } from '../infra/db/db.module';
@@ -1660,6 +1661,10 @@ export class ConversationsService {
     mentions: ConversationMentionPayload[],
     tasks: ConversationTaskReferencePayload[],
   ): void {
+    if (existing.deletedAt)
+      throw new ConflictException(
+        'The original message is no longer available',
+      );
     const payload = (existing.payload ?? null) as MessagePayload | null;
     const sameAttachments =
       payload?.kind === 'attachments' &&
@@ -1678,8 +1683,8 @@ export class ConversationsService {
       (existing.type === 'image' || existing.type === 'file') &&
       existing.body === input.body &&
       sameAttachments &&
-      JSON.stringify(persistedMentions) === JSON.stringify(mentions) &&
-      JSON.stringify(persistedTasks) === JSON.stringify(tasks)
+      isDeepStrictEqual(persistedMentions, mentions) &&
+      isDeepStrictEqual(persistedTasks, tasks)
     ) {
       return;
     }
@@ -2374,10 +2379,14 @@ export class ConversationsService {
     body: string,
     payload: MessagePayload | null,
   ): void {
+    if (existing.deletedAt)
+      throw new ConflictException(
+        'The original message is no longer available',
+      );
     if (
       existing.type === type &&
       existing.body === body &&
-      JSON.stringify(existing.payload ?? null) === JSON.stringify(payload)
+      isDeepStrictEqual(existing.payload ?? null, payload)
     ) {
       return;
     }
