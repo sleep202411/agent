@@ -114,7 +114,69 @@ integration('Compute member usage rollup (owned PostgreSQL)', () => {
       },
     });
     transactions.push(tx.id);
+    return tx.id;
   }
+  it('filters workspace names literally and includes official image/video counts', async () => {
+    const ws = await workspace();
+    const needle = `Fixture_%_${actor}`;
+    await db.workspace.update({ where: { id: ws.id }, data: { name: needle } });
+    const jobs: string[] = [];
+    try {
+      for (const type of ['image', 'video'] as const) {
+        const id = randomUUID();
+        await db.aiJob.create({
+          data: {
+            id,
+            userId: actor,
+            type,
+            provider: 'fixture',
+            modelId: 'fixture',
+            deployment: 'fixture',
+            schemaVersion: '1',
+            status: 'completed',
+            stage: 'completed',
+            queueName: 'fixture',
+            prompt: '',
+            idempotencyKey: id,
+            input: {},
+            normalizedInput: {},
+            logs: [],
+            metrics: {},
+          },
+        });
+        jobs.push(id);
+        const transactionId = await debit(ws.accountId, 2n);
+        await db.walletTransaction.update({
+          where: { id: transactionId },
+          data: { sourceType: 'ai_job', sourceId: id },
+        });
+      }
+      const other = await workspace();
+      await db.workspace.update({
+        where: { id: other.id },
+        data: { name: needle.replace('_%_', 'xxx') },
+      });
+      await debit(other.accountId, 100n);
+      const result = await service().listAdminComputeMemberUsage({
+        days: 30,
+        workspaceKind: 'all',
+        workspaceQuery: needle,
+        limit: 1,
+      });
+      expect(result.totalCredits).toBe('4');
+      expect(result.members[0]).toMatchObject({
+        totalJobs: 2,
+        totalImageJobs: 1,
+        totalVideoJobs: 1,
+      });
+      expect(result.members[0].workspaces[0]).toMatchObject({
+        imageJobs: 1,
+        videoJobs: 1,
+      });
+    } finally {
+      await db.aiJob.deleteMany({ where: { id: { in: jobs } } });
+    }
+  });
   it('joins text wallet owners to UUID workspaces and preserves sums beyond signed bigint', async () => {
     const ws = await workspace();
     await debit(ws.accountId, 9_000_000_000_000_000_000n);

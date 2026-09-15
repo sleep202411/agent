@@ -893,6 +893,10 @@ export class BillingService {
         : query.workspaceKind === 'shared'
           ? Prisma.sql`AND w.default_for_user_id IS NULL`
           : Prisma.empty;
+    const workspaceNeedle = query.workspaceQuery?.trim();
+    const workspaceNameFilter = workspaceNeedle
+      ? Prisma.sql`AND w.name ILIKE ${likeContainsPattern(workspaceNeedle)} ESCAPE '\\'`
+      : Prisma.empty;
     // Aggregate before limiting display rows. Member ranking and headline
     // totals must include every matching ledger entry, not just the top pairs.
     const rows = await this.prisma.$queryRaw<
@@ -901,6 +905,10 @@ export class BillingService {
         workspaceId: string;
         credits: string;
         jobs: string;
+        imageJobs: string;
+        videoJobs: string;
+        memberImageJobs: string;
+        memberVideoJobs: string;
         memberCredits: string;
         memberJobs: string;
         memberWorkspaces: string;
@@ -911,34 +919,40 @@ export class BillingService {
     >(Prisma.sql`
       WITH pairs AS (
         SELECT COALESCE(t.actor_user_id, 'unknown') AS actor,
-               a.owner_id AS workspace, SUM(e.amount) AS credits, COUNT(*) AS jobs
+               a.owner_id AS workspace, SUM(e.amount) AS credits, COUNT(*) AS jobs,
+               COUNT(*) FILTER (WHERE j.type::text = 'image') AS image_jobs,
+               COUNT(*) FILTER (WHERE j.type::text = 'video') AS video_jobs
         FROM wallet_ledger_entries e
         JOIN wallet_transactions t ON t.id = e.transaction_id
         JOIN wallet_accounts a ON a.id = e.account_id
         JOIN workspaces w ON w.id::text = a.owner_id AND w.deleted_at IS NULL
+        LEFT JOIN ai_jobs j ON t.source_type = 'ai_job' AND j.id::text = t.source_id
         WHERE a.owner_type::text = 'workspace'
           AND a.currency::text = 'compute_point'
           AND a.balance_kind::text = 'consumable'
           AND t.status = 'posted'
           AND e.entry_type::text IN ('settle', 'debit')
           AND e.created_at >= ${from}
-          ${workspaceIdFilter} ${actorFilter} ${kindFilter}
+          ${workspaceIdFilter} ${actorFilter} ${kindFilter} ${workspaceNameFilter}
         GROUP BY COALESCE(t.actor_user_id, 'unknown'), a.owner_id
       ), totals AS (
         SELECT SUM(credits)::text AS credits,
                COUNT(DISTINCT actor)::text AS members,
                COUNT(DISTINCT workspace)::text AS workspaces FROM pairs
       ), selected AS (
-        SELECT actor, SUM(credits) AS credits, SUM(jobs) AS jobs, COUNT(*) AS workspaces
+        SELECT actor, SUM(credits) AS credits, SUM(jobs) AS jobs, SUM(image_jobs) AS image_jobs, SUM(video_jobs) AS video_jobs, COUNT(*) AS workspaces
         FROM pairs GROUP BY actor ORDER BY credits DESC, actor ASC LIMIT ${query.limit}
       ), details AS (
         SELECT p.*, s.credits AS member_credits, s.jobs AS member_jobs,
+               s.image_jobs AS member_image_jobs, s.video_jobs AS member_video_jobs,
                s.workspaces AS member_workspaces,
                ROW_NUMBER() OVER (PARTITION BY p.actor ORDER BY p.credits DESC, p.workspace ASC) AS ordinal
         FROM pairs p JOIN selected s ON s.actor = p.actor
       )
       SELECT d.actor AS "actorUserId", d.workspace AS "workspaceId",
              d.credits::text AS credits, d.jobs::text AS jobs,
+             d.image_jobs::text AS "imageJobs", d.video_jobs::text AS "videoJobs",
+             d.member_image_jobs::text AS "memberImageJobs", d.member_video_jobs::text AS "memberVideoJobs",
              d.member_credits::text AS "memberCredits", d.member_jobs::text AS "memberJobs",
              d.member_workspaces::text AS "memberWorkspaces",
              t.credits AS "totalCredits", t.members AS "memberCount", t.workspaces AS "workspaceCount"
@@ -1009,12 +1023,16 @@ export class BillingService {
       workspaceId: string;
       credits: bigint;
       jobs: number;
+      imageJobs: number;
+      videoJobs: number;
     };
     type MemberAgg = {
       rawUserId: string;
       totalCredits: bigint;
       totalJobs: number;
       workspaceCount: number;
+      totalImageJobs: number;
+      totalVideoJobs: number;
       workspaces: WorkspaceAgg[];
     };
     const byMember = new Map<string, MemberAgg>();
@@ -1027,15 +1045,21 @@ export class BillingService {
           totalCredits: BigInt(row.memberCredits),
           totalJobs: Number(row.memberJobs),
           workspaceCount: Number(row.memberWorkspaces),
+          totalImageJobs: Number(row.memberImageJobs),
+          totalVideoJobs: Number(row.memberVideoJobs),
           workspaces: [],
         };
         byMember.set(rawUserId, member);
       }
       const jobs = Number(row.jobs);
+      const imageJobs = Number(row.imageJobs);
+      const videoJobs = Number(row.videoJobs);
       member.workspaces.push({
         workspaceId: row.workspaceId,
         credits: BigInt(row.credits),
         jobs,
+        imageJobs,
+        videoJobs,
       });
     }
 
@@ -1063,6 +1087,8 @@ export class BillingService {
           email: legacy?.email ?? null,
           totalCredits: member.totalCredits.toString(),
           totalJobs: member.totalJobs,
+          totalImageJobs: member.totalImageJobs,
+          totalVideoJobs: member.totalVideoJobs,
           workspaces: member.workspaces
             .sort((a, b) =>
               a.credits === b.credits
@@ -1080,6 +1106,8 @@ export class BillingService {
                 isPersonal: Boolean(meta?.defaultForUserId),
                 credits: ws.credits.toString(),
                 jobs: ws.jobs,
+                imageJobs: ws.imageJobs,
+                videoJobs: ws.videoJobs,
               };
             }),
         };
@@ -9404,4 +9432,9 @@ function refundIntentFingerprint(
       ]),
     )
     .digest('hex');
+}
+
+/** Escape `\`, `%`, `_` so user input is treated as a literal ILIKE substring. */
+function likeContainsPattern(raw: string): string {
+  return `%${raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
 }

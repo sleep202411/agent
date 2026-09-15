@@ -24,6 +24,8 @@ const data = (name: string): AdminComputeMemberUsageData => ({
       phone: null,
       totalCredits: "9007199254740993",
       totalJobs: 1,
+      totalImageJobs: 1,
+      totalVideoJobs: 0,
       workspaces: [],
     },
   ],

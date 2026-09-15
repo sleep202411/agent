@@ -157,6 +157,13 @@ vi.mock("@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation", () => 
   useCrewConversation: () => state.chatThread,
 }));
 
+vi.mock(
+  "@/app/(site)/crews/[id]/workspace/_components/workbench/crew-studio-workspace-picker",
+  () => ({
+    CrewStudioWorkspacePicker: () => <button aria-label="Link workspace">Link workspace</button>,
+  })
+);
+
 // Panes and dialogs are stubbed: this suite is about which one mounts,
 // not what each renders.
 vi.mock("@/app/(site)/crews/[id]/workspace/_components/chat/crew-chat-tab", () => ({
@@ -344,7 +351,7 @@ afterEach(() => {
 });
 
 describe("crew workspace tabs", () => {
-  it("keeps one crew header and canvas action mounted while switching surfaces", () => {
+  it("keeps one crew header and workspace action mounted while switching surfaces", () => {
     render();
     const header = document.querySelector('header[aria-label="Crew header"]');
     expect(header).not.toBeNull();
@@ -363,7 +370,7 @@ describe("crew workspace tabs", () => {
       expect(document.querySelectorAll('header[aria-label="Crew header"]')).toHaveLength(1);
       expect(document.querySelector('header[aria-label="Crew header"]')).toBe(header);
       expect(header?.textContent).toContain(label);
-      expect(document.querySelectorAll('button[aria-label="Link Canvas"]')).toHaveLength(1);
+      expect(document.querySelectorAll('button[aria-label="Link workspace"]')).toHaveLength(1);
     }
   });
 
