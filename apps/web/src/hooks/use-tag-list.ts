@@ -57,7 +57,7 @@ export function useTagList() {
       const out: Tag[] = [];
       for (const [idStr, name] of Object.entries(json.all ?? {})) {
         const id = Number(idStr);
-        if (Number.isFinite(id) && typeof name === "string" && name.length > 0) {
+        if (Number.isSafeInteger(id) && id > 0 && typeof name === "string" && name.length > 0) {
           out.push({ id, name });
         }
       }

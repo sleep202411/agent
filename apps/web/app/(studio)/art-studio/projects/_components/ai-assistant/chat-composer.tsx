@@ -232,6 +232,7 @@ function renderToolCard(
       const data = input as unknown as AssistantConfigureParamsInput;
       return (
         <ToolParamsCard
+          key={toolCallId}
           title={data.title}
           description={data.description}
           fields={data.fields.map((f) => ({

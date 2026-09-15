@@ -38,7 +38,9 @@ beforeEach(() => {
   );
   s.user = "a";
   s.locale = "en-US";
-  s.get.mockReset().mockResolvedValue({ all: { 1: "Drama" } });
+  s.get
+    .mockReset()
+    .mockResolvedValue({ all: { 1: "Drama", "-1": "Invalid", "1.5": "Fraction", 0: "Zero" } });
   client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
   root = createRoot(document.createElement("div"));
 });
