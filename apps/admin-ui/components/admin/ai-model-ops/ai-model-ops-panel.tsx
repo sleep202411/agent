@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -25,6 +26,7 @@ import {
   IconShieldCheck,
   IconTrash,
 } from "@tabler/icons-react";
+import { useAdminOperation } from "../use-admin-operation";
 import { AI_PROVIDER_LABELS } from "@repo/shared";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -229,7 +231,16 @@ const PROVIDER_BINDING_FIELDS = {
   disabledReason: { name: "disabledReason", label: "停用原因" },
 } satisfies Record<string, AdminFieldDefinition>;
 
-export function AiModelOpsPanel({
+export function AiModelOpsPanel(props: {
+  view: AdminAiModelOpsView;
+  siteLabel: string;
+  databaseLabel: string;
+  initialData: AdminAiModelOpsInitialData;
+}) {
+  return <AiModelOpsContent key={props.view} {...props} />;
+}
+
+function AiModelOpsContent({
   view,
   siteLabel,
   databaseLabel,
@@ -257,8 +268,14 @@ export function AiModelOpsPanel({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
   const [modality, setModality] = useState<AiModality>("image");
   const [assetModerationFilter, setAssetModerationFilter] = useState<AssetModerationFilter>("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin: beginRead } = useAdminOperation();
+  const readOperation = useRef<ReturnType<typeof beginRead>>(null);
+  const { begin: beginJob } = useAdminOperation();
+  const jobOperation = useRef<ReturnType<typeof beginJob>>(null);
+  const jobIdRef = useRef<string | null>(null);
+  const [requestedJobId, setRequestedJobId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const writePending = useRef(false);
   const [error, setError] = useState<string | null>(initialData.error);
   const [drawerError, setDrawerError] = useState<string | null>(null);
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null);
@@ -271,9 +288,17 @@ export function AiModelOpsPanel({
   const [selectedJob, setSelectedJob] = useState<AdminAiJobListItem | null>(null);
   const [jobDetail, setJobDetail] = useState<AdminAiJobDetail | null>(null);
 
-  async function refresh(nextStatus = statusFilter, nextModality: AiModality = modality) {
-    setLoading(true);
+  async function refresh(
+    nextStatus = statusFilter,
+    nextModality: AiModality = modality,
+    nextModeration = assetModerationFilter,
+    existing?: NonNullable<ReturnType<typeof beginRead>>
+  ) {
+    const operation = existing ?? beginRead("read");
+    if (!operation) return;
+    readOperation.current = operation;
     setError(null);
+    const read = <T,>(url: string) => requestEnvelope<T>(url, operation.signal);
     try {
       const bindingQuery = new URLSearchParams({ modality: nextModality });
       if (nextStatus) bindingQuery.set("status", nextStatus);
@@ -290,20 +315,19 @@ export function AiModelOpsPanel({
           nextJobs,
           nextAssets,
         ] = await Promise.all([
-          requestEnvelope<AdminAiOverviewData>("/api/admin/ai-model-ops/overview"),
-          requestEnvelope<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
-          requestEnvelope<AdminAiEndpointListData>(
+          read<AdminAiOverviewData>("/api/admin/ai-model-ops/overview"),
+          read<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
+          read<AdminAiEndpointListData>(
             `/api/admin/ai-model-ops/endpoints?${endpointQuery.toString()}`
           ),
-          requestEnvelope<AdminAiModelListData>(
-            `/api/admin/ai-model-ops/models?modality=${nextModality}`
-          ),
-          requestEnvelope<AdminAiBindingListData>(
+          read<AdminAiModelListData>(`/api/admin/ai-model-ops/models?modality=${nextModality}`),
+          read<AdminAiBindingListData>(
             `/api/admin/ai-model-ops/bindings?${bindingQuery.toString()}`
           ),
-          requestEnvelope<AdminAiJobListData>("/api/admin/ai-model-ops/jobs"),
-          requestEnvelope<AdminAiAssetListData>("/api/admin/ai-model-ops/assets"),
+          read<AdminAiJobListData>("/api/admin/ai-model-ops/jobs"),
+          read<AdminAiAssetListData>("/api/admin/ai-model-ops/assets"),
         ]);
+        if (!operation.current()) return;
         setOverview(nextOverview);
         setProviders(nextProviders);
         setEndpoints(nextEndpoints);
@@ -317,11 +341,12 @@ export function AiModelOpsPanel({
 
       if (view === "providers") {
         const [nextProviders, nextEndpoints] = await Promise.all([
-          requestEnvelope<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
-          requestEnvelope<AdminAiEndpointListData>(
+          read<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
+          read<AdminAiEndpointListData>(
             `/api/admin/ai-model-ops/endpoints?${endpointQuery.toString()}`
           ),
         ]);
+        if (!operation.current()) return;
         setProviders(nextProviders);
         setEndpoints(nextEndpoints);
         return;
@@ -329,14 +354,13 @@ export function AiModelOpsPanel({
 
       if (view === "endpoints") {
         const [nextEndpoints, nextProviders, nextModels] = await Promise.all([
-          requestEnvelope<AdminAiEndpointListData>(
+          read<AdminAiEndpointListData>(
             `/api/admin/ai-model-ops/endpoints?${endpointQuery.toString()}`
           ),
-          requestEnvelope<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
-          requestEnvelope<AdminAiModelListData>(
-            `/api/admin/ai-model-ops/models?modality=${nextModality}`
-          ),
+          read<AdminAiProviderListData>("/api/admin/ai-model-ops/providers"),
+          read<AdminAiModelListData>(`/api/admin/ai-model-ops/models?modality=${nextModality}`),
         ]);
+        if (!operation.current()) return;
         setEndpoints(nextEndpoints);
         setProviders(nextProviders);
         setModels(nextModels);
@@ -345,16 +369,13 @@ export function AiModelOpsPanel({
 
       if (view === "models") {
         const [nextModels, nextBindings, nextEndpoints] = await Promise.all([
-          requestEnvelope<AdminAiModelListData>(
-            `/api/admin/ai-model-ops/models?modality=${nextModality}`
-          ),
-          requestEnvelope<AdminAiBindingListData>(
-            `/api/admin/ai-model-ops/bindings?modality=${nextModality}`
-          ),
-          requestEnvelope<AdminAiEndpointListData>(
+          read<AdminAiModelListData>(`/api/admin/ai-model-ops/models?modality=${nextModality}`),
+          read<AdminAiBindingListData>(`/api/admin/ai-model-ops/bindings?modality=${nextModality}`),
+          read<AdminAiEndpointListData>(
             `/api/admin/ai-model-ops/endpoints?modality=${nextModality}`
           ),
         ]);
+        if (!operation.current()) return;
         setModels(nextModels);
         setBindings(nextBindings);
         setEndpoints(nextEndpoints);
@@ -363,22 +384,29 @@ export function AiModelOpsPanel({
       }
 
       if (view === "jobs") {
-        setJobs(await requestEnvelope<AdminAiJobListData>("/api/admin/ai-model-ops/jobs"));
+        const nextJobs = await read<AdminAiJobListData>("/api/admin/ai-model-ops/jobs");
+        if (operation.current()) setJobs(nextJobs);
         return;
       }
 
       const assetsQuery = new URLSearchParams();
-      if (assetModerationFilter) {
-        assetsQuery.set("moderationStatus", assetModerationFilter);
+      if (nextModeration) {
+        assetsQuery.set("moderationStatus", nextModeration);
       }
       const suffix = assetsQuery.size ? `?${assetsQuery.toString()}` : "";
-      setAssets(
-        await requestEnvelope<AdminAiAssetListData>(`/api/admin/ai-model-ops/assets${suffix}`)
+      const nextAssets = await read<AdminAiAssetListData>(
+        `/api/admin/ai-model-ops/assets${suffix}`
       );
+      if (operation.current()) setAssets(nextAssets);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (existing) throw err;
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      if (!existing) {
+        if (readOperation.current === operation) readOperation.current = null;
+        operation.cancel();
+        operation.finish();
+      }
     }
   }
 
@@ -403,54 +431,75 @@ export function AiModelOpsPanel({
     );
   }
 
-  const loadJobDetail = useCallback(async (jobId: string) => {
-    setDrawerError(null);
-    try {
-      setJobDetail(
-        await requestEnvelope<AdminAiJobDetail>(`/api/admin/ai-model-ops/jobs/${jobId}`)
-      );
-    } catch (err) {
-      setDrawerError(toErrorMessage(err));
-    }
-  }, []);
+  function abandonJobRead() {
+    jobOperation.current?.cancel();
+    jobOperation.current?.finish();
+    jobOperation.current = null;
+    jobIdRef.current = null;
+    setRequestedJobId(null);
+  }
+  const loadJobDetail = useCallback(
+    async (jobId: string) => {
+      if (jobIdRef.current !== jobId) return;
+      const operation = beginJob("read");
+      if (!operation) return;
+      jobOperation.current = operation;
+      setDrawerError(null);
+      try {
+        const detail = await requestEnvelope<AdminAiJobDetail>(
+          `/api/admin/ai-model-ops/jobs/${encodeURIComponent(jobId)}`,
+          operation.signal
+        );
+        if (operation.current() && jobIdRef.current === jobId) setJobDetail(detail);
+      } catch (err) {
+        if (operation.current()) setDrawerError(toErrorMessage(err));
+      } finally {
+        if (jobOperation.current === operation) jobOperation.current = null;
+        operation.finish();
+      }
+    },
+    [beginJob, setDrawerError, setJobDetail]
+  );
 
   function handleStatusFilter(next: StatusFilter) {
+    if (saving || readOperation.current) return;
     setStatusFilter(next);
     void refresh(next);
   }
 
   function handleAssetModerationFilter(next: AssetModerationFilter) {
+    if (saving || readOperation.current) return;
     setAssetModerationFilter(next);
-    setLoading(true);
-    setError(null);
-    const params = new URLSearchParams();
-    if (next) params.set("moderationStatus", next);
-    const suffix = params.size ? `?${params.toString()}` : "";
-    requestEnvelope<AdminAiAssetListData>(`/api/admin/ai-model-ops/assets${suffix}`)
-      .then(setAssets)
-      .catch((err) => setError(toErrorMessage(err)))
-      .finally(() => setLoading(false));
+    void refresh(statusFilter, modality, next);
   }
 
   function openModel(model: AdminAiCanonicalModel) {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setSelectedModel(model);
     setDrawerMode("model");
   }
 
   function openNewModel() {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setSelectedModel(null);
     setDrawerMode("model");
   }
 
   function openProvider(provider: AdminAiProviderAccount) {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setSelectedProvider(provider);
     setDrawerMode("provider");
   }
 
   function openEndpointBinding(endpoint: AdminAiProviderEndpoint) {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setBindingModel(null);
     setSelectedEndpoint(endpoint);
@@ -459,6 +508,8 @@ export function AiModelOpsPanel({
 
   // Open the create-binding drawer scoped to a canonical model from its inline bindings sub-table (pick endpoint, fixed model).
   function openModelBinding(model: AdminAiCanonicalModel) {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setSelectedEndpoint(null);
     setSelectedModel(model);
@@ -467,32 +518,43 @@ export function AiModelOpsPanel({
   }
 
   function openEndpoint(endpoint: AdminAiProviderEndpoint) {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setSelectedEndpoint(endpoint);
     setDrawerMode("endpoint");
   }
 
   function openNewEndpoint() {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setSelectedEndpoint(null);
     setDrawerMode("endpoint");
   }
 
   function openBinding(binding: AdminAiProviderBinding) {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setSelectedBinding(binding);
     setDrawerMode("binding");
   }
 
   function openJob(job: AdminAiJobListItem) {
+    if (readOperation.current) return;
+    abandonJobRead();
     setDrawerError(null);
     setJobDetail(null);
+    jobIdRef.current = job.id;
+    setRequestedJobId(job.id);
     setSelectedJob(job);
     setDrawerMode("job");
   }
 
   function closeDrawer() {
-    if (saving) return;
+    if (writePending.current) return;
+    abandonJobRead();
     setDrawerMode(null);
     setDrawerError(null);
     setSelectedProvider(null);
@@ -504,22 +566,51 @@ export function AiModelOpsPanel({
     setJobDetail(null);
   }
 
+  function beginWrite() {
+    const operation = beginRead("write");
+    if (!operation) return null;
+    readOperation.current = operation;
+    writePending.current = true;
+    setSaving(true);
+    return operation;
+  }
+  function finishWrite(operation: NonNullable<ReturnType<typeof beginRead>>) {
+    if (readOperation.current === operation) {
+      writePending.current = false;
+      if (operation.current()) setSaving(false);
+      readOperation.current = null;
+    }
+    operation.cancel();
+    operation.finish();
+  }
+
   // Archive a binding (soft-disable). The server exposes no hard-delete route, so removal = status: archived.
   async function archiveBinding(binding: AdminAiProviderBinding) {
-    setSaving(true);
+    const operation = beginWrite();
+    if (!operation) return;
+    let accepted = false;
     setError(null);
     try {
       await mutateEnvelope(
         `/api/admin/ai-model-ops/bindings/${binding.id}`,
         { status: "archived" },
-        "PATCH"
+        "PATCH",
+        operation.signal
       );
-      await refresh();
+      if (!operation.current()) return;
+      accepted = true;
+      await refresh(undefined, undefined, undefined, operation);
+      if (!operation.current()) return;
     } catch (err) {
+      if (!operation.current()) return;
+      if (accepted) {
+        setError(toErrorMessage(err));
+        return;
+      }
       setError(toErrorMessage(err));
       throw err;
     } finally {
-      setSaving(false);
+      finishWrite(operation);
     }
   }
 
@@ -549,20 +640,32 @@ export function AiModelOpsPanel({
           loading={loading || saving}
           onOpenProvider={openProvider}
           onStatusChange={async (provider, status) => {
-            setSaving(true);
+            const operation = beginWrite();
+            if (!operation) return;
+            let accepted = false;
             setError(null);
             try {
               await mutateEnvelope(
                 `/api/admin/ai-model-ops/providers/${provider.id}`,
                 { status },
-                "PATCH"
+                "PATCH",
+                operation.signal
               );
-              await refresh();
+              if (!operation.current()) return;
+              accepted = true;
+              await refresh(undefined, undefined, undefined, operation);
+              if (!operation.current()) return;
             } catch (err) {
+              if (!operation.current()) return;
+              if (accepted) {
+                setError(toErrorMessage(err));
+                setDrawerMode(null);
+                return;
+              }
               setError(toErrorMessage(err));
               throw err;
             } finally {
-              setSaving(false);
+              finishWrite(operation);
             }
           }}
         />
@@ -580,37 +683,61 @@ export function AiModelOpsPanel({
           onOpenEndpoint={openEndpoint}
           onOpenBinding={openEndpointBinding}
           onStatusChange={async (endpoint, status) => {
-            setSaving(true);
+            const operation = beginWrite();
+            if (!operation) return;
+            let accepted = false;
             setError(null);
             try {
               await mutateEnvelope(
                 `/api/admin/ai-model-ops/endpoints/${endpoint.id}`,
                 { status },
-                "PATCH"
+                "PATCH",
+                operation.signal
               );
-              await refresh();
+              if (!operation.current()) return;
+              accepted = true;
+              await refresh(undefined, undefined, undefined, operation);
+              if (!operation.current()) return;
             } catch (err) {
+              if (!operation.current()) return;
+              if (accepted) {
+                setError(toErrorMessage(err));
+                setDrawerMode(null);
+                return;
+              }
               setError(toErrorMessage(err));
               throw err;
             } finally {
-              setSaving(false);
+              finishWrite(operation);
             }
           }}
           onArchiveEndpoint={async (endpoint) => {
-            setSaving(true);
+            const operation = beginWrite();
+            if (!operation) return;
+            let accepted = false;
             setError(null);
             try {
               await mutateEnvelope(
                 `/api/admin/ai-model-ops/endpoints/${endpoint.id}`,
                 {},
-                "DELETE"
+                "DELETE",
+                operation.signal
               );
-              await refresh();
+              if (!operation.current()) return;
+              accepted = true;
+              await refresh(undefined, undefined, undefined, operation);
+              if (!operation.current()) return;
             } catch (err) {
+              if (!operation.current()) return;
+              if (accepted) {
+                setError(toErrorMessage(err));
+                setDrawerMode(null);
+                return;
+              }
               setError(toErrorMessage(err));
               throw err;
             } finally {
-              setSaving(false);
+              finishWrite(operation);
             }
           }}
         />
@@ -644,14 +771,19 @@ export function AiModelOpsPanel({
         moderationFilter={assetModerationFilter}
         onModerationFilter={handleAssetModerationFilter}
         onOpenJobId={(jobId) => {
+          if (readOperation.current) return;
+          abandonJobRead();
+          jobIdRef.current = jobId;
+          setRequestedJobId(jobId);
           setDrawerError(null);
           setSelectedJob(null);
           setJobDetail(null);
           setDrawerMode("job");
-          void loadJobDetail(jobId);
         }}
         onModerationChange={async (asset, moderationStatus) => {
-          setSaving(true);
+          const operation = beginWrite();
+          if (!operation) return;
+          let accepted = false;
           setError(null);
           try {
             await mutateEnvelope<AdminAiMediaAsset>(
@@ -665,14 +797,24 @@ export function AiModelOpsPanel({
                       ? "Admin marked asset for manual review from AI asset ops."
                       : null,
               },
-              "PATCH"
+              "PATCH",
+              operation.signal
             );
-            await refresh();
+            if (!operation.current()) return;
+            accepted = true;
+            await refresh(undefined, undefined, undefined, operation);
+            if (!operation.current()) return;
           } catch (err) {
+            if (!operation.current()) return;
+            if (accepted) {
+              setError(toErrorMessage(err));
+              setDrawerMode(null);
+              return;
+            }
             setError(toErrorMessage(err));
             throw err;
           } finally {
-            setSaving(false);
+            finishWrite(operation);
           }
         }}
       />
@@ -759,6 +901,7 @@ export function AiModelOpsPanel({
       {renderViewContent()}
 
       <ProviderAccountDrawer
+        key={selectedProvider?.id ?? "provider-new"}
         open={drawerMode === "provider"}
         providerAccount={selectedProvider}
         saving={saving}
@@ -767,27 +910,40 @@ export function AiModelOpsPanel({
         onSave={async (event) => {
           event.preventDefault();
           if (!selectedProvider) return;
-          setSaving(true);
+          const operation = beginWrite();
+          if (!operation) return;
+          let accepted = false;
           setDrawerError(null);
           try {
             const form = new FormData(event.currentTarget);
             await mutateEnvelope<AdminAiProviderAccount>(
               `/api/admin/ai-model-ops/providers/${selectedProvider.id}`,
               buildProviderAccountPayload(form),
-              "PATCH"
+              "PATCH",
+              operation.signal
             );
-            await refresh();
+            if (!operation.current()) return;
+            accepted = true;
+            await refresh(undefined, undefined, undefined, operation);
+            if (!operation.current()) return;
             setDrawerMode(null);
             setSelectedProvider(null);
           } catch (err) {
+            if (!operation.current()) return;
+            if (accepted) {
+              setError(toErrorMessage(err));
+              setDrawerMode(null);
+              return;
+            }
             setDrawerError(toErrorMessage(err));
           } finally {
-            setSaving(false);
+            finishWrite(operation);
           }
         }}
       />
 
       <ModelPolicyDrawer
+        key={selectedModel?.id ?? "model-new"}
         open={drawerMode === "model"}
         model={selectedModel}
         modality={modality}
@@ -796,7 +952,9 @@ export function AiModelOpsPanel({
         onClose={closeDrawer}
         onSave={async (event) => {
           event.preventDefault();
-          setSaving(true);
+          const operation = beginWrite();
+          if (!operation) return;
+          let accepted = false;
           setDrawerError(null);
           try {
             const form = new FormData(event.currentTarget);
@@ -804,23 +962,42 @@ export function AiModelOpsPanel({
               await mutateEnvelope(
                 `/api/admin/ai-model-ops/models/${selectedModel.id}`,
                 buildModelPayload(form),
-                "PATCH"
+                "PATCH",
+                operation.signal
               );
-              await refresh();
+              if (!operation.current()) return;
+              accepted = true;
+              await refresh(undefined, undefined, undefined, operation);
+              if (!operation.current()) return;
             } else {
-              await mutateEnvelope("/api/admin/ai-model-ops/models", buildCreateModelPayload(form));
-              await refresh();
-              closeDrawer();
+              await mutateEnvelope(
+                "/api/admin/ai-model-ops/models",
+                buildCreateModelPayload(form),
+                "POST",
+                operation.signal
+              );
+              if (!operation.current()) return;
+              accepted = true;
+              await refresh(undefined, undefined, undefined, operation);
+              if (!operation.current()) return;
+              setDrawerMode(null);
             }
           } catch (err) {
+            if (!operation.current()) return;
+            if (accepted) {
+              setError(toErrorMessage(err));
+              setDrawerMode(null);
+              return;
+            }
             setDrawerError(toErrorMessage(err));
           } finally {
-            setSaving(false);
+            finishWrite(operation);
           }
         }}
       />
 
       <ProviderEndpointDrawer
+        key={selectedEndpoint?.id ?? "endpoint-new"}
         open={drawerMode === "endpoint"}
         endpoint={selectedEndpoint}
         providers={providers.items}
@@ -830,7 +1007,9 @@ export function AiModelOpsPanel({
         onClose={closeDrawer}
         onSave={async (event) => {
           event.preventDefault();
-          setSaving(true);
+          const operation = beginWrite();
+          if (!operation) return;
+          let accepted = false;
           setDrawerError(null);
           try {
             const form = new FormData(event.currentTarget);
@@ -838,26 +1017,41 @@ export function AiModelOpsPanel({
               await mutateEnvelope(
                 `/api/admin/ai-model-ops/endpoints/${selectedEndpoint.id}`,
                 buildProviderEndpointPayload(form),
-                "PATCH"
+                "PATCH",
+                operation.signal
               );
+              if (!operation.current()) return;
+              accepted = true;
             } else {
               await mutateEnvelope(
                 "/api/admin/ai-model-ops/endpoints",
-                buildCreateProviderEndpointPayload(form)
+                buildCreateProviderEndpointPayload(form),
+                "POST",
+                operation.signal
               );
+              if (!operation.current()) return;
+              accepted = true;
             }
-            await refresh();
+            await refresh(undefined, undefined, undefined, operation);
+            if (!operation.current()) return;
             setDrawerMode(null);
             setSelectedEndpoint(null);
           } catch (err) {
+            if (!operation.current()) return;
+            if (accepted) {
+              setError(toErrorMessage(err));
+              setDrawerMode(null);
+              return;
+            }
             setDrawerError(toErrorMessage(err));
           } finally {
-            setSaving(false);
+            finishWrite(operation);
           }
         }}
       />
 
       <EndpointBindingDrawer
+        key={bindingModel?.id ?? selectedEndpoint?.id ?? "binding-new"}
         open={drawerMode === "endpointBinding"}
         endpoint={bindingModel ? null : selectedEndpoint}
         model={bindingModel}
@@ -868,24 +1062,38 @@ export function AiModelOpsPanel({
         onClose={closeDrawer}
         onSave={async (event) => {
           event.preventDefault();
-          setSaving(true);
+          const operation = beginWrite();
+          if (!operation) return;
+          let accepted = false;
           setDrawerError(null);
           try {
             await mutateEnvelope(
               "/api/admin/ai-model-ops/bindings",
-              buildCreateProviderBindingPayload(new FormData(event.currentTarget))
+              buildCreateProviderBindingPayload(new FormData(event.currentTarget)),
+              "POST",
+              operation.signal
             );
-            await refresh();
-            closeDrawer();
+            if (!operation.current()) return;
+            accepted = true;
+            await refresh(undefined, undefined, undefined, operation);
+            if (!operation.current()) return;
+            setDrawerMode(null);
           } catch (err) {
+            if (!operation.current()) return;
+            if (accepted) {
+              setError(toErrorMessage(err));
+              setDrawerMode(null);
+              return;
+            }
             setDrawerError(toErrorMessage(err));
           } finally {
-            setSaving(false);
+            finishWrite(operation);
           }
         }}
       />
 
       <BindingPolicyDrawer
+        key={selectedBinding?.id ?? "binding-policy"}
         open={drawerMode === "binding"}
         binding={selectedBinding}
         saving={saving}
@@ -894,26 +1102,39 @@ export function AiModelOpsPanel({
         onSave={async (event) => {
           event.preventDefault();
           if (!selectedBinding) return;
-          setSaving(true);
+          const operation = beginWrite();
+          if (!operation) return;
+          let accepted = false;
           setDrawerError(null);
           try {
             const payload = buildProviderBindingPayload(new FormData(event.currentTarget));
             await mutateEnvelope(
               `/api/admin/ai-model-ops/bindings/${selectedBinding.id}`,
               payload,
-              "PATCH"
+              "PATCH",
+              operation.signal
             );
-            await refresh();
-            closeDrawer();
+            if (!operation.current()) return;
+            accepted = true;
+            await refresh(undefined, undefined, undefined, operation);
+            if (!operation.current()) return;
+            setDrawerMode(null);
           } catch (err) {
+            if (!operation.current()) return;
+            if (accepted) {
+              setError(toErrorMessage(err));
+              setDrawerMode(null);
+              return;
+            }
             setDrawerError(toErrorMessage(err));
           } finally {
-            setSaving(false);
+            finishWrite(operation);
           }
         }}
       />
 
       <JobDetailDrawer
+        requestedJobId={requestedJobId}
         open={drawerMode === "job"}
         job={selectedJob}
         detail={jobDetail}
@@ -2170,6 +2391,7 @@ function ProviderAccountDrawer({
           </SheetDescription>
         </SheetHeader>
         <form
+          inert={saving}
           id="ai-provider-account-form"
           className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
           onSubmit={onSave}
@@ -2264,7 +2486,7 @@ function ModelPolicyDrawer({
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-          <form id="ai-model-form" onSubmit={onSave}>
+          <form inert={saving} id="ai-model-form" onSubmit={onSave}>
             {error ? <ErrorBanner message={error} /> : null}
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               <FormField
@@ -2486,6 +2708,7 @@ function ProviderEndpointDrawer({
           </SheetDescription>
         </SheetHeader>
         <form
+          inert={saving}
           id="ai-provider-endpoint-form"
           className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
           onSubmit={onSave}
@@ -2757,6 +2980,7 @@ function EndpointBindingDrawer({
           </SheetDescription>
         </SheetHeader>
         <form
+          inert={saving}
           id="ai-endpoint-binding-form"
           className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
           onSubmit={onSave}
@@ -2919,6 +3143,7 @@ function BindingPolicyDrawer({
           </SheetDescription>
         </SheetHeader>
         <form
+          inert={saving}
           id="ai-binding-form"
           className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
           onSubmit={onSave}
@@ -3022,6 +3247,7 @@ function RouteBindingPolicyNotice({
 }
 
 function JobDetailDrawer({
+  requestedJobId,
   open,
   job,
   detail,
@@ -3029,6 +3255,7 @@ function JobDetailDrawer({
   onClose,
   onLoad,
 }: {
+  requestedJobId: string | null;
   open: boolean;
   job: AdminAiJobListItem | null;
   detail: AdminAiJobDetail | null;
@@ -3036,11 +3263,11 @@ function JobDetailDrawer({
   onClose: () => void;
   onLoad: (jobId: string) => void;
 }) {
-  const jobId = detail?.id ?? job?.id ?? "-";
+  const jobId = requestedJobId ?? detail?.id ?? job?.id ?? "-";
 
   useEffect(() => {
-    if (open && job?.id && !detail) onLoad(job.id);
-  }, [detail, job?.id, onLoad, open]);
+    if (open && requestedJobId) onLoad(requestedJobId);
+  }, [requestedJobId, onLoad, open]);
 
   return (
     <Sheet open={open} onOpenChange={(next) => (!next ? onClose() : null)}>
