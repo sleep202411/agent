@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   describeUnknown,
   requiredScalarString,
@@ -532,7 +532,7 @@ export class WorkspaceService {
   ): Promise<Record<string, unknown>> {
     return this.request<Record<string, unknown>>(
       headers,
-      `/api/user/project/detail/${projectId}`,
+      `/api/user/project/detail/${encodeURIComponent(projectId)}`,
     );
   }
 
@@ -555,7 +555,7 @@ export class WorkspaceService {
   async getWorldDetail(headers: HeadersLike, worldId: string) {
     return this.request<Record<string, unknown>>(
       headers,
-      `/api/user/world/query/world?id=${worldId}`,
+      `/api/user/world/query/world?id=${encodeURIComponent(worldId)}`,
     );
   }
 
@@ -580,6 +580,7 @@ export class WorkspaceService {
     // Fetch current episode to get all fields
     const episodes = await this.listEpisodes(headers, projectId);
     const current = episodes.find((ep) => ep.id === episodeId);
+    if (!current) throw new NotFoundException('Episode not found');
 
     const merged: EpisodeRecord = {
       id: episodeId,
@@ -622,7 +623,7 @@ export class WorkspaceService {
   ): Promise<string> {
     const res = await this.request<{ content?: string }>(
       headers,
-      `/api/user/project/scripts/episode/detail/${episodeId}`,
+      `/api/user/project/scripts/episode/detail/${encodeURIComponent(episodeId)}`,
     );
     return (res as unknown as { content?: string })?.content ?? '';
   }
@@ -647,7 +648,7 @@ export class WorkspaceService {
   async deleteEpisode(headers: HeadersLike, episodeId: string) {
     return this.request<WorkspaceRecord>(
       headers,
-      `/api/user/world/delete/episode?id=${episodeId}`,
+      `/api/user/world/delete/episode?id=${encodeURIComponent(episodeId)}`,
     );
   }
 
@@ -670,7 +671,7 @@ export class WorkspaceService {
   async deleteCharacter(headers: HeadersLike, id: string) {
     return this.request<WorkspaceRecord>(
       headers,
-      `/api/user/world/delete/worldrole?id=${id}`,
+      `/api/user/world/delete/worldrole?id=${encodeURIComponent(id)}`,
     );
   }
 
@@ -693,7 +694,7 @@ export class WorkspaceService {
   async deleteScene(headers: HeadersLike, id: string) {
     return this.request<WorkspaceRecord>(
       headers,
-      `/api/user/world/delete/worldscene?id=${id}`,
+      `/api/user/world/delete/worldscene?id=${encodeURIComponent(id)}`,
     );
   }
 
@@ -716,7 +717,7 @@ export class WorkspaceService {
   async deleteProp(headers: HeadersLike, id: string) {
     return this.request<WorkspaceRecord>(
       headers,
-      `/api/user/world/delete/worldprop?id=${id}`,
+      `/api/user/world/delete/worldprop?id=${encodeURIComponent(id)}`,
     );
   }
 
