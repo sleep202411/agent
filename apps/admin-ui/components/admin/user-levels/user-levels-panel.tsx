@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { readAllPages } from "./read-all-pages";
+import { useAdminOperation } from "../use-admin-operation";
 import { decodeUserId, encodeUserId } from "@repo/shared";
 import { IconBadge, IconEdit, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +34,7 @@ type AdminApiPayload<T> = {
 async function mutateUserLevels<T = unknown>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(adminUiApiPath(url), { cache: "no-store", ...init });
   const payload = (await response.json().catch(() => null)) as AdminApiPayload<T> | null;
+  init?.signal?.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(payload?.msg ?? payload?.message ?? `请求失败：${response.status}`);
   }
@@ -52,11 +55,6 @@ type ResolvedUser = {
   phone: string | null;
   email: string | null;
   nickName: string | null;
-};
-
-type MemberSearchResult = {
-  items: MemberHit[];
-  total: number;
 };
 
 type Draft = {
@@ -91,13 +89,13 @@ function userLine(user: {
     .join(" · ");
 }
 
-async function searchMembers(query: string): Promise<MemberHit[]> {
-  const params = new URLSearchParams({ page: "1", pageSize: "20" });
-  params.set("query", query);
-  const data = await requestEnvelope<MemberSearchResult>(
-    `/api/admin/legacy-points/users?${params.toString()}`
+export async function searchMembers(query: string, signal: AbortSignal): Promise<MemberHit[]> {
+  const params = new URLSearchParams({ query });
+  return readAllPages<MemberHit>(
+    `/api/admin/legacy-points/users?${params}`,
+    signal,
+    (hit) => hit.userId
   );
-  return data.items ?? [];
 }
 
 function normalizeText(value: string | null | undefined): string {
@@ -134,35 +132,29 @@ function resolveSearchHits(query: string, hits: MemberHit[]): MemberHit[] {
   return hits;
 }
 
-async function fetchRelationsForUserIds(
+export async function fetchRelationsForUserIds(
   userIds: string[],
   levelId: string,
-  pageSize: number
+  signal: AbortSignal
 ): Promise<AdminUserLevelRelation[]> {
   const unique = [...new Set(userIds.map((id) => decodeUserId(id)).filter(Boolean))];
-  const chunks = await Promise.all(
-    unique.map(async (rawId) => {
-      const params = new URLSearchParams({
-        page: "1",
-        // Pull a wide page per user; nickname search unions a small user set.
-        pageSize: String(Math.max(pageSize, 100)),
-        userId: rawId,
-      });
-      if (levelId !== "all") params.set("levelId", levelId);
-      const data = await requestEnvelope<AdminUserLevelListResult>(
-        `/api/admin/user-levels?${params.toString()}`
-      );
-      return data.items;
-    })
-  );
   const byId = new Map<number, AdminUserLevelRelation>();
-  for (const row of chunks.flat()) {
-    byId.set(row.id, row);
+  // Walk users sequentially rather than launching an unbounded request fan-out.
+  for (const userId of unique) {
+    signal.throwIfAborted();
+    const params = new URLSearchParams({ userId });
+    if (levelId !== "all") params.set("levelId", levelId);
+    const rows = await readAllPages<AdminUserLevelRelation>(
+      `/api/admin/user-levels?${params}`,
+      signal,
+      (row) => row.id
+    );
+    for (const row of rows) byId.set(row.id, row);
   }
   return [...byId.values()].sort((a, b) => {
     const at = a.updateTime ?? a.createTime ?? "";
     const bt = b.updateTime ?? b.createTime ?? "";
-    return bt.localeCompare(at);
+    return bt.localeCompare(at) || b.id - a.id;
   });
 }
 
@@ -188,7 +180,13 @@ export function UserLevelsPanel({
   const [queryInput, setQueryInput] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
   const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const pending = useRef<ReturnType<typeof begin>>(null);
+  const pendingPurpose = useRef<"read" | "lookup" | "write">("read");
+  const dialogActive = useRef(false);
+  const [purpose, setPurpose] = useState<"read" | "lookup" | "write">("read");
+  const lookingUp = loading && purpose === "lookup";
+  const saving = loading && purpose === "write";
   const [error, setError] = useState<string | null>(initialError);
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -199,8 +197,6 @@ export function UserLevelsPanel({
   const [lookupQuery, setLookupQuery] = useState("");
   const [lookupHits, setLookupHits] = useState<MemberHit[]>([]);
   const [resolvedUser, setResolvedUser] = useState<ResolvedUser | null>(null);
-  const [lookingUp, setLookingUp] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const [deleteTarget, setDeleteTarget] = useState<AdminUserLevelRelation | null>(null);
@@ -208,88 +204,116 @@ export function UserLevelsPanel({
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const levelOptions = useMemo(() => [...levels].sort((a, b) => a.id - b.id), [levels]);
 
-  async function loadList(
-    opts: {
-      page?: number;
-      query?: string;
-      levelId?: string;
-    } = {}
-  ) {
+  type Operation = NonNullable<ReturnType<typeof begin>>;
+  type ListOptions = { page?: number; query?: string; levelId?: string };
+  function start(kind: "read" | "lookup" | "write") {
+    const operation = begin(kind === "read" ? "read" : "write");
+    if (!operation) return null;
+    pending.current = operation;
+    pendingPurpose.current = kind;
+    setPurpose(kind);
+    return operation;
+  }
+  function finish(operation: Operation) {
+    if (pending.current === operation) pending.current = null;
+    operation.cancel();
+    operation.finish();
+  }
+  function closeDialog() {
+    dialogActive.current = false;
+    pending.current?.cancel();
+    pending.current?.finish();
+    pending.current = null;
+    setDialogOpen(false);
+  }
+  async function readList(operation: Operation, opts: ListOptions = {}) {
     const targetPage = opts.page ?? page;
     const query = (opts.query ?? activeQuery).trim();
     const levelId = opts.levelId ?? levelFilter;
 
-    setLoading(true);
-    setError(null);
-    try {
-      if (query) {
-        const hits = await searchMembers(query);
-        const matched = resolveSearchHits(query, hits);
-        if (matched.length === 0) {
-          setItems([]);
-          setTotal(0);
-          setPage(1);
-          setError("未找到匹配的用户。");
-          return;
-        }
-
-        if (matched.length === 1) {
-          const params = new URLSearchParams();
-          params.set("page", String(targetPage));
-          params.set("pageSize", String(pageSize));
-          if (levelId !== "all") params.set("levelId", levelId);
-          params.set("userId", decodeUserId(matched[0].userId));
-          const data = await requestEnvelope<AdminUserLevelListResult>(
-            `/api/admin/user-levels?${params.toString()}`
-          );
-          setItems(data.items);
-          setTotal(data.total);
-          setPage(data.page);
-          return;
-        }
-
-        // Nickname / fuzzy: several users matched → union their level rows.
-        const merged = await fetchRelationsForUserIds(
-          matched.map((hit) => hit.userId),
-          levelId,
-          pageSize
-        );
-        const totalMerged = merged.length;
-        const safePage = Math.min(
-          Math.max(1, targetPage),
-          Math.max(1, Math.ceil(totalMerged / pageSize) || 1)
-        );
-        const start = (safePage - 1) * pageSize;
-        setItems(merged.slice(start, start + pageSize));
-        setTotal(totalMerged);
-        setPage(safePage);
+    if (query) {
+      const hits = await searchMembers(query, operation.signal);
+      if (!operation.current()) return;
+      const matched = resolveSearchHits(query, hits);
+      if (matched.length === 0) {
+        setItems([]);
+        setTotal(0);
+        setPage(1);
+        setError("未找到匹配的用户。");
         return;
       }
 
-      const params = new URLSearchParams();
-      params.set("page", String(targetPage));
-      params.set("pageSize", String(pageSize));
-      if (levelId !== "all") params.set("levelId", levelId);
-      const data = await requestEnvelope<AdminUserLevelListResult>(
-        `/api/admin/user-levels?${params.toString()}`
+      if (matched.length === 1) {
+        const params = new URLSearchParams();
+        params.set("page", String(targetPage));
+        params.set("pageSize", String(pageSize));
+        if (levelId !== "all") params.set("levelId", levelId);
+        params.set("userId", decodeUserId(matched[0].userId));
+        const data = await requestEnvelope<AdminUserLevelListResult>(
+          `/api/admin/user-levels?${params.toString()}`,
+          operation.signal
+        );
+        if (!operation.current()) return;
+        setItems(data.items);
+        setTotal(data.total);
+        setPage(data.page);
+        return;
+      }
+
+      // Nickname / fuzzy: several users matched → union their level rows.
+      const merged = await fetchRelationsForUserIds(
+        matched.map((hit) => hit.userId),
+        levelId,
+        operation.signal
       );
-      setItems(data.items);
-      setTotal(data.total);
-      setPage(data.page);
+      if (!operation.current()) return;
+      const totalMerged = merged.length;
+      const safePage = Math.min(
+        Math.max(1, targetPage),
+        Math.max(1, Math.ceil(totalMerged / pageSize) || 1)
+      );
+      const start = (safePage - 1) * pageSize;
+      setItems(merged.slice(start, start + pageSize));
+      setTotal(totalMerged);
+      setPage(safePage);
+      return;
+    }
+
+    const params = new URLSearchParams();
+    params.set("page", String(targetPage));
+    params.set("pageSize", String(pageSize));
+    if (levelId !== "all") params.set("levelId", levelId);
+    const data = await requestEnvelope<AdminUserLevelListResult>(
+      `/api/admin/user-levels?${params.toString()}`,
+      operation.signal
+    );
+    if (!operation.current()) return;
+    setItems(data.items);
+    setTotal(data.total);
+    setPage(data.page);
+  }
+  async function loadList(opts: ListOptions = {}) {
+    const operation = start("read");
+    if (!operation) return;
+    setError(null);
+    try {
+      await readList(operation, opts);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      finish(operation);
     }
   }
 
   function runSearch() {
+    if (loading || pending.current) return;
     const next = queryInput.trim();
     setActiveQuery(next);
     void loadList({ page: 1, query: next });
   }
 
   function openCreate() {
+    if (loading || pending.current) return;
     setMode("create");
     setEditingId(null);
     setEditingUserLabel("");
@@ -301,10 +325,12 @@ export function UserLevelsPanel({
     setLookupHits([]);
     setResolvedUser(null);
     setFormError(null);
+    dialogActive.current = true;
     setDialogOpen(true);
   }
 
   function openEdit(row: AdminUserLevelRelation) {
+    if (loading || pending.current) return;
     setMode("edit");
     setEditingId(row.id);
     setEditingUserLabel(
@@ -318,96 +344,94 @@ export function UserLevelsPanel({
     setLookupHits([]);
     setResolvedUser(null);
     setFormError(null);
+    dialogActive.current = true;
     setDialogOpen(true);
   }
 
   async function runDialogLookup() {
     const q = lookupQuery.trim();
-    if (!q) return;
-    setLookingUp(true);
+    if (!q || !dialogActive.current || mode !== "create") return;
+    const operation = start("lookup");
+    if (!operation) return;
     setFormError(null);
-    setResolvedUser(null);
-    setLookupHits([]);
     try {
-      const hits = await searchMembers(q);
-      if (hits.length === 0) {
-        setFormError("未找到匹配的用户。");
-        return;
-      }
+      const hits = await searchMembers(q, operation.signal);
+      if (!operation.current()) return;
       const matched = resolveSearchHits(q, hits);
-      if (matched.length === 1) {
-        setResolvedUser(toResolved(matched[0]));
-        setLookupHits([]);
-        return;
-      }
-      // Ambiguous nickname / partial match — let the operator pick.
-      setLookupHits(matched);
+      setResolvedUser(matched.length === 1 ? toResolved(matched[0]) : null);
+      setLookupHits(matched.length === 1 ? [] : matched);
+      if (!matched.length) setFormError("No matching users.");
     } catch (err) {
-      setFormError(toErrorMessage(err));
+      if (operation.current()) setFormError(toErrorMessage(err));
     } finally {
-      setLookingUp(false);
+      finish(operation);
     }
   }
-
   async function handleSave() {
+    if (!dialogActive.current) return;
+    const operation = start("write");
+    if (!operation) return;
     setFormError(null);
-    const levelId = Number(draft.levelId);
-    if (!Number.isInteger(levelId) || levelId <= 0) {
-      setFormError("请选择等级。");
-      return;
-    }
-
-    setSaving(true);
+    setError(null);
+    let accepted = false;
     try {
+      const levelId = Number(draft.levelId);
+      if (!Number.isSafeInteger(levelId) || levelId <= 0) throw new Error("Select a valid level.");
+      const body: { levelId: number; remark?: string; userId?: number; id?: number } = {
+        levelId,
+        remark: draft.remark.trim() || undefined,
+      };
       if (mode === "create") {
-        if (!resolvedUser) {
-          setFormError("请先查找并选择用户。");
-          setSaving(false);
-          return;
-        }
-        const userId = Number(resolvedUser.userId);
-        if (!Number.isInteger(userId) || userId <= 0) {
-          setFormError("解析到的用户 ID 无效。");
-          setSaving(false);
-          return;
-        }
-        await mutateUserLevels(`/api/admin/user-levels`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            levelId,
-            remark: draft.remark.trim() || undefined,
-          }),
-        });
-      } else if (editingId !== null) {
-        await mutateUserLevels(`/api/admin/user-levels`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: editingId,
-            levelId,
-            remark: draft.remark.trim() || undefined,
-          }),
-        });
+        const userId = Number(resolvedUser?.userId);
+        if (!Number.isSafeInteger(userId) || userId <= 0) throw new Error("Select a valid user.");
+        body.userId = userId;
+      } else {
+        if (editingId === null) throw new Error("Select a level relation.");
+        body.id = editingId;
       }
+      await mutateUserLevels("/api/admin/user-levels", {
+        method: "POST",
+        signal: operation.signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!operation.current()) return;
+      accepted = true;
+      dialogActive.current = false;
       setDialogOpen(false);
-      await loadList({ page: mode === "create" ? 1 : page });
+      await readList(operation, { page: mode === "create" ? 1 : page });
     } catch (err) {
-      setFormError(toErrorMessage(err));
+      if (operation.current()) {
+        if (accepted) setError(toErrorMessage(err));
+        else setFormError(toErrorMessage(err));
+      }
     } finally {
-      setSaving(false);
+      finish(operation);
     }
   }
-
   async function confirmDelete() {
     if (!deleteTarget) return;
+    const operation = start("write");
+    if (!operation) return;
     setError(null);
-    await mutateUserLevels(`/api/admin/user-levels?id=${deleteTarget.id}`, {
-      method: "DELETE",
-    });
-    setDeleteTarget(null);
-    await loadList({ page: items.length === 1 && page > 1 ? page - 1 : page });
+    let accepted = false;
+    try {
+      await mutateUserLevels(`/api/admin/user-levels?id=${deleteTarget.id}`, {
+        method: "DELETE",
+        signal: operation.signal,
+      });
+      if (!operation.current()) return;
+      accepted = true;
+      setDeleteTarget(null);
+      await readList(operation, { page: items.length === 1 && page > 1 ? page - 1 : page });
+    } catch (err) {
+      if (operation.current()) {
+        setError(toErrorMessage(err));
+        if (!accepted) throw err;
+      }
+    } finally {
+      finish(operation);
+    }
   }
 
   return (
@@ -423,6 +447,7 @@ export function UserLevelsPanel({
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4">
           <div className="min-w-[220px] max-w-md flex-1">
             <TextInput
+              disabled={loading}
               value={queryInput}
               placeholder="手机号 / 邮箱 / 昵称 / ID"
               onChange={(event) => setQueryInput(event.target.value)}
@@ -432,6 +457,7 @@ export function UserLevelsPanel({
             />
           </div>
           <select
+            disabled={loading}
             value={levelFilter}
             onChange={(event) => {
               const next = event.target.value;
@@ -456,7 +482,7 @@ export function UserLevelsPanel({
             size="sm"
             className="ml-auto"
             onClick={openCreate}
-            disabled={levelOptions.length === 0}
+            disabled={loading || levelOptions.length === 0}
           >
             <IconPlus className="size-4" />
             授予等级
@@ -509,6 +535,7 @@ export function UserLevelsPanel({
                           type="button"
                           size="xs"
                           variant="outline"
+                          disabled={loading}
                           onClick={() => openEdit(row)}
                         >
                           <IconEdit className="size-3.5" />
@@ -518,7 +545,10 @@ export function UserLevelsPanel({
                           type="button"
                           size="xs"
                           variant="destructive"
-                          onClick={() => setDeleteTarget(row)}
+                          disabled={loading}
+                          onClick={() => {
+                            if (!loading && !pending.current) setDeleteTarget(row);
+                          }}
                         >
                           <IconTrash className="size-3.5" />
                           删除
@@ -563,7 +593,7 @@ export function UserLevelsPanel({
 
       <AdminDialog
         open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
+        onClose={closeDialog}
         title={mode === "create" ? "授予等级" : "编辑等级关联"}
         description={
           mode === "create"
@@ -576,7 +606,7 @@ export function UserLevelsPanel({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setDialogOpen(false)}
+              onClick={closeDialog}
               disabled={saving}
             >
               取消
@@ -584,7 +614,7 @@ export function UserLevelsPanel({
             <Button
               type="button"
               size="sm"
-              disabled={saving || (mode === "create" && !resolvedUser)}
+              disabled={loading || (mode === "create" && !resolvedUser)}
               onClick={() => void handleSave()}
             >
               {saving ? "保存中…" : "保存"}
@@ -602,6 +632,11 @@ export function UserLevelsPanel({
                   value={lookupQuery}
                   placeholder="手机号 / 邮箱 / 昵称 / ID"
                   onChange={(event) => {
+                    if (pendingPurpose.current === "lookup") {
+                      pending.current?.cancel();
+                      pending.current?.finish();
+                      pending.current = null;
+                    }
                     setLookupQuery(event.target.value);
                     setResolvedUser(null);
                     setLookupHits([]);
@@ -648,6 +683,7 @@ export function UserLevelsPanel({
                     <button
                       key={hit.userId}
                       type="button"
+                      disabled={lookingUp}
                       onClick={() => {
                         setResolvedUser(toResolved(hit));
                         setLookupHits([]);
@@ -708,7 +744,12 @@ export function UserLevelsPanel({
       <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
+          if (!open) {
+            pending.current?.cancel();
+            pending.current?.finish();
+            pending.current = null;
+            setDeleteTarget(null);
+          }
         }}
         title="删除等级关联"
         description={
