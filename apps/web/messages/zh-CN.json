@@ -2394,6 +2394,7 @@
     "missingRequired": "标题与简介为必填项。",
     "publishNeedsTier": "发布需要至少开启一个档位。",
     "tierIncomplete": "「{tier}」档缺少{field}。请补齐，或关闭该档。",
+    "tierInvalidNumber": "「{tier}」档的{field}无效。请输入有效值，或关闭该档。",
     "tierField": {
       "title": "档位名称",
       "description": "档位描述"

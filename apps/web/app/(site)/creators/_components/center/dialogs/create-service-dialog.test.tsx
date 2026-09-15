@@ -6,11 +6,20 @@ import type { CreatorServiceDTO } from "@repo/shared/creator-service";
 import { CreateServiceDialog } from "./create-service-dialog";
 const mocks = vi.hoisted(() => ({
   account: "alice",
+  cell: "global",
   create: vi.fn(),
   update: vi.fn(),
   publish: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
+}));
+vi.mock("@/src/lib/region/cell", () => ({
+  get CURRENT_CELL() {
+    return mocks.cell;
+  },
+}));
+vi.mock("@/src/env", () => ({
+  env: { BANNER_BASE_URL: "https://fixture.oss-ap-southeast-1.aliyuncs.com" },
 }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: mocks.account } }),
@@ -71,6 +80,7 @@ const close = vi.fn(),
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.account = "alice";
+  mocks.cell = "global";
   mocks.create.mockResolvedValue({ ...service, version: 2 });
   mocks.update.mockResolvedValue({ ...service, version: 2 });
   mocks.publish.mockResolvedValue({ ...service, status: "listed", version: 3 });
@@ -202,4 +212,56 @@ it("ignores an abandoned publish completion", async () => {
   expect(close).not.toHaveBeenCalled();
   expect(saved).not.toHaveBeenCalled();
   expect(mocks.success).not.toHaveBeenCalled();
+});
+
+it.each(["", "-1", "100000001", "1e309"])(
+  "rejects invalid package price %s without saving a free offer",
+  async (price) => {
+    await act(async () => render());
+    await act(async () => button("wizardNext").click());
+    await fill("0", price);
+    await act(async () => button("saveDraft").click());
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.error).toHaveBeenCalledWith("tierInvalidNumber");
+    expect(button("wizardNext").disabled).toBe(true);
+  }
+);
+it.each([365, 200])("rejects fractional package fields with max=%s", async (max) => {
+  await act(async () => render());
+  await act(async () => button("wizardNext").click());
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>(`input[max="${max}"]`)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "1.5");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => button("saveDraft").click());
+  expect(mocks.update).not.toHaveBeenCalled();
+  expect(mocks.error).toHaveBeenCalledWith("tierInvalidNumber");
+});
+it("accepts an explicitly entered zero price", async () => {
+  await act(async () => render());
+  await act(async () => button("wizardNext").click());
+  await fill("0", "0");
+  await act(async () => button("saveDraft").click());
+  expect(mocks.update.mock.calls[0]![0].body.packages[0].price).toBe(0);
+  expect(button("wizardNext").disabled).toBe(false);
+});
+it.each([
+  ["global", "USD"],
+  ["com", "USD"],
+  ["cn", "CNY"],
+])("uses %s currency policy independently of OSS host", async (cell, expectedCurrency) => {
+  mocks.cell = cell!;
+  await act(async () => render(null));
+  await fill("fieldTitlePlaceholder", "Service");
+  await fill("fieldSummaryPlaceholder", "Summary");
+  await act(async () => button("wizardNext").click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="tier.basic"]')!.click()
+  );
+  await fill("tierTitlePlaceholder.basic", "Basic");
+  await fill("tierDescPlaceholder.basic", "Description");
+  await fill("0", "10");
+  await act(async () => button("saveDraft").click());
+  expect(mocks.create.mock.calls[0]![0].packages[0].currency).toBe(expectedCurrency);
 });

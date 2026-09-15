@@ -2394,6 +2394,7 @@
     "missingRequired": "標題與簡介為必填項。",
     "publishNeedsTier": "發布需要至少開啟一個檔位。",
     "tierIncomplete": "「{tier}」檔缺少{field}。請補齊，或關閉該檔。",
+    "tierInvalidNumber": "「{tier}」檔的{field}無效。請輸入有效值，或關閉該檔。",
     "tierField": {
       "title": "檔位名稱",
       "description": "檔位描述"

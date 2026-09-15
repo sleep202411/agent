@@ -47,6 +47,7 @@ import {
   type ServiceTier,
 } from "@repo/shared/creator-service";
 import { ZERO_DECIMAL_CURRENCIES, type CurrencyCode } from "@repo/shared/crew";
+import { CURRENT_CELL } from "@/src/lib/region/cell";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import {
   ServiceApiError,
@@ -97,8 +97,7 @@ const COM_CURRENCIES: CurrencyCode[] = [
 const CN_CURRENCIES: CurrencyCode[] = ["CNY"];
 
 function defaultCurrencyForCell(): CurrencyCode {
-  const banner = env.BANNER_BASE_URL ?? "";
-  return /\.cn|\.aliyuncs\.com/.test(banner) ? "CNY" : "USD";
+  return CURRENT_CELL === "cn" ? "CNY" : "USD";
 }
 
 function allowedCurrenciesForCell(): CurrencyCode[] {
@@ -153,7 +152,7 @@ function tierToWire(
     title: s.title.trim(),
     description: s.description.trim(),
     currency,
-    price: Number.isFinite(price) ? price : 0,
+    price,
     deliveryDays: s.deliveryDays,
     revisions: s.revisions,
     scope: s.scopeText
@@ -161,6 +160,18 @@ function tierToWire(
       .map((line) => line.trim())
       .filter(Boolean),
   };
+}
+
+// Match the existing server package bounds; blank or invalid prices are not free offers.
+function invalidNumericField(s: TierFormState): string | null {
+  const price = Number(s.priceText.trim());
+  if (!s.priceText.trim() || !Number.isFinite(price) || price < 0 || price > 100_000_000)
+    return "tierFieldPrice";
+  if (!Number.isInteger(s.deliveryDays) || s.deliveryDays < 1 || s.deliveryDays > 365)
+    return "tierFieldDeliveryDays";
+  if (!Number.isInteger(s.revisions) || s.revisions < UNLIMITED_REVISIONS || s.revisions > 200)
+    return "tierFieldRevisions";
+  return null;
 }
 
 // ─── Step config ────────────────────────────────────────────
@@ -351,7 +362,10 @@ function CreateServiceDialogContent({
 
   const enabledCount = SERVICE_TIERS.filter((t) => tiers[t].enabled).length;
   const overviewReady = title.trim().length > 0 && summary.trim().length > 0;
-  const canPublish = overviewReady && enabledCount > 0;
+  const invalidTier = SERVICE_TIERS.find(
+    (tier) => tiers[tier].enabled && invalidNumericField(tiers[tier])
+  );
+  const canPublish = overviewReady && enabledCount > 0 && !invalidTier;
 
   const updateTier = (tier: ServiceTier, patch: Partial<TierFormState>) =>
     setTiers((prev) => ({ ...prev, [tier]: { ...prev[tier], ...patch } }));
@@ -431,6 +445,15 @@ function CreateServiceDialogContent({
       );
       return null;
     }
+    if (invalidTier) {
+      toast.error(
+        t("tierInvalidNumber", {
+          tier: t(`tier.${invalidTier}`),
+          field: t(invalidNumericField(tiers[invalidTier])!),
+        })
+      );
+      return null;
+    }
     try {
       let saved: CreatorServiceDTO;
       if (savedRecord.current.id) {
@@ -497,6 +520,7 @@ function CreateServiceDialogContent({
     overview: overviewReady,
     pricing:
       enabledCount > 0 &&
+      !invalidTier &&
       SERVICE_TIERS.every((k) => !tiers[k].enabled || tiers[k].title.trim().length > 0),
     questions: true,
     preview: canPublish,
