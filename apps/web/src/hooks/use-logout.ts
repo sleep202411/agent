@@ -37,10 +37,10 @@ export function useLogout() {
     void queryClient.cancelQueries({ queryKey: ["user"] });
     void queryClient.cancelQueries({ queryKey: kycKeys.authStatus });
 
-    // Force-write the cleared state. Subscribers re-render immediately
-    // (avatar → "Get Started", protected pages → AuthGate redirect)
-    // without firing an extra refetch.
-    queryClient.setQueryData(userKeys.info, null);
+    // Force-write the cleared state across every locale variant.
+    // Subscribers re-render immediately (avatar → "Get Started",
+    // protected pages → AuthGate redirect) without firing an extra refetch.
+    queryClient.setQueriesData({ queryKey: userKeys.info }, null);
     queryClient.setQueryData(userKeys.credits, 0);
     queryClient.removeQueries({ queryKey: kycKeys.authStatus });
 

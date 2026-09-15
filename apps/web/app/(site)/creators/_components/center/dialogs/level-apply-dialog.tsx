@@ -71,13 +71,13 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
   const levelLocked = lockedLevelId != null;
 
   const levelsQuery = useQuery({
-    queryKey: ["user-levels", "options"],
+    queryKey: ["user-levels", "options", locale],
     queryFn: listUserLevelOptions,
     enabled: open,
     staleTime: 60_000,
   });
   const pendingQuery = useQuery({
-    queryKey: ["user-levels", "apply", "mine", USER_LEVEL_APPLY_STATUS.PENDING],
+    queryKey: ["user-levels", "apply", "mine", USER_LEVEL_APPLY_STATUS.PENDING, locale],
     queryFn: () => listMyUserLevelApplications(USER_LEVEL_APPLY_STATUS.PENDING),
     enabled: open,
     staleTime: 30_000,

@@ -867,7 +867,7 @@ export class BillingService {
 
     const from = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
     const workspaceIdFilter = query.workspaceId
-      ? Prisma.sql`AND a.owner_id = ${query.workspaceId}::uuid`
+      ? Prisma.sql`AND a.owner_id = ${query.workspaceId}`
       : Prisma.empty;
     const actorFilter = rawActorUserId
       ? Prisma.sql`AND t.actor_user_id = ${rawActorUserId}`
@@ -896,10 +896,11 @@ export class BillingService {
       FROM wallet_ledger_entries e
       JOIN wallet_transactions t ON t.id = e.transaction_id
       JOIN wallet_accounts a ON a.id = e.account_id
-      JOIN workspaces w ON w.id = a.owner_id AND w.deleted_at IS NULL
-      WHERE a.owner_type = 'workspace'
-        AND a.currency = 'compute_point'
-        AND a.balance_kind = 'consumable'
+      -- owner_id is varchar; workspaces.id is uuid — cast before comparing.
+      JOIN workspaces w ON w.id::text = a.owner_id AND w.deleted_at IS NULL
+      WHERE a.owner_type::text = 'workspace'
+        AND a.currency::text = 'compute_point'
+        AND a.balance_kind::text = 'consumable'
         AND e.entry_type::text IN ('settle', 'debit')
         AND e.created_at >= ${from}
         ${workspaceIdFilter}
@@ -922,16 +923,27 @@ export class BillingService {
       };
     }
 
-    const workspaceIds = [...new Set(rows.map((row) => row.workspaceId))];
-    const workspaces = await this.prisma.workspace.findMany({
-      where: { id: { in: workspaceIds } },
-      select: {
-        id: true,
-        name: true,
-        defaultForUserId: true,
-        status: true,
-      },
-    });
+    const workspaceIdPattern =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const workspaceIds = [
+      ...new Set(
+        rows
+          .map((row) => row.workspaceId)
+          .filter((id) => workspaceIdPattern.test(id)),
+      ),
+    ];
+    const workspaces =
+      workspaceIds.length === 0
+        ? []
+        : await this.prisma.workspace.findMany({
+            where: { id: { in: workspaceIds } },
+            select: {
+              id: true,
+              name: true,
+              defaultForUserId: true,
+              status: true,
+            },
+          });
     const workspaceById = new Map(workspaces.map((ws) => [ws.id, ws]));
 
     const rawUserIds = [

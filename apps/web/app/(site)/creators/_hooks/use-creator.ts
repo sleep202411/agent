@@ -35,6 +35,7 @@ import {
 import { api } from "@/src/lib/api";
 import type { ExperienceEntry } from "@/app/(site)/profile/_hooks/use-profile-extras";
 import { env } from "@/src/env";
+import { useLocale } from "@/src/i18n/i18n";
 
 export interface CreatorLevel {
   id: number;
@@ -148,9 +149,10 @@ const PAGE_SIZE = 60;
 
 export const creatorKeys = {
   all: ["creator"] as const,
-  list: () => ["creator", "list"] as const,
-  search: (key: string) => ["creator", "search", key] as const,
-  detail: (id: string) => ["creator", "detail", id] as const,
+  /** Level names are localized by Java via Accept-Language. */
+  list: (locale: string) => ["creator", "list", locale] as const,
+  search: (key: string, locale: string) => ["creator", "search", key, locale] as const,
+  detail: (id: string, locale: string) => ["creator", "detail", id, locale] as const,
 };
 
 interface CreatorsView {
@@ -197,6 +199,7 @@ function nextCreatorsPage(
  * authoritative total and stop fetching once `loaded.length >= total`.
  */
 export function useCreators() {
+  const locale = useLocale();
   return useInfiniteQuery<
     CreatorListResult,
     Error,
@@ -204,7 +207,7 @@ export function useCreators() {
     ReturnType<typeof creatorKeys.list>,
     number
   >({
-    queryKey: creatorKeys.list(),
+    queryKey: creatorKeys.list(locale),
     initialPageParam: 1,
     queryFn: ({ pageParam }) => listCreators({ page: pageParam, pageSize: PAGE_SIZE }),
     // Stop conditions (in `nextCreatorsPage`): empty page, short page
@@ -222,6 +225,7 @@ export function useCreators() {
  * list in that case. Same dedupe + pagination as the list.
  */
 export function useCreatorSearch(key: string, enabled = true) {
+  const locale = useLocale();
   const trimmed = key.trim();
   return useInfiniteQuery<
     CreatorListResult,
@@ -230,7 +234,7 @@ export function useCreatorSearch(key: string, enabled = true) {
     ReturnType<typeof creatorKeys.search>,
     number
   >({
-    queryKey: creatorKeys.search(trimmed),
+    queryKey: creatorKeys.search(trimmed, locale),
     enabled: enabled && trimmed.length > 0,
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
@@ -247,14 +251,15 @@ export function useCreatorSearch(key: string, enabled = true) {
  * page reloads still work.
  */
 export function useCreatorDetail(id: string) {
+  const locale = useLocale();
   const qc = useQueryClient();
   return useQuery<Creator | null>({
-    queryKey: ["creator", "detail", id],
+    queryKey: creatorKeys.detail(id, locale),
     queryFn: async () => {
       // The list cache stores the raw infinite-query envelope (pages + pageParams);
       // flatten + map before searching so deep-link arrivals reuse a row already
       // fetched by the talent-market grid.
-      const cached = qc.getQueryData<{ pages: CreatorListResult[] }>(creatorKeys.list());
+      const cached = qc.getQueryData<{ pages: CreatorListResult[] }>(creatorKeys.list(locale));
       if (cached?.pages) {
         for (const page of cached.pages) {
           for (const row of page.list) {

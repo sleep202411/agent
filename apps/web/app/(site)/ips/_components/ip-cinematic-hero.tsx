@@ -240,12 +240,12 @@ function RailOnly({
       <div className="mb-3">
         <h2 className="text-lg font-semibold text-foreground">{t("forYou")}</h2>
       </div>
-      <div className="-mx-6 flex gap-3 overflow-x-auto px-6 pb-4 sm:-mx-10 sm:px-10 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="grid grid-cols-2 gap-3 pb-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {rail.map((item) => (
           <Link
             key={item.id}
             href={localizePath(ipRoomPath(item.roomNumber), locale)}
-            className="group block w-64 shrink-0 sm:w-72"
+            className="group block min-w-0"
           >
             <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">
               {item.cover ? (

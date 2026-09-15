@@ -367,7 +367,7 @@ export const emptyIpOrders: AdminIpOrdersData = { items: [], nextCursor: null };
 export const emptyIpEntitlements: AdminIpEntitlementsData = { items: [], nextCursor: null };
 export const emptyIpTaxonomy: AdminIpTaxonomyData = { items: [] };
 
-// --- IP discovery placements (IP Plaza hero / for-you / pinned) ---
+// --- IP discovery placements (IP Plaza Banner / TV Recommendation / pinned) ---
 
 export type IpDiscoveryPlacementKey = "ip_plaza_hero" | "ip_plaza_for_you" | "ip_plaza_list_pinned";
 

@@ -59,28 +59,56 @@ function InstructorChips({
 
   return (
     <TooltipProvider delayDuration={120}>
-      <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-        <span className="shrink-0 text-[11px] font-medium text-[#6f7585]">{t("instructors")}</span>
-        {visible.map((instructor) => {
-          const name = instructor.nickName.trim() || t("unknownInstructor");
-          const href = localizePath(`/creators/${encodeUserId(instructor.userId)}`, locale);
-          return (
-            <Tooltip key={instructor.userId}>
-              <TooltipTrigger asChild>
-                <Link
-                  href={href}
-                  onClick={(event) => event.stopPropagation()}
-                  className="flex min-w-0 max-w-[50%] items-center gap-1.5 rounded-md px-0.5 py-0.5 text-[12px] font-medium text-[#c8cfde] transition-colors hover:text-white"
+      <div className="flex min-w-0 flex-col gap-1.5 overflow-hidden">
+        <span className="text-[11px] font-medium text-[#6f7585]">{t("instructors")}</span>
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
+          {visible.map((instructor) => {
+            const name = instructor.nickName.trim() || t("unknownInstructor");
+            const href = localizePath(`/creators/${encodeUserId(instructor.userId)}`, locale);
+            return (
+              <Tooltip key={instructor.userId}>
+                <TooltipTrigger asChild>
+                  <Link
+                    href={href}
+                    onClick={(event) => event.stopPropagation()}
+                    className="flex min-w-0 max-w-[50%] items-center gap-1.5 rounded-md px-0.5 py-0.5 text-[12px] font-medium text-[#c8cfde] transition-colors hover:text-white"
+                  >
+                    <UserAvatar
+                      src={instructor.avatar}
+                      seed={instructor.userId}
+                      name={name}
+                      size={20}
+                      className="size-5 shrink-0 ring-1 ring-[#3a3a4a]"
+                    />
+                    <span className="truncate leading-5">{name}</span>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  sideOffset={8}
+                  className={instructorTooltipClassName}
+                  arrowClassName={instructorTooltipArrowClassName}
                 >
-                  <UserAvatar
-                    src={instructor.avatar}
-                    seed={instructor.userId}
-                    name={name}
-                    size={20}
-                    className="size-5 shrink-0 ring-1 ring-[#3a3a4a]"
-                  />
-                  <span className="truncate leading-5">{name}</span>
-                </Link>
+                  <span className="flex items-center gap-2">
+                    <UserAvatar
+                      src={instructor.avatar}
+                      seed={instructor.userId}
+                      name={name}
+                      size={22}
+                      className="size-[22px] shrink-0"
+                    />
+                    <span className="text-xs font-medium leading-snug break-all">{name}</span>
+                  </span>
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+          {hidden.length > 0 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="shrink-0 cursor-default text-[11px] font-medium text-[#8b92a3]">
+                  +{hidden.length}
+                </span>
               </TooltipTrigger>
               <TooltipContent
                 side="top"
@@ -88,53 +116,27 @@ function InstructorChips({
                 className={instructorTooltipClassName}
                 arrowClassName={instructorTooltipArrowClassName}
               >
-                <span className="flex items-center gap-2">
-                  <UserAvatar
-                    src={instructor.avatar}
-                    seed={instructor.userId}
-                    name={name}
-                    size={22}
-                    className="size-[22px] shrink-0"
-                  />
-                  <span className="text-xs font-medium leading-snug break-all">{name}</span>
-                </span>
+                <ul className="space-y-1.5">
+                  {hidden.map((instructor) => {
+                    const name = instructor.nickName.trim() || t("unknownInstructor");
+                    return (
+                      <li key={instructor.userId} className="flex items-center gap-2">
+                        <UserAvatar
+                          src={instructor.avatar}
+                          seed={instructor.userId}
+                          name={name}
+                          size={18}
+                          className="size-[18px] shrink-0"
+                        />
+                        <span className="text-xs font-medium leading-snug break-all">{name}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
               </TooltipContent>
             </Tooltip>
-          );
-        })}
-        {hidden.length > 0 ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="shrink-0 cursor-default text-[11px] font-medium text-[#8b92a3]">
-                +{hidden.length}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent
-              side="top"
-              sideOffset={8}
-              className={instructorTooltipClassName}
-              arrowClassName={instructorTooltipArrowClassName}
-            >
-              <ul className="space-y-1.5">
-                {hidden.map((instructor) => {
-                  const name = instructor.nickName.trim() || t("unknownInstructor");
-                  return (
-                    <li key={instructor.userId} className="flex items-center gap-2">
-                      <UserAvatar
-                        src={instructor.avatar}
-                        seed={instructor.userId}
-                        name={name}
-                        size={18}
-                        className="size-[18px] shrink-0"
-                      />
-                      <span className="text-xs font-medium leading-snug break-all">{name}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </TooltipProvider>
   );
