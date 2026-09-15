@@ -6,7 +6,7 @@ import { useAuth } from "@/app/_components/auth-provider";
 import { IconPlus } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +27,17 @@ import {
   type StoryAssetSpecKind,
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
+
+type CreateAdmission = {
+  token: symbol;
+  idempotencyKey: string;
+  isCurrent: () => boolean;
+  cacheKey: ReturnType<typeof storyProductionKeys.assets>;
+  projectId: string;
+  chapterId: string;
+  kind: StoryAssetSpecKind;
+  name: string;
+};
 
 export function StoryAssetSpecCreateDialog({
   projectId,
@@ -51,36 +62,45 @@ export function StoryAssetSpecCreateDialog({
   const [name, setName] = useState("");
   const trimmedName = name.trim();
   const valid = trimmedName.length > 0;
+  const pending = useRef<{ scope: typeof isCurrent; token: symbol } | null>(null);
+  const lastSubmission = useRef<{
+    scope: typeof isCurrent;
+    name: string;
+    idempotencyKey: string;
+  } | null>(null);
 
   const mutation = useMutation({
     retry: false,
-    onMutate: () => ({
-      isCurrent,
-      cacheKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
+    onMutate: (input: CreateAdmission) => ({
+      isCurrent: input.isCurrent,
+      cacheKey: input.cacheKey,
     }),
-    mutationFn: () =>
-      createStoryAssetSpec(
-        projectId,
-        chapterId,
-        createStoryProductionIdempotencyKey("story-asset-create"),
-        {
-          kind: initialKind,
-          name: trimmedName,
-          imagePrompt: trimmedName,
-        }
-      ),
+    mutationFn: (input: CreateAdmission) => {
+      if (!input.isCurrent()) throw new DOMException("Asset creation abandoned", "AbortError");
+      return createStoryAssetSpec(input.projectId, input.chapterId, input.idempotencyKey, {
+        kind: input.kind,
+        name: input.name,
+        imagePrompt: input.name,
+      });
+    },
     onSuccess: async (created, _input, context) => {
       if (!context) return;
-      queryClient.setQueryData<StoryAssetSpec[]>(context.cacheKey, (current) => [
-        ...(current ?? []),
-        created,
-      ]);
+      queryClient.setQueryData<StoryAssetSpec[]>(context.cacheKey, (current) =>
+        current?.some((item) => item.id === created.id)
+          ? current.map((item) => (item.id === created.id ? created : item))
+          : [...(current ?? []), created]
+      );
+      if (lastSubmission.current?.idempotencyKey === _input.idempotencyKey)
+        lastSubmission.current = null;
       if (!context.isCurrent()) return;
       onOpenChange(false);
       toast.success(t("created"));
       await queryClient.invalidateQueries({
         queryKey: storyProductionKeys.state(projectId, chapterId),
       });
+    },
+    onSettled: (_result, _error, input) => {
+      if (pending.current?.token === input.token) pending.current = null;
     },
     onError: (error, _input, context) => {
       if (!context?.isCurrent()) return;
@@ -105,7 +125,33 @@ export function StoryAssetSpecCreateDialog({
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            if (valid && !mutation.isPending) mutation.mutate();
+            if (!valid || !isCurrent() || pending.current?.scope === isCurrent) return;
+            let submission = lastSubmission.current;
+            if (submission?.scope !== isCurrent || submission.name !== trimmedName) {
+              try {
+                submission = {
+                  scope: isCurrent,
+                  name: trimmedName,
+                  idempotencyKey: createStoryProductionIdempotencyKey("story-asset-create"),
+                };
+                lastSubmission.current = submission;
+              } catch (error) {
+                toast.error(storyApiErrorMessage(error, t("createError")));
+                return;
+              }
+            }
+            const token = Symbol("asset-create");
+            pending.current = { scope: isCurrent, token };
+            mutation.mutate({
+              token,
+              idempotencyKey: submission.idempotencyKey,
+              isCurrent,
+              cacheKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
+              projectId,
+              chapterId,
+              kind: initialKind,
+              name: trimmedName,
+            });
           }}
         >
           <Field dense required label={t("name")} htmlFor="asset-create-name">
