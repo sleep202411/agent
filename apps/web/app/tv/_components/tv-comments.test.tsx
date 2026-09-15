@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { TvRightRail } from "./tv-right-rail";
 import { TvComments } from "./tv-comments";
 import { commentsApi } from "../_hooks/comments";
 const state = vi.hoisted(() => ({ id: "alice" as string | undefined, open: vi.fn() }));
@@ -142,4 +143,18 @@ it("preserves a failed removal for retry", async () => {
   expect(container.textContent).toContain("Try removal again");
   await act(async () => click("remove"));
   expect(container.textContent).not.toContain("Hello");
+});
+
+it("reclaims the comment column and retains its draft when reopened", async () => {
+  await act(async () => root.render(<TvRightRail ipId="ip" />));
+  act(() => draft("Unsent review"));
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-expanded="true"]')!.click()
+  );
+  expect(container.querySelector("aside")!.className).toContain("lg:w-12");
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="expand"]')!.click()
+  );
+  expect(container.querySelector("textarea")!.value).toBe("Unsent review");
+  expect(container.querySelector("aside")!.className).toContain("xl:w-80");
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { api } from "@/src/lib/api";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -86,7 +86,7 @@ export function useTvIps(options?: { q?: string }) {
 }
 
 /** Use the same public preview as plaza cards. */
-function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>): TvItem {
+export function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>): TvItem {
   const cover = getAssetUrl(ip.coverAsset);
   const trailer = ipPreviewVideoUrl(ip);
   return {
@@ -98,20 +98,46 @@ function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>): TvIt
     description: ip.summary || ip.description || "",
     cover,
     trailer,
+    trailerType:
+      [
+        ip.trailerAsset,
+        ...ip.episodes.flatMap((episode) => [episode.trailerAsset, episode.mediaAsset]),
+      ].find((asset) => asset?.url === trailer)?.contentType ?? undefined,
     ownerName: ip.copyrightOwner?.trim() || t("anonymousOwner"),
-    episodeCount: ip.episodes.length,
+    episodeCount: ip.episodes.filter((episode) => episode.status === "published").length,
     episodes: ip.episodes
       .map((episode) => ({
         id: episode.id,
         number: episode.episodeNo,
         title: episode.title,
         video: previewVideoUrl(episode.mediaAsset),
+        videoType: episode.mediaAsset?.contentType ?? undefined,
         published: episode.status === "published",
+        locked: Boolean(episode.mediaLocked),
       }))
-      .filter((episode) => episode.published && Boolean(episode.video)),
+      .filter((episode) => episode.published),
   };
 }
 
 function getAssetUrl(asset: IpCommerceAsset | null | undefined) {
   return asset?.url || asset?.externalUrl || "";
+}
+
+/** Detail resolves viewer access; discovery and list cards are public-only. */
+export function useTvSelectedIp(ipId: string | undefined) {
+  const { user } = useCurrentUser();
+  const locale = useLocale();
+  const t = useTranslations("tv");
+  const query = useQuery({
+    queryKey: ["tv", "selected-ip", ipId, locale, user?.id ?? "guest"],
+    queryFn: ({ signal }) =>
+      api.get<{ ip: IpCommerceIp }>(`/aurora/ip-commerce/ips/${encodeURIComponent(ipId!)}`, {
+        params: { locale },
+        signal,
+      }),
+    enabled: Boolean(ipId),
+    retry: false,
+    staleTime: 30_000,
+  });
+  return { ...query, item: query.data?.ip ? toTvItem(query.data.ip, t) : undefined };
 }

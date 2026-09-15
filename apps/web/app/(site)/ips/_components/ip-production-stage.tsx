@@ -11,7 +11,15 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { api } from "@/src/lib/api";
 
-export function IpProductionStage({ ipId, compact = false }: { ipId: string; compact?: boolean }) {
+export function IpProductionStage({
+  ipId,
+  compact = false,
+  showLabel = false,
+}: {
+  ipId: string;
+  compact?: boolean;
+  showLabel?: boolean;
+}) {
   const { user } = useCurrentUser();
   const t = useTranslations("ipProductionStage");
   const query = useQuery({
@@ -48,7 +56,9 @@ export function IpProductionStage({ ipId, compact = false }: { ipId: string; com
         className="inline-flex shrink-0 items-center rounded px-1 py-0.5 text-white/45"
       >
         <Icon aria-hidden className="size-3.5" />
-        <span className="sr-only">{label}</span>
+        <span className={showLabel ? "ml-1 text-[11px]" : "sr-only"}>
+          {showLabel && query.data ? t(query.data.stage) : label}
+        </span>
       </span>
     );
   }

@@ -18,6 +18,7 @@ interface TvStageProps {
   onNext?: () => void;
   advancing: boolean;
   navigationError: string | null;
+  onRefreshSource?: () => void;
 }
 
 export function TvStage(props: TvStageProps) {
@@ -132,13 +133,21 @@ export function TvStage(props: TvStageProps) {
     }
     player.src({
       src: item.trailer,
-      type: /\.m3u8(?:[?#]|$)/i.test(item.trailer) ? "application/x-mpegURL" : "video/mp4",
+      type:
+        item.trailerType &&
+        /^(video\/|application\/(?:vnd\.apple\.mpegurl|x-mpegurl))/i.test(item.trailerType)
+          ? item.trailerType
+          : /\.m3u8(?:[?#]|$)/i.test(item.trailer)
+            ? "application/x-mpegURL"
+            : /\.webm(?:[?#]|$)/i.test(item.trailer)
+              ? "video/webm"
+              : "video/mp4",
     });
     if (visible.current && !document.hidden) {
       autoplayPending.current = false;
       void player.play()?.catch(() => {});
     }
-  }, [item.id, item.trailer, retry]);
+  }, [item.id, item.trailer, item.trailerType, retry]);
 
   useEffect(() => {
     playerRef.current?.poster(coverAvailable ? item.cover : "");
@@ -181,7 +190,10 @@ export function TvStage(props: TvStageProps) {
                     {item.trailer && (
                       <button
                         type="button"
-                        onClick={() => setRetry((value) => value + 1)}
+                        onClick={() => {
+                          latest.current.onRefreshSource?.();
+                          setRetry((value) => value + 1);
+                        }}
                         className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-white/10 px-4 text-white hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-white"
                       >
                         <IconRefresh aria-hidden className="size-4" />
