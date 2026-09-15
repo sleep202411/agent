@@ -38,10 +38,14 @@ export function useCertifyQuery() {
     onMutate: () => ({ accountId: user?.id ?? null }),
     onSuccess: (_data, _variables, context) => {
       void qc.invalidateQueries({ queryKey: [...kycKeys.authStatus, context?.accountId ?? null] });
-      const current = qc.getQueryData<{ id?: string | number }>(userKeys.info);
-      if (context?.accountId && current?.id != null && String(current.id) === context.accountId) {
-        void qc.invalidateQueries({ queryKey: userKeys.info });
-      }
+      if (!context?.accountId) return;
+      void qc.invalidateQueries({
+        queryKey: userKeys.info,
+        predicate: (query) => {
+          const current = query.state.data as { id?: string | number } | null | undefined;
+          return current?.id != null && String(current.id) === context.accountId;
+        },
+      });
     },
   });
 }

@@ -84,7 +84,7 @@ it("does not refresh a replacement user's profile after delayed verification", a
     await Promise.resolve();
   });
   s.user = "b";
-  client.setQueryData(["user", "info"], { id: "b" });
+  client.setQueryData(["user", "info", "en-US"], { id: "b" });
   await render();
   const invalidate = vi.spyOn(client, "invalidateQueries");
   await act(async () => {
@@ -92,5 +92,21 @@ it("does not refresh a replacement user's profile after delayed verification", a
     await pending;
   });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["kyc", "auth-status", "a"] });
-  expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ["user", "info"] });
+  expect(client.getQueryState(["user", "info", "en-US"])?.isInvalidated).toBe(false);
+});
+
+it("refreshes all matching localized profile variants after verification without touching another account", async () => {
+  for (const locale of ["en-US", "zh-CN", "zh-HK"]) {
+    client.setQueryData(["user", "info", locale], { id: "a" });
+  }
+  client.setQueryData(["user", "info", "old-fixture"], { id: "b" });
+  s.confirm.mockResolvedValue({ status: "T" });
+  await render();
+  await act(async () => {
+    await confirm.mutateAsync("verification");
+  });
+  for (const locale of ["en-US", "zh-CN", "zh-HK"]) {
+    expect(client.getQueryState(["user", "info", locale])?.isInvalidated).toBe(true);
+  }
+  expect(client.getQueryState(["user", "info", "old-fixture"])?.isInvalidated).toBe(false);
 });
