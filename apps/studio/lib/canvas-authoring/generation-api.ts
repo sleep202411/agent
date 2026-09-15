@@ -1667,17 +1667,20 @@ export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {
   });
 }
 
-export async function listFizzAiJobs(input: {
-  limit?: number;
-  sourceSurface?: string;
-  type?: FizzAiJobType;
-  ids?: string[];
-  projectId?: string;
-  storyProjectId?: string;
-  documentId?: string;
-  documentBlockId?: string;
-  idempotencyKey?: string;
-}): Promise<FizzAiJobListResponse> {
+export async function listFizzAiJobs(
+  input: {
+    limit?: number;
+    sourceSurface?: string;
+    type?: FizzAiJobType;
+    ids?: string[];
+    projectId?: string;
+    storyProjectId?: string;
+    documentId?: string;
+    documentBlockId?: string;
+    idempotencyKey?: string;
+  },
+  options: { signal?: AbortSignal; headers?: HeadersInit } = {}
+): Promise<FizzAiJobListResponse> {
   const params = new URLSearchParams();
   if (input.limit) params.set("limit", String(input.limit));
   if (input.sourceSurface) params.set("sourceSurface", input.sourceSurface);
@@ -1694,6 +1697,7 @@ export async function listFizzAiJobs(input: {
   }
   const query = params.toString();
   return api.get<FizzAiJobListResponse>(`/aurora/ai/jobs${query ? `?${query}` : ""}`, {
+    ...options,
     requestScope:
       input.documentId || input.projectId || input.storyProjectId ? "project" : "workspace",
     timeout: 15_000,
