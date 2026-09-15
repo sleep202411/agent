@@ -134,6 +134,7 @@ export class MembershipGrantAdminService {
    */
   async revoke(grantId: string): Promise<MembershipGrantView> {
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM entitlement_grants WHERE id=${grantId}::uuid FOR UPDATE`;
       const existing = await tx.entitlementGrant.findUnique({
         where: { id: grantId },
       });
@@ -143,7 +144,9 @@ export class MembershipGrantAdminService {
           'Only admin-issued grants can be revoked here; refund the order instead.',
         );
       }
-      const now = new Date();
+      const [{ now }] = await tx.$queryRaw<
+        { now: Date }[]
+      >`SELECT clock_timestamp() AS now`;
       const effectiveStatus = effectiveStatusAt(existing, now);
       if (
         effectiveStatus !== EntitlementGrantStatus.active &&

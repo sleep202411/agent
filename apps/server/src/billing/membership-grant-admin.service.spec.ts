@@ -65,7 +65,7 @@ describe('MembershipGrantAdminService', () => {
   beforeEach(() => {
     prisma = {
       $transaction: jest.fn(),
-      $queryRaw: jest.fn().mockResolvedValue([]),
+      $queryRaw: jest.fn().mockResolvedValue([{ now: new Date() }]),
       entitlementGrant: {
         findMany: jest.fn(),
         findUnique: jest.fn(),

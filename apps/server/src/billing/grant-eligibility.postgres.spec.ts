@@ -181,4 +181,70 @@ integration('Grant eligibility transaction recovery', () => {
       expect(await db.ipCollectionItem.count({ where: { ipId } })).toBe(0);
     },
   );
+  it.each(['expired', 'metadata', 'deleted'] as const)(
+    're-reads a grant changed to %s during revocation admission',
+    async (kind) => {
+      const grant = await membership();
+      let release!: () => void;
+      let ready!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const entered = new Promise<void>((resolve) => {
+        ready = resolve;
+      });
+      const holder = db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM entitlement_grants WHERE id=${grant.id}::uuid FOR UPDATE`;
+        ready();
+        await gate;
+        if (kind === 'deleted') {
+          await tx.entitlementGrant.delete({ where: { id: grant.id } });
+        } else {
+          await tx.entitlementGrant.update({
+            where: { id: grant.id },
+            data:
+              kind === 'expired'
+                ? {
+                    startsAt: new Date(Date.now() - 10000),
+                    endsAt: new Date(Date.now() - 1000),
+                  }
+                : { metadata: { note: 'updated while waiting' } },
+          });
+        }
+      });
+      await entered;
+      const pending = memberships().revoke(grant.id);
+      void pending.catch(() => undefined);
+      try {
+        const deadline = Date.now() + 5000;
+        while (true) {
+          const [row] = await db.$queryRaw<
+            { count: bigint }[]
+          >`SELECT count(*) FROM pg_stat_activity WHERE application_name=${applicationName} AND wait_event_type='Lock'`;
+          if (Number(row.count)) break;
+          if (Date.now() > deadline)
+            throw new Error('Expected revocation admission wait');
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      } finally {
+        release();
+      }
+      await holder;
+      if (kind === 'metadata') {
+        await expect(pending).resolves.toMatchObject({
+          note: 'updated while waiting',
+          effectiveStatus: 'revoked',
+        });
+      } else {
+        await expect(pending).rejects.toMatchObject({
+          status: kind === 'expired' ? 400 : 404,
+        });
+        const stored = await db.entitlementGrant.findUnique({
+          where: { id: grant.id },
+        });
+        if (kind === 'expired') expect(stored?.revokedAt).toBeNull();
+        else expect(stored).toBeNull();
+      }
+    },
+  );
 });
