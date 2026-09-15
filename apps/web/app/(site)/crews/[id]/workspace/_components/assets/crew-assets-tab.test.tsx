@@ -31,6 +31,14 @@ vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: "user-1" }, isLoading: false }),
 }));
 
+// The linked-workspace picker's "Open in Studio" anchor resolves the
+// regional Studio host from env; pin it so jsdom never needs the var.
+// Partial mock: keep CURRENT_CELL and friends for crew-money formatting.
+vi.mock("@/src/lib/region/cell", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/src/lib/region/cell")>()),
+  getStudioHref: () => "https://studio.test",
+}));
+
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
@@ -111,6 +119,7 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 let canLink = true;
 let linkFails = false;
+let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
 let movedSecond = false;
 
@@ -126,32 +135,23 @@ function installFetch() {
         body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
       });
       if (method === "GET" && url.endsWith("/production-overview")) {
-        return jsonResponse({ studioProject: null, capabilities: { manage: canLink } });
-      }
-      if (method === "GET" && url.endsWith("/studio-project-options")) {
         return jsonResponse({
-          workspaces: [
-            {
-              id: "ws-1",
-              name: "Studio",
-              type: "team",
-              projects: [
-                { id: "project-1", name: "Film Canvas", selectable: true, selected: false },
-              ],
-            },
-          ],
+          studioWorkspace: linkedWorkspaceId ? { id: linkedWorkspaceId, name: "Studio" } : null,
+          capabilities: { linkWorkspace: canLink },
         });
       }
-      if (method === "PATCH" && url.endsWith("/studio-project")) {
-        return linkFails
-          ? jsonResponse({ message: "Project access changed" }, { status: 403 })
-          : jsonResponse({
-              studioProject: {
-                id: "project-1",
-                name: "Film Canvas",
-                workspace: { id: "ws-1", name: "Studio" },
-              },
-            });
+      if (method === "GET" && url.endsWith("/studio-workspace-options")) {
+        return jsonResponse([
+          { id: "ws-1", name: "Studio" },
+          { id: "ws-2", name: "Film Room" },
+        ]);
+      }
+      if (method === "PATCH" && url.endsWith("/studio-workspace")) {
+        if (linkFails) {
+          return jsonResponse({ message: "Workspace link changed" }, { status: 403 });
+        }
+        linkedWorkspaceId = "ws-1";
+        return jsonResponse({ studioWorkspace: { id: "ws-1", name: "Studio" } });
       }
       if (method === "GET" && url.includes("/users/by-ids")) {
         return jsonResponse({
@@ -316,6 +316,7 @@ beforeEach(() => {
   assetListFails = false;
   canLink = true;
   linkFails = false;
+  linkedWorkspaceId = null;
   HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     "ResizeObserver",
@@ -529,47 +530,50 @@ describe("crew asset center", () => {
   });
 });
 
-describe("Link Canvas", () => {
-  it("links a canvas from the shared header and updates the linked project", async () => {
+describe("Link workspace", () => {
+  it("links a workspace from the shared header and updates the trigger", async () => {
     await render();
-    const trigger = byText("button", "Link Canvas");
+    const trigger = byText("button", "Link workspace");
     const header = document.querySelector('header[aria-label="Crew header"]');
     expect(header?.contains(trigger)).toBe(true);
     expect(header?.contains(byText("button", "New folder"))).toBe(false);
-    expect(document.querySelectorAll('button[aria-label="Link Canvas"]')).toHaveLength(1);
     await click(trigger);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
-    await click(byText("span", "Film Canvas"));
+    await click(byText("span", "Studio"));
     expect(requests).toContainEqual(
-      expect.objectContaining({ method: "PATCH", body: { projectId: "project-1" } })
+      expect.objectContaining({ method: "PATCH", body: { workspaceId: "ws-1" } })
     );
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
     await vi.waitFor(async () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      expect(trigger.textContent).toBe("Film Canvas");
+      expect(trigger.textContent).toBe("Studio");
     });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).toContain("Open in Studio");
   });
-  it("keeps the action disabled without Overview management permission", async () => {
+  it("keeps the action disabled without the workspace-link capability", async () => {
     canLink = false;
     await render();
-    expect((byText("button", "Link Canvas") as HTMLButtonElement).disabled).toBe(true);
-    expect(requests.some((r) => r.url.endsWith("/studio-project-options"))).toBe(false);
+    expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(true);
+    expect(requests.some((r) => r.url.endsWith("/studio-workspace-options"))).toBe(false);
   });
   it("keeps the picker open and reports a rejected link", async () => {
     linkFails = true;
     await render();
-    await click(byText("button", "Link Canvas"));
+    await click(byText("button", "Link workspace"));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
-    await click(byText("span", "Film Canvas"));
-    const { toast } = await import("sonner");
-    expect(toast.error).toHaveBeenCalledWith("Project access changed");
-    expect(byText("span", "Film Canvas")).toBeTruthy();
+    await click(byText("span", "Studio"));
+    await vi.waitFor(() => {
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+        "Workspace link changed"
+      );
+    });
+    expect(byText("span", "Studio")).toBeTruthy();
   });
 });
 
