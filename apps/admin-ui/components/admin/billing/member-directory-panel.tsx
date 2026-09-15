@@ -3,6 +3,7 @@
 // User identity lookup; compute balances and adjustments belong to workspaces.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAdminSessionRequests } from "../admin-session-boundary";
 import {
   IconSearch,
   IconWallet,
@@ -77,6 +78,8 @@ export function MemberDirectoryPanel({
     user: ClientUserTarget;
   } | null>(null);
 
+  const scope = useAdminSessionRequests();
+  const pending = useRef<ReturnType<typeof scope.begin>>(null);
   const requestSequence = useRef(0);
   const queryKey = `${activeQuery}:${page}`;
   const [previousQueryKey, setPreviousQueryKey] = useState(queryKey);
@@ -86,30 +89,39 @@ export function MemberDirectoryPanel({
     setError(null);
   }
 
-  const fetchRows = useCallback((query: string, pageNum: number) => {
-    const ticket = ++requestSequence.current;
-    const params = new URLSearchParams({
-      page: String(pageNum),
-      pageSize: String(PAGE_SIZE),
-    });
-    if (query) params.set("query", query);
-    return requestEnvelope<MemberSearchResult>(
-      `/api/admin/legacy-points/users?${params.toString()}`
-    )
-      .then((data) => {
-        if (ticket !== requestSequence.current) return;
-        setError(null);
-        setResult(data);
-      })
-      .catch((err: unknown) => {
-        if (ticket !== requestSequence.current) return;
-        setError(toErrorMessage(err));
-        setResult(null);
-      })
-      .finally(() => {
-        if (ticket === requestSequence.current) setLoading(false);
+  const fetchRows = useCallback(
+    (query: string, pageNum: number) => {
+      pending.current?.cancel();
+      const operation = scope.begin();
+      if (!operation) return Promise.resolve();
+      pending.current = operation;
+      const ticket = ++requestSequence.current;
+      const params = new URLSearchParams({
+        page: String(pageNum),
+        pageSize: String(PAGE_SIZE),
       });
-  }, []);
+      if (query) params.set("query", query);
+      return requestEnvelope<MemberSearchResult>(
+        `/api/admin/legacy-points/users?${params.toString()}`,
+        operation.signal
+      )
+        .then((data) => {
+          if (!operation.current() || ticket !== requestSequence.current) return;
+          setError(null);
+          setResult(data);
+        })
+        .catch((err: unknown) => {
+          if (!operation.current() || ticket !== requestSequence.current) return;
+          setError(toErrorMessage(err));
+          setResult(null);
+        })
+        .finally(() => {
+          if (operation.current() && ticket === requestSequence.current) setLoading(false);
+          operation.release();
+        });
+    },
+    [scope]
+  );
 
   const load = (...args: Parameters<typeof fetchRows>) => {
     setLoading(true);
@@ -121,6 +133,7 @@ export function MemberDirectoryPanel({
     void fetchRows(activeQuery, page);
     return () => {
       requestSequence.current += 1;
+      pending.current?.cancel();
     };
   }, [fetchRows, activeQuery, page]);
 
