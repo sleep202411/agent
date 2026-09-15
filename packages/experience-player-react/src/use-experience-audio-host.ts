@@ -91,7 +91,9 @@ class ExperienceAudioHost {
       .then(async () => {
         for (const effect of effects) await this.#apply(effect);
       })
-      .catch((error: unknown) => this.#onError(runtimeErrorMessage(error)));
+      .catch((error: unknown) => {
+        if (!this.#disposed) this.#onError(runtimeErrorMessage(error));
+      });
   }
 
   async dispose(): Promise<void> {
@@ -153,7 +155,7 @@ class ExperienceAudioHost {
   async #play(effect: Extract<AudioEffect, { kind: "audio.play" }>): Promise<void> {
     const cue = this.#manifest.audio?.cues.find((candidate) => candidate.cueId === effect.cueId);
     if (!cue) throw new Error(`Unknown audio cue ${effect.cueId}`);
-    if (!this.#acceptConcurrency(cue)) return;
+    if (!this.#acceptConcurrency(cue, false)) return;
     const asset = this.#manifest.assets.find(
       (candidate): candidate is ExperienceAudioAsset =>
         candidate.assetId === effect.assetId && candidate.kind === "audio"
@@ -169,6 +171,7 @@ class ExperienceAudioHost {
     if (!variant) throw new Error(`Audio asset ${asset.assetId} has no playable variant`);
     const buffer = await this.#loadBuffer(variant.uri, variant.sha256);
     if (this.#disposed) return;
+    if (!this.#acceptConcurrency(cue)) return;
 
     const source = this.#context.createBufferSource();
     const gain = this.#context.createGain();
@@ -201,14 +204,15 @@ class ExperienceAudioHost {
     this.#refreshDucking();
   }
 
-  #acceptConcurrency(cue: ExperienceAudioCue): boolean {
+  #acceptConcurrency(cue: ExperienceAudioCue, stopOverflow = true): boolean {
     const concurrency = cue.concurrency;
     if (!concurrency) return true;
     const group = [...this.#active.values()].filter(
-      (playback) => playback.cue.concurrency?.groupId === concurrency.groupId
+      (playback) => !playback.stopping && playback.cue.concurrency?.groupId === concurrency.groupId
     );
     if (group.length < concurrency.maxInstances) return true;
     if (concurrency.overflowBehavior === "reject-new") return false;
+    if (!stopOverflow) return true;
     const victim =
       concurrency.overflowBehavior === "stop-oldest"
         ? group.reduce((oldest, item) => (item.startedAt < oldest.startedAt ? item : oldest))

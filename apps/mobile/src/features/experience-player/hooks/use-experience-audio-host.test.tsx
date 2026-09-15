@@ -28,8 +28,8 @@ const manifest = {
 let root: Root;
 let latest: ReturnType<typeof useExperienceAudioHost>;
 const onError = vi.fn();
-function Harness() {
-  const value = useExperienceAudioHost(manifest, "en-US", onError);
+function Harness({ definition = manifest }: { definition?: ExperienceRuntimeManifest }) {
+  const value = useExperienceAudioHost(definition, "en-US", onError);
   useLayoutEffect(() => {
     latest = value;
   });
@@ -51,9 +51,9 @@ afterEach(async () => {
     root.unmount();
   });
 });
-function play() {
+function play(playbackOrdinal = 1) {
   latest.applyEffects([
-    { kind: "audio.play", cueId: "cue", assetId: "asset", playbackOrdinal: 1, playbackRate: 1 },
+    { kind: "audio.play", cueId: "cue", assetId: "asset", playbackOrdinal, playbackRate: 1 },
   ]);
 }
 it("suppresses delayed cache errors after leaving the player", async () => {
@@ -137,4 +137,99 @@ it("keeps the replacement host active when the outgoing host unmounts", async ()
     });
   }
   expect(native.setIsAudioActiveAsync).toHaveBeenCalledWith(false);
+});
+
+function playerFixture() {
+  return {
+    volume: 1,
+    playing: true,
+    loop: false,
+    play: vi.fn(),
+    pause: vi.fn(),
+    remove: vi.fn(),
+    setPlaybackRate: vi.fn(),
+    addListener: vi.fn(() => ({ remove: vi.fn() })),
+  };
+}
+async function concurrencyFixture(overflowBehavior: "stop-oldest" | "reject-new" = "stop-oldest") {
+  const definition = {
+    ...manifest,
+    audio: {
+      ...manifest.audio!,
+      cues: [
+        {
+          ...manifest.audio!.cues[0]!,
+          fadeOutMs: 1000,
+          concurrency: { groupId: "one", maxInstances: 1, overflowBehavior },
+        },
+      ],
+    },
+  };
+  const players: ReturnType<typeof playerFixture>[] = [];
+  native.createAudioPlayer.mockImplementation(() => {
+    const player = playerFixture();
+    players.push(player);
+    return player;
+  });
+  native.ensureAudioCached.mockResolvedValue("file://cached.mp3");
+  await act(async () => {
+    root.render(<Harness definition={definition} />);
+  });
+  return players;
+}
+it("does not repeatedly choose an already stopping cue during rapid replacements", async () => {
+  vi.useFakeTimers();
+  try {
+    const players = await concurrencyFixture();
+    await act(async () => {
+      play(1);
+    });
+    await act(async () => {
+      play(2);
+    });
+    await act(async () => {
+      play(3);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(players).toHaveLength(3);
+    expect(players[0]!.pause).toHaveBeenCalled();
+    expect(players[1]!.pause).toHaveBeenCalled();
+    expect(players[2]!.pause).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("keeps the current cue playing when its replacement cannot be loaded", async () => {
+  vi.useFakeTimers();
+  try {
+    const players = await concurrencyFixture();
+    await act(async () => {
+      play(1);
+    });
+    native.ensureAudioCached.mockRejectedValueOnce(new Error("replacement unavailable"));
+    await act(async () => {
+      play(2);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(players).toHaveLength(1);
+    expect(players[0]!.pause).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith("replacement unavailable");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("retains reject-new admission without downloading another cue", async () => {
+  const players = await concurrencyFixture("reject-new");
+  await act(async () => {
+    play(1);
+  });
+  await act(async () => {
+    play(2);
+  });
+  expect(players).toHaveLength(1);
+  expect(native.ensureAudioCached).toHaveBeenCalledTimes(1);
 });
