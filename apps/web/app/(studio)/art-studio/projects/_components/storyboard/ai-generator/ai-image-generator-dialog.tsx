@@ -126,8 +126,10 @@ export function AiImageGeneratorDialog({
   };
 
   // Debounced autosave of the main prompt → image-prompt cell. Flush on close.
-  const { schedule: scheduleSavePrompt, flush: flushPrompt } = usePromptAutosave((value) =>
-    onAutoSavePrompt?.(value)
+  const { schedule: scheduleSavePrompt, flush: flushPrompt } = usePromptAutosave(
+    (value) => onAutoSavePrompt?.(value),
+    800,
+    JSON.stringify([shotId, shotColumnId])
   );
   useEffect(() => {
     if (!open) flushPrompt();

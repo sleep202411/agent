@@ -261,8 +261,10 @@ export function AiVideoGeneratorDialog({
   );
 
   // ── Autosave: main prompt → video-prompt cell (debounced, flush on close) ──
-  const { schedule: scheduleSavePrompt, flush: flushPrompt } = usePromptAutosave((value) =>
-    onAutoSavePrompt?.(value)
+  const { schedule: scheduleSavePrompt, flush: flushPrompt } = usePromptAutosave(
+    (value) => onAutoSavePrompt?.(value),
+    800,
+    JSON.stringify([shotId, shotColumnId])
   );
   useEffect(() => {
     if (!open) flushPrompt();
