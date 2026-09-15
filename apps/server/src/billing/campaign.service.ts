@@ -14,6 +14,7 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
   type CreditCampaign,
+  type CreditCampaignClaim,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -149,33 +150,24 @@ export class CampaignService {
         msg: 'Campaign not found.',
       });
     }
-    if (campaign.status !== CreditCampaignStatus.active) {
-      throw new GoneException({
-        code: 'CREDIT_CAMPAIGN_NOT_ACTIVE',
-        msg: 'This campaign is not active.',
-      });
-    }
-    if (campaign.startsAt && campaign.startsAt > now) {
-      throw new GoneException({
-        code: 'CREDIT_CAMPAIGN_NOT_STARTED',
-        msg: 'This campaign has not started yet.',
-      });
-    }
-    if (campaign.endsAt && campaign.endsAt <= now) {
-      throw new GoneException({
-        code: 'CREDIT_CAMPAIGN_ENDED',
-        msg: 'This campaign has ended.',
-      });
-    }
+    const existing = await this.prisma.creditCampaignClaim.findUnique({
+      where: { campaignId_userId: { campaignId, userId } },
+    });
+
+    // A captured claim is already accepted; availability gates new claims,
+    // not recovery of an interrupted credit for that captured claim.
+    if (!existing) this.assertClaimable(campaign, now);
 
     // compute_point is workspace-owned -> credits land in the default-workspace pot.
-    const defaultWorkspace = await this.prisma.workspace.findFirst({
-      where: {
-        defaultForUserId: userId,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
+    const defaultWorkspace = existing
+      ? { id: existing.workspaceId }
+      : await this.prisma.workspace.findFirst({
+          where: {
+            defaultForUserId: userId,
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
     if (!defaultWorkspace) {
       throw new ConflictException({
         code: 'DEFAULT_WORKSPACE_MISSING',
@@ -183,24 +175,35 @@ export class CampaignService {
       });
     }
 
-    const existing = await this.prisma.creditCampaignClaim.findUnique({
-      where: { campaignId_userId: { campaignId, userId } },
-    });
-
-    let claimId: string;
+    let acceptedClaim: CreditCampaignClaim;
     let alreadyClaimed = false;
     if (existing) {
-      claimId = existing.id;
+      acceptedClaim = existing;
       alreadyClaimed = true;
     } else {
       try {
         const created = await this.prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM credit_campaigns WHERE id=${campaignId}::uuid FOR UPDATE`;
+          const accepted = await tx.creditCampaignClaim.findUnique({
+            where: { campaignId_userId: { campaignId, userId } },
+          });
+          if (accepted) {
+            alreadyClaimed = true;
+            return accepted;
+          }
+          const current = await tx.creditCampaign.findUniqueOrThrow({
+            where: { id: campaignId },
+          });
+          const [{ now: admittedAt }] = await tx.$queryRaw<
+            { now: Date }[]
+          >`SELECT clock_timestamp() AS now`;
+          this.assertClaimable(current, admittedAt);
           const claim = await tx.creditCampaignClaim.create({
             data: {
               campaignId,
               userId,
               workspaceId: defaultWorkspace.id,
-              amount: campaign.computeCreditAmount,
+              amount: current.computeCreditAmount,
             },
           });
           // Atomic budget guard (column-to-column comparison needs raw SQL); the
@@ -220,7 +223,7 @@ export class CampaignService {
           }
           return claim;
         });
-        claimId = created.id;
+        acceptedClaim = created;
       } catch (err) {
         // Raced a concurrent claim by the same user -> they have a claim now.
         if (!isUniqueViolation(err)) throw err;
@@ -228,25 +231,27 @@ export class CampaignService {
           where: { campaignId_userId: { campaignId, userId } },
         });
         if (!raced) throw err;
-        claimId = raced.id;
+        acceptedClaim = raced;
         alreadyClaimed = true;
       }
     }
 
     // Credit. Idempotent by claim id: a retry / same-user re-claim credits once.
-    const amount = BigInt(campaign.computeCreditAmount);
+    const claimId = acceptedClaim.id;
+    const targetWorkspaceId = acceptedClaim.workspaceId;
+    const amount = BigInt(acceptedClaim.amount);
     const account = await this.prisma.walletAccount.upsert({
       where: {
         ownerType_ownerId_currency_balanceKind: {
           ownerType: WalletOwnerType.workspace,
-          ownerId: defaultWorkspace.id,
+          ownerId: targetWorkspaceId,
           currency: WalletCurrencyType.compute_point,
           balanceKind: WalletBalanceKind.consumable,
         },
       },
       create: {
         ownerType: WalletOwnerType.workspace,
-        ownerId: defaultWorkspace.id,
+        ownerId: targetWorkspaceId,
         currency: WalletCurrencyType.compute_point,
         balanceKind: WalletBalanceKind.consumable,
         status: WalletAccountStatus.active,
@@ -263,7 +268,7 @@ export class CampaignService {
       sourceId: claimId,
       idempotencyKey: `campaign_claim:${claimId}`,
       actorUserId: userId,
-      workspaceId: defaultWorkspace.id,
+      workspaceId: targetWorkspaceId,
       description: `Campaign "${campaign.name}" claimed`,
       reason: 'campaign_compute_point_credit',
       metadata: { campaignId, campaignName: campaign.name, claimId },
@@ -279,10 +284,31 @@ export class CampaignService {
         grantType: 'compute_credits' as const,
         currency: WalletCurrencyType.compute_point,
         amount: amount.toString(),
-        workspaceId: defaultWorkspace.id,
+        workspaceId: targetWorkspaceId,
       },
       alreadyClaimed: alreadyClaimed || posted.deduped,
     };
+  }
+
+  private assertClaimable(campaign: CreditCampaign, now: Date) {
+    if (campaign.status !== CreditCampaignStatus.active) {
+      throw new GoneException({
+        code: 'CREDIT_CAMPAIGN_NOT_ACTIVE',
+        msg: 'This campaign is not active.',
+      });
+    }
+    if (campaign.startsAt && campaign.startsAt > now) {
+      throw new GoneException({
+        code: 'CREDIT_CAMPAIGN_NOT_STARTED',
+        msg: 'This campaign has not started yet.',
+      });
+    }
+    if (campaign.endsAt && campaign.endsAt <= now) {
+      throw new GoneException({
+        code: 'CREDIT_CAMPAIGN_ENDED',
+        msg: 'This campaign has ended.',
+      });
+    }
   }
 
   private campaignDto(c: CreditCampaign) {
