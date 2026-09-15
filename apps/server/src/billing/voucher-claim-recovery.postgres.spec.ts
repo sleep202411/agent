@@ -161,8 +161,59 @@ const url =
         await db.walletTransaction.count({ where: { actorUserId: userId } }),
       ).toBe(1);
     });
+    it.each(['frozen', 'closed'] as const)(
+      'does not reactivate an existing %s reward wallet',
+      async (status) => {
+        const account = await db.walletAccount.create({
+          data: {
+            ownerType: 'workspace',
+            ownerId: workspaceId,
+            currency: 'compute_point',
+            balanceKind: 'consumable',
+            status,
+            availableBalance: 50n,
+          },
+        });
+        const { service } = fixture();
+        await expect(
+          service.redeemVoucher({ userId }, { code }),
+        ).rejects.toMatchObject({
+          response: { code: 'WALLET_ACCOUNT_NOT_ACTIVE' },
+        });
+        const retained = await db.walletAccount.findUniqueOrThrow({
+          where: { id: account.id },
+        });
+        expect(retained).toMatchObject({
+          status,
+          availableBalance: 50n,
+          version: account.version,
+        });
+        expect(
+          await db.walletTransaction.count({ where: { actorUserId: userId } }),
+        ).toBe(0);
+      },
+    );
     it('credits once for simultaneous calls by the same redeemer', async () => {
-      const { service } = fixture();
+      let arrivals = 0;
+      let release!: () => void;
+      const bothReady = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const concurrentDb = db.$extends({
+        query: {
+          walletAccount: {
+            async createMany({ args, query }) {
+              if (++arrivals === 2) release();
+              await bothReady;
+              return query(args);
+            },
+          },
+        },
+      });
+      const service = new VoucherService(
+        concurrentDb as never,
+        new WalletLedgerService(db as never),
+      );
       const results = await Promise.all([
         service.redeemVoucher({ userId }, { code }),
         service.redeemVoucher({ userId }, { code }),

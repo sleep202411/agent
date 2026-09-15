@@ -1,15 +1,13 @@
+import { ensurePromotionalWalletAccount } from './promotional-wallet-account';
 import {
   ForbiddenException,
   Injectable,
   ConflictException,
 } from '@nestjs/common';
 import {
-  WalletAccountStatus,
-  WalletBalanceKind,
   WalletCreditGrantType,
   WalletCurrencyType,
   WalletLedgerEntryType,
-  WalletOwnerType,
   type CheckInConfig,
   type DailyCheckIn,
 } from '@prisma/client';
@@ -188,24 +186,10 @@ export class CheckInService {
   /** Credit a check-in record's reward to its workspace pot, idempotently. */
   private async creditForRecord(userId: string, record: DailyCheckIn) {
     const amount = BigInt(record.amount);
-    const account = await this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.workspace,
-          ownerId: record.workspaceId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: record.workspaceId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
-    });
+    const account = await ensurePromotionalWalletAccount(
+      this.prisma,
+      record.workspaceId,
+    );
     const posted = await this.walletLedger.postEntry({
       accountId: account.id,
       entryType: WalletLedgerEntryType.adjustment,

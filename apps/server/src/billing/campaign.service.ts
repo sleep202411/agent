@@ -1,3 +1,4 @@
+import { ensurePromotionalWalletAccount } from './promotional-wallet-account';
 import {
   ConflictException,
   GoneException,
@@ -7,12 +8,9 @@ import {
 import {
   CreditCampaignStatus,
   Prisma,
-  WalletAccountStatus,
-  WalletBalanceKind,
   WalletCreditGrantType,
   WalletCurrencyType,
   WalletLedgerEntryType,
-  WalletOwnerType,
   type CreditCampaign,
   type CreditCampaignClaim,
 } from '@prisma/client';
@@ -243,24 +241,10 @@ export class CampaignService {
     const claimId = acceptedClaim.id;
     const targetWorkspaceId = acceptedClaim.workspaceId;
     const amount = BigInt(acceptedClaim.amount);
-    const account = await this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.workspace,
-          ownerId: targetWorkspaceId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: targetWorkspaceId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
-    });
+    const account = await ensurePromotionalWalletAccount(
+      this.prisma,
+      targetWorkspaceId,
+    );
     const posted = await this.walletLedger.postEntry({
       accountId: account.id,
       entryType: WalletLedgerEntryType.adjustment,

@@ -1,3 +1,4 @@
+import { ensurePromotionalWalletAccount } from './promotional-wallet-account';
 import { randomInt, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -10,12 +11,9 @@ import {
   Prisma,
   VoucherGrantType,
   VoucherStatus,
-  WalletAccountStatus,
-  WalletBalanceKind,
   WalletCreditGrantType,
   WalletCurrencyType,
   WalletLedgerEntryType,
-  WalletOwnerType,
   type Voucher,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
@@ -215,24 +213,10 @@ export class VoucherService {
     // a crash between claim and credit) credits exactly once (postEntry dedupes).
     const targetWorkspaceId = voucher.redeemedWorkspaceId;
     const amount = BigInt(voucher.computeCreditAmount ?? 0);
-    const account = await this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.workspace,
-          ownerId: targetWorkspaceId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: targetWorkspaceId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
-    });
+    const account = await ensurePromotionalWalletAccount(
+      this.prisma,
+      targetWorkspaceId,
+    );
     const posted = await this.walletLedger.postEntry({
       accountId: account.id,
       entryType: WalletLedgerEntryType.adjustment,
