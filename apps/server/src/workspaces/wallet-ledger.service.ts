@@ -1,3 +1,4 @@
+import { ensureWalletAccount } from './wallet-account-admission';
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
 import {
@@ -85,23 +86,11 @@ export class WalletLedgerService {
     const accounts: WalletAccount[] = [];
     for (const accountSpec of specs) {
       accounts.push(
-        await client.walletAccount.upsert({
-          where: {
-            ownerType_ownerId_currency_balanceKind: {
-              ownerType,
-              ownerId,
-              currency: accountSpec.currency,
-              balanceKind: accountSpec.balanceKind,
-            },
-          },
-          create: {
-            ownerType,
-            ownerId,
-            currency: accountSpec.currency,
-            balanceKind: accountSpec.balanceKind,
-            status: WalletAccountStatus.active,
-          },
-          update: {},
+        await ensureWalletAccount(client, {
+          ownerType,
+          ownerId,
+          currency: accountSpec.currency,
+          balanceKind: accountSpec.balanceKind,
         }),
       );
     }

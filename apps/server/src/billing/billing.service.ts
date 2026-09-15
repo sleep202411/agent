@@ -1,3 +1,4 @@
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import { expireLapsedGrantsTx } from '../workspaces/wallet-ledger.service';
 import {
   BadRequestException,
@@ -7193,23 +7194,11 @@ export class BillingService {
       order,
       WalletCurrencyType.compute_point,
     );
-    const account = await tx.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    const account = await ensureWalletAccount(tx, {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+      currency: WalletCurrencyType.compute_point,
+      balanceKind: WalletBalanceKind.consumable,
     });
     const idempotencyKey = `billing_order:${order.id}:membership_included:compute_point`;
     const existing = await tx.walletTransaction.findUnique({
@@ -7449,23 +7438,11 @@ export class BillingService {
       grantCurrency,
     );
 
-    const account = await tx.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          currency: grantCurrency,
-          balanceKind: grantBalanceKind,
-        },
-      },
-      create: {
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        currency: grantCurrency,
-        balanceKind: grantBalanceKind,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    const account = await ensureWalletAccount(tx, {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+      currency: grantCurrency,
+      balanceKind: grantBalanceKind,
     });
 
     const idempotencyKey = `billing_order:${order.id}:wallet_grant:${grantCurrency}`;

@@ -1,5 +1,5 @@
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import {
-  WalletAccountStatus,
   WalletBalanceKind,
   WalletCurrencyType,
   WalletOwnerType,
@@ -17,13 +17,5 @@ export async function ensurePromotionalWalletAccount(
     currency: WalletCurrencyType.compute_point,
     balanceKind: WalletBalanceKind.consumable,
   };
-  // Empty-update Prisma upserts can perform a read followed by an insert.
-  // ON CONFLICT DO NOTHING makes first-use admission atomic across callers.
-  await client.walletAccount.createMany({
-    data: [{ ...identity, status: WalletAccountStatus.active }],
-    skipDuplicates: true,
-  });
-  return client.walletAccount.findUniqueOrThrow({
-    where: { ownerType_ownerId_currency_balanceKind: identity },
-  });
+  return ensureWalletAccount(client, identity);
 }

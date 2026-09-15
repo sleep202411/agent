@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { BillingService } from '../billing/billing.service';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { PrismaService } from '../infra/db/db.module';
 import {
@@ -61,6 +62,169 @@ integration('Wallet ledger replay (owned PostgreSQL)', () => {
         },
       })
     ).id;
+  });
+  it.each([false, true])(
+    'admits concurrent default wallets (transaction=%s)',
+    async (transactional) => {
+      let arrivals = 0;
+      let release!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const concurrent = db.$extends({
+        query: {
+          walletAccount: {
+            async createMany({ args, query }) {
+              if (++arrivals === 3) release();
+              await ready;
+              return query(args);
+            },
+          },
+        },
+      });
+      const service = new WalletLedgerService(concurrent as never);
+      const results = await Promise.all(
+        Array.from({ length: 3 }, () =>
+          transactional
+            ? concurrent.$transaction((tx) =>
+                service.ensureDefaultAccounts(
+                  'workspace',
+                  ownerId,
+                  tx as unknown as Prisma.TransactionClient,
+                ),
+              )
+            : service.ensureDefaultAccounts('workspace', ownerId),
+        ),
+      );
+      expect(new Set(results.flat().map((account) => account.id)).size).toBe(1);
+      expect(
+        await db.walletAccount.count({
+          where: { ownerType: 'workspace', ownerId },
+        }),
+      ).toBe(1);
+    },
+  );
+  it('preserves default wallets that are frozen and already have funds', async () => {
+    await db.walletAccount.update({
+      where: { id: accountId },
+      data: { status: 'frozen', availableBalance: 40n },
+    });
+    const result = await ledger.ensureDefaultAccounts('user', ownerId);
+    expect(result.find((account) => account.id === accountId)).toMatchObject({
+      status: 'frozen',
+      availableBalance: 40n,
+    });
+    expect(await db.walletAccount.count({ where: { ownerId } })).toBe(2);
+  });
+  it('admits simultaneous top-up and membership grants to the same new wallet', async () => {
+    let arrivals = 0;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const concurrent = db.$extends({
+      query: {
+        walletAccount: {
+          async createMany({ args, query }) {
+            if (++arrivals === 2) release();
+            await ready;
+            return query(args);
+          },
+        },
+      },
+    });
+    const service = new BillingService(
+      db as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    const now = new Date();
+    const order = () => ({
+      id: randomUUID(),
+      orderNo: randomUUID(),
+      userId: ownerId,
+      subjectType: 'workspace',
+      subjectId: ownerId,
+      workspaceId: null,
+      priceId: randomUUID(),
+      quantity: 2,
+      grantsWalletCurrency: 'compute_point',
+      grantsWalletAmount: 30n,
+      grantsWalletBalanceKind: 'consumable',
+      price: { grantsPlanKey: null, grantDurationDays: null },
+    });
+    const topup = order();
+    const membership = order();
+    const plan = {
+      id: randomUUID(),
+      planKey: 'fixture',
+      includedComputeCredits: 40n,
+    };
+    const ids = await Promise.all([
+      concurrent.$transaction((tx) =>
+        service['creditWalletGrantForOrderTx'](
+          tx as unknown as Prisma.TransactionClient,
+          topup as never,
+          now,
+        ),
+      ),
+      concurrent.$transaction((tx) =>
+        service['creditMembershipIncludedCreditsForOrderTx'](
+          tx as unknown as Prisma.TransactionClient,
+          membership as never,
+          plan as never,
+          { startsAt: now, endsAt: null },
+        ),
+      ),
+    ]);
+    expect(new Set(ids).size).toBe(2);
+    const accounts = await db.walletAccount.findMany({
+      where: { ownerType: 'workspace', ownerId },
+    });
+    expect(accounts).toHaveLength(1);
+    expect(accounts[0].availableBalance).toBe(100n);
+    const grants = await db.walletCreditGrant.findMany({
+      where: { accountId: accounts[0].id },
+    });
+    expect(grants.map((g) => [g.grantType, g.totalAmount])).toEqual(
+      expect.arrayContaining([
+        ['purchase_topup', 60n],
+        ['membership_included', 40n],
+      ]),
+    );
+    expect(
+      await db.$transaction((tx) =>
+        service['creditWalletGrantForOrderTx'](
+          tx as unknown as Prisma.TransactionClient,
+          topup as never,
+          now,
+        ),
+      ),
+    ).toBe(ids[0]);
+    expect(
+      await db.$transaction((tx) =>
+        service['creditMembershipIncludedCreditsForOrderTx'](
+          tx as unknown as Prisma.TransactionClient,
+          membership as never,
+          plan as never,
+          { startsAt: now, endsAt: null },
+        ),
+      ),
+    ).toBe(ids[1]);
+    expect(
+      (
+        await db.walletAccount.findUniqueOrThrow({
+          where: { id: accounts[0].id },
+        })
+      ).availableBalance,
+    ).toBe(100n);
   });
   afterEach(async () => {
     await db.walletTransaction.deleteMany({ where: { actorUserId: ownerId } });
