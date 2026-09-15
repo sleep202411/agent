@@ -33,6 +33,8 @@ export const OpenConversationSchema = z.object({
   /// types a question, hits Send → API creates conversation +
   /// posts the first message in one round-trip.
   firstMessage: z.string().trim().min(1).max(4000).optional(),
+  /** Optional identity for retrying the same initial message. */
+  firstMessageClientKey: z.string().trim().min(1).max(64).optional(),
 });
 export type OpenConversationInput = z.infer<typeof OpenConversationSchema>;
 

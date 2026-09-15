@@ -126,6 +126,7 @@ export interface OpenConversationBody {
   contextType: "service";
   contextId: string;
   firstMessage?: string;
+  firstMessageClientKey?: string;
 }
 
 export interface SendProposalBody {

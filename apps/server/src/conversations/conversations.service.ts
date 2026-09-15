@@ -116,7 +116,7 @@ import {
   type SystemMessageKind,
   type SystemMessagePayload,
 } from '@repo/shared/conversation';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
@@ -255,6 +255,73 @@ export class ConversationsService {
         skipDuplicates: true,
       });
       return conv;
+    });
+  }
+
+  /** Keep a retried inquiry in its original thread, including after order promotion. */
+  async openServiceInquiry(
+    args: OpenConversationArgs,
+    firstMessage?: string,
+    requestKey?: string,
+  ) {
+    const clientKey =
+      firstMessage && requestKey
+        ? `inq:${createHash('sha256')
+            .update(JSON.stringify([args.serviceId, requestKey]))
+            .digest('hex')
+            .slice(0, 60)}`
+        : null;
+    return this.prisma.$transaction(async (tx) => {
+      if (clientKey) {
+        // Unlike the conversation lookup lock, this survives inquiry -> order promotion.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`service-inquiry:${args.buyerId}:${clientKey}`}, 0))`;
+        const existing = await tx.message.findFirst({
+          where: {
+            authorId: args.buyerId,
+            clientKey,
+            conversation: {
+              OR: [
+                { contextType: 'service', contextId: args.serviceId },
+                {
+                  contextType: 'order',
+                  order: { serviceId: args.serviceId, buyerId: args.buyerId },
+                },
+              ],
+            },
+          },
+        });
+        if (existing) {
+          await this.assertConversationAccess(
+            existing.conversationId,
+            args.buyerId,
+            tx,
+          );
+          if (existing.deletedAt)
+            throw new ConflictException(
+              'The original inquiry message is no longer available.',
+            );
+          this.assertIdempotentReplay(existing, 'text', firstMessage!, null);
+          return {
+            conv: { id: existing.conversationId },
+            first: existing,
+            created: false,
+          };
+        }
+      }
+      const conv = await this.openServiceConversation(args, tx);
+      if (!firstMessage) return { conv, first: null, created: false };
+      // Only this path may use a key in a caller transaction: admission is locked above.
+      const result = await this.persist(
+        conv.id,
+        args.buyerId,
+        'text',
+        firstMessage,
+        null,
+        tx,
+        clientKey,
+        true,
+      );
+      return { conv, first: result.message, created: result.created };
     });
   }
 
@@ -2041,6 +2108,7 @@ export class ConversationsService {
     payload: MessagePayload | null,
     db: DbClient = this.prisma,
     clientKey: string | null = null,
+    lockedInquiry = false,
   ): Promise<PersistResult> {
     if (clientKey !== null) {
       if (authorId === null) {
@@ -2048,7 +2116,7 @@ export class ConversationsService {
           'clientKey requires an authorId — the dedupe index is scoped to (conversation, author, key)',
         );
       }
-      if (this.isTx(db)) {
+      if (this.isTx(db) && !lockedInquiry) {
         throw new Error(
           'clientKey dedupe cannot run inside a caller transaction — a unique violation would abort it (25P02)',
         );
@@ -2115,7 +2183,8 @@ export class ConversationsService {
         return { message: created, created: true };
       });
     } catch (err) {
-      if (clientKey === null || !isUniqueViolation(err)) throw err;
+      if (clientKey === null || this.isTx(db) || !isUniqueViolation(err))
+        throw err;
       const winner = await this.prisma.message.findFirst({
         where: { conversationId, authorId, clientKey },
       });

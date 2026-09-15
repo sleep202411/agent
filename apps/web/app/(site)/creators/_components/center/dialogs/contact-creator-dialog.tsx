@@ -93,6 +93,7 @@ function ContactCreatorDialogContent({
 }: ContactCreatorDialogProps) {
   const active = useRef(false);
   const admitted = useRef(false);
+  const messageIntent = useRef<{ body: string; key: string } | null>(null);
   useLayoutEffect(() => {
     active.current = open;
     return () => {
@@ -128,12 +129,23 @@ function ContactCreatorDialogContent({
     if (!service || !canSend || !active.current || admitted.current) return;
     admitted.current = true;
     try {
+      if (messageIntent.current?.body !== trimmed) {
+        messageIntent.current = {
+          body: trimmed,
+          key:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `inq-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+        };
+      }
       const { conversation } = await openConversation.mutateAsync({
         contextType: "service",
         contextId: service.id,
         firstMessage: trimmed,
+        firstMessageClientKey: messageIntent.current.key,
       });
       if (!active.current) return;
+      messageIntent.current = null;
       toast.success(tm("sentToast"), {
         action: {
           label: tm("openConversation"),

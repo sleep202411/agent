@@ -7302,7 +7302,8 @@ model Message {
   /// the row it already created instead of appending a duplicate the
   /// whole group then sees.
   ///
-  /// NULL everywhere else — most importantly on system messages, which
+  /// Service-inquiry first messages also use a service-scoped token,
+  /// admitted under a transaction lock. NULL on system messages, which
   /// are written from inside other modules' transactions where a
   /// unique-violation would poison the outer tx (25P02).
   clientKey String? @map("client_key") @db.VarChar(64)

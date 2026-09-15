@@ -61,12 +61,12 @@ const send = () =>
   [...container.querySelectorAll<HTMLButtonElement>("button")].find(
     (b) => b.textContent === "send"
   )!;
-async function fill() {
+async function fill(value = "Alice draft") {
   await act(async () => {
     const input = container.querySelector("textarea")!;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
       input,
-      "Alice draft"
+      value
     );
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
@@ -129,6 +129,36 @@ it.each([false, true])("handles contact failure abandoned=%s", async (abandoned)
     mocks.send.mockResolvedValue({ conversation: { id: "conversation-1" } });
     await act(async () => send().click());
     expect(mocks.send).toHaveBeenCalledTimes(2);
+    expect(mocks.send.mock.calls[1]![0].firstMessageClientKey).toBe(
+      mocks.send.mock.calls[0]![0].firstMessageClientKey
+    );
     expect(mocks.success).toHaveBeenCalledOnce();
   }
+});
+
+it("assigns a new inquiry identity to edited text after failure", async () => {
+  mocks.send.mockRejectedValue(new Error("Response lost"));
+  await act(async () => render());
+  await fill();
+  await act(async () => send().click());
+  await fill("Changed inquiry");
+  await act(async () => send().click());
+  expect(mocks.send.mock.calls[1]![0].firstMessageClientKey).not.toBe(
+    mocks.send.mock.calls[0]![0].firstMessageClientKey
+  );
+});
+it.each(["reopen", "success"])("starts a new inquiry intent after %s", async (mode) => {
+  mocks.send.mockResolvedValue({ conversation: { id: "thread" } });
+  await act(async () => render());
+  await fill();
+  await act(async () => send().click());
+  if (mode === "reopen") {
+    await act(async () => render("service-1", false));
+    await act(async () => render());
+    await fill();
+  }
+  await act(async () => send().click());
+  expect(mocks.send.mock.calls[1]![0].firstMessageClientKey).not.toBe(
+    mocks.send.mock.calls[0]![0].firstMessageClientKey
+  );
 });
