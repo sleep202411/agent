@@ -3451,140 +3451,148 @@ export class IpCommerceService {
     ipId: string,
     input: UpdateAdminIpPublicationInput,
   ) {
-    const ip = await this.prisma.ip.findFirst({
-      where: { id: ipId, deletedAt: null },
-      include: adminIpInclude,
-    });
-    if (!ip) {
-      throw new NotFoundException({
-        code: 'IP_NOT_FOUND',
-        msg: 'IP not found.',
-      });
-    }
-
-    const now = new Date();
-    const nextStatus = input.status as IpPublicationStatus;
-    const scheduledAt =
-      input.scheduledAt === null ? null : (input.scheduledAt ?? ip.scheduledAt);
-    if (nextStatus === IpPublicationStatus.scheduled) {
-      if (!scheduledAt) {
-        throw new BadRequestException({
-          code: 'IP_SCHEDULE_REQUIRED',
-          msg: 'scheduledAt is required when scheduling an IP.',
-        });
-      }
-      if (scheduledAt <= now) {
-        throw new BadRequestException({
-          code: 'IP_SCHEDULE_IN_PAST',
-          msg: 'scheduledAt must be in the future.',
-        });
-      }
-    }
-    if (
-      nextStatus === IpPublicationStatus.published ||
-      nextStatus === IpPublicationStatus.scheduled
-    ) {
-      assertIpReadyForPublication(ip);
-      const openReportCount = await this.prisma.ipContentReport.count({
-        where: {
-          ipId: ip.id,
-          status: { in: [IpReportStatus.submitted, IpReportStatus.triaged] },
-        },
-      });
-      if (openReportCount > 0) {
-        throw new BadRequestException({
-          code: 'IP_PUBLISH_OPEN_REPORTS',
-          msg: `Resolve ${openReportCount} open IP report(s) before publishing.`,
-        });
-      }
-    }
-
-    const nextVisibility =
-      input.listingVisibility ??
-      defaultVisibilityForStatus(nextStatus, ip.listingVisibility);
-    const actionType = moderationActionForPublicationStatus(nextStatus);
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const updateResult = await tx.ip.updateMany({
-        where: {
-          id: ip.id,
-          deletedAt: null,
-          ...(input.expectedVersion !== undefined
-            ? { version: input.expectedVersion }
-            : {}),
-        },
-        data: {
-          status: nextStatus,
-          listingVisibility: nextVisibility,
-          scheduledAt:
-            nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
-          publishedAt:
-            nextStatus === IpPublicationStatus.published
-              ? (ip.publishedAt ?? now)
-              : ip.publishedAt,
-          suspendedAt:
-            nextStatus === IpPublicationStatus.suspended
-              ? (ip.suspendedAt ?? now)
-              : nextStatus === IpPublicationStatus.approved ||
-                  nextStatus === IpPublicationStatus.published
-                ? null
-                : ip.suspendedAt,
-          archivedAt:
-            nextStatus === IpPublicationStatus.archived
-              ? (ip.archivedAt ?? now)
-              : ip.archivedAt,
-          updatedById: user.userId,
-          version: { increment: 1 },
-        },
-      });
-      if (updateResult.count !== 1) {
-        throw new ConflictException({
-          code: 'IP_VERSION_CONFLICT',
-          msg: 'IP was updated by another operator. Refresh and retry.',
-        });
-      }
-
-      await syncIpLocalizationStatusForPublication(tx, ip.id, nextStatus);
-      // Episodes created while the IP was still draft stay `draft` until this
-      // handoff — creators cannot publish them themselves. Mirror IP
-      // localization sync so the first (pre-review) episode goes live with the IP.
-      await syncIpEpisodeStatusForPublication(tx, ip.id, nextStatus, {
-        now,
-        scheduledAt:
-          nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
-      });
-      await settleIpReviewSubmissionsForPublication(tx, {
-        ipId: ip.id,
-        reviewerId: user.userId,
-        status: nextStatus,
-        reason: input.reason,
-        now,
-      });
-
-      const updatedIp = await tx.ip.findUniqueOrThrow({
-        where: { id: ip.id },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ips WHERE id=${ipId}::uuid FOR UPDATE`;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, deletedAt: null },
         include: adminIpInclude,
       });
-      await tx.ipModerationAction.create({
-        data: {
-          targetType: IpModerationTargetType.ip,
-          targetId: ip.id,
-          actionType,
-          actorUserId: user.userId,
-          reason: input.reason,
-          before: moderationSnapshot(ip) as Prisma.InputJsonValue,
-          after: moderationSnapshot(updatedIp) as Prisma.InputJsonValue,
-          startsAt:
-            nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
-          metadata: {
-            source: 'admin_ip_commerce_publication',
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+
+      const [{ now }] = await tx.$queryRaw<
+        { now: Date }[]
+      >`SELECT clock_timestamp() AS now`;
+      const nextStatus = input.status as IpPublicationStatus;
+      const scheduledAt =
+        input.scheduledAt === null
+          ? null
+          : (input.scheduledAt ?? ip.scheduledAt);
+      if (nextStatus === IpPublicationStatus.scheduled) {
+        if (!scheduledAt) {
+          throw new BadRequestException({
+            code: 'IP_SCHEDULE_REQUIRED',
+            msg: 'scheduledAt is required when scheduling an IP.',
+          });
+        }
+        if (scheduledAt <= now) {
+          throw new BadRequestException({
+            code: 'IP_SCHEDULE_IN_PAST',
+            msg: 'scheduledAt must be in the future.',
+          });
+        }
+      }
+      if (
+        nextStatus === IpPublicationStatus.published ||
+        nextStatus === IpPublicationStatus.scheduled
+      ) {
+        assertIpReadyForPublication(ip);
+        const openReportCount = await tx.ipContentReport.count({
+          where: {
+            ipId: ip.id,
+            status: {
+              in: [IpReportStatus.submitted, IpReportStatus.triaged],
+            },
           },
-        },
-      });
+        });
+        if (openReportCount > 0) {
+          throw new BadRequestException({
+            code: 'IP_PUBLISH_OPEN_REPORTS',
+            msg: `Resolve ${openReportCount} open IP report(s) before publishing.`,
+          });
+        }
+      }
 
-      return updatedIp;
+      const nextVisibility =
+        input.listingVisibility ??
+        defaultVisibilityForStatus(nextStatus, ip.listingVisibility);
+      const actionType = moderationActionForPublicationStatus(nextStatus);
+      const updated = await (async () => {
+        const updateResult = await tx.ip.updateMany({
+          where: {
+            id: ip.id,
+            deletedAt: null,
+            ...(input.expectedVersion !== undefined
+              ? { version: input.expectedVersion }
+              : {}),
+          },
+          data: {
+            status: nextStatus,
+            listingVisibility: nextVisibility,
+            scheduledAt:
+              nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
+            publishedAt:
+              nextStatus === IpPublicationStatus.published
+                ? (ip.publishedAt ?? now)
+                : ip.publishedAt,
+            suspendedAt:
+              nextStatus === IpPublicationStatus.suspended
+                ? (ip.suspendedAt ?? now)
+                : nextStatus === IpPublicationStatus.approved ||
+                    nextStatus === IpPublicationStatus.published
+                  ? null
+                  : ip.suspendedAt,
+            archivedAt:
+              nextStatus === IpPublicationStatus.archived
+                ? (ip.archivedAt ?? now)
+                : ip.archivedAt,
+            updatedById: user.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (updateResult.count !== 1) {
+          throw new ConflictException({
+            code: 'IP_VERSION_CONFLICT',
+            msg: 'IP was updated by another operator. Refresh and retry.',
+          });
+        }
+
+        await syncIpLocalizationStatusForPublication(tx, ip.id, nextStatus);
+        // Episodes created while the IP was still draft stay `draft` until this
+        // handoff — creators cannot publish them themselves. Mirror IP
+        // localization sync so the first (pre-review) episode goes live with the IP.
+        await syncIpEpisodeStatusForPublication(tx, ip.id, nextStatus, {
+          now,
+          scheduledAt:
+            nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
+        });
+        await settleIpReviewSubmissionsForPublication(tx, {
+          ipId: ip.id,
+          reviewerId: user.userId,
+          status: nextStatus,
+          reason: input.reason,
+          now,
+        });
+
+        const updatedIp = await tx.ip.findUniqueOrThrow({
+          where: { id: ip.id },
+          include: adminIpInclude,
+        });
+        await tx.ipModerationAction.create({
+          data: {
+            targetType: IpModerationTargetType.ip,
+            targetId: ip.id,
+            actionType,
+            actorUserId: user.userId,
+            reason: input.reason,
+            before: moderationSnapshot(ip) as Prisma.InputJsonValue,
+            after: moderationSnapshot(updatedIp) as Prisma.InputJsonValue,
+            startsAt:
+              nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
+            metadata: {
+              source: 'admin_ip_commerce_publication',
+            },
+          },
+        });
+
+        return updatedIp;
+      })();
+      return { ip: adminIpDetailDto(updated, ip.sourceLocale) };
     });
-
-    return { ip: adminIpDetailDto(updated, ip.sourceLocale) };
   }
 
   async resolveAdminReport(
@@ -3592,63 +3600,75 @@ export class IpCommerceService {
     reportId: string,
     input: ResolveAdminIpReportInput,
   ) {
-    const report = await this.prisma.ipContentReport.findUnique({
-      where: { id: reportId },
-      include: {
-        ip: true,
-        episode: true,
-      },
-    });
-    if (!report) {
-      throw new NotFoundException({
-        code: 'IP_REPORT_NOT_FOUND',
-        msg: 'IP report not found.',
+    return this.prisma.$transaction(async (tx) => {
+      const target = await tx.ipContentReport.findUnique({
+        where: { id: reportId },
+        select: { ipId: true, episodeId: true },
       });
-    }
-
-    const now = new Date();
-    const actionType = input.actionType as IpModerationActionType | undefined;
-    if (actionType) {
-      await this.applyModerationAction(user, report, actionType, {
-        reason: input.reason ?? input.resolutionNote ?? 'Report resolved.',
-        now,
-      });
-    }
-
-    const updated = await this.prisma.ipContentReport.update({
-      where: { id: report.id },
-      data: {
-        status: input.status as IpReportStatus,
-        resolvedById: user.userId,
-        resolutionNote: input.resolutionNote,
-        resolvedAt:
-          input.status === IpReportStatus.triaged ? report.resolvedAt : now,
-        metadata: {
-          ...(isRecord(report.metadata) ? report.metadata : {}),
-          actionType: actionType ?? null,
+      if (target?.ipId)
+        await tx.$queryRaw`SELECT id FROM ips WHERE id=${target.ipId}::uuid FOR UPDATE`;
+      if (target?.episodeId)
+        await tx.$queryRaw`SELECT id FROM ip_episodes WHERE id=${target.episodeId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM ip_content_reports WHERE id=${reportId}::uuid FOR UPDATE`;
+      const report = await tx.ipContentReport.findUnique({
+        where: { id: reportId },
+        include: {
+          ip: true,
+          episode: true,
         },
-      },
-      include: {
-        ip: {
-          include: {
-            localizations: {
-              where: { archivedAt: null },
-              orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+      });
+      if (!report) {
+        throw new NotFoundException({
+          code: 'IP_REPORT_NOT_FOUND',
+          msg: 'IP report not found.',
+        });
+      }
+
+      const [{ now }] = await tx.$queryRaw<
+        { now: Date }[]
+      >`SELECT clock_timestamp() AS now`;
+      const actionType = input.actionType as IpModerationActionType | undefined;
+      if (actionType) {
+        await this.applyModerationAction(tx, user.userId, report, actionType, {
+          reason: input.reason ?? input.resolutionNote ?? 'Report resolved.',
+          now,
+        });
+      }
+
+      const updated = await tx.ipContentReport.update({
+        where: { id: report.id },
+        data: {
+          status: input.status as IpReportStatus,
+          resolvedById: user.userId,
+          resolutionNote: input.resolutionNote,
+          resolvedAt:
+            input.status === IpReportStatus.triaged ? report.resolvedAt : now,
+          metadata: {
+            ...(isRecord(report.metadata) ? report.metadata : {}),
+            actionType: actionType ?? null,
+          },
+        },
+        include: {
+          ip: {
+            include: {
+              localizations: {
+                where: { archivedAt: null },
+                orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+              },
+            },
+          },
+          episode: {
+            include: {
+              localizations: {
+                where: { archivedAt: null },
+                orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+              },
             },
           },
         },
-        episode: {
-          include: {
-            localizations: {
-              where: { archivedAt: null },
-              orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
-            },
-          },
-        },
-      },
+      });
+      return { report: adminReportDto(updated, report.ip?.sourceLocale) };
     });
-
-    return { report: adminReportDto(updated, report.ip?.sourceLocale) };
   }
 
   async recordIpView(
@@ -5360,7 +5380,8 @@ export class IpCommerceService {
   }
 
   private async applyModerationAction(
-    user: AuthUser,
+    tx: Prisma.TransactionClient,
+    actorId: string,
     report: {
       id: string;
       targetType: IpTargetType;
@@ -5402,24 +5423,24 @@ export class IpCommerceService {
 
     let after: unknown = before;
     if (targetType === IpModerationTargetType.ip && report.ipId) {
-      after = await this.prisma.ip.update({
+      after = await tx.ip.update({
         where: { id: report.ipId },
         data: ipPublicationPatchForModeration(actionType, input.now),
       });
     }
     if (targetType === IpModerationTargetType.episode && report.episodeId) {
-      after = await this.prisma.ipEpisode.update({
+      after = await tx.ipEpisode.update({
         where: { id: report.episodeId },
         data: episodePublicationPatchForModeration(actionType, input.now),
       });
     }
 
-    await this.prisma.ipModerationAction.create({
+    await tx.ipModerationAction.create({
       data: {
         targetType,
         targetId,
         actionType,
-        actorUserId: user.userId,
+        actorUserId: actorId,
         reason: input.reason,
         before: moderationSnapshot(before) as Prisma.InputJsonValue,
         after: moderationSnapshot(after) as Prisma.InputJsonValue,
