@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useLayoutEffect, useRef, useState, type DragEvent } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
 import {
   IconArrowRight,
@@ -72,16 +73,17 @@ type StoryOsInsights = {
   sourceExcerpt?: string;
 };
 
-export function CreateWorldDialog({
-  open,
-  onOpenChange,
-  onCreated,
-}: {
+type CreateWorldDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Called on success with the new (worldId, projectId). */
   onCreated?: (result: CreateQuickWorldResult) => void;
-}) {
+};
+export function CreateWorldDialog(props: CreateWorldDialogProps) {
+  const { user } = useCurrentUser();
+  return <CreateWorldForm key={user?.id ?? "guest"} {...props} />;
+}
+function CreateWorldForm({ open, onOpenChange, onCreated }: CreateWorldDialogProps) {
   const tw = useTranslations("workspace");
   const tc = useTranslations("common");
   const queryClient = useQueryClient();
@@ -99,6 +101,23 @@ export function CreateWorldDialog({
   const [aiFilledFields, setAiFilledFields] = useState<Set<"name" | "description">>(new Set());
   const sourceInputRef = useRef<HTMLInputElement | null>(null);
   const sparkAnalyze = useSparkAnalyze();
+  const [openScope, setOpenScope] = useState({ open });
+  const active = useRef(false);
+  const operation = useRef<AbortController | null>(null);
+  const nameDraft = useRef("");
+  const descriptionDraft = useRef("");
+  useLayoutEffect(() => {
+    active.current = openScope.open;
+    nameDraft.current = "";
+    descriptionDraft.current = "";
+    return () => {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+    };
+  }, [openScope]);
+  const owns = (run: AbortController) =>
+    active.current && operation.current === run && !run.signal.aborted;
 
   const markAi = (field: "name" | "description") => {
     setAiFilledFields((prev) => {
@@ -117,7 +136,7 @@ export function CreateWorldDialog({
     });
   };
 
-  const reset = () => {
+  const resetFields = () => {
     setName("");
     setDescription("");
     setTags([]);
@@ -128,23 +147,40 @@ export function CreateWorldDialog({
     setSubmitting(false);
     setErrors({});
     setAiFilledFields(new Set());
+  };
+  const reset = () => {
+    resetFields();
     if (sourceInputRef.current) sourceInputRef.current.value = "";
   };
+  if (openScope.open !== open) {
+    setOpenScope({ open });
+    resetFields();
+  }
 
   const handleOpenChange = (next: boolean) => {
-    if (!next) reset();
+    if (!next) {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+      reset();
+    }
     onOpenChange(next);
   };
 
   const handleSourceFile = async (file: File) => {
+    if (!active.current || operation.current) return;
+    const run = new AbortController();
+    operation.current = run;
     setSourceUploading(true);
     try {
       const uploaded = await uploadWorkspaceFile(file, {
+        signal: run.signal,
         uploadType: "WORLD",
         sourceType: "LOCAL",
         accept: SOURCE_ACCEPT,
         maxSize: SOURCE_MAX_SIZE_BYTES,
       });
+      if (!owns(run)) return;
       setSourceFile(uploaded);
 
       // Auto-fill name + description from the uploaded brief, mirroring
@@ -153,12 +189,15 @@ export function CreateWorldDialog({
       // user hasn't already typed. Failure is non-fatal: the upload
       // succeeded, the user can fill the form manually.
       try {
-        const draft = await sparkAnalyze.mutateAsync(file);
-        if (draft.name && !name.trim()) {
+        const draft = await sparkAnalyze.mutateAsync({ file, signal: run.signal });
+        if (!owns(run)) return;
+        if (draft.name && !nameDraft.current.trim()) {
+          nameDraft.current = draft.name;
           setName(draft.name);
           markAi("name");
         }
-        if (draft.description && !description.trim()) {
+        if (draft.description && !descriptionDraft.current.trim()) {
+          descriptionDraft.current = draft.description;
           setDescription(draft.description);
           markAi("description");
         }
@@ -175,9 +214,11 @@ export function CreateWorldDialog({
           sourceExcerpt: draft.sourceExcerpt,
         });
       } catch (analyzeErr) {
+        if (!owns(run)) return;
         console.warn("[CreateWorldDialog] spark analyze failed:", analyzeErr);
       }
     } catch (err) {
+      if (!owns(run)) return;
       console.error("[CreateWorldDialog] 上传故事素材失败:", err);
       const message = err instanceof Error ? err.message : "";
       if (message === "unsupportedFileType") {
@@ -188,9 +229,12 @@ export function CreateWorldDialog({
         toast.error(tw("createWorldSourceUploadFailed"));
       }
     } finally {
-      setSourceUploading(false);
-      setSourceDragOver(false);
-      if (sourceInputRef.current) sourceInputRef.current.value = "";
+      if (owns(run)) {
+        operation.current = null;
+        setSourceUploading(false);
+        setSourceDragOver(false);
+        if (sourceInputRef.current) sourceInputRef.current.value = "";
+      }
     }
   };
 
@@ -210,9 +254,11 @@ export function CreateWorldDialog({
   };
 
   const handleSubmit = async () => {
-    if (submitting || sourceUploading || sparkAnalyze.isPending) return;
+    if (!active.current || operation.current) return;
     if (!validate()) return;
 
+    const run = new AbortController();
+    operation.current = run;
     setSubmitting(true);
     try {
       // Mirrors the legacy `createQuickWorldProduct` call: Java's
@@ -224,6 +270,7 @@ export function CreateWorldDialog({
       const result = await backendApi.post<CreateQuickWorldResult>(
         "/api/user/world/create/quick/worldproduct",
         {
+          signal: run.signal,
           data: {
             name: name.trim(),
             description: description.trim() || undefined,
@@ -240,8 +287,10 @@ export function CreateWorldDialog({
         }
       );
 
-      toast.success(tw("createWorldSuccess"));
+      if (!owns(run)) return;
       await queryClient.invalidateQueries({ queryKey: worldKeys.all });
+      if (!owns(run)) return;
+      toast.success(tw("createWorldSuccess"));
       reset();
       onOpenChange(false);
 
@@ -262,10 +311,14 @@ export function CreateWorldDialog({
         onCreated?.(result);
       }
     } catch (err) {
+      if (!owns(run)) return;
       console.error("[CreateWorldDialog] 创建世界失败:", err);
       toast.error(err instanceof Error ? err.message : tw("createWorldFailed"));
     } finally {
-      setSubmitting(false);
+      if (owns(run)) {
+        operation.current = null;
+        setSubmitting(false);
+      }
     }
   };
 
@@ -322,7 +375,7 @@ export function CreateWorldDialog({
                   variant="outline"
                   color="muted"
                   onClick={() => sourceInputRef.current?.click()}
-                  disabled={sourceUploading || sparkAnalyze.isPending}
+                  disabled={submitting || sourceUploading || sparkAnalyze.isPending}
                 >
                   {tw("createWorldSourceReplace")}
                 </Button>
@@ -332,6 +385,7 @@ export function CreateWorldDialog({
                   variant="ghost"
                   color="muted"
                   onClick={() => {
+                    if (operation.current || !active.current) return;
                     setSourceFile(null);
                     // The chips reflect "values came from this brief".
                     // Once the brief is gone, the chip claim is no
@@ -341,7 +395,7 @@ export function CreateWorldDialog({
                     if (aiFilledFields.has("description")) clearAi("description");
                   }}
                   aria-label={tw("createWorldSourceRemove")}
-                  disabled={sourceUploading || sparkAnalyze.isPending}
+                  disabled={submitting || sourceUploading || sparkAnalyze.isPending}
                 >
                   <IconX className="size-3.5" />
                 </Button>
@@ -412,7 +466,9 @@ export function CreateWorldDialog({
               <Input
                 id="create-world-name"
                 value={name}
+                disabled={submitting}
                 onChange={(event) => {
+                  nameDraft.current = event.target.value;
                   setName(event.target.value);
                   clearAi("name");
                   if (errors.name) setErrors((current) => ({ ...current, name: undefined }));
@@ -434,8 +490,10 @@ export function CreateWorldDialog({
                 // dialog footer out — same fix used in create-ip-dialog.
                 className="max-h-40 overflow-y-auto"
                 value={description}
+                disabled={submitting}
                 rows={3}
                 onChange={(event) => {
+                  descriptionDraft.current = event.target.value;
                   setDescription(event.target.value);
                   clearAi("description");
                 }}
