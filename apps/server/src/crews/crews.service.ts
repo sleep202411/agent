@@ -555,61 +555,65 @@ export class CrewsService {
   ) {
     await this.authorization.require(id, ownerId, 'crew.settings.manage');
 
-    const patch: Prisma.CrewUpdateInput = {
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.description !== undefined
-        ? { description: input.description }
-        : {}),
-      ...(input.logo !== undefined ? { logo: input.logo } : {}),
-      ...(input.tagline !== undefined ? { tagline: input.tagline } : {}),
-      ...(input.genres !== undefined ? { genres: input.genres } : {}),
-      ...(input.styles !== undefined ? { styles: input.styles } : {}),
-      ...(input.socialLinks !== undefined
-        ? {
-            socialLinks:
-              input.socialLinks.length > 0 ? input.socialLinks : Prisma.DbNull,
-          }
-        : {}),
-      ...(input.showcaseWorks !== undefined
-        ? {
-            showcaseWorks:
-              input.showcaseWorks.length > 0
-                ? input.showcaseWorks
-                : Prisma.DbNull,
-          }
-        : {}),
-      version: { increment: 1 },
-    };
+    return this.settingsWrite(id, ownerId, async (tx) => {
+      const patch: Prisma.CrewUpdateInput = {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
+        ...(input.logo !== undefined ? { logo: input.logo } : {}),
+        ...(input.tagline !== undefined ? { tagline: input.tagline } : {}),
+        ...(input.genres !== undefined ? { genres: input.genres } : {}),
+        ...(input.styles !== undefined ? { styles: input.styles } : {}),
+        ...(input.socialLinks !== undefined
+          ? {
+              socialLinks:
+                input.socialLinks.length > 0
+                  ? input.socialLinks
+                  : Prisma.DbNull,
+            }
+          : {}),
+        ...(input.showcaseWorks !== undefined
+          ? {
+              showcaseWorks:
+                input.showcaseWorks.length > 0
+                  ? input.showcaseWorks
+                  : Prisma.DbNull,
+            }
+          : {}),
+        version: { increment: 1 },
+      };
 
-    if (input.expectedVersion !== undefined) {
-      const r = await this.prisma.crew.updateMany({
-        where: { id, version: input.expectedVersion, deletedAt: null },
-        data: patch,
-      });
-      if (r.count === 0) {
-        // Distinguish "row gone" from "version stale".
-        const current = await this.prisma.crew.findUnique({
-          where: { id },
-          select: { version: true, deletedAt: true },
+      if (input.expectedVersion !== undefined) {
+        const r = await tx.crew.updateMany({
+          where: { id, version: input.expectedVersion, deletedAt: null },
+          data: patch,
         });
-        if (!current || current.deletedAt)
-          throw new NotFoundException('Crew not found');
-        throw new ConflictException({
-          message: 'Crew was modified by someone else; refresh and retry',
-          expectedVersion: input.expectedVersion,
-          actualVersion: current.version,
-        });
+        if (r.count === 0) {
+          // Distinguish "row gone" from "version stale".
+          const current = await tx.crew.findUnique({
+            where: { id },
+            select: { version: true, deletedAt: true },
+          });
+          if (!current || current.deletedAt)
+            throw new NotFoundException('Crew not found');
+          throw new ConflictException({
+            message: 'Crew was modified by someone else; refresh and retry',
+            expectedVersion: input.expectedVersion,
+            actualVersion: current.version,
+          });
+        }
+      } else {
+        await tx.crew.update({ where: { id }, data: patch });
       }
-    } else {
-      await this.prisma.crew.update({ where: { id }, data: patch });
-    }
 
-    const updated = await this.prisma.crew.findUnique({
-      where: { id },
-      include: CREW_OWNER_INCLUDE,
+      const updated = await tx.crew.findUnique({
+        where: { id },
+        include: CREW_OWNER_INCLUDE,
+      });
+      if (!updated) throw new NotFoundException('Crew not found');
+      return toCrewDTO(updated);
     });
-    if (!updated) throw new NotFoundException('Crew not found');
-    return toCrewDTO(updated);
   }
 
   async updateListing(
@@ -619,40 +623,66 @@ export class CrewsService {
   ) {
     await this.authorization.require(id, ownerId, 'crew.settings.manage');
 
-    const data: Prisma.CrewUpdateInput = {
-      listingStatus: input.listingStatus,
-      listedAt: input.listingStatus === 'listed' ? new Date() : null,
-      version: { increment: 1 },
-    };
+    return this.settingsWrite(id, ownerId, async (tx) => {
+      const data: Prisma.CrewUpdateInput = {
+        listingStatus: input.listingStatus,
+        listedAt: input.listingStatus === 'listed' ? new Date() : null,
+        version: { increment: 1 },
+      };
 
-    if (input.expectedVersion !== undefined) {
-      const r = await this.prisma.crew.updateMany({
-        where: { id, version: input.expectedVersion, deletedAt: null },
-        data,
-      });
-      if (r.count === 0) {
-        const current = await this.prisma.crew.findUnique({
-          where: { id },
-          select: { version: true, deletedAt: true },
+      if (input.expectedVersion !== undefined) {
+        const r = await tx.crew.updateMany({
+          where: { id, version: input.expectedVersion, deletedAt: null },
+          data,
         });
-        if (!current || current.deletedAt)
-          throw new NotFoundException('Crew not found');
-        throw new ConflictException({
-          message: 'Crew was modified by someone else; refresh and retry',
-          expectedVersion: input.expectedVersion,
-          actualVersion: current.version,
-        });
+        if (r.count === 0) {
+          const current = await tx.crew.findUnique({
+            where: { id },
+            select: { version: true, deletedAt: true },
+          });
+          if (!current || current.deletedAt)
+            throw new NotFoundException('Crew not found');
+          throw new ConflictException({
+            message: 'Crew was modified by someone else; refresh and retry',
+            expectedVersion: input.expectedVersion,
+            actualVersion: current.version,
+          });
+        }
+      } else {
+        await tx.crew.update({ where: { id }, data });
       }
-    } else {
-      await this.prisma.crew.update({ where: { id }, data });
-    }
 
-    const updated = await this.prisma.crew.findUnique({
-      where: { id },
-      include: CREW_OWNER_INCLUDE,
+      const updated = await tx.crew.findUnique({
+        where: { id },
+        include: CREW_OWNER_INCLUDE,
+      });
+      if (!updated) throw new NotFoundException('Crew not found');
+      return toCrewDTO(updated);
     });
-    if (!updated) throw new NotFoundException('Crew not found');
-    return toCrewDTO(updated);
+  }
+
+  private async settingsWrite<T>(
+    crewId: string,
+    userId: string,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
+      await this.authorization.require(
+        crewId,
+        userId,
+        'crew.settings.manage',
+        tx,
+      );
+      const result = await work(tx);
+      await this.authorization.require(
+        crewId,
+        userId,
+        'crew.settings.manage',
+        tx,
+      );
+      return result;
+    });
   }
 
   /** Atomically moves the unique CrewOwnership relation and its projections. */
