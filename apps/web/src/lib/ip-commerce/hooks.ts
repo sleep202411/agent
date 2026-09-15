@@ -281,10 +281,11 @@ export function usePublicCreatorIps(
 }
 
 export function useMyIpCommerceIp(ipId: string | null | undefined, params?: { locale?: string }) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIp(ipId ?? "", params),
-    queryFn: () => getMyIpCommerceIp(ipId!, params),
-    enabled: Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIp(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) => getMyIpCommerceIp(ipId!, params, signal),
+    enabled: Boolean(ipId && user?.id),
     // 404 is a definitive answer (not the creator / IP gone) — the default
     // 3-retry backoff only pins the public detail page in its loading state
     // for extra seconds before the not-found screen. Mirrors useIpCommerceIp.
@@ -354,10 +355,11 @@ export function useMyIpCommerceOverview(
   ipId: string | null | undefined,
   params?: { locale?: string }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIpCommerce(ipId ?? "", params),
-    queryFn: () => getMyIpCommerceOverview(ipId!, params),
-    enabled: Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIpCommerce(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) => getMyIpCommerceOverview(ipId!, params, signal),
+    enabled: Boolean(ipId && user?.id),
     staleTime: 30_000,
   });
 }
@@ -366,10 +368,11 @@ export function useMyIpCommerceAssets(
   ipId: string | null | undefined,
   params?: { purpose?: "source_material" | "reference_art" | "production_asset" }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIpAssets(ipId ?? "", params),
-    queryFn: () => listMyIpCommerceIpAssets(ipId!, params),
-    enabled: Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIpAssets(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listMyIpCommerceIpAssets(ipId!, params, signal),
+    enabled: Boolean(ipId && user?.id),
     staleTime: 30_000,
   });
 }
@@ -524,10 +527,11 @@ function invalidateIpAclCaches(qc: ReturnType<typeof useQueryClient>, ipId: stri
 }
 
 export function useMyIpAclGrants(ipId: string | null | undefined, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIpAcl(ipId ?? ""),
-    queryFn: () => listMyIpAclGrants(ipId!),
-    enabled: enabled && Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIpAcl(ipId ?? ""), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listMyIpAclGrants(ipId!, signal),
+    enabled: enabled && Boolean(ipId && user?.id),
     staleTime: 30_000,
   });
 }
@@ -563,10 +567,11 @@ export function useTransferIpOwner() {
 }
 
 export function useMyIpContributors(ipId: string | null | undefined) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIpContributors(ipId ?? ""),
-    queryFn: () => listIpCommerceContributors(ipId!),
-    enabled: Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIpContributors(ipId ?? ""), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listIpCommerceContributors(ipId!, signal),
+    enabled: Boolean(ipId && user?.id),
     staleTime: 30_000,
   });
 }
@@ -627,23 +632,29 @@ export function useIpAccess(
   ipId: string | null | undefined,
   params?: { episodeIds?: readonly string[]; locale?: string }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.ipAccess(ipId ?? "", params),
-    queryFn: () =>
-      getIpAccess(ipId!, {
-        episodeIds: params?.episodeIds ? [...params.episodeIds] : undefined,
-        locale: params?.locale,
-      }),
+    queryKey: [...ipCommerceKeys.ipAccess(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) =>
+      getIpAccess(
+        ipId!,
+        {
+          episodeIds: params?.episodeIds ? [...params.episodeIds] : undefined,
+          locale: params?.locale,
+        },
+        signal
+      ),
     enabled: Boolean(ipId),
     staleTime: 30_000,
   });
 }
 
 export function useIpCommerceWallet(enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.wallet,
-    queryFn: getIpCommerceWallet,
-    enabled,
+    queryKey: [...ipCommerceKeys.wallet, user?.id ?? "guest"],
+    queryFn: ({ signal }) => getIpCommerceWallet(signal),
+    enabled: enabled && Boolean(user?.id),
     staleTime: 30_000,
   });
 }
@@ -662,10 +673,11 @@ export function useCommunityPointBalance(enabled = true) {
 }
 
 export function useIpCommerceCollection(enabled = true, locale?: string) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.collection(locale),
-    queryFn: () => listIpCommerceCollection({ locale }),
-    enabled,
+    queryKey: [...ipCommerceKeys.collection(locale), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listIpCommerceCollection({ locale }, signal),
+    enabled: enabled && Boolean(user?.id),
     staleTime: 30_000,
   });
 }

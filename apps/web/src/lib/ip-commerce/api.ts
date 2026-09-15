@@ -758,9 +758,14 @@ export function listMyIpCommerceIps(
   );
 }
 
-export function getMyIpCommerceIp(ipId: string, params?: { locale?: string }) {
+export function getMyIpCommerceIp(
+  ipId: string,
+  params?: { locale?: string },
+  signal?: AbortSignal
+) {
   return api.get<{ ip: IpCreatorIp }>(`/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}`, {
     params,
+    signal,
   });
 }
 
@@ -813,15 +818,21 @@ export function listIpsByTag(
   });
 }
 
-export function getMyIpCommerceOverview(ipId: string, params?: { locale?: string }) {
+export function getMyIpCommerceOverview(
+  ipId: string,
+  params?: { locale?: string },
+  signal?: AbortSignal
+) {
   return api.get<IpCreatorCommerceOverview>(
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/commerce`,
-    { params }
+    { params, signal }
   );
 }
 
-export function listMyIpAclGrants(ipId: string) {
-  return api.get<IpAclGrantList>(`/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/acl`);
+export function listMyIpAclGrants(ipId: string, signal?: AbortSignal) {
+  return api.get<IpAclGrantList>(`/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/acl`, {
+    signal,
+  });
 }
 
 export function grantIpEditAccess(input: GrantIpAclInput) {
@@ -850,11 +861,12 @@ export function transferIpOwner(input: TransferIpOwnerInput) {
 
 export function listMyIpCommerceIpAssets(
   ipId: string,
-  params?: { purpose?: IpCommerceLibraryAsset["purpose"] }
+  params?: { purpose?: IpCommerceLibraryAsset["purpose"] },
+  signal?: AbortSignal
 ) {
   return api.get<{ items: IpCommerceLibraryAsset[] }>(
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/assets`,
-    { params }
+    { params, signal }
   );
 }
 
@@ -1001,9 +1013,10 @@ export function submitIpCommerceIpForReview(input: SubmitIpReviewInput) {
   );
 }
 
-export function listIpCommerceContributors(ipId: string) {
+export function listIpCommerceContributors(ipId: string, signal?: AbortSignal) {
   return api.get<IpCreatorContributorList>(
-    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/contributors`
+    `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/contributors`,
+    { signal }
   );
 }
 
@@ -1081,8 +1094,13 @@ export function getIpCommerceIp(ipReference: string, params?: { locale?: string 
   );
 }
 
-export function getIpAccess(ipId: string, params?: { episodeIds?: string[]; locale?: string }) {
+export function getIpAccess(
+  ipId: string,
+  params?: { episodeIds?: string[]; locale?: string },
+  signal?: AbortSignal
+) {
   return api.get<IpAccess>(`/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}/access`, {
+    signal,
     params: {
       episodeIds: params?.episodeIds?.join(","),
       locale: params?.locale,
@@ -1114,12 +1132,15 @@ export function unlikeIpContent(ipId: string) {
   );
 }
 
-export function getIpCommerceWallet() {
-  return api.get<{ accounts: IpCommerceWalletAccount[] }>("/aurora/ip-commerce/wallet");
+export function getIpCommerceWallet(signal?: AbortSignal) {
+  return api.get<{ accounts: IpCommerceWalletAccount[] }>("/aurora/ip-commerce/wallet", { signal });
 }
 
-export function listIpCommerceCollection(params?: { locale?: string }) {
-  return api.get<{ items: IpCollectionItem[] }>("/aurora/ip-commerce/me/collection", { params });
+export function listIpCommerceCollection(params?: { locale?: string }, signal?: AbortSignal) {
+  return api.get<{ items: IpCollectionItem[] }>("/aurora/ip-commerce/me/collection", {
+    params,
+    signal,
+  });
 }
 
 export function saveIpCommerceCollection(input: UpsertIpCollectionInput) {
