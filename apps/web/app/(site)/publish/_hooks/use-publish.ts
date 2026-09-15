@@ -15,37 +15,16 @@
  * cache.
  */
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { notifyUnauthorized } from "@/src/lib/api";
-import {
-  createPersonalWork,
-  updatePersonalWork,
-  uploadPersonalVideo,
-} from "@/src/services/project";
+import { uploadPersonalVideo } from "@/src/services/project";
 
 export { useTagList, tagListKeys, type Tag } from "@/src/hooks/use-tag-list";
 
-export function useCreatePersonalVideo() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: createPersonalWork,
-    onSuccess: () => {
-      // Profile's "Personal Works" tab queries this list; refresh after
-      // a new upload lands so it appears without a manual reload.
-      qc.invalidateQueries({ queryKey: ["my-personal-works"] });
-    },
-  });
-}
-
-export function useUpdatePersonalVideo() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: updatePersonalWork,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["my-personal-works"] });
-    },
-  });
-}
+export {
+  useCreatePersonalWork as useCreatePersonalVideo,
+  useUpdatePersonalWork as useUpdatePersonalVideo,
+} from "@/src/hooks/use-my-projects";
 
 /**
  * Multipart upload for the actual video file. Bypasses api-client
@@ -64,12 +43,12 @@ export function useUploadPersonalVideoFile() {
   return useMutation({
     mutationFn: async ({ personalId, file, signal, onProgress }: UploadVideoArgs) => {
       void onProgress; // reserved — XHR path can wire it; fetch can't easily
-      void signal;
+      signal?.throwIfAborted();
       try {
-        return await uploadPersonalVideo(personalId, file);
+        return await uploadPersonalVideo(personalId, file, signal);
       } catch (err) {
         const msg = String((err as Error)?.message ?? "");
-        if (msg.includes("401")) notifyUnauthorized();
+        if (!signal?.aborted && msg === "Upload failed: HTTP 401") notifyUnauthorized();
         throw err;
       }
     },
@@ -86,11 +65,13 @@ export function useUploadPersonalVideoFile() {
 export interface UploadCoverArgs {
   personalId: number;
   file: File;
+  signal?: AbortSignal;
 }
 
 export function useUploadPersonalCover() {
   return useMutation({
-    mutationFn: async ({ personalId, file }: UploadCoverArgs) => {
+    mutationFn: async ({ personalId, file, signal }: UploadCoverArgs) => {
+      signal?.throwIfAborted();
       const formData = new FormData();
       formData.append("file", file);
       formData.append("id", String(personalId));
@@ -99,11 +80,15 @@ export function useUploadPersonalCover() {
         method: "POST",
         credentials: "include",
         body: formData,
+        signal,
       });
 
+      signal?.throwIfAborted();
       if (res.status === 401) notifyUnauthorized();
+      if (!res.ok) throw new Error(`Cover upload failed: HTTP ${res.status}`);
 
       const body = (await res.json()) as { code?: number; msg?: string; path?: string };
+      signal?.throwIfAborted();
       if (body.code !== 200) throw new Error(body.msg || "Cover upload failed");
       return body.path ?? "";
     },
