@@ -31,6 +31,14 @@ vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: "user-1" }, isLoading: false }),
 }));
 
+// The linked-workspace picker's "Open in Studio" anchor resolves the
+// regional Studio host from env; pin it so jsdom never needs the var.
+// Partial mock: keep CURRENT_CELL and friends for crew-money formatting.
+vi.mock("@/src/lib/region/cell", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/src/lib/region/cell")>()),
+  getStudioHref: () => "https://studio.test",
+}));
+
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
@@ -109,9 +117,9 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
-let linkedWorkspace: { id: string; name: string } | null = null;
 let canLink = true;
 let linkFails = false;
+let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
 let movedSecond = false;
 
@@ -128,19 +136,22 @@ function installFetch() {
       });
       if (method === "GET" && url.endsWith("/production-overview")) {
         return jsonResponse({
-          studioProject: null,
-          studioWorkspace: linkedWorkspace,
-          capabilities: { manage: true, linkWorkspace: canLink },
+          studioWorkspace: linkedWorkspaceId ? { id: linkedWorkspaceId, name: "Studio" } : null,
+          capabilities: { linkWorkspace: canLink },
         });
       }
       if (method === "GET" && url.endsWith("/studio-workspace-options")) {
-        return jsonResponse([{ id: "ws-1", name: "Studio" }]);
+        return jsonResponse([
+          { id: "ws-1", name: "Studio" },
+          { id: "ws-2", name: "Film Room" },
+        ]);
       }
       if (method === "PATCH" && url.endsWith("/studio-workspace")) {
-        if (linkFails)
-          return jsonResponse({ message: "Workspace access changed" }, { status: 403 });
-        linkedWorkspace = { id: "ws-1", name: "Studio" };
-        return jsonResponse({ studioWorkspace: linkedWorkspace });
+        if (linkFails) {
+          return jsonResponse({ message: "Workspace link changed" }, { status: 403 });
+        }
+        linkedWorkspaceId = "ws-1";
+        return jsonResponse({ studioWorkspace: { id: "ws-1", name: "Studio" } });
       }
       if (method === "GET" && url.includes("/users/by-ids")) {
         return jsonResponse({
@@ -303,9 +314,9 @@ beforeEach(() => {
   paginated = false;
   nextPageFails = false;
   assetListFails = false;
-  linkedWorkspace = null;
   canLink = true;
   linkFails = false;
+  linkedWorkspaceId = null;
   HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     "ResizeObserver",
@@ -520,7 +531,7 @@ describe("crew asset center", () => {
 });
 
 describe("Link workspace", () => {
-  it("links an owned workspace from the shared header and refreshes the linked workspace", async () => {
+  it("links a workspace from the shared header and updates the trigger", async () => {
     await render();
     const trigger = byText("button", "Link workspace");
     const header = document.querySelector('header[aria-label="Crew header"]');
@@ -539,15 +550,16 @@ describe("Link workspace", () => {
     expect(requests).toContainEqual(
       expect.objectContaining({ method: "PATCH", body: { workspaceId: "ws-1" } })
     );
-    expect(document.querySelector('input[placeholder="Search your workspaces"]')).toBeNull();
     await vi.waitFor(async () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
       expect(trigger.textContent).toBe("Studio");
     });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.textContent).toContain("Open in Studio");
   });
-  it("keeps the action disabled without Overview management permission", async () => {
+  it("keeps the action disabled without the workspace-link capability", async () => {
     canLink = false;
     await render();
     expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(true);
@@ -561,9 +573,11 @@ describe("Link workspace", () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
     });
     await click(byText("span", "Studio"));
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      "Workspace access changed"
-    );
+    await vi.waitFor(() => {
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+        "Workspace link changed"
+      );
+    });
     expect(byText("span", "Studio")).toBeTruthy();
   });
 });
