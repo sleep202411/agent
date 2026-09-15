@@ -11,6 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { episodeUploadTestDatabase } from './episode-upload-test-database';
 import { EPISODE_UPLOAD_PART_BYTES } from '@repo/shared';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { S3CompatibleStorageService } from '../infra/storage/s3-storage.service';
@@ -35,21 +36,7 @@ integration('episode upload against local PostgreSQL and MinIO', () => {
   const environment = { ...process.env };
 
   beforeAll(async () => {
-    const databaseUrl =
-      process.env.TASK01_TEST_DATABASE_URL ?? process.env.DATABASE_URL;
-    const database = new URL(databaseUrl!);
-    if (
-      !['localhost', '127.0.0.1'].includes(database.hostname) ||
-      !(
-        (database.port === '5433' &&
-          database.pathname === '/fizzdragon_outbox_test') ||
-        (database.port === '55439' && database.pathname === '/task01')
-      )
-    ) {
-      throw new Error(
-        'Integration requires an explicitly named loopback test database',
-      );
-    }
+    const databaseUrl = episodeUploadTestDatabase(process.env);
     Object.assign(process.env, {
       S3_ENDPOINT: 'http://127.0.0.1:19000',
       S3_REGION: 'us-east-1',
