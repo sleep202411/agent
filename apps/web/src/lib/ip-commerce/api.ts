@@ -748,10 +748,13 @@ export function listIpCommerceDiscovery(
   });
 }
 
-export function listMyIpCommerceIps(params?: { locale?: string; cursor?: string; limit?: number }) {
+export function listMyIpCommerceIps(
+  params?: { locale?: string; cursor?: string; limit?: number },
+  signal?: AbortSignal
+) {
   return api.get<{ items: IpCreatorIp[]; nextCursor: string | null }>(
     "/aurora/ip-commerce/me/ips",
-    { params }
+    { params, signal }
   );
 }
 
@@ -768,11 +771,12 @@ export function getMyIpCommerceIp(ipId: string, params?: { locale?: string }) {
  */
 export function listPublicCreatorIps(
   creatorId: string,
-  params?: { locale?: string; cursor?: string; limit?: number }
+  params?: { locale?: string; cursor?: string; limit?: number },
+  signal?: AbortSignal
 ) {
   return api.get<{ items: IpCommerceIp[]; nextCursor: string | null }>(
     `/aurora/ip-commerce/creators/${encodeURIComponent(creatorId)}/ips`,
-    { params }
+    { params, signal }
   );
 }
 

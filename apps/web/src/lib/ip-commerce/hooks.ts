@@ -1,4 +1,5 @@
 "use client";
+import { collectIpPages } from "./collect-ip-pages";
 import { useCurrentUser } from "@/src/hooks/use-user";
 
 import {
@@ -229,10 +230,11 @@ export function useMyIpCommerceIps(
   enabled = true,
   params?: { locale?: string; cursor?: string; limit?: number }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIps(params),
-    queryFn: () => listMyIpCommerceIps(params),
-    enabled,
+    queryKey: [...ipCommerceKeys.myIps(params), user?.id],
+    queryFn: ({ signal }) => listMyIpCommerceIps(params, signal),
+    enabled: enabled && Boolean(user?.id),
     staleTime: 30_000,
   });
 }
@@ -244,20 +246,15 @@ export function useMyIpCommerceIps(
  * against a pathological/repeating nextCursor.
  */
 export function useAllMyIpCommerceIps(enabled = true, params?: { locale?: string }) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ["ip-commerce", "me", "ips", "all", params ?? {}] as const,
-    queryFn: async () => {
-      const items: Awaited<ReturnType<typeof listMyIpCommerceIps>>["items"] = [];
-      let cursor: string | undefined;
-      for (let page = 0; page < 200; page++) {
-        const res = await listMyIpCommerceIps({ ...params, cursor, limit: 50 });
-        items.push(...res.items);
-        if (!res.nextCursor) break;
-        cursor = res.nextCursor;
-      }
-      return { items };
-    },
-    enabled,
+    queryKey: ["ip-commerce", "me", "ips", "all", params ?? {}, user?.id] as const,
+    queryFn: ({ signal }) =>
+      collectIpPages(
+        (cursor) => listMyIpCommerceIps({ ...params, cursor, limit: 50 }, signal),
+        signal
+      ),
+    enabled: enabled && Boolean(user?.id),
     staleTime: 30_000,
   });
 }
@@ -273,17 +270,11 @@ export function usePublicCreatorIps(
 ) {
   return useQuery({
     queryKey: ["ip-commerce", "creators", creatorId ?? "", "ips", "all", params ?? {}] as const,
-    queryFn: async () => {
-      const items: Awaited<ReturnType<typeof listPublicCreatorIps>>["items"] = [];
-      let cursor: string | undefined;
-      for (let page = 0; page < 200; page++) {
-        const res = await listPublicCreatorIps(creatorId!, { ...params, cursor, limit: 50 });
-        items.push(...res.items);
-        if (!res.nextCursor) break;
-        cursor = res.nextCursor;
-      }
-      return { items };
-    },
+    queryFn: ({ signal }) =>
+      collectIpPages(
+        (cursor) => listPublicCreatorIps(creatorId!, { ...params, cursor, limit: 50 }, signal),
+        signal
+      ),
     enabled: enabled && !!creatorId,
     staleTime: 30_000,
   });
