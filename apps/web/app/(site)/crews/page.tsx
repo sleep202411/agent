@@ -12,6 +12,7 @@
  */
 
 import Link from "next/link";
+import { CrewWorkspace } from "./_components/crew-workspace";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -54,6 +55,8 @@ export default function CrewsPage() {
     const memberships = [...(myCrews.data?.founded ?? []), ...(myCrews.data?.joined ?? [])];
     return [...new Map(memberships.map((crew) => [crew.id, crew])).values()];
   }, [user, myCrews.data]);
+  const requestedCrew = searchParams.get("crew");
+  const selectedCrew = myCrewItems.find((crew) => crew.id === requestedCrew) ?? myCrewItems[0];
   const requestedView = searchParams.get("view");
   const view: ViewMode =
     requestedView === "positions" || requestedView === "crews" || requestedView === "mine"
@@ -182,15 +185,17 @@ export default function CrewsPage() {
                 <p className="py-12 text-center text-muted-foreground">{tCrew("myCrewsSignIn")}</p>
               ) : (
                 <>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-                    {myCrews.isPending ? (
-                      <CardSkeleton count={6} />
-                    ) : (
-                      myCrewItems.map((crew) => (
-                        <CrewCard key={crew.id} item={crew} locale={locale} workspace />
-                      ))
-                    )}
-                  </div>
+                  {myCrews.isPending ? (
+                    <CardSkeleton count={1} />
+                  ) : selectedCrew ? (
+                    <div className="h-[calc(100dvh-13rem)] min-h-[28rem] overflow-hidden rounded-xl">
+                      <CrewWorkspace
+                        key={`${user.id}:${selectedCrew.id}`}
+                        id={selectedCrew.id}
+                        embedded
+                      />
+                    </div>
+                  ) : null}
                   {!myCrews.isPending && !myCrews.isError && myCrewItems.length === 0 ? (
                     <p className="py-12 text-center text-muted-foreground">
                       {tCrew("myCrewsEmpty")}

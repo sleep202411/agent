@@ -28,6 +28,7 @@ export function shouldShowCrewSwitcherRail({
 }
 
 interface CrewSwitcherRailProps {
+  embedded?: boolean;
   currentCrew: RailCrew;
   currentCrewHref?: string;
   showNames?: boolean;
@@ -36,6 +37,7 @@ interface CrewSwitcherRailProps {
 /** Workspace adapter: owns the shared query and ensures the open crew is
  * always present, even while the membership cache is refreshing. */
 export function CrewSwitcherRail({
+  embedded = false,
   currentCrew,
   currentCrewHref,
   showNames = false,
@@ -49,6 +51,7 @@ export function CrewSwitcherRail({
 
   return (
     <CrewSwitcherRailView
+      embedded={embedded}
       crews={crews}
       currentCrewId={currentCrew.id}
       currentCrewHref={currentCrewHref}
@@ -62,6 +65,7 @@ export function CrewSwitcherRail({
 }
 
 interface CrewSwitcherRailViewProps {
+  embedded?: boolean;
   crews: RailCrew[];
   currentCrewId?: string;
   currentCrewHref?: string;
@@ -76,6 +80,7 @@ interface CrewSwitcherRailViewProps {
 
 /** Shared desktop crew rail used by both Crew Hall and the crew workspace. */
 export function CrewSwitcherRailView({
+  embedded = false,
   crews,
   currentCrewId,
   currentCrewHref,
@@ -162,7 +167,12 @@ export function CrewSwitcherRailView({
                   href={
                     active && currentCrewHref
                       ? currentCrewHref
-                      : localizePath(`/crews/${encodeURIComponent(crew.id)}/workspace`, locale)
+                      : localizePath(
+                          embedded
+                            ? `/crews?view=mine&crew=${encodeURIComponent(crew.id)}`
+                            : `/crews/${encodeURIComponent(crew.id)}/workspace`,
+                          locale
+                        )
                   }
                   aria-label={crew.name}
                   aria-current={active ? "page" : undefined}

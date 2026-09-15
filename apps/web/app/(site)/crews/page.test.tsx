@@ -46,6 +46,9 @@ vi.mock("./_hooks/use-crew", () => ({ useCrewList: () => feed, useMyCrews: () =>
 vi.mock("./_hooks/use-position-label", () => ({
   useTranslatePositionValue: () => (value: string) => value,
 }));
+vi.mock("./_components/crew-workspace", () => ({
+  CrewWorkspace: ({ id }: { id: string }) => <div data-workspace={id}>Private Crew</div>,
+}));
 vi.mock("./_components/create-crew-dialog", () => ({ CreateCrewDialog: () => null }));
 vi.mock("./_components/positions-tab", () => ({ PositionsTab: () => null }));
 vi.mock("@/app/_components/kyc-gate-dialog", () => ({ KycGateDialog: () => null }));
@@ -90,13 +93,8 @@ it("moves the membership list into My Crews and opens the selected workspace", (
   root = createRoot(container);
   act(() => root.render(<CrewsPage />));
   expect(container.querySelector("aside")).toBeNull();
-  expect(container.querySelectorAll("h3")).toHaveLength(1);
   expect(container.textContent).not.toContain("Loaded Crew");
-  const card = [...container.querySelectorAll("button")].find((b) =>
-    b.textContent?.includes("Private Crew")
-  )!;
-  act(() => card.click());
-  expect(navigation.push).toHaveBeenCalledWith("/en-US/crews/mine/workspace");
+  expect(container.querySelector("[data-workspace=mine]")).not.toBeNull();
   mine.isError = true;
   mine.error = new Error("Membership refresh failed");
   act(() => root.render(<CrewsPage />));
