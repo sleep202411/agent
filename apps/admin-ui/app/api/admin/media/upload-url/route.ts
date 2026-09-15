@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminPathWithSearch,
   adminUnavailableResponse,
@@ -12,13 +13,13 @@ export const dynamic = "force-dynamic";
 // Azure/OSS). Body: { kind, contentType, fileName, sizeBytes }.
 export async function POST(request: NextRequest) {
   try {
-    const upstream = await fetch(adminPathWithSearch(request, "/media/upload-url"), {
+    const upstream = await adminFetch(request, adminPathWithSearch(request, "/media/upload-url"), {
       method: "POST",
       headers: adminForwardHeaders(request, { json: true }),
       body: await request.text(),
       cache: "no-store",
     });
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

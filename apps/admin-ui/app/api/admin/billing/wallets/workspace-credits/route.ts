@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminPathWithSearch,
   adminUrlForRequest,
@@ -12,7 +13,8 @@ export const dynamic = "force-dynamic";
 // Credit/debit a workspace compute_point pot by workspaceId.
 export async function POST(request: NextRequest) {
   try {
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(request, "/billing/wallets/workspace-credits"),
       {
         method: "POST",
@@ -21,7 +23,7 @@ export async function POST(request: NextRequest) {
         cache: "no-store",
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }
@@ -31,7 +33,8 @@ export async function POST(request: NextRequest) {
 // balance for the workspace-wallet panel's balance line.
 export async function GET(request: NextRequest) {
   try {
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminPathWithSearch(request, "/billing/wallets/workspace-credits"),
       {
         method: "GET",
@@ -39,7 +42,7 @@ export async function GET(request: NextRequest) {
         cache: "no-store",
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }
