@@ -21,6 +21,8 @@ import {
 } from "./shared";
 import type { AdminBillingOrdersData, BillingOrderRow } from "./types";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 const emptyOrders: AdminBillingOrdersData = { items: [], nextCursor: null };
 
 export function BillingOrdersPanel({
@@ -38,7 +40,7 @@ export function BillingOrdersPanel({
   const [status, setStatus] = useState("");
   const [provider, setProvider] = useState("");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
   function orderQueryString() {
@@ -51,18 +53,19 @@ export function BillingOrdersPanel({
   }
 
   async function refreshOrders() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setOrders(
-        await requestEnvelope<AdminBillingOrdersData>(
-          `/api/admin/billing/orders${orderQueryString()}`
-        )
+      const data = await requestEnvelope<AdminBillingOrdersData>(
+        `/api/admin/billing/orders${orderQueryString()}`,
+        operation.signal
       );
+      if (operation.current()) setOrders(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 

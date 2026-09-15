@@ -5,6 +5,7 @@
 // page header layered on top (mirrors the IP module per-page panels).
 
 import { useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -39,21 +40,23 @@ export function BillingReconciliationPanel({
   const [runs, setRuns] = useState<BillingReconciliationRunRow[]>(
     initialReconciliationRuns?.items ?? []
   );
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
       const nextRuns = await requestEnvelope<AdminBillingReconciliationRunsData>(
-        "/api/admin/billing/ledger/reconciliation-runs"
+        "/api/admin/billing/ledger/reconciliation-runs",
+        operation.signal
       );
-      setRuns(nextRuns.items);
+      if (operation.current()) setRuns(nextRuns.items);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 

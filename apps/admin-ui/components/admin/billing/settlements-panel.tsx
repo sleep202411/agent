@@ -25,6 +25,8 @@ import {
 } from "./shared";
 import type { AdminBillingSettlementsData, BillingSettlementRow } from "./types";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 export function BillingSettlementsPanel({
   siteLabel,
   databaseLabel,
@@ -39,21 +41,23 @@ export function BillingSettlementsPanel({
   const [settlements, setSettlements] = useState<BillingSettlementRow[]>(
     initialSettlements?.items ?? []
   );
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
       const nextSettlements = await requestEnvelope<AdminBillingSettlementsData>(
-        "/api/admin/billing/ledger/settlements"
+        "/api/admin/billing/ledger/settlements",
+        operation.signal
       );
-      setSettlements(nextSettlements.items);
+      if (operation.current()) setSettlements(nextSettlements.items);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
