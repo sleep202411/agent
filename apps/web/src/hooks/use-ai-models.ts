@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import {
@@ -10,6 +10,8 @@ import {
 } from "@/src/store/slices/aiModelCacheSlice";
 import { backendApi } from "@/src/lib/api";
 import { normalizeAiModel, type RawAiModel } from "@/components/ui/schema-field/schema";
+import { useLocale } from "@/src/i18n/i18n";
+import { getModelDescription } from "@/components/ui/schema-field/descriptions";
 import { ALL_AI_MODEL_PATHS } from "@/components/ui/schema-field/paths";
 
 function idle(callback: () => void) {
@@ -74,8 +76,17 @@ const EMPTY_RAW_MODELS: never[] = [];
  * Returns normalized AiModel[] from the store cache.
  */
 export function useAiModels(path: string) {
-  const models = useAppSelector((s) => s.aiModelCache.aiModelCache[path] ?? EMPTY_MODELS);
+  const locale = useLocale();
+  const cachedModels = useAppSelector((s) => s.aiModelCache.aiModelCache[path] ?? EMPTY_MODELS);
   const loading = useAppSelector((s) => s.aiModelCache.aiModelCacheLoading);
+  const models = useMemo(
+    () =>
+      cachedModels.map((model) => ({
+        ...model,
+        description: getModelDescription(model.id, model.name, locale) ?? model.description,
+      })),
+    [cachedModels, locale]
+  );
   return { models, loading };
 }
 
