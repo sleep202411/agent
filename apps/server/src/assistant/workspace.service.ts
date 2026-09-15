@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   describeUnknown,
   requiredScalarString,
@@ -999,6 +1004,9 @@ export class WorkspaceService {
   ) {
     if (datas.length === 0) return;
     const projectId = datas[0].projectId;
+    if (datas.some((item) => item.projectId !== projectId)) {
+      throw new BadRequestException('Episode batch must belong to one project');
+    }
 
     // Fetch current episodes to merge with
     const currentEpisodes = await this.listEpisodes(headers, projectId);
@@ -1006,6 +1014,7 @@ export class WorkspaceService {
 
     const merged: EpisodeRecord[] = datas.map((d) => {
       const cur = currentMap.get(d.id);
+      if (!cur) throw new NotFoundException('Episode not found');
       return {
         id: d.id,
         projectId,

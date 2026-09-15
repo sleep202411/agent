@@ -1,4 +1,4 @@
-import { Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { WorkspaceService } from './workspace.service';
 
 const headers = { cookie: 'session=fixture' };
@@ -111,5 +111,47 @@ describe('WorkspaceService request integrity', () => {
       }),
     ).rejects.toThrow('lookup failed');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('rejects a mixed-project batch before any upstream request', async () => {
+    await expect(
+      service.batchUpdateEpisodes(headers, [
+        { id: 'one', projectId: 'first' },
+        { id: 'two', projectId: 'second' },
+      ]),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not write a batch with a missing episode', async () => {
+    fetchMock.mockResolvedValueOnce(response({ list: [{ id: 'one' }] }));
+    await expect(
+      service.batchUpdateEpisodes(headers, [
+        { id: 'one', projectId: 'project' },
+        { id: 'missing', projectId: 'project' },
+      ]),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves all saved fields in a valid batch update', async () => {
+    const current = {
+      id: 'one',
+      projectId: 'project',
+      title: 'old',
+      introduction: 'intro',
+      sort: 1,
+      videoLength: 42,
+      frontPrompt: 'front',
+      behindPrompt: 'behind',
+    };
+    fetchMock
+      .mockResolvedValueOnce(response({ list: [current] }))
+      .mockResolvedValueOnce(response({}));
+    await service.batchUpdateEpisodes(headers, [
+      { id: 'one', projectId: 'project', title: 'new' },
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
+      datas: [{ ...current, title: 'new' }],
+    });
   });
 });
