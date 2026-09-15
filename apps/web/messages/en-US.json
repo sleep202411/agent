@@ -9967,6 +9967,9 @@
     "normal": "Normal (1×)"
   },
   "crewWorkspaceLink": {
+    "legacyProject": "Project: {name}",
+    "legacyDescription": "Only {name} is linked. Existing Crew asset access stays limited to this Canvas project. Select a workspace you own to replace this link and share with its projects.",
+    "unlinkProject": "Disconnect project",
     "link": "Link workspace",
     "description": "Only Crew admins can link a workspace they own. Its projects can use shared Crew assets; restricted folders keep their permissions.",
     "failed": "Could not save the workspace link.",

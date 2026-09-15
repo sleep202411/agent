@@ -59,6 +59,7 @@ export function CrewWorkbenchHeader({
             key={crewId}
             crewId={crewId}
             value={overview.data?.studioWorkspace ?? null}
+            legacyProject={overview.data?.studioProject ?? null}
             disabled={!overview.data?.capabilities.linkWorkspace}
           />
         ) : null}

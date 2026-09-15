@@ -22,6 +22,7 @@ type Workspace = { id: string; name: string };
 export function CrewStudioWorkspacePicker(props: {
   crewId: string;
   value: Workspace | null;
+  legacyProject?: Workspace | null;
   disabled: boolean;
 }) {
   const { user } = useCurrentUser();
@@ -37,15 +38,18 @@ function WorkspacePickerSession({
   crewId,
   userId,
   value,
+  legacyProject,
   disabled,
 }: {
   crewId: string;
   userId: string;
   value: Workspace | null;
+  legacyProject?: Workspace | null;
   disabled: boolean;
 }) {
   const t = useTranslations("crewWorkspaceLink");
   const locale = useLocale();
+  const legacy = value ? null : legacyProject;
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -112,11 +116,15 @@ function WorkspacePickerSession({
             icon={<IconLink className="size-3.5" />}
             className="max-w-48 text-xs"
           >
-            <span className="truncate">{value?.name ?? t("link")}</span>
+            <span className="truncate">
+              {value?.name ?? (legacy ? t("legacyProject", { name: legacy.name }) : t("link"))}
+            </span>
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[min(360px,calc(100vw-2rem))] p-3">
-          <p className="mb-3 text-xs text-muted-foreground">{t("description")}</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            {legacy ? t("legacyDescription", { name: legacy.name }) : t("description")}
+          </p>
           {error || options.isError ? (
             <div role="alert" className="mb-2 text-xs text-destructive">
               {error ?? options.error?.message}
@@ -145,9 +153,9 @@ function WorkspacePickerSession({
                   <span className="truncate">{workspace.name}</span>
                 </CommandItem>
               ))}
-              {value ? (
+              {value || legacy ? (
                 <CommandItem disabled={saving} onSelect={() => void select(null)}>
-                  {t("unlink")}
+                  {legacy ? t("unlinkProject") : t("unlink")}
                 </CommandItem>
               ) : null}
             </CommandList>
