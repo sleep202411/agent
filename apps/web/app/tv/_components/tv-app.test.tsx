@@ -31,6 +31,7 @@ vi.mock("@/src/lib/api", () => ({
     get: (path: string, config?: unknown) => {
       harness.get(path, config);
       if (String(path).includes("/discovery")) return harness.discovery();
+      if (/\/ips\//.test(path)) return Promise.resolve({ ip: null });
       return harness.list(config);
     },
   },
@@ -238,7 +239,7 @@ describe("TV IP list", () => {
   const selected = () =>
     container.querySelector('nav button[aria-current="true"]')?.getAttribute("aria-label");
 
-  it("selects only authorized full episodes and clears feedback on another channel", async () => {
+  it("lists locked episodes without exposing their video and clears feedback on another channel", async () => {
     const first = makeIp("ip-1", "First IP");
     const media = { ...first.trailerAsset!, url: "https://cdn.test/episode-one.mp4" };
     first.episodes = [
@@ -253,6 +254,7 @@ describe("TV IP list", () => {
         id: "locked",
         episodeNo: 2,
         title: "Locked",
+        mediaLocked: true,
         status: "published",
         mediaAsset: null,
         trailerAsset: media,
@@ -265,13 +267,20 @@ describe("TV IP list", () => {
       'select[aria-label="tv.episodeSelector"]'
     )!;
     expect(select.textContent).toContain("First episode");
-    expect(select.textContent).not.toContain("Locked");
+    expect(select.textContent).toContain("Locked");
     await act(async () => {
       select.value = "episode-1";
       select.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await waitForSource("episode-one");
     expect(container.querySelector('[data-feedback="episode-1"]')).not.toBeNull();
+    await act(async () => {
+      select.value = "locked";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("tv.episodeAccess");
+    expect(container.querySelector("[data-feedback]")).toBeNull();
+    expect(container.querySelector('section a[href="/ip/100001"]')).not.toBeNull();
     clickIp("Second IP");
     await waitForSource("ip-2");
     expect(container.querySelector("[data-feedback]")).toBeNull();

@@ -2,11 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
 import { IconX } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
-import { useTvIps } from "../_hooks/use-tv-ips";
+import { useTvIps, useTvSelectedIp } from "../_hooks/use-tv-ips";
 import { EpisodeFeedback } from "@/app/(site)/ips/_components/episode-feedback";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { TvGames } from "./tv-games";
@@ -99,7 +101,9 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  const item = items.find((entry) => entry.id === selectedId) ?? items[0];
+  const listedItem = items.find((entry) => entry.id === selectedId) ?? items[0];
+  const detail = useTvSelectedIp(listedItem?.id);
+  const item = detail.item ?? listedItem;
   // Remember the initial channel so a catalog refresh cannot change it.
   if (item && item.id !== selectedId) {
     setSelectedId(item.id);
@@ -109,7 +113,8 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
     episodeChoice?.ipId === item?.id
       ? item?.episodes?.find((entry) => entry.id === episodeChoice.episodeId)
       : undefined;
-  const playbackItem = item && episode ? { ...item, trailer: episode.video } : item;
+  const playbackItem =
+    item && episode ? { ...item, trailer: episode.video, trailerType: episode.videoType } : item;
   const errorMessage = error instanceof Error ? error.message : undefined;
   const index = items.findIndex((entry) => entry.id === item?.id);
   const hasNext = hasNextPage || items.slice(index + 1).some((entry) => entry.trailer);
@@ -199,6 +204,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
               onNext={hasNext ? () => void nextChannel() : undefined}
               advancing={advancing}
               navigationError={nextError}
+              onRefreshSource={() => void detail.refetch()}
             />
           ) : isLoading ? (
             <TvLoadingState />
@@ -208,8 +214,22 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
             <TvEmptyState />
           )}
         </div>
+        {item && detail.isError && (
+          <p role="alert" className="px-4 py-2 text-xs text-red-400">
+            {detail.error instanceof Error ? detail.error.message : t("loadFailed")}{" "}
+            <button
+              type="button"
+              disabled={detail.isFetching}
+              className="underline"
+              onClick={() => void detail.refetch()}
+            >
+              {t("retry")}
+            </button>
+          </p>
+        )}
         {item && Boolean(item.episodes?.length) && (
-          <div className="shrink-0 px-4 py-2">
+          <div className="shrink-0 space-y-2 px-4 py-2">
+            <p className="text-xs text-white/60">{t("episodeSelector")}</p>
             <NativeSelect
               aria-label={t("episodeSelector")}
               value={episode?.id ?? ""}
@@ -225,10 +245,26 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
               {item.episodes?.map((entry) => (
                 <NativeSelectOption key={entry.id} value={entry.id}>
                   {entry.number}. {entry.title}
+                  {entry.locked
+                    ? ` · ${t("lockedEpisode")}`
+                    : !entry.video
+                      ? ` · ${t("videoUnavailable")}`
+                      : ""}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
-            {episode && episode.number >= 1 && episode.number <= 3 && (
+            {episode && !episode.video && (
+              <p role="status" className="text-sm text-white/60">
+                {episode.locked ? t("episodeAccess") : t("videoUnavailable")}{" "}
+                <Link
+                  className="underline"
+                  href={localizePath(ipRoomPath(item.roomNumber), locale)}
+                >
+                  {t("viewDetail")}
+                </Link>
+              </p>
+            )}
+            {episode && Boolean(episode.video) && episode.number >= 1 && episode.number <= 3 && (
               <EpisodeFeedback ipId={item.id} episodeId={episode.id} />
             )}
           </div>

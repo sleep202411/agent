@@ -9495,7 +9495,9 @@
     "notPlaying": "未播放",
     "loadingChannel": "正在載入下一頻道…",
     "episodeSelector": "選擇分集",
-    "preview": "IP 預覽"
+    "preview": "預告片",
+    "lockedEpisode": "未解鎖",
+    "episodeAccess": "請開啟 IP 頁面查看本集存取權限。"
   },
   "creatorEarnings": {
     "title": "收益",
