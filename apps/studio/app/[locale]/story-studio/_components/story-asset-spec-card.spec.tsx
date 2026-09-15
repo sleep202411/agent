@@ -80,7 +80,7 @@ describe("StoryAssetSpecCard", () => {
   it("saves an edited prompt once before concurrent generations and reuses the persisted version", async () => {
     const asset = assetSpec();
     const client = new QueryClient();
-    client.setQueryData(storyProductionKeys.assets("project-1", "chapter-1"), [asset]);
+    client.setQueryData(storyProductionKeys.assets("project-1", "chapter-1", null), [asset]);
     let finishSave!: (value: StoryAssetSpec) => void;
     mocks.patch.mockReturnValue(
       new Promise<StoryAssetSpec>((resolve) => {

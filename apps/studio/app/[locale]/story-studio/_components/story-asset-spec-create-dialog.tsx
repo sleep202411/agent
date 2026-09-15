@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { IconPlus } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -38,6 +40,7 @@ export function StoryAssetSpecCreateDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.assetsPage.createDialog");
   const addT = useTranslations("storyStudio.assetsPage.addByKind");
   const queryClient = useQueryClient();
@@ -47,6 +50,9 @@ export function StoryAssetSpecCreateDialog({
 
   const mutation = useMutation({
     retry: false,
+    onMutate: () => ({
+      cacheKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
+    }),
     mutationFn: () =>
       createStoryAssetSpec(
         projectId,
@@ -58,11 +64,12 @@ export function StoryAssetSpecCreateDialog({
           imagePrompt: trimmedName,
         }
       ),
-    onSuccess: async (created) => {
-      queryClient.setQueryData<StoryAssetSpec[]>(
-        storyProductionKeys.assets(projectId, chapterId),
-        (current) => [...(current ?? []), created]
-      );
+    onSuccess: async (created, _input, context) => {
+      if (!context) return;
+      queryClient.setQueryData<StoryAssetSpec[]>(context.cacheKey, (current) => [
+        ...(current ?? []),
+        created,
+      ]);
       onOpenChange(false);
       toast.success(t("created"));
       await queryClient.invalidateQueries({

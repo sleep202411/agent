@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import {
   IconCheck,
   IconChevronLeft,
@@ -76,6 +78,7 @@ export function StoryAssetSpecCard({
   allowMediaReplacement?: boolean;
   eagerMedia?: boolean;
 }) {
+  const { user } = useAuth();
   const detailT = useTranslations("storyStudio.assetsPage.detailDialog");
   const workbenchT = useTranslations("storyStudio.assetsPage.workbench");
   const mediaT = useTranslations("storyStudio.assetsPage.mediaAction");
@@ -105,7 +108,7 @@ export function StoryAssetSpecCard({
 
   const updateCachedAsset = (updated: StoryAssetSpec) => {
     queryClient.setQueryData<StoryAssetSpec[]>(
-      storyProductionKeys.assets(projectId, chapterId),
+      storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
       (current) => current?.map((item) => (item.id === updated.id ? updated : item))
     );
   };
@@ -115,7 +118,9 @@ export function StoryAssetSpecCard({
     persist: async ({ name, imagePrompt }) => {
       const current =
         queryClient
-          .getQueryData<StoryAssetSpec[]>(storyProductionKeys.assets(projectId, chapterId))
+          .getQueryData<
+            StoryAssetSpec[]
+          >(storyProductionKeys.assets(projectId, chapterId, user?.id ?? null))
           ?.find((item) => item.id === asset.id) ?? asset;
       if (
         !name.trim() ||
@@ -168,6 +173,10 @@ export function StoryAssetSpecCard({
 
   const archiveMutation = useMutation({
     retry: false,
+    onMutate: () => ({
+      cacheKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
+      assetId: asset.id,
+    }),
     mutationFn: () =>
       runWithSavedValues((version) =>
         archiveStoryAssetSpec(
@@ -178,10 +187,10 @@ export function StoryAssetSpecCard({
           { expectedVersion: version }
         )
       ),
-    onSuccess: async () => {
-      queryClient.setQueryData<StoryAssetSpec[]>(
-        storyProductionKeys.assets(projectId, chapterId),
-        (current) => current?.filter((item) => item.id !== asset.id)
+    onSuccess: async (_result, _input, context) => {
+      if (!context) return;
+      queryClient.setQueryData<StoryAssetSpec[]>(context.cacheKey, (current) =>
+        current?.filter((item) => item.id !== context.assetId)
       );
       toast.success(detailT("deleted"));
       await queryClient.invalidateQueries({
@@ -627,12 +636,16 @@ function StoryAssetSpecCardMediaPicker({
   purpose: "primary" | "turnaround";
   onOpenChange: (open: boolean) => void;
 }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.assetsPage.mediaAction");
   const queryClient = useQueryClient();
   const candidateAssets = useStoryCandidateAssets({ projectId, canEdit: true });
 
   const replaceMutation = useMutation({
     retry: false,
+    onMutate: () => ({
+      cacheKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
+    }),
     mutationFn: (candidate: StoryCandidateAsset) =>
       patchStoryAssetSpec(
         projectId,
@@ -645,10 +658,10 @@ function StoryAssetSpecCardMediaPicker({
           sourceMediaPurpose: purpose,
         }
       ),
-    onSuccess: async (updated) => {
-      queryClient.setQueryData<StoryAssetSpec[]>(
-        storyProductionKeys.assets(projectId, chapterId),
-        (current) => current?.map((item) => (item.id === updated.id ? updated : item))
+    onSuccess: async (updated, _input, context) => {
+      if (!context) return;
+      queryClient.setQueryData<StoryAssetSpec[]>(context.cacheKey, (current) =>
+        current?.map((item) => (item.id === updated.id ? updated : item))
       );
       onOpenChange(false);
       toast.success(purpose === "turnaround" ? t("turnaroundReplaceSuccess") : t("replaceSuccess"));

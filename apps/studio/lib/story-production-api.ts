@@ -392,8 +392,14 @@ export function storyGenerationBatchHasPendingItems(batch: StoryGenerationBatch)
 export const storyProductionKeys = {
   state: (projectId: string, chapterId: string | null) =>
     ["story-studio", "production-state", projectId, chapterId] as const,
-  assets: (projectId: string, chapterId: string | null) =>
-    ["story-studio", "asset-specs", projectId, chapterId] as const,
+  assets: (projectId: string, chapterId: string | null, viewerId?: string | number | null) =>
+    [
+      "story-studio",
+      "asset-specs",
+      projectId,
+      chapterId,
+      ...(viewerId === undefined ? [] : [viewerId]),
+    ] as const,
   storyboard: (projectId: string, chapterId: string | null) =>
     ["story-studio", "storyboard", projectId, chapterId] as const,
   generation: (

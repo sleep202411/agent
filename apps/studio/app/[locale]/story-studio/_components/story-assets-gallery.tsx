@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { IconAlertTriangle, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -31,6 +33,7 @@ const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
 /** Chapter-scoped logical Asset Specs. A spec remains usable by @stable-key
  * before any media exists; this view never starts paid generation on load. */
 export function StoryAssetsGallery({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.assetsPage");
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const router = useRouter();
@@ -43,9 +46,9 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
     ? (kindParam as StoryAssetSpecKind)
     : "character";
   const assetsQuery = useQuery({
-    queryKey: storyProductionKeys.assets(projectId, activeChapterId),
+    queryKey: storyProductionKeys.assets(projectId, activeChapterId, user?.id ?? null),
     queryFn: ({ signal }) => listStoryAssetSpecs(projectId, activeChapterId as string, signal),
-    enabled: Boolean(activeChapterId),
+    enabled: Boolean(projectId && activeChapterId && user),
     retry: false,
   });
   const setTab = (tab: StoryAssetSpecKind) => {
