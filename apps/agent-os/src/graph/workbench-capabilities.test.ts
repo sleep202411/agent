@@ -1,3 +1,4 @@
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import { describe, expect, it, vi } from "vitest";
 import { resolveSkillMounts } from "@repo/agent-skills";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
@@ -259,7 +260,9 @@ describe("skill mounts (system workbench skills)", () => {
       },
       onToolEvent,
     } as unknown as ToolRuntimeContext;
-    const list = buildLangChainTools(fencedRuntime, ["characters.list"])[0]!;
+    const list: StructuredToolInterface = buildLangChainTools(fencedRuntime, [
+      "characters.list",
+    ])[0]!;
 
     await expect(
       list.invoke({}, { toolCall: { id: "stale-call" } } as never)

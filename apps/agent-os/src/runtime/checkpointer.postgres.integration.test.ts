@@ -1,13 +1,12 @@
+import { checkpointTestDatabase } from "./checkpoint-test-database.js";
 import { emptyCheckpoint } from "@langchain/langgraph-checkpoint";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { AgentOsPostgresSaver, type AgentOsCheckpointExecutionIdentity } from "./checkpointer.js";
 
-const ENABLED = process.env.AGENT_OS_CHECKPOINT_POSTGRES_INTEGRATION === "1";
-const describePostgres = ENABLED ? describe : describe.skip;
-const DATABASE_URL =
-  process.env.DATABASE_URL?.trim() || "postgres://fizzdragon:fizzdragon@localhost:5433/fizzdragon";
+const DATABASE_URL = checkpointTestDatabase(process.env);
+const describePostgres = DATABASE_URL ? describe : describe.skip;
 const { Pool } = pg;
 
 describePostgres("Agent OS fenced Postgres checkpointer", () => {
@@ -16,8 +15,7 @@ describePostgres("Agent OS fenced Postgres checkpointer", () => {
   let authority: pg.Pool;
 
   beforeAll(async () => {
-    assertLocalDatabase(DATABASE_URL);
-    authority = new Pool({ connectionString: DATABASE_URL, max: 2 });
+    authority = new Pool({ connectionString: DATABASE_URL!, max: 2 });
     const result = await authority.query<{ relation: string | null }>(
       `SELECT to_regclass('public.agent_os_runs')::text AS relation`
     );
@@ -48,15 +46,15 @@ describePostgres("Agent OS fenced Postgres checkpointer", () => {
   });
 
   it("separates pinned guard sessions from a max=1 saver pool", async () => {
-    const first = executionIdentity(1);
-    const second = executionIdentity(2);
+    const first = executionIdentity();
+    const second = executionIdentity();
     runIds.push(first.runId, second.runId);
     conversationIds.push(first.conversationId, second.conversationId);
     await seedExecution(authority, first);
     await seedExecution(authority, second);
 
-    const saverPool = new Pool({ connectionString: DATABASE_URL, max: 1 });
-    const guardPool = new Pool({ connectionString: DATABASE_URL, max: 2 });
+    const saverPool = new Pool({ connectionString: DATABASE_URL!, max: 1 });
+    const guardPool = new Pool({ connectionString: DATABASE_URL!, max: 2 });
     const saver = new AgentOsPostgresSaver(saverPool, guardPool, "agent_os");
     await saver.setup();
     const leaseOne = await saver.acquireExecution(first);
@@ -91,8 +89,8 @@ describePostgres("Agent OS fenced Postgres checkpointer", () => {
   });
 
   it("blocks takeover while A holds the thread and rejects A after epoch B", async () => {
-    const first = executionIdentity(3);
-    const replacementGuardProbe = executionIdentity(4);
+    const first = executionIdentity();
+    const replacementGuardProbe = executionIdentity();
     runIds.push(first.runId, replacementGuardProbe.runId);
     conversationIds.push(first.conversationId, replacementGuardProbe.conversationId);
     await seedExecution(authority, first);
@@ -100,17 +98,17 @@ describePostgres("Agent OS fenced Postgres checkpointer", () => {
 
     const guardApplicationName = `agent-os-checkpoint-guard-${first.runId}`;
     const saverA = new AgentOsPostgresSaver(
-      new Pool({ connectionString: DATABASE_URL, max: 1 }),
+      new Pool({ connectionString: DATABASE_URL!, max: 1 }),
       new Pool({
-        connectionString: DATABASE_URL,
+        connectionString: DATABASE_URL!,
         max: 1,
         application_name: guardApplicationName,
       }),
       "agent_os"
     );
     const saverB = new AgentOsPostgresSaver(
-      new Pool({ connectionString: DATABASE_URL, max: 1 }),
-      new Pool({ connectionString: DATABASE_URL, max: 1 }),
+      new Pool({ connectionString: DATABASE_URL!, max: 1 }),
+      new Pool({ connectionString: DATABASE_URL!, max: 1 }),
       "agent_os"
     );
     await Promise.all([saverA.setup(), saverB.setup()]);
@@ -196,16 +194,15 @@ describePostgres("Agent OS fenced Postgres checkpointer", () => {
   });
 });
 
-function executionIdentity(seed: number): AgentOsCheckpointExecutionIdentity {
-  const suffix = seed.toString().padStart(12, "0");
+function executionIdentity(): AgentOsCheckpointExecutionIdentity {
   return {
     kind: "start",
-    runId: `40000000-0000-4000-8000-${suffix}`,
-    conversationId: `50000000-0000-4000-8000-${suffix}`,
-    executionToken: `60000000-0000-4000-8000-${suffix}`,
-    executionAttemptId: `70000000-0000-4000-8000-${suffix}`,
+    runId: crypto.randomUUID(),
+    conversationId: crypto.randomUUID(),
+    executionToken: crypto.randomUUID(),
+    executionAttemptId: crypto.randomUUID(),
     executionEpoch: 1,
-    executionOwnerId: `80000000-0000-4000-8000-${suffix}`,
+    executionOwnerId: crypto.randomUUID(),
   };
 }
 
@@ -259,17 +256,4 @@ function checkpoint(id: string, text: string) {
 
 function metadata() {
   return { source: "loop" as const, step: 1, parents: {} };
-}
-
-function assertLocalDatabase(rawUrl: string): void {
-  const url = new URL(rawUrl);
-  if (
-    !["postgres:", "postgresql:"].includes(url.protocol) ||
-    !["localhost", "127.0.0.1", "::1"].includes(url.hostname) ||
-    url.port !== "5433"
-  ) {
-    throw new Error(
-      "Refusing checkpoint integration test: DATABASE_URL must target localhost:5433"
-    );
-  }
 }
