@@ -6,9 +6,7 @@ import {
   type Prisma,
 } from '@prisma/client';
 import type { UIMessage } from 'ai';
-import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { CopilotConfigService } from './copilot.config';
 import { CopilotQuotaService } from './copilot-quota.service';
@@ -23,15 +21,9 @@ import {
   type CopilotUserStreamLease,
 } from './copilot.store';
 
-loadEnv({
-  path: resolve(__dirname, '../../.env'),
-  override: false,
-  quiet: true,
-});
-
-const INTEGRATION_ENABLED = process.env.COPILOT_POSTGRES_INTEGRATION === '1';
-const DEFAULT_LOCAL_DATABASE_URL =
-  'postgres://fizzdragon:fizzdragon@localhost:5433/fizzdragon';
+const INTEGRATION_ENABLED =
+  Boolean(process.env.TASK01_TEST_DATABASE_URL) ||
+  process.env.COPILOT_POSTGRES_INTEGRATION === '1';
 const TEST_PREFIX = 'copilot-pg-it';
 const describePostgres = INTEGRATION_ENABLED ? describe : describe.skip;
 
@@ -40,19 +32,21 @@ jest.setTimeout(60_000);
 /**
  * Real PostgreSQL coverage for Copilot's canonical transcript, admission
  * fencing, and transaction rollback behavior. The suite is opt-in and refuses
- * every database except PostgreSQL on localhost:5433. Each test deletes only
+ * every database except the explicitly named loopback fixtures. Each test deletes only
  * the exact randomly generated user IDs it registered.
  */
 describePostgres('CopilotStore PostgreSQL integration', () => {
   const databaseUrl =
-    process.env.DATABASE_URL?.trim() || DEFAULT_LOCAL_DATABASE_URL;
+    process.env.TASK01_TEST_DATABASE_URL ??
+    process.env.DATABASE_URL?.trim() ??
+    '';
   const touchedUserIds = new Set<string>();
   let prisma: ReturnType<typeof buildPrisma>;
   let store: CopilotStore;
 
   beforeAll(async () => {
     assertDedicatedLocalPostgres(databaseUrl);
-    prisma = buildPrisma();
+    prisma = buildPrisma(databaseUrl);
     await prisma.$connect();
     await assertCopilotMigrationPresent(prisma);
     store = new CopilotStore(
@@ -1133,24 +1127,19 @@ function resolvedAssistantToolMessage(
 }
 
 function assertDedicatedLocalPostgres(rawUrl: string): void {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error(
-      'Copilot PostgreSQL integration tests require a valid DATABASE_URL.',
-    );
-  }
+  const url = new URL(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
-    !['localhost', '127.0.0.1', '::1'].includes(url.hostname) ||
-    url.port !== '5433'
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    !(
+      (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+      (url.port === '55439' && url.pathname === '/task01')
+    )
   ) {
     throw new Error(
-      'Refusing Copilot integration tests: DATABASE_URL must target PostgreSQL on localhost:5433.',
+      'Explicitly selected named loopback test database required.',
     );
   }
-  process.env.DATABASE_URL = rawUrl;
 }
 
 async function assertCopilotMigrationPresent(

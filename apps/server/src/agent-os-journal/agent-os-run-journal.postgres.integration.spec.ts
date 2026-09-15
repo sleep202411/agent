@@ -2,9 +2,7 @@ import { ConflictException, Logger } from '@nestjs/common';
 import { AgentOsExternalHandoffReconcilerService } from './agent-os-external-handoff-reconciler.service';
 import { Prisma } from '@prisma/client';
 import type { AgentEventEnvelope, AgentRunStatus } from '@repo/agent-protocol';
-import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import pg from 'pg';
 import {
   AGENT_OS_CHECKPOINT_EXECUTION_LOCK_SEED,
@@ -18,16 +16,9 @@ import {
   type AgentOsStartDispatchClaim,
 } from './agent-os-run-journal.service';
 
-loadEnv({
-  path: resolve(__dirname, '../../.env'),
-  override: false,
-  quiet: true,
-});
-
 const INTEGRATION_ENABLED =
+  Boolean(process.env.TASK01_TEST_DATABASE_URL) ||
   process.env.AGENT_OS_START_POSTGRES_INTEGRATION === '1';
-const DEFAULT_LOCAL_DATABASE_URL =
-  'postgres://fizzdragon:fizzdragon@localhost:5433/fizzdragon';
 const describePostgres = INTEGRATION_ENABLED ? describe : describe.skip;
 const { Client } = pg;
 
@@ -48,13 +39,15 @@ describePostgres(
   'AgentOsRunJournalService start fence PostgreSQL integration',
   () => {
     const databaseUrl =
-      process.env.DATABASE_URL?.trim() || DEFAULT_LOCAL_DATABASE_URL;
+      process.env.TASK01_TEST_DATABASE_URL ??
+      process.env.DATABASE_URL?.trim() ??
+      '';
     let prisma: ReturnType<typeof buildPrisma>;
     const runIds = new Set<string>();
 
     beforeAll(async () => {
       assertDedicatedLocalPostgres(databaseUrl);
-      prisma = buildPrisma();
+      prisma = buildPrisma(databaseUrl);
       await prisma.$connect();
       await assertStartFenceMigrationPresent(prisma);
     });
@@ -81,10 +74,8 @@ describePostgres(
       const original = process.env.DATABASE_URL;
       const url = new URL(databaseUrl);
       url.searchParams.set('options', '-c timezone=Asia/Shanghai');
-      process.env.DATABASE_URL = url.toString();
-      const client = buildPrisma();
-      if (original === undefined) delete process.env.DATABASE_URL;
-      else process.env.DATABASE_URL = original;
+      const client = buildPrisma(url.toString());
+      expect(process.env.DATABASE_URL).toBe(original);
       try {
         const instant = new Date('2026-09-12T14:10:31.895Z');
         const [row] = await client.$queryRaw<
@@ -1596,14 +1587,16 @@ function assertDedicatedLocalPostgres(rawUrl: string): void {
   const url = new URL(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
-    !['localhost', '127.0.0.1', '::1'].includes(url.hostname) ||
-    url.port !== '5433'
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    !(
+      (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+      (url.port === '55439' && url.pathname === '/task01')
+    )
   ) {
     throw new Error(
-      'Refusing Agent OS start integration tests: DATABASE_URL must target PostgreSQL on localhost:5433.',
+      'Explicitly selected named loopback test database required.',
     );
   }
-  process.env.DATABASE_URL = rawUrl;
 }
 
 async function assertStartFenceMigrationPresent(

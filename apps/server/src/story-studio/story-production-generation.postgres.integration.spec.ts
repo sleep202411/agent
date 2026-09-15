@@ -29,9 +29,7 @@ import {
   type StoryScreenplay,
 } from '@repo/shared/story-agent';
 import { STORY_PRODUCTION_PLAN_SCHEMA_VERSION } from '@repo/shared/story-production';
-import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import * as Y from 'yjs';
 import type { AiJob } from '../ai-generation/types';
 import { STORY_STUDIO_WORKBENCH_SURFACE } from '../ai-generation/output-storage-target';
@@ -49,28 +47,23 @@ import { readStoryScriptHead } from './story-script-stage';
 const CINEMATIC_REALISM_SKILL =
   storyVisualStyleSkillBySlug('cinematic-realism')!;
 
-loadEnv({
-  path: resolve(__dirname, '../../.env'),
-  override: false,
-  quiet: true,
-});
-
 const INTEGRATION_ENABLED =
+  Boolean(process.env.TASK01_TEST_DATABASE_URL) ||
   process.env.STORY_PRODUCTION_GENERATION_POSTGRES_INTEGRATION === '1';
-const DEFAULT_LOCAL_DATABASE_URL =
-  'postgres://fizzdragon:fizzdragon@localhost:5433/fizzdragon';
 const TEST_PREFIX = 'story-generation-pg-it';
 const describePostgres = INTEGRATION_ENABLED ? describe : describe.skip;
 
 describePostgres('Story production generation PostgreSQL integration', () => {
   const databaseUrl =
-    process.env.DATABASE_URL?.trim() || DEFAULT_LOCAL_DATABASE_URL;
+    process.env.TASK01_TEST_DATABASE_URL ??
+    process.env.DATABASE_URL?.trim() ??
+    '';
   let prisma: ReturnType<typeof buildPrisma>;
   const workspaceIds = new Set<string>();
 
   beforeAll(async () => {
     assertDedicatedLocalPostgres(databaseUrl);
-    prisma = buildPrisma();
+    prisma = buildPrisma(databaseUrl);
     await prisma.$connect();
     await assertGenerationMigrationPresent(prisma);
   });
@@ -2132,22 +2125,17 @@ async function cleanupFixtures(
 }
 
 function assertDedicatedLocalPostgres(rawUrl: string): void {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error(
-      'Story production generation PostgreSQL tests require a valid DATABASE_URL.',
-    );
-  }
+  const url = new URL(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
-    !['localhost', '127.0.0.1', '::1'].includes(url.hostname) ||
-    url.port !== '5433'
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    !(
+      (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+      (url.port === '55439' && url.pathname === '/task01')
+    )
   ) {
     throw new Error(
-      'Refusing Story production generation tests: DATABASE_URL must target PostgreSQL on localhost:5433.',
+      'Explicitly selected named loopback test database required.',
     );
   }
-  process.env.DATABASE_URL = rawUrl;
 }

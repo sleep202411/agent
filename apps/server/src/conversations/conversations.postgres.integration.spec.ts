@@ -25,26 +25,22 @@
  * deleted afterwards; conversations cascade to participants and
  * messages.
  */
-import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { ConversationsService, crewLookupKey } from './conversations.service';
 
-loadEnv({
-  path: resolve(__dirname, '../../.env'),
-  override: false,
-  quiet: true,
-});
-
 const INTEGRATION_ENABLED =
+  Boolean(process.env.TASK01_TEST_DATABASE_URL) ||
   process.env.CONVERSATIONS_POSTGRES_INTEGRATION === '1';
 const describePostgres = INTEGRATION_ENABLED ? describe : describe.skip;
 
 jest.setTimeout(60_000);
 
 describePostgres('ConversationsService PostgreSQL integration', () => {
-  const databaseUrl = process.env.DATABASE_URL?.trim() ?? '';
+  const databaseUrl =
+    process.env.TASK01_TEST_DATABASE_URL ??
+    process.env.DATABASE_URL?.trim() ??
+    '';
   const createdCrewIds = new Set<string>();
   const createdConversationIds = new Set<string>();
 
@@ -59,7 +55,7 @@ describePostgres('ConversationsService PostgreSQL integration', () => {
 
   beforeAll(async () => {
     assertLocalPostgres(databaseUrl);
-    prisma = buildPrisma();
+    prisma = buildPrisma(databaseUrl);
     await prisma.$connect();
     await assertCrewChatMigrationsPresent(prisma);
   });
@@ -605,23 +601,19 @@ async function orderedIds(
 }
 
 function assertLocalPostgres(rawUrl: string): void {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error(
-      'Conversations PostgreSQL integration tests require a valid DATABASE_URL.',
-    );
-  }
+  const url = new URL(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
-    !['localhost', '127.0.0.1', '::1'].includes(url.hostname)
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    !(
+      (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+      (url.port === '55439' && url.pathname === '/task01')
+    )
   ) {
     throw new Error(
-      'Refusing Conversations integration tests: DATABASE_URL must target PostgreSQL on localhost. These tests write and delete rows.',
+      'Explicitly selected named loopback test database required.',
     );
   }
-  process.env.DATABASE_URL = rawUrl;
 }
 
 async function assertCrewChatMigrationsPresent(

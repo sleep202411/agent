@@ -1,3 +1,4 @@
+import { ensureStoryVisualStyleFixture } from '../../test/story-visual-style-fixture';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import {
   Prisma,
@@ -25,7 +26,6 @@ import {
   STORY_PRODUCTION_PLAN_SCHEMA_VERSION,
   type StoryProductionPlan,
 } from '@repo/shared/story-production';
-import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -58,16 +58,9 @@ import { readStoryScriptHead } from './story-script-stage';
 const CINEMATIC_REALISM_SKILL =
   storyVisualStyleSkillBySlug('cinematic-realism')!;
 
-loadEnv({
-  path: resolve(__dirname, '../../.env'),
-  override: false,
-  quiet: true,
-});
-
 const INTEGRATION_ENABLED =
+  Boolean(process.env.TASK01_TEST_DATABASE_URL) ||
   process.env.STORY_AGENT_POSTGRES_INTEGRATION === '1';
-const DEFAULT_LOCAL_DATABASE_URL =
-  'postgres://fizzdragon:fizzdragon@localhost:5433/fizzdragon';
 const TEST_PREFIX = 'story-agent-pg-it';
 const describePostgres = INTEGRATION_ENABLED ? describe : describe.skip;
 const nativeStructuredClone = globalThis.structuredClone;
@@ -82,7 +75,9 @@ const nativeStructuredClone = globalThis.structuredClone;
  */
 describePostgres('StoryAgentRunService PostgreSQL integration', () => {
   const databaseUrl =
-    process.env.DATABASE_URL?.trim() || DEFAULT_LOCAL_DATABASE_URL;
+    process.env.TASK01_TEST_DATABASE_URL ??
+    process.env.DATABASE_URL?.trim() ??
+    '';
   let prisma: ReturnType<typeof buildPrisma>;
   const fixtureWorkspaceIds = new Set<string>();
 
@@ -93,8 +88,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     // guard correctly rejects non-local prototypes, so use an equivalent JSON
     // clone here; Story Agent drafts/layouts are schema-validated JSON values.
     globalThis.structuredClone = jsonStructuredClone;
-    prisma = buildPrisma();
+    prisma = buildPrisma(databaseUrl);
     await prisma.$connect();
+    await ensureStoryVisualStyleFixture(prisma);
     await assertStoryAgentMigrationPresent(prisma);
     await removeAbandonedFixtures(prisma);
   });
@@ -3119,24 +3115,19 @@ async function expectErrorResponse(
 }
 
 function assertDedicatedLocalPostgres(rawUrl: string): void {
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error(
-      'Story Agent PostgreSQL integration tests require a valid DATABASE_URL.',
-    );
-  }
+  const url = new URL(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
-    !['localhost', '127.0.0.1', '::1'].includes(url.hostname) ||
-    url.port !== '5433'
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    !(
+      (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+      (url.port === '55439' && url.pathname === '/task01')
+    )
   ) {
     throw new Error(
-      'Refusing Story Agent integration tests: DATABASE_URL must target PostgreSQL on localhost:5433.',
+      'Explicitly selected named loopback test database required.',
     );
   }
-  process.env.DATABASE_URL = rawUrl;
 }
 
 function jsonStructuredClone<T>(value: T): T {
