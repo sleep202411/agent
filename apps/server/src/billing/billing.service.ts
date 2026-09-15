@@ -2239,24 +2239,29 @@ export class BillingService {
   }
 
   async updateAdminPrice(priceId: string, input: UpdateAdminBillingPriceInput) {
-    const price = await this.prisma.billingPrice.findUnique({
-      where: { id: priceId },
-      include: { item: true },
-    });
-    if (!price) {
-      throw new NotFoundException({
-        code: 'BILLING_PRICE_NOT_FOUND',
-        msg: 'Billing price not found.',
+    return this.prisma.$transaction(async (tx) => {
+      const target = await tx.billingPrice.findUnique({
+        where: { id: priceId },
+        select: { itemId: true },
       });
-    }
-    const archivedAt =
-      input.archived === undefined
-        ? price.archivedAt
-        : input.archived
-          ? new Date()
-          : null;
-    await this.prisma.$transaction([
-      this.prisma.billingCatalogItem.update({
+      if (target)
+        await tx.$queryRaw`SELECT id FROM billing_catalog_items WHERE id=${target.itemId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM billing_prices WHERE id=${priceId}::uuid FOR UPDATE`;
+      const price = await tx.billingPrice.findUnique({
+        where: { id: priceId },
+      });
+      if (!price)
+        throw new NotFoundException({
+          code: 'BILLING_PRICE_NOT_FOUND',
+          msg: 'Billing price not found.',
+        });
+      const archivedAt =
+        input.archived === undefined
+          ? price.archivedAt
+          : input.archived
+            ? new Date()
+            : null;
+      await tx.billingCatalogItem.update({
         where: { id: price.itemId },
         data: {
           name: input.itemName ?? undefined,
@@ -2265,8 +2270,8 @@ export class BillingService {
               ? undefined
               : input.itemDescription,
         },
-      }),
-      this.prisma.billingPrice.update({
+      });
+      await tx.billingPrice.update({
         where: { id: priceId },
         data: {
           isActive: input.isActive ?? undefined,
@@ -2275,51 +2280,54 @@ export class BillingService {
             ? (input.priceMetadata as Prisma.InputJsonValue)
             : undefined,
         },
-      }),
-    ]);
-    return this.getAdminPrice(priceId);
+      });
+      return this.getAdminPrice(priceId, tx);
+    });
   }
 
   async upsertAdminProviderBinding(
     priceId: string,
     input: UpsertAdminBillingProviderBindingInput,
   ) {
-    const price = await this.prisma.billingPrice.findUnique({
-      where: { id: priceId },
-    });
-    if (!price) {
-      throw new NotFoundException({
-        code: 'BILLING_PRICE_NOT_FOUND',
-        msg: 'Billing price not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_prices WHERE id=${priceId}::uuid FOR UPDATE`;
+      const price = await tx.billingPrice.findUnique({
+        where: { id: priceId },
       });
-    }
-    const existing = await this.prisma.billingProviderPriceBinding.findFirst({
-      where: {
-        priceId,
-        provider: input.provider as PaymentProvider,
-        archivedAt: null,
-      },
-    });
-    const data = {
-      providerProductId: input.providerProductId ?? null,
-      providerPriceId: input.providerPriceId ?? null,
-      providerMode: input.providerMode ?? null,
-      status: input.status as BillingProviderBindingStatus,
-      syncError: null,
-      metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
-    };
-    if (existing) {
-      return this.prisma.billingProviderPriceBinding.update({
-        where: { id: existing.id },
-        data,
+      if (!price) {
+        throw new NotFoundException({
+          code: 'BILLING_PRICE_NOT_FOUND',
+          msg: 'Billing price not found.',
+        });
+      }
+      const existing = await tx.billingProviderPriceBinding.findFirst({
+        where: {
+          priceId,
+          provider: input.provider as PaymentProvider,
+          archivedAt: null,
+        },
       });
-    }
-    return this.prisma.billingProviderPriceBinding.create({
-      data: {
-        priceId,
-        provider: input.provider as PaymentProvider,
-        ...data,
-      },
+      const data = {
+        providerProductId: input.providerProductId ?? null,
+        providerPriceId: input.providerPriceId ?? null,
+        providerMode: input.providerMode ?? null,
+        status: input.status as BillingProviderBindingStatus,
+        syncError: null,
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+      };
+      if (existing) {
+        return tx.billingProviderPriceBinding.update({
+          where: { id: existing.id },
+          data,
+        });
+      }
+      return tx.billingProviderPriceBinding.create({
+        data: {
+          priceId,
+          provider: input.provider as PaymentProvider,
+          ...data,
+        },
+      });
     });
   }
 
@@ -7790,8 +7798,11 @@ export class BillingService {
     };
   }
 
-  private async getAdminPrice(priceId: string) {
-    const price = await this.prisma.billingPrice.findUniqueOrThrow({
+  private async getAdminPrice(
+    priceId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const price = await db.billingPrice.findUniqueOrThrow({
       where: { id: priceId },
       include: {
         item: true,
