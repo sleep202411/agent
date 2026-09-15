@@ -79,7 +79,7 @@ export function StoryAssetSpecCard({
   allowMediaReplacement?: boolean;
   eagerMedia?: boolean;
 }) {
-  const { user } = useAuth();
+  const { user, isCurrentAccount } = useAuth();
   const isCurrent = useStoryOperationScope(
     JSON.stringify([projectId, chapterId, user?.id, asset.id, allowEditing, allowMediaReplacement])
   );
@@ -119,6 +119,8 @@ export function StoryAssetSpecCard({
 
   const { values, changeValues, runWithSavedValues } = useStoryProductionAutosave({
     initialValues: { name: asset.name, imagePrompt: asset.imagePrompt },
+    canPersist: () => user?.id != null && isCurrentAccount(user.id),
+    scopeKey: JSON.stringify([projectId, chapterId, asset.id, user?.id, allowEditing]),
     persist: async ({ name, imagePrompt }) => {
       const current =
         queryClient

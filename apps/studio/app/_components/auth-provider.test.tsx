@@ -45,11 +45,14 @@ it("clears the user immediately and cannot erase replacement authentication on l
       </QueryClientProvider>
     )
   );
+  const originalCheck = current.isCurrentAccount;
+  expect(originalCheck("alice")).toBe(true);
   let pending!: Promise<void>;
   await act(async () => {
     pending = current.signOut();
   });
   expect(client.getQueryData(key)).toBeNull();
+  expect(originalCheck("alice")).toBe(false);
   expect(state.getAuthUser).not.toHaveBeenCalled();
   await act(async () => {
     client.setQueryData(key, { id: "bob" });
@@ -57,4 +60,6 @@ it("clears the user immediately and cannot erase replacement authentication on l
     await pending;
   });
   expect(client.getQueryData(key)).toEqual({ id: "bob" });
+  expect(originalCheck("alice")).toBe(false);
+  expect(originalCheck("bob")).toBe(true);
 });

@@ -9,6 +9,9 @@ import { StoryAssetSpecCard } from "./story-asset-spec-card";
 
 const mocks = vi.hoisted(() => ({ patch: vi.fn(), prepared: vi.fn() }));
 
+vi.mock("@/app/_components/auth-provider", () => ({
+  useAuth: () => ({ user: { id: "alice" }, isCurrentAccount: (id: string) => id === "alice" }),
+}));
 vi.mock("@/lib/story-production-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/story-production-api")>()),
   patchStoryAssetSpec: mocks.patch,
@@ -80,7 +83,7 @@ describe("StoryAssetSpecCard", () => {
   it("saves an edited prompt once before concurrent generations and reuses the persisted version", async () => {
     const asset = assetSpec();
     const client = new QueryClient();
-    client.setQueryData(storyProductionKeys.assets("project-1", "chapter-1", null), [asset]);
+    client.setQueryData(storyProductionKeys.assets("project-1", "chapter-1", "alice"), [asset]);
     let finishSave!: (value: StoryAssetSpec) => void;
     mocks.patch.mockReturnValue(
       new Promise<StoryAssetSpec>((resolve) => {

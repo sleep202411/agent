@@ -21,6 +21,8 @@ import { LoginDialog } from "./login-dialog";
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
+  /** Checks the latest observed account, including after a caller unmounts. */
+  isCurrentAccount: (userId: string | number) => boolean;
   /** Open the global sign-in dialog. */
   signIn: () => void;
   /**
@@ -35,6 +37,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   loading: true,
+  isCurrentAccount: () => false,
   signIn: () => {},
   requireAuth: () => {},
   signOut: async () => {},
@@ -122,9 +125,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (pending) pending();
   }, [queryClient]);
 
+  const isCurrentAccount = useCallback(
+    (userId: string | number) => {
+      const current = queryClient.getQueryData<AuthUser | null>(ME_KEY);
+      return current != null && String(current.id) === String(userId);
+    },
+    [queryClient]
+  );
+
   const value = useMemo<AuthContextValue>(
-    () => ({ user, loading: isLoading || authUnavailable, signIn, requireAuth, signOut }),
-    [user, isLoading, authUnavailable, signIn, requireAuth, signOut]
+    () => ({
+      user,
+      loading: isLoading || authUnavailable,
+      isCurrentAccount,
+      signIn,
+      requireAuth,
+      signOut,
+    }),
+    [user, isLoading, authUnavailable, isCurrentAccount, signIn, requireAuth, signOut]
   );
 
   return (
