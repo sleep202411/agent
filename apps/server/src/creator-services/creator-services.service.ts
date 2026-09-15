@@ -35,6 +35,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import type { CreatorService, Prisma } from '@prisma/client';
 import { ZERO_DECIMAL_CURRENCIES } from '@repo/shared/crew';
 import { assertAllowedCurrency } from '../common/currency';
@@ -162,11 +163,46 @@ export class CreatorServicesService {
     this.assertPackagesValid(input.packages);
 
     const serviceId = newShortId();
+    const creationKey = input.clientRequestKey ?? null;
+    const creationFingerprint = creationKey
+      ? createServiceFingerprint(input)
+      : null;
     const row = await this.prisma.$transaction(async (tx) => {
+      if (creationKey) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`creator-service-create:${creatorId}:${creationKey}`}, 0))`;
+        const receipt = await tx.creatorService.findUnique({
+          where: { creatorId_creationKey: { creatorId, creationKey } },
+          select: { id: true },
+        });
+        if (receipt) {
+          await tx.$queryRaw`SELECT id FROM creator_services WHERE id = ${receipt.id} FOR SHARE`;
+          const existing = await tx.creatorService.findUniqueOrThrow({
+            where: { id: receipt.id },
+            include: { packages: true, requirementQuestions: true },
+          });
+          if (existing.creationFingerprint !== creationFingerprint)
+            throw new ConflictException(
+              'Creation key was already used for a different service request',
+            );
+          if (existing.deletedAt || existing.status === 'archived')
+            throw new ConflictException(
+              'The created service was archived; it cannot be recreated with this key',
+            );
+          if (existing.version !== 0)
+            throw new ConflictException({
+              message:
+                'The created service has changed; reload it before saving again',
+              serviceId: existing.id,
+            });
+          return existing;
+        }
+      }
       await tx.creatorService.create({
         data: {
           id: serviceId,
           creatorId,
+          creationKey,
+          creationFingerprint,
           title: input.title,
           summary: input.summary,
           coverPath: input.coverPath,
@@ -464,4 +500,36 @@ function materializeQuestions(
       displayOrder: q.displayOrder,
     };
   });
+}
+
+/** Canonicalize the accepted create fields; object property insertion order is immaterial. */
+function createServiceFingerprint(input: CreateServiceInput): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        title: input.title,
+        summary: input.summary,
+        coverPath: input.coverPath,
+        category: input.category,
+        tags: input.tags,
+        packages: input.packages.map((p) => ({
+          tier: p.tier,
+          title: p.title,
+          description: p.description,
+          currency: p.currency,
+          price: p.price,
+          deliveryDays: p.deliveryDays,
+          revisions: p.revisions,
+          scope: p.scope,
+        })),
+        requirementQuestions: input.requirementQuestions.map((q) => ({
+          id: q.id ?? null,
+          prompt: q.prompt,
+          helpText: q.helpText,
+          required: q.required,
+          displayOrder: q.displayOrder,
+        })),
+      }),
+    )
+    .digest('hex');
 }

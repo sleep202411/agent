@@ -75,6 +75,7 @@ const ServiceBaseSchema = z.object({
 });
 
 export const CreateServiceSchema = ServiceBaseSchema.extend({
+  clientRequestKey: z.string().trim().min(8).max(64).optional(),
   /// Optional on create — a freshly drafted service may have zero
   /// packages yet. Publishing rejects services with empty packages.
   packages: z

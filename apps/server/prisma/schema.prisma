@@ -6922,6 +6922,10 @@ model CreatorService {
   id        String @id
   creatorId String @map("creator_id")
 
+  /// Optional first-save receipt. Scoped to the creator; never reused for edits.
+  creationKey         String? @map("creation_key") @db.VarChar(64)
+  creationFingerprint String? @map("creation_fingerprint") @db.VarChar(64)
+
   /// Buyer-facing headline ("Final cut · 30s vertical"). ≤ 120 chars.
   title     String @db.VarChar(120)
   /// One-paragraph pitch (≤ 1000 chars). Plain text, newline-allowed.
@@ -6959,6 +6963,7 @@ model CreatorService {
   requirementQuestions ServiceRequirementQuestion[]
   orders               ServiceOrder[]
 
+  @@unique([creatorId, creationKey], map: "creator_services_creation_key_unique")
   /// Owner-side query: "list my services in created-order".
   @@index([creatorId, deletedAt, createdAt(sort: Desc)], map: "creator_services_by_creator_idx")
   /// Plaza feed: "newest listed first" — only hits when status='listed'.

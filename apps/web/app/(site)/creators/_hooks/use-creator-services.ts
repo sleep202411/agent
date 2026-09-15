@@ -130,6 +130,7 @@ export interface ServiceRequirementQuestionInput {
 }
 
 export interface CreateServiceBody {
+  clientRequestKey?: string;
   title: string;
   summary: string;
   coverPath?: string;

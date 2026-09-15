@@ -345,3 +345,61 @@ it("matches confirmation by original display order when blank questions were omi
     displayOrder: 1,
   });
 });
+
+it("retries first creation with the same original request after a lost response", async () => {
+  mocks.create
+    .mockRejectedValueOnce(new Error("Response lost"))
+    .mockResolvedValueOnce({ ...service, version: 0 });
+  await act(async () => render(null));
+  await fill("fieldTitlePlaceholder", "Title");
+  await fill("fieldSummaryPlaceholder", "Summary");
+  await act(async () => button("saveDraft").click());
+  await act(async () => button("saveDraft").click());
+  expect(mocks.create.mock.calls[1]![0]).toEqual(mocks.create.mock.calls[0]![0]);
+  expect(mocks.create.mock.calls[0]![0].clientRequestKey).toEqual(expect.any(String));
+  expect(mocks.update).not.toHaveBeenCalled();
+});
+it("recovers first creation before applying edits and retains the row after patch failure", async () => {
+  mocks.create
+    .mockRejectedValueOnce(new Error("Response lost"))
+    .mockResolvedValueOnce({ ...service, version: 0 });
+  mocks.update
+    .mockRejectedValueOnce(new Error("Patch unavailable"))
+    .mockResolvedValueOnce({ ...service, version: 1 });
+  await act(async () => render(null));
+  await fill("fieldTitlePlaceholder", "Original title");
+  await fill("fieldSummaryPlaceholder", "Summary");
+  await act(async () => button("saveDraft").click());
+  await fill("fieldTitlePlaceholder", "Edited title");
+  await act(async () => button("saveDraft").click());
+  expect(mocks.create.mock.calls[1]![0]).toEqual(mocks.create.mock.calls[0]![0]);
+  expect(mocks.update.mock.calls[0]![0]).toMatchObject({
+    id: service.id,
+    body: { title: "Edited title", expectedVersion: 0 },
+  });
+  await act(async () => button("saveDraft").click());
+  expect(mocks.create).toHaveBeenCalledTimes(2);
+  expect(mocks.update).toHaveBeenCalledTimes(2);
+});
+it("abandons the recovery-to-edit continuation after account replacement", async () => {
+  mocks.create.mockRejectedValueOnce(new Error("Response lost"));
+  let finish!: (result: CreatorServiceDTO) => void;
+  await act(async () => render(null));
+  await fill("fieldTitlePlaceholder", "Title");
+  await fill("fieldSummaryPlaceholder", "Summary");
+  await act(async () => button("saveDraft").click());
+  await fill("fieldTitlePlaceholder", "Edited title");
+  mocks.create.mockReturnValueOnce(
+    new Promise<CreatorServiceDTO>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await act(async () => button("saveDraft").click());
+  await act(async () => {
+    mocks.account = "bob";
+    render(null);
+  });
+  await act(async () => finish({ ...service, version: 0 }));
+  expect(mocks.update).not.toHaveBeenCalled();
+  expect(mocks.success).not.toHaveBeenCalled();
+});

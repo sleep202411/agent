@@ -270,6 +270,7 @@ function CreateServiceDialogContent({
   const active = useRef(false);
   const admitted = useRef(false);
   const savedRecord = useRef({ id: initial?.id ?? null, version: initial?.version });
+  const creationIntent = useRef<{ key: string; body: CreateServiceBody } | null>(null);
   useLayoutEffect(() => {
     active.current = open;
     return () => {
@@ -465,7 +466,29 @@ function CreateServiceDialogContent({
           body: buildBody(true) as UpdateServiceBody,
         });
       } else {
-        saved = await create.mutateAsync(buildBody(false) as CreateServiceBody);
+        const desired = buildBody(false) as CreateServiceBody;
+        if (!creationIntent.current) {
+          creationIntent.current = {
+            key:
+              typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `cs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+            body: desired,
+          };
+        }
+        const intent = creationIntent.current;
+        saved = await create.mutateAsync({ ...intent.body, clientRequestKey: intent.key });
+        if (!active.current) return null;
+        // Recover the original create before applying edits made after a lost reply.
+        // Capture the row even if the following PATCH fails, so retry cannot create again.
+        savedRecord.current = { id: saved.id, version: saved.version };
+        setSavedId(saved.id);
+        if (JSON.stringify(desired) !== JSON.stringify(intent.body)) {
+          saved = await update.mutateAsync({
+            id: saved.id,
+            body: { ...desired, expectedVersion: saved.version },
+          });
+        }
       }
       if (!active.current) return null;
       savedRecord.current = { id: saved.id, version: saved.version };

@@ -201,5 +201,122 @@ jest.setTimeout(15000);
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(await svc.detail(id, owner)).toEqual(before);
     });
+    const creationInput = (key: string) =>
+      CreateServiceSchema.parse({
+        clientRequestKey: key,
+        title: 'New draft',
+        summary: 'Retry fixture',
+        category: 'other',
+        packages: [
+          {
+            tier: 'basic',
+            title: 'Basic',
+            description: 'Fixture',
+            currency: 'CNY',
+            price: 10,
+            deliveryDays: 1,
+          },
+        ],
+        requirementQuestions: [{ prompt: 'Brief' }],
+      });
+    it('deduplicates concurrent first saves with one set of children', async () => {
+      const request = creationInput('create-retry-key');
+      const [a, b] = await Promise.all([
+        svc.create(owner, request),
+        svc.create(owner, request),
+      ]);
+      expect(a).toEqual(b);
+      expect(
+        await db.creatorService.count({
+          where: { creatorId: owner, creationKey: request.clientRequestKey },
+        }),
+      ).toBe(1);
+      expect(
+        await db.servicePackage.count({ where: { serviceId: a.id } }),
+      ).toBe(1);
+      expect(
+        await db.serviceRequirementQuestion.count({
+          where: { serviceId: a.id },
+        }),
+      ).toBe(1);
+      expect(a).not.toHaveProperty('creationKey');
+      expect(a).not.toHaveProperty('creationFingerprint');
+    });
+    it('ignores object field insertion order but rejects changed create content', async () => {
+      const request = creationInput('canonical-create-key');
+      const first = await svc.create(owner, request);
+      const reordered = Object.fromEntries(
+        Object.entries(request).reverse(),
+      ) as typeof request;
+      expect((await svc.create(owner, reordered)).id).toBe(first.id);
+      await expect(
+        svc.create(owner, { ...request, title: 'Different intent' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect((await svc.detail(first.id, owner)).title).toBe('New draft');
+    });
+    it('does not overwrite a draft edited after its original creation', async () => {
+      const request = creationInput('modified-create-key');
+      const first = await svc.create(owner, request);
+      await svc.update(first.id, owner, {
+        title: 'Other editor',
+        expectedVersion: 0,
+      });
+      await expect(svc.create(owner, request)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect((await svc.detail(first.id, owner)).title).toBe('Other editor');
+    });
+    it('does not resurrect an archived creation on retry', async () => {
+      const request = creationInput('archived-create-key');
+      const first = await svc.create(owner, request);
+      await svc.archive(first.id, owner);
+      await expect(svc.create(owner, request)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(
+        await db.creatorService.count({
+          where: { creatorId: owner, creationKey: request.clientRequestKey },
+        }),
+      ).toBe(1);
+    });
+    it('scopes creation keys to their creator', async () => {
+      const request = creationInput('separate-creator-key'),
+        other = randomUUID();
+      try {
+        const a = await svc.create(owner, request),
+          b = await svc.create(other, request);
+        expect(a.id).not.toBe(b.id);
+        expect(b.creatorId).toBe(other);
+      } finally {
+        await db.creatorService.deleteMany({ where: { creatorId: other } });
+      }
+    });
+    it('retains legacy creation without a retry token', async () => {
+      const { clientRequestKey: _key, ...request } =
+        creationInput('unused-legacy-key');
+      void _key;
+      const a = await svc.create(owner, request),
+        b = await svc.create(owner, request);
+      expect(a.id).not.toBe(b.id);
+    });
+    it('rolls back a failed child insert and permits retry with the same key', async () => {
+      const request = creationInput('failed-creation-key');
+      await expect(
+        svc.create(owner, {
+          ...request,
+          requirementQuestions: [
+            { ...request.requirementQuestions[0], prompt: 'x'.repeat(241) },
+          ],
+        }),
+      ).rejects.toThrow();
+      expect(
+        await db.creatorService.count({
+          where: { creatorId: owner, creationKey: request.clientRequestKey },
+        }),
+      ).toBe(0);
+      expect(
+        (await svc.create(owner, request)).requirementQuestions,
+      ).toHaveLength(1);
+    });
   },
 );
