@@ -2895,31 +2895,35 @@ export class BillingService {
   }
 
   async ignoreAdminProviderEvent(eventId: string, reason: string) {
-    const event = await this.prisma.billingPaymentProviderEvent.findUnique({
-      where: { id: eventId },
-      select: { id: true, status: true },
-    });
-    if (!event) {
-      throw new NotFoundException({
-        code: 'BILLING_PROVIDER_EVENT_NOT_FOUND',
-        msg: 'Billing provider event not found.',
+    const id = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${eventId}`})::bigint)`;
+      const event = await tx.billingPaymentProviderEvent.findUnique({
+        where: { id: eventId },
+        select: { id: true, status: true },
       });
-    }
-    if (event.status === PaymentProviderEventStatus.processed) {
-      throw new ConflictException({
-        code: 'BILLING_PROVIDER_EVENT_ALREADY_PROCESSED',
-        msg: 'Processed provider events cannot be ignored.',
+      if (!event) {
+        throw new NotFoundException({
+          code: 'BILLING_PROVIDER_EVENT_NOT_FOUND',
+          msg: 'Billing provider event not found.',
+        });
+      }
+      if (event.status === PaymentProviderEventStatus.processed) {
+        throw new ConflictException({
+          code: 'BILLING_PROVIDER_EVENT_ALREADY_PROCESSED',
+          msg: 'Processed provider events cannot be ignored.',
+        });
+      }
+      await tx.billingPaymentProviderEvent.update({
+        where: { id: event.id },
+        data: {
+          status: PaymentProviderEventStatus.ignored,
+          processedAt: new Date(),
+          error: reason,
+        },
       });
-    }
-    await this.prisma.billingPaymentProviderEvent.update({
-      where: { id: event.id },
-      data: {
-        status: PaymentProviderEventStatus.ignored,
-        processedAt: new Date(),
-        error: reason,
-      },
+      return event.id;
     });
-    return this.getAdminProviderEvent(event.id);
+    return this.getAdminProviderEvent(id);
   }
 
   async quoteAdminRefund(
@@ -4481,7 +4485,7 @@ export class BillingService {
         SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${input.provider}:${input.providerEventId}`})::bigint)
       `;
 
-      const existing = await tx.billingPaymentProviderEvent.findUnique({
+      let existing = await tx.billingPaymentProviderEvent.findUnique({
         where: {
           provider_providerEventId: {
             provider: input.provider,
@@ -4489,6 +4493,12 @@ export class BillingService {
           },
         },
       });
+      if (existing) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${existing.id}`})::bigint)`;
+        existing = await tx.billingPaymentProviderEvent.findUniqueOrThrow({
+          where: { id: existing.id },
+        });
+      }
       if (existing?.status === PaymentProviderEventStatus.processed) {
         return existing;
       }
@@ -4521,6 +4531,7 @@ export class BillingService {
     eventId: string,
     options: { allowProcessedNoop?: boolean } = {},
   ): Promise<BillingPaymentProviderEvent> {
+    let failureRevision: string | null = null;
     let accrueOrderId: string | null = null;
     let reverseOrderId: string | null = null;
     try {
@@ -4528,6 +4539,11 @@ export class BillingService {
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${eventId}`})::bigint)
         `;
+        // A later ingestion or decision must survive delayed failure recovery.
+        const [revision] = await tx.$queryRaw<
+          { revision: string }[]
+        >`SELECT xmin::text AS revision FROM billing_payment_provider_events WHERE id=${eventId}::uuid FOR UPDATE`;
+        failureRevision = revision?.revision ?? null;
         const providerEvent =
           await tx.billingPaymentProviderEvent.findUniqueOrThrow({
             where: { id: eventId },
@@ -4672,7 +4688,7 @@ export class BillingService {
       return result;
     } catch (err) {
       if (!isProviderEventAlreadyProcessedError(err)) {
-        await this.markProviderEventFailed(eventId, err);
+        await this.markProviderEventFailed(eventId, err, failureRevision);
       }
       throw err;
     }
@@ -4681,15 +4697,13 @@ export class BillingService {
   private async markProviderEventFailed(
     eventId: string,
     err: unknown,
+    revision: string | null,
   ): Promise<void> {
-    await this.prisma.billingPaymentProviderEvent
-      .update({
-        where: { id: eventId },
-        data: {
-          status: PaymentProviderEventStatus.failed,
-          processedAt: new Date(),
-          error: providerEventErrorMessage(err),
-        },
+    if (!revision) return;
+    await this.prisma
+      .$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${eventId}`})::bigint)`;
+        await tx.$executeRaw`UPDATE billing_payment_provider_events SET status='failed', processed_at=clock_timestamp(), error=${providerEventErrorMessage(err)} WHERE id=${eventId}::uuid AND xmin::text=${revision} AND status <> 'processed'`;
       })
       .catch(() => undefined);
   }
