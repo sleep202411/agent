@@ -324,6 +324,67 @@ describe("ExperiencePlayer branch frames and timeline-control charge", () => {
     vi.restoreAllMocks();
   });
 
+  it("ignores a replaced custom theme loader that finishes late", async () => {
+    const runtime = gestureManifest({
+      gesture: { kind: "tap", maxDurationMs: 500 },
+      targets: { success: "scene.clear", failure: "scene.clear", timeout: "scene.clear" },
+    });
+    let finish!: (value: ExperienceThemeConfig) => void;
+    const oldLoader = () =>
+      new Promise<ExperienceThemeConfig>((resolve) => {
+        finish = resolve;
+      });
+    await act(async () => {
+      root.render(
+        <ExperiencePlayer
+          runtime={runtime}
+          randomSeed="stable"
+          locale="en-US"
+          copy={copy}
+          loadTheme={oldLoader}
+        />
+      );
+    });
+    const newTheme = { ...theme, tokens: { "color.background": "#123456" } };
+    await act(async () => {
+      root.render(
+        <ExperiencePlayer
+          runtime={runtime}
+          randomSeed="stable"
+          locale="en-US"
+          copy={copy}
+          loadTheme={() => Promise.resolve(newTheme)}
+        />
+      );
+    });
+    const currentMarkup = container.innerHTML;
+    await act(async () => {
+      finish({ ...theme, tokens: { "color.background": "#abcdef" } });
+    });
+    expect(container.innerHTML).toBe(currentMarkup);
+  });
+
+  it("shows synchronous custom theme loader failures through the normal error state", async () => {
+    const runtime = gestureManifest({
+      gesture: { kind: "tap", maxDurationMs: 500 },
+      targets: { success: "scene.clear", failure: "scene.clear", timeout: "scene.clear" },
+    });
+    await act(async () => {
+      root.render(
+        <ExperiencePlayer
+          runtime={runtime}
+          randomSeed="stable"
+          locale="en-US"
+          copy={copy}
+          loadTheme={() => {
+            throw new Error("Theme unavailable");
+          }}
+        />
+      );
+    });
+    expect(container.textContent).toContain("Theme unavailable");
+  });
+
   it("parks a resolved tap until the scene clock reaches the safe branch frame", async () => {
     await mount(
       gestureManifest({
