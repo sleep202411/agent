@@ -37,54 +37,88 @@ export default function CrewsScreen() {
   // Bumped when a mutation elsewhere (e.g. blocking a crew) invalidates lists.
   const browseVersion = useBrowseVersion();
   const hasDataRef = useRef(false);
-  const loadingMoreRef = useRef(false);
+  const loadingMoreRef = useRef<object | null>(null);
+  const replacingRef = useRef(false);
+  const sequenceRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++sequenceRef.current;
+    replacingRef.current = true;
+    loadingMoreRef.current = null;
+    setLoadingMore(false);
+    setRefreshing(false);
     // Skeleton only when there is nothing to show yet — refetches swap in place.
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
       const page = await getCrewFeedPage({ limit: PAGE_SIZE });
+      if (seq !== sequenceRef.current) return;
       hasDataRef.current = true;
       setCrews(page.items);
       setNextCursor(page.nextCursor);
     } catch (loadError) {
       // A failed background refetch keeps the list we already have.
-      if (!hasDataRef.current) {
+      if (seq === sequenceRef.current && !hasDataRef.current) {
         setError(loadError instanceof Error ? loadError.message : t("crews.loadErrorFallback"));
       }
     } finally {
-      setLoading(false);
+      if (seq === sequenceRef.current) {
+        replacingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [t]);
 
   useEffect(() => {
+    // Synchronize the directory and its request indicators with the current browse scope.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
+    return () => {
+      sequenceRef.current += 1;
+      loadingMoreRef.current = null;
+      replacingRef.current = false;
+    };
   }, [load, browseVersion]);
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMoreRef.current) return;
-    loadingMoreRef.current = true;
+    if (!nextCursor || replacingRef.current || loadingMoreRef.current) return;
+    const operation = {};
+    const seq = sequenceRef.current;
+    loadingMoreRef.current = operation;
     setLoadingMore(true);
     try {
       const page = await getCrewFeedPage({ cursor: nextCursor, limit: PAGE_SIZE });
+      if (seq !== sequenceRef.current) return;
       setCrews((current) => {
         const seen = new Set(current.map((crew) => crew.id));
-        return [...current, ...page.items.filter((crew) => !seen.has(crew.id))];
+        return [
+          ...current,
+          ...page.items.filter((crew) => {
+            if (seen.has(crew.id)) return false;
+            seen.add(crew.id);
+            return true;
+          }),
+        ];
       });
       setNextCursor(page.nextCursor);
+    } catch {
+      // Retain the loaded directory and position for the next pagination retry.
     } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
+      if (loadingMoreRef.current === operation) {
+        loadingMoreRef.current = null;
+        setLoadingMore(false);
+      }
     }
   }, [nextCursor]);
 
   const onRefresh = useCallback(async () => {
+    const pending = load();
+    const seq = sequenceRef.current;
     setRefreshing(true);
     try {
-      await load();
+      await pending;
     } finally {
-      setRefreshing(false);
+      if (seq === sequenceRef.current) setRefreshing(false);
     }
   }, [load]);
 
