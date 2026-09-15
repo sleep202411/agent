@@ -37,6 +37,7 @@ import {
 import { currentCheckoutChannel, type CheckoutChannel } from "../lib/checkout-channel";
 import { fetchComputeWalletBalance } from "../lib/compute-wallet";
 import { isPaywallCategory, PAYWALL_CATEGORIES, type PaywallCategory } from "../lib/paywall-store";
+import { usePaywallSelection } from "../lib/use-paywall-selection";
 
 const BRAND = Colors.dark.brand;
 const CANVAS = Colors.dark.background;
@@ -206,35 +207,20 @@ export function PaywallScreen() {
   const initialCategory: PaywallCategory = isPaywallCategory(rawCategory)
     ? rawCategory
     : "community_points";
-  const [selected, setSelected] = useState(initialCategory);
+  const { selected, setSelected, productId, setProductId, computeAmount, setComputeAmount } =
+    usePaywallSelection(initialCategory);
   const [computeBalance, setComputeBalance] = useState<string | null>(null);
-  const [computeAmount, setComputeAmount] = useState(COMPUTE_RECHARGE_DEFAULT);
   const channel = useMemo(() => currentCheckoutChannel(), []);
   const unsupported = channel === "web";
   const membership = isMembershipCategory(selected);
   const computePoints = selected === "compute_points";
   const products = productsForCategory(selected);
   const savePercent = yearlySavePercent(products);
-  const [productId, setProductId] = useState(products[0]?.id ?? "");
   const catalogProduct = products.find((item) => item.id === productId) ?? products[0];
   const computeProduct = computePoints ? computeCustomProduct(computeAmount) : null;
   const product = computePoints ? computeProduct : catalogProduct;
   const pointsCheckout = selected === "community_points" || selected === "compute_points";
   const stackedFooter = membership || pointsCheckout;
-
-  useEffect(() => {
-    setSelected(initialCategory);
-  }, [initialCategory]);
-
-  useEffect(() => {
-    const next = productsForCategory(selected);
-    const yearly = next.find((item) => item.interval === "year");
-    setProductId(yearly?.id ?? next[0]?.id ?? "");
-  }, [selected]);
-
-  useEffect(() => {
-    if (selected === "compute_points") setComputeAmount(COMPUTE_RECHARGE_DEFAULT);
-  }, [selected]);
 
   useEffect(() => {
     let cancelled = false;
