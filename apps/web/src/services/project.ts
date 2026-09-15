@@ -150,7 +150,8 @@ export const createPersonalWork = (data: {
  * Without it the upload returns an auth error even though the cookie
  * is present on the request.
  */
-export async function uploadPersonalVideo(id: number | string, file: File) {
+export async function uploadPersonalVideo(id: number | string, file: File, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   const formData = new FormData();
   formData.append("file", file);
   formData.append("id", String(id));
@@ -171,6 +172,7 @@ export async function uploadPersonalVideo(id: number | string, file: File) {
       method: "POST",
       credentials: "include",
       body: formData,
+      signal,
     }
   );
 
@@ -179,6 +181,7 @@ export async function uploadPersonalVideo(id: number | string, file: File) {
   }
 
   const body = await response.json();
+  signal?.throwIfAborted();
   if (body.code !== 200 && body.code !== "SUCCESS" && !body.success) {
     throw new Error(body.msg || body.message || "Upload failed");
   }
