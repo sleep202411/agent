@@ -90,9 +90,12 @@ export async function assignAdminRole(
   grantedBy?: string,
 ): Promise<void> {
   const { roleIds } = await ensureAdminAuthCatalog(prisma);
-  await prisma.adminUserRole.deleteMany({ where: { userId } });
-  await prisma.adminUserRole.createMany({
-    data: [{ userId, roleId: roleIds[roleKey], grantedBy }],
-    skipDuplicates: true,
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${userId}::uuid FOR UPDATE`;
+    await tx.adminUserRole.deleteMany({ where: { userId } });
+    await tx.adminUserRole.createMany({
+      data: [{ userId, roleId: roleIds[roleKey], grantedBy }],
+      skipDuplicates: true,
+    });
   });
 }
