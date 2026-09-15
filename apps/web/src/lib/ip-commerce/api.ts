@@ -683,16 +683,20 @@ export interface UpsertIpBlockInput {
   reason?: string;
 }
 
-export function listIpCommerceIps(params?: {
-  genreCodes?: string[];
-  tagCodes?: string[];
-  regions?: string[];
-  q?: string;
-  locale?: string;
-  cursor?: string;
-  limit?: number;
-}) {
+export function listIpCommerceIps(
+  params?: {
+    genreCodes?: string[];
+    tagCodes?: string[];
+    regions?: string[];
+    q?: string;
+    locale?: string;
+    cursor?: string;
+    limit?: number;
+  },
+  signal?: AbortSignal
+) {
   return api.get<{ items: IpCommerceIp[]; nextCursor: string | null }>("/aurora/ip-commerce/ips", {
+    signal,
     params: {
       ...params,
       genreCodes: params?.genreCodes?.join(","),
@@ -811,10 +815,12 @@ export interface IpTagPageResult {
  */
 export function listIpsByTag(
   code: string,
-  params?: { locale?: string; cursor?: string; limit?: number }
+  params?: { locale?: string; cursor?: string; limit?: number },
+  signal?: AbortSignal
 ) {
   return api.get<IpTagPageResult>(`/aurora/ip-commerce/tags/${encodeURIComponent(code)}/ips`, {
     params,
+    signal,
   });
 }
 
@@ -1085,11 +1091,16 @@ export async function searchIpCommerceUsers(query: string): Promise<IpUserSearch
   return Array.isArray(res.users) ? res.users : [];
 }
 
-export function getIpCommerceIp(ipReference: string, params?: { locale?: string }) {
+export function getIpCommerceIp(
+  ipReference: string,
+  params?: { locale?: string },
+  signal?: AbortSignal
+) {
   return api.get<{ ip: IpCommerceIp }>(
     `/aurora/ip-commerce/ips/${encodeURIComponent(ipReference)}`,
     {
       params,
+      signal,
     }
   );
 }
