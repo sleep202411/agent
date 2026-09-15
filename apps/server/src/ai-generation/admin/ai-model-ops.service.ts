@@ -174,32 +174,35 @@ export class AiModelOpsService {
     adminId: string,
     input: UpdateAdminAiProviderInput,
   ) {
-    const existing = await this.prisma.aiProviderAccount.findFirst({
-      where: { id: providerAccountId, archivedAt: null },
-      select: {
-        id: true,
-        provider: true,
-      },
-    });
-    if (!existing) throw new NotFoundException('供应商账号不存在或已归档。');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_provider_accounts WHERE id=${providerAccountId}::uuid FOR UPDATE`;
+      const existing = await tx.aiProviderAccount.findFirst({
+        where: { id: providerAccountId, archivedAt: null },
+        select: {
+          id: true,
+          provider: true,
+        },
+      });
+      if (!existing) throw new NotFoundException('供应商账号不存在或已归档。');
 
-    const data: Prisma.AiProviderAccountUpdateInput = {
-      updatedByAdminId: adminId,
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.rateLimitPolicy !== undefined
-        ? { rateLimitPolicy: input.rateLimitPolicy as Prisma.InputJsonValue }
-        : {}),
-      ...(input.quotaPolicy !== undefined
-        ? { quotaPolicy: input.quotaPolicy as Prisma.InputJsonValue }
-        : {}),
-    };
+      const data: Prisma.AiProviderAccountUpdateInput = {
+        updatedByAdminId: adminId,
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.rateLimitPolicy !== undefined
+          ? { rateLimitPolicy: input.rateLimitPolicy as Prisma.InputJsonValue }
+          : {}),
+        ...(input.quotaPolicy !== undefined
+          ? { quotaPolicy: input.quotaPolicy as Prisma.InputJsonValue }
+          : {}),
+      };
 
-    const account = await this.prisma.aiProviderAccount.update({
-      where: { id: providerAccountId },
-      data,
-      include: providerAccountInclude(),
+      const account = await tx.aiProviderAccount.update({
+        where: { id: providerAccountId },
+        data,
+        include: providerAccountInclude(),
+      });
+      return serializeProviderAccount(account);
     });
-    return serializeProviderAccount(account);
   }
 
   async listCanonicalModels(query: ListAdminAiModelsQuery) {
@@ -361,52 +364,55 @@ export class AiModelOpsService {
     adminId: string,
     input: CreateProviderEndpointInput,
   ) {
-    const providerAccount = await this.prisma.aiProviderAccount.findFirst({
-      where: { id: input.providerAccountId, archivedAt: null },
-      select: { id: true, provider: true },
-    });
-    if (!providerAccount) {
-      throw new NotFoundException('供应商账号不存在或已归档。');
-    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_provider_accounts WHERE id=${input.providerAccountId}::uuid FOR UPDATE`;
+      const providerAccount = await tx.aiProviderAccount.findFirst({
+        where: { id: input.providerAccountId, archivedAt: null },
+        select: { id: true, provider: true },
+      });
+      if (!providerAccount) {
+        throw new NotFoundException('供应商账号不存在或已归档。');
+      }
 
-    const duplicate = await this.prisma.aiProviderEndpoint.findFirst({
-      where: {
-        providerAccountId: input.providerAccountId,
-        endpointId: input.endpointId,
-        archivedAt: null,
-      },
-      select: { id: true },
-    });
-    if (duplicate) {
-      throw new BadRequestException(`供应商端点已存在：${input.endpointId}`);
-    }
+      const duplicate = await tx.aiProviderEndpoint.findFirst({
+        where: {
+          providerAccountId: input.providerAccountId,
+          endpointId: input.endpointId,
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new BadRequestException(`供应商端点已存在：${input.endpointId}`);
+      }
 
-    const endpoint = await this.prisma.aiProviderEndpoint.create({
-      data: {
-        providerAccountId: providerAccount.id,
-        provider: providerAccount.provider,
-        endpointId: input.endpointId,
-        displayName: input.displayName ?? null,
-        modality: input.modality,
-        status: input.status,
-        healthStatus: input.healthStatus,
-        supportedModes: input.supportedModes as Prisma.InputJsonValue,
-        providerInputSchema: input.providerInputSchema as Prisma.InputJsonValue,
-        providerOutputSchema:
-          input.providerOutputSchema as Prisma.InputJsonValue,
-        maxConcurrentRequests: input.maxConcurrentRequests ?? null,
-        maxRequestsPerMinute: input.maxRequestsPerMinute ?? null,
-        requestTimeoutSeconds: input.requestTimeoutSeconds ?? null,
-        cooldownSeconds: input.cooldownSeconds ?? null,
-        failureThreshold: input.failureThreshold ?? null,
-        catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
-        disabledReason: input.disabledReason ?? null,
-        createdByAdminId: adminId,
-        updatedByAdminId: adminId,
-      },
-      include: providerEndpointInclude(),
+      const endpoint = await tx.aiProviderEndpoint.create({
+        data: {
+          providerAccountId: providerAccount.id,
+          provider: providerAccount.provider,
+          endpointId: input.endpointId,
+          displayName: input.displayName ?? null,
+          modality: input.modality,
+          status: input.status,
+          healthStatus: input.healthStatus,
+          supportedModes: input.supportedModes as Prisma.InputJsonValue,
+          providerInputSchema:
+            input.providerInputSchema as Prisma.InputJsonValue,
+          providerOutputSchema:
+            input.providerOutputSchema as Prisma.InputJsonValue,
+          maxConcurrentRequests: input.maxConcurrentRequests ?? null,
+          maxRequestsPerMinute: input.maxRequestsPerMinute ?? null,
+          requestTimeoutSeconds: input.requestTimeoutSeconds ?? null,
+          cooldownSeconds: input.cooldownSeconds ?? null,
+          failureThreshold: input.failureThreshold ?? null,
+          catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
+          disabledReason: input.disabledReason ?? null,
+          createdByAdminId: adminId,
+          updatedByAdminId: adminId,
+        },
+        include: providerEndpointInclude(),
+      });
+      return serializeProviderEndpoint(endpoint);
     });
-    return serializeProviderEndpoint(endpoint);
   }
 
   async updateProviderEndpoint(
@@ -414,63 +420,68 @@ export class AiModelOpsService {
     adminId: string,
     input: UpdateProviderEndpointInput,
   ) {
-    const existing = await this.prisma.aiProviderEndpoint.findFirst({
-      where: { id: endpointId, archivedAt: null },
-      select: { id: true },
-    });
-    if (!existing) throw new NotFoundException('供应商端点不存在或已归档。');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_provider_endpoints WHERE id=${endpointId}::uuid FOR UPDATE`;
+      const existing = await tx.aiProviderEndpoint.findFirst({
+        where: { id: endpointId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!existing) throw new NotFoundException('供应商端点不存在或已归档。');
 
-    const endpoint = await this.prisma.aiProviderEndpoint.update({
-      where: { id: endpointId },
-      data: {
-        ...(input.displayName !== undefined
-          ? { displayName: input.displayName ?? null }
-          : {}),
-        ...(input.status !== undefined ? { status: input.status } : {}),
-        ...(input.healthStatus !== undefined
-          ? { healthStatus: input.healthStatus }
-          : {}),
-        ...(input.supportedModes !== undefined
-          ? { supportedModes: input.supportedModes as Prisma.InputJsonValue }
-          : {}),
-        ...(input.providerInputSchema !== undefined
-          ? {
-              providerInputSchema:
-                input.providerInputSchema as Prisma.InputJsonValue,
-            }
-          : {}),
-        ...(input.providerOutputSchema !== undefined
-          ? {
-              providerOutputSchema:
-                input.providerOutputSchema as Prisma.InputJsonValue,
-            }
-          : {}),
-        ...(input.maxConcurrentRequests !== undefined
-          ? { maxConcurrentRequests: input.maxConcurrentRequests }
-          : {}),
-        ...(input.maxRequestsPerMinute !== undefined
-          ? { maxRequestsPerMinute: input.maxRequestsPerMinute }
-          : {}),
-        ...(input.requestTimeoutSeconds !== undefined
-          ? { requestTimeoutSeconds: input.requestTimeoutSeconds }
-          : {}),
-        ...(input.cooldownSeconds !== undefined
-          ? { cooldownSeconds: input.cooldownSeconds }
-          : {}),
-        ...(input.failureThreshold !== undefined
-          ? { failureThreshold: input.failureThreshold }
-          : {}),
-        ...(input.catalogSnapshot !== undefined
-          ? { catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue }
-          : {}),
-        ...(input.disabledReason !== undefined
-          ? { disabledReason: input.disabledReason ?? null }
-          : {}),
-        updatedByAdminId: adminId,
-      },
-      include: providerEndpointInclude(),
+      const endpoint = await tx.aiProviderEndpoint.update({
+        where: { id: endpointId },
+        data: {
+          ...(input.displayName !== undefined
+            ? { displayName: input.displayName ?? null }
+            : {}),
+          ...(input.status !== undefined ? { status: input.status } : {}),
+          ...(input.healthStatus !== undefined
+            ? { healthStatus: input.healthStatus }
+            : {}),
+          ...(input.supportedModes !== undefined
+            ? { supportedModes: input.supportedModes as Prisma.InputJsonValue }
+            : {}),
+          ...(input.providerInputSchema !== undefined
+            ? {
+                providerInputSchema:
+                  input.providerInputSchema as Prisma.InputJsonValue,
+              }
+            : {}),
+          ...(input.providerOutputSchema !== undefined
+            ? {
+                providerOutputSchema:
+                  input.providerOutputSchema as Prisma.InputJsonValue,
+              }
+            : {}),
+          ...(input.maxConcurrentRequests !== undefined
+            ? { maxConcurrentRequests: input.maxConcurrentRequests }
+            : {}),
+          ...(input.maxRequestsPerMinute !== undefined
+            ? { maxRequestsPerMinute: input.maxRequestsPerMinute }
+            : {}),
+          ...(input.requestTimeoutSeconds !== undefined
+            ? { requestTimeoutSeconds: input.requestTimeoutSeconds }
+            : {}),
+          ...(input.cooldownSeconds !== undefined
+            ? { cooldownSeconds: input.cooldownSeconds }
+            : {}),
+          ...(input.failureThreshold !== undefined
+            ? { failureThreshold: input.failureThreshold }
+            : {}),
+          ...(input.catalogSnapshot !== undefined
+            ? {
+                catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
+              }
+            : {}),
+          ...(input.disabledReason !== undefined
+            ? { disabledReason: input.disabledReason ?? null }
+            : {}),
+          updatedByAdminId: adminId,
+        },
+        include: providerEndpointInclude(),
+      });
+      return serializeProviderEndpoint(endpoint);
     });
-    return serializeProviderEndpoint(endpoint);
   }
 
   async archiveProviderEndpoint(endpointId: string, adminId: string) {
