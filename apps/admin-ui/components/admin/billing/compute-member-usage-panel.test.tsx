@@ -1,37 +1,150 @@
 // @vitest-environment jsdom
 import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+import { AdminSessionBoundary } from "../admin-session-boundary";
 import { BillingComputeMemberUsagePanel } from "./compute-member-usage-panel";
 import type { AdminComputeMemberUsageData } from "./types";
-import { requestEnvelope } from "./shared";
-vi.mock("./shared", async (original) => ({
-  ...await original<typeof import("./shared")>(),
-  requestEnvelope: vi.fn(),
-}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-it("accepts new server data without resetting local refresh results on unchanged props", async () => {
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  const initial: AdminComputeMemberUsageData = {
-    rangeDays: 30, workspaceKind: "all", workspaceId: null,
-    totalCredits: "111", memberCount: 0, workspaceCount: 0, members: [],
-  };
-  const render = (data: AdminComputeMemberUsageData | null) => root.render(
-    <BillingComputeMemberUsagePanel siteLabel="Test" databaseLabel="Local" initialData={data} />
+let root: Root | undefined;
+let container: HTMLDivElement;
+const fetchMock = vi.fn();
+const data = (name: string): AdminComputeMemberUsageData => ({
+  rangeDays: 30,
+  workspaceKind: "all",
+  workspaceId: null,
+  totalCredits: "9007199254740993",
+  memberCount: 1,
+  workspaceCount: 1,
+  members: [
+    {
+      userId: name,
+      nickName: name,
+      email: null,
+      phone: null,
+      totalCredits: "9007199254740993",
+      totalJobs: 1,
+      workspaces: [],
+    },
+  ],
+});
+const response = (name: string) => ({
+  ok: true,
+  json: async () => ({ code: 200, data: data(name) }),
+});
+function deferred() {
+  let resolve!: (value: unknown) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+async function render(scope = "alice", name = "Initial", initialData = data(name)) {
+  if (!root) {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  }
+  vi.stubGlobal("fetch", fetchMock);
+  await act(async () =>
+    root!.render(
+      <AdminSessionBoundary scopeKey={scope}>
+        <BillingComputeMemberUsagePanel
+          siteLabel="Fixture"
+          databaseLabel="Fixture"
+          initialData={initialData}
+        />
+      </AdminSessionBoundary>
+    )
   );
-  try {
-    await act(async () => render(initial));
-    expect(container.textContent).toContain("111");
-    vi.mocked(requestEnvelope).mockResolvedValue({...initial,totalCredits:"222"});
-    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="刷新"]')!.click());
-    expect(container.textContent).toContain("222");
-    await act(async () => render(initial));
-    expect(container.textContent).toContain("222");
-    await act(async () => render({...initial,totalCredits:"333"}));
-    expect(container.textContent).toContain("333");
-    expect(container.textContent).not.toContain("222");
-    await act(async () => render(null));
-    expect(container.textContent).toContain("333");
-  } finally { act(() => root.unmount()); }
+}
+function click(text: string) {
+  const button = [...container.querySelectorAll("button")].find(
+    (node) => node.textContent === text || node.getAttribute("aria-label") === text
+  );
+  expect(button).toBeTruthy();
+  button!.click();
+}
+afterEach(async () => {
+  await act(async () => root?.unmount());
+  root = undefined;
+  container?.remove();
+  vi.resetAllMocks();
+  vi.unstubAllGlobals();
+});
+
+it("combines rapid filter changes and ignores the displaced result", async () => {
+  const first = deferred();
+  const second = deferred();
+  fetchMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+  await render();
+  await act(async () => {
+    click("7 天");
+    click("共享工作区");
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls[1][0]).toContain("days=7&workspaceKind=shared");
+  expect((fetchMock.mock.calls[0][1].signal as AbortSignal).aborted).toBe(true);
+  await act(async () => first.resolve(response("Old")));
+  expect(container.querySelector<HTMLButtonElement>('[aria-label="刷新"]')!.disabled).toBe(true);
+  expect(container.textContent).not.toContain("Old");
+  await act(async () => second.resolve(response("Current")));
+  expect(container.textContent).toContain("Current");
+  expect(container.querySelector<HTMLButtonElement>('[aria-label="刷新"]')!.disabled).toBe(false);
+});
+
+it("retains loaded records on failure and allows explicit retry", async () => {
+  fetchMock
+    .mockRejectedValueOnce(new Error("Usage unavailable"))
+    .mockResolvedValueOnce(response("Recovered"));
+  await render();
+  await act(async () => click("刷新"));
+  expect(container.textContent).toContain("Initial");
+  expect(container.textContent).toContain("Usage unavailable");
+  await act(async () => click("刷新"));
+  expect(container.textContent).toContain("Recovered");
+});
+
+it("cancels session-abandoned reads and suppresses their errors", async () => {
+  const pending = deferred();
+  fetchMock.mockReturnValueOnce(pending.promise);
+  await render();
+  await act(async () => click("刷新"));
+  const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+  await render("bob", "Bob");
+  expect(signal.aborted).toBe(true);
+  await act(async () => pending.reject(new Error("Old error")));
+  expect(container.textContent).toContain("Bob");
+  expect(container.textContent).not.toContain("Old error");
+});
+
+it("preserves filtered data across same-session server refresh and cancels on unmount", async () => {
+  const pending = deferred();
+  fetchMock.mockResolvedValueOnce(response("Filtered")).mockReturnValueOnce(pending.promise);
+  await render();
+  await act(async () => click("7 天"));
+  await render("alice", "Server refresh");
+  expect(container.textContent).toContain("Filtered");
+  expect(container.textContent).not.toContain("Server refresh");
+  await act(async () => click("刷新"));
+  expect(fetchMock.mock.calls[1][0]).toContain("days=7");
+  const signal = fetchMock.mock.calls[1][1].signal as AbortSignal;
+  await act(async () => root?.unmount());
+  root = undefined;
+  expect(signal.aborted).toBe(true);
+  await act(async () => pending.resolve(response("Abandoned")));
+});
+
+it("accepts matching new server snapshots without replacing client results on unchanged props", async () => {
+  const initial = data("Initial snapshot");
+  await render("alice", "Initial snapshot", initial);
+  fetchMock.mockResolvedValueOnce(response("Client refresh"));
+  await act(async () => click("刷新"));
+  await render("alice", "Initial snapshot", initial);
+  expect(container.textContent).toContain("Client refresh");
+  await render("alice", "New snapshot", data("New snapshot"));
+  expect(container.textContent).toContain("New snapshot");
+  expect(container.textContent).not.toContain("Client refresh");
 });
