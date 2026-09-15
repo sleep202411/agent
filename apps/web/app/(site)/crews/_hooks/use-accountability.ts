@@ -75,9 +75,10 @@ export function useTaskCommitments(taskId: string) {
   return useQuery({
     queryKey: ["crew", "commitments", taskId, user?.id ?? null],
     enabled: !!user?.id && !!taskId,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       crewApi.get<{ records: Commitment[] }>(
-        `/crew-tasks/${encodeURIComponent(taskId)}/commitments`
+        `/crew-tasks/${encodeURIComponent(taskId)}/commitments`,
+        { signal, cache: "no-store" }
       ),
     refetchInterval: 15000,
   });
@@ -87,8 +88,10 @@ export function useAccountability(crewId: string, page: number) {
   return useQuery({
     queryKey: ["crew", "accountability", crewId, page, user?.id ?? null],
     enabled: !!user?.id && !!crewId,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       crewApi.get<Accountability>(`/crews/${encodeURIComponent(crewId)}/accountability`, {
+        signal,
+        cache: "no-store",
         query: { page },
       }),
     refetchInterval: 15000,

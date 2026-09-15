@@ -36,9 +36,10 @@ export function useCrewProductionOverview(crewId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.productionOverview(crewId), user?.id ?? null],
     enabled: enabled && Boolean(crewId) && Boolean(user),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       crewApi.get<CrewProductionOverviewDTO>(
-        `/crews/${encodeURIComponent(crewId)}/production-overview`
+        `/crews/${encodeURIComponent(crewId)}/production-overview`,
+        { signal, cache: "no-store" }
       ),
   });
 }
@@ -124,10 +125,10 @@ export function useCrewProductionActivity(crewId: string, enabled = true) {
     queryKey: [...crewKeys.productionActivity(crewId), user?.id ?? null],
     enabled: enabled && Boolean(crewId) && Boolean(user),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewProductionActivityPageDTO>(
         `/crews/${encodeURIComponent(crewId)}/production-activity`,
-        { query: { cursor: pageParam, limit: 30 } }
+        { signal, cache: "no-store", query: { cursor: pageParam, limit: 30 } }
       ),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
@@ -162,7 +163,11 @@ export function useCrewEpisodes(crewId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.episodes(crewId), user?.id ?? null],
     enabled: enabled && Boolean(crewId) && Boolean(user),
-    queryFn: () => crewApi.get<CrewEpisodeDTO[]>(`/crews/${encodeURIComponent(crewId)}/episodes`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewEpisodeDTO[]>(`/crews/${encodeURIComponent(crewId)}/episodes`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
