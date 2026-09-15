@@ -1,3 +1,4 @@
+import { expireLapsedGrantsTx } from '../workspaces/wallet-ledger.service';
 import {
   BadRequestException,
   ConflictException,
@@ -1638,50 +1639,51 @@ export class BillingService {
     };
   }
 
-  async getAdminWalletAccountDetail(accountId: string) {
-    const [account, entries, grants] = await Promise.all([
-      this.prisma.walletAccount.findUnique({
-        where: { id: accountId },
-        include: {
-          _count: { select: { ledgerEntries: true } },
-        },
-      }),
-      this.prisma.walletLedgerEntry.findMany({
-        where: { accountId },
-        include: {
-          account: true,
-          transaction: true,
-          creditAllocations: {
-            include: {
-              grant: {
-                select: {
-                  id: true,
-                  grantType: true,
-                  status: true,
-                  validFrom: true,
-                  expiresAt: true,
-                  sourceType: true,
-                  sourceId: true,
-                },
+  async getAdminWalletAccountDetail(
+    accountId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const account = await db.walletAccount.findUnique({
+      where: { id: accountId },
+      include: {
+        _count: { select: { ledgerEntries: true } },
+      },
+    });
+    const entries = await db.walletLedgerEntry.findMany({
+      where: { accountId },
+      include: {
+        account: true,
+        transaction: true,
+        creditAllocations: {
+          include: {
+            grant: {
+              select: {
+                id: true,
+                grantType: true,
+                status: true,
+                validFrom: true,
+                expiresAt: true,
+                sourceType: true,
+                sourceId: true,
               },
             },
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: 100,
-      }),
-      this.prisma.walletCreditGrant.findMany({
-        where: { accountId },
-        orderBy: [
-          { status: 'asc' },
-          { expiresAt: { sort: 'asc', nulls: 'last' } },
-          { createdAt: 'desc' },
-          { id: 'desc' },
-        ],
-        take: 100,
-      }),
-    ]);
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 100,
+    });
+    const grants = await db.walletCreditGrant.findMany({
+      where: { accountId },
+      orderBy: [
+        { status: 'asc' },
+        { expiresAt: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      take: 100,
+    });
 
     if (!account) {
       throw new NotFoundException({
@@ -1722,7 +1724,20 @@ export class BillingService {
     accountId: string,
     input: CreateAdminWalletAdjustmentInput,
   ) {
-    const account = await this.prisma.walletAccount.findUnique({
+    return this.prisma.$transaction((tx) =>
+      this.postAdminWalletAdjustmentTx(tx, adminId, accountId, input),
+    );
+  }
+
+  private async postAdminWalletAdjustmentTx(
+    tx: Prisma.TransactionClient,
+    adminId: string,
+    accountId: string,
+    input: CreateAdminWalletAdjustmentInput,
+  ) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${accountId}`})::bigint)`;
+    await tx.$queryRaw`SELECT id FROM wallet_accounts WHERE id=${accountId}::uuid FOR UPDATE`;
+    const account = await tx.walletAccount.findUnique({
       where: { id: accountId },
     });
     if (!account) {
@@ -1752,7 +1767,8 @@ export class BillingService {
 
     const amount = input.amount;
     const isPositive = amount > 0n;
-    await this.walletLedger.postEntry({
+    await expireLapsedGrantsTx(tx, account.id);
+    await this.walletLedger.postEntryTx(tx, {
       accountId: account.id,
       entryType: WalletLedgerEntryType.adjustment,
       amount: amount > 0n ? amount : -amount,
@@ -1790,61 +1806,76 @@ export class BillingService {
         : undefined,
     });
 
-    return this.getAdminWalletAccountDetail(account.id);
+    return this.getAdminWalletAccountDetail(account.id, tx);
   }
 
   async createAdminWorkspaceWalletCredit(
     adminId: string,
     input: CreateAdminWorkspaceWalletCreditInput,
   ) {
-    const workspace = await this.prisma.workspace.findFirst({
-      where: { id: input.workspaceId, deletedAt: null },
-      select: { id: true, name: true, status: true },
-    });
-    if (!workspace) {
-      throw new NotFoundException({
-        code: 'WORKSPACE_NOT_FOUND',
-        msg: 'Workspace not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM workspaces WHERE id=${input.workspaceId}::uuid FOR SHARE`;
+      const workspace = await tx.workspace.findFirst({
+        where: { id: input.workspaceId, deletedAt: null },
+        select: { id: true, name: true, status: true },
       });
-    }
-    if (workspace.status !== WorkspaceStatus.active) {
-      throw new ConflictException({
-        code: 'WORKSPACE_NOT_ACTIVE',
-        msg: 'Only active workspaces can be credited.',
-      });
-    }
+      if (!workspace) {
+        throw new NotFoundException({
+          code: 'WORKSPACE_NOT_FOUND',
+          msg: 'Workspace not found.',
+        });
+      }
+      if (workspace.status !== WorkspaceStatus.active) {
+        throw new ConflictException({
+          code: 'WORKSPACE_NOT_ACTIVE',
+          msg: 'Only active workspaces can be credited.',
+        });
+      }
 
-    const account = await this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.workspace,
-          ownerId: workspace.id,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
+      // Avoid taking an existing wallet row lock before the ledger advisory lock.
+      await tx.walletAccount.createMany({
+        data: [
+          {
+            id: randomUUID(),
+            ownerType: WalletOwnerType.workspace,
+            ownerId: workspace.id,
+            currency: WalletCurrencyType.compute_point,
+            balanceKind: WalletBalanceKind.consumable,
+            status: WalletAccountStatus.active,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      const account = await tx.walletAccount.findUniqueOrThrow({
+        where: {
+          ownerType_ownerId_currency_balanceKind: {
+            ownerType: WalletOwnerType.workspace,
+            ownerId: workspace.id,
+            currency: WalletCurrencyType.compute_point,
+            balanceKind: WalletBalanceKind.consumable,
+          },
         },
-      },
-      create: {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: workspace.id,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
-    });
+      });
 
-    return this.createAdminWalletAdjustment(adminId, account.id, {
-      amount: input.amount,
-      grantType: input.grantType,
-      expiresAt: input.expiresAt,
-      reason: input.reason,
-      idempotencyKey: input.idempotencyKey,
-      metadata: {
-        ...input.metadata,
-        subject: 'workspace',
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-      },
+      const result = await this.postAdminWalletAdjustmentTx(
+        tx,
+        adminId,
+        account.id,
+        {
+          amount: input.amount,
+          grantType: input.grantType,
+          expiresAt: input.expiresAt,
+          reason: input.reason,
+          idempotencyKey: input.idempotencyKey,
+          metadata: {
+            ...input.metadata,
+            subject: 'workspace',
+            workspaceId: workspace.id,
+            workspaceName: workspace.name,
+          },
+        },
+      );
+      return result;
     });
   }
 
