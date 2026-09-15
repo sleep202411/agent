@@ -1733,6 +1733,10 @@ export class ConversationsService {
 
     const pendingMessages: PrismaMessage[] = [];
     const patched = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT user_id FROM conversation_participants WHERE conversation_id = ${conversationId} AND user_id = ${buyerId} FOR SHARE`;
+      const current = await this.assertParticipant(conversationId, buyerId, tx);
+      if (current.role !== 'buyer')
+        throw new ForbiddenException('Only the buyer can decline a proposal');
       await lockProposalsAndAssertOpen(tx, conversationId, proposalMessageId);
       const updated = await this.persistProposalStatusPatch(
         conversationId,

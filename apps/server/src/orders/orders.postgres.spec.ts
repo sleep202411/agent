@@ -260,4 +260,120 @@ jest.setTimeout(15000);
     );
     expect(await db.serviceOrder.count({ where: { buyerId: buyer } })).toBe(0);
   });
+  async function proposal() {
+    const conv = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    const message = await conversations.persistProposal(conv.id, owner, {
+      packageTier: 'basic',
+      price: 10,
+      currency: 'CNY',
+      deliveryDays: 1,
+      revisions: 0,
+      scope: [],
+      note: 'Offer',
+    });
+    return { conv, message };
+  }
+  it.each(['accept', 'decline'])(
+    'rechecks active buyer after a queued %s waits',
+    async (action) => {
+      const { conv, message } = await proposal();
+      await expect(
+        afterHeldEdit<unknown>(
+          (tx) =>
+            tx.conversationParticipant.update({
+              where: {
+                conversationId_userId: {
+                  conversationId: conv.id,
+                  userId: buyer,
+                },
+              },
+              data: { leftAt: new Date() },
+            }),
+          () =>
+            action === 'accept'
+              ? svc.acceptProposal(buyer, conv.id, message.id)
+              : conversations.declineProposal(conv.id, buyer, message.id),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(await db.serviceOrder.count({ where: { buyerId: buyer } })).toBe(
+        0,
+      );
+      expect(
+        (await db.message.findUniqueOrThrow({ where: { id: message.id } }))
+          .payload,
+      ).toMatchObject({ proposal: { status: 'open' } });
+    },
+  );
+  it('rejects a departed creator after proposal admission waits', async () => {
+    const { conv, message } = await proposal();
+    await expect(
+      afterHeldEdit(
+        (tx) =>
+          tx.conversationParticipant.update({
+            where: {
+              conversationId_userId: { conversationId: conv.id, userId: owner },
+            },
+            data: { leftAt: new Date() },
+          }),
+        () => svc.acceptProposal(buyer, conv.id, message.id),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(await db.serviceOrder.count({ where: { buyerId: buyer } })).toBe(0);
+  });
+  it('uses the proposal payload read under its admission lock', async () => {
+    const { conv, message } = await proposal();
+    const payload = message.payload as {
+      kind: string;
+      proposal: Record<string, unknown>;
+    };
+    const order = await afterHeldEdit(
+      (tx) =>
+        tx.message.update({
+          where: { id: message.id },
+          data: {
+            payload: {
+              kind: 'proposal',
+              proposal: { ...payload.proposal, price: 22 },
+            } as Prisma.InputJsonValue,
+          },
+        }),
+      () => svc.acceptProposal(buyer, conv.id, message.id),
+    );
+    expect(order.packageSnapshot).toMatchObject({ price: 22 });
+  });
+  it('rechecks conversation context after waiting for an existing context writer', async () => {
+    const { conv, message } = await proposal();
+    await expect(
+      afterHeldEdit(
+        (tx) =>
+          tx.conversation.update({
+            where: { id: conv.id },
+            data: {
+              contextType: 'order',
+              contextId: 'fixture-prior-order',
+              lookupKey: `order:${randomUUID()}`,
+            },
+          }),
+        () => svc.acceptProposal(buyer, conv.id, message.id),
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(await db.serviceOrder.count({ where: { buyerId: buyer } })).toBe(0);
+  });
+  it('serializes competing proposal acceptances without duplicate orders', async () => {
+    const { conv, message } = await proposal();
+    const results = await Promise.allSettled([
+      svc.acceptProposal(buyer, conv.id, message.id),
+      svc.acceptProposal(buyer, conv.id, message.id),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((r) => r.status === 'rejected');
+    expect(rejected?.status).toBe('rejected');
+    if (rejected?.status === 'rejected')
+      expect(rejected.reason as unknown).toBeInstanceOf(ConflictException);
+    expect(await db.serviceOrder.count({ where: { buyerId: buyer } })).toBe(1);
+  });
 });

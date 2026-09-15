@@ -287,7 +287,8 @@ export class OrdersService {
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { conversationId_userId: { conversationId, userId: buyerId } },
     });
-    if (!participant) throw new NotFoundException('Conversation not found');
+    if (!participant || participant.leftAt)
+      throw new NotFoundException('Conversation not found');
     if (participant.role !== 'buyer') {
       throw new ForbiddenException('Only the buyer can accept a proposal');
     }
@@ -301,7 +302,9 @@ export class OrdersService {
         'Conversation is not a service inquiry — cannot accept proposal here',
       );
     }
-    const creatorPart = conv.participants.find((p) => p.role === 'creator');
+    const creatorPart = conv.participants.find(
+      (p) => p.role === 'creator' && !p.leftAt,
+    );
     if (!creatorPart) {
       throw new ConflictException('Conversation has no creator participant');
     }
@@ -325,13 +328,15 @@ export class OrdersService {
 
     this.assertBindingsBelongToBuyer(buyerId, bindings);
 
-    const snapshot = proposalToSnapshot(payload.proposal);
     const orderId = newShortId();
 
     const pendingMessages: PrismaMessage[] = [];
     const pendingContextChanges: PendingContextChange[] = [];
 
     const order = await this.prisma.$transaction(async (tx) => {
+      // Share admission with questionnaire orders for this buyer/service pair.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`service-order:${buyerId}:${conv.contextId}`}, 0))`;
+      await tx.$queryRaw`SELECT user_id FROM conversation_participants WHERE conversation_id = ${conversationId} ORDER BY user_id FOR SHARE`;
       // Lock EVERY proposal row in this conversation (ASC by id)
       // and re-check the target's status. Same-order locking
       // serializes concurrent accept/decline txns even when they
@@ -339,12 +344,44 @@ export class OrdersService {
       // cancel-siblings sweep below could deadlock against a
       // sibling tx holding the other proposal's lock.
       await lockProposalsAndAssertOpen(tx, conversationId, proposalMessageId);
+      await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId} FOR UPDATE`;
+      const current = await tx.conversation.findUnique({
+        where: { id: conversationId },
+        include: { participants: { where: { leftAt: null } } },
+      });
+      if (
+        !current ||
+        current.contextType !== 'service' ||
+        current.contextId !== conv.contextId
+      ) {
+        throw new ConflictException(
+          'Conversation is no longer a service inquiry',
+        );
+      }
+      const currentBuyer = current.participants.find(
+        (p) => p.userId === buyerId,
+      );
+      if (!currentBuyer) throw new NotFoundException('Conversation not found');
+      if (currentBuyer.role !== 'buyer')
+        throw new ForbiddenException('Only the buyer can accept a proposal');
+      const currentCreator = current.participants.find(
+        (p) => p.role === 'creator',
+      );
+      if (!currentCreator)
+        throw new ConflictException('Conversation has no creator participant');
+      const lockedProposal = await tx.message.findUniqueOrThrow({
+        where: { id: proposalMessageId },
+      });
+      const currentPayload = lockedProposal.payload as MessagePayload | null;
+      if (!currentPayload || currentPayload.kind !== 'proposal')
+        throw new BadRequestException('Proposal payload missing');
+      const snapshot = proposalToSnapshot(currentPayload.proposal);
 
       const row = await tx.serviceOrder.create({
         data: {
           id: orderId,
           buyerId,
-          creatorId: creatorPart.userId,
+          creatorId: currentCreator.userId,
           serviceId: conv.contextId, // service id while still in service ctx
           packageSnapshot: snapshot as unknown as Prisma.InputJsonValue,
           // Proposal-accept skips pending_creator — the creator
