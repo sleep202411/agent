@@ -17,7 +17,8 @@
  * routes to /kyc.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import posthog from "posthog-js";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -42,6 +43,11 @@ type Step = "basic" | "upload";
 const INITIAL_FORM: BasicInfoFormValue = { title: "", description: "", tagIds: [] };
 
 export default function PublishPage() {
+  const { user } = useCurrentUser();
+  return <PublishWizard key={user?.id ?? "guest"} />;
+}
+
+function PublishWizard() {
   const t = useTranslations("publishVideo");
   const router = useRouter();
   const locale = useLocale() as Locale;
@@ -63,12 +69,40 @@ export default function PublishPage() {
     [form]
   );
 
-  // Reset to step 1 if user pulls a hard refresh mid-flow.
-  useEffect(() => {
-    setStep("basic");
+  const active = useRef(false);
+  const operation = useRef<AbortController | null>(null);
+  const preview = useRef<string | undefined>(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const abandon = () => {
+    active.current = false;
+    operation.current?.abort();
+    operation.current = null;
+    if (timer.current != null) clearTimeout(timer.current);
+    timer.current = null;
+    if (preview.current) URL.revokeObjectURL(preview.current);
+    preview.current = undefined;
+  };
+  useLayoutEffect(() => {
+    active.current = true;
+    return abandon;
   }, []);
-
+  const begin = () => {
+    if (!active.current || operation.current) return null;
+    const request = new AbortController();
+    operation.current = request;
+    setBusy(true);
+    return request;
+  };
+  const current = (request: AbortController) =>
+    active.current && operation.current === request && !request.signal.aborted;
+  const finish = (request: AbortController) => {
+    if (!current(request)) return;
+    operation.current = null;
+    setBusy(false);
+  };
   const goBackToProfile = () => {
+    abandon();
     router.replace(localizePath("/profile", locale));
   };
 
@@ -77,6 +111,8 @@ export default function PublishPage() {
       toast.warning(t("pleaseCompleteInfo"));
       return;
     }
+    const request = begin();
+    if (!request) return;
     try {
       if (personalId == null) {
         const res = await createMut.mutateAsync({
@@ -85,6 +121,7 @@ export default function PublishPage() {
           tags: form.tagIds,
           viewStatus: 1,
         });
+        if (!current(request)) return;
         setPersonalId(res.id);
       } else {
         await updateMut.mutateAsync({
@@ -94,32 +131,47 @@ export default function PublishPage() {
           viewStatus: 1,
         });
       }
-      setStep("upload");
+      if (current(request)) setStep("upload");
     } catch {
-      toast.error(personalId == null ? t("createFailed") : t("updateFailed"));
+      if (current(request)) toast.error(personalId == null ? t("createFailed") : t("updateFailed"));
+    } finally {
+      finish(request);
     }
   };
 
   const handleUploadVideo = async (file: File) => {
     if (personalId == null) return;
+    const request = begin();
+    if (!request) return;
     try {
-      await uploadVideoMut.mutateAsync({ personalId, file });
+      await uploadVideoMut.mutateAsync({ personalId, file, signal: request.signal });
+      if (!current(request)) return;
       // For local preview, point at the picked File; backend playback
       // URL becomes available once the publish completes.
-      setVideoUrl(URL.createObjectURL(file));
+      const url = URL.createObjectURL(file);
+      if (preview.current) URL.revokeObjectURL(preview.current);
+      preview.current = url;
+      setVideoUrl(url);
       toast.success(t("uploadSuccess"));
     } catch {
-      toast.error(t("uploadFailed"));
+      if (current(request)) toast.error(t("uploadFailed"));
+    } finally {
+      finish(request);
     }
   };
 
   const handleUploadCover = async (file: File) => {
     if (personalId == null) return;
+    const request = begin();
+    if (!request) return;
     try {
-      await uploadCoverMut.mutateAsync({ personalId, file });
+      await uploadCoverMut.mutateAsync({ personalId, file, signal: request.signal });
+      if (!current(request)) return;
       toast.success(t("uploadSuccess"));
     } catch {
-      toast.error(t("uploadFailed"));
+      if (current(request)) toast.error(t("uploadFailed"));
+    } finally {
+      finish(request);
     }
   };
 
@@ -128,12 +180,16 @@ export default function PublishPage() {
       toast.warning(t("pleaseUploadVideo"));
       return;
     }
+    const request = begin();
+    if (!request) return;
     posthog.capture("video_published", {
       personal_id: personalId,
       tag_count: form.tagIds.length,
     });
     toast.success(t("publishSuccess"));
-    setTimeout(goBackToProfile, 1200);
+    timer.current = setTimeout(() => {
+      if (current(request)) goBackToProfile();
+    }, 1200);
   };
 
   // Step config keeps the sidebar render simple.
@@ -143,7 +199,7 @@ export default function PublishPage() {
   ];
   const stepIndex = steps.findIndex((s) => s.key === step);
 
-  const submitting = createMut.isPending || updateMut.isPending;
+  const submitting = busy || createMut.isPending || updateMut.isPending;
 
   return (
     <div className="mx-auto max-w-[1200px] px-6 py-10">
@@ -204,10 +260,10 @@ export default function PublishPage() {
           ) : (
             <VideoUploadStep
               videoUrl={videoUrl}
-              uploading={uploadVideoMut.isPending}
+              uploading={busy}
               onPickVideo={handleUploadVideo}
               onPickCover={handleUploadCover}
-              coverUploading={uploadCoverMut.isPending}
+              coverUploading={busy}
             />
           )}
 
@@ -231,14 +287,10 @@ export default function PublishPage() {
               </>
             ) : (
               <>
-                <Button
-                  variant="outline"
-                  onClick={() => setStep("basic")}
-                  disabled={uploadVideoMut.isPending}
-                >
+                <Button variant="outline" onClick={() => setStep("basic")} disabled={busy}>
                   {t("prevStep")}
                 </Button>
-                <Button onClick={handlePublish} disabled={!videoUrl || uploadVideoMut.isPending}>
+                <Button onClick={handlePublish} disabled={!videoUrl || busy}>
                   {t("publish")}
                 </Button>
               </>
