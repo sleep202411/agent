@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IconDeviceDesktop, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -24,6 +24,8 @@ import {
 } from "./shared";
 import type { AdminSessionRow, AdminSessionsData } from "./types";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 type StatusFilter = "active" | "all";
 
 export function SessionsPanel({
@@ -43,38 +45,59 @@ export function SessionsPanel({
 }) {
   const [items, setItems] = useState<AdminSessionRow[]>(initialData?.items ?? []);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const writing = useRef(false);
   const [error, setError] = useState<string | null>(initialError);
 
   const activeCount = useMemo(() => items.filter((row) => row.status === "active").length, [items]);
   const uniqueUsers = useMemo(() => new Set(items.map((row) => row.userId)).size, [items]);
 
+  async function load(nextStatus: StatusFilter, operation: NonNullable<ReturnType<typeof begin>>) {
+    const data = await requestEnvelope<AdminSessionsData>(
+      `/api/admin/users/sessions?status=${nextStatus}`,
+      { signal: operation.signal }
+    );
+    if (operation.current()) setItems(data.items);
+  }
+
   async function refresh(nextStatus: StatusFilter = statusFilter) {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      const data = await requestEnvelope<AdminSessionsData>(
-        `/api/admin/users/sessions?status=${nextStatus}`
-      );
-      setItems(data.items);
+      await load(nextStatus, operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function revoke(row: AdminSessionRow) {
+    if (row.id === currentSessionId || row.status !== "active") return;
+    const operation = begin("write");
+    if (!operation) return;
+    writing.current = true;
+    let accepted = false;
+    setError(null);
     try {
       await requestEnvelope(
-        `/api/admin/users/${encodeURIComponent(row.userId)}/sessions/${encodeURIComponent(
-          row.id
-        )}/revoke`,
-        { method: "POST" }
+        `/api/admin/users/${encodeURIComponent(row.userId)}/sessions/${encodeURIComponent(row.id)}/revoke`,
+        { method: "POST", signal: operation.signal }
       );
-      await refresh();
+      if (!operation.current()) return;
+      accepted = true;
+      setItems((rows) =>
+        rows.map((item) => (item.id === row.id ? { ...item, status: "revoked" } : item))
+      );
+      await load(statusFilter, operation);
     } catch (err) {
+      if (!operation.current()) return;
       setError(toErrorMessage(err));
+      if (!accepted) throw err;
+    } finally {
+      if (operation.current()) writing.current = false;
+      operation.finish();
     }
   }
 
@@ -103,12 +126,13 @@ export function SessionsPanel({
         <Metric label="涉及账号" value={uniqueUsers} />
       </div>
 
-      <div className="flex items-end gap-2">
+      <div inert={loading} className="flex items-end gap-2">
         <div className="space-y-1">
           <Label className="text-[11px] text-slate-500">范围</Label>
           <Select
             value={statusFilter}
             onValueChange={(value) => {
+              if (writing.current) return;
               const next = value as StatusFilter;
               setStatusFilter(next);
               void refresh(next);
@@ -218,7 +242,7 @@ export function SessionsPanel({
                           destructive
                           onConfirm={() => revoke(row)}
                           trigger={
-                            <Button variant="outline" size="sm">
+                            <Button variant="outline" size="sm" disabled={loading}>
                               吊销
                             </Button>
                           }
