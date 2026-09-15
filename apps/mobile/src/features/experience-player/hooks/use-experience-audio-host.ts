@@ -196,7 +196,9 @@ class ExperienceAudioHost {
       .then(async () => {
         for (const effect of effects) await this.#apply(effect);
       })
-      .catch((error: unknown) => this.#onError(runtimeErrorMessage(error)));
+      .catch((error: unknown) => {
+        if (!this.#disposed) this.#onError(runtimeErrorMessage(error));
+      });
   }
 
   async dispose(): Promise<void> {
@@ -208,7 +210,8 @@ class ExperienceAudioHost {
     // Only release the session while this host still owns it — a chapter switch
     // disposes us after the incoming host has already unlocked, and the recheck
     // inside the queued transition covers it unlocking while we wait.
-    if (sessionOwner !== this) return;
+    // An in-flight unlock may acquire ownership after dispose starts. Always
+    // queue this check behind it; the queued check also protects a newer host.
     await runSessionTransition(async () => {
       if (sessionOwner !== this) return;
       sessionOwner = null;
