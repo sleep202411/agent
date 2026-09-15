@@ -240,7 +240,11 @@ function AuthorizationContent({
             <h3 className="text-sm font-medium">{t("grantsTitle")}</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">{t("grantsHint")}</p>
           </div>
-          <Button variant="secondary" onClick={() => setAuthorizeOpen(true)}>
+          <Button
+            variant="secondary"
+            disabled={grantsDenied || takedownBusy || revokingProjectId !== null}
+            onClick={() => setAuthorizeOpen(true)}
+          >
             <IconPlus data-icon="inline-start" />
             {t("authorizeProject")}
           </Button>

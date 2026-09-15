@@ -6,6 +6,7 @@ import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { AuthorizeProjectDialog } from "./authorize-project-dialog";
 const s = vi.hoisted(() => ({
   user: "a",
+  workspaces: [{ id: "w", name: "Workspace" }],
   list: vi.fn(),
   grant: vi.fn(),
   granted: vi.fn(),
@@ -14,7 +15,7 @@ const s = vi.hoisted(() => ({
 }));
 vi.mock("@/app/_components/auth-provider", () => ({ useAuth: () => ({ user: { id: s.user } }) }));
 vi.mock("@/app/_components/workspace-context", () => ({
-  useWorkspace: () => ({ workspaces: [{ id: "w", name: "Workspace" }] }),
+  useWorkspace: () => ({ workspaces: s.workspaces }),
 }));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("sonner", () => ({ toast: { success: s.success, error: vi.fn() } }));
@@ -46,6 +47,7 @@ let host: HTMLDivElement, root: Root, client: QueryClient;
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   s.user = "a";
+  s.workspaces = [{ id: "w", name: "Workspace" }];
   vi.clearAllMocks();
   s.list.mockReset().mockResolvedValue([{ id: "p", name: "Film", status: "active" }]);
   host = document.createElement("div");
@@ -129,4 +131,11 @@ it("abandons private project reads on account change", async () => {
   s.user = "b";
   await render();
   expect(signals[0].aborted).toBe(true);
+});
+
+it("shows the existing empty state when no workspace can be queried", async () => {
+  s.workspaces = [];
+  await render();
+  expect(document.body.textContent).toContain("authorizeNoProjects");
+  expect(s.list).not.toHaveBeenCalled();
 });

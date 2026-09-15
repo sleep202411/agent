@@ -111,3 +111,25 @@ it("releases a failed withdrawal for retry", async () => {
   expect(s.revoke).toHaveBeenCalledTimes(2);
   expect(s.success).toHaveBeenCalled();
 });
+
+it("disables new authorization during withdrawal and restores it after failure", async () => {
+  let reject!: (error: Error) => void;
+  s.revoke.mockImplementation(
+    () =>
+      new Promise<void>((_resolve, fail) => {
+        reject = fail;
+      })
+  );
+  await render();
+  const authorize = () =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent === "authorizeProject")!;
+  expect(authorize().disabled).toBe(false);
+  await act(async () => {
+    Array.from(host.querySelectorAll("button"))
+      .find((b) => b.textContent === "grantWithdraw")!
+      .click();
+  });
+  expect(authorize().disabled).toBe(true);
+  await act(async () => reject(new Error("withdrawal failed")));
+  expect(authorize().disabled).toBe(false);
+});

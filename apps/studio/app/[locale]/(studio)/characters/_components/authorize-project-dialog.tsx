@@ -225,7 +225,7 @@ function AuthorizeContent({
             </div>
 
             <div className="max-h-72 min-h-24 space-y-0.5 overflow-y-auto">
-              {projectsQuery.isPending ? (
+              {projectsQuery.isPending && workspaces.length > 0 ? (
                 <div className="flex items-center justify-center py-10 text-muted-foreground">
                   <IconLoader2 className="size-5 animate-spin" stroke={1.8} />
                 </div>
