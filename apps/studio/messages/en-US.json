@@ -1220,6 +1220,8 @@
     "undo": "Undo",
     "redo": "Redo",
     "openError": "Couldn't open this canvas — check the link or your access.",
+    "dropToAdd": "Drop to add on the canvas",
+    "unsupportedDrop": "Only JPEG, PNG, WebP, MP4, MOV, MP3, and WAV can be placed on the canvas.",
     "emptyReadOnly": "This canvas is empty.",
     "activityLog": "Activity",
     "connection": {
@@ -2464,6 +2466,27 @@
     "confirmRemoveEdge": "Delete this connection?"
   },
   "storyStudio": {
+    "projectAccess": {
+      "authentication": {
+        "title": "Sign in to open this project",
+        "description": "Your session may have expired. Sign in with the account that was granted access to this project."
+      },
+      "forbidden": {
+        "title": "You don't have access to this project",
+        "description": "Ask the project owner or the person who invited you to grant this account access."
+      },
+      "unavailable": {
+        "title": "This project isn't available to you",
+        "description": "It may have been deleted, or this account hasn't been granted access. Ask the project owner or the person who invited you to check your access."
+      },
+      "unexpected": {
+        "title": "This project couldn't load",
+        "description": "A temporary problem prevented the project from opening. Try again, or return to your projects."
+      },
+      "signIn": "Sign in",
+      "back": "Back to projects",
+      "retry": "Try again"
+    },
     "authoringRun": {
       "sourceReviewNotes": "Script rules and production notes ({count})",
       "title": {
@@ -3721,35 +3744,40 @@
       },
       "plotImport": {
         "title": "Import JSON",
-        "description": "Turn a plot JSON file from any AI tool into an editable plot tree.",
+        "description": "Turn a plot JSON file from any AI tool into an editable plot tree, with assets and storyboard clip prompts.",
         "download": "Download AI template",
         "choose": "Choose JSON file",
         "reading": "Reading file…",
-        "summary": "{scenes} scenes · {decisions} decisions",
-        "limits": "JSON · up to 2 MB and 1,000 nodes",
+        "importing": "Importing…",
+        "summary": "{scenes} scenes · {decisions} decisions · {assets} assets · {clips} clips",
+        "limits": "JSON · up to 2 MB, 500 nodes and 500 assets",
         "replaceLabel": "Replace the current chapter’s plot tree",
-        "replaceHint": "Replaces this chapter’s nodes and connections. Other chapters stay unchanged. You can undo this in one step.",
-        "replaced": "Plot tree replaced. Saving automatically…",
-        "appendHint": "Adds a separate group to this chapter. Existing content stays in place; connect the new group where you need it. You can undo the import in one step.",
-        "emptyHint": "Preserves the text, choice order and connections. Creates the skeleton only; no media is generated.",
+        "replaceHint": "Replaces this chapter’s nodes and connections. Existing assets stay; assets in the file are added. Other chapters stay unchanged. You can undo the plot-tree change in one step.",
+        "replaced": "Plot tree, assets and clips imported.",
+        "appendHint": "Adds a separate group to this chapter, plus the file’s assets and clips. Existing content stays in place; connect the new group where you need it. You can undo the plot-tree change in one step.",
+        "emptyHint": "Imports the plot tree, asset specs and clip prompts. No media is generated.",
         "cancel": "Cancel",
         "confirm": "Import plot tree",
-        "added": "Plot tree added. Saving automatically…",
+        "added": "Plot tree, assets and clips imported.",
         "errors": {
           "json": "Invalid JSON. Ask your AI to return a JSON file without Markdown fences, comments or trailing commas.",
           "size": "File is too large. Keep each file under 2 MB.",
           "object": "{path}: expected an object.",
           "field": "{path}: unsupported field. Follow the downloaded template so no content is lost.",
           "text": "{path}: expected text within the template’s length limit. Required text cannot be blank.",
-          "id": "{path}: use an ID of 1–64 characters, starting with an English letter, followed by letters, digits, dots, underscores, colons or hyphens.",
-          "version": "{path}: version must be 1.",
-          "nodes": "{path}: provide 1–1,000 nodes. Split larger stories into chapters.",
+          "id": "{path}: use an ID of 1–64 characters, starting with an English letter, followed by letters, digits or underscores, with optional dots, colons or hyphens between groups.",
+          "nodes": "{path}: provide 1–500 nodes. Split larger stories into chapters.",
           "type": "{path}: type must be scene or decision.",
+          "kind": "{path}: use a kind from the downloaded template.",
           "choices": "{path}: a decision needs 2–6 choices.",
-          "duplicate": "{path}: duplicate node ID. Give every node a unique ID.",
+          "duplicate": "{path}: duplicate ID. Give every item a unique ID in its scope.",
           "target": "{path}: this target must match an existing node ID in the file.",
           "unreachable": "{path}: this node cannot be reached from entryNodeId. Add its missing connection.",
-          "capacity": "This chapter would exceed 10,000 nodes. Import into another chapter.",
+          "capacity": "This chapter would exceed 500 nodes. Import into another chapter.",
+          "assets": "{path}: provide 0–500 assets.",
+          "clips": "{path}: provide 0–100 clips in this scene.",
+          "duration": "{path}: duration must be an integer from 250 to 3,600,000 ms, and a scene cannot exceed 3,600,000 ms.",
+          "mention": "{path}: prompts cannot contain @ tokens in this import.",
           "read": "Could not read the file. Choose it again.",
           "locked": "The plot tree is not editable right now. Try again when saving or the current operation finishes.",
           "singleFile": "Drop one JSON file at a time.",

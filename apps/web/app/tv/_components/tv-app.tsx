@@ -24,15 +24,15 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const router = useRouter();
   const [mode, setMode] = useState<"videos" | "games">("videos");
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#0c0e13] text-white">
-      <div role="group" aria-label={t("catalog")} className="flex shrink-0 gap-3 px-4 py-2">
+    <div className="flex min-h-full min-w-0 max-w-full flex-col lg:h-full lg:min-h-0 bg-[#0c0e13] text-white">
+      <div role="group" aria-label={t("catalog")} className="flex shrink-0 gap-1 px-4 py-2">
         {(["videos", "games"] as const).map((value) => (
           <button
             type="button"
             key={value}
             aria-pressed={mode === value}
             onClick={() => setMode(value)}
-            className="min-h-11 rounded-lg px-4 text-white/60 aria-pressed:bg-white/10 aria-pressed:text-white"
+            className="min-h-11 rounded-full px-3 text-sm font-medium leading-5 text-white/60 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white aria-pressed:bg-white/10 aria-pressed:text-white"
           >
             {t(value)}
           </button>
@@ -164,7 +164,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
   }
 
   return (
-    <div className="flex w-full flex-col overflow-hidden bg-[#0c0e13] px-3 min-h-0 flex-1 md:flex-row md:px-6">
+    <div className="flex w-full shrink-0 flex-col bg-[#0c0e13] px-3 lg:min-h-0 lg:flex-1 lg:flex-row lg:overflow-hidden lg:px-6">
       <TvIpList
         embedded={embedded}
         items={items}
@@ -183,9 +183,9 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
       />
       <section
         aria-label={t("playerTitle")}
-        className="relative flex min-w-0 flex-col overflow-hidden md:flex-1"
+        className="relative flex min-w-0 shrink-0 flex-col lg:flex-1 lg:overflow-hidden"
       >
-        <div className="relative aspect-video shrink-0 md:aspect-auto md:min-h-0 md:flex-1">
+        <div className="relative aspect-video shrink-0 lg:aspect-auto lg:min-h-0 lg:flex-1">
           {item ? (
             <TvStage
               item={playbackItem!}

@@ -21,12 +21,11 @@ import {
   type ValidationIssue,
 } from "@/lib/canvas-authoring/generation-api";
 import {
-  isOmniTaskModeValue,
+  applyOmniModeSelection,
   lockedSettingFields,
   menuValueForMode,
   modeMenuValues,
   OMNI_TASK_TYPE_FIELD,
-  splitOmniTaskModeValue,
 } from "@/lib/canvas-authoring/omni-task-modes";
 import { useComposerModeLabel } from "@/lib/canvas-authoring/use-labels";
 import { ModelPicker } from "@/components/canvas/authoring/model-picker";
@@ -130,15 +129,7 @@ export function StudioComposer({
    *  in one change. Any non-composite selection (including plain Omni
    *  Reference) resets the task type to auto. */
   const selectMode = (value: string) => {
-    const taskType = isOmniTaskModeValue(value) ? splitOmniTaskModeValue(value).taskType : "auto";
-    const nextMode = isOmniTaskModeValue(value) ? splitOmniTaskModeValue(value).mode : value;
-    const next: ModelSettingsBag = { ...settings, omniReferenceTaskType: taskType };
-    // Editing keeps the source video's ratio and duration; extension keeps
-    // its ratio (ModelArk locks, mirrored by the catalog x-rules).
-    if (taskType === "edit" || taskType === "extend") {
-      next.aspectRatio = "auto";
-      if (taskType === "edit") next.duration = "auto";
-    }
+    const { mode: nextMode, settings: next } = applyOmniModeSelection(value, settings);
     onSettingsChange(next);
     onSelectMode?.(nextMode);
   };

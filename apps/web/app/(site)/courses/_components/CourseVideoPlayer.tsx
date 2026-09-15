@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import {
   IconArrowsMaximize,
   IconDots,
@@ -9,12 +9,16 @@ import {
   IconPlayerSkipBackFilled,
   IconPlayerSkipForwardFilled,
   IconVolume,
+  IconVolumeOff,
 } from "@tabler/icons-react";
 import {
   readLatestStoredEpisodeProgress,
   writeStoredEpisodeProgress,
 } from "@/src/hooks/use-courses";
 import { recomputePublicCourseProgress } from "@/src/hooks/use-courses-public";
+
+import { DropdownMenu as Menu } from "radix-ui";
+import { useTranslations } from "@/src/i18n/i18n";
 
 interface CourseVideoPlayerProps {
   courseId: number;
@@ -54,8 +58,16 @@ export function CourseVideoPlayer({
   posterUrl,
   stableProgressKey,
 }: CourseVideoPlayerProps) {
+  const t = useTranslations("coursePlayerControls");
+  const [muted, setMuted] = useState(false);
+  const [rate, setRate] = useState(1);
+  const [menuContainer, setMenuContainer] = useState<HTMLElement | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLElement>(null);
+  const attachContainer = useCallback((node: HTMLElement | null) => {
+    containerRef.current = node;
+    setMenuContainer(node);
+  }, []);
   const lastSeriesProgressWriteRef = useRef(0);
 
   function flushSeriesProgress() {
@@ -100,6 +112,8 @@ export function CourseVideoPlayer({
 
   function handleLoadedMetadata(event: SyntheticEvent<HTMLVideoElement>) {
     const video = event.currentTarget;
+    video.playbackRate = rate;
+    setMuted(video.muted || video.volume === 0);
     const metadataDuration = video.duration;
     setDuration(metadataDuration);
 
@@ -180,7 +194,10 @@ export function CourseVideoPlayer({
     const video = videoRef.current;
     if (!video) return;
 
-    video.muted = !video.muted;
+    const nextMuted = !(video.muted || video.volume === 0);
+    if (!nextMuted && video.volume === 0) video.volume = 1;
+    video.muted = nextMuted;
+    setMuted(nextMuted);
   }
 
   /**
@@ -206,7 +223,7 @@ export function CourseVideoPlayer({
     // inside the sibling panel. `top-16` mirrors the global header's
     // 4rem height — keeping this in sync is the only coupling.
     <section
-      ref={containerRef}
+      ref={attachContainer}
       className="sticky top-16 z-10 flex flex-col overflow-hidden bg-[radial-gradient(circle_at_20%_20%,#2b1832_0%,#121322_42%,#08080d_100%)] lg:static lg:top-auto lg:z-auto lg:h-full lg:min-h-0"
     >
       {videoUrl ? (
@@ -217,6 +234,11 @@ export function CourseVideoPlayer({
           poster={posterUrl || undefined}
           className="aspect-video w-full bg-black object-contain lg:aspect-auto lg:min-h-0 lg:flex-1"
           preload="metadata"
+          muted={muted}
+          onVolumeChange={(event) =>
+            setMuted(event.currentTarget.muted || event.currentTarget.volume === 0)
+          }
+          onRateChange={(event) => setRate(event.currentTarget.playbackRate)}
           onClick={togglePlay}
           onPlay={handlePlay}
           onPause={handlePause}
@@ -283,12 +305,61 @@ export function CourseVideoPlayer({
             <button type="button" aria-label="Skip forward" onClick={() => skipBy(10)}>
               <IconPlayerSkipForwardFilled className="size-4" />
             </button>
-            <button type="button" aria-label="Mute" onClick={toggleMuted}>
-              <IconVolume className="size-4" />
+            <button
+              type="button"
+              aria-label={muted ? t("unmute") : t("mute")}
+              title={muted ? t("unmute") : t("mute")}
+              aria-pressed={muted}
+              disabled={!videoUrl}
+              onClick={toggleMuted}
+              className="rounded focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-40"
+            >
+              {muted ? <IconVolumeOff className="size-4" /> : <IconVolume className="size-4" />}
             </button>
-            <button type="button" aria-label="More options">
-              <IconDots className="size-5" />
-            </button>
+            <Menu.Root key={videoUrl}>
+              <Menu.Trigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("options")}
+                  title={t("options")}
+                  disabled={!videoUrl}
+                  className="rounded focus-visible:outline-2 focus-visible:outline-offset-4 disabled:opacity-40"
+                >
+                  <IconDots className="size-5" />
+                </button>
+              </Menu.Trigger>
+              <Menu.Portal container={menuContainer}>
+                <Menu.Content
+                  side="top"
+                  align="end"
+                  sideOffset={8}
+                  collisionPadding={8}
+                  className="z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-36 overflow-y-auto rounded-lg border border-white/10 bg-[#18181b] p-1 text-xs text-white shadow-lg"
+                >
+                  <Menu.Label className="px-2 py-1.5 text-white/60">{t("speed")}</Menu.Label>
+                  <Menu.RadioGroup
+                    value={String(rate)}
+                    onValueChange={(value) => {
+                      const video = videoRef.current;
+                      if (!video) return;
+                      video.playbackRate = Number(value);
+                      setRate(video.playbackRate);
+                    }}
+                  >
+                    {[0.5, 0.75, 1, 1.25, 1.5, 2].map((speed) => (
+                      <Menu.RadioItem
+                        key={speed}
+                        value={String(speed)}
+                        className="flex cursor-default items-center justify-between gap-4 rounded px-2 py-1.5 outline-none focus:bg-white/10"
+                      >
+                        {speed === 1 ? t("normal") : `${speed}×`}
+                        <Menu.ItemIndicator aria-hidden>✓</Menu.ItemIndicator>
+                      </Menu.RadioItem>
+                    ))}
+                  </Menu.RadioGroup>
+                </Menu.Content>
+              </Menu.Portal>
+            </Menu.Root>
             <button type="button" aria-label="Fullscreen" onClick={toggleFullscreen}>
               <IconArrowsMaximize className="size-4" />
             </button>

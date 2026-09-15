@@ -92,7 +92,7 @@ function estimateCanvasNodeHeight(node: Node): number | undefined {
 const UPLOAD_CONTENT_TYPES: Record<UploadMediaKind, readonly string[]> = {
   image: ["image/jpeg", "image/png", "image/webp"],
   video: ["video/mp4", "video/quicktime"],
-  audio: ["audio/mpeg", "audio/wav", "audio/x-wav"],
+  audio: ["audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/wave"],
 };
 
 const UPLOAD_KIND_BY_EXTENSION: Record<string, UploadMediaKind> = {
@@ -104,6 +104,14 @@ const UPLOAD_KIND_BY_EXTENSION: Record<string, UploadMediaKind> = {
   mov: "video",
   mp3: "audio",
   wav: "audio",
+};
+
+/** Native file pickers (macOS Finder especially) ignore many audio MIME types
+ *  unless the matching extensions are listed next to them. */
+const UPLOAD_EXTENSIONS: Record<UploadMediaKind, readonly string[]> = {
+  image: [".jpg", ".jpeg", ".png", ".webp"],
+  video: [".mp4", ".mov"],
+  audio: [".mp3", ".wav"],
 };
 
 export function canvasUploadMediaKind(
@@ -133,7 +141,14 @@ function nodeTypeForMedia(kind: UploadMediaKind) {
 }
 
 export function canvasAcceptedFileTypes(kinds: readonly UploadMediaKind[]): string {
-  return kinds.flatMap((kind) => UPLOAD_CONTENT_TYPES[kind]).join(",");
+  return kinds
+    .flatMap((kind) => [...UPLOAD_CONTENT_TYPES[kind], ...UPLOAD_EXTENSIONS[kind]])
+    .join(",");
+}
+
+export function isExternalCanvasDrag(types: ArrayLike<string>): boolean {
+  const list = Array.from(types);
+  return list.includes("Files") || list.includes(ASSET_DRAG_MIME);
 }
 
 /**
@@ -218,6 +233,8 @@ export function useMediaAuthoringCanvas({
     : setLocalAssetsOpen;
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [minimapOpen, setMinimapOpen] = useState(false);
+  const [fileDragActive, setFileDragActive] = useState(false);
+  const fileDragDepth = useRef(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadFlowPos = useRef<{ x: number; y: number } | null>(null);
@@ -765,13 +782,39 @@ export function useMediaAuthoringCanvas({
     },
     [addNode, screenToFlowPosition]
   );
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
+  const clearFileDrag = useCallback(() => {
+    fileDragDepth.current = 0;
+    setFileDragActive(false);
   }, []);
+  const onDragEnter = useCallback(
+    (event: React.DragEvent) => {
+      if (!canEdit || !isExternalCanvasDrag(event.dataTransfer.types)) return;
+      fileDragDepth.current += 1;
+      setFileDragActive(true);
+    },
+    [canEdit]
+  );
+  const onDragOver = useCallback(
+    (event: React.DragEvent) => {
+      if (!canEdit || !isExternalCanvasDrag(event.dataTransfer.types)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    [canEdit]
+  );
+  const onDragLeave = useCallback(
+    (event: React.DragEvent) => {
+      if (!canEdit || !isExternalCanvasDrag(event.dataTransfer.types)) return;
+      fileDragDepth.current = Math.max(0, fileDragDepth.current - 1);
+      if (fileDragDepth.current === 0) setFileDragActive(false);
+    },
+    [canEdit]
+  );
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
+      clearFileDrag();
+      if (!canEdit) return;
       const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
       const assetData = event.dataTransfer.getData(ASSET_DRAG_MIME);
       if (assetData) {
@@ -782,19 +825,23 @@ export function useMediaAuthoringCanvas({
         }
         return;
       }
-      const files = Array.from(event.dataTransfer.files).filter((file) =>
-        Boolean(canvasUploadMediaKind(file, acceptedKinds))
-      );
+      const dropped = Array.from(event.dataTransfer.files);
+      const files = dropped.filter((file) => Boolean(canvasUploadMediaKind(file, acceptedKinds)));
+      if (dropped.length > 0 && files.length < dropped.length) {
+        toast.error(t("unsupportedDrop"));
+      }
       if (files.length > 0) addFiles(files, position);
     },
-    [acceptedKinds, addAssetToCanvas, addFiles, screenToFlowPosition]
+    [acceptedKinds, addAssetToCanvas, addFiles, canEdit, clearFileDrag, screenToFlowPosition, t]
   );
   const onPickFiles = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []).filter((file) =>
-        Boolean(canvasUploadMediaKind(file, acceptedKinds))
-      );
+      const picked = Array.from(event.target.files ?? []);
+      const files = picked.filter((file) => Boolean(canvasUploadMediaKind(file, acceptedKinds)));
       event.target.value = "";
+      if (picked.length > 0 && files.length < picked.length) {
+        toast.error(t("unsupportedDrop"));
+      }
       if (files.length === 0) return;
       const rect = containerRef.current?.getBoundingClientRect();
       const base =
@@ -814,7 +861,7 @@ export function useMediaAuthoringCanvas({
         });
       }
     },
-    [acceptedKinds, addFiles, connectionForPending, onConnect, screenToFlowPosition]
+    [acceptedKinds, addFiles, connectionForPending, onConnect, screenToFlowPosition, t]
   );
   const onConnectStart = useCallback<OnConnectStart>((event, params) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -982,7 +1029,10 @@ export function useMediaAuthoringCanvas({
     fileInputRef,
     acceptedFileTypes: canvasAcceptedFileTypes(uploadKinds),
     uploadContextValue,
+    fileDragActive,
+    onDragEnter,
     onDragOver,
+    onDragLeave,
     onDrop,
     onPickFiles,
     onDoubleClick,

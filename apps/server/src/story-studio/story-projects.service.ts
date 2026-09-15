@@ -15,7 +15,9 @@ import {
   MediaAssetVariantStatus,
   Prisma,
   SkillCatalogStatus,
+  StoryAssetSpecKind,
   StoryProductionSpecStatus,
+  StoryStoryboardClipKind,
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
@@ -57,6 +59,7 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
+  type ImportStoryPlotInput,
   type StoryChapterDto,
   type StoryCanvasLayoutDto,
   type StoryCandidateAssetDto,
@@ -81,6 +84,14 @@ import {
 } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import { reconcileStoryTimelinesWithDraft } from './story-timeline-reconcile';
+import {
+  applyStoryPlotImport,
+  MAX_PLOT_IMPORT_ASSETS,
+  parseStoryPlotImportValue,
+  storyPlotImportAssetWrites,
+  storyPlotImportClipWrites,
+  StoryPlotImportError,
+} from './story-plot-import';
 import {
   commitStoryChapterGraph,
   mergeChapterDraftIntoStory,
@@ -918,110 +929,24 @@ export class StoryProjectsService {
   ): Promise<StoryDraftDto> {
     const access = await this.requireProject(user, projectId, 'story.edit');
     const saved = await this.prisma.$transaction(async (tx) => {
-      await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-      const [current, chapters] = await Promise.all([
-        tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
-        tx.storyChapter.findMany({
-          where: { storyProjectId: projectId, archivedAt: null },
-          orderBy: [{ rank: 'asc' }, { id: 'asc' }],
-        }),
-      ]);
-      if (!current || current.revision !== input.expectedRevision) return null;
-      const chapter = chapters.find((candidate) => candidate.id === chapterId);
-      if (!chapter) throwChapterNotFound();
-
-      const currentActualHash = canonicalJsonHash(current.content);
-      if (currentActualHash !== current.contentHash) {
-        throw new ConflictException({
-          code: 'DRAFT_INTEGRITY_ERROR',
-          message: 'The stored draft content does not match its hash.',
-          expectedHash: current.contentHash,
-          actualHash: currentActualHash,
-        });
-      }
-      const currentContent = parseDraftContent(
-        current.content,
-        'STORY_DRAFT_CORRUPT',
-      );
-      const repaired = reconcileStoryChapterGraphPartition({
-        content: currentContent,
-        chapters,
-      });
-      let merged: StoryChapterGraphMerge;
-      try {
-        merged = mergeChapterDraftIntoStory({
-          content: repaired.content,
-          chapters: repaired.chapters,
-          chapterId,
-          chapterContent: input.content,
-        });
-      } catch (error) {
-        if (error instanceof StoryChapterNodeOwnershipConflictError) {
-          throw new BadRequestException({
-            code: 'STORY_CHAPTER_NODE_OWNERSHIP_CONFLICT',
-            message: error.message,
-            nodeId: error.nodeId,
-          });
-        }
-        throw error;
-      }
-      const mergedContent = InteractiveStoryDraftContentSchema.parse(
-        merged.content,
-      );
-      const nextChapterNodeIds = merged.nextChapterNodeIds;
-      const contentHash = canonicalJsonHash(mergedContent);
-      const membershipUnchanged = arraysEqual(
-        stringArray(chapter.nodeIds),
-        nextChapterNodeIds,
-      );
-      // Autosave, navigation flush and retry may legitimately converge on the
-      // same canonical payload. Treat that as an idempotent read of the saved
-      // head: revisions represent content changes, not transport attempts.
-      if (
-        current.schemaVersion === input.schemaVersion &&
-        current.contentHash === contentHash &&
-        !repaired.changed &&
-        membershipUnchanged &&
-        chapter.entryNodeId === input.content.graph.entryNodeId
-      ) {
-        return { draft: current, chapter };
-      }
-
-      const committed = await commitStoryChapterGraph(tx, {
-        draft: current,
-        chaptersBefore: chapters,
-        partitionRepair: repaired,
-        content: mergedContent,
-        chapters: merged.chapters,
-        schemaVersion: input.schemaVersion,
-        actorUserId: user.userId,
-        sessionId: input.sessionId,
-        trigger: 'draft_save',
-      });
-      if (!committed) return null;
-
-      // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
-      // their sequences immediately, undone deletions revive them.
-      await reconcileStoryTimelinesWithDraft(
+      const committed = await this.commitChapterDraftTx(
         tx,
+        user,
         projectId,
-        mergedContent as {
-          graph: { nodes: Array<{ kind: string; nodeId: string }> };
-        },
-        {
-          storyChapterId: chapter.id,
-          chapterNodeIds: nextChapterNodeIds,
-          actorUserId: user.userId,
-        },
+        chapterId,
+        input,
       );
-
+      if (!committed) return null;
+      if (committed.status === 'unchanged') {
+        return { draft: committed.draft, chapter: committed.chapter };
+      }
       await tx.storyProject.update({
         where: { id: projectId },
         data: { updatedAt: new Date() },
       });
       const [draft, savedChapter] = await Promise.all([
         tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
-        tx.storyChapter.findUnique({ where: { id: chapter.id } }),
+        tx.storyChapter.findUnique({ where: { id: committed.chapterId } }),
       ]);
       return draft && savedChapter ? { draft, chapter: savedChapter } : null;
     });
@@ -1034,6 +959,335 @@ export class StoryProjectsService {
       );
     }
     return this.toChapterDraft(saved.draft, access.project, saved.chapter);
+  }
+
+  async importPlot(
+    user: AuthUser,
+    projectId: string,
+    input: ImportStoryPlotInput,
+    chapterId: string,
+  ): Promise<{ draft: StoryDraftDto; importedNodeIds: string[] }> {
+    const access = await this.requireProject(user, projectId, 'story.edit');
+    let plot: ReturnType<typeof parseStoryPlotImportValue>;
+    try {
+      plot = parseStoryPlotImportValue(input.plot);
+    } catch (error) {
+      throwPlotImportError(error);
+    }
+    let imported: ReturnType<
+      typeof applyStoryPlotImport<ImportStoryPlotInput['content']>
+    >;
+    try {
+      imported = applyStoryPlotImport(
+        input.content,
+        plot,
+        input.locale,
+        input.mode,
+      );
+    } catch (error) {
+      throwPlotImportError(error);
+    }
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const committed = await this.commitChapterDraftTx(
+        tx,
+        user,
+        projectId,
+        chapterId,
+        {
+          expectedRevision: input.expectedRevision,
+          schemaVersion: input.schemaVersion,
+          content: imported.content,
+          sessionId: input.sessionId,
+        },
+      );
+      if (!committed) return null;
+      if (committed.status !== 'committed') {
+        throw new InternalServerErrorException({
+          code: 'STORY_PLOT_IMPORT_NOOP',
+          message: 'Plot import did not persist a new draft.',
+        });
+      }
+      await this.writeImportedProduction(tx, {
+        user,
+        projectId,
+        chapterId: committed.chapterId,
+        namespace: imported.namespace,
+        plot,
+      });
+      await tx.storyProject.update({
+        where: { id: projectId },
+        data: { updatedAt: new Date() },
+      });
+      const [draft, savedChapter] = await Promise.all([
+        tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+        tx.storyChapter.findUnique({ where: { id: committed.chapterId } }),
+      ]);
+      return draft && savedChapter ? { draft, chapter: savedChapter } : null;
+    });
+
+    if (!saved) {
+      return this.throwDraftConflict(
+        projectId,
+        input.expectedRevision,
+        chapterId,
+      );
+    }
+    return {
+      draft: this.toChapterDraft(saved.draft, access.project, saved.chapter),
+      importedNodeIds: imported.importedNodes.map((node) => node.nodeId),
+    };
+  }
+
+  private async commitChapterDraftTx(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    input: PutStoryDraftInput,
+  ): Promise<
+    | {
+        status: 'unchanged';
+        draft: {
+          storyProjectId: string;
+          schemaVersion: string;
+          content: Prisma.JsonValue;
+          contentHash: string;
+          revision: number;
+          updatedByUserId: string;
+          updatedBySessionId: string | null;
+          createdAt: Date;
+          updatedAt: Date;
+        };
+        chapter: {
+          id: string;
+          nodeIds: Prisma.JsonValue;
+          entryNodeId: string | null;
+        };
+      }
+    | { status: 'committed'; chapterId: string }
+    | null
+  > {
+    await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+    const [current, chapters] = await Promise.all([
+      tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+      tx.storyChapter.findMany({
+        where: { storyProjectId: projectId, archivedAt: null },
+        orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
+    if (!current || current.revision !== input.expectedRevision) return null;
+    const chapter = chapters.find((candidate) => candidate.id === chapterId);
+    if (!chapter) throwChapterNotFound();
+
+    const currentActualHash = canonicalJsonHash(current.content);
+    if (currentActualHash !== current.contentHash) {
+      throw new ConflictException({
+        code: 'DRAFT_INTEGRITY_ERROR',
+        message: 'The stored draft content does not match its hash.',
+        expectedHash: current.contentHash,
+        actualHash: currentActualHash,
+      });
+    }
+    const currentContent = parseDraftContent(
+      current.content,
+      'STORY_DRAFT_CORRUPT',
+    );
+    const repaired = reconcileStoryChapterGraphPartition({
+      content: currentContent,
+      chapters,
+    });
+    let merged: StoryChapterGraphMerge;
+    try {
+      merged = mergeChapterDraftIntoStory({
+        content: repaired.content,
+        chapters: repaired.chapters,
+        chapterId,
+        chapterContent: input.content,
+      });
+    } catch (error) {
+      if (error instanceof StoryChapterNodeOwnershipConflictError) {
+        throw new BadRequestException({
+          code: 'STORY_CHAPTER_NODE_OWNERSHIP_CONFLICT',
+          message: error.message,
+          nodeId: error.nodeId,
+        });
+      }
+      throw error;
+    }
+    const mergedContent = InteractiveStoryDraftContentSchema.parse(
+      merged.content,
+    );
+    const nextChapterNodeIds = merged.nextChapterNodeIds;
+    const contentHash = canonicalJsonHash(mergedContent);
+    const membershipUnchanged = arraysEqual(
+      stringArray(chapter.nodeIds),
+      nextChapterNodeIds,
+    );
+    // Autosave, navigation flush and retry may legitimately converge on the
+    // same canonical payload. Treat that as an idempotent read of the saved
+    // head: revisions represent content changes, not transport attempts.
+    if (
+      current.schemaVersion === input.schemaVersion &&
+      current.contentHash === contentHash &&
+      !repaired.changed &&
+      membershipUnchanged &&
+      chapter.entryNodeId === input.content.graph.entryNodeId
+    ) {
+      return { status: 'unchanged', draft: current, chapter };
+    }
+
+    const committed = await commitStoryChapterGraph(tx, {
+      draft: current,
+      chaptersBefore: chapters,
+      partitionRepair: repaired,
+      content: mergedContent,
+      chapters: merged.chapters,
+      schemaVersion: input.schemaVersion,
+      actorUserId: user.userId,
+      sessionId: input.sessionId,
+      trigger: 'draft_save',
+    });
+    if (!committed) return null;
+
+    // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
+    // their sequences immediately, undone deletions revive them.
+    await reconcileStoryTimelinesWithDraft(
+      tx,
+      projectId,
+      mergedContent as {
+        graph: { nodes: Array<{ kind: string; nodeId: string }> };
+      },
+      {
+        storyChapterId: chapter.id,
+        chapterNodeIds: nextChapterNodeIds,
+        actorUserId: user.userId,
+      },
+    );
+    return { status: 'committed', chapterId: chapter.id };
+  }
+
+  private async writeImportedProduction(
+    tx: Prisma.TransactionClient,
+    input: {
+      user: AuthUser;
+      projectId: string;
+      chapterId: string;
+      namespace: string;
+      plot: ReturnType<typeof parseStoryPlotImportValue>;
+    },
+  ): Promise<void> {
+    const now = new Date();
+    const assets = storyPlotImportAssetWrites(input.plot, input.namespace);
+    const clipWrites = storyPlotImportClipWrites(input.plot, input.namespace);
+    if (assets.length > 0) {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtext(${`story-production-asset-create:${input.chapterId}`})::bigint
+        )
+      `;
+      const activeCount = await tx.storyAssetSpec.count({
+        where: {
+          storyProjectId: input.projectId,
+          storyChapterId: input.chapterId,
+          status: { not: StoryProductionSpecStatus.archived },
+        },
+      });
+      if (activeCount + assets.length > MAX_PLOT_IMPORT_ASSETS) {
+        throw new BadRequestException({
+          code: 'STORY_PRODUCTION_ASSET_LIMIT_REACHED',
+          message: 'A chapter can contain at most 500 Asset Specs.',
+        });
+      }
+      for (const asset of assets) {
+        await tx.storyAssetSpec.create({
+          data: {
+            storyProjectId: input.projectId,
+            storyChapterId: input.chapterId,
+            stableKey: asset.stableKey,
+            kind: asset.kind as StoryAssetSpecKind,
+            sourceCharacterId: null,
+            sourceNodeIds: [],
+            name: asset.name,
+            description: asset.description,
+            imagePrompt: asset.imagePrompt,
+            videoPrompt: asset.videoPrompt,
+            negativePrompt: asset.negativePrompt,
+            sourceFingerprint: canonicalJsonHash({
+              kind: 'imported-asset-spec',
+              projectId: input.projectId,
+              chapterId: input.chapterId,
+              stableKey: asset.stableKey,
+            }),
+            status: StoryProductionSpecStatus.current,
+            createdByUserId: input.user.userId,
+            userModifiedAt: now,
+            userModifiedByUserId: input.user.userId,
+            lastPlannedAt: now,
+          },
+        });
+      }
+    }
+    if (clipWrites.length === 0) return;
+    const sequences = await tx.storyStoryboardSequence.findMany({
+      where: {
+        storyProjectId: input.projectId,
+        storyChapterId: input.chapterId,
+        plotNodeId: { in: clipWrites.map((write) => write.plotNodeId) },
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      select: { id: true, plotNodeId: true },
+    });
+    const sequenceByNode = new Map(
+      sequences.map((sequence) => [sequence.plotNodeId, sequence.id]),
+    );
+    for (const write of clipWrites) {
+      const sequenceId = sequenceByNode.get(write.plotNodeId);
+      if (!sequenceId) {
+        throw new InternalServerErrorException({
+          code: 'STORYBOARD_SEQUENCE_MISSING',
+          message: `Plot node ${write.plotNodeId} has no Storyboard sequence after import.`,
+        });
+      }
+      for (const [rank, clip] of write.clips.entries()) {
+        await tx.storyStoryboardClip.create({
+          data: {
+            storyProjectId: input.projectId,
+            storyChapterId: input.chapterId,
+            sequenceId,
+            stableKey: clip.stableKey,
+            title: clip.title,
+            rank,
+            kind: clip.kind as StoryStoryboardClipKind,
+            track: 'visual',
+            startMs: clip.startMs,
+            durationMs: clip.durationMs,
+            description: null,
+            imagePrompt: clip.imagePrompt,
+            videoPrompt: clip.videoPrompt,
+            negativePrompt: clip.negativePrompt,
+            sourceFingerprint: canonicalJsonHash({
+              kind: 'imported-storyboard-clip',
+              projectId: input.projectId,
+              chapterId: input.chapterId,
+              sequenceId,
+              stableKey: clip.stableKey,
+            }),
+            createdByUserId: input.user.userId,
+            userModifiedAt: now,
+            userModifiedByUserId: input.user.userId,
+          },
+        });
+      }
+      await tx.storyStoryboardSequence.update({
+        where: { id: sequenceId },
+        data: {
+          durationMs: write.durationMs,
+          userModifiedAt: now,
+          userModifiedByUserId: input.user.userId,
+          version: { increment: 1 },
+        },
+      });
+    }
   }
 
   async getCanvasLayout(
@@ -2037,6 +2291,18 @@ export class StoryProjectsService {
       completedAt: row.completedAt?.toISOString() ?? null,
     };
   }
+}
+
+function throwPlotImportError(error: unknown): never {
+  if (error instanceof StoryPlotImportError) {
+    throw new BadRequestException({
+      code: 'STORY_PLOT_IMPORT_INVALID',
+      message: `${error.path}: ${error.code}`,
+      path: error.path,
+      importCode: error.code,
+    });
+  }
+  throw error;
 }
 
 function throwDraftNotFound(): never {

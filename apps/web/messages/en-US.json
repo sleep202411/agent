@@ -1969,7 +1969,7 @@
     "joinUs": "Join us",
     "positionsSectionTitle": "{count} open positions",
     "foundedOn": "Founded",
-    "allPositionsTab": "All positions",
+    "allPositionsTab": "All Positions",
     "noOpenPositions": "No open positions right now — check back soon.",
     "filterEmployment": "Type of Employment",
     "filterSeniority": "Seniority Level",
@@ -2039,10 +2039,10 @@
       "applySuccess": "Application submitted",
       "applyFail": "Application failed, please try again"
     },
-    "myTasksTab": "My tasks",
+    "myTasksTab": "My Tasks",
     "myCrewsSignIn": "Sign in to view your crews.",
     "myCrewsEmpty": "You have not founded or joined a crew yet.",
-    "myIncomeTab": "My income"
+    "myIncomeTab": "My Income"
   },
   "crewRoles": {
     "director": "Director",
@@ -9816,6 +9816,7 @@
     "likeNotice": "If this IP has a linked Crew, liking joins its public fan community. Unliking does not leave it."
   },
   "tvGames": {
+    "backToGames": "Back to games",
     "videos": "Videos",
     "games": "Games",
     "catalog": "TV channels",
@@ -9958,5 +9959,12 @@
     "retry": "Retry",
     "more": "Load more",
     "viewIp": "View this game's IP"
+  },
+  "coursePlayerControls": {
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "options": "More options",
+    "speed": "Playback speed",
+    "normal": "Normal (1×)"
   }
 }

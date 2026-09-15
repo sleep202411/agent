@@ -23,7 +23,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MediaTimelineTrack, timelineSecondsToPixels } from "@/components/media-timeline";
 import { toast } from "sonner";
-import { QuickParamChips } from "@/components/canvas/authoring/quick-param-chips";
+import { StoryClipGenerationFields } from "./story-clip-generation-fields";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,12 +47,14 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Link } from "@/i18n/navigation";
 import {
+  defaultMode,
   defaultSettingsForModel,
   schemaFields,
   type FizzAiModel,
   type ModelSettings,
   type SchemaFieldDescriptor,
 } from "@/lib/canvas-authoring/generation-api";
+import { lockedSettingFields } from "@/lib/canvas-authoring/omni-task-modes";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import {
   createStoryProductionIdempotencyKey,
@@ -384,7 +386,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[240px_minmax(0,1fr)_280px] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[240px_minmax(0,1fr)_360px] xl:grid-cols-[260px_minmax(0,1fr)_400px]">
         <TimelineClipSidebar
           clips={timeline.visualTrack.clips}
           selectedClipId={selectedClip?.id ?? null}
@@ -401,24 +403,36 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
             })
           }
         />
-        <section
-          aria-label={t("preview")}
-          className="grid min-h-[260px] min-w-0 place-items-center overflow-hidden bg-black/38 p-5"
-        >
-          <TimelineClipPreview
-            clip={selectedClip}
-            timelineTimeMs={playheadMs}
-            timelinePlaying={isPlaying}
-            onTimeUpdate={(seconds) =>
-              setPlayheadMs(
-                selectedClip
-                  ? selectedClip.startMs + Math.min(selectedClip.durationMs, seconds * 1_000)
-                  : 0
-              )
-            }
+        <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <section
+            aria-label={t("preview")}
+            className="grid min-h-[260px] min-w-0 flex-1 place-items-center overflow-hidden bg-black/38 p-5"
+          >
+            <TimelineClipPreview
+              clip={selectedClip}
+              timelineTimeMs={playheadMs}
+              timelinePlaying={isPlaying}
+              onTimeUpdate={(seconds) =>
+                setPlayheadMs(
+                  selectedClip
+                    ? selectedClip.startMs + Math.min(selectedClip.durationMs, seconds * 1_000)
+                    : 0
+                )
+              }
+            />
+          </section>
+          <TimelineTrack
+            timeline={timeline}
+            selectedClipId={selectedClip?.id ?? null}
+            playheadMs={playheadMs}
+            playing={isPlaying}
+            onSelectClip={selectClip}
+            onSeek={seekTimeline}
+            onTogglePlayback={togglePlayback}
+            onRestart={restartPlayback}
           />
-        </section>
-        <aside className="min-h-0 overflow-y-auto border-t border-white/8 bg-white/[0.025] p-4 md:border-t-0 md:border-l">
+        </div>
+        <aside className="min-h-0 overflow-y-auto border-t border-white/8 bg-white/[0.025] p-5 md:border-t-0 md:border-l">
           <h2 className="text-xs font-semibold tracking-[0.12em] text-white/52 uppercase">
             {t("inspector")}
           </h2>
@@ -438,17 +452,6 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
           )}
         </aside>
       </div>
-
-      <TimelineTrack
-        timeline={timeline}
-        selectedClipId={selectedClip?.id ?? null}
-        playheadMs={playheadMs}
-        playing={isPlaying}
-        onSelectClip={selectClip}
-        onSeek={seekTimeline}
-        onTogglePlayback={togglePlayback}
-        onRestart={restartPlayback}
-      />
     </main>
   );
 }
@@ -1027,6 +1030,12 @@ function TimelineClipInspector({
   const selectedModel =
     generationDefaults.models.find((candidate) => candidate.id === modelId) ??
     generationDefaults.model;
+  const [modeOverride, setModeOverride] = useState<string | null>(null);
+  const modes = selectedModel?.generationModes ?? [];
+  const selectedMode =
+    modeOverride && (modes as readonly string[]).includes(modeOverride)
+      ? modeOverride
+      : defaultMode(selectedModel);
   const [modelSettingsOverride, setModelSettingsOverride] = useState<{
     modelId: string;
     settings: ModelSettings;
@@ -1199,6 +1208,7 @@ function TimelineClipInspector({
           onValueChange={(value) => {
             setKind(value as StoryStoryboardClip["kind"]);
             setModelId(null);
+            setModeOverride(null);
             setModelSettingsOverride(null);
           }}
           disabled={!editable || busy}
@@ -1248,37 +1258,20 @@ function TimelineClipInspector({
           disabled={!editable || busy}
         />
       </Field>
-      <Field dense required label={t("inspectorForm.model")}>
-        <Select
-          value={selectedModel?.id ?? ""}
-          onValueChange={(value) => {
-            setModelId(value);
-            setModelSettingsOverride(null);
-          }}
-          disabled={!allowGeneration || busy || generationDefaults.loading || !selectedModel}
-        >
-          <SelectTrigger className="w-full">
-            <SelectValue
-              placeholder={
-                generationDefaults.loading
-                  ? t("inspectorForm.loadingModels")
-                  : t("inspectorForm.noModels")
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {generationDefaults.models.map((model) => (
-              <SelectItem key={model.id} value={model.id}>
-                {model.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      <QuickParamChips
+      <StoryClipGenerationFields
+        models={generationDefaults.models}
         model={selectedModel}
+        onSelectModel={(model) => {
+          setModelId(model.id);
+          setModeOverride(null);
+          setModelSettingsOverride(null);
+        }}
         settings={modelSettings}
-        onChange={updateModelSettings}
+        onSettingsChange={updateModelSettings}
+        mode={selectedMode}
+        onSelectMode={setModeOverride}
+        disabled={!allowGeneration || busy}
+        loading={generationDefaults.loading}
       />
       <div className="grid grid-cols-2 gap-2">
         <Button
@@ -1332,6 +1325,9 @@ export function storyTimelineDefaultGenerationSettings(
   settings: ModelSettings,
   clipDurationMs: number
 ): ModelSettings {
+  const taskType =
+    typeof settings.omniReferenceTaskType === "string" ? settings.omniReferenceTaskType : undefined;
+  if (lockedSettingFields(taskType).has("duration")) return settings;
   const durationField = schemaFields(model).find(isStoryDurationField);
   if (!durationField) return settings;
   const value = nearestStoryDurationValue(durationField, clipDurationMs / 1_000);

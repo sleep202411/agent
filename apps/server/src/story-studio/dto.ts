@@ -8,6 +8,7 @@ import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
   ReviewChecklistValueSchema,
+  StoryLocaleSchema,
   StoryReferenceReviewDecisionSchema,
   StoryReferenceSlotSpecSchema,
   StoryStableIdSchema,
@@ -378,6 +379,31 @@ export const PutStoryDraftSchema = z
     },
   );
 export type PutStoryDraftInput = z.infer<typeof PutStoryDraftSchema>;
+
+export const ImportStoryPlotSchema = z
+  .object({
+    expectedRevision: NonNegativeVersionSchema,
+    schemaVersion: z.literal(INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION),
+    content: InteractiveStoryDraftContentSchema,
+    sessionId: SessionIdSchema,
+    locale: StoryLocaleSchema,
+    mode: z.enum(['append', 'replace']),
+    plot: z.unknown(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    value.content.graph.nodes.forEach((node, index) => {
+      if (node.kind === 'decision' && node.exit.kind !== 'choice') {
+        context.addIssue({
+          code: 'custom',
+          path: ['content', 'graph', 'nodes', index, 'exit'],
+          message:
+            'An editable decision node must retain its choice definition.',
+        });
+      }
+    });
+  });
+export type ImportStoryPlotInput = z.infer<typeof ImportStoryPlotSchema>;
 
 export const PutStoryCanvasLayoutSchema = z
   .object({

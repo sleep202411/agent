@@ -1,4 +1,5 @@
 "use client";
+import { IpProductionStage } from "@/app/(site)/ips/_components/ip-production-stage";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -56,22 +57,22 @@ export function TvIpList({
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const [collapsed, setCollapsed] = useState(false);
-  const detailsClass = collapsed ? "md:hidden" : undefined;
+  const detailsClass = collapsed ? "lg:hidden" : undefined;
   const toggleClass =
-    "flex size-11 shrink-0 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:size-9";
+    "flex size-11 shrink-0 items-center justify-center rounded-md text-white/45 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white lg:size-9";
 
   return (
     <aside
       aria-label={t("listTitle")}
       className={cn(
-        "relative z-30 order-last min-w-0 w-full shrink-0 md:order-none md:h-full md:w-[72px]",
-        !collapsed && "md:w-[280px]"
+        "relative z-30 order-last min-w-0 w-full shrink-0 lg:order-none lg:h-full lg:w-[72px]",
+        !collapsed && "lg:w-[280px]"
       )}
     >
-      <div className="relative flex w-full flex-col border-t border-white/[0.06] bg-[#0c0e13] md:h-full md:border-r md:border-t-0">
+      <div className="relative flex w-full flex-col border-t border-white/[0.06] bg-[#0c0e13] lg:h-full lg:border-r lg:border-t-0">
         <header
           className={cn(
-            "hidden shrink-0 flex-col gap-2 border-b border-white/[0.06] px-3 py-2 md:flex",
+            "hidden shrink-0 flex-col gap-2 border-b border-white/[0.06] px-3 py-2 lg:flex",
             collapsed && "items-center"
           )}
         >
@@ -147,7 +148,7 @@ export function TvIpList({
         </header>
 
         {/* Mobile search — always visible above the horizontal channel strip. */}
-        <div className="border-b border-white/[0.06] px-3 py-2 md:hidden">
+        <div className="border-b border-white/[0.06] px-3 py-2 lg:hidden">
           <label className="relative block">
             <span className="sr-only">{t("searchLabel")}</span>
             <IconSearch
@@ -179,8 +180,8 @@ export function TvIpList({
           data-lenis-prevent
           aria-label={t("listTitle")}
           className={cn(
-            "flex snap-x snap-proximity gap-2 overflow-x-auto overscroll-x-contain py-3 [scrollbar-width:thin] md:block md:min-h-0 md:flex-1 md:snap-none md:space-y-0.5 md:overflow-x-hidden md:overflow-y-auto md:overscroll-contain",
-            collapsed ? "md:px-2" : "md:px-3"
+            "block max-h-64 space-y-0.5 overflow-x-hidden overflow-y-auto overscroll-contain px-2 py-3 lg:max-h-none [scrollbar-width:thin] lg:block lg:min-h-0 lg:flex-1 lg:snap-none lg:space-y-0.5 lg:overflow-x-hidden lg:overflow-y-auto lg:overscroll-contain",
+            collapsed ? "lg:px-2" : "lg:px-3"
           )}
         >
           {isLoading && (
@@ -228,9 +229,10 @@ export function TvIpList({
                 onClick={() => onSelect(item.id)}
                 aria-current={active ? "true" : undefined}
                 aria-label={label}
+                aria-describedby={`tv-production-stage-${item.id}`}
                 title={label}
                 className={cn(
-                  "flex min-h-[64px] w-44 shrink-0 snap-start items-center justify-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white md:min-h-[52px] md:w-full",
+                  "flex min-h-[64px] w-full shrink-0 items-center justify-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white lg:min-h-[52px] lg:w-full",
                   active ? "bg-white/[0.07] text-white" : "text-white/85 hover:bg-white/5"
                 )}
               >
@@ -248,7 +250,7 @@ export function TvIpList({
                   ) : null}
                 </span>
                 <span className={cn("block min-w-0 flex-1", detailsClass)}>
-                  <span className="block truncate text-sm font-medium leading-5 md:text-[15px]">
+                  <span className="block truncate text-sm font-medium leading-5 lg:text-[15px]">
                     {item.title}
                   </span>
                   <span className="mt-0.5 block truncate text-xs tabular-nums text-white/50">
@@ -266,6 +268,7 @@ export function TvIpList({
                       </span>
                     )}
                     {item.genre && <span className="truncate">{item.genre}</span>}
+                    <IpProductionStage ipId={item.id} compact />
                   </span>
                 </span>
                 {active && item.trailer && (
@@ -292,7 +295,7 @@ export function TvIpList({
               onClick={onLoadMore}
               disabled={isLoadingMore}
               aria-label={isLoadingMore ? t("loading") : t("loadMore")}
-              className="flex min-h-11 w-32 shrink-0 snap-start items-center justify-center gap-2 rounded-md px-2 text-sm text-white/65 hover:bg-white/5 disabled:opacity-50 md:mt-3 md:w-full"
+              className="flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-md px-2 text-sm text-white/65 hover:bg-white/5 disabled:opacity-50 lg:mt-3 lg:w-full"
             >
               <IconChevronDown aria-hidden className="size-4 shrink-0" />
               <span className={detailsClass}>{isLoadingMore ? t("loading") : t("loadMore")}</span>
@@ -307,7 +310,7 @@ export function TvIpList({
 function IpThumbnail({ item }: { item: TvItem }) {
   const [failed, setFailed] = useState(false);
   return (
-    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[#303030] text-white/40 md:size-9">
+    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[#303030] text-white/40 lg:size-9">
       {item.cover && !failed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
