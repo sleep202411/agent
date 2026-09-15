@@ -2939,18 +2939,40 @@ export class BillingService {
     adminId: string,
     input: CreateAdminBillingRefundInput,
   ) {
-    const existing = await this.prisma.billingRefund.findUnique({
-      where: { idempotencyKey: input.idempotencyKey },
-      include: {
-        order: { include: { item: true } },
-        paymentIntent: true,
-      },
+    const admitted = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:refund_intent:${input.idempotencyKey}`})::bigint)`;
+      const existing = await tx.billingRefund.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { order: { include: { item: true } }, paymentIntent: true },
+      });
+      if (existing) {
+        const metadata = isRecord(existing.metadata) ? existing.metadata : {};
+        const fingerprint = metadata.requestFingerprint;
+        if (
+          existing.requestedById !== adminId ||
+          existing.orderId !== input.orderId ||
+          existing.reasonCode !== input.reasonCode ||
+          existing.operatorNote !== (input.operatorNote || null) ||
+          (typeof fingerprint === 'string'
+            ? fingerprint !== refundIntentFingerprint(adminId, input)
+            : (input.amountMinor !== undefined &&
+                existing.amountMinor !== input.amountMinor) ||
+              (input.percentBps !== undefined &&
+                metadata.requestedPercentBps !== input.percentBps))
+        ) {
+          throw new ConflictException({
+            code: 'BILLING_REFUND_INTENT_CONFLICT',
+            msg: 'This refund intent was already used for a different request.',
+          });
+        }
+        return { kind: 'replay' as const, existing };
+      }
+      const prepared = await this.prepareAdminRefundTx(tx, adminId, input);
+      return { kind: 'admitted' as const, prepared };
     });
-    if (existing) return this.adminRefundDto(existing);
-
-    const prepared = await this.prisma.$transaction((tx) =>
-      this.prepareAdminRefundTx(tx, adminId, input),
-    );
+    if (admitted.kind === 'replay')
+      return this.adminRefundDto(admitted.existing);
+    const prepared = admitted.prepared;
 
     const adapter = this.providerRegistry.get(prepared.refund.provider);
     if (!adapter.createRefund) {
@@ -5704,6 +5726,7 @@ export class BillingService {
         operatorNote: input.operatorNote || null,
         requestedById: adminId,
         metadata: {
+          requestFingerprint: refundIntentFingerprint(adminId, input),
           orderNo: order.orderNo,
           activeRefundAmountMinor: activeRefundAmount.toString(),
           calculationMode: quote.policy.calculationMode,
@@ -5994,6 +6017,14 @@ export class BillingService {
     const refund = await tx.billingRefund.findUniqueOrThrow({
       where: { id: refundId },
     });
+    // A delayed acknowledgement cannot reopen a terminal refund.
+    if (
+      refund.status === BillingRefundStatus.succeeded ||
+      refund.status === BillingRefundStatus.failed ||
+      refund.status === BillingRefundStatus.canceled
+    ) {
+      return this.getAdminRefundForTx(tx, refund.id);
+    }
     const providerStatus = result.providerStatus ?? refund.providerStatus;
     await tx.billingRefund.update({
       where: { id: refund.id },
@@ -9293,4 +9324,22 @@ function allowedReturnOrigins(): Set<string> {
   origins.add('https://studio.fizzdragon.com');
   origins.add('https://fizzdragon.fizzspace.cn');
   return origins;
+}
+
+function refundIntentFingerprint(
+  adminId: string,
+  input: CreateAdminBillingRefundInput,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        adminId,
+        input.orderId,
+        input.amountMinor?.toString() ?? null,
+        input.percentBps ?? null,
+        input.reasonCode,
+        input.operatorNote || null,
+      ]),
+    )
+    .digest('hex');
 }
