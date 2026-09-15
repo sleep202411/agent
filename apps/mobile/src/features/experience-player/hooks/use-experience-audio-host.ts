@@ -358,15 +358,19 @@ class ExperienceAudioHost {
   #teardown(playback: ActivePlayback): void {
     this.#cancelRamp(playback, "envelope");
     this.#cancelRamp(playback, "busGain");
-    playback.statusSub?.remove();
-    playback.statusSub = null;
-    try {
-      playback.player.pause();
-      playback.player.remove();
-    } catch {
-      // Player may already be released.
-    }
     this.#active.delete(playback.key);
+    for (const release of [
+      () => playback.statusSub?.remove(),
+      () => playback.player.pause(),
+      () => playback.player.remove(),
+    ]) {
+      try {
+        release();
+      } catch {
+        // A detached subscription/player must not prevent the other releases.
+      }
+    }
+    playback.statusSub = null;
   }
 
   #setBusGain(busId: string, gain: number, durationMs: number): void {

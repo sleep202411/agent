@@ -48,6 +48,7 @@ let clock: number;
 const fetchMock = vi.fn();
 const onError = vi.fn();
 const decode = vi.fn();
+const closeAudio = vi.fn();
 function Harness({ definition = manifest }: { definition?: ExperienceRuntimeManifest }) {
   const value = useExperienceAudioHost(definition, "en-US", onError);
   useLayoutEffect(() => {
@@ -58,6 +59,7 @@ function Harness({ definition = manifest }: { definition?: ExperienceRuntimeMani
 beforeEach(async () => {
   vi.clearAllMocks();
   decode.mockReset().mockResolvedValue({});
+  closeAudio.mockReset().mockResolvedValue(undefined);
   sources = [];
   clock = 0;
   fetchMock
@@ -77,7 +79,7 @@ beforeEach(async () => {
       }
       resume = vi.fn(() => Promise.resolve());
       suspend = vi.fn(() => Promise.resolve());
-      close = vi.fn(() => Promise.resolve());
+      close = closeAudio;
       decodeAudioData = decode;
       createGain() {
         return {
@@ -225,4 +227,29 @@ it("does not decode after a delayed integrity check outlives the host", async ()
   });
   expect(decode).not.toHaveBeenCalled();
   expect(onError).not.toHaveBeenCalled();
+});
+
+it("releases the other sources and context after one node disconnect throws", async () => {
+  await play(1);
+  await play(2);
+  sources[0]!.disconnect.mockImplementationOnce(() => {
+    throw new Error("already detached");
+  });
+  await act(async () => {
+    root.unmount();
+  });
+  expect(sources[1]!.stop).toHaveBeenCalledTimes(1);
+  expect(sources[1]!.disconnect).toHaveBeenCalledTimes(1);
+  expect(closeAudio).toHaveBeenCalledTimes(1);
+});
+
+it("finishes a cue even if its source was already disconnected", async () => {
+  await play(1);
+  sources[0]!.disconnect.mockImplementationOnce(() => {
+    throw new Error("already detached");
+  });
+  const ended = sources[0]!.onended as unknown as () => void;
+  expect(() => ended()).not.toThrow();
+  await play(2);
+  expect(sources[0]!.stop).not.toHaveBeenCalled();
 });

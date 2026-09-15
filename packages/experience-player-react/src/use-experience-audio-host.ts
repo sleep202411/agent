@@ -108,8 +108,8 @@ class ExperienceAudioHost {
       } catch {
         // The source may already have ended; cleanup below remains identical.
       }
-      playback.source.disconnect();
-      playback.gain.disconnect();
+      disconnectAudioNode(playback.source);
+      disconnectAudioNode(playback.gain);
     });
     this.#active.clear();
     await this.#context.close();
@@ -249,8 +249,8 @@ class ExperienceAudioHost {
   #finishPlayback(key: string): void {
     const playback = this.#active.get(key);
     if (!playback) return;
-    playback.source.disconnect();
-    playback.gain.disconnect();
+    disconnectAudioNode(playback.source);
+    disconnectAudioNode(playback.gain);
     this.#active.delete(key);
     this.#refreshDucking();
   }
@@ -343,4 +343,12 @@ async function sha256(value: ArrayBuffer): Promise<string> {
 function runtimeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Unknown audio runtime error";
+}
+
+function disconnectAudioNode(node: Pick<AudioNode, "disconnect">): void {
+  try {
+    node.disconnect();
+  } catch {
+    // The node may already be detached; remaining nodes still need cleanup.
+  }
 }

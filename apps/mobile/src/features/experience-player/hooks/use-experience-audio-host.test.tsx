@@ -233,3 +233,34 @@ it("retains reject-new admission without downloading another cue", async () => {
   expect(players).toHaveLength(1);
   expect(native.ensureAudioCached).toHaveBeenCalledTimes(1);
 });
+
+it("still releases a native player when pausing it during cleanup throws", async () => {
+  const players = await concurrencyFixture();
+  await act(async () => {
+    play(1);
+  });
+  players[0]!.pause.mockImplementationOnce(() => {
+    throw new Error("already detached");
+  });
+  await act(async () => {
+    root.unmount();
+  });
+  expect(players[0]!.remove).toHaveBeenCalledTimes(1);
+  expect(native.setIsAudioActiveAsync).toHaveBeenLastCalledWith(false);
+});
+it("continues native cleanup after a status subscription is already detached", async () => {
+  const players = await concurrencyFixture();
+  await act(async () => {
+    play(1);
+  });
+  const subscription = players[0]!.addListener.mock.results[0]!.value;
+  subscription.remove.mockImplementationOnce(() => {
+    throw new Error("already detached");
+  });
+  await act(async () => {
+    root.unmount();
+  });
+  expect(players[0]!.pause).toHaveBeenCalledTimes(1);
+  expect(players[0]!.remove).toHaveBeenCalledTimes(1);
+  expect(native.setIsAudioActiveAsync).toHaveBeenLastCalledWith(false);
+});
