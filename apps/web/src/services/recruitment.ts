@@ -16,11 +16,18 @@ export interface JobApplicant {
 }
 
 /** 招募申请人列表 */
-export const getRecruitmentList = (params: { page?: number; pageSize?: number } = {}) =>
-  api.postForm<JobApplicant[]>("/project/job/applicant", {
-    page: String(params.page ?? 1),
-    pageSize: String(params.pageSize ?? 50),
-  });
+export const getRecruitmentList = (
+  params: { page?: number; pageSize?: number } = {},
+  signal?: AbortSignal
+) =>
+  api.postForm<JobApplicant[]>(
+    "/project/job/applicant",
+    {
+      page: String(params.page ?? 1),
+      pageSize: String(params.pageSize ?? 50),
+    },
+    { signal }
+  );
 
 /** 同意招募申请 — backend renamed to crew-scoped path. */
 export const agreeJobApply = (applyId: string) =>

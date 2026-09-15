@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getNeedAuth, certifyInit, certifyQuery, type KycAuthStatus } from "@/src/services/kyc";
-import { userKeys } from "@/src/hooks/use-user";
+import { userKeys, useCurrentUser } from "@/src/hooks/use-user";
 
 export const kycKeys = {
   authStatus: ["kyc", "auth-status"] as const,
@@ -11,11 +11,12 @@ export const kycKeys = {
  * 5-minute stale time — the status rarely changes during a session.
  */
 export function useKycAuthStatus(options: { enabled?: boolean } = {}) {
+  const { user } = useCurrentUser();
   return useQuery<KycAuthStatus>({
-    queryKey: kycKeys.authStatus,
-    queryFn: getNeedAuth,
+    queryKey: [...kycKeys.authStatus, user?.id ?? null],
+    queryFn: ({ signal }) => getNeedAuth(signal),
     staleTime: 5 * 60 * 1000,
-    enabled: options.enabled ?? true,
+    enabled: Boolean(user?.id) && (options.enabled ?? true),
   });
 }
 
@@ -30,12 +31,17 @@ export function useCertifyInit() {
  * dialogs re-read fresh state.
  */
 export function useCertifyQuery() {
+  const { user } = useCurrentUser();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: certifyQuery,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: kycKeys.authStatus });
-      qc.invalidateQueries({ queryKey: userKeys.info });
+    onMutate: () => ({ accountId: user?.id ?? null }),
+    onSuccess: (_data, _variables, context) => {
+      void qc.invalidateQueries({ queryKey: [...kycKeys.authStatus, context?.accountId ?? null] });
+      const current = qc.getQueryData<{ id?: string | number }>(userKeys.info);
+      if (context?.accountId && current?.id != null && String(current.id) === context.accountId) {
+        void qc.invalidateQueries({ queryKey: userKeys.info });
+      }
     },
   });
 }
