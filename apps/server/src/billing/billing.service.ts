@@ -4139,23 +4139,55 @@ export class BillingService {
         });
       }
       await adapter.cancelSubscription({
-        requestId: randomUUID(),
+        requestId: subscription.id,
         providerSubscriptionId: subscription.providerSubscriptionId,
         prorationBehavior: 'NONE',
       });
     }
 
-    const now = new Date();
-    const updated = await this.prisma.billingSubscription.update({
-      where: { id: subscription.id },
-      data: {
-        status: BillingSubscriptionStatus.canceled,
-        cancelAtPeriodEnd: true,
-        canceledAt: now,
-        endedAt: subscription.currentPeriodEnd ?? now,
-        version: { increment: 1 },
-      },
-      include: { price: { include: { item: true } } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_subscriptions WHERE id=${subscription.id}::uuid FOR UPDATE`;
+      const current = await tx.billingSubscription.findUnique({
+        where: { id: subscription.id },
+        include: { price: { include: { item: true } } },
+      });
+      if (!current) {
+        throw new NotFoundException({
+          code: 'BILLING_SUBSCRIPTION_NOT_FOUND',
+          msg: 'Subscription not found.',
+        });
+      }
+      if (
+        current.provider !== subscription.provider ||
+        current.providerSubscriptionId !==
+          subscription.providerSubscriptionId ||
+        current.subjectType !== subscription.subjectType ||
+        current.subjectId !== subscription.subjectId
+      ) {
+        throw new ConflictException({
+          code: 'BILLING_SUBSCRIPTION_CHANGED',
+          msg: 'Subscription changed during cancellation. Refresh and try again.',
+        });
+      }
+      // Preserve a webhook or another cancellation completed during the provider
+      // wait. For an active subscription, retain the latest paid period.
+      if (
+        current.status === BillingSubscriptionStatus.canceled ||
+        current.status === BillingSubscriptionStatus.expired
+      )
+        return current;
+      const now = new Date();
+      return tx.billingSubscription.update({
+        where: { id: current.id },
+        data: {
+          status: BillingSubscriptionStatus.canceled,
+          cancelAtPeriodEnd: true,
+          canceledAt: now,
+          endedAt: current.currentPeriodEnd ?? now,
+          version: { increment: 1 },
+        },
+        include: { price: { include: { item: true } } },
+      });
     });
     return this.subscriptionDto(updated);
   }
