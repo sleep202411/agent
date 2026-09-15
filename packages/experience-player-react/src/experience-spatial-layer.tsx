@@ -468,15 +468,18 @@ function SwipeControl({
     [onEvents, presentation.gesture.gestureId]
   );
 
-  const cancelPointer = useCallback(() => {
-    const pointer = pointerRef.current;
-    if (!pointer) return;
-    pointerRef.current = null;
-    emit("gesture.cancelled", {
-      reason: "pointer-cancelled",
-      durationMs: Math.max(0, Math.round(performance.now() - pointer.startedAt)),
-    });
-  }, [emit]);
+  const cancelPointer = useCallback(
+    (event: PointerEvent<HTMLButtonElement>) => {
+      const pointer = pointerRef.current;
+      if (!pointer || pointer.pointerId !== event.pointerId) return;
+      pointerRef.current = null;
+      emit("gesture.cancelled", {
+        reason: "pointer-cancelled",
+        durationMs: Math.max(0, Math.round(performance.now() - pointer.startedAt)),
+      });
+    },
+    [emit]
+  );
 
   const completePointer = (event: PointerEvent<HTMLButtonElement>) => {
     const pointer = pointerRef.current;
@@ -532,7 +535,7 @@ function SwipeControl({
       aria-label={presentation.description ?? presentation.label}
       aria-disabled={!presentation.available}
       onPointerDown={(event) => {
-        if (event.button !== 0 || !presentation.available) return;
+        if (event.button !== 0 || !presentation.available || pointerRef.current) return;
         event.preventDefault();
         pointerRef.current = {
           pointerId: event.pointerId,
