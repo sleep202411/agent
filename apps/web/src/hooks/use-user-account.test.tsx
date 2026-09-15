@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { useCredits, useRefreshCredits, userKeys } from "./use-user";
+
+const TEST_LOCALE = "en-US";
 const api = vi.hoisted(() => ({ credits: vi.fn() }));
 vi.mock("@/src/services/user", () => ({
   getUserInfo: vi.fn(),
@@ -11,6 +13,9 @@ vi.mock("@/src/services/user", () => ({
   uploadAvatar: vi.fn(),
   uploadBanner: vi.fn(),
   getRecommendationCode: vi.fn(),
+}));
+vi.mock("@/src/i18n/i18n", () => ({
+  useLocale: () => "en-US",
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
@@ -22,13 +27,13 @@ async function settle() {
 }
 async function account(id: string | null) {
   await act(async () => {
-    client.setQueryData(userKeys.info, id ? { id } : null);
+    client.setQueryData(userKeys.infoOf(TEST_LOCALE), id ? { id } : null);
   });
   await settle();
 }
 async function mount(id: string | null = "alice") {
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
-  client.setQueryData(userKeys.info, id ? { id } : null);
+  client.setQueryData(userKeys.infoOf(TEST_LOCALE), id ? { id } : null);
   root = createRoot(document.createElement("div"));
   let current!: {
     credits: ReturnType<typeof useCredits>;

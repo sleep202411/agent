@@ -43,7 +43,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { useUploadAvatar } from "@/src/hooks/use-user";
-import { creatorKeys, type Creator } from "@/app/(site)/creators/_hooks/use-creator";
+import { type Creator } from "@/app/(site)/creators/_hooks/use-creator";
 
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -277,7 +277,9 @@ function HeroAvatarUploader({ creator, name }: { creator: Creator; name: string 
       // reads from useCreatorDetail(creatorId), which is a separate
       // cache entry. Without this the avatar shown here stays stale
       // until next route load / page refresh.
-      await queryClient.invalidateQueries({ queryKey: creatorKeys.detail(creator.id) });
+      await queryClient.invalidateQueries({
+        queryKey: ["creator", "detail", creator.id],
+      });
       toast.success(tp("avatarUpdated"));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";

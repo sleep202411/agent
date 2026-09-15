@@ -1,3 +1,5 @@
+"use client";
+
 import { useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,23 +9,19 @@ import {
   uploadBanner,
   getCredits,
   getRecommendationCode,
-  type UserInfo,
   type UserInfoResolved,
 } from "@/src/services/user";
+import { useLocale } from "@/src/i18n/i18n";
+import { userKeys } from "@/src/hooks/user-keys";
 
-// ─── Query Keys ───────────────────────────────────────
-
-export const userKeys = {
-  info: ["user", "info"] as const,
-  credits: ["user", "credits"] as const,
-  accountCredits: (accountId: string | null) => ["user", "credits", accountId] as const,
-};
+export { userKeys };
 
 // ─── User Info ────────────────────────────────────────
 
 export function useUserInfo() {
+  const locale = useLocale();
   return useQuery<UserInfoResolved>({
-    queryKey: userKeys.info,
+    queryKey: userKeys.infoOf(locale),
     queryFn: getUserInfo,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
