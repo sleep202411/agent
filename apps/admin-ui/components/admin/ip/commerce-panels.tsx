@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
+import { useOrderRevenueBreakdown } from "./use-order-revenue-breakdown";
 import { IconKey, IconRefresh, IconShoppingBag, IconUserPlus } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -31,14 +33,12 @@ import {
 } from "./shared";
 import type {
   AdminIpEntitlementsData,
-  AdminOrderRevenueBreakdownData,
   AdminIpOrdersData,
   AdminIpsData,
   IpEntitlementRow,
   IpPurchaseOrderRow,
 } from "./types";
 import { emptyIpEntitlements, emptyIpOrders, emptyIps } from "./types";
-import { fetchAdminOrderRevenueBreakdown } from "@/lib/admin-ip-commerce-client";
 import { OrderRevenueBreakdownDialog } from "./order-revenue-breakdown";
 
 const LOCALE_ALL = "__all__";
@@ -57,26 +57,18 @@ export function IpOrdersPanel({
   const [orders, setOrders] = useState(initialOrders ?? emptyIpOrders);
   const [query, setQuery] = useState("");
   const [locale, setLocale] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const loadingMore = loading;
   const [error, setError] = useState<string | null>(initialError);
-  const [breakdown, setBreakdown] = useState<AdminOrderRevenueBreakdownData | null>(null);
-  const [breakdownLoading, setBreakdownLoading] = useState(false);
-  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+  const {
+    data: breakdown,
+    loading: breakdownLoading,
+    error: breakdownError,
+    open: openBreakdown,
+    close: closeBreakdown,
+  } = useOrderRevenueBreakdown();
 
-  async function openBreakdown(orderId: string) {
-    setBreakdownLoading(true);
-    setBreakdownError(null);
-    setBreakdown(null);
-    try {
-      setBreakdown(await fetchAdminOrderRevenueBreakdown(orderId));
-    } catch (err) {
-      setBreakdownError(toErrorMessage(err));
-    } finally {
-      setBreakdownLoading(false);
-    }
-  }
-
+  const [loadedParams, setLoadedParams] = useState("limit=30");
   function orderParams(extra?: Record<string, string>) {
     const params = new URLSearchParams({ limit: "30" });
     if (query.trim()) params.set("q", query.trim());
@@ -88,37 +80,50 @@ export function IpOrdersPanel({
   }
 
   async function refreshOrders() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
+    const params = orderParams().toString();
     setError(null);
     try {
-      setOrders(
-        await requestEnvelope<AdminIpOrdersData>(
-          `/api/admin/ip-commerce/orders?${orderParams().toString()}`
-        )
+      const result = await requestEnvelope<AdminIpOrdersData>(
+        `/api/admin/ip-commerce/orders?${params}`,
+        { signal: operation.signal }
       );
+      if (operation.current()) {
+        setOrders(result);
+        setLoadedParams(params);
+      }
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
-
   async function loadMoreOrders() {
-    if (!orders.nextCursor || loadingMore) return;
-    setLoadingMore(true);
+    if (!orders.nextCursor) return;
+    if (orderParams().toString() !== loadedParams) {
+      await refreshOrders();
+      return;
+    }
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
+    const params = new URLSearchParams(loadedParams);
+    params.set("cursor", orders.nextCursor);
     try {
       const next = await requestEnvelope<AdminIpOrdersData>(
-        `/api/admin/ip-commerce/orders?${orderParams({ cursor: orders.nextCursor }).toString()}`
+        `/api/admin/ip-commerce/orders?${params}`,
+        { signal: operation.signal }
       );
-      setOrders((current) => ({
-        items: [...current.items, ...next.items],
-        nextCursor: next.nextCursor,
-      }));
+      if (operation.current())
+        setOrders((current) => ({
+          items: [...current.items, ...next.items],
+          nextCursor: next.nextCursor,
+        }));
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoadingMore(false);
+      operation.finish();
     }
   }
 
@@ -220,9 +225,7 @@ export function IpOrdersPanel({
         ),
       },
     ],
-    // openBreakdown is a render-stable closure used only in an onClick; rebuild
-    // only when the disabled state flips (matches the other action tables).
-    [breakdownLoading]
+    [breakdownLoading, openBreakdown]
   );
 
   return (
@@ -300,10 +303,7 @@ export function IpOrdersPanel({
         breakdown={breakdown}
         loading={breakdownLoading}
         error={breakdownError}
-        onClose={() => {
-          setBreakdown(null);
-          setBreakdownError(null);
-        }}
+        onClose={closeBreakdown}
       />
     </div>
   );
@@ -326,8 +326,9 @@ export function IpEntitlementsPanel({
   const [ipList] = useState(ips ?? emptyIps);
   const [query, setQuery] = useState("");
   const [locale, setLocale] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const loadingMore = loading;
+  const [loadedParams, setLoadedParams] = useState("limit=30");
   const [error, setError] = useState<string | null>(initialError);
   const [userId, setUserId] = useState("");
   const [ipId, setIpId] = useState("");
@@ -352,48 +353,61 @@ export function IpEntitlementsPanel({
     return params;
   }
 
+  const readEntitlements = (params: string, signal: AbortSignal) =>
+    requestEnvelope<AdminIpEntitlementsData>(`/api/admin/ip-commerce/entitlements?${params}`, {
+      signal,
+    });
   async function refreshEntitlements() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
+    const params = entitlementParams().toString();
     try {
-      setEntitlements(
-        await requestEnvelope<AdminIpEntitlementsData>(
-          `/api/admin/ip-commerce/entitlements?${entitlementParams().toString()}`
-        )
-      );
+      const next = await readEntitlements(params, operation.signal);
+      if (operation.current()) {
+        setEntitlements(next);
+        setLoadedParams(params);
+      }
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
-
   async function loadMoreEntitlements() {
-    if (!entitlements.nextCursor || loadingMore) return;
-    setLoadingMore(true);
+    if (!entitlements.nextCursor) return;
+    if (entitlementParams().toString() !== loadedParams) {
+      await refreshEntitlements();
+      return;
+    }
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
+    const params = new URLSearchParams(loadedParams);
+    params.set("cursor", entitlements.nextCursor);
     try {
-      const next = await requestEnvelope<AdminIpEntitlementsData>(
-        `/api/admin/ip-commerce/entitlements?${entitlementParams({ cursor: entitlements.nextCursor }).toString()}`
-      );
-      setEntitlements((current) => ({
-        items: [...current.items, ...next.items],
-        nextCursor: next.nextCursor,
-      }));
+      const next = await readEntitlements(params.toString(), operation.signal);
+      if (operation.current())
+        setEntitlements((current) => ({
+          items: [...current.items, ...next.items],
+          nextCursor: next.nextCursor,
+        }));
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoadingMore(false);
+      operation.finish();
     }
   }
 
   async function grantEntitlement() {
     if (!canGrant) return;
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
       await requestEnvelope<unknown>("/api/admin/ip-commerce/entitlements/grants", {
         method: "POST",
+        signal: operation.signal,
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           userId: userId.trim(),
@@ -403,110 +417,121 @@ export function IpEntitlementsPanel({
           reason: reason.trim(),
         }),
       });
-      await refreshEntitlements();
+      if (!operation.current()) return;
+      const params = entitlementParams().toString();
+      const next = await readEntitlements(params, operation.signal);
+      if (operation.current()) {
+        setEntitlements(next);
+        setLoadedParams(params);
+      }
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function revokeEntitlement(entitlementId: string) {
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
       await requestEnvelope<unknown>(
         `/api/admin/ip-commerce/entitlements/${encodeURIComponent(entitlementId)}/revoke`,
         {
           method: "PATCH",
+          signal: operation.signal,
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ reason: "运营手动撤销 IP 权益。" }),
         }
       );
-      await refreshEntitlements();
+      if (!operation.current()) return;
+      const params = entitlementParams().toString();
+      const next = await readEntitlements(params, operation.signal);
+      if (operation.current()) {
+        setEntitlements(next);
+        setLoadedParams(params);
+      }
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) {
+        setError(toErrorMessage(err));
+        throw err;
+      }
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
-  const columns = useMemo<ColumnDef<IpEntitlementRow, unknown>[]>(
-    () => [
-      {
-        id: "content",
-        header: "内容",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const entitlement = row.original;
-          return (
-            <>
-              <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
-                {entitlement.episode?.title ?? entitlement.ip?.title ?? entitlement.ipId}
-              </p>
-              <p className="mt-0.5 max-w-[260px] truncate text-[11px] text-slate-500">
-                {entitlement.userId} · {targetTypeLabel(entitlement.targetType)} ·{" "}
-                {entitlement.sourceOrderNo ?? sourceTypeLabel(entitlement.sourceType)}
-              </p>
-            </>
-          );
-        },
-      },
-      {
-        accessorKey: "startsAt",
-        header: "有效期",
-        cell: ({ row }) => {
-          const entitlement = row.original;
-          return (
-            <p className="text-[12px] text-slate-700">
-              {formatDate(entitlement.startsAt)}
-              {entitlement.endsAt ? ` - ${formatDate(entitlement.endsAt)}` : " - 长期"}
+  const columns: ColumnDef<IpEntitlementRow, unknown>[] = [
+    {
+      id: "content",
+      header: "内容",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const entitlement = row.original;
+        return (
+          <>
+            <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
+              {entitlement.episode?.title ?? entitlement.ip?.title ?? entitlement.ipId}
             </p>
-          );
-        },
+            <p className="mt-0.5 max-w-[260px] truncate text-[11px] text-slate-500">
+              {entitlement.userId} · {targetTypeLabel(entitlement.targetType)} ·{" "}
+              {entitlement.sourceOrderNo ?? sourceTypeLabel(entitlement.sourceType)}
+            </p>
+          </>
+        );
       },
-      {
-        accessorKey: "status",
-        header: "状态",
-        cell: ({ row }) => {
-          const entitlement = row.original;
-          return (
-            <StatusPill tone={entitlement.status === "active" ? "success" : "muted"}>
-              {entitlementStatusLabel(entitlement.status)}
-            </StatusPill>
-          );
-        },
+    },
+    {
+      accessorKey: "startsAt",
+      header: "有效期",
+      cell: ({ row }) => {
+        const entitlement = row.original;
+        return (
+          <p className="text-[12px] text-slate-700">
+            {formatDate(entitlement.startsAt)}
+            {entitlement.endsAt ? ` - ${formatDate(entitlement.endsAt)}` : " - 长期"}
+          </p>
+        );
       },
-      {
-        id: "actions",
-        header: "操作",
-        enableSorting: false,
-        meta: { pin: "right" },
-        cell: ({ row }) => {
-          const entitlement = row.original;
-          if (entitlement.status !== "active") return null;
-          return (
-            <ConfirmDialog
-              destructive
-              title="确认吊销该权益？"
-              description="吊销后该用户将失去对应内容的访问权限。"
-              confirmLabel="确认吊销"
-              onConfirm={() => revokeEntitlement(entitlement.id)}
-              trigger={
-                <Button variant="destructive" size="sm">
-                  吊销
-                </Button>
-              }
-            />
-          );
-        },
+    },
+    {
+      accessorKey: "status",
+      header: "状态",
+      cell: ({ row }) => {
+        const entitlement = row.original;
+        return (
+          <StatusPill tone={entitlement.status === "active" ? "success" : "muted"}>
+            {entitlementStatusLabel(entitlement.status)}
+          </StatusPill>
+        );
       },
-    ],
-    // revokeEntitlement is a render-stable closure used only in an onConfirm; the
-    // column defs never need to rebuild for it (matches the other action tables).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
+    },
+    {
+      id: "actions",
+      header: "操作",
+      enableSorting: false,
+      meta: { pin: "right" },
+      cell: ({ row }) => {
+        const entitlement = row.original;
+        if (entitlement.status !== "active") return null;
+        return (
+          <ConfirmDialog
+            destructive
+            title="确认吊销该权益？"
+            description="吊销后该用户将失去对应内容的访问权限。"
+            confirmLabel="确认吊销"
+            onConfirm={() => revokeEntitlement(entitlement.id)}
+            trigger={
+              <Button variant="destructive" size="sm" disabled={loading}>
+                吊销
+              </Button>
+            }
+          />
+        );
+      },
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -589,7 +614,7 @@ export function IpEntitlementsPanel({
           <p className="mt-1 text-[12px] leading-5 text-slate-500">
             用于客服补偿、人工恢复和运营白名单。补发原因必须可审计。
           </p>
-          <div className="mt-3 grid gap-2">
+          <div inert={loading} className="mt-3 grid gap-2">
             <div className="grid gap-1">
               <Label htmlFor="grant-user-id" className="text-[12px] text-slate-600">
                 用户 ID
