@@ -1,3 +1,5 @@
+import { AdminAuditService } from '../admin-auth/admin-audit.service';
+import { ListAdminAuditQuerySchema } from '../admin-auth/admin-audit.dto';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -86,6 +88,7 @@ integration('Grant eligibility transaction recovery', () => {
     });
   });
   afterEach(async () => {
+    await db.adminAuditLog.deleteMany({ where: { resourceId: workspaceId } });
     await db.aiEventOutbox.deleteMany({
       where: { channel: entitlementWorkspaceChannel(workspaceId) },
     });
@@ -99,6 +102,54 @@ integration('Grant eligibility transaction recovery', () => {
   });
   afterAll(async () => {
     await db?.$disconnect();
+  });
+
+  it('keeps tied audit records stable across filtered pages', async () => {
+    const ids = Array.from({ length: 7 }, () => randomUUID());
+    const at = new Date('2026-01-01');
+    await db.adminAuditLog.createMany({
+      data: ids.map((id) => ({
+        id,
+        action: 'fixture.list',
+        resourceType: 'fixture',
+        resourceId: workspaceId,
+        createdAt: at,
+      })),
+    });
+    const audit = new AdminAuditService(db as PrismaService);
+    const found: string[] = [];
+    for (let page = 1; page <= 4; page++) {
+      const result = await audit.list(
+        ListAdminAuditQuerySchema.parse({ q: workspaceId, page, pageSize: 2 }),
+      );
+      expect(result.total).toBe(ids.length);
+      found.push(...result.items.map((item) => item.id));
+    }
+    expect(found).toEqual([...ids].sort().reverse());
+  });
+
+  it('uses stable membership grant ordering at the existing fifty-record limit', async () => {
+    const ids = Array.from({ length: 53 }, () => randomUUID());
+    const at = new Date('2026-01-01');
+    await db.entitlementGrant.createMany({
+      data: ids.map((id) => ({
+        id,
+        subjectType: 'workspace',
+        subjectId: workspaceId,
+        planKey,
+        sourceType: 'fixture',
+        sourceId: id,
+        startsAt: at,
+        createdAt: at,
+      })),
+    });
+    const result = await memberships().listForSubject({
+      subjectType: 'workspace',
+      subjectId: workspaceId,
+    });
+    expect(result.map((item) => item.id)).toEqual(
+      [...ids].sort().reverse().slice(0, 50),
+    );
   });
 
   it('preserves deliberate repeated membership grants as distinct stacked sources', async () => {

@@ -98,7 +98,7 @@ export class MembershipGrantAdminService {
         subjectType: input.subjectType,
         subjectId: input.subjectId,
       },
-      orderBy: [{ createdAt: 'desc' }],
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 50,
     });
     return grants.map((grant) => toView(grant, now));
