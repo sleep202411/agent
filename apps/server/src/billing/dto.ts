@@ -328,6 +328,8 @@ export const ListAdminComputeMemberUsageQuerySchema = z.object({
    */
   workspaceKind: z.enum(['personal', 'shared', 'all']).default('all'),
   workspaceId: z.string().uuid().optional(),
+  /** Substring match against workspace name. */
+  workspaceQuery: z.string().trim().min(1).max(160).optional(),
   /** Raw or encoded Java client user id. */
   userId: z.string().trim().min(1).max(64).optional(),
   /**
