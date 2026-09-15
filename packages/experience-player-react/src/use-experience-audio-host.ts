@@ -63,6 +63,7 @@ class ExperienceAudioHost {
   readonly #active = new Map<string, ActivePlayback>();
   #queue: Promise<void> = Promise.resolve();
   #disposed = false;
+  readonly #downloads = new AbortController();
 
   constructor(
     manifest: ExperienceRuntimeManifest,
@@ -98,6 +99,8 @@ class ExperienceAudioHost {
 
   async dispose(): Promise<void> {
     this.#disposed = true;
+    this.#downloads.abort();
+    this.#buffers.clear();
     this.#active.forEach((playback) => {
       playback.source.onended = null;
       try {
@@ -296,25 +299,33 @@ class ExperienceAudioHost {
   }
 
   async #loadBuffer(uri: string, expectedSha256: string): Promise<AudioBuffer> {
-    const existing = this.#buffers.get(uri);
+    const key = JSON.stringify([uri, expectedSha256]);
+    const existing = this.#buffers.get(key);
     if (existing) return existing;
     const pending = (async () => {
-      const response = await fetch(uri, { cache: "force-cache" });
+      const response = await fetch(uri, { cache: "force-cache", signal: this.#downloads.signal });
+      this.#assertActive();
       if (!response.ok)
         throw new Error(`Audio asset could not be loaded (HTTP ${response.status})`);
       const bytes = await response.arrayBuffer();
+      this.#assertActive();
       const digest = await sha256(bytes);
+      this.#assertActive();
       if (digest !== expectedSha256)
         throw new Error(`Audio asset ${uri} failed integrity validation`);
       return this.#context.decodeAudioData(bytes.slice(0));
     })();
-    this.#buffers.set(uri, pending);
+    this.#buffers.set(key, pending);
     try {
       return await pending;
     } catch (error) {
-      this.#buffers.delete(uri);
+      this.#buffers.delete(key);
       throw error;
     }
+  }
+
+  #assertActive(): void {
+    if (this.#disposed) throw new Error("Audio host disposed");
   }
 
   #requireBus(busId: string): GainNode {

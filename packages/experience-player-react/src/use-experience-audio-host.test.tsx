@@ -47,8 +47,9 @@ let sources: ReturnType<typeof sourceFixture>[];
 let clock: number;
 const fetchMock = vi.fn();
 const onError = vi.fn();
-function Harness() {
-  const value = useExperienceAudioHost(manifest, "en-US", onError);
+const decode = vi.fn();
+function Harness({ definition = manifest }: { definition?: ExperienceRuntimeManifest }) {
+  const value = useExperienceAudioHost(definition, "en-US", onError);
   useLayoutEffect(() => {
     latest = value;
   });
@@ -56,6 +57,7 @@ function Harness() {
 }
 beforeEach(async () => {
   vi.clearAllMocks();
+  decode.mockReset().mockResolvedValue({});
   sources = [];
   clock = 0;
   fetchMock
@@ -76,7 +78,7 @@ beforeEach(async () => {
       resume = vi.fn(() => Promise.resolve());
       suspend = vi.fn(() => Promise.resolve());
       close = vi.fn(() => Promise.resolve());
-      decodeAudioData = vi.fn(() => Promise.resolve({}));
+      decodeAudioData = decode;
       createGain() {
         return {
           connect: vi.fn(),
@@ -151,4 +153,76 @@ it("ignores a late fetch failure after the host is disposed", async () => {
   });
   expect(onError).not.toHaveBeenCalled();
   expect(sources).toHaveLength(0);
+});
+
+it("verifies a different digest even when another asset uses the same URI", async () => {
+  const definition = {
+    ...manifest,
+    assets: manifest.assets.map((asset, index) => ({
+      ...asset,
+      variants: [{ locale: "en-US", uri: "shared.mp3", sha256: String(index).repeat(64) }],
+    })),
+  } as ExperienceRuntimeManifest;
+  await act(async () => {
+    root.render(<Harness definition={definition} />);
+  });
+  await play(1);
+  await play(2, "replacement");
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(onError).toHaveBeenCalledWith(expect.stringContaining("integrity validation"));
+  expect(sources).toHaveLength(1);
+});
+it("aborts outstanding audio fetches when leaving the player", async () => {
+  fetchMock.mockImplementationOnce(
+    (_uri: string, options: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        options.signal?.addEventListener("abort", () => reject(new Error("aborted")), {
+          once: true,
+        });
+      })
+  );
+  await play(1);
+  const signal = fetchMock.mock.calls[0]![1]?.signal as AbortSignal | undefined;
+  await act(async () => {
+    root.unmount();
+  });
+  expect(signal?.aborted).toBe(true);
+  expect(onError).not.toHaveBeenCalled();
+});
+it("does not hash or decode a delayed response body after disposal", async () => {
+  let finish!: (bytes: ArrayBuffer) => void;
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    arrayBuffer: () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        finish = resolve;
+      }),
+  });
+  await play(1);
+  await act(async () => {
+    root.unmount();
+  });
+  await act(async () => {
+    finish(new ArrayBuffer(1));
+  });
+  expect(crypto.subtle.digest).not.toHaveBeenCalled();
+  expect(decode).not.toHaveBeenCalled();
+});
+it("does not decode after a delayed integrity check outlives the host", async () => {
+  let finish!: (bytes: ArrayBuffer) => void;
+  vi.mocked(crypto.subtle.digest).mockImplementationOnce(
+    () =>
+      new Promise<ArrayBuffer>((resolve) => {
+        finish = resolve;
+      })
+  );
+  await play(1);
+  await act(async () => {
+    root.unmount();
+  });
+  await act(async () => {
+    finish(new ArrayBuffer(32));
+  });
+  expect(decode).not.toHaveBeenCalled();
+  expect(onError).not.toHaveBeenCalled();
 });
