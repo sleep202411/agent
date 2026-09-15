@@ -592,9 +592,10 @@ export function RefundQuotePanel({ quote }: { quote: BillingRefundQuoteData | nu
 // API envelope helpers
 // ---------------------------------------------------------------------------
 
-export async function requestEnvelope<T>(url: string): Promise<T> {
-  const response = await fetch(adminUiApiPath(url), { cache: "no-store" });
+export async function requestEnvelope<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(adminUiApiPath(url), { cache: "no-store", signal });
   const payload = (await response.json().catch(() => null)) as AdminApiPayload<T> | null;
+  signal?.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(adminApiErrorMessage(payload, response.status));
   }
@@ -604,14 +605,17 @@ export async function requestEnvelope<T>(url: string): Promise<T> {
 export async function mutateEnvelope<T = unknown>(
   url: string,
   body: Record<string, unknown>,
-  method = "POST"
+  method = "POST",
+  signal?: AbortSignal
 ): Promise<T> {
   const response = await fetch(adminUiApiPath(url), {
     method,
+    signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   const payload = (await response.json().catch(() => null)) as AdminApiPayload<T> | null;
+  signal?.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(adminApiErrorMessage(payload, response.status));
   }
