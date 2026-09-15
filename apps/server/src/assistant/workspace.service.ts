@@ -967,24 +967,6 @@ export class WorkspaceService {
     );
 
     return ids;
-
-    /* ── Sequential fallback (use if batch API doesn't create storyboard associations) ──
-    const ids: string[] = [];
-    for (const title of titles) {
-      try {
-        const createdId = await this.request<string | number>(
-          headers,
-          '/api/user/storyBoard/create',
-          { data: { projectId, name: title }, maxRetries: 2 },
-        );
-        ids.push(String(createdId));
-      } catch (error) {
-        this.logger.error(`[batchAddEpisodes] Failed "${title}": ${error}`);
-        ids.push('');
-      }
-    }
-    return ids;
-    */
   }
 
   /**
