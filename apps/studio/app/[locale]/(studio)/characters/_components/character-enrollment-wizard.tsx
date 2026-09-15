@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconAlertTriangle,
@@ -11,6 +11,7 @@ import {
   IconUserScan,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { useAuth } from "@/app/_components/auth-provider";
 import { cn } from "@/lib/utils";
 import { ApiRequestError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,23 @@ export function CharacterEnrollmentWizard({
   character: CharacterDetail;
   onDetail: (detail: CharacterDetail) => void;
 }) {
+  const { user } = useAuth();
+  if (user?.id == null) return null;
+  return (
+    <EnrollmentContent
+      key={JSON.stringify([user.id, character.id])}
+      character={character}
+      onDetail={onDetail}
+    />
+  );
+}
+function EnrollmentContent({
+  character,
+  onDetail,
+}: {
+  character: CharacterDetail;
+  onDetail: (detail: CharacterDetail) => void;
+}) {
   const t = useTranslations("characters");
   const tc = useTranslations("common");
 
@@ -94,6 +112,16 @@ export function CharacterEnrollmentWizard({
 
   const characterId = character.id;
   const confirmingRef = useRef(false);
+  const startingRef = useRef(false);
+  const lifetime = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    const owner = new AbortController();
+    lifetime.current = owner;
+    return () => {
+      owner.abort();
+      lifetime.current = null;
+    };
+  }, []);
 
   /**
    * Server-pull completion (idempotent). The SOLE completion authority — the
@@ -102,15 +130,18 @@ export function CharacterEnrollmentWizard({
    */
   const finalize = useCallback(
     async (silent = false) => {
-      if (confirmingRef.current) return;
+      const owner = lifetime.current;
+      if (!owner || owner.signal.aborted || confirmingRef.current || startingRef.current) return;
       confirmingRef.current = true;
       if (!silent) setConfirming(true);
       try {
-        const detail = await completeEnrollment(characterId);
+        const detail = await completeEnrollment(characterId, owner.signal);
+        if (owner.signal.aborted) return;
         setWaiting(false);
         onDetail(detail);
         if (detail.status === "active") toast.success(t("enrollSuccessToast"));
       } catch (error) {
+        if (owner.signal.aborted) return;
         const code = characterApiErrorCode(error);
         if (code === "ENROLLMENT_NOT_COMPLETED") {
           // Not finished in the H5 yet — gentle state + automatic status polling.
@@ -123,26 +154,31 @@ export function CharacterEnrollmentWizard({
         }
       } finally {
         confirmingRef.current = false;
-        if (!silent) setConfirming(false);
+        if (!silent && !owner.signal.aborted) setConfirming(false);
       }
     },
     [characterId, onDetail, t, tc]
   );
 
   const start = useCallback(async () => {
-    if (starting) return;
+    const owner = lifetime.current;
+    if (!owner || owner.signal.aborted || startingRef.current || confirmingRef.current) return;
+    startingRef.current = true;
+    let reconcile = false;
     setStarting(true);
     try {
-      const next = await createEnrollmentSession(characterId);
+      const next = await createEnrollmentSession(characterId, owner.signal);
+      if (owner.signal.aborted) return;
       setSession(next);
       setNowMs(Date.now());
       setWaiting(false);
       setPhase("active");
     } catch (error) {
+      if (owner.signal.aborted) return;
       const code = characterApiErrorCode(error);
       if (code === "ENROLLMENT_ALREADY_COMPLETED") {
         // The provider already confirmed — reconcile through complete().
-        void finalize();
+        reconcile = true;
       } else if (
         code === "RATE_LIMITED" ||
         (error instanceof ApiRequestError && error.status === 429)
@@ -154,9 +190,13 @@ export function CharacterEnrollmentWizard({
         toast.error(error instanceof Error ? error.message : tc("error"));
       }
     } finally {
-      setStarting(false);
+      startingRef.current = false;
+      if (!owner.signal.aborted) {
+        setStarting(false);
+        if (reconcile) void finalize();
+      }
     }
-  }, [characterId, finalize, starting, t, tc]);
+  }, [characterId, finalize, t, tc]);
 
   // The in-iframe callback frame (H5 redirect target) posts a same-origin
   // message when verification finishes — the primary happy path (no need for
@@ -184,7 +224,8 @@ export function CharacterEnrollmentWizard({
   // H5 flow — the status route says so without minting a new session.
   useEffect(() => {
     let cancelled = false;
-    void getEnrollmentStatus(characterId)
+    const controller = new AbortController();
+    void getEnrollmentStatus(characterId, controller.signal)
       .then((status) => {
         if (cancelled) return;
         if (status.sessionStatus === "completed") void finalize();
@@ -196,6 +237,7 @@ export function CharacterEnrollmentWizard({
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
     // Mount-only reconcile per character.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -226,12 +268,13 @@ export function CharacterEnrollmentWizard({
   useEffect(() => {
     if (!waiting || phase !== "active") return;
     let cancelled = false;
+    const controller = new AbortController();
     let inFlight = false;
     const poll = async () => {
       if (inFlight) return;
       inFlight = true;
       try {
-        const status = await getEnrollmentStatus(characterId);
+        const status = await getEnrollmentStatus(characterId, controller.signal);
         if (cancelled) return;
         if (status.sessionStatus === "completed" || status.characterStatus === "active") {
           setWaiting(false);
@@ -257,6 +300,7 @@ export function CharacterEnrollmentWizard({
     const timer = setInterval(() => void poll(), STATUS_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
+      controller.abort();
       clearInterval(timer);
     };
   }, [characterId, finalize, phase, waiting]);
