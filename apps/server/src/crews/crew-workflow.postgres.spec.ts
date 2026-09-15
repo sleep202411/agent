@@ -907,6 +907,127 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       expect(await authorization.resolve(crewId, worker)).toBeNull();
     });
 
+    it('admits one manual earning for concurrent retries and rejects changed terms', async () => {
+      const input = {
+        crewMemberId: workerMemberId,
+        sourceType: 'adjustment' as const,
+        title: 'Retry earning',
+        amountMinor: '1000',
+        currency: 'USD' as const,
+        idempotencyKey: 'earning-receipt',
+      };
+      const [first, second] = await Promise.all([
+        earnings.create(crewId, finance, input),
+        earnings.create(crewId, finance, input),
+      ]);
+      expect(first.id).toBe(second.id);
+      expect(
+        await db.crewEarningEvent.count({
+          where: { earningId: first.id, action: 'earning.created' },
+        }),
+      ).toBe(1);
+      for (const changed of [
+        { amountMinor: '999' },
+        { title: 'Other' },
+        { description: 'Changed' },
+        { sourceType: 'discretionary_bonus' as const },
+      ]) {
+        await expect(
+          earnings.create(crewId, finance, { ...input, ...changed }),
+        ).rejects.toMatchObject({ status: 409 });
+      }
+      await earnings.approve(first.id, finance, {
+        expectedVersion: first.version,
+      });
+      expect((await earnings.create(crewId, finance, input)).id).toBe(first.id);
+    });
+
+    it('admits one payout for concurrent retries and rejects changed amounts and withholding', async () => {
+      const earning = await earnings.create(crewId, finance, {
+        crewMemberId: workerMemberId,
+        sourceType: 'adjustment',
+        title: 'Payout balance',
+        amountMinor: '2000',
+        currency: 'USD',
+        idempotencyKey: 'payout-balance',
+      });
+      await earnings.approve(earning.id, finance, {
+        expectedVersion: earning.version,
+      });
+      const input = {
+        crewMemberId: workerMemberId,
+        currency: 'USD' as const,
+        amountMinor: '1000',
+        withholdingAmountMinor: '10',
+        idempotencyKey: 'payout-receipt',
+      };
+      const [first, second] = await Promise.all([
+        payouts.create(crewId, finance, input),
+        payouts.create(crewId, finance, input),
+      ]);
+      expect(first.id).toBe(second.id);
+      expect(
+        await db.crewPayoutEvent.count({
+          where: { payoutId: first.id, action: 'payout.created' },
+        }),
+      ).toBe(1);
+      expect(
+        await db.crewPayoutAllocation.count({ where: { payoutId: first.id } }),
+      ).toBe(1);
+      for (const changed of [
+        { amountMinor: '999' },
+        { withholdingAmountMinor: '20' },
+        { note: 'Changed' },
+      ]) {
+        await expect(
+          payouts.create(crewId, finance, { ...input, ...changed }),
+        ).rejects.toMatchObject({ status: 409 });
+      }
+    });
+
+    it('serializes the same payout key across different beneficiaries', async () => {
+      const other = await db.crewMember.create({
+        data: {
+          id: randomUUID(),
+          crewId,
+          userId: `other-${randomUUID()}`,
+          joinedVia: 'invitation',
+        },
+      });
+      for (const memberId of [workerMemberId, other.id]) {
+        const earning = await earnings.create(crewId, finance, {
+          crewMemberId: memberId,
+          sourceType: 'adjustment',
+          title: 'Balance',
+          amountMinor: '1000',
+          currency: 'USD',
+          idempotencyKey: `balance-${memberId}`,
+        });
+        await earnings.approve(earning.id, finance, {
+          expectedVersion: earning.version,
+        });
+      }
+      const results = await Promise.allSettled(
+        [workerMemberId, other.id].map((crewMemberId) =>
+          payouts.create(crewId, finance, {
+            crewMemberId,
+            currency: 'USD',
+            amountMinor: '100',
+            withholdingAmountMinor: '0',
+            idempotencyKey: 'shared-beneficiary-key',
+          }),
+        ),
+      );
+      expect(
+        results.filter((result) => result.status === 'fulfilled'),
+      ).toHaveLength(1);
+      const rejected = results.find((result) => result.status === 'rejected');
+      expect(
+        rejected?.status === 'rejected' ? rejected.reason : null,
+      ).toMatchObject({ status: 409 });
+      expect(await db.crewPayout.count({ where: { crewId } })).toBe(1);
+    });
+
     it('cannot both allocate and reverse the same balance across concurrent sessions', async () => {
       const earning = await earnings.create(crewId, finance, {
         crewMemberId: workerMemberId,
