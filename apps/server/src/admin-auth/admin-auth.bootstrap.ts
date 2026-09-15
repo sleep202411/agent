@@ -1,4 +1,4 @@
-import { AdminSiteScope, type PrismaClient } from '@prisma/client';
+import { AdminSiteScope, type Prisma, type PrismaClient } from '@prisma/client';
 import {
   ADMIN_PERMISSION_CATALOG,
   ADMIN_ROLE_CATALOG,
@@ -90,12 +90,22 @@ export async function assignAdminRole(
   grantedBy?: string,
 ): Promise<void> {
   const { roleIds } = await ensureAdminAuthCatalog(prisma);
-  await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${userId}::uuid FOR UPDATE`;
-    await tx.adminUserRole.deleteMany({ where: { userId } });
-    await tx.adminUserRole.createMany({
-      data: [{ userId, roleId: roleIds[roleKey], grantedBy }],
-      skipDuplicates: true,
-    });
+  await prisma.$transaction((tx) =>
+    replaceAdminRoleInTransaction(tx, userId, roleIds[roleKey], grantedBy),
+  );
+}
+
+/** Share the caller's transaction when a role is part of a larger account write. */
+export async function replaceAdminRoleInTransaction(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  roleId: string,
+  grantedBy?: string,
+): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${userId}::uuid FOR UPDATE`;
+  await tx.adminUserRole.deleteMany({ where: { userId } });
+  await tx.adminUserRole.createMany({
+    data: [{ userId, roleId, grantedBy }],
+    skipDuplicates: true,
   });
 }

@@ -10,7 +10,10 @@ import {
   AdminUserStatus,
   Prisma,
 } from '@prisma/client';
-import { assignAdminRole } from './admin-auth.bootstrap';
+import {
+  ensureAdminAuthCatalog,
+  replaceAdminRoleInTransaction,
+} from './admin-auth.bootstrap';
 import {
   ADMIN_PERMISSION_CATALOG,
   ADMIN_ROLE_CATALOG,
@@ -113,37 +116,46 @@ export class AdminUsersService {
     });
 
     const passwordHash = hashAdminPassword(input.password);
-    const user = await this.prisma.adminUser.create({
-      data: {
-        email: input.email,
-        displayName: input.displayName,
-        passwordHash,
-        passwordChangedAt: new Date(),
-        status: input.status as AdminUserStatus,
-        siteScope: input.siteScope as AdminSiteScope,
-        requireMfa: input.requireMfa,
-        disabledAt:
-          input.status === AdminUserStatus.disabled ? new Date() : null,
-      },
-      include: adminUserListInclude,
-    });
-    await this.recordPasswordHistory(user.id, passwordHash);
-    await assignAdminRole(this.prisma, user.id, input.roleKey as AdminRoleKey);
-    return this.getById(user.id);
+    const { roleIds } = await ensureAdminAuthCatalog(this.prisma);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const user = await tx.adminUser.create({
+          data: {
+            email: input.email,
+            displayName: input.displayName,
+            passwordHash,
+            passwordChangedAt: new Date(),
+            status: input.status as AdminUserStatus,
+            siteScope: input.siteScope as AdminSiteScope,
+            requireMfa: input.requireMfa,
+            disabledAt:
+              input.status === AdminUserStatus.disabled ? new Date() : null,
+          },
+          include: adminUserListInclude,
+        });
+        await this.recordPasswordHistory(user.id, passwordHash, tx);
+        await replaceAdminRoleInTransaction(
+          tx,
+          user.id,
+          roleIds[input.roleKey as AdminRoleKey],
+        );
+        return this.getById(user.id, tx);
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      )
+        throw new ConflictException({
+          code: 'ADMIN_USER_EMAIL_EXISTS',
+          msg: '该后台邮箱已存在。',
+        });
+      throw error;
+    }
   }
 
   async update(actor: AdminActor, userId: string, input: UpdateAdminUserInput) {
-    const existing = await this.findExisting(userId);
-    if (input.roleKey) {
-      this.assertAssignableRoleKey(input.roleKey);
-      const existingWithRoles = await this.findExistingWithRoles(userId);
-      if (primaryRoleKey(existingWithRoles) === ADMIN_ROLE_KEYS.SuperAdmin) {
-        throw new BadRequestException({
-          code: 'ADMIN_SUPER_ADMIN_ROLE_MANAGED_OUT_OF_BAND',
-          msg: '超级管理员角色只能通过受控部署脚本维护，不能在后台页面降级或重新授权。',
-        });
-      }
-    }
+    if (input.roleKey) this.assertAssignableRoleKey(input.roleKey);
     if (
       actor.id === userId &&
       ((input.status && input.status !== AdminUserStatus.active) ||
@@ -155,36 +167,53 @@ export class AdminUsersService {
         msg: '不能降低当前登录账号的状态、角色或 MFA 要求。',
       });
     }
+    const catalog = input.roleKey
+      ? await ensureAdminAuthCatalog(this.prisma)
+      : null;
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${userId}::uuid FOR UPDATE`;
+      const existing = await this.findExisting(userId, tx);
+      if (input.roleKey) {
+        this.assertAssignableRoleKey(input.roleKey);
+        const existingWithRoles = await this.findExistingWithRoles(userId, tx);
+        if (primaryRoleKey(existingWithRoles) === ADMIN_ROLE_KEYS.SuperAdmin) {
+          throw new BadRequestException({
+            code: 'ADMIN_SUPER_ADMIN_ROLE_MANAGED_OUT_OF_BAND',
+            msg: '超级管理员角色只能通过受控部署脚本维护，不能在后台页面降级或重新授权。',
+          });
+        }
+      }
 
-    const nextStatus = input.status ?? existing.status;
-    await this.prisma.adminUser.update({
-      where: { id: userId },
-      data: {
-        displayName: input.displayName,
-        status: input.status as AdminUserStatus | undefined,
-        siteScope: input.siteScope as AdminSiteScope | undefined,
-        requireMfa: input.requireMfa,
-        ...(input.requireMfa === false
-          ? { mfaSecretHash: null, mfaEnabledAt: null }
-          : {}),
-        disabledAt:
-          nextStatus === AdminUserStatus.disabled
-            ? (existing.disabledAt ?? new Date())
-            : null,
-      },
+      const nextStatus = input.status ?? existing.status;
+      await tx.adminUser.update({
+        where: { id: userId },
+        data: {
+          displayName: input.displayName,
+          status: input.status as AdminUserStatus | undefined,
+          siteScope: input.siteScope as AdminSiteScope | undefined,
+          requireMfa: input.requireMfa,
+          ...(input.requireMfa === false
+            ? { mfaSecretHash: null, mfaEnabledAt: null }
+            : {}),
+          disabledAt:
+            nextStatus === AdminUserStatus.disabled
+              ? (existing.disabledAt ?? new Date())
+              : null,
+        },
+      });
+      if (input.roleKey) {
+        await replaceAdminRoleInTransaction(
+          tx,
+          userId,
+          catalog!.roleIds[input.roleKey as AdminRoleKey],
+          actor.id,
+        );
+      }
+      if (input.status && input.status !== AdminUserStatus.active) {
+        await this.revokeSessionsInTransaction(userId, actor.sessionId, tx);
+      }
+      return this.getById(userId, tx);
     });
-    if (input.roleKey) {
-      await assignAdminRole(
-        this.prisma,
-        userId,
-        input.roleKey as AdminRoleKey,
-        actor.id,
-      );
-    }
-    if (input.status && input.status !== AdminUserStatus.active) {
-      await this.revokeSessions(userId, actor.sessionId);
-    }
-    return this.getById(userId);
   }
 
   async resetMfa(userId: string, exceptSessionId?: string) {
@@ -440,8 +469,11 @@ export class AdminUsersService {
     return existing;
   }
 
-  private async findExistingWithRoles(userId: string) {
-    const existing = await this.prisma.adminUser.findUnique({
+  private async findExistingWithRoles(
+    userId: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
+    const existing = await tx.adminUser.findUnique({
       where: { id: userId },
       include: adminUserListInclude,
     });
