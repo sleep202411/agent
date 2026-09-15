@@ -2531,97 +2531,113 @@ export class BillingService {
     adminId: string,
     input: UpdateAdminBillingPromotionInput,
   ) {
-    const existing = await this.prisma.billingPromotion.findUnique({
-      where: { id: promotionId },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'BILLING_PROMOTION_NOT_FOUND',
-        msg: 'Billing promotion not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_promotions WHERE id=${promotionId}::uuid FOR UPDATE`;
+      const existing = await tx.billingPromotion.findUnique({
+        where: { id: promotionId },
       });
-    }
-    const promotion = await this.prisma.billingPromotion.update({
-      where: { id: promotionId },
-      data: {
-        name: input.name ?? undefined,
-        description:
-          input.description === undefined ? undefined : input.description,
-        status: input.status as BillingPromotionStatus | undefined,
-        startsAt: input.startsAt === undefined ? undefined : input.startsAt,
-        endsAt: input.endsAt === undefined ? undefined : input.endsAt,
-        maxRedemptions:
-          input.maxRedemptions === undefined ? undefined : input.maxRedemptions,
-        maxRedemptionsPerUser:
-          input.maxRedemptionsPerUser === undefined
-            ? undefined
-            : input.maxRedemptionsPerUser,
-        metadata: input.metadata
-          ? (input.metadata as Prisma.InputJsonValue)
-          : undefined,
-        updatedById: adminId,
-        archivedAt:
-          input.archived === undefined
-            ? undefined
-            : input.archived
-              ? new Date()
-              : null,
-      },
-      include: {
-        appliesItem: true,
-        appliesPrice: { include: { item: true } },
-        providerBindings: { orderBy: [{ provider: 'asc' }] },
-        _count: { select: { redemptions: true } },
-      },
+      if (!existing) {
+        throw new NotFoundException({
+          code: 'BILLING_PROMOTION_NOT_FOUND',
+          msg: 'Billing promotion not found.',
+        });
+      }
+      const startsAt =
+        input.startsAt === undefined ? existing.startsAt : input.startsAt;
+      const endsAt =
+        input.endsAt === undefined ? existing.endsAt : input.endsAt;
+      if (startsAt && endsAt && endsAt <= startsAt)
+        throw new BadRequestException({
+          code: 'BILLING_PROMOTION_TIME_WINDOW_INVALID',
+          msg: 'Promotion end time must be after start time.',
+        });
+      const promotion = await tx.billingPromotion.update({
+        where: { id: promotionId },
+        data: {
+          name: input.name ?? undefined,
+          description:
+            input.description === undefined ? undefined : input.description,
+          status: input.status as BillingPromotionStatus | undefined,
+          startsAt: input.startsAt === undefined ? undefined : input.startsAt,
+          endsAt: input.endsAt === undefined ? undefined : input.endsAt,
+          maxRedemptions:
+            input.maxRedemptions === undefined
+              ? undefined
+              : input.maxRedemptions,
+          maxRedemptionsPerUser:
+            input.maxRedemptionsPerUser === undefined
+              ? undefined
+              : input.maxRedemptionsPerUser,
+          metadata: input.metadata
+            ? (input.metadata as Prisma.InputJsonValue)
+            : undefined,
+          updatedById: adminId,
+          archivedAt:
+            input.archived === undefined
+              ? undefined
+              : input.archived
+                ? new Date()
+                : null,
+        },
+        include: {
+          appliesItem: true,
+          appliesPrice: { include: { item: true } },
+          providerBindings: { orderBy: [{ provider: 'asc' }] },
+          _count: { select: { redemptions: true } },
+        },
+      });
+      return this.adminPromotionDto(promotion);
     });
-    return this.adminPromotionDto(promotion);
   }
 
   async upsertAdminPromotionProviderBinding(
     promotionId: string,
     input: UpsertAdminBillingPromotionProviderBindingInput,
   ) {
-    const promotion = await this.prisma.billingPromotion.findUnique({
-      where: { id: promotionId },
-    });
-    if (!promotion) {
-      throw new NotFoundException({
-        code: 'BILLING_PROMOTION_NOT_FOUND',
-        msg: 'Billing promotion not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_promotions WHERE id=${promotionId}::uuid FOR UPDATE`;
+      const promotion = await tx.billingPromotion.findUnique({
+        where: { id: promotionId },
       });
-    }
-    if (
-      promotion.appliesProductType === BillingProductType.compute_point_pack
-    ) {
-      assertComputePointPromotionProviderAllowed(
-        input.provider as PaymentProvider,
-      );
-    }
-    const existing =
-      await this.prisma.billingPromotionProviderBinding.findFirst({
+      if (!promotion) {
+        throw new NotFoundException({
+          code: 'BILLING_PROMOTION_NOT_FOUND',
+          msg: 'Billing promotion not found.',
+        });
+      }
+      if (
+        promotion.appliesProductType === BillingProductType.compute_point_pack
+      ) {
+        assertComputePointPromotionProviderAllowed(
+          input.provider as PaymentProvider,
+        );
+      }
+      const existing = await tx.billingPromotionProviderBinding.findFirst({
         where: {
           promotionId,
           provider: input.provider as PaymentProvider,
           archivedAt: null,
         },
       });
-    const data = {
-      providerCouponId: input.providerCouponId ?? null,
-      status: input.status as BillingProviderBindingStatus,
-      syncError: null,
-      metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
-    };
-    if (existing) {
-      return this.prisma.billingPromotionProviderBinding.update({
-        where: { id: existing.id },
-        data,
+      const data = {
+        providerCouponId: input.providerCouponId ?? null,
+        status: input.status as BillingProviderBindingStatus,
+        syncError: null,
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+      };
+      if (existing) {
+        return tx.billingPromotionProviderBinding.update({
+          where: { id: existing.id },
+          data,
+        });
+      }
+      return tx.billingPromotionProviderBinding.create({
+        data: {
+          promotionId,
+          provider: input.provider as PaymentProvider,
+          ...data,
+        },
       });
-    }
-    return this.prisma.billingPromotionProviderBinding.create({
-      data: {
-        promotionId,
-        provider: input.provider as PaymentProvider,
-        ...data,
-      },
     });
   }
 
