@@ -3,13 +3,8 @@
 import { useState } from "react";
 import { IconSearch, IconTrash, IconUserPlus, IconX } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import {
-  AdminDialog,
-  FormLabel,
-  TextInput,
-  requestEnvelope,
-  toErrorMessage,
-} from "@/components/admin/billing/shared";
+import { AdminDialog, FormLabel, TextInput } from "@/components/admin/billing/shared";
+import { useAdminUserLookup } from "../use-admin-user-lookup";
 import type { CourseInstructor } from "@/components/admin/courses/types";
 import type { UserLookupResult } from "@/components/admin/growth/referrals-types";
 
@@ -25,33 +20,17 @@ export function InstructorPicker({
   onChange: (next: CourseInstructor[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<UserLookupResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [lookupError, setLookupError] = useState<string | null>(null);
-
-  async function runLookup() {
-    const q = query.trim();
-    if (!q) return;
-    setSearching(true);
-    setLookupError(null);
-    setResults([]);
-    try {
-      const data = await requestEnvelope<UserLookupResult[]>(
-        `/api/admin/referrals/user-lookup?q=${encodeURIComponent(q)}`
-      );
-      setResults(data);
-      if (data.length === 0) setLookupError("未找到匹配用户。");
-    } catch (err) {
-      setLookupError(toErrorMessage(err));
-    } finally {
-      setSearching(false);
-    }
+  const { query, setQuery, results, searching, lookupError, runLookup, cancel } =
+    useAdminUserLookup(open);
+  function close() {
+    cancel();
+    setOpen(false);
   }
 
   function addInstructor(user: UserLookupResult) {
+    if (!open || searching) return;
     if (instructors.some((item) => item.userId === user.userId)) {
-      setOpen(false);
+      close();
       return;
     }
     onChange([
@@ -63,10 +42,8 @@ export function InstructorPicker({
         description: "",
       },
     ]);
-    setOpen(false);
+    close();
     setQuery("");
-    setResults([]);
-    setLookupError(null);
   }
 
   return (
@@ -114,7 +91,7 @@ export function InstructorPicker({
 
       <AdminDialog
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={close}
         title="添加讲师"
         description="搜索用户后选择；界面展示混淆后的 Public ID，保存时会解码成真实 userId。"
       >
@@ -150,6 +127,7 @@ export function InstructorPicker({
                 <button
                   key={user.userId}
                   type="button"
+                  disabled={searching}
                   onClick={() => addInstructor(user)}
                   className="flex w-full flex-col items-start rounded px-2 py-1.5 text-left transition hover:bg-slate-50"
                 >
@@ -162,7 +140,7 @@ export function InstructorPicker({
             </div>
           ) : null}
           <div className="flex justify-end border-t border-slate-200 pt-3">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={close}>
               <IconX className="size-4" />
               关闭
             </Button>
