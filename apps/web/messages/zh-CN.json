@@ -9485,7 +9485,9 @@
     "notPlaying": "未播放",
     "loadingChannel": "正在加载下一频道…",
     "episodeSelector": "选择分集",
-    "preview": "IP 预览"
+    "preview": "预告片",
+    "lockedEpisode": "未解锁",
+    "episodeAccess": "请打开 IP 页面查看本集访问权限。"
   },
   "creatorEarnings": {
     "title": "收益",

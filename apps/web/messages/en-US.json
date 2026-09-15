@@ -9485,7 +9485,9 @@
     "notPlaying": "Not playing",
     "loadingChannel": "Loading next channel…",
     "episodeSelector": "Choose episode",
-    "preview": "IP preview"
+    "preview": "Trailer",
+    "lockedEpisode": "Locked",
+    "episodeAccess": "Open the IP page to check access to this episode."
   },
   "creatorEarnings": {
     "title": "Earnings",
