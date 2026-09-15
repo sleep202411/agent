@@ -5062,17 +5062,6 @@
       "dateInput": "日期或時間段",
       "dateInputPlaceholder": "例如 2027-05、2027-Q4 或 2027-05-20",
       "labels": "標籤",
-      "searchStudioProjects": "搜尋工作區和項目…",
-      "loadingStudioProjects": "正在載入項目…",
-      "noStudioProjects": "沒有符合的項目。",
-      "unlinkStudioProject": "解除 Studio 項目關聯",
-      "workspaceHasNoProjects": "這個工作區暫無項目。",
-      "projectLinkFailed": "無法關聯 Studio 項目。",
-      "projectOptionsFailed": "無法載入項目。",
-      "projectDisabled": {
-        "alreadyLinked": "已關聯到劇組「{crew}」。",
-        "insufficient_permission": "需要項目編輯權限才能關聯。"
-      },
       "addLabel": "加入標籤",
       "addAnotherLabel": "繼續加入標籤",
       "searchLabels": "搜尋標籤…",
@@ -5803,7 +5792,6 @@
   "crewWorkbench": {
     "projectUsage": "Studio 項目消耗",
     "header": "劇組工具列",
-    "linkCanvas": "連結畫布",
     "globalNavigation": "劇組工作台導覽",
     "crewSwitcherNavigation": "切換劇組",
     "allCrews": "全部劇組",

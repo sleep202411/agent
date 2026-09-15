@@ -5062,17 +5062,6 @@
       "dateInput": "Date or time period",
       "dateInputPlaceholder": "Try 2027-05, 2027-Q4, or 2027-05-20",
       "labels": "Labels",
-      "searchStudioProjects": "Search workspaces and projects…",
-      "loadingStudioProjects": "Loading projects…",
-      "noStudioProjects": "No matching projects.",
-      "unlinkStudioProject": "Unlink Studio project",
-      "workspaceHasNoProjects": "No projects in this workspace.",
-      "projectLinkFailed": "The Studio project could not be linked.",
-      "projectOptionsFailed": "Projects could not be loaded.",
-      "projectDisabled": {
-        "alreadyLinked": "Already linked to {crew}.",
-        "insufficient_permission": "You need edit access to link this project."
-      },
       "addLabel": "Add label",
       "addAnotherLabel": "Add another label",
       "searchLabels": "Search labels…",
@@ -5803,7 +5792,6 @@
   "crewWorkbench": {
     "projectUsage": "Studio project usage",
     "header": "Crew header",
-    "linkCanvas": "Link Canvas",
     "globalNavigation": "Crew workspace navigation",
     "crewSwitcherNavigation": "Crew switcher",
     "allCrews": "All crews",
