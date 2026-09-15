@@ -130,6 +130,119 @@ jest.setTimeout(15000);
     }
     return result;
   }
+  it('counts system events consistently in order cards and conversation detail', async () => {
+    const order = await svc.submit(buyer, input());
+    await svc.accept(order.id, owner);
+    for (const viewer of [buyer, owner]) {
+      const page = await svc.list(viewer, { role: 'both', limit: 24 });
+      const conversation = await conversations.detail(
+        order.conversationId,
+        viewer,
+      );
+      expect(page.items[0]._unreadCount).toBe(viewer === buyer ? 2 : 3);
+      expect(page.items[0]._unreadCount).toBe(conversation._unreadCount);
+    }
+  });
+  it('retains unread timestamp ties and excludes read, own and deleted messages', async () => {
+    const order = await svc.submit(buyer, input());
+    await db.message.deleteMany({
+      where: { conversationId: order.conversationId },
+    });
+    const time = new Date('2026-01-01T00:00:00.123Z');
+    const prefix = randomUUID();
+    await db.message.createMany({
+      data: [
+        { id: prefix + '1', authorId: owner, deletedAt: null },
+        { id: prefix + '2', authorId: owner, deletedAt: null },
+        { id: prefix + '3', authorId: owner, deletedAt: null },
+        { id: prefix + '4', authorId: null, deletedAt: null },
+        { id: prefix + '5', authorId: owner, deletedAt: time },
+        { id: prefix + '6', authorId: buyer, deletedAt: null },
+      ].map((m) => ({
+        ...m,
+        conversationId: order.conversationId,
+        createdAt: time,
+        type: m.authorId ? ('text' as const) : ('system' as const),
+        body: 'Unread fixture',
+      })),
+    });
+    await db.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId: order.conversationId,
+          userId: buyer,
+        },
+      },
+      data: { lastReadAt: time, lastReadMessageId: prefix + '2' },
+    });
+    expect(
+      (await svc.list(buyer, { role: 'buyer', limit: 24 })).items[0]
+        ._unreadCount,
+    ).toBe(2);
+    expect(
+      (await conversations.detail(order.conversationId, buyer))._unreadCount,
+    ).toBe(2);
+    await db.conversationParticipant.update({
+      where: {
+        conversationId_userId: {
+          conversationId: order.conversationId,
+          userId: buyer,
+        },
+      },
+      data: { lastReadMessageId: null },
+    });
+    expect(
+      (await svc.list(buyer, { role: 'buyer', limit: 24 })).items[0]
+        ._unreadCount,
+    ).toBe(4);
+  });
+  it('keeps tied order pages deterministic with per-conversation counts and role scope', async () => {
+    const a = await svc.submit(buyer, input('page-a'));
+    const b = await svc.submit(buyer, input('page-b'));
+    const c = await svc.submit(buyer, input('page-c'));
+    await svc.accept(b.id, owner);
+    await db.serviceOrder.updateMany({
+      where: { buyerId: buyer },
+      data: { createdAt: new Date('2026-01-01T00:00:00.000Z') },
+    });
+    const expected = await db.serviceOrder.findMany({
+      where: { buyerId: buyer },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+    });
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await svc.list(buyer, { role: 'buyer', limit: 1, cursor });
+      ids.push(...page.items.map((r) => r.id));
+      expect(page.items[0]._unreadCount).toBe(
+        page.items[0].id === b.id ? 2 : 1,
+      );
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor && ids.length < 5);
+    expect(ids).toEqual(expected.map((r) => r.id));
+    expect(new Set(ids)).toEqual(new Set([a.id, b.id, c.id]));
+    expect(
+      (await svc.list(buyer, { role: 'creator', limit: 24 })).items,
+    ).toEqual([]);
+    expect(
+      (await svc.list(randomUUID(), { role: 'both', limit: 24 })).items,
+    ).toEqual([]);
+  });
+  it('does not invent unread history when an order participant has no conversation cursor row', async () => {
+    const order = await svc.submit(buyer, input());
+    await db.conversationParticipant.delete({
+      where: {
+        conversationId_userId: {
+          conversationId: order.conversationId,
+          userId: owner,
+        },
+      },
+    });
+    expect(
+      (await svc.list(owner, { role: 'creator', limit: 24 })).items[0]
+        ._unreadCount,
+    ).toBe(0);
+  });
   it('concurrent retries retain one order, conversation, message pair and broadcast set', async () => {
     await conversations.openServiceConversation({
       serviceId: id,

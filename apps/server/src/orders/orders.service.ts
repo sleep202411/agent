@@ -60,6 +60,7 @@ import type {
   SystemMessageKind,
 } from '@repo/shared/conversation';
 import { newShortId } from '../common/id';
+import { conversationUnreadCounts } from '../conversations/unread-counts';
 import { PrismaService } from '../infra/db/db.module';
 import {
   ConversationsService,
@@ -534,50 +535,29 @@ export class OrdersService {
     };
     const rows = await this.prisma.serviceOrder.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       take: opts.limit + 1,
       ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
       include: {
         service: { select: { title: true } },
-        // Eager-load conversation + participants so the card
-        // projection can compute lastActivityAt (= max of order
-        // updatedAt and conversation lastMessageAt) and per-viewer
-        // unread count without N follow-up queries.
-        conversation: {
-          include: {
-            participants: { where: { userId: viewerId } },
-          },
-        },
+        conversation: { select: { lastMessageAt: true } },
       },
     });
     const hasMore = rows.length > opts.limit;
     const page = hasMore ? rows.slice(0, opts.limit) : rows;
 
-    // Unread counts: one COUNT(*) per row. Could be folded into a
-    // single GROUP BY raw query later, but at limit=24 this is
-    // already a single round-trip's worth of work and the
-    // simpler-to-read code wins.
-    const hydrated = await Promise.all(
-      page.map(async (r) => {
-        const me = r.conversation.participants[0];
-        // conv.lastMessageAt is already "max of everything that
-        // matters" by construction: every order transition emits a
-        // system message (via persistSystem inside the same tx),
-        // which bumps lastMessageAt. So we don't need a separate
-        // max-with-status-timestamp computation.
-        const lastActivityAt = r.conversation.lastMessageAt;
-        const unread = await this.prisma.message.count({
-          where: {
-            conversationId: r.conversationId,
-            deletedAt: null,
-            NOT: { authorId: viewerId },
-            ...(me?.lastReadAt ? { createdAt: { gt: me.lastReadAt } } : {}),
-          },
-        });
-        return Object.assign(r, {
-          _lastActivityAt: lastActivityAt,
-          _unreadCount: unread,
-        });
+    // Share the inbox's null-author and full read-cursor semantics, in one
+    // grouped query for the already authorized order page.
+    const counts = await conversationUnreadCounts(
+      this.prisma,
+      page.map((r) => r.conversationId),
+      [viewerId],
+    );
+    const unread = new Map(counts.map((r) => [r.conversationId, r.unread]));
+    const hydrated = page.map((r) =>
+      Object.assign(r, {
+        _lastActivityAt: r.conversation.lastMessageAt,
+        _unreadCount: unread.get(r.conversationId) ?? 0,
       }),
     );
     return {

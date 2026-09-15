@@ -118,6 +118,7 @@ import {
 } from '@repo/shared/conversation';
 import { createHash, randomUUID } from 'node:crypto';
 import { newShortId } from '../common/id';
+import { conversationUnreadCounts } from './unread-counts';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import { lockCrewAssetUploads } from '../crews/assets/upload-lock';
@@ -2348,25 +2349,7 @@ export class ConversationsService {
     userIds: string[],
     db: DbClient = this.prisma,
   ): Promise<Map<string, number>> {
-    if (userIds.length === 0) return new Map();
-    const rows = await db.$queryRaw<
-      Array<{ userId: string; unread: number }>
-    >(Prisma.sql`
-      SELECT p.user_id AS "userId", COUNT(m.id)::int AS "unread"
-      FROM conversation_participants p
-      LEFT JOIN messages m
-        ON m.conversation_id = p.conversation_id
-       AND m.deleted_at IS NULL
-       AND (m.author_id IS NULL OR m.author_id <> p.user_id)
-       AND (
-             p.last_read_at IS NULL
-             OR (m.created_at, m.id)
-                > (p.last_read_at, COALESCE(p.last_read_message_id, ''))
-           )
-      WHERE p.conversation_id = ${conversationId}
-        AND p.user_id IN (${Prisma.join(userIds)})
-      GROUP BY p.user_id
-    `);
+    const rows = await conversationUnreadCounts(db, [conversationId], userIds);
     return new Map(rows.map((r) => [r.userId, r.unread]));
   }
 
