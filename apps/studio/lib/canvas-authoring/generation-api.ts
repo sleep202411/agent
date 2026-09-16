@@ -1457,6 +1457,12 @@ export interface FizzAiPointEstimateInput {
   referenceImageCount?: number;
   /** Combined duration of all attached reference videos. */
   referenceVideoSeconds?: number;
+  /**
+   * Provider contract where an 'auto' duration follows the reference videos'
+   * combined length (Seedance 2.5 edit). Must mirror the server-side quote
+   * flag so the displayed estimate always matches the wallet hold.
+   */
+  outputDurationFollowsReferenceVideos?: boolean;
   resolution?: string;
 }
 
@@ -1479,6 +1485,7 @@ export function estimateModelSellPoints(
       referenceImageCount: input.referenceImageCount,
       referenceMedia: input.referenceMedia,
       referenceVideoSeconds: input.referenceVideoSeconds,
+      outputDurationFollowsReferenceVideos: input.outputDurationFollowsReferenceVideos,
       resolution: input.resolution,
       hasMask: input.hasMask,
     });

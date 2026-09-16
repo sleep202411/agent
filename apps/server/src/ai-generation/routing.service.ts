@@ -430,6 +430,11 @@ function estimateQuotaCost(
           : undefined,
       referenceImageCount: arrayLength(input?.referenceImages),
       referenceVideoSeconds: sumMediaDuration(input?.referenceVideos),
+      // Seedance 2.5 edit contract (doc 1520757): the output keeps the source
+      // video's duration, so an explicit 'auto' quotes at the combined
+      // reference-video length instead of the 30s ceiling.
+      outputDurationFollowsReferenceVideos:
+        stringInput(input?.omniReferenceTaskType) === 'edit',
       generateAudio: booleanInput(input?.generateAudio),
       hasMask: hasMediaValue(input?.maskImage),
     }).sellPoints;

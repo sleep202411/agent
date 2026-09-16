@@ -265,6 +265,9 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
       },
       referenceImageCount: uploadedReferenceCount || undefined,
       referenceVideoSeconds: referenceVideoSeconds || undefined,
+      // Seedance 2.5 edit keeps the source video's duration — the auto quote
+      // follows the combined reference-video length (mirrors the server hold).
+      outputDurationFollowsReferenceVideos: settings.omniReferenceTaskType === "edit",
     })?.sellPoints ?? null
   );
 }

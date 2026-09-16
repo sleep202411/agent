@@ -133,6 +133,14 @@ export interface EstimateProductModelPointsInput {
   };
   /** Combined duration of all reference videos supplied to the job. */
   referenceVideoSeconds?: number;
+  /**
+   * Provider contract where an 'auto' duration follows the reference videos'
+   * combined length (Seedance 2.5 edit: the output keeps the source video's
+   * duration, doc 1520757). When set, an explicit 'auto' quotes at
+   * clamp(ceil(referenceVideoSeconds)) instead of the autoQuoteSeconds
+   * ceiling; unknown reference seconds keep the ceiling fallback.
+   */
+  outputDurationFollowsReferenceVideos?: boolean;
   /** Whether native audio is requested. Only affects policies with a video-only rate. */
   generateAudio?: boolean;
   hasMask?: boolean;
@@ -176,8 +184,12 @@ export function estimateProductModelPoints(
     pointsPerOutput = positiveNumber(policy.pointsPerOutput) ?? 0;
   } else if (policy.mode === "per_second_matrix") {
     const resolution = selectPerSecondResolution(policy, input.resolution);
-    const seconds = selectBilledSeconds(policy, requestedDuration);
     const referenceVideoSeconds = finiteNonNegative(input.referenceVideoSeconds) ?? 0;
+    const seconds = selectBilledSeconds(
+      policy,
+      requestedDuration,
+      input.outputDurationFollowsReferenceVideos ? referenceVideoSeconds : undefined
+    );
     const referenceVideoRate = positiveNumber(policy.referenceVideoPointsPerSecond?.[resolution]);
     const videoOnlyRate = positiveNumber(policy.videoOnlyPointsPerSecond?.[resolution]);
     const perSecond =
@@ -335,7 +347,8 @@ function selectPerSecondResolution(
 
 function selectBilledSeconds(
   policy: AiPerSecondMatrixPricingPolicy,
-  requested: string | number | undefined
+  requested: string | number | undefined,
+  autoFollowsReferenceSeconds?: number
 ): number {
   // Only an EXPLICIT 'auto' quotes at the ceiling (provider picks the length —
   // never undercharge). An ABSENT duration is quoted at defaultSeconds: the
@@ -346,8 +359,20 @@ function selectBilledSeconds(
     return Math.min(Math.max(policy.defaultSeconds, policy.minSeconds), policy.maxSeconds);
   }
   const seconds = numericSeconds(requested);
-  const effective = seconds ?? policy.autoQuoteSeconds;
-  return Math.min(Math.max(effective, policy.minSeconds), policy.maxSeconds);
+  if (seconds === undefined) {
+    // 'auto' under a contract that pins the output to the reference videos'
+    // combined length (Seedance 2.5 edit): that length is the quote — rounded
+    // up and clamped so it can never undercharge. Unknown reference seconds
+    // keep the ceiling fallback.
+    if (autoFollowsReferenceSeconds !== undefined && autoFollowsReferenceSeconds > 0) {
+      return Math.min(
+        Math.max(Math.ceil(autoFollowsReferenceSeconds), policy.minSeconds),
+        policy.maxSeconds
+      );
+    }
+    return Math.min(Math.max(policy.autoQuoteSeconds, policy.minSeconds), policy.maxSeconds);
+  }
+  return Math.min(Math.max(seconds, policy.minSeconds), policy.maxSeconds);
 }
 
 function numericSeconds(value: string | number): number | undefined {

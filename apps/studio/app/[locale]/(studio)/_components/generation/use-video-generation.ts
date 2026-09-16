@@ -154,6 +154,9 @@ export function useVideoGeneration() {
                 : 0),
             0
           ) || undefined,
+      // Seedance 2.5 edit keeps the source video's duration — the auto quote
+      // follows the combined reference-video length (mirrors the server hold).
+      outputDurationFollowsReferenceVideos: settings.omniReferenceTaskType === "edit",
     });
     return estimate?.sellPoints ?? null;
   }, [model, readyUploads, settings]);
