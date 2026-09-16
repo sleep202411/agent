@@ -272,10 +272,21 @@ export class StoryWorkingPreviewService {
       ? { kind: 'subgraph', entryNodeId: chapter.entryNodeId }
       : null;
 
+    const scope: StoryBuildScope = chapterScope ?? { kind: 'full' };
+    const metadata = {
+      title: project.title,
+      summary: project.summary?.trim() || playableDraft.data.storyBible.logline,
+    };
     const previewBuildId = workingPreviewBuildId(
       projectId,
       draft.contentHash,
       videoSnapshotHash,
+      {
+        scope,
+        frameProfile: project.frameProfile,
+        defaultLocale: project.defaultLocale,
+        metadata,
+      },
     );
     const coverUrl = await resolveStoryCoverUrl(tx, project.coverAssetId);
 
@@ -287,14 +298,10 @@ export class StoryWorkingPreviewService {
       // Previewing a chapter starts at that chapter, not at the story's first
       // scene. Without this a multi-chapter work could only ever be walked from
       // the top, which is why the canvas play-test entry was closed off.
-      scope: chapterScope ?? { kind: 'full' },
+      scope,
       frameProfile: project.frameProfile,
       defaultLocale: project.defaultLocale,
-      metadata: {
-        title: project.title,
-        summary:
-          project.summary?.trim() || playableDraft.data.storyBible.logline,
-      },
+      metadata,
       draft: playableDraft.data,
       timelines: prepared.map((item) => item.timeline),
       worlds,
@@ -536,11 +543,20 @@ function workingPreviewBuildId(
   projectId: string,
   draftContentHash: string,
   videoSnapshotHash: string,
+  presentation: {
+    scope: StoryBuildScope;
+    frameProfile: string;
+    defaultLocale: string;
+    metadata: { title: string; summary: string };
+  },
 ): string {
+  // Hosts use this identity to replace the playback session. Scope and project
+  // presentation can change independently of the draft and media selections.
   return `preview:${canonicalJsonHash({
     projectId,
     draftContentHash,
     videoSnapshotHash,
+    presentation,
   })}`;
 }
 
