@@ -117,6 +117,7 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
+let legacyProject: { id: string; name: string } | null = null;
 let canLink = true;
 let linkFails = false;
 let linkedWorkspaceId: string | null = null;
@@ -136,6 +137,7 @@ function installFetch() {
       });
       if (method === "GET" && url.endsWith("/production-overview")) {
         return jsonResponse({
+          studioProject: legacyProject,
           studioWorkspace: linkedWorkspaceId ? { id: linkedWorkspaceId, name: "Studio" } : null,
           capabilities: { linkWorkspace: canLink },
         });
@@ -150,7 +152,8 @@ function installFetch() {
         if (linkFails) {
           return jsonResponse({ message: "Workspace link changed" }, { status: 403 });
         }
-        linkedWorkspaceId = "ws-1";
+        linkedWorkspaceId = JSON.parse(String(init?.body)).workspaceId;
+        legacyProject = null;
         return jsonResponse({ studioWorkspace: { id: "ws-1", name: "Studio" } });
       }
       if (method === "GET" && url.includes("/users/by-ids")) {
@@ -317,6 +320,7 @@ beforeEach(() => {
   canLink = true;
   linkFails = false;
   linkedWorkspaceId = null;
+  legacyProject = null;
   HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     "ResizeObserver",
@@ -625,4 +629,38 @@ it("retains loaded assets after a refresh failure and recovers with refresh retr
   });
   expect(document.body.textContent).not.toContain("Refresh unavailable");
   expect(document.body.textContent).toContain("concept.png");
+});
+
+describe("Legacy project link", () => {
+  it("shows the retained project and explains explicit workspace replacement", async () => {
+    legacyProject = { id: "old-project", name: "Old canvas" };
+    await render();
+    await click(byText("button", "Project: Old canvas"));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Existing Crew asset access stays limited")
+    );
+    expect(document.body.textContent).toContain("Disconnect project");
+    expect(requests.some((r) => r.method === "PATCH")).toBe(false);
+    await click(byText("span", "Studio"));
+    await vi.waitFor(() => expect(byText("button", "Studio")).toBeTruthy());
+    expect(document.body.textContent).not.toContain("Project: Old canvas");
+  });
+  it("allows explicit legacy disconnect without choosing a workspace", async () => {
+    legacyProject = { id: "old-project", name: "Old canvas" };
+    await render();
+    await click(byText("button", "Project: Old canvas"));
+    await vi.waitFor(() => expect(byText('[role="option"]', "Disconnect project")).toBeTruthy());
+    await click(byText('[role="option"]', "Disconnect project"));
+    expect(requests).toContainEqual(
+      expect.objectContaining({ method: "PATCH", body: { workspaceId: null } })
+    );
+    await vi.waitFor(() => expect(byText("button", "Link workspace")).toBeTruthy());
+  });
+  it("keeps a legacy link visible but disabled for non-admins", async () => {
+    legacyProject = { id: "old-project", name: "Old canvas" };
+    canLink = false;
+    await render();
+    expect((byText("button", "Project: Old canvas") as HTMLButtonElement).disabled).toBe(true);
+    expect(requests.some((r) => r.url.endsWith("/studio-workspace-options"))).toBe(false);
+  });
 });

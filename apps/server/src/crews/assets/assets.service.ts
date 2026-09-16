@@ -116,6 +116,10 @@ export class CrewAssetsService {
     const project = await this.prisma.platformProject.findUnique({
       where: { id: projectId },
       select: {
+        studioCrew: {
+          where: { deletedAt: null, studioWorkspaceId: null },
+          select: { id: true, name: true, logo: true },
+        },
         workspace: {
           select: {
             studioCrew: { select: { id: true, name: true, logo: true } },
@@ -130,6 +134,7 @@ export class CrewAssetsService {
       },
     });
     return (
+      project?.studioCrew ??
       project?.workspace.studioCrew ??
       project?.productionCrew ??
       project?.crewTaskCanvas?.crew ??

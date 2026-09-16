@@ -71,13 +71,13 @@ export class CrewStudioWorkspaceService {
           );
         const crew = await tx.crew.findUniqueOrThrow({
           where: { id: crewId },
-          select: { studioWorkspaceId: true },
+          select: { studioWorkspaceId: true, studioProjectId: true },
         });
         await tx.crew.update({
           where: { id: crewId },
           data: { studioWorkspaceId: workspaceId, studioProjectId: null },
         });
-        if (crew.studioWorkspaceId !== workspaceId) {
+        if (crew.studioWorkspaceId !== workspaceId || crew.studioProjectId) {
           await tx.crewProductionActivity.create({
             data: {
               crewId,
@@ -85,6 +85,15 @@ export class CrewStudioWorkspaceService {
               createdByUserId: userId,
               payload: {
                 changes: [
+                  ...(crew.studioProjectId
+                    ? [
+                        {
+                          field: 'studio_project_id',
+                          from: crew.studioProjectId,
+                          to: null,
+                        },
+                      ]
+                    : []),
                   {
                     field: 'studio_workspace_id',
                     from: crew.studioWorkspaceId,
