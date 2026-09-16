@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
 import { useHotkeys } from "react-hotkeys-hook";
 import type { Transaction } from "@tiptap/pm/state";
-import { TextSelection } from "@tiptap/pm/state";
 import { Fragment, Slice } from "@tiptap/pm/model";
 
 // --- Hooks ---
@@ -101,7 +100,7 @@ export function extractContent(
 
   let content = selection.content();
 
-  if (selection.empty || selection instanceof TextSelection) {
+  if (selection.empty) {
     const node = $anchor.node(1);
 
     // We dont want to use node.content here because we dont want tiptap to split the node
