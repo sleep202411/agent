@@ -1743,7 +1743,7 @@ export class StoryProductionGenerationService
     target: StoryGenerationTarget,
     command: Pick<
       SubmitGenerationCommand,
-      'expectedVersion' | 'requestedOutputKind'
+      'expectedVersion' | 'requestedOutputKind' | 'batchAdmission'
     >,
   ): void {
     if (target.status === StoryProductionSpecStatus.archived) {
@@ -1752,7 +1752,13 @@ export class StoryProductionGenerationService
         message: 'This production target has been archived.',
       });
     }
-    if (target.version !== command.expectedVersion) {
+    // Trusted batch dispatches re-read the live target: the batch's OWN
+    // materializations legitimately bump target versions between quote and
+    // dispatch (e.g. a completed same-sequence clip writes the timeline and
+    // bumps sibling clips), and a confirmed, paid batch must not die to its
+    // own progress. Direct creator submissions keep the strict optimistic
+    // lock — a stale version there still means "reload and retry".
+    if (target.version !== command.expectedVersion && !command.batchAdmission) {
       throw new ConflictException({
         code: 'STORY_PRODUCTION_VERSION_CONFLICT',
         message:
@@ -3118,6 +3124,11 @@ function estimateGenerationPoints(
     },
     referenceImageCount: arraySize(aiInput.referenceImages),
     referenceVideoSeconds: mediaDurationSeconds(aiInput.referenceVideos),
+    // Seedance 2.5 edit contract (doc 1520757): output keeps the source
+    // video's duration — an explicit 'auto' quotes at the combined
+    // reference-video length instead of the ceiling.
+    outputDurationFollowsReferenceVideos:
+      optionalString(aiInput.omniReferenceTaskType) === 'edit',
     generateAudio:
       typeof aiInput.generateAudio === 'boolean'
         ? aiInput.generateAudio
