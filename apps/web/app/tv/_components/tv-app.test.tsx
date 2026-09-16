@@ -733,6 +733,39 @@ describe("TV IP list", () => {
     });
   });
 
+  it("releases the previous stream before selecting a channel that cannot load", async () => {
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    act(() => {
+      instance.muted(false);
+      instance.volume(0.4);
+    });
+    const pause = vi.spyOn(instance, "pause");
+    const reset = vi.spyOn(instance, "reset");
+    // Source admission can fail before a replacement tech is attached.
+    const setSource = vi.spyOn(instance, "src").mockImplementation(() => "");
+    clickIp("Second IP");
+    await vi.waitFor(() => expect(reset).toHaveBeenCalled());
+    expect(pause.mock.invocationCallOrder[0]).toBeLessThan(reset.mock.invocationCallOrder[0]!);
+    expect(reset.mock.invocationCallOrder[0]).toBeLessThan(
+      setSource.mock.invocationCallOrder.at(-1)!
+    );
+    expect(instance.currentSrc()).not.toContain("ip-1.mp4");
+    expect(instance.muted()).toBe(false);
+    expect(instance.volume()).toBeCloseTo(0.4);
+  });
+
+  it("stops playback when a media error is reported", async () => {
+    await render();
+    await waitForSource("ip-1");
+    const pause = vi.spyOn(player(), "pause");
+    vi.spyOn(videojs.log, "error").mockImplementation(() => {});
+    act(() => player().error("Unsupported replacement"));
+    expect(pause).toHaveBeenCalled();
+    expect(container.textContent).toContain("Unsupported replacement");
+  });
+
   it("retries a failed source on the same player", async () => {
     await render();
     await waitForSource("ip-1");
