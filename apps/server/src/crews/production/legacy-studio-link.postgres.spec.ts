@@ -10,6 +10,7 @@ import { CrewStudioWorkspaceService } from './studio-workspace.service';
 
 const url =
   process.env.CREW_LEGACY_TEST_DATABASE_URL ||
+  process.env.TASK01_TEST_DATABASE_URL ||
   (process.env.DATABASE_POSTGRES_INTEGRATION === '1'
     ? process.env.DATABASE_URL
     : undefined);
@@ -28,7 +29,7 @@ const url =
     if (
       !['postgres:', 'postgresql:'].includes(target.protocol) ||
       target.hostname !== '127.0.0.1' ||
-      target.port !== '55439' ||
+      !['55439', '55440'].includes(target.port) ||
       target.pathname !== '/task01' ||
       [...target.searchParams.keys()].some((key) => key !== 'sslmode')
     )
