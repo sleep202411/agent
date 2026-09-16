@@ -1,5 +1,7 @@
 "use client";
 
+import { CrewVisitReadMarker } from "./crew-visit-read-marker";
+
 /**
  * Crew workspace — owner / member control surface.
  *
@@ -332,6 +334,7 @@ export function CrewWorkspace({ id, embedded = false }: { id: string; embedded?:
 
   return (
     <CrewTransfersProvider crewId={id}>
+      <CrewVisitReadMarker crewId={id} />
       <CrewWorkbenchShell
         embedded={embedded}
         activeChatChannel={requestedCommunityChannel ? "community" : "team"}

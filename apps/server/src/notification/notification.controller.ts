@@ -84,6 +84,16 @@ export class NotificationController {
     return dto;
   }
 
+  @Post('crews/:crewId/read')
+  @HttpCode(HttpStatus.OK)
+  async markCrewRead(
+    @CurrentUser() user: AuthUser,
+    @Param('crewId') crewId: string,
+  ) {
+    const count = await this.svc.markCrewRead(user.userId, crewId);
+    return { count };
+  }
+
   @Post('read-all')
   @HttpCode(HttpStatus.OK)
   async markAllRead(@CurrentUser() user: AuthUser) {
