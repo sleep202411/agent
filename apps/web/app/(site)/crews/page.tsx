@@ -52,7 +52,11 @@ export default function CrewsPage() {
   const myCrews = useMyCrews(Boolean(user));
   const myCrewItems = useMemo(() => {
     if (!user) return [];
-    const memberships = [...(myCrews.data?.founded ?? []), ...(myCrews.data?.joined ?? [])];
+    const memberships = [
+      ...(myCrews.data?.community ?? []),
+      ...(myCrews.data?.founded ?? []),
+      ...(myCrews.data?.joined ?? []),
+    ];
     return [...new Map(memberships.map((crew) => [crew.id, crew])).values()];
   }, [user, myCrews.data]);
   const requestedCrew = searchParams.get("crew");
@@ -193,6 +197,12 @@ export default function CrewsPage() {
                         key={`${user.id}:${selectedCrew.id}`}
                         id={selectedCrew.id}
                         embedded
+                        communityOnly={
+                          !!myCrews.data?.community?.some((crew) => crew.id === selectedCrew.id) &&
+                          ![...(myCrews.data?.founded ?? []), ...(myCrews.data?.joined ?? [])].some(
+                            (crew) => crew.id === selectedCrew.id
+                          )
+                        }
                       />
                     </div>
                   ) : null}

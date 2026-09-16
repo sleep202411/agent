@@ -9466,6 +9466,7 @@
     "anonymousOwner": "Anonymous",
     "episodeCount": "{count} eps",
     "viewDetail": "View IP",
+    "joinFanGroup": "Join fan group",
     "exit": "Exit TV",
     "loading": "Loading…",
     "loadFailed": "Could not load IPs.",

@@ -9466,6 +9466,7 @@
     "anonymousOwner": "匿名创作者",
     "episodeCount": "{count} 集",
     "viewDetail": "查看 IP",
+    "joinFanGroup": "加入粉丝群",
     "exit": "退出 TV",
     "loading": "加载中…",
     "loadFailed": "IP 列表加载失败",

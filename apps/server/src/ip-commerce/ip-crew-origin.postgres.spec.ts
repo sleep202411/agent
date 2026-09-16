@@ -7,6 +7,7 @@ import { CrewAuthorizationService } from '../crews/crew-authorization.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { IpCommerceService } from './ip-commerce.service';
 import { IpCrewOriginService } from './ip-crew-origin';
+import { CrewsService } from '../crews/crews.service';
 const databaseUrl =
   process.env.TASK01_TEST_DATABASE_URL ??
   (process.env.IP_ORIGIN_POSTGRES_TEST === '1'
@@ -21,6 +22,13 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
   let ipId: string;
   let crewId: string;
   let owner: string;
+  const crewService = () =>
+    new CrewsService(
+      db as never,
+      conversations,
+      new CrewAuthorizationService(db as never),
+      {} as never,
+    );
   beforeAll(async () => {
     const url = postgresFixtureUrl(databaseUrl!);
     if (
@@ -101,6 +109,60 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
   });
   afterAll(async () => {
     await db?.$disconnect();
+  });
+  it('keeps joined fan communities discoverable across reads without production membership', async () => {
+    const fan = `discovery-${randomUUID()}`;
+    expect((await crewService().myCrews(fan)).community).toEqual([]);
+    await Promise.all([
+      crewService().joinFanCommunity(crewId, fan),
+      crewService().joinFanCommunity(crewId, fan),
+    ]);
+    for (let read = 0; read < 2; read++) {
+      const result = await crewService().myCrews(fan);
+      expect(result.founded).toEqual([]);
+      expect(result.joined).toEqual([]);
+      expect(result.community.map((crew) => crew.id)).toEqual([crewId]);
+    }
+    expect(
+      (await crewService().myCrews(`other-${randomUUID()}`)).community,
+    ).toEqual([]);
+    expect(await db.crewMember.count({ where: { crewId, userId: fan } })).toBe(
+      0,
+    );
+    await expect(crewService().conversation(crewId, fan)).rejects.toThrow();
+    await db.conversationParticipant.updateMany({
+      where: { userId: fan },
+      data: { leftAt: new Date() },
+    });
+    expect((await crewService().myCrews(fan)).community).toEqual([]);
+  });
+  it('deduplicates production members and hides deleted, moderated or blocked fan Crews', async () => {
+    await crewService().joinFanCommunity(crewId, owner);
+    expect(
+      (await crewService().myCrews(owner)).founded.map((crew) => crew.id),
+    ).toEqual([crewId]);
+    expect((await crewService().myCrews(owner)).community).toEqual([]);
+    const fan = `visibility-${randomUUID()}`;
+    await crewService().joinFanCommunity(crewId, fan);
+    await db.crew.update({
+      where: { id: crewId },
+      data: { deletedAt: new Date() },
+    });
+    expect((await crewService().myCrews(fan)).community).toEqual([]);
+    await db.crew.update({ where: { id: crewId }, data: { deletedAt: null } });
+    await db.crew.update({
+      where: { id: crewId },
+      data: { moderationStatus: 'taken_down' },
+    });
+    expect((await crewService().myCrews(fan)).community).toEqual([]);
+    await db.crew.update({
+      where: { id: crewId },
+      data: { moderationStatus: 'ok' },
+    });
+    await db.ipUserContentBlock.create({
+      data: { userId: fan, targetType: 'crew', targetId: crewId },
+    });
+    expect((await crewService().myCrews(fan)).community).toEqual([]);
   });
   it('requires authority over both records and rejects a stale change', async () => {
     const foreign = { userId: 'foreign-origin-editor' };
