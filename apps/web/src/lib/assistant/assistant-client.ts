@@ -65,7 +65,8 @@ async function parseError(response: Response) {
 
 export async function fetchMessagesByIds(
   conversationId: string,
-  messageIds: string[]
+  messageIds: string[],
+  signal?: AbortSignal
 ): Promise<AssistantMessage[]> {
   if (messageIds.length === 0) return [];
   const response = await fetch("/aurora/chat/get-messages", {
@@ -73,8 +74,9 @@ export async function fetchMessagesByIds(
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conversationId, messageIds }),
+    signal,
   });
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error(`Failed to get messages: HTTP ${response.status}`);
   const body = (await response.json()) as {
     conversationId: string;
     messages: AssistantMessage[];
@@ -254,10 +256,11 @@ export async function fetchConversationHistory(
 // ─── Clear API ─────────────────────────────────────────
 
 export async function clearConversation(projectId: string): Promise<void> {
-  await fetch("/aurora/chat/clear-conversation", {
+  const response = await fetch("/aurora/chat/clear-conversation", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conversationId: projectId }),
   });
+  if (!response.ok) throw new Error(`Failed to clear conversation: HTTP ${response.status}`);
 }
