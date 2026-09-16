@@ -1,5 +1,7 @@
 "use client";
 
+import { CrewVisitReadMarker } from "./crew-visit-read-marker";
+
 /**
  * Crew workspace — owner / member control surface.
  *
@@ -340,6 +342,7 @@ export function CrewWorkspace({
 
   return (
     <CrewTransfersProvider crewId={id}>
+      <CrewVisitReadMarker crewId={id} />
       <CrewWorkbenchShell
         embedded={embedded}
         activeChatChannel={requestedCommunityChannel ? "community" : "team"}
@@ -512,6 +515,7 @@ function CommunityWorkspace({ crew, embedded = false }: { crew: CrewDTO; embedde
 
   return (
     <>
+      <CrewVisitReadMarker crewId={crew.id} />
       <CrewWorkbenchShell
         embedded={embedded}
         activeChatChannel="community"
@@ -567,14 +571,14 @@ function StandardWorkspaceSurface({
 }) {
   if (isChat || isTaskWorkspace) {
     return (
-      <div className="h-full min-h-0 overflow-hidden bg-[#090a0c]">
+      <div className="h-full min-h-0 overflow-hidden bg-background">
         <div className="h-full min-h-0 w-full">{children}</div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#090a0c]">
+    <div className="flex h-full min-h-0 flex-col bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="mx-auto w-full max-w-[1480px]">{children}</div>
       </div>

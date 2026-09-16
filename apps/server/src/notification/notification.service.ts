@@ -165,6 +165,21 @@ export class NotificationService {
     return row ? toDTO(row) : null;
   }
 
+  async markCrewRead(userId: string, crewId: string): Promise<number> {
+    const readAt = new Date();
+    const result = await this.prisma.notification.updateMany({
+      where: {
+        userId,
+        readAt: null,
+        type: { startsWith: 'crew.' },
+        meta: { path: ['crewId'], equals: crewId },
+        createdAt: { lte: readAt },
+      },
+      data: { readAt },
+    });
+    return result.count;
+  }
+
   async markAllRead(userId: string): Promise<number> {
     const r = await this.prisma.notification.updateMany({
       where: { userId, readAt: null },

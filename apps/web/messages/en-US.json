@@ -5287,6 +5287,19 @@
       "title": "Approved final cuts",
       "subtitle": "The current approved delivery for every completed episode.",
       "empty": "Approved final cuts will appear here."
+    },
+    "formatting": {
+      "label": "Formatting",
+      "bold": "Bold",
+      "italic": "Italic",
+      "heading": "Heading",
+      "bulletList": "Bullet list",
+      "orderedList": "Numbered list",
+      "checklist": "Checklist",
+      "quote": "Quote",
+      "undo": "Undo",
+      "redo": "Redo",
+      "hint": "Select text to format it, or type # + Space for a heading, - + Space for a list, and / for more blocks. Changes save automatically."
     }
   },
   "crewTasks": {

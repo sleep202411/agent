@@ -16,6 +16,7 @@ import {
 import { NotionEditor } from "@/components/tiptap-templates/notion-like/notion-like-editor";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
+import { ProductionOverviewToolbar } from "./production-overview-toolbar";
 import { ProductionProjectHeader } from "./production-project-header";
 
 interface ProductionOverviewProps {
@@ -256,7 +257,7 @@ function ProductionDocumentEditor({
   };
 
   return (
-    <main className="min-h-0 flex-1 overflow-y-auto bg-[#0f1012]">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-background">
       <div className="mx-auto w-full max-w-[1060px] px-6 pb-40 pt-[75px] sm:px-8 lg:px-8">
         <ProductionProjectHeader
           crewId={crewId}
@@ -278,6 +279,7 @@ function ProductionDocumentEditor({
         </h3>
 
         <NotionEditor
+          renderToolbar={(instance) => <ProductionOverviewToolbar editor={instance} />}
           content={overview.page.document as JSONContent}
           editable={overview.capabilities.manage}
           placeholder={t("placeholder.paragraph")}
@@ -306,7 +308,7 @@ function slashLabel(t: ReturnType<typeof useTranslations>, key: string) {
 
 function ProductionLoading({ label }: { label: string }) {
   return (
-    <div className="grid min-h-[420px] flex-1 place-items-center bg-[#0f1012]">
+    <div className="grid min-h-[420px] flex-1 place-items-center bg-background">
       <div className="flex items-center gap-2 text-[11px] text-[#77777d]">
         <IconLoader2 className="size-4 animate-spin" /> {label}
       </div>
@@ -325,7 +327,7 @@ function ProductionError({
 }) {
   const t = useTranslations("crewProduction");
   return (
-    <div className="grid min-h-[420px] flex-1 place-items-center bg-[#0f1012] p-8 text-center">
+    <div className="grid min-h-[420px] flex-1 place-items-center bg-background p-8 text-center">
       <div className="max-w-sm">
         <IconAlertCircle className="mx-auto size-6 text-[#e52227]" />
         <h3 className="mt-3 text-[13px] font-semibold text-[#e5e5e7]">{title}</h3>
