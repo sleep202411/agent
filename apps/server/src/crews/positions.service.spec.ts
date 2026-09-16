@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import {
   ListCrewPositionsQuerySchema,
   ListPublicPositionsQuerySchema,
@@ -170,7 +169,10 @@ describe('PositionsService.listPublic', () => {
         workMode: ['remote'],
         sort: 'newest',
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_POSITION_CURSOR_INVALID' },
+      status: 400,
+    });
 
     expect(t.crewPosition.findMany).not.toHaveBeenCalled();
     expect(t.crewPosition.count).not.toHaveBeenCalled();

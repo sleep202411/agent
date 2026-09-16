@@ -1,9 +1,11 @@
+import { CrewApiError as CursorApiError } from "@/app/(site)/crews/_hooks/api";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { MembersGrid } from "./members-grid";
 import type { CrewMemberDTO } from "@repo/shared/crew";
 const state = vi.hoisted(() => ({
+  cursorError: false,
   account: "alice",
   locale: "en-US",
   failed: false,
@@ -116,7 +118,9 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     total: 1,
     isLoading: false,
     isError: state.failed,
-    error: new Error("Invitation list unavailable"),
+    error: state.cursorError
+      ? new CursorApiError(400, { code: "CREW_INVITATION_CURSOR_INVALID" })
+      : new Error("Invitation list unavailable"),
     isFetchNextPageError: state.nextPageError,
     isFetching: state.fetching,
     hasNextPage: state.hasNextPage,
@@ -131,6 +135,7 @@ const members = ["A", "B"].map(
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
+  state.cursorError = false;
   vi.clearAllMocks();
   state.account = "alice";
   state.locale = "en-US";
@@ -284,3 +289,15 @@ it.each(["en-US", "zh-CN", "zh-HK"])("formats invitation expiry in %s", async (l
 vi.mock("@/app/(site)/crews/_components/accountability/project-accountability", () => ({
   ProjectAccountability: () => null,
 }));
+
+it("restarts after the server rejects a continuation cursor", async () => {
+  state.cursorError = true;
+  state.failed = true;
+  state.nextPageError = true;
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click()
+  );
+  expect(state.refetch).toHaveBeenCalledTimes(1);
+  expect(state.next).not.toHaveBeenCalled();
+});

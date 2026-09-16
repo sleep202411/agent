@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   IconAlertCircle,
@@ -376,7 +378,8 @@ function AgreementSession({
                 className="mt-3"
                 disabled={agreements.isFetching}
                 onClick={() =>
-                  void (agreements.isFetchNextPageError
+                  void (agreements.isFetchNextPageError &&
+                  !isCrewCursorError(agreements.error, "CREW_AGREEMENT_CURSOR_INVALID")
                     ? agreements.fetchNextPage()
                     : agreements.refetch())
                 }

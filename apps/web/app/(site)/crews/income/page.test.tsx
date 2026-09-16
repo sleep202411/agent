@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Page from "./page";
+import { CrewApiError } from "../_hooks/api";
 vi.mock("./payout-history", () => ({ PayoutHistory: () => null }));
 const state = vi.hoisted(() => ({
   user: { id: "alice" } as { id: string } | null,
@@ -117,4 +118,19 @@ it("switches currencies without converting the amounts", () => {
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(state.currency).toBe("CNY");
+});
+
+it.each([true, false])("recovers a next-page earnings failure (invalid cursor: %s)", (invalid) => {
+  state.feed.isError = true;
+  state.feed.isFetchNextPageError = true;
+  state.feed.error = invalid
+    ? new CrewApiError(400, { code: "CREW_EARNING_CURSOR_INVALID" })
+    : new Error("Temporary outage");
+  render();
+  expect(container.textContent).toContain("Accepted animation");
+  act(() =>
+    [...container.querySelectorAll("button")].find((node) => node.textContent === "retry")!.click()
+  );
+  expect(state.feed.refetch).toHaveBeenCalledTimes(invalid ? 1 : 0);
+  expect(state.feed.fetchNextPage).toHaveBeenCalledTimes(invalid ? 0 : 1);
 });

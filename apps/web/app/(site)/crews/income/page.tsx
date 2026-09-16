@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "../_hooks/api";
+
 import { PayoutHistory } from "./payout-history";
 import { useState } from "react";
 import Link from "next/link";
@@ -69,7 +71,10 @@ export default function PersonalCrewIncome() {
                 variant="outline"
                 disabled={feed.isFetching}
                 onClick={() =>
-                  void (feed.isFetchNextPageError ? feed.fetchNextPage() : feed.refetch())
+                  void (feed.isFetchNextPageError &&
+                  !isCrewCursorError(feed.error, "CREW_EARNING_CURSOR_INVALID")
+                    ? feed.fetchNextPage()
+                    : feed.refetch())
                 }
               >
                 {t("retry")}

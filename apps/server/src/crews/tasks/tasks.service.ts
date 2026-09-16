@@ -1614,6 +1614,23 @@ export class CrewTasksService {
     return { items, nextCursor: more ? items.at(-1)!.id : null };
   }
 
+  private async assertTaskListCursor(
+    where: Prisma.CrewTaskWhereInput,
+    cursor?: string,
+  ) {
+    if (!cursor) return;
+    const row = await this.prisma.crewTask.findFirst({
+      where: { AND: [where, { id: cursor }] },
+      select: { id: true },
+    });
+    if (!row)
+      throw new BadRequestException({
+        code: 'CREW_TASK_CURSOR_INVALID',
+        message:
+          'The task cursor is invalid for the current view. Restart from the first page.',
+      });
+  }
+
   async list(crewId: string, userId: string, query: ListCrewTasksQuery) {
     await this.authorization.require(crewId, userId, 'tasks.view');
     const view = await this.prisma.crewTaskView.findFirst({
@@ -1629,6 +1646,7 @@ export class CrewTasksService {
       view.filters,
       query,
     );
+    await this.assertTaskListCursor(where, query.cursor);
     const orderBy = taskViewOrderBy(view.sorts);
     const [rows, total, workflowCounts] = await Promise.all([
       this.prisma.crewTask.findMany({
@@ -1673,26 +1691,28 @@ export class CrewTasksService {
   ) {
     await this.authorization.require(crewId, userId, 'tasks.view');
     const normalized = query.query?.trim();
-    const rows = await this.prisma.crewTask.findMany({
-      where: {
-        deletedAt: null,
-        crewId,
-        ...(query.excludeTaskId ? { id: { not: query.excludeTaskId } } : {}),
-        ...(query.activeOnly
-          ? {
-              workflowState: {
-                semantic: {
-                  notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
-                },
+    const where: Prisma.CrewTaskWhereInput = {
+      deletedAt: null,
+      crewId,
+      ...(query.excludeTaskId ? { id: { not: query.excludeTaskId } } : {}),
+      ...(query.activeOnly
+        ? {
+            workflowState: {
+              semantic: {
+                notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
               },
-            }
-          : {}),
-        ...(normalized
-          ? {
-              OR: taskSearchWhere(normalized),
-            }
-          : {}),
-      },
+            },
+          }
+        : {}),
+      ...(normalized
+        ? {
+            OR: taskSearchWhere(normalized),
+          }
+        : {}),
+    };
+    await this.assertTaskListCursor(where, query.cursor);
+    const rows = await this.prisma.crewTask.findMany({
+      where,
       select: {
         id: true,
         number: true,

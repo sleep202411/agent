@@ -1,9 +1,11 @@
+import { CrewApiError as CursorApiError } from "@/app/(site)/crews/_hooks/api";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { PositionDetailSheet } from "./position-detail-sheet";
 import type { CrewPositionDTO } from "@repo/shared/crew";
 const state = vi.hoisted(() => ({
+  cursorError: false,
   account: "alice",
   failed: false,
   nextPageError: false,
@@ -98,7 +100,9 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     },
     isLoading: false,
     isError: state.failed,
-    error: new Error("Applicants unavailable"),
+    error: state.cursorError
+      ? new CursorApiError(400, { code: "CREW_APPLICATION_CURSOR_INVALID" })
+      : new Error("Applicants unavailable"),
     isFetching: state.fetching,
     isFetchNextPageError: state.nextPageError,
     hasNextPage: state.hasNextPage,
@@ -127,6 +131,7 @@ const position = {
   revenueSharePercent: null,
 } as unknown as CrewPositionDTO;
 beforeEach(() => {
+  state.cursorError = false;
   vi.clearAllMocks();
   state.account = "alice";
   state.failed = false;
@@ -313,5 +318,17 @@ it("pauses manual applicant pagination during refresh", async () => {
   await render();
   expect(button("loadMore").disabled).toBe(true);
   await click("loadMore");
+  expect(state.next).not.toHaveBeenCalled();
+});
+
+it("restarts after the server rejects a continuation cursor", async () => {
+  state.cursorError = true;
+  state.failed = true;
+  state.nextPageError = true;
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click()
+  );
+  expect(state.refetch).toHaveBeenCalledTimes(1);
   expect(state.next).not.toHaveBeenCalled();
 });

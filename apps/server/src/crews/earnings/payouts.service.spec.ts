@@ -411,7 +411,10 @@ describe('Personal payout history', () => {
           cursor: PAYOUT_ID,
         }),
       ),
-    ).rejects.toThrow('cursor');
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_PAYOUT_CURSOR_INVALID' },
+      status: 400,
+    });
     expect(f.prisma.crewPayout.findMany).not.toHaveBeenCalled();
   });
 });

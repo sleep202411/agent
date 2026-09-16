@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
   locale: "en-US",
   layout: "board",
   account: "alice",
+  listFailed: false,
   failed: false,
   missing: false,
   retry: vi.fn(),
@@ -82,7 +83,13 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
         ],
       },
     }),
-    useCrewTaskView: () => ({ data: [], workflowCounts: {} }),
+    useCrewTaskView: () => ({
+      data: [],
+      workflowCounts: {},
+      isError: state.listFailed,
+      error: new Error("Task list unavailable"),
+      refetch: state.retry,
+    }),
   };
 });
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ useUserDisplays: () => ({}) }));
@@ -120,6 +127,7 @@ vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./task-dialogs", () => ({ SubmitTaskDialog: () => null }));
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
+  state.listFailed = false;
   if (root) act(() => root.unmount());
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
@@ -291,4 +299,13 @@ it("offers a retry when task details fail before any data loads", async () => {
       .click()
   );
   expect(state.retry).toHaveBeenCalledOnce();
+});
+
+it("shows task-list failure and retries without claiming an empty successful load", async () => {
+  state.listFailed = true;
+  await render();
+  expect(document.body.textContent).toContain("Task list unavailable");
+  const retry = [...document.querySelectorAll("button")].find((b) => b.textContent === "Retry")!;
+  await act(async () => retry.click());
+  expect(state.retry).toHaveBeenCalledTimes(1);
 });

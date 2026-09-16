@@ -229,14 +229,16 @@ export class CrewsService {
   ) {
     const limit = clampPageSize(opts.limit);
     const blockedIds = await this.blockedCrewIds(viewerId);
+    const where: Prisma.CrewWhereInput = {
+      deletedAt: null,
+      listingStatus: 'listed',
+      moderationStatus: 'ok',
+      ...(blockedIds.length ? { id: { notIn: blockedIds } } : {}),
+    };
+    await this.assertListCursor(opts.cursor, where);
     const rows = await this.prisma.crew.findMany({
-      where: {
-        deletedAt: null,
-        listingStatus: 'listed',
-        moderationStatus: 'ok',
-        ...(blockedIds.length ? { id: { notIn: blockedIds } } : {}),
-      },
-      orderBy: [{ listedAt: 'desc' }, { createdAt: 'desc' }],
+      where,
+      orderBy: [{ listedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
       include: CREW_OWNER_INCLUDE,
@@ -254,6 +256,23 @@ export class CrewsService {
       ),
       nextCursor: hasMore ? slice[slice.length - 1].id : null,
     };
+  }
+
+  private async assertListCursor(
+    cursor: string | undefined,
+    where: Prisma.CrewWhereInput,
+  ) {
+    if (!cursor) return;
+    const row = await this.prisma.crew.findFirst({
+      where: { AND: [where, { id: cursor }] },
+      select: { id: true },
+    });
+    if (!row)
+      throw new BadRequestException({
+        code: 'CREW_CURSOR_INVALID',
+        message:
+          'The Crew cursor is invalid for the current filters. Restart from the first page.',
+      });
   }
 
   async detail(id: string, viewerId: string | null) {
@@ -319,9 +338,10 @@ export class CrewsService {
         ? { OR: [{ id: q }, { name: { contains: q, mode: 'insensitive' } }] }
         : {}),
     };
+    await this.assertListCursor(opts.cursor, where);
     const rows = await this.prisma.crew.findMany({
       where,
-      orderBy: [{ createdAt: 'desc' }],
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
       include: CREW_OWNER_INCLUDE,

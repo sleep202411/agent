@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { PositionsTab } from "./positions-tab";
+import { CrewApiError } from "../_hooks/api";
 
 const feed = vi.hoisted(() => ({
   data: undefined as unknown,
@@ -75,3 +76,22 @@ it.each(["initial", "refresh", "next"])(
     expect(feed.refetch).toHaveBeenCalledTimes(kind === "next" ? 0 : 1);
   }
 );
+
+it("restarts recruitment discovery when its cursor is rejected", () => {
+  feed.isFetchNextPageError = true;
+  feed.error = new CrewApiError(400, {
+    code: "CREW_POSITION_CURSOR_INVALID",
+    message: "Restart the list",
+  });
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() => root.render(<PositionsTab />));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Restart the list");
+  act(() =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "retry")!
+      .click()
+  );
+  expect(feed.refetch).toHaveBeenCalledTimes(1);
+  expect(feed.fetchNextPage).not.toHaveBeenCalled();
+});

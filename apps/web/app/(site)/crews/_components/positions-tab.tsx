@@ -35,7 +35,7 @@ import {
   type ExperienceLevel,
   type WorkMode,
 } from "@repo/shared/crew";
-import { crewApi } from "@/app/(site)/crews/_hooks/api";
+import { crewApi, isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 
 interface PositionWithCrew {
   position: CrewPositionDTO;
@@ -182,7 +182,8 @@ export function PositionsTab() {
               variant="outline"
               disabled={positions.isFetching}
               onClick={() =>
-                void (positions.isFetchNextPageError
+                void (positions.isFetchNextPageError &&
+                !isCrewCursorError(positions.error, "CREW_POSITION_CURSOR_INVALID")
                   ? positions.fetchNextPage()
                   : positions.refetch())
               }

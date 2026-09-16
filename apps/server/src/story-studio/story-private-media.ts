@@ -28,12 +28,12 @@ export async function streamStoryPrivateMedia(
       response.status(416);
       const contentRange = upstream.headers.get('content-range');
       if (contentRange) response.setHeader('content-range', contentRange);
-      await upstream.body?.cancel();
+      void upstream.body?.cancel().catch(() => {});
       response.end();
       return;
     }
     if (!upstream.ok || !upstream.body) {
-      await upstream.body?.cancel();
+      void upstream.body?.cancel().catch(() => {});
       throw new BadGatewayException('The story media could not be loaded.');
     }
     response.status(upstream.status);

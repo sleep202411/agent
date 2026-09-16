@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "../_hooks/api";
+
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -57,7 +59,12 @@ export function PayoutHistory({ currency }: { currency: CrewLedgerCurrency }) {
           <p>{feed.error.message}</p>
           <Button
             disabled={feed.isFetching}
-            onClick={() => void (feed.isFetchNextPageError ? feed.fetchNextPage() : feed.refetch())}
+            onClick={() =>
+              void (feed.isFetchNextPageError &&
+              !isCrewCursorError(feed.error, "CREW_PAYOUT_CURSOR_INVALID")
+                ? feed.fetchNextPage()
+                : feed.refetch())
+            }
           >
             {t("retry")}
           </Button>

@@ -112,6 +112,7 @@ export class GoogleVertexMediaLoaderService {
       }
 
       if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      void response.body?.cancel().catch(() => {});
       const location = response.headers.get('location');
       if (!location || redirect === MAX_REDIRECTS) {
         throw googleVertexError(
@@ -125,6 +126,7 @@ export class GoogleVertexMediaLoaderService {
     }
 
     if (!response?.ok || !response.body) {
+      void response?.body?.cancel().catch(() => {});
       throw googleVertexError(
         'VALIDATION_ERROR',
         `Reference ${options.noun} download failed with HTTP ${response?.status ?? 'unknown'}.`,
@@ -136,6 +138,7 @@ export class GoogleVertexMediaLoaderService {
     if (contentLength && /^\d+$/.test(contentLength)) {
       const declared = Number(contentLength);
       if (!Number.isSafeInteger(declared) || declared > options.maxBytes) {
+        void response.body.cancel().catch(() => {});
         throw mediaTooLarge(options.maxBytes, options.noun);
       }
     }
@@ -150,7 +153,7 @@ export class GoogleVertexMediaLoaderService {
         if (!value) continue;
         byteLength += value.byteLength;
         if (byteLength > options.maxBytes) {
-          await reader.cancel();
+          void reader.cancel().catch(() => {});
           throw mediaTooLarge(options.maxBytes, options.noun);
         }
         chunks.push(value);

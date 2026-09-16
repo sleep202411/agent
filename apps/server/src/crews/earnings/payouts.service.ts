@@ -76,9 +76,11 @@ export class CrewPayoutsService {
         select: { id: true },
       }))
     )
-      throw new BadRequestException(
-        'The payout cursor is invalid for the current filters. Restart from the first page.',
-      );
+      throw new BadRequestException({
+        code: 'CREW_PAYOUT_CURSOR_INVALID',
+        message:
+          'The payout cursor is invalid for the current filters. Restart from the first page.',
+      });
     const [rows, groups] = await Promise.all([
       this.prisma.crewPayout.findMany({
         where,

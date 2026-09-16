@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
 /**
  * One-shot application-review dialog. Opens directly from the owner's
  * notification deeplink (`?application=<id>`) so the approve / reject
@@ -132,7 +134,8 @@ function ApplicationReviewSession({
       key: "positions",
       query: positionsQuery,
       retry: () =>
-        positionsQuery.isFetchNextPageError
+        positionsQuery.isFetchNextPageError &&
+        !isCrewCursorError(positionsQuery.error, "CREW_POSITION_CURSOR_INVALID")
           ? positionsQuery.fetchNextPage()
           : positionsQuery.refetch(),
     },
