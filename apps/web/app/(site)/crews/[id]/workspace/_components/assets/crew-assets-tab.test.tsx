@@ -106,6 +106,7 @@ let container: HTMLElement | null = null;
 let requests: Array<{ url: string; method: string; body?: unknown }> = [];
 let storageAvailable = true;
 let paginated = false;
+let cursorRejected = false;
 let nextPageFails = false;
 let assetListFails = false;
 
@@ -229,6 +230,11 @@ function installFetch() {
         if (assetListFails)
           return jsonResponse({ message: "Refresh unavailable" }, { status: 503 });
         if (url.includes("cursor=")) {
+          if (cursorRejected)
+            return jsonResponse(
+              { code: "CREW_ASSET_CURSOR_INVALID", message: "Restart assets" },
+              { status: 400 }
+            );
           return nextPageFails
             ? jsonResponse({ message: "Next page unavailable" }, { status: 503 })
             : jsonResponse({
@@ -318,6 +324,7 @@ beforeEach(() => {
   storageAvailable = true;
   paginated = false;
   nextPageFails = false;
+  cursorRejected = false;
   assetListFails = false;
   canLink = true;
   linkFails = false;
@@ -670,4 +677,21 @@ describe("Legacy project link", () => {
     expect((byText("button", "Project: Old canvas") as HTMLButtonElement).disabled).toBe(true);
     expect(requests.some((r) => r.url.endsWith("/studio-workspace-options"))).toBe(false);
   });
+});
+
+it("rebuilds asset pages after a cursor rejection instead of replaying the invalid boundary", async () => {
+  paginated = true;
+  cursorRejected = true;
+  await render();
+  const scroller = container!.querySelector<HTMLElement>(".relative.overflow-auto")!;
+  await act(async () => scroller.dispatchEvent(new Event("scroll", { bubbles: true })));
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Restart assets"));
+  expect(document.body.textContent).toContain("concept.png");
+  const before = requests.length;
+  paginated = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() => expect(requests.length).toBeGreaterThan(before));
+  const retried = requests.slice(before).find((request) => request.url.includes("/assets?"))!;
+  expect(retried.url).not.toContain("cursor=");
+  await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
 });

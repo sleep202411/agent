@@ -1887,6 +1887,14 @@ function TaskRelationshipsEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <fieldset disabled={pending} className="contents">
+          {options.isError && (
+            <div role="alert" className="space-y-2 text-xs text-destructive">
+              <p>{options.error instanceof Error ? options.error.message : t("loadFailed")}</p>
+              <Button disabled={options.isFetching} onClick={() => void options.refetch()}>
+                {t("retry")}
+              </Button>
+            </div>
+          )}
           <PropertyInput label={t("parentTask")}>
             <TaskSelect
               value={parentId}

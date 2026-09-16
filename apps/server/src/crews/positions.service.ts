@@ -77,6 +77,7 @@ export class PositionsService {
       });
       if (!cursor) {
         throw new BadRequestException({
+          code: 'CREW_POSITION_CURSOR_INVALID',
           message:
             'The crew positions cursor is invalid for the current viewer. Restart from the first page.',
         });
@@ -168,6 +169,7 @@ export class PositionsService {
       });
       if (!cursor) {
         throw new BadRequestException({
+          code: 'CREW_POSITION_CURSOR_INVALID',
           message:
             'The positions cursor is invalid for the current filters. Restart from the first page.',
         });
@@ -242,6 +244,18 @@ export class PositionsService {
           }
         : {}),
     };
+    if (opts.cursor) {
+      const cursor = await this.prisma.crewPosition.findFirst({
+        where: { AND: [where, { id: opts.cursor }] },
+        select: { id: true },
+      });
+      if (!cursor)
+        throw new BadRequestException({
+          code: 'CREW_POSITION_CURSOR_INVALID',
+          message:
+            'The positions cursor is invalid for the current filters. Restart from the first page.',
+        });
+    }
     const rows = await this.prisma.crewPosition.findMany({
       where,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

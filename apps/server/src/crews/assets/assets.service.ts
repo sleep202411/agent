@@ -586,6 +586,19 @@ export class CrewAssetsService {
           : { updatedAt: 'desc' },
       { id: 'asc' },
     ];
+    if (
+      query.cursor &&
+      !(await this.prisma.crewAssetNode.findFirst({
+        where: { AND: [where, { id: query.cursor }] },
+        select: { id: true },
+      }))
+    ) {
+      throw new BadRequestException({
+        code: 'CREW_ASSET_CURSOR_INVALID',
+        message:
+          'The asset cursor is invalid for the current view. Restart from the first page.',
+      });
+    }
     const limit = query.limit ?? 100;
     const page = await this.prisma.crewAssetNode.findMany({
       where,

@@ -2,11 +2,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import CrewsPage from "./page";
+import { CrewApiError } from "./_hooks/api";
 
 const feed = vi.hoisted(() => ({
   data: {
     pages: [{ items: [{ id: "crew", name: "Loaded Crew", createdAt: "2026-01-01" }] }],
   } as unknown,
+  error: null as Error | null,
   isLoading: false,
   isError: true,
   isFetching: false,
@@ -61,6 +63,7 @@ vi.mock("@/app/_components/kyc-gate-dialog", () => ({ KycGateDialog: () => null 
 let root: Root;
 beforeEach(() => {
   navigation.search = "";
+  feed.error = null;
   session.user = null;
   mine.data = undefined;
   mine.isError = false;
@@ -140,4 +143,29 @@ it("preserves other URL filters when selecting My Crews", () => {
   act(() => tab.click());
   expect(navigation.replace).toHaveBeenCalledWith("?from=invite&view=mine", { scroll: false });
   expect(container.querySelector("a")?.getAttribute("href")).toBe("/en-US/crews/tasks");
+});
+
+it("restarts the Crew feed when its continuation cursor is no longer visible", () => {
+  feed.isFetchNextPageError = true;
+  feed.error = new CrewApiError(400, { code: "CREW_CURSOR_INVALID" });
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() => root.render(<CrewsPage />));
+  expect(container.textContent).toContain("Loaded Crew");
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "retry"
+  )!;
+  act(() => retry.click());
+  expect(feed.refetch).toHaveBeenCalledTimes(1);
+  expect(feed.fetchNextPage).not.toHaveBeenCalled();
+});
+
+it("shows the server's actionable Crew-list error instead of replacing it with a generic failure", () => {
+  feed.error = new CrewApiError(403, { message: "Crew access has been suspended" });
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() => root.render(<CrewsPage />));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Crew access has been suspended"
+  );
 });

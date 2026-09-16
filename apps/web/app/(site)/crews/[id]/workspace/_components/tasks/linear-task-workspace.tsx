@@ -594,9 +594,19 @@ function LinearTaskSession({
             />
           </div>
           <main className="min-h-0 flex-1 overflow-auto">
+            {tasksQuery.isError && (
+              <div role="alert" className="space-y-2 p-4 text-sm text-destructive">
+                <p>
+                  {tasksQuery.error instanceof Error ? tasksQuery.error.message : t("loadFailed")}
+                </p>
+                <Button disabled={tasksQuery.isFetching} onClick={() => void tasksQuery.refetch()}>
+                  {t("retry")}
+                </Button>
+              </div>
+            )}
             {tasksQuery.isLoading ? (
               <LoadingState label={t("loadingIssues")} />
-            ) : (
+            ) : tasksQuery.isError && !tasks.length ? null : (
               <TaskProjectView
                 tasks={tasks}
                 workflowCounts={tasksQuery.workflowCounts}

@@ -106,3 +106,169 @@ describe('inlineBailianImageReferences', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+describe('bounded reference download lifetime', () => {
+  it('stops a chunked response as soon as the byte cap is exceeded', async () => {
+    process.env.BAILIAN_INLINE_MAX_BYTES = '5';
+    let pulls = 0;
+    const cancel = jest.fn();
+    fetchMock(
+      () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              pulls += 1;
+              controller.enqueue(new Uint8Array(4));
+              if (pulls === 20) controller.close();
+            },
+            cancel,
+          }),
+          { headers: { 'content-type': 'image/png' } },
+        ),
+    );
+    const url = 'https://media.fizzspace.cn/large.png';
+    expect(
+      (await inlineBailianImageReferences({ startFrame: url })).startFrame,
+    ).toBe(url);
+    expect(cancel).toHaveBeenCalled();
+    expect(pulls).toBeLessThan(20);
+  });
+  it.each([503, 200])(
+    'cancels an unread rejected response (%s)',
+    async (status) => {
+      const cancel = jest.fn();
+      fetchMock(
+        () =>
+          new Response(new ReadableStream({ cancel }), {
+            status,
+            headers: { 'content-length': '999999999' },
+          }),
+      );
+      await inlineBailianImageReferences({
+        startFrame: 'https://media.fizzspace.cn/a.png',
+      });
+      expect(cancel).toHaveBeenCalled();
+    },
+  );
+  it('keeps an exact-cap multi-chunk image valid', async () => {
+    process.env.BAILIAN_INLINE_MAX_BYTES = '4';
+    fetchMock(
+      () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1, 2]));
+              controller.enqueue(new Uint8Array([3, 4]));
+              controller.close();
+            },
+          }),
+          { headers: { 'content-type': 'image/png' } },
+        ),
+    );
+    expect(
+      (
+        await inlineBailianImageReferences({
+          startFrame: 'https://media.fizzspace.cn/a.png',
+        })
+      ).startFrame,
+    ).toBe('data:image/png;base64,AQIDBA==');
+  });
+});
+
+describe('server-side reference origin admission', () => {
+  it.each([
+    'https://127.0.0.1/private',
+    'https://untrusted.example/a.png',
+    'https://user:secret@media.fizzspace.cn/a.png',
+    'https://media.fizzspace.cn:8443/a.png',
+  ])('preserves %s without fetching it on the server', async (url) => {
+    const spy = fetchMock(() => new Response(PNG));
+    expect(
+      (await inlineBailianImageReferences({ startFrame: url })).startFrame,
+    ).toBe(url);
+    expect(spy).not.toHaveBeenCalled();
+  });
+  it('disables automatic redirects while downloading trusted media', async () => {
+    const spy = fetchMock(() => new Response(PNG));
+    await inlineBailianImageReferences({
+      startFrame: 'https://media.fizzspace.cn/a.png',
+    });
+    expect(spy.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
+  });
+  it('accepts the configured media origin without broadening to sibling hosts', async () => {
+    jest.replaceProperty(process, 'env', {
+      ...process.env,
+      MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS: 'https://configured.example/media',
+    });
+    const spy = fetchMock(
+      () => new Response(PNG, { headers: { 'content-type': 'image/png' } }),
+    );
+    const result = await inlineBailianImageReferences({
+      startFrame: 'https://configured.example/media/a.png',
+      endFrame: 'https://sibling.configured.example/a.png',
+    });
+    expect(result.startFrame).toMatch(/^data:image\/png;base64,/);
+    expect(result.endFrame).toBe('https://sibling.configured.example/a.png');
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('reference response admission', () => {
+  it.each(['text/html', 'application/json', 'video/mp4'])(
+    'does not relabel an explicit %s response as a PNG',
+    async (contentType) => {
+      fetchMock(
+        () =>
+          new Response('not-an-image', {
+            headers: { 'content-type': contentType },
+          }),
+      );
+      const url = 'https://media.fizzspace.cn/a.png';
+      expect(
+        (await inlineBailianImageReferences({ startFrame: url })).startFrame,
+      ).toBe(url);
+    },
+  );
+  it('keeps octet-stream references compatible with the existing PNG fallback', async () => {
+    fetchMock(
+      () =>
+        new Response(PNG, {
+          headers: { 'content-type': 'application/octet-stream' },
+        }),
+    );
+    expect(
+      (
+        await inlineBailianImageReferences({
+          startFrame: 'https://media.fizzspace.cn/a.png',
+        })
+      ).startFrame,
+    ).toBe(`data:image/png;base64,${PNG.toString('base64')}`);
+  });
+});
+
+it('cancels a stalled reference body at the deadline without submitting partial bytes', async () => {
+  jest.useFakeTimers();
+  try {
+    const cancel = jest.fn();
+    fetchMock(
+      () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1, 2]));
+            },
+            cancel,
+          }),
+          { headers: { 'content-type': 'image/png' } },
+        ),
+    );
+    const url = 'https://media.fizzspace.cn/stalled.png';
+    const result = inlineBailianImageReferences({ startFrame: url });
+    await jest.advanceTimersByTimeAsync(10_001);
+    expect((await result).startFrame).toBe(url);
+    expect(cancel).toHaveBeenCalled();
+    expect(jest.getTimerCount()).toBe(0);
+  } finally {
+    jest.useRealTimers();
+  }
+});

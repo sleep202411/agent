@@ -51,6 +51,18 @@ export class CrewApiError extends Error {
   }
 }
 
+/** Match a structured cursor rejection without treating other failures as a restart. */
+export function isCrewCursorError(error: unknown, code: string): boolean {
+  return (
+    error instanceof CrewApiError &&
+    error.status === 400 &&
+    typeof error.body === "object" &&
+    error.body !== null &&
+    "code" in error.body &&
+    error.body.code === code
+  );
+}
+
 function describeError(status: number, body: unknown): string {
   if (typeof body === "string" && body.trim()) return body;
   if (!body || typeof body !== "object") return `Crew API error ${status}`;

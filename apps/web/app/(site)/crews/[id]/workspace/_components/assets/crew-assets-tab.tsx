@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
@@ -838,7 +840,8 @@ export function CrewAssetsTab({
                   error={assetQuery.error}
                   t={t}
                   onRetry={() =>
-                    void (assetQuery.isFetchNextPageError
+                    void (assetQuery.isFetchNextPageError &&
+                    !isCrewCursorError(assetQuery.error, "CREW_ASSET_CURSOR_INVALID")
                       ? assetQuery.fetchNextPage()
                       : assetQuery.refetch())
                   }

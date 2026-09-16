@@ -2,10 +2,12 @@
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { CrewIncomeTab } from "./crew-income-tab";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   account: "alice",
+  failure: null as Error | null,
   failed: false,
   pageFailed: false,
   fetching: false,
@@ -64,7 +66,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     isError: state.failed,
     isFetchNextPageError: state.pageFailed,
     isFetching: state.fetching,
-    error: new Error("Ledger unavailable"),
+    error: state.failure ?? new Error("Ledger unavailable"),
   }),
   useCrewPayouts: () => ({
     data: state.payout
@@ -88,7 +90,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     isError: state.failed,
     isFetchNextPageError: state.pageFailed,
     isFetching: state.fetching,
-    error: new Error("Ledger unavailable"),
+    error: state.failure ?? new Error("Ledger unavailable"),
   }),
   useCrewEarningDetail: () => ({}),
   useCrewPayoutDetail: () => ({}),
@@ -190,6 +192,7 @@ afterEach(async () => {
   vi.clearAllMocks();
   state.account = "alice";
   state.failed = false;
+  state.failure = null;
   state.pageFailed = false;
   state.fetching = false;
   state.earning = false;
@@ -370,3 +373,23 @@ it("retains earnings after refresh errors and waits for refresh before paginatio
   expect(state.refetch).toHaveBeenCalledTimes(1);
   expect(state.nextPage).not.toHaveBeenCalled();
 });
+
+it.each(["earnings", "payouts"])(
+  "restarts rejected %s pagination without discarding visible records",
+  async (view) => {
+    state.earning = view === "earnings";
+    state.payout = view === "payouts";
+    await render();
+    if (state.payout) await act(async () => button("views.payouts").click());
+    state.failed = true;
+    state.pageFailed = true;
+    state.failure = new CrewApiError(400, {
+      code: state.payout ? "CREW_PAYOUT_CURSOR_INVALID" : "CREW_EARNING_CURSOR_INVALID",
+    });
+    await render();
+    expect(container.textContent).toContain(state.payout ? "payout.record" : "Recorded bonus");
+    await act(async () => button("retry").click());
+    expect(state.refetch).toHaveBeenCalledTimes(1);
+    expect(state.nextPage).not.toHaveBeenCalled();
+  }
+);

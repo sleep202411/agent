@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
 import { useLayoutEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import {
@@ -1420,7 +1422,13 @@ function ResultState({
         className="mt-3"
         icon={<IconRefresh />}
         disabled={query.isFetching}
-        onClick={() => void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())}
+        onClick={() =>
+          void (query.isFetchNextPageError &&
+          !isCrewCursorError(query.error, "CREW_EARNING_CURSOR_INVALID") &&
+          !isCrewCursorError(query.error, "CREW_PAYOUT_CURSOR_INVALID")
+            ? query.fetchNextPage()
+            : query.refetch())
+        }
       >
         {t("retry")}
       </Button>

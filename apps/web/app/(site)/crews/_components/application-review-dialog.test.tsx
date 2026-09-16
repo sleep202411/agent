@@ -1,3 +1,4 @@
+import { CrewApiError as CursorApiError } from "@/app/(site)/crews/_hooks/api";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -7,6 +8,7 @@ import cn from "@/messages/zh-CN.json";
 import hk from "@/messages/zh-HK.json";
 const messages = { "en-US": en, "zh-CN": cn, "zh-HK": hk };
 const state = vi.hoisted(() => ({
+  cursorError: false,
   account: "alice",
   locale: "en-US" as "en-US" | "zh-CN" | "zh-HK",
   translate: false,
@@ -88,7 +90,9 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
           },
         ],
     isError: state.failed === "positions",
-    error: new Error("Positions unavailable"),
+    error: state.cursorError
+      ? new CursorApiError(400, { code: "CREW_POSITION_CURSOR_INVALID" })
+      : new Error("Positions unavailable"),
     refetch: state.positionsRetry,
     hasNextPage: state.morePositions,
     isFetchNextPageError: state.nextPageError,
@@ -124,6 +128,7 @@ vi.mock("@/components/ui/dialog", () => {
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  state.cursorError = false;
   vi.clearAllMocks();
   state.account = "alice";
   state.locale = "en-US";
@@ -321,4 +326,16 @@ it("formats older application dates in the selected locale", async () => {
   vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-12T02:00:00Z"));
   await render();
   expect(container.textContent).toContain(new Date(state.createdAt).toLocaleDateString("zh-HK"));
+});
+
+it("restarts after the server rejects a continuation cursor", async () => {
+  state.cursorError = true;
+  state.failed = "positions";
+  state.nextPageError = true;
+  await render();
+  await act(async () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click()
+  );
+  expect(state.positionsRetry).toHaveBeenCalledTimes(1);
+  expect(state.nextPage).not.toHaveBeenCalled();
 });

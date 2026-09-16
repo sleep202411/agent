@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import type { CrewProfessionalDeliveryInput } from "./types";
 
 import {
@@ -86,6 +87,10 @@ export function useCrewTaskView(
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
+  useCompleteTaskPages(
+    result,
+    enabled && Boolean(accountUserId) && Boolean(crewId) && Boolean(input.viewId)
+  );
   return {
     ...result,
     data: result.data?.pages.flatMap((page) => page.items) ?? [],
@@ -123,6 +128,7 @@ export function useCrewTaskOptions(
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
+  useCompleteTaskPages(result, enabled && Boolean(accountUserId) && Boolean(crewId));
   return {
     ...result,
     data: result.data?.pages.flatMap((page) => page.items) ?? [],
@@ -900,4 +906,19 @@ export function useReviewCrewTask(crewId: string) {
       qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
     },
   });
+}
+
+function useCompleteTaskPages(
+  query: {
+    hasNextPage: boolean;
+    isFetching: boolean;
+    isError: boolean;
+    fetchNextPage: () => Promise<unknown>;
+  },
+  enabled: boolean
+) {
+  const { hasNextPage, isFetching, isError, fetchNextPage } = query;
+  useEffect(() => {
+    if (enabled && hasNextPage && !isFetching && !isError) void fetchNextPage();
+  }, [enabled, hasNextPage, isFetching, isError, fetchNextPage]);
 }

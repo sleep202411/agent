@@ -223,6 +223,7 @@ describe('CrewAgreementsService', () => {
       }),
     ).rejects.toMatchObject({
       response: expect.objectContaining({
+        code: 'CREW_AGREEMENT_CURSOR_INVALID',
         message: expect.stringContaining('cursor is invalid'),
       }),
     });

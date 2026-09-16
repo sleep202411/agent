@@ -57,6 +57,7 @@ export class CrewAgreementsService {
       : null;
     if (query.cursor && !cursor) {
       throw new BadRequestException({
+        code: 'CREW_AGREEMENT_CURSOR_INVALID',
         message:
           'The agreements cursor is invalid for the current view. Restart from the first page.',
       });

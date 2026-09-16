@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
 /**
  * Right-side Sheet drawer with full position info + applicants
  * triage. Owner-only — handles every position management action:
@@ -299,7 +301,11 @@ function PositionDetailSession({
                       size="sm"
                       disabled={applicationInbox.isFetching}
                       onClick={() =>
-                        void (applicationInbox.isFetchNextPageError
+                        void (applicationInbox.isFetchNextPageError &&
+                        !isCrewCursorError(
+                          applicationInbox.error,
+                          "CREW_APPLICATION_CURSOR_INVALID"
+                        )
                           ? applicationInbox.fetchNextPage()
                           : applicationInbox.refetch())
                       }

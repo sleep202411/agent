@@ -27,31 +27,95 @@ function maxInlineBytes(): number {
 }
 
 function httpsUrl(value: unknown): string | null {
-  if (typeof value !== 'string' || !value.startsWith('https://')) return null;
-  return value;
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) return null;
+    const origins = new Set([
+      'https://media.fizzdragon.com',
+      'https://media.fizzspace.cn',
+      'https://banner.fizzspace.cn',
+    ]);
+    for (const base of [
+      process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS,
+      process.env.MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE,
+      process.env.MEDIA_PUBLIC_BASE_URL_AZURE_BLOB,
+    ]) {
+      if (!base) continue;
+      try {
+        origins.add(new URL(base).origin);
+      } catch {
+        /* Invalid optional origins cannot admit downloads. */
+      }
+    }
+    return origins.has(url.origin) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 async function inlineUrl(url: string): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  let response: Response | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let complete = false;
+  const cancel = () => {
+    void reader?.cancel().catch(() => {});
+  };
   try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (!response.ok) return url;
+    response = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'error',
+    });
+    if (controller.signal.aborted || !response.ok || !response.body) return url;
+    const mime = response.headers
+      .get('content-type')
+      ?.split(';')[0]
+      ?.trim()
+      .toLowerCase();
+    if (
+      mime &&
+      !mime.startsWith('image/') &&
+      mime !== 'application/octet-stream' &&
+      mime !== 'binary/octet-stream'
+    )
+      return url;
+    const limit = maxInlineBytes();
     const bytes = Number.parseInt(
       response.headers.get('content-length') ?? '',
       10,
     );
-    if (Number.isFinite(bytes) && bytes > maxInlineBytes()) return url;
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.byteLength === 0 || buffer.byteLength > maxInlineBytes()) {
-      return url;
+    if (Number.isFinite(bytes) && bytes > limit) return url;
+    reader = response.body.getReader();
+    controller.signal.addEventListener('abort', cancel, { once: true });
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (controller.signal.aborted) return url;
+      if (done) {
+        complete = true;
+        break;
+      }
+      size += value.byteLength;
+      if (size > limit) return url;
+      chunks.push(value);
     }
-    const mime = response.headers.get('content-type')?.split(';')[0]?.trim();
+    if (!size) return url;
+    const buffer = Buffer.concat(chunks, size);
     return `data:${mime && mime.startsWith('image/') ? mime : 'image/png'};base64,${buffer.toString('base64')}`;
   } catch {
     return url;
   } finally {
     clearTimeout(timer);
+    controller.signal.removeEventListener('abort', cancel);
+    if (!complete) {
+      if (reader) cancel();
+      else void response?.body?.cancel().catch(() => {});
+      controller.abort();
+    }
+    reader?.releaseLock();
   }
 }
 

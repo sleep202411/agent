@@ -1,4 +1,6 @@
 "use client";
+
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { ProjectAccountability } from "@/app/(site)/crews/_components/accountability/project-accountability";
 
 /**
@@ -219,7 +221,8 @@ function MembersGridSession({
                 color="muted"
                 disabled={invitations.isFetching}
                 onClick={() =>
-                  void (invitations.isFetchNextPageError
+                  void (invitations.isFetchNextPageError &&
+                  !isCrewCursorError(invitations.error, "CREW_INVITATION_CURSOR_INVALID")
                     ? invitations.fetchNextPage()
                     : invitations.refetch())
                 }

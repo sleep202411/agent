@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { CrewApplicationStatus } from '@prisma/client';
 import { ListCrewApplicationsQuerySchema } from './dto';
 import { ApplicationsService } from './applications.service';
@@ -127,7 +127,10 @@ describe('ApplicationsService owner inbox', () => {
         cursor: 'application-other',
         positionId: POSITION_ID,
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_APPLICATION_CURSOR_INVALID' },
+      status: 400,
+    });
     expect(t.crewApplication.findMany).not.toHaveBeenCalled();
   });
 

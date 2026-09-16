@@ -12,6 +12,7 @@
  */
 
 import Link from "next/link";
+import { isCrewCursorError } from "./_hooks/api";
 import { CrewWorkspace } from "./_components/crew-workspace";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -83,6 +84,7 @@ export default function CrewsPage() {
     data,
     isLoading,
     isError,
+    error,
     isFetching,
     isFetchNextPageError,
     isFetchingNextPage,
@@ -90,6 +92,7 @@ export default function CrewsPage() {
     fetchNextPage,
     refetch,
   } = useCrewList(24);
+  const cursorInvalid = isCrewCursorError(error, "CREW_CURSOR_INVALID");
   const { data: kycStatus, refetch: refetchKycStatus } = useKycAuthStatus({
     enabled: isCnRegion,
   });
@@ -250,11 +253,17 @@ export default function CrewsPage() {
                   role="alert"
                   className="mt-6 flex items-center justify-center gap-3 text-sm text-muted-foreground"
                 >
-                  <span>{tc("loadFailed")}</span>
+                  <span>
+                    {error instanceof Error && error.message.trim()
+                      ? error.message
+                      : tc("loadFailed")}
+                  </span>
                   <Button
                     variant="outline"
                     disabled={isFetching}
-                    onClick={() => void (isFetchNextPageError ? fetchNextPage() : refetch())}
+                    onClick={() =>
+                      void (isFetchNextPageError && !cursorInvalid ? fetchNextPage() : refetch())
+                    }
                   >
                     {tc("retry")}
                   </Button>

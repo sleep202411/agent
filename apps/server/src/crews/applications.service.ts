@@ -75,6 +75,7 @@ export class ApplicationsService {
       });
       if (!cursor) {
         throw new BadRequestException({
+          code: 'CREW_APPLICATION_CURSOR_INVALID',
           message:
             'The applications cursor is invalid for the current filters. Restart from the first page.',
         });
