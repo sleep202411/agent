@@ -108,3 +108,13 @@ it("retains join errors and allows a successful retry", async () => {
   await act(async () => click());
   expect(state.push).toHaveBeenCalledOnce();
 });
+it("does not join a cached Crew when its current IP association cannot be verified", async () => {
+  client.setQueryData(["tv", "crew-origin", "ip", "viewer"], {
+    crew: { id: "former", name: "Former Crew" },
+  });
+  vi.mocked(api.get).mockRejectedValue(new Error("Association unavailable"));
+  await render();
+  await act(async () => click());
+  expect(crewApi.post).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Association unavailable");
+});

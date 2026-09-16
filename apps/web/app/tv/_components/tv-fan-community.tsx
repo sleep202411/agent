@@ -47,7 +47,14 @@ function FanEntry({ ipId, userId }: { ipId: string; userId: string | null }) {
   }, []);
 
   async function join() {
-    if (!active.current || operation.current || !origin.data?.crew) return;
+    if (
+      !active.current ||
+      operation.current ||
+      origin.isFetching ||
+      origin.isError ||
+      !origin.data?.crew
+    )
+      return;
     if (!userId) {
       open();
       return;
@@ -87,7 +94,7 @@ function FanEntry({ ipId, userId }: { ipId: string; userId: string | null }) {
         <button
           type="button"
           onClick={() => void join()}
-          disabled={joining}
+          disabled={joining || origin.isFetching || origin.isError}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-white/10 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white disabled:opacity-50"
         >
           <IconUsers className="size-4" />
