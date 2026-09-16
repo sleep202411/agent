@@ -399,6 +399,8 @@ function StoryboardColumnHeaderSession({
   const [showBatchVoiceDialog, setShowBatchVoiceDialog] = useState(false);
 
   const batchRun = useRef<BatchRun | null>(null);
+  const downloadRequest = useRef<AbortController | null>(null);
+  const mounted = useRef(false);
   const associationRequests = useRef(new Map<string, AbortController>());
   const currentAssociation = (kind: string, controller: AbortController) =>
     associationRequests.current.get(kind) === controller &&
@@ -434,8 +436,12 @@ function StoryboardColumnHeaderSession({
   const isDescriptionColumn = column.presetColumnKey === "description";
   const isDialogueColumn = column.presetColumnKey === "dialogue";
 
-  useLayoutEffect(
-    () => () => {
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      downloadRequest.current?.abort();
+      downloadRequest.current = null;
       associationRequests.current.forEach((request) => request.abort());
       associationRequests.current.clear();
       const run = batchRun.current;
@@ -446,9 +452,8 @@ function StoryboardColumnHeaderSession({
         activeBatchRuns.delete(run.projectId);
         store.dispatch(clearBatchGenerating(run.projectId));
       }
-    },
-    [projectId, column.id]
-  );
+    };
+  }, [projectId, column.id]);
 
   const handleAutoload = async () => {
     if (
@@ -519,6 +524,20 @@ function StoryboardColumnHeaderSession({
   };
 
   const handleBatchExport = async (type: "image" | "video") => {
+    if (
+      !mounted.current ||
+      !projectId ||
+      store.getState().project.currentProjectId !== projectId ||
+      downloadRequest.current
+    )
+      return;
+    const controller = new AbortController();
+    downloadRequest.current = controller;
+    const current = () =>
+      mounted.current &&
+      downloadRequest.current === controller &&
+      !controller.signal.aborted &&
+      store.getState().project.currentProjectId === projectId;
     try {
       const finalAssets = rows
         .map((row, rowIndex) => {
@@ -544,15 +563,20 @@ function StoryboardColumnHeaderSession({
           : t("startExportVideos", { count: finalAssets.length })
       );
 
-      if (!(await downloadBatch(finalAssets))) {
+      const successful = await downloadBatch(finalAssets, controller.signal);
+      if (!current()) return;
+      if (!successful) {
         toast.error(type === "image" ? t("exportImagesFailed") : t("exportVideosFailed"));
         return;
       }
 
       toast.success(type === "image" ? t("finalizedImagesExported") : t("finalizedVideosExported"));
     } catch (error) {
+      if (!current()) return;
       console.error("[StoryboardColumnHeader] 批量导出失败:", error);
       toast.error(type === "image" ? t("exportImagesFailed") : t("exportVideosFailed"));
+    } finally {
+      if (downloadRequest.current === controller) downloadRequest.current = null;
     }
   };
 

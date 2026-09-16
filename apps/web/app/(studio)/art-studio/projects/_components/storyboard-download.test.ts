@@ -63,3 +63,54 @@ it("reports a failed batch while still attempting later files", async () => {
   ).toBe(false);
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
+
+it("does not start an already-abandoned batch", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  await expect(
+    downloadBatch([{ url: "first", name: "first.png" }], controller.signal)
+  ).rejects.toMatchObject({ name: "AbortError" });
+  expect(fetcher).not.toHaveBeenCalled();
+});
+it("stops after cancellation during response-body reading", async () => {
+  vi.useFakeTimers();
+  let resolve!: (b: Blob) => void;
+  const controller = new AbortController();
+  const create = vi.fn();
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = create;
+      static revokeObjectURL = vi.fn();
+    }
+  );
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      blob: () =>
+        new Promise<Blob>((r) => {
+          resolve = r;
+        }),
+    })
+    .mockResolvedValue({ ok: true, blob: async () => new Blob(["next"]) });
+  vi.stubGlobal("fetch", fetcher);
+  const pending = downloadBatch(
+    [
+      { url: "first", name: "first.png" },
+      { url: "second", name: "second.png" },
+    ],
+    controller.signal
+  );
+  const result = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  await vi.waitFor(() => expect(resolve).toBeDefined());
+  controller.abort();
+  resolve(new Blob(["old"]));
+  await result;
+  expect(create).not.toHaveBeenCalled();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});

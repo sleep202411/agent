@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   project: "first",
   active: false,
+  assets: false,
   confirm: undefined as undefined | ((config: { model: string; voiceId: string }) => void),
   post: vi.fn(),
   dispatch: vi.fn(),
@@ -23,7 +24,20 @@ vi.mock("@/src/store", () => ({
 vi.mock("@/src/store/slices/projectSlice", () => ({
   selectCurrentInstance: () => ({
     rows: [
-      { shotId: "one", shotValues: [{ presetColumnKey: "dialogue", value: "Hello" }] },
+      {
+        shotId: "one",
+        shotValues: [
+          { presetColumnKey: "dialogue", value: "Hello" },
+          ...(h.assets
+            ? [
+                {
+                  shotColumnId: "voice",
+                  files: [{ url: "https://cdn.test/one.png", preferred: true }],
+                },
+              ]
+            : []),
+        ],
+      },
       { shotId: "two", shotValues: [{ presetColumnKey: "dialogue", value: "World" }] },
     ],
     columns: [],
@@ -86,6 +100,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   h.project = "first";
   h.active = false;
+  h.assets = false;
   h.post.mockReset();
   h.success.mockReset();
   h.dispatch.mockReset().mockImplementation((a) => {
@@ -100,6 +115,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   vi.clearAllTimers();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   container.remove();
 });
 it("does not clear a batch owned by another column on unmount", async () => {
@@ -255,3 +271,36 @@ it.each(["image_prompt", "dialogue"])(
     error.mockRestore();
   }
 );
+
+it("cancels a single admitted export on project replacement", async () => {
+  h.assets = true;
+  let resolve!: (value: unknown) => void;
+  const fetcher = vi.fn().mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  const create = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = create;
+    }
+  );
+  const imageColumn = { id: "voice", presetColumnKey: "image_path" };
+  await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
+  await act(async () => {
+    container.querySelectorAll("button")[1]!.click();
+    container.querySelectorAll("button")[1]!.click();
+  });
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  const signal = fetcher.mock.calls[0]![1].signal as AbortSignal;
+  h.project = "second";
+  await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
+  expect(signal.aborted).toBe(true);
+  await act(async () => resolve({ ok: true, blob: async () => new Blob(["old"]) }));
+  expect(create).not.toHaveBeenCalled();
+  expect(h.success).not.toHaveBeenCalled();
+});
