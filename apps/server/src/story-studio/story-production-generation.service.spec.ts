@@ -47,13 +47,15 @@ describe('Story production generation model constraints', () => {
     expect(resolved.id).toBe('text-video');
   });
 
-  it('reports the missing source frame when no text-to-video model is available', async () => {
+  it('reports the mode mismatch when only an image-to-video model is available', async () => {
+    // The canonical mode authority now rejects the i2v-only model at
+    // selection time with actionable copy — before billing, before the
+    // provider can 422 on the missing image_url.
     await expect(
       resolveDefaultVideoModel([imageOnlyVideo()]),
     ).rejects.toMatchObject({
       response: {
-        code: 'STORY_GENERATION_MODEL_INPUT_REQUIRED',
-        fields: ['startFrame'],
+        code: 'STORY_GENERATION_MODEL_MODE_UNSUPPORTED',
       },
     });
   });

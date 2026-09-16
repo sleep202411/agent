@@ -34,6 +34,11 @@ import {
   type AiGenerationCompletionObserver,
 } from '../ai-generation/completion-observer.service';
 import { AiGenerationService } from '../ai-generation/ai-generation.service';
+import {
+  describeGenerationRequestShape,
+  generationRequestShape,
+  modelSupportsRequest,
+} from '../ai-generation/generation-mode-capability';
 import { STORY_STUDIO_WORKBENCH_SURFACE } from '../ai-generation/output-storage-target';
 import type {
   AiPromptDocument,
@@ -1512,12 +1517,16 @@ export class StoryProductionGenerationService
     });
     let durationFailure: BadRequestException | null = null;
     let inputFailure: BadRequestException | null = null;
+    let modeFailure: BadRequestException | null = null;
     for (const candidate of candidates) {
-      if (
-        !candidate.enabled ||
-        candidate.access?.allowed === false ||
-        modelCompatibilityIssue(candidate, kind, references) !== null
-      ) {
+      if (!candidate.enabled || candidate.access?.allowed === false) {
+        continue;
+      }
+      const issue = modelCompatibilityIssue(candidate, kind, references);
+      if (issue) {
+        if (issue.code === 'STORY_GENERATION_MODEL_MODE_UNSUPPORTED') {
+          modeFailure ??= new BadRequestException(issue);
+        }
         continue;
       }
       try {
@@ -1541,10 +1550,13 @@ export class StoryProductionGenerationService
 
     // Do not hide a timeline that no available provider can cover behind a
     // generic "default unavailable" response. The creator needs the concrete
-    // split-clip action, while required-input failures explain that an
-    // explicit model/setting selection is necessary.
+    // split-clip action, required-input failures explain that an
+    // explicit model/setting selection is necessary, and mode failures
+    // explain that every candidate lacked the capability this request
+    // shape needs (e.g. only image-to-video models for a text-only clip).
     if (inputFailure) throw inputFailure;
     if (durationFailure) throw durationFailure;
+    if (modeFailure) throw modeFailure;
     throw new ServiceUnavailableException({
       code: 'STORY_GENERATION_DEFAULT_MODEL_UNAVAILABLE',
       message: `No accessible ${kind} generation model can satisfy this target and its resolved @Asset references.`,
@@ -2460,7 +2472,7 @@ interface ProviderReference {
   };
 }
 
-function modelCompatibilityIssue(
+export function modelCompatibilityIssue(
   model: AiModelDefinition,
   kind: 'image' | 'video',
   references: ProviderReference[],
@@ -2484,6 +2496,25 @@ function modelCompatibilityIssue(
       code: 'STORY_GENERATION_MODEL_PROMPT_UNSUPPORTED',
       message: 'The selected model does not accept a Story prompt.',
     };
+  }
+  // Single capability authority: the canonical's declared generationModes
+  // decide whether this request shape is quotable at all. A text-only request
+  // must never quote an i2v-only model (the kling-motion class of failure:
+  // quoted, billed, then rejected 422 by the provider for image_url).
+  // Models with no declared modes keep the schema-only checks below.
+  if (model.generationModes?.length) {
+    const shape = generationRequestShape(
+      kind,
+      references.map((reference) => reference.binding.kind),
+    );
+    if (!modelSupportsRequest(model.generationModes, shape)) {
+      return {
+        code: 'STORY_GENERATION_MODEL_MODE_UNSUPPORTED',
+        message:
+          `The selected model only supports ${model.generationModes.join(', ')} ` +
+          `and cannot serve ${describeGenerationRequestShape(shape)}.`,
+      };
+    }
   }
   for (const referenceKind of ['image', 'video'] as const) {
     const count = references.filter(
