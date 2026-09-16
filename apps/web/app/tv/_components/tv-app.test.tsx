@@ -9,6 +9,9 @@ import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock("./tv-right-rail", () => ({ TvRightRail: () => null }));
+vi.mock("@/components/auth/auth-dialog-provider", () => ({
+  useAuthDialog: () => ({ open: vi.fn() }),
+}));
 const harness = vi.hoisted(() => ({
   userId: "viewer-a",
   get: vi.fn(),
