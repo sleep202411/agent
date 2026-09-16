@@ -18,6 +18,7 @@ import {
   mapBailianUnknownError,
 } from './bailian-error.mapper';
 import { mapBailianProviderRequest } from './bailian-request.mapper';
+import { inlineBailianImageReferences } from './bailian-reference-inline';
 import type {
   BailianMediaObject,
   BailianModelRuntimeConfig,
@@ -65,7 +66,12 @@ export class BailianProviderAdapter implements ProviderAdapter {
   ): Promise<StartResult> {
     void ctx;
     const runtime = await this.requireRuntime(modelId, true);
-    const payload = mapBailianProviderRequest(runtime, input);
+    // Image references ride as data URIs (see bailian-reference-inline) so a
+    // Bailian-side download flake can never fail a submission.
+    const payload = mapBailianProviderRequest(
+      runtime,
+      await inlineBailianImageReferences(input),
+    );
     // Multi-binding video canonicals (e.g. Wan 2.7) route per mode to a distinct
     // upstream model id. Resolve it from the runtime's mode->endpoint map and
     // override the request body's `model` so the right endpoint is called; the
