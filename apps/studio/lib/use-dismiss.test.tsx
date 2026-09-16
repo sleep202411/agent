@@ -33,3 +33,20 @@ it("releases dismissal events after closing", async () => {
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   expect(dismiss).not.toHaveBeenCalled();
 });
+
+it.each(["document", "text"])(
+  "handles a %s pointer target without assuming an HTMLElement",
+  async (kind) => {
+    const add = vi.spyOn(document, "addEventListener");
+    await act(async () => root.render(<Probe />));
+    const listener = add.mock.calls.find(([type]) => type === "pointerdown")?.[1] as EventListener;
+    add.mockRestore();
+    const zone = document.createElement("span");
+    zone.dataset.popoverZone = "";
+    const text = document.createTextNode("inside");
+    zone.append(text);
+    const target = kind === "document" ? document : text;
+    expect(() => listener({ target } as unknown as Event)).not.toThrow();
+    expect(dismiss).toHaveBeenCalledTimes(kind === "document" ? 1 : 0);
+  }
+);

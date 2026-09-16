@@ -17,7 +17,12 @@ export function useDismiss(open: boolean, onDismiss: () => void) {
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target =
+        event.target instanceof Element
+          ? event.target
+          : event.target instanceof Node
+            ? event.target.parentElement
+            : null;
       if (!target?.closest("[data-popover-zone]")) cb.current();
     };
     const onKeyDown = (event: KeyboardEvent) => {
