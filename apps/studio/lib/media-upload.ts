@@ -142,7 +142,7 @@ function errorMessageFromJson(json: {
 function contentTypeForFile(file: File, explicit?: string): string {
   if (explicit) return explicit;
   const extension = file.name.split(".").pop()?.toLowerCase();
-  if (extension && CONTENT_TYPE_BY_EXTENSION[extension]) {
+  if (extension && Object.hasOwn(CONTENT_TYPE_BY_EXTENSION, extension)) {
     return CONTENT_TYPE_BY_EXTENSION[extension];
   }
   return file.type || "application/octet-stream";
@@ -213,7 +213,12 @@ function putBytesToStorage(
       reject(new DOMException("Upload aborted", "AbortError"));
     };
 
-    xhr.send(file);
+    try {
+      xhr.send(file);
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 }
 

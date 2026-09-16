@@ -8,6 +8,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("uploadFileViaSignedUrl", () => {
@@ -49,6 +50,24 @@ describe("uploadFileViaSignedUrl", () => {
     });
   });
 
+  it.each([
+    ["constructor", "image/png"],
+    ["__proto__", "application/octet-stream"],
+  ])("uses the normal MIME fallback for extension %s", async (extension, expected) => {
+    const fetchMock = mockUploadPipeline({});
+    vi.stubGlobal("fetch", fetchMock);
+    await uploadFileViaSignedUrl(
+      new File(["image"], `frame.${extension}`, {
+        type: extension === "constructor" ? "image/png" : "",
+      }),
+      { kind: "ai_reference_image" }
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      contentType: expected,
+    });
+    expect(FakeXMLHttpRequest.instances[0]?.headers.get("Content-Type")).toBe(expected);
+  });
+
   it("lets a provider-signed content type override the canonical default case-insensitively", async () => {
     vi.stubGlobal("fetch", mockUploadPipeline({ "content-type": "image/provider-signed" }));
 
@@ -59,6 +78,26 @@ describe("uploadFileViaSignedUrl", () => {
     expect(FakeXMLHttpRequest.instances[0]?.headers).toEqual(
       new Map([["content-type", "image/provider-signed"]])
     );
+  });
+
+  it("removes the cancellation listener when starting the storage request throws", async () => {
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const add = vi.spyOn(controller.signal, "addEventListener");
+    const error = new DOMException("Network unavailable", "NetworkError");
+    vi.spyOn(FakeXMLHttpRequest.prototype, "send").mockImplementation(() => {
+      throw error;
+    });
+    const fetchMock = mockUploadPipeline({});
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png"), {
+        kind: "ai_reference_image",
+        signal: controller.signal,
+      })
+    ).rejects.toBe(error);
+    expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[0]?.[1]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("refuses to start once the caller has already aborted", async () => {
