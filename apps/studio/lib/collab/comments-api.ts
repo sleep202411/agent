@@ -38,9 +38,13 @@ export interface CreateThreadInput {
   body: string;
 }
 
-export async function listCommentThreads(documentId: string): Promise<CommentThreadDto[]> {
+export async function listCommentThreads(
+  documentId: string,
+  signal?: AbortSignal
+): Promise<CommentThreadDto[]> {
   const data = await api.get<{ threads: CommentThreadDto[] }>(
-    `/aurora/documents/${documentId}/comments`
+    `/aurora/documents/${documentId}/comments`,
+    { signal }
   );
   return data.threads;
 }
