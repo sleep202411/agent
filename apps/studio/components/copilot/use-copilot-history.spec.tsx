@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, useState } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { UIMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCopilotHistory } from "./use-copilot-history";
+
+let retained: ReturnType<typeof useCopilotHistory<UIMessage>>;
 
 interface PendingHistoryRequest {
   input: RequestInfo | URL;
@@ -31,6 +33,9 @@ function Harness({
     mode,
     projectId,
     setMessages,
+  });
+  useLayoutEffect(() => {
+    retained = history;
   });
   return (
     <div>
@@ -79,6 +84,21 @@ describe("useCopilotHistory", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
+
+  it.each(["retry", "reset"] as const)(
+    "rejects retained %s callbacks after unmount",
+    async (action) => {
+      await act(async () => root.render(<Harness conversationId="conversation-a" />));
+      const callback = retained[action];
+      await act(async () => root.render(null));
+      // A stale caller must not start another request; deliberately do not await
+      // an unfixed callback because its mocked HTTP request remains pending.
+      await act(async () => {
+        void callback();
+      });
+      expect(requests).toHaveLength(1);
+    }
+  );
 
   it("cannot apply a late history response from a previous conversation", async () => {
     await act(async () => {
