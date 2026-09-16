@@ -1,15 +1,8 @@
 "use client";
 
-/**
- * React hook: poll /aurora/assets/image-status for a project.
- *
- * Polling cadence:
- *   - 3s while any tracked asset is `pending` or `generating`
- *   - Stops when all tracked assets are terminal (ready | failed_*)
- *   - Resumes immediately on visibility change (tab back to focus)
- *   - Refetches on explicit refetch() call (after the user clicks retry)
- */
-import { useCallback, useEffect, useRef, useState } from "react";
+/** Poll active image jobs, retry transient reads and discard abandoned scopes. */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import {
   fetchAssetImageStatuses,
   isInFlight,
@@ -17,6 +10,7 @@ import {
 } from "./image-status-client";
 
 const POLL_INTERVAL_MS = 3_000;
+const EMPTY_STATUSES: AssetImageStatusMap = {};
 
 export interface UseAssetImageStatusesResult {
   statuses: AssetImageStatusMap;
@@ -28,73 +22,68 @@ export interface UseAssetImageStatusesResult {
 export function useAssetImageStatuses(
   projectId: string | null | undefined
 ): UseAssetImageStatusesResult {
-  const [statuses, setStatuses] = useState<AssetImageStatusMap>({});
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const mountedRef = useRef(true);
+  const { user } = useCurrentUser();
+  const userId = user?.id;
+  const scope = useMemo(() => ({ projectId, userId }), [projectId, userId]);
+  const [snapshot, setSnapshot] = useState<{
+    scope: typeof scope;
+    statuses: AssetImageStatusMap;
+  } | null>(null);
+  const refresh = useRef<{ scope: typeof scope; run: () => void } | null>(null);
+  const statuses = snapshot?.scope === scope ? snapshot.statuses : EMPTY_STATUSES;
 
-  const hasInFlight = Object.values(statuses).some((s) => isInFlight(s.status));
-
-  const runFetch = useCallback(async () => {
-    if (!projectId) return;
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const next = await fetchAssetImageStatuses(projectId, controller.signal);
-      if (!mountedRef.current || controller.signal.aborted) return;
-      setStatuses(next);
-    } catch {
-      // transient — next poll will retry
-    }
-  }, [projectId]);
-
-  // Initial fetch + polling driver.
   useEffect(() => {
-    mountedRef.current = true;
-    if (!projectId) {
-      setStatuses({});
-      return () => {
-        mountedRef.current = false;
-      };
-    }
-    void runFetch();
-    return () => {
-      mountedRef.current = false;
-      abortRef.current?.abort();
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [projectId, runFetch]);
+    if (!scope.projectId || !scope.userId) return;
+    const currentProject = scope.projectId;
+    let disposed = false;
+    let controller: AbortController | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let needsPoll = true;
 
-  // Schedule the next poll only while something is in flight.
-  useEffect(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
+    async function run() {
+      if (disposed) return;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      controller?.abort();
+      const request = new AbortController();
+      controller = request;
+      try {
+        const next = await fetchAssetImageStatuses(currentProject, request.signal);
+        if (disposed || request.signal.aborted) return;
+        needsPoll = Object.values(next).some((entry) => isInFlight(entry.status));
+        setSnapshot({ scope, statuses: next });
+      } catch {
+        if (!disposed && !request.signal.aborted) needsPoll = true;
+      } finally {
+        // A replaced request must never schedule another timer for this scope.
+        if (!disposed && controller === request && needsPoll) {
+          timer = setTimeout(() => void run(), POLL_INTERVAL_MS);
+        }
+      }
     }
-    if (!hasInFlight) return;
-    timerRef.current = setTimeout(() => {
-      void runFetch();
-    }, POLL_INTERVAL_MS);
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [hasInFlight, statuses, runFetch]);
-
-  // Visibility: when user returns to tab and something was in-flight,
-  // immediately refresh to catch up.
-  useEffect(() => {
-    if (typeof document === "undefined") return;
+    const ownedRefresh = { scope, run: () => void run() };
+    refresh.current = ownedRefresh;
+    void run();
     const onVisibility = () => {
-      if (!document.hidden && hasInFlight) void runFetch();
+      if (!document.hidden && needsPoll) void run();
     };
     document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [hasInFlight, runFetch]);
+    return () => {
+      disposed = true;
+      controller?.abort();
+      if (timer) clearTimeout(timer);
+      if (refresh.current === ownedRefresh) refresh.current = null;
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [scope]);
+
+  const refetch = useCallback(() => {
+    if (refresh.current?.scope === scope) refresh.current.run();
+  }, [scope]);
 
   return {
     statuses,
-    refetch: () => void runFetch(),
-    hasInFlight,
+    refetch,
+    hasInFlight: Object.values(statuses).some((entry) => isInFlight(entry.status)),
   };
 }

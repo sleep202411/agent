@@ -1,12 +1,12 @@
 /**
- * Lightweight per-user sliding-window rate limiter backed by Redis.
+ * Lightweight per-user fixed-window rate limiter backed by Redis.
  *
- * Stateless wrapper around `INCR + EXPIRE`. Bucket key includes the
+ * Atomic counter and expiry admission. Bucket key includes the
  * current window so we never need to manually evict — Redis TTL drops
  * the row when the window rolls over.
  *
  * Usage:
- *   await rateLimit.guard({ bucket: 'user-lookup', userId, max: 30, windowSec: 60 });
+ *   await rateLimit.guard({ bucket: 'user-lookup', actorId: userId, max: 30, windowSec: 60 });
  *   // throws HttpException 429 if exceeded
  *
  * Why per-user not per-IP: production traffic is mostly behind
@@ -34,6 +34,14 @@ export interface RateLimitArgs {
   windowSec: number;
 }
 
+const ADMIT_COUNTER = `
+local count = redis.call('INCR', KEYS[1])
+if redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`;
+
 @Injectable()
 export class RateLimitService {
   private readonly logger = new Logger(RateLimitService.name);
@@ -54,8 +62,14 @@ export class RateLimitService {
 
     let count: number;
     try {
-      count = await this.redis.incr(key);
-      if (count === 1) await this.redis.expire(key, args.windowSec + 5);
+      // One operation prevents interruption between increment and expiry.
+      // Also repair counters left without TTL by the former two-call path.
+      count = (await this.redis.eval(
+        ADMIT_COUNTER,
+        1,
+        key,
+        args.windowSec + 5,
+      )) as number;
     } catch (err) {
       // Fail-open on Redis errors: rate limit is a defense-in-depth
       // measure, not the primary access control. Better to serve
