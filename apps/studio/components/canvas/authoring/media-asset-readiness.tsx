@@ -250,7 +250,8 @@ function useMediaAssetReadinessStatusQuery(
   const documentId = useCanvasDocumentId();
   return useQuery({
     queryKey: mediaAssetReadinessKeys.statuses(capability, assetIds, documentId),
-    queryFn: () => getMediaAssetReadinessStatuses(capability, assetIds, documentId),
+    queryFn: ({ signal }) =>
+      getMediaAssetReadinessStatuses(capability, assetIds, documentId, signal),
     enabled: enabled && assetIds.length > 0,
     refetchInterval: (query) => {
       const data = query.state.data;
