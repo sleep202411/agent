@@ -374,9 +374,12 @@ export function useCanvasGraph(
       const parts: string[] = [];
       awareness.getStates().forEach((state, clientId) => {
         if (clientId === localId) return;
-        const s = state as { drag?: unknown; selection?: unknown };
+        const s = state as { drag?: unknown; selection?: unknown; user?: { color?: unknown } };
         if (s.drag === undefined && s.selection === undefined) return;
-        parts.push(`${clientId}:${stableSig(s.drag)}:${stableSig(s.selection)}`);
+        const color = typeof s.user?.color === "string" ? s.user.color : undefined;
+        parts.push(
+          `${clientId}:${stableSig(s.drag)}:${stableSig(s.selection)}:${stableSig(color)}`
+        );
       });
       return parts.sort().join("|");
     };
