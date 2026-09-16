@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { reconcileCanvasGroups } from "@/lib/canvas-core/canvas-groups";
 import {
+  assetsMap,
+  removeAssetsByMediaAssetId,
+  renameAssetsByMediaAssetId,
   groupsMap,
   readAllGroups,
   readAllNodes,
@@ -126,5 +129,41 @@ describe("collaborative canvas groups", () => {
 
     expect(readAllGroups(legacy)).toEqual([]);
     legacy.destroy();
+  });
+});
+
+describe("persisted canvas record recovery", () => {
+  it.each([undefined, null, "ab", { length: 2 }])(
+    "replaces an invalid persisted group member list: %j",
+    (nodeIds) => {
+      const doc = new Y.Doc();
+      doc.getMap<unknown>("groups").set("group", { color: "blue", nodeIds });
+      const group = { id: "group", color: "blue" as const, nodeIds: ["a", "b"] };
+      expect(() => writeCanvasGroups(doc, [group])).not.toThrow();
+      expect(readAllGroups(doc)).toEqual([group]);
+      doc.destroy();
+    }
+  );
+
+  it("renames matching assets despite an unreadable earlier library entry", () => {
+    const doc = new Y.Doc();
+    doc.getMap<unknown>("assets").set("broken", null);
+    doc.getMap<unknown>("assets").set("valid", { id: "valid", mediaAssetId: "media", name: "old" });
+    doc.getMap<unknown>("assets").set("other", { id: "other", name: "kept" });
+    expect(() => renameAssetsByMediaAssetId(doc, "media", " new ")).not.toThrow();
+    expect(assetsMap(doc).get("valid")?.name).toBe("new");
+    expect(assetsMap(doc).get("other")?.name).toBe("kept");
+    doc.destroy();
+  });
+
+  it("removes matching assets despite an unreadable earlier library entry", () => {
+    const doc = new Y.Doc();
+    doc.getMap<unknown>("assets").set("broken", null);
+    doc.getMap<unknown>("assets").set("valid", { id: "valid", mediaAssetId: "media" });
+    doc.getMap<unknown>("assets").set("other", { id: "other" });
+    expect(() => removeAssetsByMediaAssetId(doc, "media")).not.toThrow();
+    expect(assetsMap(doc).has("valid")).toBe(false);
+    expect(assetsMap(doc).has("other")).toBe(true);
+    doc.destroy();
   });
 });

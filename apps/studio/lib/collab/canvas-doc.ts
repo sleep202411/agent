@@ -238,6 +238,7 @@ export function writeCanvasGroups(doc: Y.Doc, groups: readonly CanvasGroup[]): v
     const current = map.get(groupId);
     if (
       current?.color === group.color &&
+      Array.isArray(current.nodeIds) &&
       current.nodeIds.length === group.nodeIds.length &&
       current.nodeIds.every((nodeId, index) => nodeId === group.nodeIds[index])
     ) {
@@ -280,6 +281,7 @@ export function removeAsset(doc: Y.Doc, id: string): void {
 export function removeAssetsByMediaAssetId(doc: Y.Doc, mediaAssetId: string): void {
   const am = assetsMap(doc);
   for (const [id, asset] of [...am.entries()]) {
+    if (!asset || typeof asset !== "object") continue;
     if (asset.mediaAssetId === mediaAssetId || asset.id === mediaAssetId) {
       am.delete(id);
     }
@@ -290,6 +292,7 @@ export function renameAssetsByMediaAssetId(doc: Y.Doc, mediaAssetId: string, nam
   const am = assetsMap(doc);
   const trimmed = name.trim();
   for (const [id, asset] of [...am.entries()]) {
+    if (!asset || typeof asset !== "object") continue;
     if (asset.mediaAssetId !== mediaAssetId && asset.id !== mediaAssetId) continue;
     const next: CanvasAsset = { ...asset };
     if (trimmed) next.name = trimmed;
