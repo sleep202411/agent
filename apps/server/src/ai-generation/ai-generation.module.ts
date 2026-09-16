@@ -155,7 +155,14 @@ import { AiGenerationCompletionObserverRegistry } from './completion-observer.se
       useExisting: RealPersonLikenessOutputsService,
     },
   ],
-  exports: [AiGenerationService, AiGenerationCompletionObserverRegistry],
+  exports: [
+    AiGenerationService,
+    AiGenerationCompletionObserverRegistry,
+    // Canonical catalog access for cross-module boot-time validation (e.g.
+    // the Story mobile-default readiness check) — request paths keep using
+    // AiGenerationService.listCatalog for per-user access stamping.
+    AiCanonicalCatalogService,
+  ],
 })
 export class AiGenerationModule implements OnModuleInit {
   /**

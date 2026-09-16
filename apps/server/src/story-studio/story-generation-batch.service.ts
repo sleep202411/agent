@@ -23,6 +23,10 @@ import type {
   QuoteStoryAssetGenerationBatchInput,
   QuoteStoryStoryboardGenerationBatchInput,
 } from './story-generation-batch.schema';
+import {
+  requiredMobileImageModelId,
+  requiredMobileVideoModelId,
+} from './story-mobile-model-defaults.service';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProductionGenerationService } from './story-production-generation.service';
 
@@ -853,8 +857,8 @@ export class StoryGenerationBatchService {
         });
     const modelId = mobile
       ? outputKind === 'image'
-        ? process.env.AGENT_OS_MOBILE_IMAGE_MODEL?.trim() || 'wan-image-2.7'
-        : process.env.AGENT_OS_MOBILE_VIDEO_MODEL?.trim() || 'minimax-h3-max'
+        ? requiredMobileImageModelId()
+        : requiredMobileVideoModelId()
       : outputKind === 'image'
         ? preference?.imageModelId
         : preference?.videoModelId;
