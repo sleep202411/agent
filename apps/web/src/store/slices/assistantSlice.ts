@@ -9,17 +9,12 @@ import {
 } from "@/src/lib/uploads/workspace-upload";
 import {
   submitMessageToAgent,
-  saveConversation,
   fetchConversationHistory,
   clearConversation as clearConversationApi,
   AgentBusyError,
   type ConfirmProjectParamsPayload,
 } from "@/src/lib/assistant/assistant-client";
-import {
-  cancelWorkflow,
-  startWorkflow,
-  type WorkflowName,
-} from "@/src/lib/workflow/workflow-client";
+import { cancelWorkflow, type WorkflowName } from "@/src/lib/workflow/workflow-client";
 import type {
   AssistantAttachment,
   AssistantMessage,
@@ -40,8 +35,6 @@ import {
 import type { RootState, AppDispatch } from "@/src/store/index";
 import {
   setDetail as setProjectDetail,
-  setActivePanel,
-  setActiveTab,
   touchProjectList,
   touchWorld,
   touchEpisodes,

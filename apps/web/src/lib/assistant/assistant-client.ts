@@ -199,23 +199,6 @@ export class AgentBusyError extends Error {
   }
 }
 
-// ─── Save API ─────────────────────────────────────────
-//
-// In the new architecture, the server writes every assistant/user message to
-// Redis as part of submit-message-to-agent (see chat/agent-stream.service +
-// mastra-proxy.persistInboundMessages). There's nothing left for the client
-// to save — the store is already the source of truth.
-//
-// This function is kept as a no-op so existing callers (three thunks in
-// assistantSlice) can be migrated incrementally. We'll delete the call sites
-// in a follow-up sweep.
-export async function saveConversation(
-  _projectId: string,
-  _messages: AssistantMessage[]
-): Promise<void> {
-  // no-op — persistence happens server-side during the stream.
-}
-
 // ─── History API ───────────────────────────────────────
 
 export interface ConversationHistoryResponse {

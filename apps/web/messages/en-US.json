@@ -4301,8 +4301,6 @@
     "taskAgent": "Agent task",
     "taskProduction": "Production task",
     "taskWaiting": "Awaiting action",
-    "taskLoadError": "Tasks could not be loaded.",
-    "taskRetry": "Retry",
     "taskImage": "Generate Image",
     "taskVideo": "Generate Video",
     "taskAudio": "Generate Audio",

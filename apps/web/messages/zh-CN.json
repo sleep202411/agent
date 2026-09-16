@@ -4301,8 +4301,6 @@
     "taskAgent": "Agent 任务",
     "taskProduction": "制作任务",
     "taskWaiting": "等待操作",
-    "taskLoadError": "无法加载任务。",
-    "taskRetry": "重试",
     "taskImage": "生成图片",
     "taskVideo": "生成视频",
     "taskAudio": "生成音频",
