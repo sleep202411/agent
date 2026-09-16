@@ -59,7 +59,7 @@ vi.mock("mediabunny", () => ({
     }
   },
 }));
-import { exportTimelineToMp4 } from "./timeline-export-mediabunny";
+import { exportTimelineToMp4, triggerBlobDownload } from "./timeline-export-mediabunny";
 beforeEach(() => {
   vi.resetAllMocks();
   fixture.audio = false;
@@ -74,6 +74,8 @@ beforeEach(() => {
   vi.spyOn(console, "info").mockImplementation(() => {});
 });
 afterEach(() => {
+  vi.useRealTimers();
+  document.querySelectorAll("a[download]").forEach((el) => el.remove());
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -167,4 +169,50 @@ it("disposes an input immediately when a pending probe is abandoned", async () =
   await rejected;
   expect(released).toBe(1);
   expect(fixture.start).not.toHaveBeenCalled();
+});
+
+it.each(["create", "click"])("releases a timeline download URL after %s failure", async (phase) => {
+  vi.useFakeTimers();
+  const revoke = vi.fn();
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = () => "blob:timeline";
+      static revokeObjectURL = revoke;
+    }
+  );
+  if (phase === "create")
+    vi.spyOn(document, "createElement").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+  else
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {
+      throw new Error("blocked");
+    });
+  expect(() => triggerBlobDownload(new Blob(["video"]), "movie.mp4")).toThrow("blocked");
+  await vi.runAllTimersAsync();
+  expect(revoke).toHaveBeenCalledWith("blob:timeline");
+  expect(document.querySelector("a[download]")).toBeNull();
+});
+it("defers successful timeline URL revocation and preserves the filename", async () => {
+  vi.useFakeTimers();
+  const revoke = vi.fn();
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = () => "blob:timeline";
+      static revokeObjectURL = revoke;
+    }
+  );
+  let filename = "";
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement
+  ) {
+    filename = this.download;
+  });
+  triggerBlobDownload(new Blob(["video"]), "movie.mp4");
+  expect(filename).toBe("movie.mp4");
+  expect(revoke).not.toHaveBeenCalled();
+  await vi.runAllTimersAsync();
+  expect(revoke).toHaveBeenCalledOnce();
 });

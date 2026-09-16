@@ -394,13 +394,16 @@ export async function exportTimelineToMp4(
  */
 export function triggerBlobDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  // Defer revocation by a tick — some browsers cancel the download
-  // if the URL is revoked synchronously after click().
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  let link: HTMLAnchorElement | undefined;
+  try {
+    link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+  } finally {
+    link?.remove();
+    // Preserve delayed revocation, including failures after URL allocation.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 }
