@@ -119,6 +119,7 @@ function MediaPreviewSession({
   }, [name, type]);
 
   const handleCopyLink = async () => {
+    if (!active.current) return;
     if (!copyTarget) {
       toast.error(t("noCopyLink"));
       return;
@@ -126,22 +127,25 @@ function MediaPreviewSession({
 
     try {
       await navigator.clipboard.writeText(copyTarget);
-      toast.success(tc("copySuccess"));
+      if (active.current) toast.success(tc("copySuccess"));
     } catch {
+      if (!active.current) return;
       // Clipboard API blocked (iframe / permissions policy) — try execCommand fallback
+      let textarea: HTMLTextAreaElement | undefined;
       try {
-        const textarea = document.createElement("textarea");
+        textarea = document.createElement("textarea");
         textarea.value = copyTarget;
         textarea.style.position = "fixed";
         textarea.style.opacity = "0";
         document.body.appendChild(textarea);
         textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
+        if (!document.execCommand("copy")) throw new Error("Copy command rejected");
         toast.success(tc("copySuccess"));
       } catch {
         // Both methods blocked — prompt user to copy manually
         window.prompt(tc("manualCopyHint"), copyTarget);
+      } finally {
+        textarea?.remove();
       }
     }
   };

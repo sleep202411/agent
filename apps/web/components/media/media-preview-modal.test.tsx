@@ -2,6 +2,8 @@ import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MediaPreviewModal } from "./media-preview-modal";
+const feedback = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("sonner", () => ({ toast: feedback }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("./audio-player", () => ({ AudioPlayer: () => null }));
 vi.mock("./mention-prompt-display", () => ({ MentionPromptDisplay: () => null }));
@@ -20,6 +22,8 @@ describe("media preview download", () => {
     open = vi.fn();
   beforeEach(async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    feedback.success.mockReset();
+    feedback.error.mockReset();
     create.mockReset().mockReturnValue("blob:test");
     revoke.mockReset();
     fetcher.mockReset().mockResolvedValue(new Response("media"));
@@ -53,6 +57,9 @@ describe("media preview download", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+    delete (navigator as { clipboard?: unknown }).clipboard;
+    delete (document as { execCommand?: unknown }).execCommand;
+    document.querySelectorAll("textarea").forEach((el) => el.remove());
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -193,5 +200,70 @@ describe("media preview download", () => {
     await act(async () => click());
     expect(remove).toHaveBeenCalledTimes(2);
     expect(close).toHaveBeenCalledWith(false);
+  });
+  it("offers manual copy when the fallback command returns false", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue(null);
+    await act(async () =>
+      Array.from(document.querySelectorAll("button"))
+        .find((b) => b.textContent === "copyLink")!
+        .click()
+    );
+    expect(feedback.success).not.toHaveBeenCalled();
+    expect(prompt).toHaveBeenCalled();
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+  it("removes the fallback textarea even when copying throws", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn(() => {
+        throw new Error("blocked");
+      }),
+    });
+    vi.spyOn(window, "prompt").mockReturnValue(null);
+    await act(async () =>
+      Array.from(document.querySelectorAll("button"))
+        .find((b) => b.textContent === "copyLink")!
+        .click()
+    );
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+  it("does not open manual copy after the preview is replaced", async () => {
+    let reject!: (e: Error) => void;
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn(
+          () =>
+            new Promise((_, r) => {
+              reject = r;
+            })
+        ),
+      },
+    });
+    const command = vi.fn().mockReturnValue(false);
+    Object.defineProperty(document, "execCommand", { configurable: true, value: command });
+    await act(async () =>
+      Array.from(document.querySelectorAll("button"))
+        .find((b) => b.textContent === "copyLink")!
+        .click()
+    );
+    await act(async () =>
+      root.render(<MediaPreviewModal open onOpenChange={() => {}} type="image" src="second" />)
+    );
+    await act(async () => reject(new Error("abandoned")));
+    expect(command).not.toHaveBeenCalled();
+    expect(feedback.success).not.toHaveBeenCalled();
   });
 });
