@@ -5287,6 +5287,19 @@
       "title": "已通过的最终成片",
       "subtitle": "每个已完成剧集当前生效的审核通过版本。",
       "empty": "审核通过的最终成片会显示在这里。"
+    },
+    "formatting": {
+      "label": "文本格式",
+      "bold": "加粗",
+      "italic": "斜体",
+      "heading": "标题",
+      "bulletList": "无序列表",
+      "orderedList": "有序列表",
+      "checklist": "待办清单",
+      "quote": "引用",
+      "undo": "撤销",
+      "redo": "重做",
+      "hint": "选中文字后设置格式，或输入 # 加空格创建标题、- 加空格创建列表、/ 插入更多内容。更改会自动保存。"
     }
   },
   "crewTasks": {

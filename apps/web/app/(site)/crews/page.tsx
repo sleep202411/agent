@@ -129,7 +129,7 @@ export default function CrewsPage() {
         <div className="min-w-0">
           {/* Tabs — crews vs positions. URL state via `?view=positions`
               so refreshes / shared links keep the same surface. */}
-          <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-border">
+          <div className="sticky top-[80px] z-30 mb-6 flex flex-wrap items-center gap-1 border-b border-border bg-background py-1 md:top-[88px] lg:top-[96px]">
             <PlazaTab
               label={tCrew("myCrewsTitle")}
               icon={IconUsers}
@@ -138,14 +138,14 @@ export default function CrewsPage() {
             />
             <Link
               href={localizePath("/crews/tasks", locale)}
-              className="inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+              className="inline-flex min-h-11 items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               <IconListCheck className="size-4" />
               {tCrew("myTasksTab")}
             </Link>
             <Link
               href={localizePath("/crews/income", locale)}
-              className="inline-flex min-h-11 items-center px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+              className="inline-flex min-h-11 items-center px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
             >
               {tCrew("myIncomeTab")}
             </Link>
@@ -297,7 +297,7 @@ function PlazaTab({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "relative inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold transition-colors",
+        "relative inline-flex min-h-11 items-center gap-2 px-3 py-2 text-xs font-medium transition-colors",
         active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
       )}
     >

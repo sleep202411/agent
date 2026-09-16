@@ -5287,6 +5287,19 @@
       "title": "已通過的最終成片",
       "subtitle": "每個已完成劇集目前生效的審核通過版本。",
       "empty": "審核通過的最終成片會顯示在這裏。"
+    },
+    "formatting": {
+      "label": "文字格式",
+      "bold": "粗體",
+      "italic": "斜體",
+      "heading": "標題",
+      "bulletList": "項目列表",
+      "orderedList": "編號列表",
+      "checklist": "待辦清單",
+      "quote": "引用",
+      "undo": "復原",
+      "redo": "重做",
+      "hint": "選取文字後設定格式，或輸入 # 加空格建立標題、- 加空格建立列表、/ 插入更多內容。更改會自動儲存。"
     }
   },
   "crewTasks": {

@@ -101,8 +101,8 @@ export function CrewSwitcherRailView({
     <aside
       aria-label={t("crewSwitcherNavigation")}
       className={cn(
-        "hidden min-h-0 flex-col items-center overflow-y-auto border-r border-white/[0.075] bg-[#07080a] py-2",
-        showNames && "min-[1152px]:items-stretch",
+        "hidden min-h-0 flex-col items-center overflow-y-auto border-r border-white/[0.075] bg-background py-2",
+        showNames && "md:items-stretch",
         className
       )}
     >
@@ -113,8 +113,7 @@ export function CrewSwitcherRailView({
         title={effectiveRootLabel}
         className={cn(
           "relative grid size-10 shrink-0 place-items-center rounded-[12px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#e52227]/70",
-          showNames &&
-            "min-[1152px]:flex min-[1152px]:w-full min-[1152px]:justify-start min-[1152px]:gap-3 min-[1152px]:px-2",
+          showNames && "md:flex md:w-full md:justify-start md:gap-3 md:px-2",
           allCrewsActive
             ? "bg-white/[0.09] text-[#eceef2]"
             : "text-[#858a95] hover:bg-white/[0.055] hover:text-[#eceef2]"
@@ -125,7 +124,7 @@ export function CrewSwitcherRailView({
         ) : null}
         <IconLayoutGrid className="size-[18px] shrink-0" stroke={1.75} />
         {showNames ? (
-          <span className="hidden min-w-0 truncate text-[12px] font-medium min-[1152px]:block">
+          <span className="hidden min-w-0 truncate text-[12px] font-medium md:block">
             {effectiveRootLabel}
           </span>
         ) : null}
@@ -140,12 +139,7 @@ export function CrewSwitcherRailView({
         <IconListCheck className="size-[18px]" stroke={1.75} />
       </Link>
 
-      <div
-        className={cn(
-          "my-2 h-px w-8 shrink-0 bg-white/[0.075]",
-          showNames && "min-[1152px]:w-full"
-        )}
-      />
+      <div className={cn("my-2 h-px w-8 shrink-0 bg-white/[0.075]", showNames && "md:w-full")} />
 
       <div className="flex min-h-12 w-full flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto px-2 py-1">
         {isPending
@@ -179,8 +173,7 @@ export function CrewSwitcherRailView({
                   title={crew.name}
                   className={cn(
                     "group relative grid size-10 shrink-0 place-items-center rounded-[12px] outline-none transition-[border-radius,background-color] focus-visible:ring-2 focus-visible:ring-[#e52227]/70",
-                    showNames &&
-                      "min-[1152px]:flex min-[1152px]:w-full min-[1152px]:justify-start min-[1152px]:gap-3 min-[1152px]:px-2",
+                    showNames && "md:flex md:w-full md:justify-start md:gap-3 md:px-2",
                     active ? "bg-white/[0.09]" : "hover:bg-white/[0.055]"
                   )}
                 >
@@ -195,7 +188,7 @@ export function CrewSwitcherRailView({
                   />
                   <CrewUnreadMarker crewId={crew.id} />
                   {showNames ? (
-                    <span className="hidden min-w-0 truncate text-[12px] font-medium text-[#d8dae0] min-[1152px]:block">
+                    <span className="hidden min-w-0 truncate text-[12px] font-medium text-[#d8dae0] md:block">
                       {crew.name}
                     </span>
                   ) : null}

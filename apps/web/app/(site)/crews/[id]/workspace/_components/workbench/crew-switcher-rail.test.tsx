@@ -48,7 +48,9 @@ function render() {
   document.body.append(container);
   root = createRoot(container);
   act(() =>
-    root!.render(<CrewSwitcherRail currentCrew={{ id: "crew_1", logo: "one.png", name: "One" }} />)
+    root!.render(
+      <CrewSwitcherRail showNames currentCrew={{ id: "crew_1", logo: "one.png", name: "One" }} />
+    )
   );
 }
 
@@ -95,6 +97,8 @@ describe("crew switcher rail", () => {
     render();
 
     expect(document.querySelectorAll("[data-logo]")).toHaveLength(2);
+    expect(document.querySelector('a[aria-label="One"]')?.textContent).toBe("One");
+    expect(document.querySelector('a[aria-label="Two"]')?.textContent).toBe("Two");
     expect(document.querySelector('a[href="/zh-CN/crews/crew_1/workspace"]')).not.toBeNull();
     expect(document.querySelector('a[href="/zh-CN/crews/crew_2/workspace"]')).not.toBeNull();
     expect(document.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(
