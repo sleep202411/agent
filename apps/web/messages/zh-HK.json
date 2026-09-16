@@ -9471,6 +9471,8 @@
     "failed": "加入失敗，請重試。"
   },
   "tv": {
+    "hideDetails": "收起詳情",
+    "showDetails": "展開詳情",
     "roomNumber": "房間號 {number}",
     "metadataTitle": "FizzDragon TV",
     "metadataDescription": "瀏覽 IP 列表，選擇作品觀看預覽。",

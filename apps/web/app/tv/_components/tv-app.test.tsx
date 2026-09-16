@@ -173,6 +173,23 @@ describe("TV IP list", () => {
     });
   }
 
+  it("collapses and restores channel details without replacing the player", async () => {
+    await render();
+    await waitForText("First IP");
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-controls="tv-channel-details"]'
+    );
+    expect(toggle).not.toBeNull();
+    const details = container.querySelector<HTMLElement>("#tv-channel-details")!;
+    expect(details.hidden).toBe(false);
+    await act(async () => toggle!.click());
+    expect(details.hidden).toBe(true);
+    expect(toggle!.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => toggle!.click());
+    expect(details.hidden).toBe(false);
+    expect(details.textContent).toContain("First IP");
+  });
+
   it("cancels catalog and discovery reads when the viewer changes", async () => {
     harness.list.mockImplementation(() => new Promise(() => {}));
     harness.discovery.mockImplementation(() => new Promise(() => {}));
@@ -714,6 +731,39 @@ describe("TV IP list", () => {
       expect(player().currentSrc()).toBe(media.url);
       expect(player().currentType()).toBe("video/mp4");
     });
+  });
+
+  it("releases the previous stream before selecting a channel that cannot load", async () => {
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    act(() => {
+      instance.muted(false);
+      instance.volume(0.4);
+    });
+    const pause = vi.spyOn(instance, "pause");
+    const reset = vi.spyOn(instance, "reset");
+    // Source admission can fail before a replacement tech is attached.
+    const setSource = vi.spyOn(instance, "src").mockImplementation(() => "");
+    clickIp("Second IP");
+    await vi.waitFor(() => expect(reset).toHaveBeenCalled());
+    expect(pause.mock.invocationCallOrder[0]).toBeLessThan(reset.mock.invocationCallOrder[0]!);
+    expect(reset.mock.invocationCallOrder[0]).toBeLessThan(
+      setSource.mock.invocationCallOrder.at(-1)!
+    );
+    expect(instance.currentSrc()).not.toContain("ip-1.mp4");
+    expect(instance.muted()).toBe(false);
+    expect(instance.volume()).toBeCloseTo(0.4);
+  });
+
+  it("stops playback when a media error is reported", async () => {
+    await render();
+    await waitForSource("ip-1");
+    const pause = vi.spyOn(player(), "pause");
+    vi.spyOn(videojs.log, "error").mockImplementation(() => {});
+    act(() => player().error("Unsupported replacement"));
+    expect(pause).toHaveBeenCalled();
+    expect(container.textContent).toContain("Unsupported replacement");
   });
 
   it("retries a failed source on the same player", async () => {

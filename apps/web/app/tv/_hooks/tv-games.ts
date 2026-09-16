@@ -21,13 +21,13 @@ export function parseTvGames(kind: TvGameKind, data: unknown): TvGame[] {
   const games: TvGame[] = [];
   for (const row of data) {
     if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-    // Some Java DTOs include lifecycle fields outside the public summary contract.
-    // Never strip explicit withdrawal evidence and then advertise the game.
-    if ((row.status != null && row.status !== "published") || row.offlineAt != null) continue;
+    // The public catalog can retain offlineAt after republication. Current
+    // published status owns availability; without it, retain withdrawal protection.
+    if (row.status != null ? row.status !== "published" : row.offlineAt != null) continue;
     const parsed = ExperienceGameSummarySchema.safeParse({
       gameId: row.gameId,
       title: row.title,
-      coverUrl: row.coverUrl,
+      coverUrl: publicCover(row.coverUrl),
       currentVersion: row.currentVersion,
       updatedAt: row.updatedAt,
     });
