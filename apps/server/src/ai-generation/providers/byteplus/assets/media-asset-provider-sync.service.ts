@@ -319,15 +319,17 @@ export class MediaAssetProviderSyncService
       if (!row) return null;
     }
 
+    // Minute-bucketed id: repeated manual kicks within the same minute dedupe
+    // onto one job instead of stacking. Colons are forbidden (see enqueue*).
     const manualBucket = Math.floor(Date.now() / 60_000);
     if (row.status === AiProviderExternalAssetStatus.pending) {
       await this.enqueueRegister(
         row.id,
         REGISTER_PRIORITY_FOREGROUND,
-        `register:${row.id}:manual:${manualBucket}`,
+        `register-${row.id}-manual-${manualBucket}`,
       );
     } else if (row.status === AiProviderExternalAssetStatus.processing) {
-      await this.enqueuePoll(row.id, `poll:${row.id}:manual:${manualBucket}`);
+      await this.enqueuePoll(row.id, `poll-${row.id}-manual-${manualBucket}`);
     }
     return mediaProviderAssetStatusDto(row);
   }
@@ -453,10 +455,14 @@ export class MediaAssetProviderSyncService
     return group.status === AiProviderAssetGroupStatus.active ? group.id : null;
   }
 
+  // Custom job ids must not contain ':' — BullMQ treats it as a Redis key
+  // separator and REJECTS the add synchronously (which 500s the user-facing
+  // readiness request). The legacy `a:b:c` 3-segment form is still tolerated
+  // for old repeatable jobs, but only as a deprecated compatibility window.
   private async enqueueRegister(
     mirrorId: string,
     priority = REGISTER_PRIORITY_FOREGROUND,
-    jobId = `register:${mirrorId}:${Date.now()}`,
+    jobId = `register-${mirrorId}-${Date.now()}`,
   ): Promise<void> {
     await this.queue().add(
       'register',
@@ -467,7 +473,7 @@ export class MediaAssetProviderSyncService
 
   private async enqueuePoll(
     mirrorId: string,
-    jobId = `poll:${mirrorId}:${Date.now()}`,
+    jobId = `poll-${mirrorId}-${Date.now()}`,
   ): Promise<void> {
     await this.queue().add(
       'poll',
