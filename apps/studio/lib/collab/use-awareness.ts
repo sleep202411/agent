@@ -25,12 +25,16 @@ export function useAwarenessPeers(
   awareness: Awareness | null,
   localClientId: number | undefined
 ): PeerPresence[] {
-  const [peers, setPeers] = useState<PeerPresence[]>([]);
+  const [snapshot, setSnapshot] = useState<{
+    awareness: Awareness | null;
+    localClientId: number | undefined;
+    peers: PeerPresence[];
+  } | null>(null);
 
   useEffect(() => {
     if (!awareness) {
       /* eslint-disable-next-line react-hooks/set-state-in-effect */
-      setPeers([]);
+      setSnapshot(null);
       return;
     }
     const update = () => {
@@ -40,12 +44,14 @@ export function useAwarenessPeers(
         const presence = state as { user?: PeerUser; cursor?: PeerPresence["cursor"] };
         next.push({ clientId, user: presence.user, cursor: presence.cursor ?? null });
       });
-      setPeers(next);
+      setSnapshot({ awareness, localClientId, peers: next });
     };
     update();
     awareness.on("change", update);
     return () => awareness.off("change", update);
   }, [awareness, localClientId]);
 
-  return peers;
+  return snapshot?.awareness === awareness && snapshot.localClientId === localClientId
+    ? snapshot.peers
+    : [];
 }
