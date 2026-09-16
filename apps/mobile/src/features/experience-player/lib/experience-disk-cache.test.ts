@@ -1,8 +1,9 @@
 import { createDiskCachePool } from "./experience-disk-cache";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
-  files: new Map<string, { size: number; fail?: boolean }>(),
+  files: new Map<string, { size: number; fail?: boolean; text?: string }>(),
   mkdir: vi.fn(),
+  failList: false,
 }));
 vi.mock("expo-file-system", () => {
   class File {
@@ -26,9 +27,11 @@ vi.mock("expo-file-system", () => {
     create() {
       state.files.set(this.name, { size: 1 });
     }
-    write() {}
+    write(text: string) {
+      state.files.set(this.name, { ...state.files.get(this.name)!, text });
+    }
     textSync() {
-      return "{}";
+      return state.files.get(this.name)?.text ?? "{}";
     }
   }
   class Directory {
@@ -39,6 +42,7 @@ vi.mock("expo-file-system", () => {
       state.mkdir();
     }
     list() {
+      if (state.failList) throw new Error("Cannot list directory");
       return [...state.files.keys()].map((name) => new File(this, name));
     }
   }
@@ -48,6 +52,7 @@ vi.mock("expo-file-system", () => {
 });
 beforeEach(() => {
   state.files.clear();
+  state.failList = false;
   state.mkdir.mockReset();
   vi.useFakeTimers();
 });
@@ -76,4 +81,46 @@ it("contains directory-creation failures from delayed index writes", async () =>
   pool.touch("clip.mp4");
   await vi.advanceTimersByTimeAsync(250);
   expect(warning).toHaveBeenCalled();
+});
+
+it("releases the delayed flush when eviction flushes the index immediately", async () => {
+  state.files.set("old.mp4", { size: 10 });
+  state.files.set("new.mp4", { size: 10 });
+  const pool = createDiskCachePool({
+    dirName: "fixture",
+    budgetBytes: 10,
+    isManaged: (name) => name.endsWith(".mp4"),
+  });
+  pool.touch("new.mp4");
+  expect(vi.getTimerCount()).toBe(1);
+  await pool.enqueueEviction();
+  expect(vi.getTimerCount()).toBe(0);
+  pool.touch("new.mp4");
+  expect(vi.getTimerCount()).toBe(1);
+});
+
+it("persists stale index removal even while the cache is below budget", async () => {
+  state.files.set("access-index.json", { size: 1, text: JSON.stringify({ "gone.mp4": 1 }) });
+  state.files.set("new.mp4", { size: 1 });
+  const pool = createDiskCachePool({
+    dirName: "fixture",
+    budgetBytes: 10,
+    isManaged: (name) => name.endsWith(".mp4"),
+  });
+  await pool.enqueueEviction();
+  expect(JSON.parse(state.files.get("access-index.json")!.text!)).toEqual({});
+});
+
+it("retains access history when directory listing fails", async () => {
+  state.files.set("new.mp4", { size: 1 });
+  const pool = createDiskCachePool({
+    dirName: "fixture",
+    budgetBytes: 10,
+    isManaged: (name) => name.endsWith(".mp4"),
+  });
+  pool.touch("new.mp4");
+  state.failList = true;
+  await pool.enqueueEviction();
+  await vi.advanceTimersByTimeAsync(250);
+  expect(JSON.parse(state.files.get("access-index.json")!.text!)).toHaveProperty("new.mp4");
 });

@@ -95,6 +95,7 @@ export function createDiskCachePool(options: DiskCachePoolOptions): DiskCachePoo
   };
 
   const flushAccessIndex = (): void => {
+    if (accessIndexFlushTimer !== null) clearTimeout(accessIndexFlushTimer);
     accessIndexFlushTimer = null;
     if (!accessIndexCache) return;
     try {
@@ -125,7 +126,7 @@ export function createDiskCachePool(options: DiskCachePoolOptions): DiskCachePoo
     }
   };
 
-  const listManagedEntries = (index: AccessIndex): CacheEntry[] => {
+  const listManagedEntries = (index: AccessIndex): CacheEntry[] | null => {
     const dir = directory();
     if (!dir.exists) return [];
     const entries: CacheEntry[] = [];
@@ -139,11 +140,12 @@ export function createDiskCachePool(options: DiskCachePoolOptions): DiskCachePoo
           if (!size || size <= 0) continue;
           entries.push({ file: entry, size, lastAccessedMs: lastAccessedMs(entry, index) });
         } catch {
-          // Skip unreadable entries.
+          // An incomplete scan cannot safely prune access history.
+          return null;
         }
       }
     } catch {
-      return [];
+      return null;
     }
     return entries;
   };
@@ -165,11 +167,16 @@ export function createDiskCachePool(options: DiskCachePoolOptions): DiskCachePoo
     }
   };
 
-  const pruneStaleAccessKeys = (index: AccessIndex, entries: readonly CacheEntry[]): void => {
+  const pruneStaleAccessKeys = (index: AccessIndex, entries: readonly CacheEntry[]): boolean => {
+    let changed = false;
     const live = new Set(entries.map((entry) => entry.file.name));
     for (const name of Object.keys(index)) {
-      if (!live.has(name)) delete index[name];
+      if (!live.has(name)) {
+        delete index[name];
+        changed = true;
+      }
     }
+    return changed;
   };
 
   const enforceBudget = (extraProtectedNames: ReadonlySet<string>): void => {
@@ -182,9 +189,10 @@ export function createDiskCachePool(options: DiskCachePoolOptions): DiskCachePoo
 
     const index = readAccessIndex();
     const entries = listManagedEntries(index);
+    if (!entries) return;
     let totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
     if (totalBytes <= options.budgetBytes) {
-      pruneStaleAccessKeys(index, entries);
+      if (pruneStaleAccessKeys(index, entries)) flushAccessIndex();
       return;
     }
 
@@ -197,7 +205,8 @@ export function createDiskCachePool(options: DiskCachePoolOptions): DiskCachePoo
         totalBytes -= entry.size;
       }
     }
-    pruneStaleAccessKeys(index, listManagedEntries(index));
+    const remainingEntries = listManagedEntries(index);
+    if (remainingEntries) pruneStaleAccessKeys(index, remainingEntries);
     flushAccessIndex();
   };
 
