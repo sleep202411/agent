@@ -22,36 +22,39 @@ export function useModeDocument(
   projectId: string | null | undefined,
   type: string
 ): ModeDocumentState {
-  const [document, setDocument] = useState<ModeDocumentRef | null>(null);
-  const [status, setStatus] = useState<ModeDocumentStatus>("loading");
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<ModeDocumentState & { projectId: string; type: string }>();
 
   useEffect(() => {
     if (!projectId) return;
-    let cancelled = false;
-    /* eslint-disable-next-line react-hooks/set-state-in-effect */
-    setStatus("loading");
-    ensureModeDocument(projectId, type)
-      .then((doc) => {
-        if (cancelled) return;
-        setDocument(doc);
-        setError(null);
-        setStatus("ready");
+    const controller = new AbortController();
+    ensureModeDocument(projectId, type, controller.signal)
+      .then((document) => {
+        if (controller.signal.aborted) return;
+        setState({
+          projectId,
+          type,
+          document,
+          documentId: document.id,
+          error: null,
+          status: "ready",
+        });
       })
       .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to open document");
-        setStatus("error");
+        if (controller.signal.aborted) return;
+        setState({
+          projectId,
+          type,
+          document: null,
+          documentId: null,
+          error: err instanceof Error ? err.message : "Failed to open document",
+          status: "error",
+        });
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [projectId, type]);
 
-  return {
-    document,
-    documentId: document?.id ?? null,
-    status,
-    error,
-  };
+  if (!projectId || state?.projectId !== projectId || state.type !== type) {
+    return { document: null, documentId: null, status: "loading", error: null };
+  }
+  return state;
 }

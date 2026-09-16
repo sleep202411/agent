@@ -23,32 +23,31 @@ async function v1FormData<T>(path: string, formData: FormData, timeout = 600_000
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
 
-  let response: Response;
   try {
-    response = await fetch(path, {
-      method: "POST",
-      credentials: "include",
-      body: formData,
-      signal: controller.signal,
-    });
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      const isTimeout = error instanceof DOMException && error.name === "AbortError";
+      throw new Error(isTimeout ? "Request timed out" : "Network connection failed");
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = (await response.json()) as RawV1Body<T>;
+    controller.signal.throwIfAborted();
+    const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
+    if (!isSuccess) throw new Error(body.msg || body.message || "Request failed");
+    return (body.data ?? null) as T;
   } catch (error) {
-    const isTimeout = error instanceof DOMException && error.name === "AbortError";
-    throw new Error(isTimeout ? "Request timed out" : "Network connection failed");
+    if (controller.signal.aborted) throw new Error("Request timed out");
+    throw error;
   } finally {
     clearTimeout(timer);
   }
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  const body = (await response.json()) as RawV1Body<T>;
-  const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
-  if (!isSuccess) {
-    throw new Error(body.msg || body.message || "Request failed");
-  }
-
-  return (body.data ?? null) as T;
 }
 
 export function exportStoryboard(storyBoardId: string) {

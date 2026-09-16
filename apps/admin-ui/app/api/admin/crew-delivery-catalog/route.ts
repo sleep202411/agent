@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminPathWithSearch,
   adminUnavailableResponse,
@@ -8,12 +9,13 @@ import {
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
-    return relayAdminResponse(
-      await fetch(adminPathWithSearch(request, "/crew-delivery-catalog"), {
+    return await relayAdminResponse(
+      await adminFetch(request, adminPathWithSearch(request, "/crew-delivery-catalog"), {
         headers: adminForwardHeaders(request),
         cache: "no-store",
         signal: request.signal,
-      })
+      }),
+      request.signal
     );
   } catch {
     return adminUnavailableResponse();

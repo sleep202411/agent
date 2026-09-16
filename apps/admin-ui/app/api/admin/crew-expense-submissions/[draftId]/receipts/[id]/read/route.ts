@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminPathWithSearch,
   adminUnavailableResponse,
@@ -13,13 +14,15 @@ export async function GET(
   try {
     const { draftId, id } = await context.params;
     const response = await relayAdminResponse(
-      await fetch(
+      await adminFetch(
+        request,
         adminPathWithSearch(
           request,
           `/crew-expense-submissions/${encodeURIComponent(draftId)}/receipts/${encodeURIComponent(id)}/read`
         ),
         { headers: adminForwardHeaders(request), cache: "no-store", signal: request.signal }
-      )
+      ),
+      request.signal
     );
     response.headers.set("cache-control", "private, no-store");
     return response;

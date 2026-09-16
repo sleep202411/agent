@@ -5,9 +5,8 @@
  * client is the authoritative consumer contract. Ownership model
  * (docs/character-library-real-person-portraits-design-v1.md): a character
  * belongs to its home WORKSPACE (演员池); a project sees only its CAST
- * (演员表). v1 ships `virtual` characters only — `real_person` is rejected
- * on every write path with 501 REAL_PERSON_NOT_AVAILABLE until the ACR
- * enrollment track lands.
+ * (演员表). Real-person creation and enrollment use feature, region and
+ * consent gates; subject withdrawal remains a distinct lifecycle action.
  */
 import { z } from 'zod';
 

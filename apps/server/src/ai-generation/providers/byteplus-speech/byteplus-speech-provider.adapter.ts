@@ -48,7 +48,7 @@ export class BytePlusSpeechProviderAdapter implements ProviderAdapter {
     input: Record<string, unknown>,
     context: ProviderGenerationContext,
   ): Promise<StartResult> {
-    const runtime = await this.requireRuntime(modelId);
+    const runtime = await this.requireRuntime(modelId, true);
     const request = mapBytePlusSpeechProviderRequest(runtime, input, context);
     const providerRequest = safeBytePlusSpeechRequest(request);
     const submittedAt = new Date().toISOString();
@@ -180,8 +180,11 @@ export class BytePlusSpeechProviderAdapter implements ProviderAdapter {
 
   private async requireRuntime(
     modelId: string,
+    forSubmission = false,
   ): Promise<BytePlusSpeechRuntimeConfig> {
-    const runtime = await this.catalog.getRuntimeConfig(modelId);
+    const runtime = await this.catalog.getRuntimeConfig(modelId, {
+      forSubmission,
+    });
     if (!runtime) {
       throw bytePlusSpeechError(
         'PROVIDER_NOT_CONFIGURED',

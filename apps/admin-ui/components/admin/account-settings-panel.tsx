@@ -15,7 +15,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/admin/page-header";
-import { adminUiApiPath } from "@/lib/admin-api";
+import { useAdminOperation } from "./use-admin-operation";
+import { requestEnvelope } from "./users/shared";
 import type { AdminSession } from "@/lib/admin-session";
 
 type AccountSettingsPanelProps = {
@@ -24,6 +25,7 @@ type AccountSettingsPanelProps = {
 
 export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
   const router = useRouter();
+  const { busy, begin } = useAdminOperation();
   const [profile, setProfile] = useState({
     displayName: session.user.displayName,
     avatarUrl: session.user.avatarUrl ?? "",
@@ -42,65 +44,85 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
 
   async function updateProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const operation = begin("write");
+    if (!operation) return;
     setError(null);
     setNotice(null);
     setSavingProfile(true);
     try {
       await requestEnvelope("/api/admin/auth/me/profile", {
         method: "PATCH",
+        headers: { "content-type": "application/json" },
+        signal: operation.signal,
         body: JSON.stringify({
           displayName: profile.displayName,
           avatarUrl: profile.avatarUrl.trim() || null,
         }),
       });
+      if (!operation.current()) return;
       setNotice("账户资料已更新。");
       router.refresh();
     } catch (err) {
-      setError(errorMessage(err));
+      if (operation.current()) setError(errorMessage(err));
     } finally {
-      setSavingProfile(false);
+      if (operation.current()) setSavingProfile(false);
+      operation.finish();
     }
   }
 
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const operation = begin("write");
+    if (!operation) return;
     setError(null);
     setNotice(null);
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setError("两次输入的新密码不一致。");
-      return;
-    }
     setSavingPassword(true);
     try {
+      if (passwordForm.newPassword !== passwordForm.confirmPassword)
+        throw new Error("两次输入的新密码不一致。");
       await requestEnvelope("/api/admin/auth/me/password", {
         method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: operation.signal,
         body: JSON.stringify({
           currentPassword: passwordForm.currentPassword,
           newPassword: passwordForm.newPassword,
         }),
       });
+      if (!operation.current()) return;
       setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
       setNotice("密码已更新，其他登录会话已撤销。");
       router.refresh();
     } catch (err) {
-      setError(errorMessage(err));
+      if (operation.current()) setError(errorMessage(err));
     } finally {
-      setSavingPassword(false);
+      if (operation.current()) setSavingPassword(false);
+      operation.finish();
     }
   }
 
   async function resetMfa() {
+    const operation = begin("write");
+    if (!operation) return;
     setError(null);
     setNotice(null);
     setResettingMfa(true);
     try {
-      await requestEnvelope("/api/admin/auth/me/mfa/reset", { method: "POST" });
+      await requestEnvelope("/api/admin/auth/me/mfa/reset", {
+        method: "POST",
+        signal: operation.signal,
+      });
+      if (!operation.current()) return;
       setNotice("MFA 已重置。下次登录需要重新绑定，其他会话已撤销。");
       router.refresh();
     } catch (err) {
-      setError(errorMessage(err));
+      if (operation.current()) {
+        setError(errorMessage(err));
+        throw err;
+      }
     } finally {
-      setResettingMfa(false);
+      if (operation.current()) setResettingMfa(false);
+      operation.finish();
     }
   }
 
@@ -127,7 +149,11 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
       ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <form onSubmit={updateProfile} className="rounded-lg border border-slate-200 bg-white p-4">
+        <form
+          inert={busy}
+          onSubmit={updateProfile}
+          className="rounded-lg border border-slate-200 bg-white p-4"
+        >
           <div className="flex items-start gap-3">
             <div className="flex size-11 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
               <IconUserCircle className="size-5" />
@@ -184,7 +210,7 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
                   className="h-10"
                 />
               </Label>
-              <Button type="submit" disabled={savingProfile}>
+              <Button type="submit" disabled={busy}>
                 <IconDeviceFloppy className="size-4" />
                 {savingProfile ? "正在保存" : "保存资料"}
               </Button>
@@ -216,7 +242,7 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
                   type="button"
                   variant="outline"
                   className="w-full justify-start"
-                  disabled={resettingMfa}
+                  disabled={busy}
                 >
                   <IconRefresh className="size-4" />
                   {resettingMfa ? "正在重置 MFA" : "重新绑定 MFA"}
@@ -230,7 +256,11 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
         </section>
       </div>
 
-      <form onSubmit={changePassword} className="rounded-lg border border-slate-200 bg-white p-4">
+      <form
+        inert={busy}
+        onSubmit={changePassword}
+        className="rounded-lg border border-slate-200 bg-white p-4"
+      >
         <div className="flex items-start gap-3">
           <div className="flex size-11 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
             <IconLock className="size-5" />
@@ -295,33 +325,13 @@ export function AccountSettingsPanel({ session }: AccountSettingsPanelProps) {
             />
           </Label>
         </div>
-        <Button type="submit" className="mt-5" disabled={savingPassword}>
+        <Button type="submit" className="mt-5" disabled={busy}>
           <IconLock className="size-4" />
           {savingPassword ? "正在修改" : "修改密码"}
         </Button>
       </form>
     </div>
   );
-}
-
-async function requestEnvelope<T = unknown>(url: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(adminUiApiPath(url), {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
-  const payload = (await response.json().catch(() => null)) as {
-    code?: number;
-    msg?: string;
-    message?: string;
-    data?: T;
-  } | null;
-  if (!response.ok || payload?.code !== 200) {
-    throw new Error(payload?.msg ?? payload?.message ?? `请求失败：${response.status}`);
-  }
-  return payload.data as T;
 }
 
 function errorMessage(error: unknown) {

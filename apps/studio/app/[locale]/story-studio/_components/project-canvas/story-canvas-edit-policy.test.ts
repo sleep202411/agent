@@ -174,6 +174,7 @@ describe("Story projection readiness", () => {
       "project-1",
       "chapter",
       "chapter-1",
+      null,
     ]);
   });
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
 import { useQuery } from "@tanstack/react-query";
 import { usePathname } from "@/i18n/navigation";
 import { settingsMemberProject } from "@/lib/settings-member-scope";
@@ -58,14 +59,17 @@ function ProjectMembers({
 }) {
   const t = useTranslations("settings");
   const tc = useTranslations("common");
+  const { user } = useAuth();
+  const viewerId = user?.id == null ? null : String(user.id);
   const query = useQuery({
-    queryKey: ["settings-member-project", project.kind, project.id],
-    queryFn: async () => {
+    queryKey: ["settings-member-project", project.kind, project.id, viewerId],
+    enabled: Boolean(viewerId),
+    queryFn: async ({ signal }) => {
       if (project.kind === "project") {
-        const data = await getProject(project.id);
+        const data = await getProject(project.id, signal);
         return { name: data.name, canManage: data.role === "owner" || data.role === "admin" };
       }
-      const { project: data } = await getStoryWorkbench(project.id);
+      const { project: data } = await getStoryWorkbench(project.id, undefined, signal);
       return { name: data.title, canManage: data.capabilities.includes("story.admin") };
     },
     retry: false,

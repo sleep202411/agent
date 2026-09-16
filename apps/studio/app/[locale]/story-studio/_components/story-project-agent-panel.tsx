@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -31,10 +33,12 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
  * one conversation.
  */
 export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
   const segment = useSelectedLayoutSegment();
   const workbench = useQuery({
-    queryKey: ["story-studio", "script-workbench", projectId],
-    queryFn: () => getStoryWorkbench(projectId),
+    queryKey: ["story-studio", "script-workbench", projectId, user?.id ?? null],
+    queryFn: ({ signal }) => getStoryWorkbench(projectId, undefined, signal),
+    enabled: Boolean(projectId && user),
     retry: false,
   });
   const queryClient = useQueryClient();

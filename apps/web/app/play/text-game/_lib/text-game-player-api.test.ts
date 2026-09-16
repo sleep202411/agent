@@ -174,3 +174,31 @@ describe("text-game player session bootstrap", () => {
     });
   });
 });
+
+it("rejects an opening stream closed after metadata without an assistant completion", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(sseResponse(`event: meta\ndata: ${JSON.stringify(session)}\n\n`))
+  );
+  await expect(startTextGameSession(session.gameId, "en-US")).rejects.toThrow("without completion");
+});
+
+it("does not start a new session when its playing-session lookup was abandoned", async () => {
+  const controller = new AbortController();
+  let finish!: (value: null) => void;
+  vi.mocked(api.get).mockImplementation(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      })
+  );
+  vi.stubGlobal("fetch", vi.fn());
+  const pending = loadOrStartTextGameSession(session.gameId, "en-US", {
+    signal: controller.signal,
+  });
+  const assertion = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  controller.abort();
+  finish(null);
+  await assertion;
+  expect(fetch).not.toHaveBeenCalled();
+});

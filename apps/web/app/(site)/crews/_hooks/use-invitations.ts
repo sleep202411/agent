@@ -12,8 +12,10 @@ export function useCrewInvitations(crewId: string, enabled = true, pageSize = 30
   const query = useInfiniteQuery({
     queryKey: [...crewKeys.invitations(crewId), pageSize, user?.id ?? null] as const,
     enabled: enabled && Boolean(crewId) && Boolean(user),
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewInvitationPageDTO>(`/crews/${encodeURIComponent(crewId)}/invitations`, {
+        signal,
+        cache: "no-store",
         query: { limit: pageSize, cursor: pageParam },
       }),
     initialPageParam: undefined as string | undefined,
@@ -32,8 +34,11 @@ export function useMyCrewInvitation(invitationId: string) {
   return useQuery({
     queryKey: [...crewKeys.invitation(invitationId), user?.id ?? null],
     enabled: Boolean(invitationId) && Boolean(user),
-    queryFn: () =>
-      crewApi.get<CrewInvitationDTO>(`/crew-invitations/${encodeURIComponent(invitationId)}`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewInvitationDTO>(`/crew-invitations/${encodeURIComponent(invitationId)}`, {
+        signal,
+        cache: "no-store",
+      }),
     retry: false,
   });
 }

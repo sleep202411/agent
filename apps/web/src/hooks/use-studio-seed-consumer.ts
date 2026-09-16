@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useAppDispatch } from "@/src/store";
 import {
   pushAttachment,
@@ -79,65 +79,69 @@ function mapSeedAgentToForcedPersona(agent: StudioAgent | null): ForcedPersonaKe
  *   4. Primes the draft input with the user's prompt.
  *   5. Fires sendUserMessage(projectId) to kick the assistant off.
  *
- * Guarded by a ref so it only runs once per page load. The seed is
- * removed from sessionStorage on first read in `useStudioSeed`, so a
- * page refresh starts clean.
+ * Claims the exact project storage envelope immediately before
+ * dispatch. Effect cleanup cancels deferred admission, including Strict Mode
+ * replay; a consumed envelope cannot be sent again on remount.
  */
 export function useStudioSeedConsumer(projectId: string | null | undefined): {
   seed: StudioSeed | null;
   consumed: boolean;
 } {
-  const { seed } = useStudioSeed(projectId);
+  const { seed, claim } = useStudioSeed(projectId);
   const dispatch = useAppDispatch();
-  const consumedRef = useRef(false);
+  const [consumedSeed, setConsumedSeed] = useState<StudioSeed | null>(null);
 
   useEffect(() => {
-    if (!seed || !projectId || consumedRef.current) return;
-    consumedRef.current = true;
-
-    console.info("[studio-seed-consumer] bootstrapping", {
-      projectId,
-      agent: seed.agent,
-      hasAttachment: !!seed.attachment,
-    });
-
-    dispatch(setActivePanel("aiAssistant"));
-
-    if (seed.attachment) {
-      dispatch(
-        pushAttachment({
-          projectId,
-          attachment: {
-            id:
-              typeof crypto !== "undefined" && "randomUUID" in crypto
-                ? crypto.randomUUID()
-                : `att_${Date.now()}`,
-            name: seed.attachment.name,
-            mimeType: seed.attachment.mimeType,
-            size: seed.attachment.size,
-            ref: seed.attachment.ref,
-            excerpt: seed.attachment.excerpt,
-            status: "uploaded",
-          },
-        })
-      );
-    }
-
-    dispatch(setAgentType({ projectId, agentType: mapSeedAgent(seed.agent) }));
-    // Only pin a forced persona when the user explicitly picked a chip.
-    // Null = freeform prompt → leave forcedPersona alone so the
-    // supervisor routes by content, not by a default fallback.
-    const forced = mapSeedAgentToForcedPersona(seed.agent);
-    if (forced) {
-      dispatch(setForcedPersona({ projectId, forcedPersona: forced }));
-    }
-    dispatch(setDraft({ projectId, draft: seed.prompt }));
-
-    // Defer one tick so the slice updates land before the thunk reads state.
+    if (!seed || !projectId || consumedSeed === seed) return;
+    let abandoned = false;
     void Promise.resolve().then(() => {
+      if (abandoned || !claim()) return;
+      setConsumedSeed(seed);
+
+      console.info("[studio-seed-consumer] bootstrapping", {
+        projectId,
+        agent: seed.agent,
+        hasAttachment: !!seed.attachment,
+      });
+
+      dispatch(setActivePanel("aiAssistant"));
+
+      if (seed.attachment) {
+        dispatch(
+          pushAttachment({
+            projectId,
+            attachment: {
+              id:
+                typeof crypto !== "undefined" && "randomUUID" in crypto
+                  ? crypto.randomUUID()
+                  : `att_${Date.now()}`,
+              name: seed.attachment.name,
+              mimeType: seed.attachment.mimeType,
+              size: seed.attachment.size,
+              ref: seed.attachment.ref,
+              excerpt: seed.attachment.excerpt,
+              status: "uploaded",
+            },
+          })
+        );
+      }
+
+      dispatch(setAgentType({ projectId, agentType: mapSeedAgent(seed.agent) }));
+      // Only pin a forced persona when the user explicitly picked a chip.
+      // Null = freeform prompt → leave forcedPersona alone so the
+      // supervisor routes by content, not by a default fallback.
+      const forced = mapSeedAgentToForcedPersona(seed.agent);
+      if (forced) {
+        dispatch(setForcedPersona({ projectId, forcedPersona: forced }));
+      }
+      dispatch(setDraft({ projectId, draft: seed.prompt }));
+
       void dispatch(sendUserMessage(projectId));
     });
-  }, [seed, projectId, dispatch]);
+    return () => {
+      abandoned = true;
+    };
+  }, [seed, projectId, dispatch, claim, consumedSeed]);
 
-  return { seed, consumed: consumedRef.current };
+  return { seed, consumed: consumedSeed === seed && seed !== null };
 }

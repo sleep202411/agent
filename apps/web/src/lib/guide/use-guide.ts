@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { createGuideDriver, toDriverSteps } from "./driver";
 import { guideSteps, type GuideId } from "./guide-steps";
@@ -14,60 +14,62 @@ interface UseGuideOptions {
 export function useGuide(guideId: GuideId, options: UseGuideOptions = {}) {
   const { delay = 800, ready = true } = options;
   const t = useTranslations("guide");
-  const driverRef = useRef<ReturnType<typeof createGuideDriver> | null>(null);
-  const startedRef = useRef(false);
+  const scope = useMemo(() => ({ guideId }), [guideId]);
+  const owner = useRef<{
+    scope: typeof scope;
+    driver: ReturnType<typeof createGuideDriver> | null;
+    timer: ReturnType<typeof setInterval> | null;
+    started: boolean;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    const current = {
+      scope,
+      driver: null as ReturnType<typeof createGuideDriver> | null,
+      timer: null as ReturnType<typeof setInterval> | null,
+      started: false,
+    };
+    owner.current = current;
+    return () => {
+      if (owner.current === current) owner.current = null;
+      if (current.timer) clearInterval(current.timer);
+      current.driver?.destroy();
+    };
+  }, [scope]);
 
   const start = useCallback(() => {
+    const current = owner.current;
+    if (current?.scope !== scope || current.driver?.isActive()) return;
     const steps = guideSteps[guideId];
-    if (!steps || steps.length === 0) return;
-
-    // Check all target elements exist in DOM
-    const validSteps = steps.filter((s) => document.querySelector(s.element));
-    if (validSteps.length === 0) return;
-
-    const d = createGuideDriver({
-      prev: t("prev"),
-      next: t("next"),
-      done: t("finish"),
-    });
-    driverRef.current = d;
-
-    d.setSteps(toDriverSteps(validSteps, t));
-    d.drive();
-
-    // Mark completed when driver finishes
-    const checkDone = setInterval(() => {
-      if (!d.isActive()) {
-        clearInterval(checkDone);
+    if (!steps?.length) return;
+    const validSteps = steps.filter((step) => document.querySelector(step.element));
+    if (!validSteps.length) return;
+    if (current.timer) clearInterval(current.timer);
+    const driver = createGuideDriver({ prev: t("prev"), next: t("next"), done: t("finish") });
+    current.driver = driver;
+    driver.setSteps(toDriverSteps(validSteps, t));
+    driver.drive();
+    current.started = true;
+    current.timer = setInterval(() => {
+      if (owner.current !== current || current.driver !== driver) return;
+      if (!driver.isActive()) {
+        if (current.timer) clearInterval(current.timer);
+        current.timer = null;
+        current.driver = null;
         markGuideCompleted(guideId);
-        driverRef.current = null;
       }
     }, 500);
-  }, [guideId, t]);
+  }, [guideId, scope, t]);
 
-  // Auto-start on first mount if not completed
   useEffect(() => {
-    if (!ready || startedRef.current) return;
-    if (isGuideCompleted(guideId)) return;
-
-    startedRef.current = true;
+    if (!ready || owner.current?.started || isGuideCompleted(guideId)) return;
     const timer = setTimeout(start, delay);
     return () => clearTimeout(timer);
   }, [guideId, ready, delay, start]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (driverRef.current?.isActive()) {
-        driverRef.current.destroy();
-        driverRef.current = null;
-      }
-    };
-  }, []);
-
   const reset = useCallback(() => {
-    startedRef.current = false;
-  }, []);
+    if (owner.current?.scope === scope) owner.current.started = false;
+  }, [scope]);
 
   return { start, reset, isCompleted: isGuideCompleted(guideId) };
 }

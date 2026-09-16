@@ -77,6 +77,7 @@ export class StoryGenerationBatchContinuationWorkerService
   );
   private timer: NodeJS.Timeout | null = null;
   private draining = false;
+  private stopping = false;
   private readonly backoffUntil = new Map<string, number>();
   private readonly backoffDelayMs = new Map<string, number>();
 
@@ -86,6 +87,7 @@ export class StoryGenerationBatchContinuationWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopping || this.timer) return;
     const intervalMs = positiveInt(
       process.env.STORY_GENERATION_CONTINUATION_WORKER_INTERVAL_MS,
       DEFAULT_INTERVAL_MS,
@@ -99,27 +101,33 @@ export class StoryGenerationBatchContinuationWorkerService
   }
 
   onModuleDestroy(): void {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
 
   async drainOnce(limit = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (this.draining) return;
+    if (this.stopping || this.draining) return;
     this.draining = true;
     try {
       for (let index = 0; index < Math.max(1, Math.trunc(limit)); index += 1) {
+        if (this.stopping) break;
         const candidateId = await this.pickNextCandidateId();
         if (!candidateId) break;
 
-        let dispatch: AgentOsJournalDispatch;
+        let dispatch: AgentOsJournalDispatch | null;
         try {
           dispatch = await this.prisma.$transaction((tx) =>
-            this.deliverCandidateInTransaction(tx, candidateId),
+            this.stopping
+              ? Promise.resolve(null)
+              : this.deliverCandidateInTransaction(tx, candidateId),
           );
         } catch (error) {
           this.handleDeliveryFailure(candidateId, error);
           continue;
         }
+
+        if (!dispatch) break;
 
         this.clearBackoff(candidateId);
         await this.journal.publishCommitted(dispatch);

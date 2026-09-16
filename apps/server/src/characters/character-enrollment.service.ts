@@ -168,6 +168,14 @@ export class CharacterEnrollmentService {
     const tokenKey = this.requireTokenKey();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
     const created = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+      const current = await this.requireOwnRealPerson(user, characterId, tx);
+      if (current.status === CharacterStatus.active) {
+        throw new ConflictException({
+          code: 'ENROLLMENT_ALREADY_COMPLETED',
+          message: 'This character is already verified.',
+        });
+      }
       // Single live session per character: stale pending sessions expire now
       // (their vendor tokens are single-use anyway) — hard-delete the token.
       await tx.characterEnrollmentSession.updateMany({
@@ -264,8 +272,30 @@ export class CharacterEnrollmentService {
       });
     }
 
-    const now = new Date();
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+      const current = await this.requireOwnRealPerson(user, characterId, tx);
+      if (current.status === CharacterStatus.active) return;
+      await tx.$queryRaw`SELECT id FROM character_enrollment_sessions WHERE id = ${session.id}::uuid FOR UPDATE`;
+      const currentSession = await tx.characterEnrollmentSession.findUnique({
+        where: { id: session.id },
+      });
+      const [{ now }] = await tx.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT clock_timestamp() AS now`;
+      if (
+        !currentSession ||
+        currentSession.characterId !== characterId ||
+        currentSession.ownerUserId !== user.userId ||
+        currentSession.status !== CharacterEnrollmentSessionStatus.pending ||
+        !currentSession.bytedTokenEnc ||
+        currentSession.expiresAt <= now
+      ) {
+        throw new ConflictException({
+          code: 'ENROLLMENT_SESSION_EXPIRED',
+          message: 'No active verification session — start again.',
+        });
+      }
       await tx.aiProviderAssetGroup.upsert({
         where: {
           characterId_provider: {
@@ -371,22 +401,71 @@ export class CharacterEnrollmentService {
     character: StudioCharacter,
     consentType: CharacterConsentRecordType = CharacterConsentRecordType.revocation,
   ): Promise<void> {
-    const now = new Date();
     const teardown = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${character.id}::uuid FOR UPDATE`;
+      const current = await tx.studioCharacter.findFirst({
+        where: { id: character.id, deletedAt: null },
+      });
+      if (!current)
+        throw new NotFoundException({
+          code: 'CHARACTER_NOT_FOUND',
+          message: 'Character not found.',
+        });
+      if (current.kind !== CharacterKind.real_person)
+        throw new BadRequestException({
+          code: 'CHARACTER_NOT_REAL_PERSON',
+          message: 'Withdrawal applies to real-person characters only.',
+        });
+      if (
+        consentType !== CharacterConsentRecordType.admin_takedown &&
+        current.subjectUserId !== user.userId
+      ) {
+        throw new ForbiddenException({
+          code: 'CHARACTER_SUBJECT_MISMATCH',
+          message: 'Only the enrolled person can revoke this character.',
+        });
+      }
+      if (current.status === CharacterStatus.revoked) return null;
+      const now = new Date();
+      await tx.characterEnrollmentSession.updateMany({
+        where: {
+          characterId: character.id,
+          status: CharacterEnrollmentSessionStatus.pending,
+        },
+        data: {
+          status: CharacterEnrollmentSessionStatus.expired,
+          statusReason: 'character_revoked',
+          bytedTokenEnc: null,
+        },
+      });
       await tx.studioCharacter.update({
         where: { id: character.id },
         data: { status: CharacterStatus.revoked, revokedAt: now },
       });
       const groups = await tx.aiProviderAssetGroup.findMany({
-        where: { characterId: character.id },
-        include: { externalAssets: { select: { externalAssetId: true } } },
+        where: {
+          characterId: character.id,
+          status: { not: AiProviderAssetGroupStatus.deleted },
+        },
+        include: {
+          externalAssets: {
+            where: { status: { not: AiProviderExternalAssetStatus.deleted } },
+            select: { externalAssetId: true },
+          },
+        },
       });
       await tx.aiProviderAssetGroup.updateMany({
-        where: { characterId: character.id },
+        where: {
+          characterId: character.id,
+          status: { not: AiProviderAssetGroupStatus.deleted },
+        },
         data: { status: AiProviderAssetGroupStatus.disabled },
       });
       await tx.aiProviderExternalAsset.updateMany({
-        where: { providerAssetGroupId: { in: groups.map((g) => g.id) } },
+        where: {
+          providerAssetGroupId: { in: groups.map((g) => g.id) },
+          status: { not: AiProviderExternalAssetStatus.deleted },
+        },
         data: { status: AiProviderExternalAssetStatus.disabled },
       });
       await tx.characterConsentRecord.create({
@@ -423,7 +502,7 @@ export class CharacterEnrollmentService {
         user.userId,
       );
       await enqueueAssetEventOutbox(tx, {
-        userId: character.subjectUserId ?? character.createdByUserId,
+        userId: current.subjectUserId ?? current.createdByUserId,
         eventType: AiOutboxEventType.character_media_updated,
         payload: {
           kind: 'character_media_updated',
@@ -441,9 +520,16 @@ export class CharacterEnrollmentService {
         externalGroupIds: groups.map((g) => g.externalGroupId),
       };
     });
+    if (!teardown) return;
     // Upstream deletes ride the CRITICAL lane (never behind enrollment
     // bursts). Failure here never re-enables anything local.
-    await this.sync.enqueueCriticalTeardown(teardown);
+    try {
+      await this.sync.enqueueCriticalTeardown(teardown);
+    } catch {
+      this.logger.warn(
+        'Character withdrawal cleanup deferred to reconciliation.',
+      );
+    }
     // ⟦v2⟧ Cancel in-flight jobs across EVERY granted project + release holds
     // (prompt cleanup; the worker seam is the barrier). Best-effort.
     await this.grants.cancelJobsForCharacterAllProjects(
@@ -458,8 +544,9 @@ export class CharacterEnrollmentService {
   private async requireOwnRealPerson(
     user: AuthUser,
     characterId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<StudioCharacter> {
-    const character = await this.prisma.studioCharacter.findFirst({
+    const character = await client.studioCharacter.findFirst({
       where: { id: characterId, deletedAt: null },
     });
     if (!character || character.status === CharacterStatus.revoked) {
@@ -493,8 +580,9 @@ export class CharacterEnrollmentService {
   async requireDefaultWorkspace(
     user: AuthUser,
     workspaceId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
-    const workspace = await this.prisma.workspace.findFirst({
+    const workspace = await client.workspace.findFirst({
       where: { id: workspaceId, deletedAt: null },
       select: { defaultForUserId: true },
     });

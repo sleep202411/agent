@@ -116,8 +116,10 @@ import {
   type SystemMessageKind,
   type SystemMessagePayload,
 } from '@repo/shared/conversation';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { newShortId } from '../common/id';
+import { conversationUnreadCounts } from './unread-counts';
 import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import { lockCrewAssetUploads } from '../crews/assets/upload-lock';
@@ -255,6 +257,73 @@ export class ConversationsService {
         skipDuplicates: true,
       });
       return conv;
+    });
+  }
+
+  /** Keep a retried inquiry in its original thread, including after order promotion. */
+  async openServiceInquiry(
+    args: OpenConversationArgs,
+    firstMessage?: string,
+    requestKey?: string,
+  ) {
+    const clientKey =
+      firstMessage && requestKey
+        ? `inq:${createHash('sha256')
+            .update(JSON.stringify([args.serviceId, requestKey]))
+            .digest('hex')
+            .slice(0, 60)}`
+        : null;
+    return this.prisma.$transaction(async (tx) => {
+      if (clientKey) {
+        // Unlike the conversation lookup lock, this survives inquiry -> order promotion.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`service-inquiry:${args.buyerId}:${clientKey}`}, 0))`;
+        const existing = await tx.message.findFirst({
+          where: {
+            authorId: args.buyerId,
+            clientKey,
+            conversation: {
+              OR: [
+                { contextType: 'service', contextId: args.serviceId },
+                {
+                  contextType: 'order',
+                  order: { serviceId: args.serviceId, buyerId: args.buyerId },
+                },
+              ],
+            },
+          },
+        });
+        if (existing) {
+          await this.assertConversationAccess(
+            existing.conversationId,
+            args.buyerId,
+            tx,
+          );
+          if (existing.deletedAt)
+            throw new ConflictException(
+              'The original inquiry message is no longer available.',
+            );
+          this.assertIdempotentReplay(existing, 'text', firstMessage!, null);
+          return {
+            conv: { id: existing.conversationId },
+            first: existing,
+            created: false,
+          };
+        }
+      }
+      const conv = await this.openServiceConversation(args, tx);
+      if (!firstMessage) return { conv, first: null, created: false };
+      // Only this path may use a key in a caller transaction: admission is locked above.
+      const result = await this.persist(
+        conv.id,
+        args.buyerId,
+        'text',
+        firstMessage,
+        null,
+        tx,
+        clientKey,
+        true,
+      );
+      return { conv, first: result.message, created: result.created };
     });
   }
 
@@ -788,6 +857,83 @@ export class ConversationsService {
     input: SendProposalInput,
     db: DbClient = this.prisma,
   ): Promise<PrismaMessage> {
+    return (
+      await this.persistProposalResult(conversationId, authorId, input, db)
+    ).message;
+  }
+
+  private async persistProposalResult(
+    conversationId: string,
+    authorId: string,
+    input: SendProposalInput,
+    db: DbClient = this.prisma,
+  ): Promise<PersistResult> {
+    await this.assertProposalContext(
+      conversationId,
+      authorId,
+      db,
+      !!input.clientKey,
+    );
+    const proposal: ProposalPayload = {
+      status: 'open',
+      packageTier: input.packageTier,
+      price: input.price,
+      currency: input.currency,
+      deliveryDays: input.deliveryDays,
+      revisions: input.revisions,
+      scope: input.scope,
+      note: input.note,
+    };
+    const payload: MessagePayload = { kind: 'proposal', proposal };
+    return this.runInTx(db, async (tx) => {
+      if (input.clientKey)
+        await this.lockMessageKey(
+          tx,
+          conversationId,
+          authorId,
+          input.clientKey,
+        );
+      // Match order admission's participant-before-conversation lock order.
+      // Hold both through persistence so departure, role changes and inquiry
+      // conversion cannot slip between the eligibility check and the write.
+      await tx.$queryRaw`SELECT user_id FROM conversation_participants WHERE conversation_id = ${conversationId} AND user_id = ${authorId} FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId} FOR UPDATE`;
+      await this.assertProposalContext(
+        conversationId,
+        authorId,
+        tx,
+        !!input.clientKey,
+      );
+      if (input.clientKey) {
+        const existing = await tx.message.findFirst({
+          where: { conversationId, authorId, clientKey: input.clientKey },
+        });
+        if (existing) {
+          this.assertProposalReplay(existing, input);
+          return { message: existing, created: false };
+        }
+      }
+      // An existing receipt may be read after conversion; a new offer may not.
+      await this.assertProposalContext(conversationId, authorId, tx);
+      return this.persist(
+        conversationId,
+        authorId,
+        'proposal',
+        input.note,
+        payload,
+        tx,
+        input.clientKey ?? null,
+        true,
+      );
+    });
+  }
+
+  private async assertProposalContext(
+    conversationId: string,
+    authorId: string,
+    db: DbClient,
+    allowOrderReceipt = false,
+  ) {
     const participant = await this.assertParticipant(
       conversationId,
       authorId,
@@ -800,30 +946,13 @@ export class ConversationsService {
       where: { id: conversationId },
       select: { contextType: true },
     });
-    if (!conv || conv.contextType !== 'service') {
+    if (
+      !conv ||
+      (conv.contextType !== 'service' &&
+        !(allowOrderReceipt && conv.contextType === 'order'))
+    ) {
       throw new ConflictException('Proposals only valid on service inquiries');
     }
-    const proposal: ProposalPayload = {
-      status: 'open',
-      packageTier: input.packageTier,
-      price: input.price,
-      currency: input.currency,
-      deliveryDays: input.deliveryDays,
-      revisions: input.revisions,
-      scope: input.scope,
-      note: input.note,
-    };
-    const payload: MessagePayload = { kind: 'proposal', proposal };
-    return (
-      await this.persist(
-        conversationId,
-        authorId,
-        'proposal',
-        input.note,
-        payload,
-        db,
-      )
-    ).message;
   }
 
   /**
@@ -1362,8 +1491,8 @@ export class ConversationsService {
         .map((item) => item.mediaAssetId);
 
       await lockCrewAssetUploads(tx, uploadIds);
-      const [nodes, uploadedMedia] = await Promise.all([
-        tx.crewAssetNode.findMany({
+      const [nodes, uploadedMedia] = [
+        await tx.crewAssetNode.findMany({
           where: {
             id: { in: existingIds },
             crewId,
@@ -1374,7 +1503,7 @@ export class ConversationsService {
           },
           include: { mediaAsset: true },
         }),
-        tx.mediaAsset.findMany({
+        await tx.mediaAsset.findMany({
           where: {
             id: { in: uploadIds },
             status: MediaAssetStatus.ready,
@@ -1389,7 +1518,7 @@ export class ConversationsService {
             metadata: true,
           },
         }),
-      ]);
+      ];
       if (nodes.length !== existingIds.length) {
         throw new BadRequestException({
           message: 'One or more attached crew assets are unavailable.',
@@ -1532,6 +1661,10 @@ export class ConversationsService {
     mentions: ConversationMentionPayload[],
     tasks: ConversationTaskReferencePayload[],
   ): void {
+    if (existing.deletedAt)
+      throw new ConflictException(
+        'The original message is no longer available',
+      );
     const payload = (existing.payload ?? null) as MessagePayload | null;
     const sameAttachments =
       payload?.kind === 'attachments' &&
@@ -1550,8 +1683,8 @@ export class ConversationsService {
       (existing.type === 'image' || existing.type === 'file') &&
       existing.body === input.body &&
       sameAttachments &&
-      JSON.stringify(persistedMentions) === JSON.stringify(mentions) &&
-      JSON.stringify(persistedTasks) === JSON.stringify(tasks)
+      isDeepStrictEqual(persistedMentions, mentions) &&
+      isDeepStrictEqual(persistedTasks, tasks)
     ) {
       return;
     }
@@ -1566,9 +1699,13 @@ export class ConversationsService {
     authorId: string,
     input: SendProposalInput,
   ): Promise<PrismaMessage> {
-    const msg = await this.persistProposal(conversationId, authorId, input);
-    await this.broadcastMessage(msg);
-    return msg;
+    const result = await this.persistProposalResult(
+      conversationId,
+      authorId,
+      input,
+    );
+    if (result.created) await this.broadcastMessage(result.message);
+    return result.message;
   }
 
   async postSystem(
@@ -1666,6 +1803,10 @@ export class ConversationsService {
 
     const pendingMessages: PrismaMessage[] = [];
     const patched = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT user_id FROM conversation_participants WHERE conversation_id = ${conversationId} AND user_id = ${buyerId} FOR SHARE`;
+      const current = await this.assertParticipant(conversationId, buyerId, tx);
+      if (current.role !== 'buyer')
+        throw new ForbiddenException('Only the buyer can decline a proposal');
       await lockProposalsAndAssertOpen(tx, conversationId, proposalMessageId);
       const updated = await this.persistProposalStatusPatch(
         conversationId,
@@ -2027,8 +2168,9 @@ export class ConversationsService {
    * common case (a retry seconds later); the P2002 catch wins the
    * genuine race (two in-flight retries of the same send).
    *
-   * It is a hard error to combine `clientKey` with a caller-supplied
-   * transaction. The P2002 recovery re-reads the row, and inside
+   * Arbitrary caller transactions cannot opt into key recovery. Internal
+   * inquiry/proposal paths explicitly own their serialization before calling
+   * this primitive; other combinations are rejected. The P2002 recovery re-reads the row, and inside
    * someone else's tx that read would hit 25P02 on an already-aborted
    * transaction — a silent corruption of an unrelated business
    * operation. Fail loudly at the call site instead.
@@ -2041,6 +2183,7 @@ export class ConversationsService {
     payload: MessagePayload | null,
     db: DbClient = this.prisma,
     clientKey: string | null = null,
+    lockedMessageKey = false,
   ): Promise<PersistResult> {
     if (clientKey !== null) {
       if (authorId === null) {
@@ -2048,7 +2191,7 @@ export class ConversationsService {
           'clientKey requires an authorId — the dedupe index is scoped to (conversation, author, key)',
         );
       }
-      if (this.isTx(db)) {
+      if (this.isTx(db) && !lockedMessageKey) {
         throw new Error(
           'clientKey dedupe cannot run inside a caller transaction — a unique violation would abort it (25P02)',
         );
@@ -2080,6 +2223,7 @@ export class ConversationsService {
         }
 
         if (clientKey !== null) {
+          await this.lockMessageKey(tx, conversationId, authorId!, clientKey);
           const existing = await tx.message.findFirst({
             where: { conversationId, authorId, clientKey },
           });
@@ -2115,7 +2259,8 @@ export class ConversationsService {
         return { message: created, created: true };
       });
     } catch (err) {
-      if (clientKey === null || !isUniqueViolation(err)) throw err;
+      if (clientKey === null || this.isTx(db) || !isUniqueViolation(err))
+        throw err;
       const winner = await this.prisma.message.findFirst({
         where: { conversationId, authorId, clientKey },
       });
@@ -2124,6 +2269,57 @@ export class ConversationsService {
         return { message: winner, created: false };
       }
       throw err;
+    }
+  }
+
+  private async lockMessageKey(
+    tx: TxClient,
+    conversationId: string,
+    authorId: string,
+    key: string,
+  ) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`conversation-message:${conversationId}:${authorId}:${key}`}, 0))`;
+  }
+
+  private assertProposalReplay(
+    existing: PrismaMessage,
+    input: SendProposalInput,
+  ) {
+    const payload = existing.payload as unknown as MessagePayload | null;
+    if (existing.deletedAt)
+      throw new ConflictException(
+        'The original proposal is no longer available',
+      );
+    const terms = (
+      p: Pick<
+        ProposalPayload,
+        | 'packageTier'
+        | 'price'
+        | 'currency'
+        | 'deliveryDays'
+        | 'revisions'
+        | 'scope'
+        | 'note'
+      >,
+    ) => [
+      p.packageTier,
+      p.price,
+      p.currency,
+      p.deliveryDays,
+      p.revisions,
+      p.scope,
+      p.note,
+    ];
+    if (
+      existing.type !== 'proposal' ||
+      payload?.kind !== 'proposal' ||
+      existing.body !== input.note ||
+      JSON.stringify(terms(payload.proposal)) !== JSON.stringify(terms(input))
+    ) {
+      throw new ConflictException({
+        message: 'Idempotency key was already used for a different proposal',
+        existingMessageId: existing.id,
+      });
     }
   }
 
@@ -2183,10 +2379,14 @@ export class ConversationsService {
     body: string,
     payload: MessagePayload | null,
   ): void {
+    if (existing.deletedAt)
+      throw new ConflictException(
+        'The original message is no longer available',
+      );
     if (
       existing.type === type &&
       existing.body === body &&
-      JSON.stringify(existing.payload ?? null) === JSON.stringify(payload)
+      isDeepStrictEqual(existing.payload ?? null, payload)
     ) {
       return;
     }
@@ -2275,25 +2475,7 @@ export class ConversationsService {
     userIds: string[],
     db: DbClient = this.prisma,
   ): Promise<Map<string, number>> {
-    if (userIds.length === 0) return new Map();
-    const rows = await db.$queryRaw<
-      Array<{ userId: string; unread: number }>
-    >(Prisma.sql`
-      SELECT p.user_id AS "userId", COUNT(m.id)::int AS "unread"
-      FROM conversation_participants p
-      LEFT JOIN messages m
-        ON m.conversation_id = p.conversation_id
-       AND m.deleted_at IS NULL
-       AND (m.author_id IS NULL OR m.author_id <> p.user_id)
-       AND (
-             p.last_read_at IS NULL
-             OR (m.created_at, m.id)
-                > (p.last_read_at, COALESCE(p.last_read_message_id, ''))
-           )
-      WHERE p.conversation_id = ${conversationId}
-        AND p.user_id IN (${Prisma.join(userIds)})
-      GROUP BY p.user_id
-    `);
+    const rows = await conversationUnreadCounts(db, [conversationId], userIds);
     return new Map(rows.map((r) => [r.userId, r.unread]));
   }
 

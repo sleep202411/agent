@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import Link from "next/link";
 import { IconArrowRight, IconDots, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -93,7 +94,16 @@ export function RecentProjectsPreview() {
   );
 }
 
-function ProductCard({ product }: { product: MyProduct }) {
+export function ProductCard({ product }: { product: MyProduct }) {
+  const { user } = useCurrentUser();
+  return (
+    <OwnedProductCard
+      key={JSON.stringify([user?.id, product.id, product.worldId])}
+      product={product}
+    />
+  );
+}
+function OwnedProductCard({ product }: { product: MyProduct }) {
   const tw = useTranslations("workspace");
   const tc = useTranslations("common");
   const queryClient = useQueryClient();
@@ -103,6 +113,24 @@ function ProductCard({ product }: { product: MyProduct }) {
   const [preparing, setPreparing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [isLastInWorld, setIsLastInWorld] = useState(false);
+  const active = useRef(true);
+  const operation = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+    };
+  }, []);
+  const begin = () => {
+    if (!active.current || operation.current) return null;
+    const run = new AbortController();
+    operation.current = run;
+    return run;
+  };
+  const owns = (run: AbortController) =>
+    active.current && operation.current === run && !run.signal.aborted;
 
   // The home strip is a flat product list, so we don't know up front
   // whether this is the only project in its world. Java rejects a
@@ -110,39 +138,49 @@ function ProductCard({ product }: { product: MyProduct }) {
   // world itself, which cascades" — so fetch the world's product count
   // first to pick the right endpoint and warn the user accordingly.
   const openDeleteConfirm = async () => {
-    if (preparing) return;
+    const run = begin();
+    if (!run) return;
     setPreparing(true);
     try {
       const res = await backendApi.post<Paginated<V1WorldProduct>>(
         "/api/user/world/list/worldproduct",
-        { data: { page: 1, pageSize: 100, worldId: product.worldId } }
+        { signal: run.signal, data: { page: 1, pageSize: 100, worldId: product.worldId } }
       );
-      setIsLastInWorld((res.list ?? []).length <= 1);
-    } catch {
-      // Best effort — fall back to the non-last path; handleDelete will
-      // surface Java's rejection if it does turn out to be the last one.
-      setIsLastInWorld(false);
-    } finally {
-      setPreparing(false);
+      if (!owns(run)) return;
+      if (!(res.list ?? []).some((item) => String(item.id) === String(product.id)))
+        throw new Error(tw("projectLoadFailed"));
+      setIsLastInWorld(res.list.length === 1 && res.totalCount === 1);
       setConfirmOpen(true);
+    } catch (err) {
+      if (!owns(run)) return;
+      toast.error(err instanceof Error ? err.message : tw("projectLoadFailed"));
+    } finally {
+      if (owns(run)) {
+        operation.current = null;
+        setPreparing(false);
+      }
     }
   };
 
   const handleDelete = async () => {
-    if (deleting) return;
+    const run = begin();
+    if (!run) return;
     setDeleting(true);
     try {
       if (isLastInWorld) {
         await backendApi.post("/api/user/world/delete/world", {
+          signal: run.signal,
           data: { id: product.worldId },
         });
       } else {
         // Non-last: delete only the project. Java expects `id` on the
         // query string (body form returns 未知異常).
         await backendApi.post(
-          `/api/user/world/delete/worldproduct?id=${encodeURIComponent(product.id)}`
+          `/api/user/world/delete/worldproduct?id=${encodeURIComponent(product.id)}`,
+          { signal: run.signal }
         );
       }
+      if (!owns(run)) return;
       toast.success(tw("projectDeleteSuccess"));
       setConfirmOpen(false);
       // Refresh the home strip + this world's product list; if the world
@@ -153,10 +191,14 @@ function ProductCard({ product }: { product: MyProduct }) {
         void queryClient.invalidateQueries({ queryKey: worldKeys.all });
       }
     } catch (err) {
+      if (!owns(run)) return;
       console.error("[RecentProjectsPreview] delete failed", err);
       toast.error(err instanceof Error ? err.message : tw("projectDeleteFailed"));
     } finally {
-      setDeleting(false);
+      if (owns(run)) {
+        operation.current = null;
+        setDeleting(false);
+      }
     }
   };
 
@@ -202,7 +244,7 @@ function ProductCard({ product }: { product: MyProduct }) {
           </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
-            disabled={preparing}
+            disabled={preparing || deleting}
             onSelect={(e) => {
               e.preventDefault();
               void openDeleteConfirm();
@@ -224,9 +266,9 @@ function ProductCard({ product }: { product: MyProduct }) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting || preparing}>{tc("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              disabled={deleting}
+              disabled={deleting || preparing}
               onClick={(e) => {
                 e.preventDefault();
                 void handleDelete();

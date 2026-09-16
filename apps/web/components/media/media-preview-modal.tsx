@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   IconCopy,
@@ -50,7 +50,13 @@ function truncateMiddle(value: string, head = 36, tail = 16) {
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
 }
 
-export function MediaPreviewModal({
+export function MediaPreviewModal(props: MediaPreviewModalProps) {
+  return (
+    <MediaPreviewSession key={JSON.stringify([props.open, props.type, props.src])} {...props} />
+  );
+}
+
+function MediaPreviewSession({
   open,
   onOpenChange,
   type,
@@ -69,6 +75,17 @@ export function MediaPreviewModal({
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const copyTarget = link || src || "";
+  const active = useRef(false);
+  const downloadPending = useRef(false);
+  const deletePending = useRef(false);
+  const downloadAbort = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      downloadAbort.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -94,14 +111,12 @@ export function MediaPreviewModal({
     };
   }, [onOpenChange, open]);
 
-  const resolvedName = useMemo(() => {
-    if (name?.trim()) return name.trim();
-    if (type === "image") return t("imagePreview");
-    if (type === "video") return t("videoPreview");
-    return t("audioPreview");
-  }, [name, type]);
+  const resolvedName =
+    name?.trim() ||
+    t(type === "image" ? "imagePreview" : type === "video" ? "videoPreview" : "audioPreview");
 
   const handleCopyLink = async () => {
+    if (!active.current) return;
     if (!copyTarget) {
       toast.error(t("noCopyLink"));
       return;
@@ -109,61 +124,91 @@ export function MediaPreviewModal({
 
     try {
       await navigator.clipboard.writeText(copyTarget);
-      toast.success(tc("copySuccess"));
+      if (active.current) toast.success(tc("copySuccess"));
     } catch {
+      if (!active.current) return;
       // Clipboard API blocked (iframe / permissions policy) — try execCommand fallback
+      let textarea: HTMLTextAreaElement | undefined;
       try {
-        const textarea = document.createElement("textarea");
+        textarea = document.createElement("textarea");
         textarea.value = copyTarget;
         textarea.style.position = "fixed";
         textarea.style.opacity = "0";
         document.body.appendChild(textarea);
         textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
+        if (!document.execCommand("copy")) throw new Error("Copy command rejected");
         toast.success(tc("copySuccess"));
       } catch {
         // Both methods blocked — prompt user to copy manually
         window.prompt(tc("manualCopyHint"), copyTarget);
+      } finally {
+        textarea?.remove();
       }
     }
   };
 
   const handleDownload = async () => {
-    if (!src) return;
-    if (onDownload) {
-      await onDownload();
-      return;
-    }
-
+    if (!src || !active.current || downloadPending.current) return;
+    downloadPending.current = true;
     setDownloading(true);
+    let blobUrl: string | undefined;
+    let linkElement: HTMLAnchorElement | undefined;
     try {
-      const response = await fetch(src);
+      if (onDownload) {
+        await onDownload();
+        return;
+      }
+      const controller = new AbortController();
+      downloadAbort.current = controller;
+      const response = await fetch(src, { signal: controller.signal });
+      if (!active.current) return;
+      if (!response.ok) throw new Error(`Download failed (${response.status})`);
       const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const linkElement = document.createElement("a");
+      if (!active.current) return;
+      blobUrl = URL.createObjectURL(blob);
+      linkElement = document.createElement("a");
       linkElement.href = blobUrl;
       linkElement.download = resolvedName;
       document.body.appendChild(linkElement);
       linkElement.click();
-      document.body.removeChild(linkElement);
-      URL.revokeObjectURL(blobUrl);
     } catch (error) {
-      console.error("[MediaPreviewModal] 下载失败:", error);
+      if (!active.current) return;
+      if (onDownload) {
+        toast.error(
+          error instanceof Error && error.message ? error.message : tc("operationFailed")
+        );
+        return;
+      }
+      console.error("[MediaPreviewModal] Download failed:", error);
       window.open(src, "_blank", "noopener,noreferrer");
     } finally {
-      setDownloading(false);
+      linkElement?.remove();
+      if (blobUrl) {
+        const allocatedUrl = blobUrl;
+        // Allow the browser to begin consuming the download before revoking.
+        setTimeout(() => URL.revokeObjectURL(allocatedUrl), 1000);
+      }
+      downloadAbort.current = null;
+      downloadPending.current = false;
+      if (active.current) setDownloading(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!onDelete) return;
+    if (!onDelete || !active.current || deletePending.current) return;
+    deletePending.current = true;
     setDeleting(true);
     try {
       await onDelete();
-      onOpenChange(false);
+      if (active.current) onOpenChange(false);
+    } catch (error) {
+      if (active.current)
+        toast.error(
+          error instanceof Error && error.message ? error.message : tc("operationFailed")
+        );
     } finally {
-      setDeleting(false);
+      deletePending.current = false;
+      if (active.current) setDeleting(false);
     }
   };
 

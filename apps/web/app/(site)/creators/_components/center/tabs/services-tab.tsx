@@ -18,7 +18,7 @@
  * Empty state for owner keeps the Phase-1 marketing pitch above the
  * fold; visitor empty state is a plain "no services yet" message.
  */
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   IconArchive,
   IconBolt,
@@ -40,6 +40,7 @@ import {
   type CreatorServiceStatus,
 } from "@repo/shared/creator-service";
 import { ZERO_DECIMAL_CURRENCIES } from "@repo/shared/crew";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import {
   AlertDialog,
@@ -71,7 +72,25 @@ interface ServicesTabProps {
   isOwner: boolean;
 }
 
-export function ServicesTab({ creator, isOwner }: ServicesTabProps) {
+export function ServicesTab(props: ServicesTabProps) {
+  const { user } = useCurrentUser();
+  return (
+    <ServicesTabContent
+      key={JSON.stringify([props.creator.id, props.isOwner, user?.id])}
+      {...props}
+    />
+  );
+}
+
+function ServicesTabContent({ creator, isOwner }: ServicesTabProps) {
+  const active = useRef(false);
+  const archiving = useRef(false);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const t = useTranslations("creatorService");
   const tCenter = useTranslations("creatorCenter");
 
@@ -98,6 +117,10 @@ export function ServicesTab({ creator, isOwner }: ServicesTabProps) {
   // grid; the pending card id lives here so the dialog can call
   // archive on confirm.
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const archiveTarget = useRef<string | null>(archivingId);
+  useLayoutEffect(() => {
+    archiveTarget.current = archivingId;
+  }, [archivingId]);
   const archivingCard = items.find((s) => s.id === archivingId) ?? null;
   const archive = useArchiveService();
   // Visitor-side click-through: opens the read-only detail dialog.
@@ -216,13 +239,25 @@ export function ServicesTab({ creator, isOwner }: ServicesTabProps) {
               disabled={archive.isPending}
               onClick={async (e) => {
                 e.preventDefault();
-                if (!archivingId) return;
+                if (
+                  !isOwner ||
+                  !archivingId ||
+                  !active.current ||
+                  archiving.current ||
+                  archiveTarget.current !== archivingId
+                )
+                  return;
+                archiving.current = true;
                 try {
                   await archive.mutateAsync(archivingId);
+                  if (!active.current || archiveTarget.current !== archivingId) return;
                   toast.success(t("archivedToast"));
                   setArchivingId(null);
                 } catch (err) {
-                  toast.error(err instanceof Error ? err.message : t("archiveFailed"));
+                  if (active.current && archiveTarget.current === archivingId)
+                    toast.error(err instanceof Error ? err.message : t("archiveFailed"));
+                } finally {
+                  archiving.current = false;
                 }
               }}
             >
@@ -252,6 +287,14 @@ function ServiceCard({
   onOpenDetail: () => void;
 }) {
   const t = useTranslations("creatorService");
+  const active = useRef(false);
+  const admitted = useRef(false);
+  useLayoutEffect(() => {
+    active.current = isOwner;
+    return () => {
+      active.current = false;
+    };
+  }, [isOwner, card.id]);
   const detail = useCreatorService(isOwner ? card.id : null);
   const status = detail.data?.status;
 
@@ -266,11 +309,15 @@ function ServiceCard({
     : "";
 
   const handle = async (fn: () => Promise<unknown>, successKey: string, failureKey: string) => {
+    if (!active.current || admitted.current) return;
+    admitted.current = true;
     try {
       await fn();
-      toast.success(t(successKey));
+      if (active.current) toast.success(t(successKey));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t(failureKey));
+      if (active.current) toast.error(err instanceof Error ? err.message : t(failureKey));
+    } finally {
+      admitted.current = false;
     }
   };
 

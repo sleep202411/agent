@@ -18,7 +18,7 @@
  * service their message is about (a structural property of our
  * context-scoped conversation model).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconLoader2, IconMessage } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -59,6 +59,8 @@ type ServiceLike =
       "id" | "title" | "coverPath" | "category" | "startingPrice" | "currency"
     >;
 
+import { useCurrentUser } from "@/src/hooks/use-user";
+
 interface ContactCreatorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -73,12 +75,31 @@ interface ContactCreatorDialogProps {
 const MAX_BODY = 4000;
 const MIN_BODY = 1;
 
-export function ContactCreatorDialog({
+export function ContactCreatorDialog(props: ContactCreatorDialogProps) {
+  const { user } = useCurrentUser();
+  return (
+    <ContactCreatorDialogContent
+      key={JSON.stringify([props.service?.id, user?.id, props.open, props.initialBody])}
+      {...props}
+    />
+  );
+}
+
+function ContactCreatorDialogContent({
   open,
   onOpenChange,
   service,
   initialBody = "",
 }: ContactCreatorDialogProps) {
+  const active = useRef(false);
+  const admitted = useRef(false);
+  const messageIntent = useRef<{ body: string; key: string } | null>(null);
+  useLayoutEffect(() => {
+    active.current = open;
+    return () => {
+      active.current = false;
+    };
+  }, [open]);
   const t = useTranslations("creatorService");
   const tm = useTranslations("messages");
   const tc = useTranslations("common");
@@ -105,13 +126,26 @@ export function ContactCreatorDialog({
   const canSend = !!service && trimmed.length >= MIN_BODY && !openConversation.isPending;
 
   const handleSend = async () => {
-    if (!service || !canSend) return;
+    if (!service || !canSend || !active.current || admitted.current) return;
+    admitted.current = true;
     try {
+      if (messageIntent.current?.body !== trimmed) {
+        messageIntent.current = {
+          body: trimmed,
+          key:
+            typeof crypto !== "undefined" && "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `inq-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+        };
+      }
       const { conversation } = await openConversation.mutateAsync({
         contextType: "service",
         contextId: service.id,
         firstMessage: trimmed,
+        firstMessageClientKey: messageIntent.current.key,
       });
+      if (!active.current) return;
+      messageIntent.current = null;
       toast.success(tm("sentToast"), {
         action: {
           label: tm("openConversation"),
@@ -124,6 +158,7 @@ export function ContactCreatorDialog({
         setBody("");
       }
     } catch (err) {
+      if (!active.current) return;
       if (err instanceof ConversationApiError) {
         const detail =
           typeof err.body === "object" && err.body && "message" in err.body
@@ -136,6 +171,8 @@ export function ContactCreatorDialog({
       } else {
         toast.error(err instanceof Error ? err.message : tm("sendFailed"));
       }
+    } finally {
+      admitted.current = false;
     }
   };
 

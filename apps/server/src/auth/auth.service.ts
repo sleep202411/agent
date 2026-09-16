@@ -55,6 +55,8 @@ export class AuthService {
   private static readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
   private static readonly CACHE_MAX_SIZE = 1000;
   private pruneTimer: ReturnType<typeof setInterval> | null = null;
+  private stopping = false;
+  private readonly pendingRequests = new Set<() => void>();
 
   private async getJson<T extends object>(
     url: string,
@@ -62,45 +64,63 @@ export class AuthService {
     label: string,
     timeoutMs = 10_000,
   ): Promise<T | null> {
+    if (this.stopping) return null;
     const get: NodeGet = url.startsWith('https') ? httpsGet : httpGet;
     return new Promise<T | null>((resolve) => {
-      const req = get(
-        url,
-        {
-          headers: { Cookie: cookie },
-        },
-        (res) => {
+      let settled = false;
+      let req: ClientRequest | undefined;
+      const finish = (value: T | null) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        this.pendingRequests.delete(cancel);
+        resolve(value);
+      };
+      const cancel = () => {
+        finish(null);
+        req?.destroy();
+      };
+      this.pendingRequests.add(cancel);
+      // Bound the entire response, including connection and body delivery.
+      // Socket inactivity alone permits a trickling response to wait forever.
+      const timer = setTimeout(cancel, timeoutMs);
+      try {
+        req = get(url, { headers: { Cookie: cookie } }, (res) => {
+          if (settled) {
+            res.destroy();
+            return;
+          }
           const statusCode = res.statusCode ?? 0;
           res.setEncoding('utf8');
           let data = '';
           res.on('data', (chunk: string) => {
-            data += chunk;
+            if (!settled) data += chunk;
+          });
+          res.on('error', cancel);
+          res.on('aborted', cancel);
+          res.on('close', () => {
+            if (!res.complete) cancel();
           });
           res.on('end', () => {
+            if (settled) return;
             if (statusCode !== 200) {
-              this.logger.warn(
-                `${label} failed: HTTP ${statusCode} body=${data.slice(0, 200)}`,
-              );
-              resolve(null);
+              this.logger.warn(`${label} failed: HTTP ${statusCode}`);
+              finish(null);
               return;
             }
             try {
               const parsed: unknown = JSON.parse(data);
-              resolve(isRecord(parsed) ? (parsed as T) : null);
+              finish(isRecord(parsed) ? (parsed as T) : null);
             } catch {
               this.logger.warn(`${label} returned invalid JSON`);
-              resolve(null);
+              finish(null);
             }
           });
-        },
-      );
-      req.setTimeout(timeoutMs, () => {
-        req.destroy(new Error(`${label} request timed out`));
-      });
-      req.on('error', (err: Error) => {
-        this.logger.error(`${label} request error: ${err.message}`);
-        resolve(null);
-      });
+        });
+        req.on('error', () => finish(null));
+      } catch {
+        cancel();
+      }
     });
   }
 
@@ -110,7 +130,11 @@ export class AuthService {
   }
 
   onModuleDestroy() {
+    this.stopping = true;
     if (this.pruneTimer) clearInterval(this.pruneTimer);
+    this.pruneTimer = null;
+    for (const cancel of this.pendingRequests) cancel();
+    this.cache.clear();
     this.inFlight.clear();
   }
 
@@ -127,7 +151,7 @@ export class AuthService {
     cookie: string,
     options?: { bypassCache?: boolean },
   ): Promise<AuthUser | null> {
-    if (!cookie) return null;
+    if (this.stopping || !cookie) return null;
 
     // A browser can carry MULTIPLE `satoken` cookies for fizzdragon.com — the
     // fresh one from the current login PLUS a stale host-only one left over
@@ -164,6 +188,7 @@ export class AuthService {
 
     for (const candidate of candidates) {
       const user = await this.validateCandidate(candidate, bypassCache);
+      if (this.stopping) return null;
       if (!user) continue;
       if (satokenValues.length > 1) {
         this.logger.log(
@@ -204,12 +229,16 @@ export class AuthService {
       if (existing) return existing;
     }
 
+    // A forced refresh supersedes cached and pending snapshots for this key.
+    // Older requests may finish for their caller, but cannot repopulate cache.
+    if (bypassCache) this.cache.delete(candidate.cacheKey);
     const validation = this.validateSatoken(
       candidate.cookie,
       candidate.fingerprint,
     )
       .then((user) => {
-        if (!user) return null;
+        if (this.stopping || !user) return null;
+        if (this.inFlight.get(candidate.cacheKey) !== validation) return user;
         while (this.cache.size >= AuthService.CACHE_MAX_SIZE) {
           const oldest = this.cache.keys().next();
           if (oldest.done) break;
@@ -226,9 +255,7 @@ export class AuthService {
           this.inFlight.delete(candidate.cacheKey);
         }
       });
-    if (!bypassCache) {
-      this.inFlight.set(candidate.cacheKey, validation);
-    }
+    this.inFlight.set(candidate.cacheKey, validation);
     return validation;
   }
 
@@ -311,7 +338,7 @@ export class AuthService {
    *   - null  → status could not be verified
    */
   async needsRealNameVerification(cookie: string): Promise<boolean | null> {
-    if (!cookie) return null;
+    if (this.stopping || !cookie) return null;
 
     const baseUrl = process.env.JAVA_CONTENT_URL?.replace(/\/$/, '');
     if (!baseUrl) {
@@ -341,7 +368,12 @@ export class AuthService {
         : typeof body.info === 'object' && body.info !== null
           ? (body.info as Record<string, unknown>)
           : body;
-    if (!isSuccess && !('needAuth' in payload)) {
+    if (
+      body.success === false ||
+      (body.code !== undefined &&
+        ![200, '200', 'SUCCESS'].includes(body.code as string | number)) ||
+      (!isSuccess && !('needAuth' in payload))
+    ) {
       this.logger.warn(
         `KYC status check rejected: ${
           scalarString(body.msg) ?? scalarString(body.message) ?? 'unknown'
@@ -352,7 +384,8 @@ export class AuthService {
 
     const needAuth = payload.needAuth;
     if (typeof needAuth === 'boolean') return needAuth;
-    if (typeof needAuth === 'string') return needAuth === 'true';
+    if (needAuth === 'true') return true;
+    if (needAuth === 'false') return false;
     return null;
   }
 

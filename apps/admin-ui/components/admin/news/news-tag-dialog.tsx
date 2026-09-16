@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
+import { adminUiApiPath } from "@/lib/admin-api";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +19,11 @@ import { NEWS_LOCALES, type NewsLocaleCode, type NewsTag } from "./types";
  * Create / edit a 资讯 tag (Java POST /tags · PUT /tags/{id}). Mounted keyed by
  * the target so state resets per open; the parent unmounts it on close.
  */
-export function NewsTagDialog({
+export function NewsTagDialog(props: Parameters<typeof NewsTagDialogContent>[0]) {
+  return <NewsTagDialogContent key={props.target?.id ?? "new"} {...props} />;
+}
+
+function NewsTagDialogContent({
   target,
   onClose,
   onSaved,
@@ -34,35 +40,43 @@ export function NewsTagDialog({
     "en-US": target?.label["en-US"] ?? "",
     "zh-HK": target?.label["zh-HK"] ?? "",
   }));
-  const [saving, setSaving] = useState(false);
+  const { busy: saving, begin } = useAdminOperation();
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const canSave = NEWS_LOCALES.some((locale) => label[locale.code].trim());
 
   async function save() {
-    if (!canSave || saving) return;
-    setSaving(true);
+    if (!canSave || saving || saved) return;
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
       const response = target
-        ? await fetch(`/api/admin/news/tags/${encodeURIComponent(target.id)}`, {
+        ? await fetch(adminUiApiPath(`/api/admin/news/tags/${encodeURIComponent(target.id)}`), {
+            signal: operation.signal,
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ label }),
           })
-        : await fetch("/api/admin/news/tags", {
+        : await fetch(adminUiApiPath("/api/admin/news/tags"), {
+            signal: operation.signal,
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ label, ...(id.trim() ? { id: id.trim() } : {}) }),
           });
+      if (!operation.current()) return;
       if (!response.ok) {
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!operation.current()) return;
         throw new Error(payload?.error ?? `保存失败：${response.status}`);
       }
+      setSaved(true);
       onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败。");
-      setSaving(false);
+      if (operation.current()) setError(err instanceof Error ? err.message : "保存失败。");
+    } finally {
+      operation.finish();
     }
   }
 
@@ -81,6 +95,7 @@ export function NewsTagDialog({
           {!isEdit ? (
             <Field label="标签 ID" hint="留空则按英文名自动生成，如 tag_product">
               <Input
+                disabled={saving || saved}
                 value={id}
                 onChange={(event) => setId(event.target.value)}
                 placeholder="tag_xxx（可选）"
@@ -91,6 +106,7 @@ export function NewsTagDialog({
           {NEWS_LOCALES.map((locale) => (
             <Field key={locale.code} label={`${locale.label}名称`}>
               <Input
+                disabled={saving || saved}
                 value={label[locale.code]}
                 onChange={(event) =>
                   setLabel((prev) => ({ ...prev, [locale.code]: event.target.value }))
@@ -106,7 +122,7 @@ export function NewsTagDialog({
           <Button variant="outline" disabled={saving} onClick={onClose}>
             取消
           </Button>
-          <Button disabled={!canSave || saving} onClick={save}>
+          <Button disabled={!canSave || saving || saved} onClick={save}>
             {saving ? "保存中…" : "保存"}
           </Button>
         </DialogFooter>

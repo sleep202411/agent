@@ -6,6 +6,7 @@ import { ConversationsProvider } from "./provider";
 import { openConversationRealtime } from "./ably-client";
 import { markNotificationRead } from "@/src/lib/notifications/api";
 import { toast } from "sonner";
+import { orderKeys } from "@/app/(site)/creators/_hooks/use-orders";
 
 const mocks = vi.hoisted(() => ({
   userId: "alice" as string | null,
@@ -244,6 +245,86 @@ it.each(["task", "metadata"])(
       ]) {
         expect(client.getQueryState(key)?.isInvalidated, JSON.stringify(key)).toBe(false);
       }
+    } finally {
+      act(() => root.unmount());
+      client.clear();
+      mocks.userId = "alice";
+      vi.clearAllMocks();
+    }
+  }
+);
+
+it.each(["message", "read", "context", "ready"] as const)(
+  "refreshes order caches for the receiving account after %s, but ignores abandoned callbacks",
+  async (event) => {
+    const client = new QueryClient();
+    const root = createRoot(document.createElement("div"));
+    const list = orderKeys.list({}, "alice");
+    const detail = orderKeys.detail("order-a", "alice");
+    const otherDetail = orderKeys.detail("order-b", "alice");
+    const otherAccount = [orderKeys.list({}, "bob"), orderKeys.detail("order-a", "bob")];
+    const keys = [list, detail, otherDetail, ...otherAccount];
+    const reset = () => {
+      for (const key of keys) client.setQueryData(key, { fixture: true });
+    };
+    const render = async () => {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <ConversationsProvider>content</ConversationsProvider>
+          </QueryClientProvider>
+        )
+      );
+    };
+    try {
+      mocks.userId = "alice";
+      reset();
+      await render();
+      const handlers = vi.mocked(openConversationRealtime).mock.calls.at(-1)![1];
+      const emit = () => {
+        if (event === "message")
+          handlers.onMessage?.({
+            conversationId: "chat",
+            lastMessageAt: "2026-01-01T00:00:00Z",
+            unreadCount: 1,
+            message: {
+              id: "message",
+              conversationId: "chat",
+              body: "",
+              createdAt: "2026-01-01T00:00:00Z",
+              authorId: null,
+              type: "system",
+              payload: {
+                kind: "system",
+                system: { kind: "order.delivered", params: { orderId: "order-a" } },
+              },
+            },
+          } as Parameters<NonNullable<typeof handlers.onMessage>>[0]);
+        if (event === "read")
+          handlers.onReadAdvanced?.(
+            {} as Parameters<NonNullable<typeof handlers.onReadAdvanced>>[0]
+          );
+        if (event === "context")
+          handlers.onContextChanged?.({
+            conversationId: "chat",
+            from: "service",
+            to: "order",
+            contextId: "order-a",
+          });
+        if (event === "ready") handlers.onReady?.();
+      };
+      await act(async () => emit());
+      expect(client.getQueryState(list)?.isInvalidated).toBe(true);
+      expect(client.getQueryState(detail)?.isInvalidated).toBe(event !== "read");
+      expect(client.getQueryState(otherDetail)?.isInvalidated).toBe(event === "ready");
+      for (const key of otherAccount) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+      mocks.userId = "bob";
+      await render();
+      reset();
+      const toastCount = vi.mocked(toast).mock.calls.length;
+      await act(async () => emit());
+      for (const key of keys) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+      expect(toast).toHaveBeenCalledTimes(toastCount);
     } finally {
       act(() => root.unmount());
       client.clear();

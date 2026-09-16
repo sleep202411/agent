@@ -184,7 +184,12 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
         isLoadingMore={isFetchingNextPage}
         onLoadMore={() => void fetchNextPage()}
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={(value) => {
+          navigationVersion.current += 1;
+          setAdvancing(false);
+          setNextError(null);
+          setSearch(value);
+        }}
       />
       <section
         aria-label={t("playerTitle")}

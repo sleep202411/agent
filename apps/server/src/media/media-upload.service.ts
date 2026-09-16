@@ -607,10 +607,6 @@ export class MediaUploadService {
         );
       }
     }
-    const serializeConfirmation =
-      Boolean(policy.verifiedImageFinalKeySegment) ||
-      input.kind === 'episode_source_video' ||
-      input.kind === 'crew_asset_file';
     const storageKey = input.storageKey;
 
     // 1. Ownership: the key MUST sit under this user's scope for this kind.
@@ -768,39 +764,35 @@ export class MediaUploadService {
       async (tx) => {
         if (input.kind === 'crew_asset_file')
           await lockCrewStorage(tx, input.scope!.crewId!);
-        if (serializeConfirmation) {
-          // `media_assets.object_key` is indexed but intentionally not globally
-          // unique across all import paths. Serialize this exact final identity,
-          // then re-read under the lock so two confirm requests converge onto one
-          // asset without a check-then-create race.
-          await tx.$executeRaw`
+        // `media_assets.object_key` is indexed but intentionally not globally
+        // unique across all import paths. Serialize this exact final identity,
+        // then re-read under the lock so two confirm requests converge onto one
+        // asset without a check-then-create race.
+        await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtext(${`media-verified-image-confirm:${persistedStorageKey}`})::bigint
           )
         `;
-        }
-        const converged = serializeConfirmation
-          ? await tx.mediaAsset.findFirst({
-              where: { objectKey: persistedStorageKey, deletedAt: null },
-              select: {
-                id: true,
-                storageProvider: true,
-                bucket: true,
-                region: true,
-                objectKey: true,
-                externalUrl: true,
-                contentType: true,
-                sizeBytes: true,
-                width: true,
-                height: true,
-                durationSeconds: true,
-                checksumSha256: true,
-                workspaceId: true,
-                metadata: true,
-                status: true,
-              },
-            })
-          : null;
+        const converged = await tx.mediaAsset.findFirst({
+          where: { objectKey: persistedStorageKey, deletedAt: null },
+          select: {
+            id: true,
+            storageProvider: true,
+            bucket: true,
+            region: true,
+            objectKey: true,
+            externalUrl: true,
+            contentType: true,
+            sizeBytes: true,
+            width: true,
+            height: true,
+            durationSeconds: true,
+            checksumSha256: true,
+            workspaceId: true,
+            metadata: true,
+            status: true,
+          },
+        });
         if (
           converged &&
           !this.assetMatchesUploadScope(converged, uploadScope)

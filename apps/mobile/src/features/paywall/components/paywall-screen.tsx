@@ -3,10 +3,9 @@ import IconCheck from "@tabler/icons-react-native/icons/IconCheck";
 import IconCoins from "@tabler/icons-react-native/icons/IconCoins";
 import IconCrown from "@tabler/icons-react-native/icons/IconCrown";
 import IconSparkles from "@tabler/icons-react-native/icons/IconSparkles";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { Stack, useLocalSearchParams } from "expo-router";
+import { useMemo, type ComponentType } from "react";
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -23,7 +22,6 @@ import { ThemedView } from "@/components/themed-view";
 import { Colors, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
-import { toHref } from "@/lib/navigation";
 
 import {
   COMPUTE_RECHARGE_DEFAULT,
@@ -37,10 +35,9 @@ import {
   yearlySavePercent,
 } from "../lib/catalog";
 import { currentCheckoutChannel, type CheckoutChannel } from "../lib/checkout-channel";
-import { fetchComputeWalletBalance } from "../lib/compute-wallet";
+import { useComputeWalletBalance } from "../lib/use-compute-wallet-balance";
 import { isPaywallCategory, PAYWALL_CATEGORIES, type PaywallCategory } from "../lib/paywall-store";
-import { isPurchaseCancelled, purchaseProduct, restorePurchases } from "../lib/purchase";
-import { sanitizeAppWebPath } from "../lib/web-checkout";
+import { usePaywallSelection } from "../lib/use-paywall-selection";
 
 const BRAND = Colors.dark.brand;
 const CANVAS = Colors.dark.background;
@@ -118,11 +115,6 @@ function formatAmount(value: string, locale: string): string {
 
 function paramValue(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
-}
-
-function errorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return String(error);
 }
 
 function ComputeRechargePanel({
@@ -206,100 +198,32 @@ export function PaywallScreen() {
   const t = useTranslations();
   const locale = useLocale();
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     category?: string | string[];
-    returnPath?: string | string[];
   }>();
 
   const rawCategory = paramValue(params.category);
   const initialCategory: PaywallCategory = isPaywallCategory(rawCategory)
     ? rawCategory
     : "community_points";
-  const [selected, setSelected] = useState(initialCategory);
-  const [computeBalance, setComputeBalance] = useState<string | null>(null);
-  const [computeAmount, setComputeAmount] = useState(COMPUTE_RECHARGE_DEFAULT);
-  const [busy, setBusy] = useState(false);
-  const [restoring, setRestoring] = useState(false);
+  const { selected, setSelected, productId, setProductId, computeAmount, setComputeAmount } =
+    usePaywallSelection(initialCategory);
+  const computeBalance = useComputeWalletBalance();
   const channel = useMemo(() => currentCheckoutChannel(), []);
   const unsupported = channel === "web";
   const membership = isMembershipCategory(selected);
   const computePoints = selected === "compute_points";
   const products = productsForCategory(selected);
   const savePercent = yearlySavePercent(products);
-  const [productId, setProductId] = useState(products[0]?.id ?? "");
   const catalogProduct = products.find((item) => item.id === productId) ?? products[0];
   const computeProduct = computePoints ? computeCustomProduct(computeAmount) : null;
   const product = computePoints ? computeProduct : catalogProduct;
   const pointsCheckout = selected === "community_points" || selected === "compute_points";
   const stackedFooter = membership || pointsCheckout;
 
-  useEffect(() => {
-    setSelected(initialCategory);
-  }, [initialCategory]);
-
-  useEffect(() => {
-    const next = productsForCategory(selected);
-    const yearly = next.find((item) => item.interval === "year");
-    setProductId(yearly?.id ?? next[0]?.id ?? "");
-  }, [selected]);
-
-  useEffect(() => {
-    if (selected === "compute_points") setComputeAmount(COMPUTE_RECHARGE_DEFAULT);
-  }, [selected]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchComputeWalletBalance().then((compute) => {
-      if (!cancelled) setComputeBalance(compute);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const canRestore = channel === "apple_iap" || channel === "google_play_iap";
-  const actionsLocked = busy || restoring;
-
-  const buy = async () => {
-    if (!product || actionsLocked) return;
-    setBusy(true);
-    try {
-      const result = await purchaseProduct(product);
-      Alert.alert(
-        t("paywall.purchaseOkTitle"),
-        result.mocked ? t("paywall.purchaseOkMock") : t("paywall.purchaseOkLive")
-      );
-      const compute = await fetchComputeWalletBalance();
-      setComputeBalance(compute);
-    } catch (error: unknown) {
-      if (isPurchaseCancelled(error)) return;
-      Alert.alert(t("paywall.purchaseFailed"), errorMessage(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const restore = async () => {
-    if (actionsLocked) return;
-    setRestoring(true);
-    try {
-      const result = await restorePurchases();
-      Alert.alert(
-        t("paywall.restoreOkTitle"),
-        result.mocked ? t("paywall.restoreOkMock") : t("paywall.restoreOkLive")
-      );
-    } catch (error: unknown) {
-      Alert.alert(t("paywall.restoreFailed"), errorMessage(error));
-    } finally {
-      setRestoring(false);
-    }
-  };
-
-  const goWeb = () => {
-    const returnPath = sanitizeAppWebPath(paramValue(params.returnPath));
-    router.push(toHref(`/pay/community?returnPath=${encodeURIComponent(returnPath)}`));
+  const notifyUnavailable = () => {
+    Alert.alert(t("paywall.tryAgainLater"), undefined, [{ text: t("common.ok") }]);
   };
 
   const heroPoints =
@@ -350,38 +274,22 @@ export function PaywallScreen() {
       </View>
       <Pressable
         accessibilityRole="button"
-        disabled={!product || actionsLocked}
-        onPress={() => void buy()}
+        disabled={!product}
+        onPress={notifyUnavailable}
         style={[
           styles.payButton,
           stackedFooter && styles.payButtonFull,
-          (!product || actionsLocked) && styles.payButtonDisabled,
+          !product && styles.payButtonDisabled,
         ]}
       >
-        {busy ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <ThemedText type="smallBold" style={styles.payLabel}>
-            {pointsCheckout
-              ? t("paywall.buyNow")
-              : membership
-                ? `${t("paywall.membership.subscribe")} · ${product?.displayPrice ?? ""}`
-                : `${t("paywall.payNow")} ${product?.displayPrice ?? ""}`}
-          </ThemedText>
-        )}
+        <ThemedText type="smallBold" style={styles.payLabel}>
+          {pointsCheckout
+            ? t("paywall.buyNow")
+            : membership
+              ? `${t("paywall.membership.subscribe")} · ${product?.displayPrice ?? ""}`
+              : `${t("paywall.payNow")} ${product?.displayPrice ?? ""}`}
+        </ThemedText>
       </Pressable>
-      {canRestore ? (
-        <Pressable
-          accessibilityRole="button"
-          disabled={actionsLocked}
-          onPress={() => void restore()}
-          style={styles.restore}
-        >
-          <ThemedText type="small" themeColor="textSecondary" style={styles.restoreLabel}>
-            {restoring ? t("paywall.restoring") : t("paywall.restore")}
-          </ThemedText>
-        </Pressable>
-      ) : null}
     </View>
   );
 
@@ -404,7 +312,11 @@ export function PaywallScreen() {
           <ThemedText type="small" themeColor="textSecondary" style={styles.unsupportedBody}>
             {t("paywall.unsupportedBody")}
           </ThemedText>
-          <Pressable accessibilityRole="button" onPress={goWeb} style={styles.payButton}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={notifyUnavailable}
+            style={styles.payButton}
+          >
             <ThemedText type="smallBold" style={styles.payLabel}>
               {t("paywall.continueWeb")}
             </ThemedText>
@@ -723,9 +635,7 @@ const styles = StyleSheet.create({
     flexDirection: "column",
   },
   footerCopyStacked: {
-    flexBasis: "auto",
     flexGrow: 0,
-    flexShrink: 0,
   },
   footerCopy: {
     flex: 1,
@@ -838,14 +748,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   restore: {
-    alignItems: "center",
-    alignSelf: "center",
-    justifyContent: "center",
-    minHeight: 44,
+    alignSelf: "flex-start",
     paddingVertical: Spacing.one,
-  },
-  restoreLabel: {
-    textDecorationLine: "underline",
   },
   unsupported: {
     flex: 1,

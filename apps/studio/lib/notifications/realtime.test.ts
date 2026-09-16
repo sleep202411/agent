@@ -60,6 +60,7 @@ describe("Studio notification subscription", () => {
     expect(state.apiGet).toHaveBeenCalledWith("/aurora/conversations/realtime-token", {
       requestScope: "user",
       cache: "no-store",
+      signal: expect.any(AbortSignal),
     });
     state.ready!();
     state.ready!();
@@ -78,4 +79,28 @@ describe("Studio notification subscription", () => {
     expect(onReady).toHaveBeenCalledTimes(2);
     expect(onNotification).toHaveBeenCalledTimes(1);
   });
+});
+
+it("aborts pending token reads and never publishes a late grant after closing", async () => {
+  let resolve!: (value: unknown) => void;
+  state.apiGet.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  const client = openNotificationsRealtime("alice", { onNotification: vi.fn(), onReady: vi.fn() });
+  const callback = vi.fn();
+  state.auth!({}, callback);
+  const signal = state.apiGet.mock.calls[0]![1].signal as AbortSignal;
+  client.close();
+  expect(signal.aborted).toBe(true);
+  resolve({ tokenRequest: { nonce: "abandoned" } });
+  await vi.waitFor(() =>
+    expect(callback).toHaveBeenCalledWith("Notification subscription closed", null)
+  );
+  const afterClose = vi.fn();
+  state.auth!({}, afterClose);
+  expect(afterClose).toHaveBeenCalledWith("Notification subscription closed", null);
+  expect(state.apiGet).toHaveBeenCalledTimes(1);
 });

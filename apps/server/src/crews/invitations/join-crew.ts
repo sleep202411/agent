@@ -42,6 +42,9 @@ export async function joinCrewInTransaction(
   deps: CrewJoinDeps,
   input: CrewJoinInput,
 ): Promise<{ memberId: string; systemMessage: Message }> {
+  // Named invitations and distinct invite links have separate caller locks.
+  // Serialize their shared membership admission before checking for a winner.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:invite-membership:${input.crewId}:${input.userId}`}, 0))`;
   const existing = await tx.crewMember.findFirst({
     where: {
       crewId: input.crewId,
@@ -70,7 +73,7 @@ export async function joinCrewInTransaction(
       joinedVia: 'invitation',
     },
   });
-  const policyKeys = input.policyKeys.filter(isCrewPolicyKey);
+  const policyKeys = [...new Set(input.policyKeys.filter(isCrewPolicyKey))];
   if (policyKeys.length > 0) {
     await tx.crewMemberPolicy.createMany({
       data: policyKeys.map((policyKey) => ({

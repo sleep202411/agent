@@ -1,6 +1,14 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useId, useMemo, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  type ChangeEvent,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import {
   IconEdit,
   IconInfoCircle,
@@ -46,7 +54,12 @@ import {
   StatusPill,
   toErrorMessage,
 } from "./shared";
-import type { AdminIpDiscoveryData, AdminIpsData, IpDiscoveryRecommendationRow } from "./types";
+import type { AdminIpDiscoveryData, IpDiscoveryRecommendationRow } from "./types";
+
+import { useAdminOperation } from "../use-admin-operation";
+import { useDiscoveryIpSearch } from "./use-discovery-ip-search";
+import { useDiscoverySave } from "./use-discovery-save";
+import { useDiscoveryUpload } from "./use-discovery-upload";
 
 type PlacementKey = "ip_plaza_hero" | "ip_plaza_for_you" | "ip_plaza_list_pinned";
 type RecommendationStatus = "enabled" | "draft" | "paused" | "archived";
@@ -159,8 +172,8 @@ export function IpDiscoveryPanel({
   const [localeTab, setLocaleTab] = useState<LocaleCode>("en-US");
   const [draft, setDraft] = useState<RecommendationDraft>(EMPTY_DRAFT);
   const [statusNow, setStatusNow] = useState(() => new Date());
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const [drawerRevision, setDrawerRevision] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError);
 
@@ -189,19 +202,24 @@ export function IpDiscoveryPanel({
   }, [items, placementFilter, query]);
 
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      const data = await requestEnvelope<AdminIpDiscoveryData>("/api/admin/ip-commerce/discovery");
+      const data = await requestEnvelope<AdminIpDiscoveryData>("/api/admin/ip-commerce/discovery", {
+        signal: operation.signal,
+      });
+      if (!operation.current()) return;
       setItems(data.items.map(rowToItem));
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   function openCreateDrawer() {
+    setDrawerRevision((current) => current + 1);
     setDrawerMode("create");
     setEditingId(null);
     setEditingIpId(null);
@@ -220,6 +238,7 @@ export function IpDiscoveryPanel({
   }
 
   function openEditDrawer(item: RecommendationItem) {
+    setDrawerRevision((current) => current + 1);
     setDrawerMode("edit");
     setEditingId(item.id);
     setEditingIpId(item.ipId);
@@ -229,42 +248,36 @@ export function IpDiscoveryPanel({
     setDrawerOpen(true);
   }
 
-  async function saveDraft() {
-    const normalized = normalizeDraftForPlacement(draft);
-    setSaving(true);
+  async function saveDraft(signal: AbortSignal) {
     setError(null);
-    try {
-      const payload = draftToPayload(normalized);
-      if (drawerMode === "create") {
-        await requestEnvelope("/api/admin/ip-commerce/discovery", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            placementKey: normalized.placementKey,
-            ...payload,
-          }),
-        });
-      } else if (editingId) {
-        // Only send mutable identity fields when they change — older servers
-        // reject unrecognized keys under .strict().
-        const { ipId, ...rest } = payload;
-        const body: Record<string, unknown> = { ...rest };
-        if (editingIpId && ipId && ipId !== editingIpId) body.ipId = ipId;
-        if (editingPlacementKey && normalized.placementKey !== editingPlacementKey) {
-          body.placementKey = normalized.placementKey;
-        }
-        await requestEnvelope(`/api/admin/ip-commerce/discovery/${encodeURIComponent(editingId)}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
+    const normalized = normalizeDraftForPlacement(draft);
+
+    const payload = draftToPayload(normalized);
+    if (drawerMode === "create") {
+      await requestEnvelope("/api/admin/ip-commerce/discovery", {
+        method: "POST",
+        signal,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          placementKey: normalized.placementKey,
+          ...payload,
+        }),
+      });
+    } else if (editingId) {
+      // Only send mutable identity fields when they change — older servers
+      // reject unrecognized keys under .strict().
+      const { ipId, ...rest } = payload;
+      const body: Record<string, unknown> = { ...rest };
+      if (editingIpId && ipId && ipId !== editingIpId) body.ipId = ipId;
+      if (editingPlacementKey && normalized.placementKey !== editingPlacementKey) {
+        body.placementKey = normalized.placementKey;
       }
-      setDrawerOpen(false);
-      await refresh();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setSaving(false);
+      await requestEnvelope(`/api/admin/ip-commerce/discovery/${encodeURIComponent(editingId)}`, {
+        method: "PATCH",
+        signal,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
     }
   }
 
@@ -480,15 +493,20 @@ export function IpDiscoveryPanel({
       </section>
 
       <RecommendationDrawer
+        key={drawerRevision}
         open={drawerOpen}
         mode={drawerMode}
         draft={draft}
         localeTab={localeTab}
-        saving={saving}
         onOpenChange={setDrawerOpen}
         onLocaleTabChange={setLocaleTab}
         onDraftChange={setDraft}
         onSave={saveDraft}
+        onError={setError}
+        onSaved={() => {
+          setDrawerOpen(false);
+          void refresh();
+        }}
       />
     </div>
   );
@@ -499,37 +517,47 @@ function RecommendationDrawer({
   mode,
   draft,
   localeTab,
-  saving,
   onOpenChange,
   onLocaleTabChange,
   onDraftChange,
   onSave,
+  onSaved,
+  onError,
 }: {
   open: boolean;
   mode: "create" | "edit";
   draft: RecommendationDraft;
   localeTab: LocaleCode;
-  saving: boolean;
   onOpenChange: (open: boolean) => void;
   onLocaleTabChange: (locale: LocaleCode) => void;
-  onDraftChange: (draft: RecommendationDraft) => void;
-  onSave: () => void;
+  onDraftChange: Dispatch<SetStateAction<RecommendationDraft>>;
+  onSave: (signal: AbortSignal) => Promise<void>;
+  onSaved: () => void;
+  onError: (error: string) => void;
 }) {
+  const { saving, saveError, uploadCount, markUpload, save } = useDiscoverySave(
+    onSave,
+    onSaved,
+    open
+  );
+  useEffect(() => {
+    if (saveError) onError(saveError);
+  }, [saveError, onError]);
   const copy = draft.locale[localeTab];
   const heroPlacement = isHeroPlacement(draft.placementKey);
 
   function patchDraft(patch: Partial<RecommendationDraft>) {
-    onDraftChange(normalizeDraftForPlacement({ ...draft, ...patch }));
+    onDraftChange((current) => normalizeDraftForPlacement({ ...current, ...patch }));
   }
 
   function patchCopy(patch: Partial<LocaleCopy>) {
-    onDraftChange({
-      ...draft,
+    onDraftChange((current) => ({
+      ...current,
       locale: {
-        ...draft.locale,
-        [localeTab]: { ...copy, ...patch },
+        ...current.locale,
+        [localeTab]: { ...current.locale[localeTab], ...patch },
       },
-    });
+    }));
   }
 
   return (
@@ -556,7 +584,7 @@ function RecommendationDrawer({
         </SheetHeader>
 
         <TooltipProvider>
-          <div className="min-w-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4">
+          <div inert={saving} className="min-w-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4">
             <FormSection title="基础信息">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
@@ -617,6 +645,7 @@ function RecommendationDrawer({
                   tooltip="绑定的 IP。公开端点击跳转到该 IP;TV Recommendation 与置顶复用 IP 原生卡片(标题/封面/简介)。"
                 >
                   <IpCombobox
+                    open={open}
                     ipId={draft.ipId}
                     ipTitle={draft.ipTitle}
                     ipRoomNumber={draft.ipRoomNumber}
@@ -681,7 +710,11 @@ function RecommendationDrawer({
                     <AssetUploadField
                       label="桌面图 / 默认封面"
                       tooltip="桌面端 Banner 背景图,也作为缺少移动图时的回退。需为已就绪(ready)的图片素材。"
+                      key={JSON.stringify([draft.ipId, draft.desktopMediaUrl])}
                       value={draft.desktopMediaUrl}
+                      disabled={saving}
+                      open={open}
+                      onPendingChange={(pending) => markUpload("desktopMediaUrl", pending)}
                       accept="image/*"
                       assetType="image"
                       onChange={(next) =>
@@ -691,7 +724,11 @@ function RecommendationDrawer({
                     <AssetUploadField
                       label="移动图"
                       tooltip="移动端 Banner 背景图(竖屏适配)。缺省时回退到桌面图。需为已就绪(ready)的图片素材。"
+                      key={JSON.stringify([draft.ipId, draft.mobileMediaUrl])}
                       value={draft.mobileMediaUrl}
+                      disabled={saving}
+                      open={open}
+                      onPendingChange={(pending) => markUpload("mobileMediaUrl", pending)}
                       accept="image/*"
                       assetType="image"
                       onChange={(next) =>
@@ -704,7 +741,11 @@ function RecommendationDrawer({
                     <AssetUploadField
                       label="Trailer 视频"
                       tooltip="Banner 预告视频,鼠标悬停或点击播放。需为已就绪(ready)的视频素材。"
+                      key={JSON.stringify([draft.ipId, draft.trailerUrl])}
                       value={draft.trailerUrl}
+                      disabled={saving}
+                      open={open}
+                      onPendingChange={(pending) => markUpload("trailerUrl", pending)}
                       accept="video/*"
                       assetType="video"
                       onChange={(next) =>
@@ -792,7 +833,11 @@ function RecommendationDrawer({
           >
             取消
           </Button>
-          <Button type="button" onClick={onSave} disabled={saving || !draft.ipId}>
+          <Button
+            type="button"
+            onClick={() => void save()}
+            disabled={saving || uploadCount > 0 || !draft.ipId}
+          >
             {saving ? "保存中" : "保存"}
           </Button>
         </SheetFooter>
@@ -808,57 +853,35 @@ function AssetUploadField({
   accept,
   assetType,
   onChange,
+  onPendingChange,
+  disabled,
+  open,
 }: {
   label: string;
   tooltip?: string;
   value: string;
   accept: string;
   assetType: "image" | "video";
+  onPendingChange: (pending: boolean) => void;
+  disabled: boolean;
+  open: boolean;
   onChange: (next: { assetId: string | null; url: string }) => void;
 }) {
   const inputId = useId();
   const Icon = assetType === "video" ? IconVideo : IconPhoto;
-  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const {
+    preview: localPreviewUrl,
+    uploading,
+    error: uploadError,
+    upload,
+    clear,
+  } = useDiscoveryUpload(assetType, onChange, onPendingChange, disabled, open);
   const previewUrl = localPreviewUrl ?? adminRenderableMediaUrl(value);
 
-  useEffect(() => {
-    return () => {
-      if (localPreviewUrl) URL.revokeObjectURL(localPreviewUrl);
-    };
-  }, [localPreviewUrl]);
-
-  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
-    if (!file) return;
-
-    const preview = URL.createObjectURL(file);
-    setLocalPreviewUrl(preview);
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const kind = assetType === "video" ? "video" : "image";
-      const form = new FormData();
-      form.append("file", file);
-      const data = await requestEnvelope<{
-        asset: { id: string; url: string | null } | null;
-      }>(`/api/admin/ip-commerce/discovery/media?kind=${kind}`, {
-        method: "POST",
-        body: form,
-      });
-      if (!data.asset) throw new Error("上传失败");
-      onChange({
-        assetId: data.asset.id,
-        url: adminMediaContentUrl(data.asset.id) ?? data.asset.url ?? "",
-      });
-    } catch (err) {
-      setUploadError(toErrorMessage(err));
-      setLocalPreviewUrl(null);
-    } finally {
-      setUploading(false);
-    }
+    if (file) void upload(file);
   }
 
   return (
@@ -866,6 +889,8 @@ function AssetUploadField({
       <div className="w-full overflow-hidden rounded-lg border border-dashed border-slate-300 bg-slate-50">
         <div className="relative flex h-32 w-full items-center justify-center overflow-hidden bg-slate-100">
           {previewUrl && assetType === "image" ? (
+            // This preview uses owned blob URLs or the authenticated admin media proxy.
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={previewUrl} alt="" className="size-full object-cover" />
           ) : previewUrl && assetType === "video" ? (
             <video src={previewUrl} controls className="size-full bg-slate-950 object-contain" />
@@ -891,16 +916,7 @@ function AssetUploadField({
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
             {value && !uploading ? (
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={() => {
-                  setLocalPreviewUrl(null);
-                  setUploadError(null);
-                  onChange({ assetId: null, url: "" });
-                }}
-              >
+              <Button variant="outline" size="sm" type="button" onClick={clear}>
                 <IconX className="size-3.5" />
                 清除
               </Button>
@@ -910,7 +926,7 @@ function AssetUploadField({
               variant="outline"
               size="sm"
               className="cursor-pointer"
-              disabled={uploading}
+              disabled={uploading || disabled}
             >
               {uploading ? (
                 <span>
@@ -930,6 +946,7 @@ function AssetUploadField({
           id={inputId}
           type="file"
           accept={accept}
+          disabled={uploading || disabled}
           className="sr-only"
           onChange={handleFileChange}
         />
@@ -939,6 +956,7 @@ function AssetUploadField({
 }
 
 function IpCombobox({
+  open,
   ipId,
   ipTitle,
   ipRoomNumber,
@@ -947,37 +965,11 @@ function IpCombobox({
   ipId: string;
   ipTitle: string;
   ipRoomNumber: string;
+  open: boolean;
   onChange: (option: IpOption | null) => void;
 }) {
-  const [options, setOptions] = useState<IpOption[]>([]);
   const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    let cancelled = false;
-    const handle = window.setTimeout(() => {
-      const params = new URLSearchParams({ limit: "20" });
-      if (search.trim()) params.set("q", search.trim());
-      requestEnvelope<AdminIpsData>(`/api/admin/ip-commerce/ips?${params.toString()}`)
-        .then((data) => {
-          if (cancelled) return;
-          setOptions(
-            data.items.map((row) => ({
-              id: row.id,
-              roomNumber: row.roomNumber,
-              title: row.title,
-              status: row.status,
-            }))
-          );
-        })
-        .catch(() => {
-          if (!cancelled) setOptions([]);
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(handle);
-    };
-  }, [search]);
+  const { items: options } = useDiscoveryIpSearch(search, open);
 
   const selectedIp =
     options.find((option) => option.id === ipId) ??
@@ -1044,11 +1036,6 @@ function adminRenderableMediaUrl(value: string) {
     return `/api/admin/media/assets/${encodeURIComponent(decodeURIComponent(mediaMatch[1]))}/content${query}`;
   }
   return isRenderableAssetUrl(value) ? value : null;
-}
-
-function adminMediaContentUrl(assetId: string | null | undefined) {
-  if (!assetId) return null;
-  return `/api/admin/media/assets/${encodeURIComponent(assetId)}/content?variantKey=original`;
 }
 
 function FormSection({

@@ -24,6 +24,7 @@ const STATUS_CONFIG: Record<
   TaskStatus,
   { icon: React.ComponentType<{ className?: string }>; labelKey: string; color: string }
 > = {
+  waiting: { icon: IconClock, labelKey: "taskWaiting", color: "text-muted-foreground" },
   pending: { icon: IconClock, labelKey: "taskPending", color: "text-muted-foreground" },
   running: { icon: IconLoader2, labelKey: "taskRunning", color: "text-blue-400" },
   completed: { icon: IconCircleCheck, labelKey: "taskCompleted", color: "text-green-400" },
@@ -35,6 +36,8 @@ const TYPE_CONFIG: Record<
   TaskType,
   { icon: React.ComponentType<{ className?: string }>; labelKey: string }
 > = {
+  agent: { icon: IconWand, labelKey: "taskAgent" },
+  production: { icon: IconWand, labelKey: "taskProduction" },
   image: { icon: IconPhoto, labelKey: "taskImage" },
   video: { icon: IconVideo, labelKey: "taskVideo" },
   audio: { icon: IconMicrophone, labelKey: "taskAudio" },
@@ -100,7 +103,9 @@ export function TaskPanel({ userId, className, onSelectTask }: TaskPanelProps) {
 
   const { activeTasks, tasksToShow } = useMemo(() => {
     const all = Object.values(tasks).sort((a, b) => b.createdAt - a.createdAt);
-    const active = all.filter((t) => t.status === "pending" || t.status === "running");
+    const active = all.filter(
+      (t) => t.status === "pending" || t.status === "running" || t.status === "waiting"
+    );
     const toShow =
       active.length > 0
         ? active

@@ -48,10 +48,10 @@ export default function CrewTaskCenter() {
     enabled: Boolean(user?.id),
     refetchInterval: 60_000,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => {
+    queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams({ scope, status, query, limit: "30" });
       if (pageParam) params.set("cursor", pageParam);
-      return crewApi.get<TaskPage>(`/crew-task-center?${params}`);
+      return crewApi.get<TaskPage>(`/crew-task-center?${params}`, { signal, cache: "no-store" });
     },
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });

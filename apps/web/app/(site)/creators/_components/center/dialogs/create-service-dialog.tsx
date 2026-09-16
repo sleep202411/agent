@@ -34,7 +34,7 @@
  *   that's proven for this exact category of UX.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IconChevronDown, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -47,6 +47,8 @@ import {
   type ServiceTier,
 } from "@repo/shared/creator-service";
 import { ZERO_DECIMAL_CURRENCIES, type CurrencyCode } from "@repo/shared/crew";
+import { CURRENT_CELL } from "@/src/lib/region/cell";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -62,7 +64,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { TagInput } from "@/components/ui/tag-input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
-import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import {
   ServiceApiError,
@@ -96,8 +97,7 @@ const COM_CURRENCIES: CurrencyCode[] = [
 const CN_CURRENCIES: CurrencyCode[] = ["CNY"];
 
 function defaultCurrencyForCell(): CurrencyCode {
-  const banner = env.BANNER_BASE_URL ?? "";
-  return /\.cn|\.aliyuncs\.com/.test(banner) ? "CNY" : "USD";
+  return CURRENT_CELL === "cn" ? "CNY" : "USD";
 }
 
 function allowedCurrenciesForCell(): CurrencyCode[] {
@@ -152,7 +152,7 @@ function tierToWire(
     title: s.title.trim(),
     description: s.description.trim(),
     currency,
-    price: Number.isFinite(price) ? price : 0,
+    price,
     deliveryDays: s.deliveryDays,
     revisions: s.revisions,
     scope: s.scopeText
@@ -160,6 +160,18 @@ function tierToWire(
       .map((line) => line.trim())
       .filter(Boolean),
   };
+}
+
+// Match the existing server package bounds; blank or invalid prices are not free offers.
+function invalidNumericField(s: TierFormState): string | null {
+  const price = Number(s.priceText.trim());
+  if (!s.priceText.trim() || !Number.isFinite(price) || price < 0 || price > 100_000_000)
+    return "tierFieldPrice";
+  if (!Number.isInteger(s.deliveryDays) || s.deliveryDays < 1 || s.deliveryDays > 365)
+    return "tierFieldDeliveryDays";
+  if (!Number.isInteger(s.revisions) || s.revisions < UNLIMITED_REVISIONS || s.revisions > 200)
+    return "tierFieldRevisions";
+  return null;
 }
 
 // ─── Step config ────────────────────────────────────────────
@@ -175,6 +187,8 @@ const STEPS: StepId[] = ["overview", "pricing", "questions", "preview"];
  */
 interface QuestionFormState {
   id: string;
+  /** Keep the local row key stable when the server assigns its persistent ID. */
+  persistedId?: string;
   prompt: string;
   helpText: string;
   required: boolean;
@@ -217,7 +231,7 @@ function questionsToWire(qs: QuestionFormState[]) {
       // local- prefix sentinel signals "new — mint one".
       const isLocal = q.id.startsWith("local-");
       return {
-        ...(isLocal ? {} : { id: q.id }),
+        ...(isLocal ? (q.persistedId ? { id: q.persistedId } : {}) : { id: q.id }),
         prompt,
         helpText: q.helpText.trim(),
         required: q.required,
@@ -236,12 +250,33 @@ interface CreateServiceDialogProps {
   onSaved?: (service: CreatorServiceDTO) => void;
 }
 
-export function CreateServiceDialog({
+export function CreateServiceDialog(props: CreateServiceDialogProps) {
+  const { user } = useCurrentUser();
+  return (
+    <CreateServiceDialogContent
+      key={JSON.stringify([props.open, props.initial?.id, user?.id])}
+      {...props}
+    />
+  );
+}
+
+function CreateServiceDialogContent({
   open,
   onOpenChange,
-  initial,
+  initial: initialProp,
   onSaved,
 }: CreateServiceDialogProps) {
+  const [initial] = useState(initialProp);
+  const active = useRef(false);
+  const admitted = useRef(false);
+  const savedRecord = useRef({ id: initial?.id ?? null, version: initial?.version });
+  const creationIntent = useRef<{ key: string; body: CreateServiceBody } | null>(null);
+  useLayoutEffect(() => {
+    active.current = open;
+    return () => {
+      active.current = false;
+    };
+  }, [open]);
   const t = useTranslations("creatorService");
   const tc = useTranslations("common");
 
@@ -274,14 +309,10 @@ export function CreateServiceDialog({
   // Pre-order questionnaire — list of rows the creator pre-defines
   // for buyers to answer at order time.
   const [questions, setQuestions] = useState<QuestionFormState[]>([]);
-  // Concurrency token for PATCH.
-  const [expectedVersion, setExpectedVersion] = useState<number | undefined>(undefined);
 
   // ─── Reset / prefill on open ─────────────────────
-  // Intentional setState-in-effect: the trigger is the `open`
-  // prop flipping false→true. A key-prop remount would also work
-  // but would lose the parent's hold on the dialog instance. See
-  // contact-creator-dialog.tsx for the same pattern.
+  // Prefill once per keyed editor lifetime. Background cache refreshes
+  // must not reset the current draft or advance its concurrency token.
   useEffect(() => {
     if (!open) return;
     /* eslint-disable react-hooks/set-state-in-effect */
@@ -301,7 +332,7 @@ export function CreateServiceDialog({
       for (const p of initial.packages) byTier[p.tier] = tierFromDTO(p);
       setTiers(byTier);
       setQuestions(initial.requirementQuestions.map(questionFromDTO));
-      setExpectedVersion(initial.version);
+      savedRecord.current = { id: initial.id, version: initial.version };
     } else {
       setStep("overview");
       setSavedId(null);
@@ -321,7 +352,7 @@ export function CreateServiceDialog({
         premium: blankTier(),
       });
       setQuestions([]);
-      setExpectedVersion(undefined);
+      savedRecord.current = { id: null, version: undefined };
     }
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, initial, defaultCurrency]);
@@ -334,7 +365,10 @@ export function CreateServiceDialog({
 
   const enabledCount = SERVICE_TIERS.filter((t) => tiers[t].enabled).length;
   const overviewReady = title.trim().length > 0 && summary.trim().length > 0;
-  const canPublish = overviewReady && enabledCount > 0;
+  const invalidTier = SERVICE_TIERS.find(
+    (tier) => tiers[tier].enabled && invalidNumericField(tiers[tier])
+  );
+  const canPublish = overviewReady && enabledCount > 0 && !invalidTier;
 
   const updateTier = (tier: ServiceTier, patch: Partial<TierFormState>) =>
     setTiers((prev) => ({ ...prev, [tier]: { ...prev[tier], ...patch } }));
@@ -366,8 +400,8 @@ export function CreateServiceDialog({
       packages,
       requirementQuestions,
     };
-    if (forUpdate && expectedVersion !== undefined) {
-      return { ...base, expectedVersion } satisfies UpdateServiceBody;
+    if (forUpdate && savedRecord.current.version !== undefined) {
+      return { ...base, expectedVersion: savedRecord.current.version } satisfies UpdateServiceBody;
     }
     return base;
   };
@@ -394,6 +428,7 @@ export function CreateServiceDialog({
    * the current step so the user can keep editing.
    */
   const persist = async (): Promise<CreatorServiceDTO | null> => {
+    if (!active.current) return null;
     if (!overviewReady) {
       toast.error(t("missingRequired"));
       return null;
@@ -413,46 +448,108 @@ export function CreateServiceDialog({
       );
       return null;
     }
+    if (invalidTier) {
+      toast.error(
+        t("tierInvalidNumber", {
+          tier: t(`tier.${invalidTier}`),
+          field: t(invalidNumericField(tiers[invalidTier])!),
+        })
+      );
+      return null;
+    }
+    const submittedQuestions = questions;
     try {
       let saved: CreatorServiceDTO;
-      if (savedId) {
+      if (savedRecord.current.id) {
         saved = await update.mutateAsync({
-          id: savedId,
+          id: savedRecord.current.id,
           body: buildBody(true) as UpdateServiceBody,
         });
       } else {
-        saved = await create.mutateAsync(buildBody(false) as CreateServiceBody);
+        const desired = buildBody(false) as CreateServiceBody;
+        if (!creationIntent.current) {
+          creationIntent.current = {
+            key:
+              typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `cs-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+            body: desired,
+          };
+        }
+        const intent = creationIntent.current;
+        saved = await create.mutateAsync({ ...intent.body, clientRequestKey: intent.key });
+        if (!active.current) return null;
+        // Recover the original create before applying edits made after a lost reply.
+        // Capture the row even if the following PATCH fails, so retry cannot create again.
+        savedRecord.current = { id: saved.id, version: saved.version };
         setSavedId(saved.id);
+        if (JSON.stringify(desired) !== JSON.stringify(intent.body)) {
+          saved = await update.mutateAsync({
+            id: saved.id,
+            body: { ...desired, expectedVersion: saved.version },
+          });
+        }
       }
-      setExpectedVersion(saved.version);
+      if (!active.current) return null;
+      savedRecord.current = { id: saved.id, version: saved.version };
+      const confirmedIds = new Map<string, string>();
+      submittedQuestions.forEach((question, displayOrder) => {
+        if (!question.id.startsWith("local-") || !question.prompt.trim()) return;
+        const confirmed = saved.requirementQuestions.find(
+          (q) => q.displayOrder === displayOrder && q.prompt === question.prompt.trim()
+        );
+        if (confirmed) confirmedIds.set(question.id, confirmed.id);
+      });
+      if (confirmedIds.size) {
+        setQuestions((current) =>
+          current.map((q) => {
+            const persistedId = confirmedIds.get(q.id);
+            return persistedId ? { ...q, persistedId } : q;
+          })
+        );
+      }
+      setSavedId(saved.id);
       return saved;
     } catch (err) {
-      reportError(err, savedId ? t("saveFailed") : t("createFailed"));
+      if (active.current) reportError(err, savedId ? t("saveFailed") : t("createFailed"));
       return null;
     }
   };
 
   const handleSaveDraft = async () => {
-    const saved = await persist();
-    if (!saved) return;
-    toast.success(savedId ? t("savedToast") : t("createdToast"));
+    if (!active.current || admitted.current) return;
+    admitted.current = true;
+    try {
+      const existed = !!savedRecord.current.id;
+      const saved = await persist();
+      if (!saved || !active.current) return;
+      toast.success(existed ? t("savedToast") : t("createdToast"));
+    } finally {
+      admitted.current = false;
+    }
   };
 
   const handlePublish = async () => {
+    if (!active.current || admitted.current) return;
     if (!canPublish) {
       toast.error(t("publishNeedsTier"));
       return;
     }
-    const saved = await persist();
-    if (!saved) return;
+    admitted.current = true;
     try {
+      const saved = await persist();
+      if (!saved || !active.current) return;
       const published =
         saved.status === "listed" ? saved : await publish.mutateAsync({ id: saved.id });
+      if (!active.current) return;
+      savedRecord.current = { id: published.id, version: published.version };
       toast.success(t("publishedToast"));
       onSaved?.(published);
       onOpenChange(false);
     } catch (err) {
-      reportError(err, t("saveFailed"));
+      if (active.current) reportError(err, t("saveFailed"));
+    } finally {
+      admitted.current = false;
     }
   };
 
@@ -465,6 +562,7 @@ export function CreateServiceDialog({
     overview: overviewReady,
     pricing:
       enabledCount > 0 &&
+      !invalidTier &&
       SERVICE_TIERS.every((k) => !tiers[k].enabled || tiers[k].title.trim().length > 0),
     questions: true,
     preview: canPublish,

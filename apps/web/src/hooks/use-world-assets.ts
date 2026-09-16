@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+import { useCurrentUser } from "./use-user";
 import { backendApi, type Paginated } from "@/src/lib/api";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
@@ -31,67 +32,87 @@ import type { ProjectOptionItem } from "@/src/types/workspace";
  * demand. `PropsPanel` loads its own list when opened.
  */
 export function useWorldAssets() {
+  const { user } = useCurrentUser();
+  const viewer = user?.id ?? null;
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
   const worldId = useAppSelector((s) => selectCurrentInstance(s).worldId);
   const charactersVersion = useAppSelector((s) => selectCurrentInstance(s).charactersVersion);
   const scenesVersion = useAppSelector((s) => selectCurrentInstance(s).scenesVersion);
   const projectListVersion = useAppSelector((s) => selectCurrentInstance(s).projectListVersion);
 
-  const loadedCharactersRef = useRef<string | null>(null);
-  const loadedScenesRef = useRef<string | null>(null);
-  const loadedProjectListRef = useRef<string | null>(null);
-
   useEffect(() => {
-    if (!worldId) return;
-    const key = `${worldId}:${charactersVersion}`;
-    if (loadedCharactersRef.current === key) return;
-    loadedCharactersRef.current = key;
+    if (!worldId || !projectId || !viewer) return;
+    const controller = new AbortController();
+    const owns = () =>
+      !controller.signal.aborted &&
+      store.getState().project.currentProjectId === projectId &&
+      selectCurrentInstance(store.getState()).worldId === worldId;
 
     store.dispatch(setCharactersLoading(true));
     backendApi
       .post<Paginated<Asset>>("/api/user/world/list/worldrole", {
+        signal: controller.signal,
         data: { worldId, page: 1, pageSize: 100 },
       })
-      .then((data) => store.dispatch(setCharacters(data?.list ?? [])))
+      .then((data) => {
+        if (owns()) store.dispatch(setCharacters(data?.list ?? []));
+      })
       .catch((error) => {
+        if (!owns()) return;
         console.error("[useWorldAssets] 加载角色失败:", error);
         store.dispatch(setCharactersLoading(false));
       });
-  }, [charactersVersion, worldId]);
+    return () => controller.abort();
+  }, [charactersVersion, worldId, projectId, viewer]);
 
   useEffect(() => {
-    if (!worldId) return;
-    const key = `${worldId}:${scenesVersion}`;
-    if (loadedScenesRef.current === key) return;
-    loadedScenesRef.current = key;
+    if (!worldId || !projectId || !viewer) return;
+    const controller = new AbortController();
+    const owns = () =>
+      !controller.signal.aborted &&
+      store.getState().project.currentProjectId === projectId &&
+      selectCurrentInstance(store.getState()).worldId === worldId;
 
     store.dispatch(setScenesLoading(true));
     backendApi
       .post<Paginated<Asset>>("/api/user/world/list/worldscene", {
+        signal: controller.signal,
         data: { worldId, page: 1, pageSize: 100 },
       })
-      .then((data) => store.dispatch(setScenes(data?.list ?? [])))
+      .then((data) => {
+        if (owns()) store.dispatch(setScenes(data?.list ?? []));
+      })
       .catch((error) => {
+        if (!owns()) return;
         console.error("[useWorldAssets] 加载场景失败:", error);
         store.dispatch(setScenesLoading(false));
       });
-  }, [scenesVersion, worldId]);
+    return () => controller.abort();
+  }, [scenesVersion, worldId, projectId, viewer]);
 
   // 项目列表
   useEffect(() => {
-    if (!worldId) return;
-    const key = `${worldId}:${projectListVersion}`;
-    if (loadedProjectListRef.current === key) return;
-    loadedProjectListRef.current = key;
+    if (!worldId || !projectId || !viewer) return;
+    const controller = new AbortController();
+    const owns = () =>
+      !controller.signal.aborted &&
+      store.getState().project.currentProjectId === projectId &&
+      selectCurrentInstance(store.getState()).worldId === worldId;
 
     store.dispatch(setProjectListLoading(true));
     backendApi
       .post<Paginated<ProjectOptionItem>>("/api/user/world/list/worldproduct", {
+        signal: controller.signal,
         data: { worldId, page: 1, pageSize: 100 },
       })
-      .then((data) => store.dispatch(setProjectList(data?.list ?? [])))
+      .then((data) => {
+        if (owns()) store.dispatch(setProjectList(data?.list ?? []));
+      })
       .catch((error) => {
+        if (!owns()) return;
         console.error("[useWorldAssets] 加载项目列表失败:", error);
         store.dispatch(setProjectListLoading(false));
       });
-  }, [projectListVersion, worldId]);
+    return () => controller.abort();
+  }, [projectListVersion, worldId, projectId, viewer]);
 }

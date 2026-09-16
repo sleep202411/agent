@@ -33,11 +33,13 @@ vi.mock("@vidstack/react", async () => {
     src,
     children,
     onPlaying,
+    onCanPlay,
   }: {
     ref?: React.Ref<unknown>;
     src: string | { src: string };
     children?: React.ReactNode;
     onPlaying?: () => void;
+    onCanPlay?: () => void;
   }) {
     const videoRef = useRef<HTMLVideoElement>(null);
     useImperativeHandle(
@@ -64,6 +66,7 @@ vi.mock("@vidstack/react", async () => {
         "data-signal": `playing:${uri}`,
         onClick: onPlaying,
       }),
+      createElement("button", { "data-ready": uri, onClick: onCanPlay }),
       children
     );
   }
@@ -258,6 +261,64 @@ describe("ExperienceMediaPlayer cut cover", () => {
     // `playing` again.
     expect(drawImage).not.toHaveBeenCalled();
     expect(stillFrame().hidden).toBe(true);
+  });
+
+  it("does not start a waiting play after the host pauses it", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    await showClip("a");
+    const handle = registeredHandles().at(-1)!;
+    const pending = handle.play();
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    handle.pause();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-ready="/a.mp4"]')!.click();
+    });
+    await rejected;
+    expect(play).not.toHaveBeenCalled();
+    await handle.play();
+    expect(play).toHaveBeenCalledOnce();
+  });
+
+  it("does not mute or retry an abandoned autoplay refusal", async () => {
+    let reject!: (error: unknown) => void;
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(
+      () =>
+        new Promise<void>((_, fail) => {
+          reject = fail;
+        })
+    );
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    await showClip("a");
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-ready="/a.mp4"]')!.click();
+    });
+    const handle = registeredHandles().at(-1)!;
+    const pending = handle.play();
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await Promise.resolve();
+    handle.pause();
+    reject(new DOMException("Blocked", "NotAllowedError"));
+    await rejected;
+    expect(play).toHaveBeenCalledOnce();
+    expect(container.querySelector("video")!.muted).toBe(false);
+  });
+
+  it("ignores retained controls after the source is replaced", async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    await showClip("a");
+    const old = registeredHandles().at(-1)!;
+    await showClip("b");
+    const video = container.querySelector("video")!;
+    video.currentTime = 3;
+    video.muted = false;
+    pause.mockClear();
+    old.pause();
+    old.seek(20);
+    old.setMuted(true);
+    expect(pause).not.toHaveBeenCalled();
+    expect(video.currentTime).toBe(3);
+    expect(video.muted).toBe(false);
   });
 
   it("offers the host a handle for every source it covers", async () => {

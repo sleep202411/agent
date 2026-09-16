@@ -17,9 +17,8 @@ import { CharactersService } from './characters.service';
 
 /**
  * Character library (角色库) — workspace-owned reusable generation subjects
- * (演员池) plus per-project cast visibility (演员表). v1 ships virtual
- * characters only; the real_person enrollment/consent track extends this
- * module later.
+ * (演员池) plus per-project cast visibility (演员表). Includes gated
+ * real-person enrollment, consent withdrawal and provider teardown.
  *
  * PrismaService comes from the global DbModule; AuthModule supplies the
  * identity the global AuthGuard attaches; WorkspacesModule exports the

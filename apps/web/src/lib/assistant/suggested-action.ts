@@ -48,7 +48,8 @@ function validateAction(raw: unknown): SuggestedAction | null {
     typeof a.label !== "string" ||
     typeof a.tool !== "string" ||
     !a.input ||
-    typeof a.input !== "object"
+    typeof a.input !== "object" ||
+    Array.isArray(a.input)
   ) {
     return null;
   }
@@ -56,7 +57,10 @@ function validateAction(raw: unknown): SuggestedAction | null {
     label: a.label,
     tool: a.tool,
     input: a.input as Record<string, unknown>,
-    estimatedCost: typeof a.estimatedCost === "number" ? a.estimatedCost : undefined,
+    estimatedCost:
+      typeof a.estimatedCost === "number" && Number.isFinite(a.estimatedCost)
+        ? a.estimatedCost
+        : undefined,
   };
 }
 
@@ -83,7 +87,7 @@ export function extractSuggestedActions(source: string): {
           if (validated) actions.push(validated);
         }
         if (actions.length > 0) {
-          const cleanText = source.slice(0, source.length - completeMatch[0].length).trimEnd();
+          const cleanText = source.slice(0, completeMatch.index).trimEnd();
           return { cleanText, suggestedActions: actions };
         }
       }

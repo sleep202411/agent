@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
+import { useAdminOperation } from "../use-admin-operation";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { useRouter } from "next/navigation";
 import { IconArrowLeft, IconPencil, IconPlus } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -44,7 +46,11 @@ type NewsFormState = {
   localized: Record<NewsLocaleCode, NewsLocaleContent>;
 };
 
-export function NewsEditor({
+export function NewsEditor(props: Parameters<typeof NewsEditorContent>[0]) {
+  return <NewsEditorContent key={`${props.mode}:${props.existing?.id ?? "new"}`} {...props} />;
+}
+
+function NewsEditorContent({
   mode,
   existing,
   tags,
@@ -63,9 +69,12 @@ export function NewsEditor({
 
   const [form, setForm] = useState<NewsFormState>(() => initForm(existing, tags));
   const [activeLocale, setActiveLocale] = useState<NewsLocaleCode>(NEWS_PRIMARY_LOCALE);
-  const [saving, setSaving] = useState(false);
+  const { busy: saving, begin } = useAdminOperation();
+  const activeOperation = useRef<ReturnType<typeof begin>>(null);
+  const leaving = useRef(false);
+  const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [coverUploading, setCoverUploading] = useState(false);
+  const coverUploading = saving;
   const [coverError, setCoverError] = useState<string | null>(null);
   const [tagDialogOpen, setTagDialogOpen] = useState(false);
   const [tagDialogTarget, setTagDialogTarget] = useState<NewsTag | null>(null);
@@ -81,6 +90,7 @@ export function NewsEditor({
     (form.status !== "published" || Boolean(form.publishedAtLocal));
 
   function setLocaleField(field: keyof NewsLocaleContent, value: string) {
+    if (saving) return;
     setForm((prev) => ({
       ...prev,
       localized: {
@@ -96,11 +106,15 @@ export function NewsEditor({
   async function handleCoverFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = ""; // allow re-picking the same file
-    if (!file) return;
-    setCoverUploading(true);
+    if (!file || leaving.current) return;
+    const operation = begin();
+    if (!operation) return;
+    activeOperation.current = operation;
+    const originatingLocale = activeLocale;
     setCoverError(null);
     try {
-      const urlRes = await fetch("/api/admin/media/upload-url", {
+      const urlRes = await fetch(adminUiApiPath("/api/admin/media/upload-url"), {
+        signal: operation.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -120,15 +134,23 @@ export function NewsEditor({
           storageKey: string;
         };
       } | null;
+      if (!operation.current()) return;
       if (!urlRes.ok || urlBody?.code !== 200 || !urlBody.data) {
         throw new Error(urlBody?.msg ?? `获取上传地址失败：${urlRes.status}`);
       }
       const { uploadUrl, method, headers, storageKey } = urlBody.data;
 
-      const putRes = await fetch(uploadUrl, { method, headers, body: file });
+      const putRes = await fetch(uploadUrl, {
+        method,
+        headers,
+        body: file,
+        signal: operation.signal,
+      });
+      if (!operation.current()) return;
       if (!putRes.ok) throw new Error(`上传到存储失败：${putRes.status}`);
 
-      const confirmRes = await fetch("/api/admin/media/confirm", {
+      const confirmRes = await fetch(adminUiApiPath("/api/admin/media/confirm"), {
+        signal: operation.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storageKey, kind: "news_cover", contentType: file.type }),
@@ -138,19 +160,28 @@ export function NewsEditor({
         msg?: string;
         data?: { url: string };
       } | null;
+      if (!operation.current()) return;
       if (!confirmRes.ok || confirmBody?.code !== 200 || !confirmBody.data) {
         throw new Error(confirmBody?.msg ?? `确认上传失败：${confirmRes.status}`);
       }
-      setLocaleField("coverUrl", confirmBody.data.url);
+      const coverUrl = confirmBody.data.url;
+      setForm((current) => ({
+        ...current,
+        localized: {
+          ...current.localized,
+          [originatingLocale]: { ...current.localized[originatingLocale], coverUrl },
+        },
+      }));
     } catch (error) {
-      setCoverError(error instanceof Error ? error.message : "封面上传失败。");
+      if (operation.current())
+        setCoverError(error instanceof Error ? error.message : "封面上传失败。");
     } finally {
-      setCoverUploading(false);
+      operation.finish();
     }
   }
 
   async function save() {
-    if (!canSubmit || saving) return;
+    if (!canSubmit || saving || leaving.current) return;
     const now = new Date().toISOString();
     const publishedAt =
       form.status === "published"
@@ -167,38 +198,54 @@ export function NewsEditor({
       publishedAt,
       localized: cloneLocalized(form.localized),
     };
-    setSaving(true);
+    const operation = begin();
+    if (!operation) return;
+    activeOperation.current = operation;
     setSaveError(null);
     try {
       const response =
         mode === "edit" && form.id
-          ? await fetch(`/api/admin/news/${form.id}`, {
+          ? await fetch(adminUiApiPath(`/api/admin/news/${encodeURIComponent(form.id)}`), {
+              signal: operation.signal,
               method: "PUT",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload),
             })
-          : await fetch("/api/admin/news", {
+          : await fetch(adminUiApiPath("/api/admin/news"), {
+              signal: operation.signal,
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload),
             });
+      if (!operation.current()) return;
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!operation.current()) return;
         throw new Error(body?.error ?? `保存失败：${response.status}`);
       }
+      leaving.current = true;
+      setSaved(true);
       router.push("/news");
       router.refresh();
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "保存失败。");
-      setSaving(false);
+      if (operation.current()) setSaveError(error instanceof Error ? error.message : "保存失败。");
+    } finally {
+      operation.finish();
     }
+  }
+
+  function leaveEditor() {
+    leaving.current = true;
+    activeOperation.current?.cancel();
+    activeOperation.current?.finish();
+    router.push("/news");
   }
 
   return (
     <div className="mx-auto max-w-4xl space-y-4">
       <button
         type="button"
-        onClick={() => router.push("/news")}
+        onClick={leaveEditor}
         className="inline-flex items-center gap-1 text-[13px] font-medium text-slate-500 transition hover:text-slate-900"
       >
         <IconArrowLeft className="size-4" />
@@ -211,10 +258,10 @@ export function NewsEditor({
         description="至少填写简体中文标题；外部链接需填写跳转地址，内部文章需填写简体中文正文。"
       >
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => router.push("/news")}>
+          <Button type="button" variant="outline" onClick={leaveEditor}>
             取消
           </Button>
-          <Button type="button" onClick={save} disabled={notFound || !canSubmit || saving}>
+          <Button type="button" onClick={save} disabled={notFound || !canSubmit || saving || saved}>
             {saving ? "保存中…" : mode === "edit" ? "保存资讯" : "创建资讯"}
           </Button>
         </div>
@@ -227,7 +274,7 @@ export function NewsEditor({
           message={loadError ? `资讯加载失败：${loadError}` : "未找到该资讯，可能已被删除。"}
         />
       ) : (
-        <div className="space-y-4">
+        <div inert={saving} className="space-y-4">
           {/* 卡片①：发布设置 */}
           <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
             <SectionLabel>发布设置</SectionLabel>

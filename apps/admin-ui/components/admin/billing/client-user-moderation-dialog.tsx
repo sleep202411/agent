@@ -4,6 +4,7 @@
 // 管理端接口(X-Admin-Api-Token 只在服务端)。屏蔽会 account_status=5 + 强制下线。
 
 import { useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { Button } from "@/components/ui/button";
 import { AdminDialog, TextInput, mutateEnvelope, toErrorMessage } from "./shared";
 
@@ -12,36 +13,29 @@ export interface ClientUserTarget {
   nickName: string | null;
 }
 
-export function ClientUserModerationDialog({
-  mode,
-  user,
-  onClose,
-  onDone,
-}: {
+type ModerationProps = {
   mode: "edit" | "block" | null;
   user: ClientUserTarget | null;
   onClose: () => void;
   onDone: () => void;
-}) {
+};
+export function ClientUserModerationDialog(props: ModerationProps) {
+  if (!props.mode || !props.user) return null;
+  return (
+    <ClientUserModerationDialogContent
+      key={JSON.stringify([props.mode, props.user.userId])}
+      {...props}
+    />
+  );
+}
+function ClientUserModerationDialogContent({ mode, user, onClose, onDone }: ModerationProps) {
   const open = mode !== null && user !== null;
-  const [nickName, setNickName] = useState("");
+  const [nickName, setNickName] = useState(user?.nickName ?? "");
   const [contact, setContact] = useState("");
   const [description, setDescription] = useState("");
   const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
+  const { busy, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(null);
-
-  // Reset the form whenever a new target/mode opens.
-  const resetKey = `${mode}:${user?.userId}:${open}`;
-  const [previousResetKey, setPreviousResetKey] = useState("");
-  if (previousResetKey !== resetKey) {
-    setPreviousResetKey(resetKey);
-    setNickName(user?.nickName ?? "");
-    setContact("");
-    setDescription("");
-    setReason("");
-    setError(null);
-  }
 
   if (!open || !user) return null;
 
@@ -54,16 +48,23 @@ export function ClientUserModerationDialog({
       setError("没有要更新的字段");
       return;
     }
-    setBusy(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
-      await mutateEnvelope(`/api/admin/client-users/${user.userId}/info`, patch);
+      await mutateEnvelope(
+        `/api/admin/client-users/${encodeURIComponent(user.userId)}/info`,
+        patch,
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
       onDone();
       onClose();
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
@@ -72,18 +73,25 @@ export function ClientUserModerationDialog({
       setError("请填写屏蔽原因");
       return;
     }
-    setBusy(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
-      await mutateEnvelope(`/api/admin/client-users/${user.userId}/block`, {
-        reason: reason.trim(),
-      });
+      await mutateEnvelope(
+        `/api/admin/client-users/${encodeURIComponent(user.userId)}/block`,
+        {
+          reason: reason.trim(),
+        },
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
       onDone();
       onClose();
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setBusy(false);
+      operation.finish();
     }
   };
 
@@ -126,6 +134,8 @@ export function ClientUserModerationDialog({
         <div className="space-y-1.5">
           <label className="text-[12px] font-medium text-slate-600">屏蔽原因(必填,1–512 字)</label>
           <TextInput
+            disabled={busy}
+            aria-label="屏蔽原因"
             value={reason}
             placeholder="例:违反社区规范,多次发布违规内容"
             maxLength={512}
@@ -137,6 +147,8 @@ export function ClientUserModerationDialog({
         <div className="space-y-3">
           <Field label="昵称">
             <TextInput
+              disabled={busy}
+              aria-label="昵称"
               value={nickName}
               placeholder="留空则不修改"
               maxLength={64}
@@ -145,6 +157,8 @@ export function ClientUserModerationDialog({
           </Field>
           <Field label="联系方式">
             <TextInput
+              disabled={busy}
+              aria-label="联系方式"
               value={contact}
               placeholder="留空则不修改"
               onChange={(event) => setContact(event.target.value)}
@@ -152,6 +166,8 @@ export function ClientUserModerationDialog({
           </Field>
           <Field label="简介">
             <TextInput
+              disabled={busy}
+              aria-label="简介"
               value={description}
               placeholder="留空则不修改"
               onChange={(event) => setDescription(event.target.value)}

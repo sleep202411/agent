@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   describeUnknown,
   requiredScalarString,
@@ -230,7 +235,7 @@ export class WorkspaceService {
   ) {
     const detail = await this.request<WorkspaceRecord>(
       headers,
-      `/api/user/project/detail/${context.projectId}`,
+      `/api/user/project/detail/${encodeURIComponent(context.projectId)}`,
     );
     const worldId =
       context.worldId ||
@@ -532,7 +537,7 @@ export class WorkspaceService {
   ): Promise<Record<string, unknown>> {
     return this.request<Record<string, unknown>>(
       headers,
-      `/api/user/project/detail/${projectId}`,
+      `/api/user/project/detail/${encodeURIComponent(projectId)}`,
     );
   }
 
@@ -555,7 +560,7 @@ export class WorkspaceService {
   async getWorldDetail(headers: HeadersLike, worldId: string) {
     return this.request<Record<string, unknown>>(
       headers,
-      `/api/user/world/query/world?id=${worldId}`,
+      `/api/user/world/query/world?id=${encodeURIComponent(worldId)}`,
     );
   }
 
@@ -580,6 +585,7 @@ export class WorkspaceService {
     // Fetch current episode to get all fields
     const episodes = await this.listEpisodes(headers, projectId);
     const current = episodes.find((ep) => ep.id === episodeId);
+    if (!current) throw new NotFoundException('Episode not found');
 
     const merged: EpisodeRecord = {
       id: episodeId,
@@ -622,7 +628,7 @@ export class WorkspaceService {
   ): Promise<string> {
     const res = await this.request<{ content?: string }>(
       headers,
-      `/api/user/project/scripts/episode/detail/${episodeId}`,
+      `/api/user/project/scripts/episode/detail/${encodeURIComponent(episodeId)}`,
     );
     return (res as unknown as { content?: string })?.content ?? '';
   }
@@ -647,7 +653,7 @@ export class WorkspaceService {
   async deleteEpisode(headers: HeadersLike, episodeId: string) {
     return this.request<WorkspaceRecord>(
       headers,
-      `/api/user/world/delete/episode?id=${episodeId}`,
+      `/api/user/world/delete/episode?id=${encodeURIComponent(episodeId)}`,
     );
   }
 
@@ -670,7 +676,7 @@ export class WorkspaceService {
   async deleteCharacter(headers: HeadersLike, id: string) {
     return this.request<WorkspaceRecord>(
       headers,
-      `/api/user/world/delete/worldrole?id=${id}`,
+      `/api/user/world/delete/worldrole?id=${encodeURIComponent(id)}`,
     );
   }
 
@@ -693,7 +699,7 @@ export class WorkspaceService {
   async deleteScene(headers: HeadersLike, id: string) {
     return this.request<WorkspaceRecord>(
       headers,
-      `/api/user/world/delete/worldscene?id=${id}`,
+      `/api/user/world/delete/worldscene?id=${encodeURIComponent(id)}`,
     );
   }
 
@@ -716,7 +722,7 @@ export class WorkspaceService {
   async deleteProp(headers: HeadersLike, id: string) {
     return this.request<WorkspaceRecord>(
       headers,
-      `/api/user/world/delete/worldprop?id=${id}`,
+      `/api/user/world/delete/worldprop?id=${encodeURIComponent(id)}`,
     );
   }
 
@@ -961,24 +967,6 @@ export class WorkspaceService {
     );
 
     return ids;
-
-    /* ── Sequential fallback (use if batch API doesn't create storyboard associations) ──
-    const ids: string[] = [];
-    for (const title of titles) {
-      try {
-        const createdId = await this.request<string | number>(
-          headers,
-          '/api/user/storyBoard/create',
-          { data: { projectId, name: title }, maxRetries: 2 },
-        );
-        ids.push(String(createdId));
-      } catch (error) {
-        this.logger.error(`[batchAddEpisodes] Failed "${title}": ${error}`);
-        ids.push('');
-      }
-    }
-    return ids;
-    */
   }
 
   /**
@@ -998,6 +986,9 @@ export class WorkspaceService {
   ) {
     if (datas.length === 0) return;
     const projectId = datas[0].projectId;
+    if (datas.some((item) => item.projectId !== projectId)) {
+      throw new BadRequestException('Episode batch must belong to one project');
+    }
 
     // Fetch current episodes to merge with
     const currentEpisodes = await this.listEpisodes(headers, projectId);
@@ -1005,6 +996,7 @@ export class WorkspaceService {
 
     const merged: EpisodeRecord[] = datas.map((d) => {
       const cur = currentMap.get(d.id);
+      if (!cur) throw new NotFoundException('Episode not found');
       return {
         id: d.id,
         projectId,

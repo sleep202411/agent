@@ -7,10 +7,12 @@ import {
   useCrewProductionOverview,
   useCrewProductionActivity,
   useCrewEpisodes,
-  useCrewStudioProjectOptions,
   useSaveCrewProductionDocument,
   useReorderCrewEpisode,
 } from "./use-production";
+import { useCrewEarnings, useMyCrewEarnings, useCrewEarningDetail } from "./use-earnings";
+import { useCrewPayouts, useCrewPayoutDetail } from "./use-payouts";
+import { useTaskCommitments, useAccountability } from "./use-accountability";
 import { crewKeys } from "./shared";
 
 const session = vi.hoisted(() => ({ id: "alice" as string | null }));
@@ -60,7 +62,6 @@ it("hides production reads after logout and while another account loads", async 
     useCrewProductionOverview("crew"),
     useCrewProductionActivity("crew"),
     useCrewEpisodes("crew"),
-    useCrewStudioProjectOptions("crew"),
   ]);
   await settle();
   expect(view.current().every((q) => q.data !== undefined)).toBe(true);
@@ -68,13 +69,13 @@ it("hides production reads after logout and while another account loads", async 
   view.render();
   expect(view.current().every((q) => q.data === undefined)).toBe(true);
   await settle();
-  expect(crewApi.get).toHaveBeenCalledTimes(4);
+  expect(crewApi.get).toHaveBeenCalledTimes(3);
   vi.mocked(crewApi.get).mockImplementation(() => new Promise(() => {}));
   session.id = "bob";
   view.render();
   expect(view.current().every((q) => q.data === undefined)).toBe(true);
   await settle();
-  expect(crewApi.get).toHaveBeenCalledTimes(8);
+  expect(crewApi.get).toHaveBeenCalledTimes(6);
 });
 
 it("applies delayed document saves only to the initiating account and Crew", async () => {
@@ -141,4 +142,41 @@ it("a late failed reorder refreshes only its original production caches", async 
   });
   expect(client.getQueryState(aliceKey)?.isInvalidated).toBe(true);
   expect(client.getQueryState(bobKey)?.isInvalidated).toBe(false);
+});
+
+it("abandons production and financial record reads on logout and resumes for the next account", async () => {
+  const reads: Array<{ signal: AbortSignal; resolve: (value: unknown) => void }> = [];
+  vi.mocked(crewApi.get).mockImplementation((_path, options) => {
+    expect(options?.cache).toBe("no-store");
+    return new Promise((resolve) =>
+      reads.push({ signal: options!.signal as AbortSignal, resolve })
+    );
+  });
+  const view = mount(() => [
+    useCrewProductionOverview("crew"),
+    useCrewProductionActivity("crew"),
+    useCrewEpisodes("crew"),
+    useCrewEarnings("crew", { currency: "USD", scope: "mine" }),
+    useMyCrewEarnings("USD"),
+    useCrewEarningDetail("earning"),
+    useCrewPayouts("crew", { currency: "USD", scope: "mine" }),
+    useCrewPayoutDetail("payout"),
+    useTaskCommitments("task"),
+    useAccountability("crew", 1),
+  ]);
+  expect(reads).toHaveLength(10);
+  session.id = null;
+  view.render();
+  expect(reads.every((read) => read.signal.aborted)).toBe(true);
+  await act(async () => reads.forEach((read) => read.resolve({ items: [], nextCursor: null })));
+  expect(
+    client
+      .getQueryCache()
+      .findAll()
+      .every((query) => query.state.data === undefined)
+  ).toBe(true);
+  session.id = "bob";
+  view.render();
+  expect(reads).toHaveLength(20);
+  expect(reads.slice(10).every((read) => !read.signal.aborted)).toBe(true);
 });

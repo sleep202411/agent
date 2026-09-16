@@ -7,7 +7,8 @@ import { useMemo, useState } from "react";
 import { IconDeviceFloppy, IconEdit, IconSearch, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
-import { FormLabel, TextInput, requestEnvelope, toErrorMessage } from "../billing/shared";
+import { FormLabel, TextInput } from "../billing/shared";
+import { useAdminUserLookup } from "../use-admin-user-lookup";
 import type { CommissionRateRow, UserLookupResult } from "./referrals-types";
 
 /** bps → "30%" / "2.5%" for display; the form edits percent directly. */
@@ -103,7 +104,16 @@ function userLine(u: { userId: string; email: string | null; phone?: string | nu
   return [u.userId, u.email, u.phone].filter(Boolean).join(" · ");
 }
 
-export function CommissionRateForm({
+export function CommissionRateForm(props: {
+  rate?: CommissionRateRow;
+  loading: boolean;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onRemove?: () => void;
+}) {
+  return <CommissionRateFormContent key={props.rate?.userId ?? "create"} {...props} />;
+}
+
+function CommissionRateFormContent({
   rate,
   loading,
   onSubmit,
@@ -115,32 +125,12 @@ export function CommissionRateForm({
   onRemove?: () => void;
 }) {
   const editing = Boolean(rate);
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<UserLookupResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [lookupError, setLookupError] = useState<string | null>(null);
   const [selected, setSelected] = useState<UserLookupResult | null>(
     rate ? { userId: rate.userId, nickName: rate.nickName, email: rate.email, phone: null } : null
   );
 
-  async function runLookup() {
-    const q = query.trim();
-    if (!q) return;
-    setSearching(true);
-    setLookupError(null);
-    setResults([]);
-    try {
-      const data = await requestEnvelope<UserLookupResult[]>(
-        `/api/admin/referrals/user-lookup?q=${encodeURIComponent(q)}`
-      );
-      setResults(data);
-      if (data.length === 0) setLookupError("未找到匹配用户。");
-    } catch (err) {
-      setLookupError(toErrorMessage(err));
-    } finally {
-      setSearching(false);
-    }
-  }
+  const { query, setQuery, results, searching, lookupError, runLookup, cancel } =
+    useAdminUserLookup(!editing && !selected && !loading);
 
   return (
     <form className="space-y-5" onSubmit={onSubmit}>
@@ -202,9 +192,11 @@ export function CommissionRateForm({
                 <button
                   key={u.userId}
                   type="button"
+                  disabled={searching || loading}
                   onClick={() => {
+                    if (searching || loading) return;
+                    cancel();
                     setSelected(u);
-                    setResults([]);
                   }}
                   className="flex w-full flex-col items-start rounded px-2 py-1.5 text-left transition hover:bg-slate-50"
                 >

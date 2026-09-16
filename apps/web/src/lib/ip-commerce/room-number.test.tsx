@@ -16,6 +16,7 @@ import LegacyPage from "@/app/(site)/ips/[id]/page";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 vi.mock("@/src/lib/api", () => ({ api }));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "viewer" } }) }));
 vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-locale": "zh-CN" }) }));
 vi.mock("next/navigation", () => ({
   notFound: () => {
@@ -92,9 +93,11 @@ it("opens room URLs without going through the old Java ID conversion", async () 
 });
 
 it("refreshes both room and UUID detail caches after likes and purchases", async () => {
-  client.setQueryData(ipCommerceKeys.ip(id), { ip: initialIp });
-  client.setQueryData(ipCommerceKeys.ip(roomNumber), { ip: initialIp });
-  client.setQueryData(ipCommerceKeys.ip("100002"), { ip: { id: "other", roomNumber: "100002" } });
+  client.setQueryData([...ipCommerceKeys.ip(id), "viewer"], { ip: initialIp });
+  client.setQueryData([...ipCommerceKeys.ip(roomNumber), "viewer"], { ip: initialIp });
+  client.setQueryData([...ipCommerceKeys.ip("100002"), "viewer"], {
+    ip: { id: "other", roomNumber: "100002" },
+  });
   api.get.mockResolvedValue({ ip: initialIp });
   const engagement = { viewCount: 1, likeCount: 1, collectionCount: 0, viewerHasLiked: true };
   api.put.mockResolvedValue({ engagement });
@@ -109,14 +112,18 @@ it("refreshes both room and UUID detail caches after likes and purchases", async
   await vi.waitFor(() =>
     expect(api.get).toHaveBeenCalledWith(`/aurora/ip-commerce/ips/${roomNumber}`, {
       params: undefined,
+      signal: expect.any(AbortSignal),
     })
   );
   expect(api.put).toHaveBeenCalledWith(`/aurora/ip-commerce/ips/${id}/like`);
   expect(
-    client.getQueryData<{ ip: { engagement: unknown } }>(ipCommerceKeys.ip(id))?.ip.engagement
+    client.getQueryData<{ ip: { engagement: unknown } }>([...ipCommerceKeys.ip(id), "viewer"])?.ip
+      .engagement
   ).toEqual(engagement);
-  expect(client.getQueryState(ipCommerceKeys.ip(id))?.isInvalidated).toBe(true);
-  expect(client.getQueryState(ipCommerceKeys.ip("100002"))?.isInvalidated).toBe(false);
+  expect(client.getQueryState([...ipCommerceKeys.ip(id), "viewer"])?.isInvalidated).toBe(true);
+  expect(client.getQueryState([...ipCommerceKeys.ip("100002"), "viewer"])?.isInvalidated).toBe(
+    false
+  );
 
   api.get.mockClear().mockResolvedValue({ ip: { ...initialIp, title: "Unlocked" } });
   api.post.mockResolvedValue({ alreadyOwned: false, entitlements: [] });
@@ -132,5 +139,6 @@ it("refreshes both room and UUID detail caches after likes and purchases", async
   });
   expect(api.get).toHaveBeenCalledWith(`/aurora/ip-commerce/ips/${roomNumber}`, {
     params: undefined,
+    signal: expect.any(AbortSignal),
   });
 });

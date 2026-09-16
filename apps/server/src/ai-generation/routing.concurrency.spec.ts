@@ -4,7 +4,10 @@ import {
   EntitlementService,
   type EntitlementSnapshot,
 } from '../entitlements';
-import { AiGenerationRoutingService } from './routing.service';
+import {
+  AiGenerationRoutingService,
+  refineProviderExecutionRouting,
+} from './routing.service';
 import type { AiBillingPolicy, AiModelDefinition } from './types';
 
 const NOW = '2026-06-12T12:00:00.000Z';
@@ -254,5 +257,120 @@ describe('H3 Max reference pricing at admission', () => {
         ],
       }),
     ).rejects.toMatchObject({ response: { code: 'MODEL_PRICING_INVALID' } });
+  });
+});
+
+describe('explicit execution binding refinement', () => {
+  const ops = {
+    canonicalModelId: 'canonical-1',
+    canonicalSlug: 'image-model',
+    providerAccountId: 'account-1',
+    providerBindingId: 'primary-binding',
+    providerEndpointId: 'primary-endpoint',
+    providerRoutePriority: 10,
+    providerRouteWeight: 1,
+    providerCapacity: {
+      maxConcurrentRequests: 2,
+      maxRequestsPerMinute: 30,
+      requestTimeoutSeconds: 60,
+      cooldownSeconds: null,
+      failureThreshold: null,
+    },
+  };
+  it('freezes mode-specific IDs and resolution capacity without changing the price or membership limits', async () => {
+    const { service, adapter } = routingFor(model({ ops }));
+    const input = {
+      resolution: '4k',
+      referenceImages: [{ url: 'https://example.com/image.png' }],
+    };
+    const resolveExecutionBinding = jest.fn().mockResolvedValue({
+      deployment: 'fixture/edit',
+      ops: {
+        ...ops,
+        providerBindingId: 'edit-binding',
+        providerEndpointId: 'edit-endpoint',
+        providerCapacity: {
+          ...ops.providerCapacity,
+          maxConcurrentRequests: 8,
+          requestTimeoutSeconds: 300,
+        },
+        providerCapacityTiers: {
+          resolution: {
+            '4k': { maxConcurrentRequests: 1, requestTimeoutSeconds: 120 },
+          },
+        },
+      },
+    });
+    Object.assign(adapter, { resolveExecutionBinding });
+    const decision = await service.resolve({
+      entitlement: entitlement(),
+      body: { modelId: 'image-model' },
+      now: NOW,
+    });
+    const quota = { ...decision.snapshot.policy.quota };
+    const concurrency = { ...decision.snapshot.policy.concurrency };
+    await refineProviderExecutionRouting(decision, input);
+    expect(resolveExecutionBinding).toHaveBeenCalledWith('image-model', input);
+    expect(decision.snapshot).toMatchObject({
+      selectedDeployment: 'fixture/edit',
+      executionBindingIdentity: {
+        deployment: 'fixture/edit',
+        canonicalModelId: 'canonical-1',
+        providerAccountId: 'account-1',
+        providerBindingId: 'edit-binding',
+        providerEndpointId: 'edit-endpoint',
+      },
+      selectedProviderBindingId: 'edit-binding',
+      selectedProviderEndpointId: 'edit-endpoint',
+    });
+    expect(decision.snapshot.policy.providerCapacity).toMatchObject({
+      maxConcurrentRequests: 1,
+      tierKey: 'resolution:4k',
+      requestTimeoutSeconds: 120,
+    });
+    expect(decision.snapshot.policy.runtime.maxProviderRuntimeSeconds).toBe(
+      120,
+    );
+    expect(decision.snapshot.policy.quota).toEqual(quota);
+    expect(decision.snapshot.policy.concurrency).toEqual(concurrency);
+  });
+  it('rejects cross-canonical metadata without modifying the snapshot', async () => {
+    const { service, adapter } = routingFor(model({ ops }));
+    Object.assign(adapter, {
+      resolveExecutionBinding: jest.fn().mockResolvedValue({
+        deployment: 'other',
+        ops: { ...ops, canonicalModelId: 'other' },
+      }),
+    });
+    const decision = await service.resolve({
+      entitlement: entitlement(),
+      body: { modelId: 'image-model' },
+      now: NOW,
+    });
+    const before = structuredClone(decision.snapshot);
+    await expect(
+      refineProviderExecutionRouting(decision, {}),
+    ).rejects.toThrow();
+    expect(decision.snapshot).toEqual(before);
+  });
+  it('retains legacy metadata when no explicit binding exists and propagates resolver failure', async () => {
+    const { service, adapter } = routingFor(model({ ops }));
+    const resolveExecutionBinding = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('binding unavailable'));
+    Object.assign(adapter, { resolveExecutionBinding });
+    const decision = await service.resolve({
+      entitlement: entitlement(),
+      body: { modelId: 'image-model' },
+      now: NOW,
+    });
+    const before = structuredClone(decision.snapshot);
+    await refineProviderExecutionRouting(decision, {});
+    expect(decision.snapshot).toEqual(before);
+    await expect(refineProviderExecutionRouting(decision, {})).rejects.toThrow(
+      'binding unavailable',
+    );
+    expect(decision.snapshot).toEqual(before);
   });
 });

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   readTaskDeliveryTemplate,
   validateProfessionalDelivery,
@@ -569,18 +570,18 @@ export class CrewTasksService {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${crewId}`})::bigint)
       `;
-      const [activeCount, duplicate, afterState, last] = await Promise.all([
-        tx.crewTaskWorkflowState.count({
+      const [activeCount, duplicate, afterState, last] = [
+        await tx.crewTaskWorkflowState.count({
           where: { crewId, archived: false },
         }),
-        tx.crewTaskWorkflowState.findFirst({
+        await tx.crewTaskWorkflowState.findFirst({
           where: {
             crewId,
             name: { equals: input.name, mode: 'insensitive' },
           },
           select: { id: true },
         }),
-        input.afterStateId
+        await (input.afterStateId
           ? tx.crewTaskWorkflowState.findFirst({
               where: {
                 id: input.afterStateId,
@@ -588,12 +589,12 @@ export class CrewTasksService {
                 archived: false,
               },
             })
-          : null,
-        tx.crewTaskWorkflowState.aggregate({
+          : null),
+        await tx.crewTaskWorkflowState.aggregate({
           where: { crewId, archived: false },
           _max: { position: true },
         }),
-      ]);
+      ];
       if (activeCount >= MAX_ACTIVE_WORKFLOW_STATES) {
         throw new ConflictException({
           code: 'CREW_TASK_WORKFLOW_LIMIT',
@@ -2271,23 +2272,21 @@ export class CrewTasksService {
           locked.canvasDocumentId &&
           (input.title !== undefined || input.description !== undefined)
         ) {
-          await Promise.all([
-            tx.platformProject.update({
-              where: { id: locked.canvasProjectId },
-              data: {
-                name: input.title,
-                description: input.description,
-              },
-            }),
-            tx.studioDocument.update({
-              where: { id: locked.canvasDocumentId },
-              data: {
-                title: input.title,
-                updatedById: userId,
-                version: { increment: 1 },
-              },
-            }),
-          ]);
+          await tx.platformProject.update({
+            where: { id: locked.canvasProjectId },
+            data: {
+              name: input.title,
+              description: input.description,
+            },
+          });
+          await tx.studioDocument.update({
+            where: { id: locked.canvasDocumentId },
+            data: {
+              title: input.title,
+              updatedById: userId,
+              version: { increment: 1 },
+            },
+          });
         }
         if (input.labelIds) {
           await tx.crewTaskLabelAssignment.deleteMany({ where: { taskId } });
@@ -3858,8 +3857,8 @@ export class CrewTasksService {
       .map((item) => item.mediaAssetId);
 
     await lockCrewAssetUploads(tx, uploadIds);
-    const [nodes, uploadedMedia, alreadyClaimed] = await Promise.all([
-      tx.crewAssetNode.findMany({
+    const [nodes, uploadedMedia, alreadyClaimed] = [
+      await tx.crewAssetNode.findMany({
         where: {
           id: { in: existingIds },
           crewId,
@@ -3870,7 +3869,7 @@ export class CrewTasksService {
         },
         select: { id: true },
       }),
-      tx.mediaAsset.findMany({
+      await tx.mediaAsset.findMany({
         where: {
           id: { in: uploadIds },
           status: MediaAssetStatus.ready,
@@ -3882,13 +3881,13 @@ export class CrewTasksService {
           metadata: true,
         },
       }),
-      tx.crewAssetNode.findMany({
+      await tx.crewAssetNode.findMany({
         where: {
           mediaAssetId: { in: uploadIds },
         },
         select: { mediaAssetId: true },
       }),
-    ]);
+    ];
     if (nodes.length !== existingIds.length) {
       throw new BadRequestException({
         message: 'One or more attached crew assets are unavailable.',
@@ -3983,8 +3982,7 @@ export class CrewTasksService {
     existing: TimelineRow,
     input: CreateCrewTaskCommentInput,
   ): void {
-    const sameMentions =
-      JSON.stringify(existing.mentions) === JSON.stringify(input.mentions);
+    const sameMentions = isDeepStrictEqual(existing.mentions, input.mentions);
     const sameAttachments =
       existing.attachments.length === input.attachments.length &&
       input.attachments.every((attachment, index) => {
@@ -3994,6 +3992,7 @@ export class CrewTasksService {
           : stored?.mediaAssetId === attachment.mediaAssetId;
       });
     if (
+      existing.deletedAt !== null ||
       existing.kind !== 'comment' ||
       existing.body !== input.body ||
       existing.replyToId !== (input.replyToId ?? null) ||

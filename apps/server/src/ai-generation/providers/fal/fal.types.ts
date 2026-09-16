@@ -23,6 +23,8 @@ export interface FalModelRuntimeConfig {
    * order (first binding wins per mode). Every sibling runtime of a canonical
    * carries the SAME map so poll-time lookups behave identically.
    */
+  /** Explicit sibling bindings must not fall back into a disabled mode. */
+  strictModeRouting?: boolean;
   modeEndpoints?: Partial<Record<AiGenerationMode, string>>;
   name: string;
   description: string;

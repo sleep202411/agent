@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUrlForRequest,
   adminUnavailableResponse,
@@ -15,13 +16,17 @@ type RouteContext = {
 export async function POST(request: NextRequest, context: RouteContext) {
   const { userId } = await context.params;
   try {
-    const upstream = await fetch(adminUrlForRequest(request, `/users/${userId}/reset-password`), {
-      method: "POST",
-      headers: adminForwardHeaders(request, { json: true }),
-      body: await request.text(),
-      cache: "no-store",
-    });
-    return relayAdminResponse(upstream);
+    const upstream = await adminFetch(
+      request,
+      adminUrlForRequest(request, `/users/${userId}/reset-password`),
+      {
+        method: "POST",
+        headers: adminForwardHeaders(request, { json: true }),
+        body: await request.text(),
+        cache: "no-store",
+      }
+    );
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

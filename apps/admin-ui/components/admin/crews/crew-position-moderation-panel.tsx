@@ -4,7 +4,7 @@
 // 后审:岗位照常上线,管理员事后处置。下架的岗位从招募广场/剧组页全部隐藏。
 // 数据经 Nest /admin/crew-positions(AdminAuthGuard + crew.manage + 审计)。
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { IconSearch, IconShieldOff, IconShieldCheck } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,11 +14,10 @@ import {
   StatusPill,
   TextInput,
   formatDate,
-  mutateEnvelope,
-  requestEnvelope,
-  toErrorMessage,
 } from "@/components/admin/billing/shared";
 import { PageHeader } from "@/components/admin/page-header";
+
+import { useModerationQueue } from "./use-moderation-queue";
 
 type ModerationStatus = "ok" | "taken_down";
 
@@ -36,11 +35,6 @@ interface AdminPosition {
   createdAt: string;
 }
 
-interface PositionListResult {
-  items: AdminPosition[];
-  nextCursor: string | null;
-}
-
 const STATUS_FILTERS = [
   { value: "", label: "全部状态" },
   { value: "ok", label: "正常" },
@@ -52,80 +46,25 @@ export function CrewPositionModerationPanel() {
   const [activeQuery, setActiveQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  const [items, setItems] = useState<AdminPosition[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const { items, nextCursor, loading, error, acting, writing, load, moderate } =
+    useModerationQueue<AdminPosition>("/api/admin/crew-positions", activeQuery, statusFilter);
   const [takedownTarget, setTakedownTarget] = useState<AdminPosition | null>(null);
   const [reason, setReason] = useState("");
-  const [acting, setActing] = useState(false);
-
-  const requestSequence = useRef(0);
-  const queryKey = `${activeQuery}:${statusFilter}`;
-  const [previousQueryKey, setPreviousQueryKey] = useState(queryKey);
-  if (previousQueryKey !== queryKey) {
-    setPreviousQueryKey(queryKey);
-    setLoading(true);
-    setError(null);
-  }
-
-  const fetchRows = useCallback((query: string, status: string, cursor: string | null) => {
-    const ticket = ++requestSequence.current;
-    const params = new URLSearchParams({ limit: "30" });
-    if (query) params.set("q", query);
-    if (status) params.set("moderationStatus", status);
-    if (cursor) params.set("cursor", cursor);
-    return requestEnvelope<PositionListResult>(`/api/admin/crew-positions?${params}`)
-      .then((data) => {
-        if (ticket !== requestSequence.current) return;
-        setError(null);
-        setItems((prev) => (cursor ? [...prev, ...data.items] : data.items));
-        setNextCursor(data.nextCursor);
-      })
-      .catch((err: unknown) => {
-        if (ticket !== requestSequence.current) return;
-        setError(toErrorMessage(err));
-      })
-      .finally(() => {
-        if (ticket === requestSequence.current) setLoading(false);
-      });
-  }, []);
-
-  const load = (...args: Parameters<typeof fetchRows>) => {
-    setLoading(true);
-    setError(null);
-    return fetchRows(...args);
+  const runSearch = () => {
+    if (!writing.current) {
+      const next = queryInput.trim();
+      if (next === activeQuery) void load();
+      else setActiveQuery(next);
+    }
   };
-
-  useEffect(() => {
-    void fetchRows(activeQuery, statusFilter, null);
-    return () => {
-      requestSequence.current += 1;
-    };
-  }, [fetchRows, activeQuery, statusFilter]);
-
-  const runSearch = () => setActiveQuery(queryInput.trim());
-
   const applyModeration = async (
     position: AdminPosition,
     status: ModerationStatus,
     why?: string
   ) => {
-    setActing(true);
-    setError(null);
-    try {
-      const updated = await mutateEnvelope<AdminPosition>(
-        `/api/admin/crew-positions/${position.id}/moderation`,
-        { status, ...(why ? { reason: why } : {}) }
-      );
-      setItems((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    if (await moderate(position, status, why)) {
       setTakedownTarget(null);
       setReason("");
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setActing(false);
     }
   };
 
@@ -137,7 +76,10 @@ export function CrewPositionModerationPanel() {
       />
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4">
+        <div
+          inert={acting || loading}
+          className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4"
+        >
           <div className="max-w-md flex-1">
             <TextInput
               value={queryInput}
@@ -152,7 +94,13 @@ export function CrewPositionModerationPanel() {
             <IconSearch className="size-4" />
             {loading ? "查询中" : "搜索"}
           </Button>
-          <Select value={statusFilter} onChange={setStatusFilter} title="审核状态">
+          <Select
+            value={statusFilter}
+            onChange={(value) => {
+              if (!writing.current) setStatusFilter(value);
+            }}
+            title="审核状态"
+          >
             {STATUS_FILTERS.map((f) => (
               <option key={f.value} value={f.value}>
                 {f.label}
@@ -228,7 +176,7 @@ export function CrewPositionModerationPanel() {
                           type="button"
                           size="xs"
                           variant="outline"
-                          disabled={acting}
+                          disabled={acting || loading}
                           onClick={() => void applyModeration(position, "ok")}
                         >
                           <IconShieldCheck className="size-3.5" />
@@ -239,8 +187,9 @@ export function CrewPositionModerationPanel() {
                           type="button"
                           size="xs"
                           variant="destructive"
-                          disabled={acting}
+                          disabled={acting || loading}
                           onClick={() => {
+                            if (writing.current) return;
                             setReason("");
                             setTakedownTarget(position);
                           }}
@@ -270,7 +219,7 @@ export function CrewPositionModerationPanel() {
               size="sm"
               variant="outline"
               disabled={loading}
-              onClick={() => void load(activeQuery, statusFilter, nextCursor)}
+              onClick={() => void load(nextCursor)}
             >
               {loading ? "加载中…" : "加载更多"}
             </Button>
@@ -287,7 +236,7 @@ export function CrewPositionModerationPanel() {
             : undefined
         }
         onClose={() => {
-          if (!acting) setTakedownTarget(null);
+          if (!writing.current) setTakedownTarget(null);
         }}
         footer={
           <div className="flex justify-end gap-2">
@@ -295,8 +244,10 @@ export function CrewPositionModerationPanel() {
               type="button"
               size="sm"
               variant="outline"
-              disabled={acting}
-              onClick={() => setTakedownTarget(null)}
+              disabled={acting || loading}
+              onClick={() => {
+                if (!writing.current) setTakedownTarget(null);
+              }}
             >
               取消
             </Button>
@@ -314,7 +265,7 @@ export function CrewPositionModerationPanel() {
           </div>
         }
       >
-        <div className="space-y-1.5">
+        <div inert={acting} className="space-y-1.5">
           <label className="text-[12px] font-medium text-slate-600">下架原因(必填)</label>
           <TextInput
             value={reason}

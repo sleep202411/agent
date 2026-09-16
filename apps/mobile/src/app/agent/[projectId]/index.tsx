@@ -2,7 +2,7 @@ import IconClockPause from "@tabler/icons-react-native/icons/IconClockPause";
 import IconPaperclip from "@tabler/icons-react-native/icons/IconPaperclip";
 import IconX from "@tabler/icons-react-native/icons/IconX";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import {
   ActivityIndicator,
   Platform,
@@ -36,6 +36,8 @@ import { StoryChatHeaderActions } from "@/features/agent/components/story-chat-h
 import { StoryGenerationBatchTranscript } from "@/features/agent/components/story-generation-batch-transcript";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
 import { useAgentOsSession } from "@/features/agent/hooks/use-agent-os-session";
+import { useAgentChatRoute } from "@/features/agent/hooks/use-agent-chat-route";
+import { useAgentTurnSubmission } from "@/features/agent/hooks/use-agent-turn-submission";
 import { useAgentComposerTurn } from "@/features/agent/hooks/use-agent-composer-turn";
 import {
   AgentThreadHydrateLockProvider,
@@ -70,7 +72,7 @@ export default function AgentChatScreen() {
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { requireAuth, isAuthenticated } = useAuthGate();
+  const { requireAuth } = useAuthGate();
   const params = useLocalSearchParams<{
     projectId: string;
     q?: string;
@@ -87,7 +89,6 @@ export default function AgentChatScreen() {
   const workbenchMode = params.mode?.trim() || AGENT_OS_STORY_WORKBENCH_MODE;
   const projectOk = isAgentOsId(projectId);
 
-  const [draft, setDraft] = useState(prefillDraft);
   const live = useAgentOsSession({
     projectId: projectOk ? projectId : "",
     workbenchMode,
@@ -97,21 +98,16 @@ export default function AgentChatScreen() {
   const pendingInput = live.session.pendingUserInput;
   const pendingApproval = live.session.pendingApproval;
 
-  const [previousPrefill, setPreviousPrefill] = useState(prefillDraft);
-  if (previousPrefill !== prefillDraft) {
-    setPreviousPrefill(prefillDraft);
-    if (prefillDraft) setDraft(prefillDraft);
-  }
-
-  useEffect(() => {
-    if (!projectOk || !isAuthenticated) return;
-    if (initialQuery) {
-      void live.send(initialQuery);
-      return;
-    }
-    void live.restore();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot bootstrap
-  }, [projectOk, isAuthenticated, initialQuery, projectId]);
+  const { draft, setDraft, scrollResetKey } = useAgentChatRoute({
+    projectId,
+    chapterId,
+    workbenchMode,
+    configured: projectOk,
+    query: initialQuery,
+    prefill: prefillDraft,
+    send: live.send,
+    restore: live.restore,
+  });
 
   const topPad = STORY_HEADER_CONTENT_GAP;
   const waitingUser =
@@ -154,7 +150,7 @@ export default function AgentChatScreen() {
     (authoringActivityKey != null || live.activity != null) &&
     (!live.assistantStreaming || live.session.status === "waiting_for_external" || waitingUser);
   const composerLocked = isExecuting || restoring || waitingUser;
-  const composerTurn = useAgentComposerTurn(projectId, workbenchMode, composerLocked);
+  const composerTurn = useAgentComposerTurn(projectId, workbenchMode, composerLocked, chapterId);
 
   const {
     scrollRef,
@@ -164,20 +160,24 @@ export default function AgentChatScreen() {
     handleEndVisible,
     revealed,
     hydrateLock,
-  } = useAgentThreadScroll(projectId);
+  } = useAgentThreadScroll(scrollResetKey);
 
+  const submitTurn = useAgentTurnSubmission({
+    identity: JSON.stringify([projectId, chapterId, workbenchMode]),
+    draft,
+    setDraft,
+    getExtras: composerTurn.getSendExtras,
+    commitExtras: composerTurn.commitSendExtras,
+    send: live.send,
+    onStarted: () => scrollToLatest(true),
+  });
   const onSubmit = useCallback(() => {
-    const text = draft.trim();
-    if ((!text && !composerTurn.canSendWithoutText) || composerTurn.uploading) return;
     requireAuth({
       onAuthenticated: () => {
-        const extras = composerTurn.takeSendExtras();
-        setDraft("");
-        scrollToLatest(true);
-        void live.send(text, extras);
+        void submitTurn();
       },
     });
-  }, [composerTurn, draft, live, requireAuth, scrollToLatest]);
+  }, [requireAuth, submitTurn]);
 
   const composerHeightRef = useRef(COMPOSER_BASE_HEIGHT);
   const onComposerLayout = useCallback(

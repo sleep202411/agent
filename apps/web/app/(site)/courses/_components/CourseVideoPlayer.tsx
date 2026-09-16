@@ -85,15 +85,23 @@ export function CourseVideoPlayer({
 
   useEffect(() => {
     return () => {
-      flushSeriesProgress();
+      if (seriesCourseId != null && seriesCourseId > 0 && seriesVideoIds?.length) {
+        recomputePublicCourseProgress(seriesCourseId, seriesVideoIds);
+      }
     };
-    // Intentionally flush latest series progress when leaving the lesson.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only
-  }, []);
+  }, [seriesCourseId, seriesVideoIds]);
 
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const source = JSON.stringify([courseId, stableProgressKey, videoUrl]);
+  const [previousSource, setPreviousSource] = useState(source);
+  if (previousSource !== source) {
+    setPreviousSource(source);
+    setPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
+  }
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   /**
@@ -115,7 +123,7 @@ export function CourseVideoPlayer({
     video.playbackRate = rate;
     setMuted(video.muted || video.volume === 0);
     const metadataDuration = video.duration;
-    setDuration(metadataDuration);
+    setDuration(Number.isFinite(metadataDuration) && metadataDuration > 0 ? metadataDuration : 0);
 
     const storedProgress = readLatestStoredEpisodeProgress(courseId, stableProgressKey);
     if (!storedProgress || !Number.isFinite(metadataDuration) || metadataDuration <= 0) return;
@@ -127,6 +135,8 @@ export function CourseVideoPlayer({
 
   function handleTimeUpdate(event: SyntheticEvent<HTMLVideoElement>) {
     const video = event.currentTarget;
+    if (videoRef.current !== video || !Number.isFinite(video.currentTime) || video.currentTime < 0)
+      return;
     setCurrentTime(video.currentTime);
 
     if (courseId > 0) {
@@ -169,7 +179,10 @@ export function CourseVideoPlayer({
     const video = videoRef.current;
     if (!video) return;
 
-    const nextTime = Number(value);
+    const requested = Number(value);
+    if (!Number.isFinite(requested) || !Number.isFinite(video.duration) || video.duration <= 0)
+      return;
+    const nextTime = Math.min(Math.max(requested, 0), video.duration);
     video.currentTime = nextTime;
     setCurrentTime(nextTime);
   }
@@ -181,10 +194,8 @@ export function CourseVideoPlayer({
     const video = videoRef.current;
     if (!video) return;
 
-    video.currentTime = Math.min(
-      Math.max(video.currentTime + seconds, 0),
-      duration || video.duration
-    );
+    if (!Number.isFinite(video.currentTime)) return;
+    handleSeek(String(video.currentTime + seconds));
   }
 
   /**
@@ -229,7 +240,7 @@ export function CourseVideoPlayer({
       {videoUrl ? (
         <video
           ref={videoRef}
-          key={videoUrl}
+          key={source}
           src={videoUrl}
           poster={posterUrl || undefined}
           className="aspect-video w-full bg-black object-contain lg:aspect-auto lg:min-h-0 lg:flex-1"
@@ -316,7 +327,7 @@ export function CourseVideoPlayer({
             >
               {muted ? <IconVolumeOff className="size-4" /> : <IconVolume className="size-4" />}
             </button>
-            <Menu.Root key={videoUrl}>
+            <Menu.Root key={source}>
               <Menu.Trigger asChild>
                 <button
                   type="button"

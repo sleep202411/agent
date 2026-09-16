@@ -164,3 +164,35 @@ describe("request cancellation and deadlines", () => {
     await expected;
   });
 });
+
+describe("request configuration preservation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each(["request", "upload"] as const)(
+    "preserves query, fragment and all header forms for %s",
+    async (kind) => {
+      for (const headers of [
+        new Headers({ "Accept-Language": "zh-CN", "X-Proof": "proof" }),
+        [
+          ["Accept-Language", "zh-CN"],
+          ["X-Proof", "proof"],
+        ] as [string, string][],
+        { "Accept-Language": "zh-CN", "X-Proof": "proof" },
+      ]) {
+        const fetcher = vi
+          .fn()
+          .mockResolvedValue(new Response(JSON.stringify({ code: 200, data: "ok" })));
+        vi.stubGlobal("fetch", fetcher);
+        const config = { headers, params: { page: 2, search: "a & b", ignored: undefined } };
+        const path = "/api/example?keep=yes&page=1#preview";
+        if (kind === "request") await api.get(path, config);
+        else await api.upload(path, new File(["x"], "file.txt"), "file", config);
+        const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
+        expect(url).toContain("/api/example?keep=yes&page=2&search=a+%26+b#preview");
+        const sent = new Headers(init.headers);
+        expect(sent.get("accept-language")).toBe("zh-CN");
+        expect(sent.get("x-proof")).toBe("proof");
+        expect(sent.has("content-type")).toBe(kind === "request");
+      }
+    }
+  );
+});

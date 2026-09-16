@@ -166,8 +166,17 @@ export interface AiRoutingPolicySnapshot {
   providerCapacity?: AiProviderCapacitySnapshot;
 }
 
+export interface AiExecutionBindingIdentity {
+  deployment: string;
+  canonicalModelId: string;
+  providerAccountId: string;
+  providerBindingId: string;
+  providerEndpointId: string;
+}
+
 export interface AiRoutingSnapshot {
   version: '2026-05-27';
+  executionBindingIdentity?: AiExecutionBindingIdentity;
   routeId: string;
   presetId: string;
   requestedModelId: string;

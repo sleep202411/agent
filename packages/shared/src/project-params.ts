@@ -59,11 +59,17 @@ export function getMissingProjectParams(
 ): ProjectParamKey[] {
   if (!detail) return ["aspectRatioType", "chapterLength", "stylePainting"];
   const missing: ProjectParamKey[] = [];
-  if (!detail.aspectRatioType) missing.push("aspectRatioType");
-  if (typeof detail.chapterLength !== "number" || detail.chapterLength <= 0) {
+  if (typeof detail.aspectRatioType !== "string" || !detail.aspectRatioType.trim())
+    missing.push("aspectRatioType");
+  if (
+    typeof detail.chapterLength !== "number" ||
+    !Number.isFinite(detail.chapterLength) ||
+    detail.chapterLength <= 0
+  ) {
     missing.push("chapterLength");
   }
-  if (!detail.stylePainting) missing.push("stylePainting");
+  if (typeof detail.stylePainting !== "string" || !detail.stylePainting.trim())
+    missing.push("stylePainting");
   return missing;
 }
 

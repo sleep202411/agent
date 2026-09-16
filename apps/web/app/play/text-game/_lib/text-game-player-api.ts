@@ -18,12 +18,13 @@ import { readTextGameSse } from "./text-game-sse";
 
 export const playerTextGameKeys = {
   all: ["player-text-game"] as const,
-  session: (gameId: string, locale: TextGameLocale) =>
-    [...playerTextGameKeys.all, "session", gameId, locale] as const,
+  session: (viewerId: string | null, gameId: string, locale: TextGameLocale) =>
+    [...playerTextGameKeys.all, "session", viewerId, gameId, locale] as const,
 };
 
 export type TextGameSessionStreamHandlers = {
   onSession?: (session: TextGamePlaySession) => void;
+  signal?: AbortSignal;
 };
 
 function streamingAssistant(content = "", createdAt?: string): TextGameMessage {
@@ -44,13 +45,15 @@ function replaceAssistant(
 }
 
 export async function getPlayingTextGameSession(
-  gameId: string
+  gameId: string,
+  signal?: AbortSignal
 ): Promise<TextGamePlaySession | null> {
   const requestedGameId = TextGameIdSchema.parse(gameId);
   const data = await api.get<unknown>(
     `/api/player/text-game/${encodeURIComponent(requestedGameId)}/playing-session`,
-    { timeout: 45_000 }
+    { timeout: 45_000, signal }
   );
+  signal?.throwIfAborted();
   if (data == null) return null;
   const session = TextGamePlaySessionSchema.parse(data);
   assertSessionGame(session, requestedGameId);
@@ -69,6 +72,7 @@ export async function startTextGameSession(
   const input = TextGameStartInputSchema.parse({ locale });
   let session: TextGamePlaySession | null = null;
   let draft = "";
+  let completed = false;
 
   await readTextGameSse(
     `/api/player/text-game/${encodeURIComponent(requestedGameId)}/start/stream`,
@@ -111,6 +115,7 @@ export async function startTextGameSession(
             `Java returned text-adventure session ${done.sessionId} while ${session.sessionId} was requested.`
           );
         }
+        completed = true;
         session = {
           ...session,
           messages: replaceAssistant(session.messages, {
@@ -122,12 +127,15 @@ export async function startTextGameSession(
         };
         handlers?.onSession?.(session);
       }
-    }
+    },
+    handlers?.signal
   );
 
   if (!session) {
     throw new Error("Java closed the text-adventure start stream without session meta.");
   }
+  if (!completed)
+    throw new Error("Java closed the text-adventure start stream without completion.");
   return session;
 }
 
@@ -137,7 +145,8 @@ export async function loadOrStartTextGameSession(
   handlers?: TextGameSessionStreamHandlers
 ): Promise<TextGamePlaySession> {
   return (
-    (await getPlayingTextGameSession(gameId)) ?? startTextGameSession(gameId, locale, handlers)
+    (await getPlayingTextGameSession(gameId, handlers?.signal)) ??
+    startTextGameSession(gameId, locale, handlers)
   );
 }
 
@@ -146,6 +155,7 @@ export async function sendTextGameAction(
   message: string,
   locale: TextGameLocale,
   handlers?: {
+    signal?: AbortSignal;
     onUserMessage?: (message: TextGameMessage) => void;
     onAssistantDelta?: (text: string) => void;
     onAssistantDone?: (message: TextGameMessage) => void;
@@ -154,7 +164,6 @@ export async function sendTextGameAction(
   const requestedSessionId = TextGameSessionIdSchema.parse(sessionId);
   const input = TextGameChatInputSchema.parse({ message, locale });
   let userMessage: TextGameMessage | null = null;
-  let assistantContent = "";
   let assistantMessage: TextGameMessage | null = null;
 
   await readTextGameSse(
@@ -175,7 +184,6 @@ export async function sendTextGameAction(
       if (frame.event === "delta") {
         const text = deltaText(frame.data);
         if (!text) return;
-        assistantContent += text;
         handlers?.onAssistantDelta?.(text);
         return;
       }
@@ -194,7 +202,8 @@ export async function sendTextGameAction(
         };
         handlers?.onAssistantDone?.(assistantMessage);
       }
-    }
+    },
+    handlers?.signal
   );
 
   if (!userMessage || !assistantMessage) {

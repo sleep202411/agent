@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useOnboardingAction } from "@/auth/use-onboarding-action";
 import { clearIsNewUserFlag, completeAuthSheet, useAuth } from "@/auth";
 import { Colors, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTranslations } from "@/i18n";
@@ -25,29 +26,35 @@ export default function InviteCodeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const action = useOnboardingAction("invite-code");
+  const { busy, error } = action;
+  const [previousScope, setPreviousScope] = useState(action.scope);
+  if (previousScope !== action.scope) {
+    setPreviousScope(action.scope);
+    setCode("");
+  }
 
   const canSubmit = code.trim().length > 0 && !busy;
 
   async function finish() {
-    await clearIsNewUserFlag();
-    completeAuthSheet(router);
+    await action.run(
+      () => clearIsNewUserFlag(),
+      () => completeAuthSheet(router),
+      t("auth.errorServer")
+    );
   }
 
   async function handleSubmit() {
     const value = code.trim();
     if (!value) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await auth.submitInviteCode(value);
-      await finish();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("auth.errorInviteCodeInvalid"));
-    } finally {
-      setBusy(false);
-    }
+    await action.run(
+      () => auth.submitInviteCode(value),
+      async (current) => {
+        await clearIsNewUserFlag();
+        if (current()) completeAuthSheet(router);
+      },
+      t("auth.errorInviteCodeInvalid")
+    );
   }
 
   return (
@@ -96,7 +103,7 @@ export default function InviteCodeScreen() {
                 editable={!busy}
                 onChangeText={(value) => {
                   setCode(value);
-                  setError(undefined);
+                  action.clearError();
                 }}
                 placeholder={t("auth.invitePlaceholder")}
                 placeholderTextColor="rgba(255,255,255,0.34)"

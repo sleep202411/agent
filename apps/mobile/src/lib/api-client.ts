@@ -25,6 +25,8 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body" | "headers"> 
   raw?: boolean;
   service?: ApiService;
   timeout?: number;
+  /** Disable automatic GET retries for endpoints that perform an action. */
+  retry?: boolean;
 }
 
 export class ApiRequestError extends Error {
@@ -163,6 +165,37 @@ function isUnauthorizedEnvelope(body: Record<string, unknown>) {
   return body.code === 401 || body.code === "401" || body.code === 302 || body.code === "302";
 }
 
+function abortError() {
+  const error = new Error("Request cancelled");
+  error.name = "AbortError";
+  return error;
+}
+
+function withCancellation<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(abortError());
+    signal.addEventListener("abort", abort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    if (signal.aborted) abort();
+  });
+}
+
+function retryDelay(ms: number, signal?: AbortSignal | null): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+  });
+}
+
 async function request<T>(method: string, path: string, config: ApiRequestConfig = {}): Promise<T> {
   const {
     data,
@@ -173,8 +206,12 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     raw,
     service,
     timeout = 30_000,
+    retry = true,
+    signal: callerSignal,
     ...rest
   } = config;
+
+  if (callerSignal?.aborted) throw abortError();
 
   const bodyKinds = [data !== undefined, form !== undefined, formData !== undefined].filter(
     Boolean
@@ -195,17 +232,20 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     // Java sa-token reads the token from a header named by its tokenName
     // (e.g. `satoken`), NOT from `Authorization: Bearer`. Browsers get away
     // with the cookie; on native we must send the named header explicitly.
-    ...(token ? { [token.name]: token.value } : {}),
+    ...(token ? { [token.name.toLowerCase()]: token.value } : {}),
     ...(isForm
-      ? { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" }
+      ? { "content-type": "application/x-www-form-urlencoded; charset=UTF-8" }
       : data !== undefined
-        ? { "Content-Type": "application/json" }
+        ? { "content-type": "application/json" }
         : {}),
   };
 
   for (const [key, value] of Object.entries(customHeaders ?? {})) {
-    if (value !== undefined) headers[key] = value;
+    if (value !== undefined) headers[key.toLowerCase()] = value;
   }
+
+  // Multipart boundaries belong to the transport, including caller overrides.
+  if (isMultipart) delete headers["content-type"];
 
   const init: RequestInit = {
     method,
@@ -223,13 +263,23 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   }
 
   const url = buildApiUrl(path, { params, service });
-  const attemptFetch = async (): Promise<Response> => {
+  const attemptFetch = async () => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
+    const abort = () => controller.abort();
+    callerSignal?.addEventListener("abort", abort, { once: true });
+    if (callerSignal?.aborted) abort();
+    const timer = setTimeout(abort, timeout);
     try {
-      return await fetch(url, { ...init, signal: controller.signal });
+      if (controller.signal.aborted) throw abortError();
+      const response = await withCancellation(
+        fetch(url, { ...init, signal: controller.signal }),
+        controller.signal
+      );
+      const parsed = await withCancellation(parseResponseBody(response), controller.signal);
+      return { response, ...parsed };
     } finally {
       clearTimeout(timer);
+      callerSignal?.removeEventListener("abort", abort);
     }
   };
 
@@ -240,13 +290,14 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   // the moment the user taps "Allow" — no restart. Mutations are NEVER auto-retried
   // (a network error mid-POST could have reached the server; retrying risks a
   // double submit).
-  const maxAttempts = method === "GET" ? 4 : 1;
-  let response!: Response;
+  const maxAttempts = method === "GET" && retry ? 4 : 1;
+  let result!: Awaited<ReturnType<typeof attemptFetch>>;
   for (let attempt = 1; ; attempt++) {
     try {
-      response = await attemptFetch();
+      result = await attemptFetch();
       break;
     } catch (error) {
+      if (callerSignal?.aborted) throw abortError();
       if (attempt >= maxAttempts) {
         throw new ApiRequestError(
           "NETWORK_ERROR",
@@ -254,14 +305,25 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
           0
         );
       }
-      await new Promise((resolve) => setTimeout(resolve, 800 * 2 ** (attempt - 1)));
+      await retryDelay(800 * 2 ** (attempt - 1), callerSignal);
     }
   }
 
-  const { body, rawBody } = await parseResponseBody(response);
+  if (callerSignal?.aborted) throw abortError();
+  const { response, body, rawBody } = result;
+  const notifyCurrentUnauthorized = () => {
+    const current = tokenProvider?.();
+    if (
+      current?.name.toLowerCase() !== token?.name.toLowerCase() ||
+      current?.value !== token?.value
+    )
+      return;
+    if (token && headers[token.name.toLowerCase()] !== token.value) return;
+    notifyUnauthorized();
+  };
 
   if (!response.ok) {
-    if (response.status === 401) notifyUnauthorized();
+    if (response.status === 401) notifyCurrentUnauthorized();
     throw new ApiRequestError(
       `HTTP_${response.status}`,
       messageFromBody(body, `HTTP ${response.status}`),
@@ -279,7 +341,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   if (hasEnvelope && !isSuccessEnvelope(envelope)) {
     const unauthorized = isUnauthorizedEnvelope(envelope);
-    if (unauthorized) notifyUnauthorized();
+    if (unauthorized) notifyCurrentUnauthorized();
 
     throw new ApiRequestError(
       (envelope.code as number | string | undefined) ?? "UNKNOWN",

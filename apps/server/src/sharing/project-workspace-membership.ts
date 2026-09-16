@@ -85,8 +85,8 @@ export async function removeUnusedProjectOnlyWorkspaceMembership(
   });
   if (!roster) return;
 
-  const [projectMembership, storyMembership] = await Promise.all([
-    tx.projectMember.findFirst({
+  const [projectMembership, storyMembership] = [
+    await tx.projectMember.findFirst({
       where: {
         userId,
         removedAt: null,
@@ -95,7 +95,7 @@ export async function removeUnusedProjectOnlyWorkspaceMembership(
       },
       select: { id: true },
     }),
-    tx.storyProjectMember.findFirst({
+    await tx.storyProjectMember.findFirst({
       where: {
         userId,
         removedAt: null,
@@ -104,7 +104,7 @@ export async function removeUnusedProjectOnlyWorkspaceMembership(
       },
       select: { id: true },
     }),
-  ]);
+  ];
   if (projectMembership || storyMembership) return;
 
   await tx.workspaceMember.update({

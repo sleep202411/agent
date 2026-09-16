@@ -1,3 +1,4 @@
+import { matchesExecutionBinding } from '../../provider-adapter';
 import { Injectable } from '@nestjs/common';
 import type {
   AiModelDefinition,
@@ -48,19 +49,42 @@ export class BailianProviderAdapter implements ProviderAdapter {
     return input;
   }
 
+  async resolveExecutionBinding(
+    modelId: string,
+    input: Record<string, unknown>,
+  ) {
+    const runtime = await this.requireRuntime(modelId, true);
+    const endpoint = this.resolveSubmitEndpoint(runtime, input);
+    return this.catalog.getExecutionBinding(modelId, endpoint);
+  }
+
   async startGeneration(
     modelId: string,
     input: Record<string, unknown>,
     ctx: ProviderGenerationContext,
   ): Promise<StartResult> {
     void ctx;
-    const runtime = await this.requireRuntime(modelId);
+    const runtime = await this.requireRuntime(modelId, true);
     const payload = mapBailianProviderRequest(runtime, input);
     // Multi-binding video canonicals (e.g. Wan 2.7) route per mode to a distinct
     // upstream model id. Resolve it from the runtime's mode->endpoint map and
     // override the request body's `model` so the right endpoint is called; the
     // resolved endpoint is what we encode into providerJobId for poll/cancel.
     const endpoint = this.resolveSubmitEndpoint(runtime, input);
+    if (
+      ctx.expectedExecutionBinding &&
+      !matchesExecutionBinding(
+        ctx.expectedExecutionBinding,
+        await this.catalog.getExecutionBinding(modelId, endpoint),
+      )
+    ) {
+      throw bailianError(
+        'VALIDATION_ERROR',
+        'The queued generation binding changed before provider submission.',
+        'This model configuration changed while the job was queued. Submit a new request.',
+      );
+    }
+
     if (endpoint !== runtime.endpointId) payload.model = endpoint;
     if (runtime.callMode === 'sync') {
       return this.generateSync(runtime, payload);
@@ -223,15 +247,26 @@ export class BailianProviderAdapter implements ProviderAdapter {
   ): string {
     if (runtime.type === 'video' && runtime.modeEndpoints) {
       const mode = videoGenerationModeFromInput(input);
-      return runtime.modeEndpoints[mode] ?? runtime.endpointId;
+      const endpoint = runtime.modeEndpoints[mode];
+      if (!endpoint && runtime.strictModeRouting) {
+        throw bailianError(
+          'VALIDATION_ERROR',
+          `The selected Alibaba video model does not support ${mode}.`,
+          'Choose a model that supports these inputs.',
+        );
+      }
+      return endpoint ?? runtime.endpointId;
     }
     return runtime.endpointId;
   }
 
   private async requireRuntime(
     modelIdOrEndpointId: string,
+    forSubmission = false,
   ): Promise<BailianModelRuntimeConfig> {
-    const runtime = await this.catalog.getRuntimeConfig(modelIdOrEndpointId);
+    const runtime = await this.catalog.getRuntimeConfig(modelIdOrEndpointId, {
+      forSubmission,
+    });
     if (!runtime) {
       throw bailianError(
         'VALIDATION_ERROR',

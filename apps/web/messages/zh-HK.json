@@ -2394,6 +2394,7 @@
     "missingRequired": "標題與簡介為必填項。",
     "publishNeedsTier": "發布需要至少開啟一個檔位。",
     "tierIncomplete": "「{tier}」檔缺少{field}。請補齊，或關閉該檔。",
+    "tierInvalidNumber": "「{tier}」檔的{field}無效。請輸入有效值，或關閉該檔。",
     "tierField": {
       "title": "檔位名稱",
       "description": "檔位描述"
@@ -4295,6 +4296,11 @@
     "taskCompleted": "已完成",
     "taskFailed": "失敗",
     "taskCancelled": "已取消",
+    "tasksTitle": "任務",
+    "tasksDescription": "生成、Agent 與 Story 製作任務",
+    "taskAgent": "Agent 任務",
+    "taskProduction": "製作任務",
+    "taskWaiting": "等待操作",
     "taskImage": "生成圖片",
     "taskVideo": "生成影片",
     "taskAudio": "生成音訊",
@@ -5062,17 +5068,6 @@
       "dateInput": "日期或時間段",
       "dateInputPlaceholder": "例如 2027-05、2027-Q4 或 2027-05-20",
       "labels": "標籤",
-      "searchStudioProjects": "搜尋工作區和項目…",
-      "loadingStudioProjects": "正在載入項目…",
-      "noStudioProjects": "沒有符合的項目。",
-      "unlinkStudioProject": "解除 Studio 項目關聯",
-      "workspaceHasNoProjects": "這個工作區暫無項目。",
-      "projectLinkFailed": "無法關聯 Studio 項目。",
-      "projectOptionsFailed": "無法載入項目。",
-      "projectDisabled": {
-        "alreadyLinked": "已關聯到劇組「{crew}」。",
-        "insufficient_permission": "需要項目編輯權限才能關聯。"
-      },
       "addLabel": "加入標籤",
       "addAnotherLabel": "繼續加入標籤",
       "searchLabels": "搜尋標籤…",
@@ -5803,7 +5798,6 @@
   "crewWorkbench": {
     "projectUsage": "Studio 項目消耗",
     "header": "劇組工具列",
-    "linkCanvas": "連結畫布",
     "globalNavigation": "劇組工作台導覽",
     "crewSwitcherNavigation": "切換劇組",
     "allCrews": "全部劇組",
@@ -7778,6 +7772,7 @@
     "proposalSentToast": "報價已傳送。",
     "proposalSendFailed": "傳送報價失敗。",
     "proposalPriceInvalid": "請填寫有效價格。",
+    "proposalNumberInvalid": "請為{field}輸入允許範圍內的整數。",
     "proposalScopePlaceholder": "一行一條，列出包含內容。",
     "proposalScopeHint": "會展示在報價卡片上，寫具體一點。",
     "proposalNoteLabel": "備註（可選）",
@@ -9970,6 +9965,9 @@
     "normal": "正常（1×）"
   },
   "crewWorkspaceLink": {
+    "legacyProject": "項目：{name}",
+    "legacyDescription": "目前僅關聯 {name}，現有劇組素材存取仍限於此畫布項目。選擇您擁有的工作區以取代此關聯，並與該工作區內的項目共享。",
+    "unlinkProject": "取消項目關聯",
     "link": "關聯工作區",
     "description": "僅劇組管理員可關聯自己擁有的工作區。其中的專案可使用共享劇組資產；受限資料夾保留原有權限。",
     "failed": "工作區關聯儲存失敗。",

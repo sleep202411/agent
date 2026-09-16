@@ -161,12 +161,12 @@ interface UserInfoEnvelope {
   level?: UserCertLevelWire[];
 }
 
-export const getUserInfo = async (): Promise<UserInfoResolved> => {
+export const getUserInfo = async (signal?: AbortSignal): Promise<UserInfoResolved> => {
   // Backend response shape is `{ code, msg, info, level }`. The shared
   // api-client unwrap defaults to `body.data ?? body.info ?? ...` which
   // would silently drop `level`. Use `raw: true` to keep the full
   // envelope so we can surface both info and level downstream.
-  const env_ = await api.get<UserInfoEnvelope>("/user/query/user/info", { raw: true });
+  const env_ = await api.get<UserInfoEnvelope>("/user/query/user/info", { raw: true, signal });
   const info = env_?.info ?? ({} as UserInfo);
   const rawLevels = Array.isArray(env_?.level) ? env_.level : [];
   const avatarBase = env.USER_BASE_URL || env.OSS_BASE_URL;

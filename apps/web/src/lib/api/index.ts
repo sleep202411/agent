@@ -1,11 +1,12 @@
 /**
  * API Client exports
  *
- * Single unified client for all backend calls:
+ * Client for Java-style success envelopes, including compatible Nest endpoints:
  * - Java backend: backendApi.post("/api/user/...", { data })
- * - Nest.js backend: backendApi.post("/aurora/api/...", { data })
+ * - Compatible Nest endpoint: backendApi.post("/aurora/viewer-assistance", { data })
  *
- * Both go through Vite / TanStack Start proxy for same-origin requests.
+ * Requests use the Next.js same-origin routes. Plain-JSON Nest endpoints need
+ * their scoped transport; raw mode still requires a success envelope marker.
  */
 
 export { api as backendApi, ApiRequestError } from "./api-client";

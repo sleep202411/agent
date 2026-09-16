@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { PrismaService } from '../infra/db/db.module';
@@ -18,7 +19,7 @@ integration('IP release links (local PostgreSQL)', () => {
     { label: 'Published platform', url: 'https://example.com/release' },
   ];
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(

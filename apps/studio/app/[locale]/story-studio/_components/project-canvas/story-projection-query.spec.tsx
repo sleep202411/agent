@@ -14,15 +14,17 @@ import { useLastDefinedData } from "./use-last-defined-data";
 
 interface HarnessProps {
   chapterId?: string;
-  queryFn: () => Promise<string>;
+  viewerId?: string;
+  queryFn: (context: { signal: AbortSignal }) => Promise<string>;
 }
 
-function Harness({ chapterId = "chapter-1", queryFn }: HarnessProps) {
+function Harness({ chapterId = "chapter-1", viewerId = "alice", queryFn }: HarnessProps) {
   const query = useQuery(
     storyProjectionQueryOptions({
       kind: "workbench",
       projectId: "project-1",
       chapterId,
+      viewerId,
       queryFn,
     })
   );
@@ -170,11 +172,52 @@ describe("Story projection query lifecycle", () => {
     expect(writable()).toBe(false);
   });
 
+  it("drops retained content and capabilities on account replacement", async () => {
+    await render({ queryFn: async () => "alice-private" });
+    await act(async () => flush());
+    expect(value()).toBe("alice-private");
+    const pending = deferred<string>();
+    await render({ viewerId: "bob", queryFn: () => pending.promise });
+    expect(value()).toBe("none");
+    expect(writable()).toBe(false);
+    await act(async () => {
+      pending.resolve("bob-private");
+      await flush();
+    });
+    expect(value()).toBe("bob-private");
+    expect(writable()).toBe(true);
+  });
+
+  it("cancels abandoned projections without admitting their delayed results", async () => {
+    const pending = deferred<string>();
+    let signal!: AbortSignal;
+    await render({
+      queryFn: (context) => {
+        signal = context.signal;
+        return pending.promise;
+      },
+    });
+    const replacement = deferred<string>();
+    await render({ viewerId: "bob", queryFn: () => replacement.promise });
+    expect(signal.aborted).toBe(true);
+    await act(async () => {
+      pending.resolve("abandoned");
+      await flush();
+    });
+    expect(value()).toBe("none");
+    expect(writable()).toBe(false);
+    await act(async () => {
+      replacement.resolve("replacement");
+      await flush();
+    });
+    expect(value()).toBe("replacement");
+  });
+
   async function render(props: HarnessProps) {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <Harness {...props} />
+          <Harness key={props.viewerId ?? "alice"} {...props} />
         </QueryClientProvider>
       );
       await Promise.resolve();

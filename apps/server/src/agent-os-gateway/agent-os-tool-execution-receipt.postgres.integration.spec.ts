@@ -1,3 +1,5 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
+import { ensureStoryVisualStyleFixture } from '../../test/story-visual-style-fixture';
 import { ConflictException } from '@nestjs/common';
 import {
   StudioDocumentStatus,
@@ -8,9 +10,7 @@ import {
   AGENT_OS_CHECKPOINT_EXECUTION_LOCK_SEED,
   agentOsCheckpointExecutionLockKey,
 } from '@repo/shared';
-import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
 import pg from 'pg';
 import { AgentOsRunJournalService } from '../agent-os-journal/agent-os-run-journal.service';
 import { DocumentsService } from '../documents/documents.service';
@@ -26,16 +26,9 @@ import type {
 } from './capabilities/capability-handler';
 import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
 
-loadEnv({
-  path: resolve(__dirname, '../../.env'),
-  override: false,
-  quiet: true,
-});
-
 const INTEGRATION_ENABLED =
+  Boolean(process.env.TASK01_TEST_DATABASE_URL) ||
   process.env.AGENT_OS_TOOL_RECEIPT_POSTGRES_INTEGRATION === '1';
-const DEFAULT_LOCAL_DATABASE_URL =
-  'postgres://fizzdragon:fizzdragon@localhost:5433/fizzdragon';
 const describePostgres = INTEGRATION_ENABLED ? describe : describe.skip;
 const { Client } = pg;
 
@@ -43,18 +36,22 @@ describePostgres(
   'AgentOsToolExecutionReceiptService PostgreSQL integration',
   () => {
     const databaseUrl =
-      process.env.DATABASE_URL?.trim() || DEFAULT_LOCAL_DATABASE_URL;
+      process.env.TASK01_TEST_DATABASE_URL ??
+      process.env.DATABASE_URL?.trim() ??
+      '';
     let prisma: ReturnType<typeof buildPrisma>;
     const runIds = new Set<string>();
     const runConversations = new Map<string, string>();
     const workspaceIds = new Set<string>();
     const platformProjectIds = new Set<string>();
     const storyProjectIds = new Set<string>();
+    const projectActors = new Map<string, string>();
 
     beforeAll(async () => {
       assertDedicatedLocalPostgres(databaseUrl);
-      prisma = buildPrisma();
+      prisma = buildPrisma(databaseUrl);
       await prisma.$connect();
+      await ensureStoryVisualStyleFixture(prisma);
       await assertReceiptMigrationPresent(prisma);
     });
 
@@ -82,6 +79,7 @@ describePostgres(
       runIds.clear();
       runConversations.clear();
       storyProjectIds.clear();
+      projectActors.clear();
       platformProjectIds.clear();
       workspaceIds.clear();
     });
@@ -575,6 +573,8 @@ describePostgres(
         },
       });
       storyProjectIds.add(storyProject.id);
+      projectActors.set(storyProject.id, actorId);
+      projectActors.set(platformProject.id, actorId);
       return {
         actorId,
         workspaceId: workspace.id,
@@ -678,7 +678,9 @@ describePostgres(
     }
 
     function actorForProject(projectId: string): string {
-      return `receipt-${projectId.slice(0, 24)}`;
+      const actorId = projectActors.get(projectId);
+      if (!actorId) throw new Error(`Missing fixture actor for ${projectId}`);
+      return actorId;
     }
 
     function receiptService(client: ReturnType<typeof buildPrisma>) {
@@ -874,17 +876,19 @@ async function withCheckpointExecutionLock<T>(
 }
 
 function assertDedicatedLocalPostgres(rawUrl: string): void {
-  const url = new URL(rawUrl);
+  const url = postgresFixtureUrl(rawUrl);
   if (
     !['postgres:', 'postgresql:'].includes(url.protocol) ||
-    !['localhost', '127.0.0.1', '::1'].includes(url.hostname) ||
-    url.port !== '5433'
+    !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
+    !(
+      (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+      (url.port === '55439' && url.pathname === '/task01')
+    )
   ) {
     throw new Error(
-      'Refusing Agent OS receipt integration tests: DATABASE_URL must target PostgreSQL on localhost:5433.',
+      'Explicitly selected named loopback test database required.',
     );
   }
-  process.env.DATABASE_URL = rawUrl;
 }
 
 async function assertReceiptMigrationPresent(

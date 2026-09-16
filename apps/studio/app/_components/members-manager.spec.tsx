@@ -7,11 +7,19 @@ import { ApiRequestError } from "@/lib/api";
 import { MembersManager } from "./members-manager";
 
 const api = vi.hoisted(() => ({
+  viewerId: "a",
+  createInvite: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
   list: vi.fn(),
   realtime: vi.fn(),
   add: vi.fn(),
   invites: vi.fn(),
 }));
+vi.mock("@/app/_components/auth-provider", () => ({
+  useAuth: () => ({ user: { id: api.viewerId } }),
+}));
+vi.mock("sonner", () => ({ toast: { success: api.success, error: api.error } }));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/lib/canvas-authoring/assets-realtime-kernel", () => ({
   getAssetsRealtimeKernel: api.realtime,
@@ -21,6 +29,7 @@ vi.mock("@/lib/collab/sharing-api", async (original) => ({
   listMembers: api.list,
   addMember: api.add,
   listInvites: api.invites,
+  createInvite: api.createInvite,
 }));
 
 describe("MembersManager project access", () => {
@@ -29,10 +38,14 @@ describe("MembersManager project access", () => {
   let client: QueryClient;
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    api.viewerId = "a";
+    api.createInvite.mockReset();
+    api.success.mockReset();
+    api.error.mockReset();
     api.list.mockReset();
     api.realtime.mockReset();
     api.add.mockReset();
-    api.invites.mockResolvedValue([]);
+    api.invites.mockReset().mockResolvedValue([]);
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     container = document.createElement("div");
     document.body.append(container);
@@ -47,13 +60,13 @@ describe("MembersManager project access", () => {
     act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
-  const render = async () => {
+  const render = async (canManage = false) => {
     await act(async () =>
       root.render(
         <QueryClientProvider client={client}>
           <MembersManager
             scope={{ kind: "project", id: "canvas", name: "Canvas" }}
-            canManage={false}
+            canManage={canManage}
           />
         </QueryClientProvider>
       )
@@ -88,7 +101,10 @@ describe("MembersManager project access", () => {
     expect(container.textContent).toContain("Collaborator");
     expect(container.querySelector('[role="alert"]')).toBeNull();
     expect(container.querySelector("form")).toBeNull();
-    expect(api.list).toHaveBeenLastCalledWith({ kind: "project", id: "canvas", name: "Canvas" });
+    expect(api.list).toHaveBeenLastCalledWith(
+      { kind: "project", id: "canvas", name: "Canvas" },
+      expect.any(AbortSignal)
+    );
     expect(api.realtime).not.toHaveBeenCalled();
   });
   it("shows an empty member list as empty, not loading", async () => {
@@ -139,5 +155,146 @@ describe("MembersManager project access", () => {
     expect(client.getQueryState(["story-studio", "workbench", "other-story"])?.isInvalidated).toBe(
       false
     );
+  });
+  it("isolates roster caches and cancels pending reads on account change", async () => {
+    api.list.mockImplementation(() => new Promise(() => {}));
+    api.invites.mockImplementation(() => new Promise(() => {}));
+    await render(true);
+    const oldRoster = api.list.mock.calls[0][1];
+    const oldInvites = api.invites.mock.calls[0][1];
+    api.viewerId = "b";
+    api.list.mockResolvedValue([]);
+    api.invites.mockResolvedValue([]);
+    await render(true);
+    expect(oldRoster.aborted).toBe(true);
+    expect(oldInvites.aborted).toBe(true);
+    expect(api.list).toHaveBeenCalledTimes(2);
+    expect(
+      client
+        .getQueryCache()
+        .findAll()
+        .filter((q) => q.queryKey[0] === "share-members")
+        .map((q) => q.queryKey.at(-1))
+    ).toEqual(["a", "b"]);
+  });
+  const fillAccount = async (value: string) => {
+    const input = container.querySelector<HTMLInputElement>(
+      'input[placeholder="addByEmailOrPhone"]'
+    )!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  };
+  const submit = () =>
+    container
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  it("guards rapid add submissions and retains failed drafts for retry", async () => {
+    api.list.mockResolvedValue([]);
+    let reject!: (error: Error) => void;
+    api.add
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, r) => {
+            reject = r;
+          })
+      )
+      .mockResolvedValue({ nickname: "Accepted" });
+    await render(true);
+    await fillAccount("member@example.test");
+    await act(async () => {
+      submit();
+      submit();
+    });
+    expect(api.add).toHaveBeenCalledTimes(1);
+    await act(async () => reject(new Error("Retry this member")));
+    expect(api.error).toHaveBeenCalledWith("Retry this member");
+    expect(
+      container.querySelector<HTMLInputElement>('input[placeholder="addByEmailOrPhone"]')?.value
+    ).toBe("member@example.test");
+    await act(async () => {
+      submit();
+    });
+    await settle();
+    expect(api.add).toHaveBeenCalledTimes(2);
+    expect(api.success).toHaveBeenCalledTimes(1);
+  });
+  it("locks member and invite draft controls during a write and restores retry after failure", async () => {
+    api.list.mockResolvedValue([]);
+    let reject!: (error: Error) => void;
+    api.add.mockImplementation(
+      () =>
+        new Promise((_, fail) => {
+          reject = fail;
+        })
+    );
+    await render(true);
+    await fillAccount("member@example.test");
+    await act(async () => {
+      submit();
+    });
+    const account = container.querySelector<HTMLInputElement>(
+      'input[placeholder="addByEmailOrPhone"]'
+    )!;
+    expect(account.disabled).toBe(true);
+    expect([...container.querySelectorAll("select")].every((select) => select.disabled)).toBe(true);
+    await act(async () => reject(new Error("Please retry")));
+    expect(account.disabled).toBe(false);
+    expect(account.value).toBe("member@example.test");
+    expect([...container.querySelectorAll("select")].every((select) => !select.disabled)).toBe(
+      true
+    );
+    expect(api.error).toHaveBeenCalled();
+  });
+  it("ignores an old add result after switching accounts and preserves replacement drafts", async () => {
+    api.list.mockResolvedValue([]);
+    let resolve!: (value: { nickname: string }) => void;
+    api.add.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        })
+    );
+    await render(true);
+    await fillAccount("old@example.test");
+    await act(async () => {
+      submit();
+    });
+    const requestSignal = api.add.mock.calls.at(-1)![3] as AbortSignal;
+    api.viewerId = "b";
+    await render(true);
+    expect(requestSignal.aborted).toBe(true);
+    await fillAccount("replacement@example.test");
+    await act(async () => resolve({ nickname: "Old member" }));
+    expect(api.success).not.toHaveBeenCalled();
+    expect(
+      container.querySelector<HTMLInputElement>('input[placeholder="addByEmailOrPhone"]')?.value
+    ).toBe("replacement@example.test");
+  });
+  it("discards invite results after management permission is withdrawn", async () => {
+    api.list.mockResolvedValue([]);
+    let resolve!: (value: { inviteId: string; token: string }) => void;
+    api.createInvite.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        })
+    );
+    await render(true);
+    const button = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("createLink")
+    )!;
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+    expect(api.createInvite).toHaveBeenCalledTimes(1);
+    const inviteSignal = api.createInvite.mock.calls.at(-1)![3] as AbortSignal;
+    await render(false);
+    expect(inviteSignal.aborted).toBe(true);
+    await act(async () => resolve({ inviteId: "old", token: "private-old-token" }));
+    expect(container.textContent).not.toContain("private-old-token");
+    expect(api.success).not.toHaveBeenCalled();
   });
 });

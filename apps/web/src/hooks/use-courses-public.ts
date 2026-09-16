@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import {
@@ -183,10 +184,11 @@ export function readPublicCourseProgress(courseId: number, episodeCount?: number
 }
 
 export function usePublicCourseList(searchQuery = "") {
+  const { user } = useCurrentUser();
   const locale = useLocale() as Locale;
   const { data, isLoading, error } = useQuery({
-    queryKey: ["public-courses", locale],
-    queryFn: () => listPublicCourses(locale),
+    queryKey: ["public-courses", locale, user?.id ?? "guest"],
+    queryFn: ({ signal }) => listPublicCourses(locale, signal),
   });
 
   const courses = useMemo(() => (data ?? []).map(toCard), [data]);
@@ -199,14 +201,24 @@ export function usePublicCourseList(searchQuery = "") {
 }
 
 export function usePublicCourseDetail(courseIdParam: string | undefined) {
+  const { user } = useCurrentUser();
   const locale = useLocale() as Locale;
   const courseId = Number(courseIdParam);
-  const validId = Number.isFinite(courseId) && courseId > 0 ? courseId : null;
-  const [selectedVideoId, setSelectedVideoId] = useState<number | null>(null);
+  const validId = Number.isSafeInteger(courseId) && courseId > 0 ? courseId : null;
+  const scope = JSON.stringify([user?.id ?? null, validId, locale]);
+  const activeScope = useRef<string | null>(scope);
+  useLayoutEffect(() => {
+    activeScope.current = scope;
+    return () => {
+      if (activeScope.current === scope) activeScope.current = null;
+    };
+  }, [scope]);
+  const [selection, setSelection] = useState<{ scope: string; id: number } | null>(null);
+  const selectedVideoId = selection?.scope === scope ? selection.id : null;
 
   const detailQuery = useQuery({
-    queryKey: ["public-course", validId, locale],
-    queryFn: () => getPublicCourse(validId!, locale),
+    queryKey: ["public-course", validId, locale, user?.id ?? "guest"],
+    queryFn: ({ signal }) => getPublicCourse(validId!, locale, signal),
     enabled: validId != null,
   });
 
@@ -237,8 +249,8 @@ export function usePublicCourseDetail(courseIdParam: string | undefined) {
   }, [validId, currentVideo]);
 
   const playQuery = useQuery({
-    queryKey: ["public-course-play", currentVideo?.id, locale],
-    queryFn: () => getPublicCoursePlayUrl(currentVideo!.id, locale),
+    queryKey: ["public-course-play", validId, currentVideo?.id, locale, user?.id ?? "guest"],
+    queryFn: ({ signal }) => getPublicCoursePlayUrl(currentVideo!.id, locale, signal),
     enabled: currentVideo?.id != null,
   });
 
@@ -261,7 +273,8 @@ export function usePublicCourseDetail(courseIdParam: string | undefined) {
   }, [course, validId, videos, currentVideo?.id, currentVideo?.coverUrl, playQuery.data]);
 
   function setCurrentVideo(videoId: number) {
-    setSelectedVideoId(videoId);
+    if (activeScope.current !== scope || !videos.some((video) => video.id === videoId)) return;
+    setSelection({ scope, id: videoId });
   }
 
   return {

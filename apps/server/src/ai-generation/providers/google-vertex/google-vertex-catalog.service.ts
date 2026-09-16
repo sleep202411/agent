@@ -1,3 +1,4 @@
+import { providerBindingAdmissionEligible } from '../../provider-catalog-eligibility';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
@@ -26,6 +27,7 @@ import {
 interface GoogleVertexCatalogCache {
   expiresAt: number;
   models: AiModelDefinition[];
+  lookupModels: AiModelDefinition[];
   runtimeById: Map<string, GoogleVertexRuntimeConfig>;
 }
 
@@ -33,6 +35,7 @@ interface GoogleVertexCatalogCache {
 export class GoogleVertexCatalogService {
   private readonly logger = new Logger(GoogleVertexCatalogService.name);
   private cache: GoogleVertexCatalogCache | null = null;
+  private cacheRead: Promise<GoogleVertexCatalogCache> | null = null;
 
   constructor(
     private readonly configService: GoogleVertexConfigService,
@@ -44,7 +47,7 @@ export class GoogleVertexCatalogService {
   }
 
   async getModel(modelId: string): Promise<AiModelDefinition | null> {
-    const models = (await this.getCache()).models;
+    const models = (await this.getCache()).lookupModels;
     return (
       models.find(
         (model) =>
@@ -57,29 +60,50 @@ export class GoogleVertexCatalogService {
 
   async getRuntimeConfig(
     modelId: string,
+    options?: { forSubmission?: boolean },
   ): Promise<GoogleVertexRuntimeConfig | null> {
+    if (options?.forSubmission && !(await this.getModel(modelId))) return null;
     return (await this.getCache()).runtimeById.get(modelId) ?? null;
   }
 
   private async getCache(): Promise<GoogleVertexCatalogCache> {
     if (this.cache && this.cache.expiresAt > Date.now()) return this.cache;
-    const entries = await this.dbRuntimeConfigs();
+    if (this.cacheRead) return this.cacheRead;
+    const pending = this.loadCache().finally(() => {
+      if (this.cacheRead === pending) this.cacheRead = null;
+    });
+    this.cacheRead = pending;
+    return pending;
+  }
+
+  private async loadCache(): Promise<GoogleVertexCatalogCache> {
+    const entries = (await this.dbRuntimeConfigs()).sort(
+      (a, b) => Number(b.admissionEligible) - Number(a.admissionEligible),
+    );
     const runtimeById = new Map<string, GoogleVertexRuntimeConfig>();
-    const models = entries.map((entry) => {
-      const model = toGoogleVertexModelDefinition({
-        config: entry.runtime,
-        source: 'google-vertex-config',
-        ops: entry.ops,
-      });
-      for (const key of [
-        model.id,
-        model.deployment,
-        entry.runtime.endpointId,
-        `google-vertex/${entry.runtime.endpointId}`,
-      ]) {
-        runtimeById.set(key, entry.runtime);
-      }
-      return model;
+    const seenModelIds = new Set<string>();
+    const lookupModels = entries
+      .map((entry) => {
+        const model = toGoogleVertexModelDefinition({
+          config: entry.runtime,
+          source: 'google-vertex-config',
+          ops: entry.ops,
+        });
+        for (const key of [
+          model.id,
+          model.deployment,
+          entry.runtime.endpointId,
+          `google-vertex/${entry.runtime.endpointId}`,
+        ]) {
+          if (!runtimeById.has(key)) runtimeById.set(key, entry.runtime);
+        }
+        return model;
+      })
+      .filter((_model, index) => entries[index].admissionEligible);
+    const models = lookupModels.filter((model) => {
+      if (seenModelIds.has(model.id)) return false;
+      seenModelIds.add(model.id);
+      return true;
     });
 
     if (this.configService.config.enabled && entries.length === 0) {
@@ -90,6 +114,7 @@ export class GoogleVertexCatalogService {
     this.cache = {
       expiresAt: Date.now() + this.configService.config.catalogRefreshMs,
       models,
+      lookupModels,
       runtimeById,
     };
     return this.cache;
@@ -158,6 +183,7 @@ export class GoogleVertexCatalogService {
         outputPolicy: row.canonicalModel.outputPolicy as AiJsonValue,
       });
       return {
+        admissionEligible: providerBindingAdmissionEligible(row),
         runtime,
         ops: {
           canonicalModelId: row.canonicalModelId,
@@ -178,6 +204,7 @@ export class GoogleVertexCatalogService {
 }
 
 interface GoogleVertexRuntimeEntry {
+  admissionEligible: boolean;
   runtime: GoogleVertexRuntimeConfig;
   ops: NonNullable<AiModelDefinition['ops']>;
 }

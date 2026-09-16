@@ -102,7 +102,7 @@ export const CANVAS_TOOL_RISK = {
 } as const satisfies Record<string, RiskLevel>;
 
 export function riskForCanvasTool(toolId: string): RiskLevel {
-  if (toolId in CANVAS_TOOL_RISK) {
+  if (Object.hasOwn(CANVAS_TOOL_RISK, toolId)) {
     return CANVAS_TOOL_RISK[toolId as keyof typeof CANVAS_TOOL_RISK];
   }
   return "critical";

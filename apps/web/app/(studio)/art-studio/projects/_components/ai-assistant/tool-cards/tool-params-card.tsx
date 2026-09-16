@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   IconChevronLeft,
   IconChevronRight,
@@ -12,7 +12,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldLabel } from "@/components/ui/field";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useAppSelector } from "@/src/store";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { fetchProjectDictionaries } from "@/src/lib/project-dictionaries";
 
 /**
@@ -94,7 +96,15 @@ interface ToolParamsCardProps {
   disabled?: boolean;
 }
 
-export function ToolParamsCard({
+export function ToolParamsCard(props: ToolParamsCardProps) {
+  const { user } = useCurrentUser();
+  const projectId = useAppSelector((state) => state.project.currentProjectId);
+  return (
+    <ScopedToolParamsCard key={JSON.stringify([user?.id, projectId, props.fields])} {...props} />
+  );
+}
+
+function ScopedToolParamsCard({
   title,
   description,
   fields,
@@ -103,6 +113,10 @@ export function ToolParamsCard({
   disabled = false,
 }: ToolParamsCardProps) {
   const t = useTranslations("ai");
+  const locale = useLocale();
+  const submittedRef = useRef(false);
+  const [submitted, setSubmitted] = useState(false);
+  const controlsDisabled = disabled || submitted;
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<Record<string, string | number>>(() =>
     Object.fromEntries(fields.map((f) => [f.key, f.value]))
@@ -131,10 +145,10 @@ export function ToolParamsCard({
   useEffect(() => {
     const needsStyleDict = fields.some((f) => f.key === "stylePainting");
     if (!needsStyleDict) return;
-    let cancelled = false;
-    void fetchProjectDictionaries()
+    const controller = new AbortController();
+    void fetchProjectDictionaries(controller.signal)
       .then((dicts) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         const styleOpts: ParamFieldOption[] = dicts.styleOptions.map((s) => ({
           label: s.info || s.id,
           value: s.id,
@@ -144,14 +158,14 @@ export function ToolParamsCard({
         }
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         // Soft-fail — LLM's fallback options still render.
-        // eslint-disable-next-line no-console
         console.warn("[ToolParamsCard] load style dictionary failed:", err);
       });
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [fields]);
+  }, [fields, locale]);
 
   // Merge dictionary-supplied options into the field spec (override LLM's
   // placeholder when dict loaded successfully).
@@ -190,20 +204,45 @@ export function ToolParamsCard({
     return out;
   };
 
-  const handleNext = () => {
-    if (isLastStep) {
-      onSubmit(values, buildDisplayLabels(values));
-    } else {
-      setStep((s) => s + 1);
+  const complete = (callback: () => void) => {
+    if (controlsDisabled || submittedRef.current) return;
+    submittedRef.current = true;
+    setSubmitted(true);
+    let completed = false;
+    try {
+      callback();
+      completed = true;
+    } finally {
+      if (!completed) {
+        submittedRef.current = false;
+        setSubmitted(false);
+      }
     }
   };
-
+  const finish = (finalValues: Record<string, string | number>) =>
+    complete(() => onSubmit(finalValues, buildDisplayLabels(finalValues)));
+  const handleDismiss = () => {
+    if (onDismiss) complete(onDismiss);
+  };
+  const handleNext = () => {
+    if (controlsDisabled || submittedRef.current || !currentField) return;
+    if (isLastStep) finish(values);
+    else setStep((value) => value + 1);
+  };
   const handlePrev = () => {
-    if (step > 0) setStep((s) => s - 1);
+    if (!controlsDisabled && !submittedRef.current && step > 0) setStep((value) => value - 1);
   };
 
   return (
-    <div>
+    <div
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && onDismiss) {
+          event.preventDefault();
+          event.stopPropagation();
+          handleDismiss();
+        }
+      }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 pt-3 pb-1">
         <div className="min-w-0 flex-1">
@@ -223,18 +262,18 @@ export function ToolParamsCard({
           <button
             type="button"
             onClick={handlePrev}
-            disabled={step === 0}
+            disabled={controlsDisabled || step === 0}
             className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-white/8 hover:text-foreground disabled:opacity-30"
           >
             <IconChevronLeft className="size-3.5" />
           </button>
           <span className="min-w-10 text-center text-[11px] text-muted-foreground/50">
-            {step + 1} / {totalSteps}
+            {currentField ? step + 1 : 0} / {totalSteps}
           </span>
           <button
             type="button"
             onClick={handleNext}
-            disabled={isLastStep}
+            disabled={controlsDisabled || isLastStep || !currentField}
             className="flex size-6 items-center justify-center rounded-md text-muted-foreground/60 transition-colors hover:bg-white/8 hover:text-foreground disabled:opacity-30"
           >
             <IconChevronRight className="size-3.5" />
@@ -242,8 +281,8 @@ export function ToolParamsCard({
           {onDismiss && (
             <button
               type="button"
-              onClick={onDismiss}
-              disabled={disabled}
+              onClick={handleDismiss}
+              disabled={controlsDisabled}
               className="flex size-7 items-center justify-center rounded-lg text-muted-foreground/60 transition-colors hover:bg-white/8 hover:text-foreground"
             >
               <IconX className="size-3.5" />
@@ -256,33 +295,35 @@ export function ToolParamsCard({
       <div className="px-3 py-2">
         {currentField?.type === "select" ? (
           <SelectStep
+            key={currentField.key}
             field={currentField}
             value={String(values[currentField.key] ?? "")}
-            disabled={disabled}
+            disabled={controlsDisabled}
             onSelect={(val) => {
+              if (controlsDisabled || submittedRef.current) return;
               updateValue(currentField.key, val);
               // Auto-advance on select
               if (isLastStep) {
                 const finalValues = { ...values, [currentField.key]: val };
-                onSubmit(finalValues, buildDisplayLabels(finalValues));
+                finish(finalValues);
               } else {
                 setStep((s) => s + 1);
               }
             }}
           />
-        ) : (
+        ) : currentField ? (
           <InputStep
             key={currentField.key}
             field={currentField}
             value={values[currentField?.key] ?? ""}
-            disabled={disabled}
+            disabled={controlsDisabled}
             onChange={(val) => updateValue(currentField.key, val)}
             onConfirm={handleNext}
             onPrev={handlePrev}
             step={step}
             isLastStep={isLastStep}
           />
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -406,38 +447,41 @@ function SelectStep({
   const customInputRef = useRef<HTMLInputElement>(null);
   const totalItems = options.length + 1;
 
+  const regionRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (disabled) return;
-      switch (e.key) {
-        case "ArrowUp":
-          e.preventDefault();
-          setFocusIndex((prev) => (prev - 1 + totalItems) % totalItems);
-          break;
-        case "ArrowDown":
-          e.preventDefault();
-          setFocusIndex((prev) => (prev + 1) % totalItems);
-          break;
-        case "Enter":
-          if (isCustomFocused) break;
-          e.preventDefault();
-          if (focusIndex < options.length) {
-            onSelect(options[focusIndex].value);
-          } else {
-            customInputRef.current?.focus();
-          }
-          break;
-        case "Escape":
-          e.preventDefault();
-          break;
+    if (!disabled) regionRef.current?.focus();
+  }, [field.key, disabled]);
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      disabled ||
+      totalItems === 0 ||
+      event.defaultPrevented ||
+      event.target instanceof HTMLInputElement
+    )
+      return;
+    switch (event.key) {
+      case "ArrowUp":
+        event.preventDefault();
+        setFocusIndex((previous) => (previous - 1 + totalItems) % totalItems);
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        setFocusIndex((previous) => (previous + 1) % totalItems);
+        break;
+      case "Enter": {
+        event.preventDefault();
+        // A focused option button owns its normal Enter action.
+        const target = event.target instanceof HTMLButtonElement ? event.target : null;
+        if (target) target.click();
+        else if (focusIndex < options.length) onSelect(options[focusIndex].value);
+        else customInputRef.current?.focus();
+        break;
       }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [disabled, focusIndex, options, totalItems, isCustomFocused, onSelect]);
+    }
+  };
 
   return (
-    <div>
+    <div ref={regionRef} tabIndex={0} onKeyDown={handleKeyDown}>
       {/* Scrollable options list — cap height so long dictionaries (18+
           painting styles etc.) don't blow the card past viewport. Custom
           "其他..." input stays pinned outside the scroll region below. */}

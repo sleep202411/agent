@@ -102,6 +102,8 @@ function Panel({
         ]);
       }
     }, 45000);
+    const clearDeadline = () => clearTimeout(timeout);
+    controller.signal.addEventListener("abort", clearDeadline, { once: true });
 
     try {
       const reply = await api.post<{ suggestions: Suggestion[] }>("/aurora/viewer-assistance", {
@@ -131,7 +133,8 @@ function Panel({
         ]);
       }
     } finally {
-      clearTimeout(timeout);
+      clearDeadline();
+      controller.signal.removeEventListener("abort", clearDeadline);
       if (active.current === controller) {
         active.current = null;
         setBusy(false);

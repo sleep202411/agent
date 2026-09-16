@@ -49,6 +49,7 @@ export class ConversationRealtimeOutboxService
   private readonly logger = new Logger(ConversationRealtimeOutboxService.name);
   private timer: NodeJS.Timeout | null = null;
   private draining = false;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -56,6 +57,7 @@ export class ConversationRealtimeOutboxService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), DISPATCH_INTERVAL_MS);
     void this.drainOnce();
     this.logger.log(
@@ -64,19 +66,23 @@ export class ConversationRealtimeOutboxService
   }
 
   onModuleDestroy(): void {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
+    this.timer = null;
   }
 
   /** Public for deterministic health checks and focused tests. */
   async drainOnce(): Promise<void> {
-    if (this.draining) return;
+    if (this.stopped || this.draining) return;
     this.draining = true;
     try {
-      const claimed = await this.claim(DISPATCH_BATCH);
-      for (const row of claimed) {
+      for (let sent = 0; sent < DISPATCH_BATCH; sent += 1) {
+        if (this.stopped) break;
+        const [row] = await this.claim(1);
+        if (!row || this.stopped) break;
         await this.dispatchOne(row);
       }
-      await this.gc();
+      if (!this.stopped) await this.gc();
     } catch (error) {
       this.logger.error(
         `conversation realtime outbox drain failed: ${this.errorMessage(error)}`,
@@ -91,6 +97,7 @@ export class ConversationRealtimeOutboxService
     const lockExpiry = new Date(now.getTime() - LOCK_TTL_MS);
 
     return this.prisma.$transaction(async (tx) => {
+      if (this.stopped) return [];
       const eligible = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id
         FROM conversation_realtime_outbox
@@ -102,18 +109,20 @@ export class ConversationRealtimeOutboxService
         LIMIT ${batch}
         FOR UPDATE SKIP LOCKED
       `);
-      if (eligible.length === 0) return [];
+      if (this.stopped || eligible.length === 0) return [];
+      const claimedAt = new Date();
 
       const ids = eligible.map((row) => row.id);
       await tx.conversationRealtimeOutbox.updateMany({
         where: { id: { in: ids } },
-        data: { lockedAt: now, lockedBy: WORKER_ID },
+        data: { lockedAt: claimedAt, lockedBy: WORKER_ID },
       });
+      if (this.stopped) return [];
       return tx.conversationRealtimeOutbox.findMany({
         where: {
           id: { in: ids },
           lockedBy: WORKER_ID,
-          lockedAt: now,
+          lockedAt: claimedAt,
           dispatchedAt: null,
           deadAt: null,
         },
@@ -186,6 +195,7 @@ export class ConversationRealtimeOutboxService
   }
 
   private async gc(): Promise<void> {
+    if (this.stopped) return;
     const cutoff = new Date(Date.now() - GC_DISPATCHED_OLDER_THAN_MS);
     const result = await this.prisma.conversationRealtimeOutbox.deleteMany({
       where: { dispatchedAt: { lt: cutoff } },

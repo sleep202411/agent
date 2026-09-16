@@ -877,6 +877,8 @@ function statusFromEvent(event: AgentOsEvent): AgentOsRunStatus | string {
 export function useAgentOsRun(projectId: string) {
   const [state, setState] = useState<AgentOsSessionState>(initial);
   const conversationRef = useRef<string | null>(null);
+  const conversationGeneration = useRef(0);
+  const historyRestore = useRef<Promise<void> | null>(null);
   const lastSequenceByRun = useRef(new Map<string, number>());
   /** Per-run poll controllers — starting run B must not kill run A catch-up. */
   const pollAborts = useRef(new Map<string, AbortController>());
@@ -1201,6 +1203,7 @@ export function useAgentOsRun(projectId: string) {
     const controllers = pollAborts.current;
     const live = ablyLive.current;
     return () => {
+      conversationGeneration.current += 1;
       for (const ac of controllers.values()) ac.abort();
       controllers.clear();
       live.detach();
@@ -1343,6 +1346,7 @@ export function useAgentOsRun(projectId: string) {
         let justFailed = false;
         try {
           const page = await agentOsApi.listEvents(runId, projectId, after, ac.signal);
+          if (ac.signal.aborted) return;
           applyToRunBuffer({
             runId: page.runId,
             status: page.status,
@@ -1416,11 +1420,13 @@ export function useAgentOsRun(projectId: string) {
     if (!storedConversationId) {
       return;
     }
+    const generation = conversationGeneration.current;
     let cancelled = false;
-    void agentOsApi
+    const isStale = () => cancelled || generation !== conversationGeneration.current;
+    const restoration = agentOsApi
       .getConversation(projectId, storedConversationId)
       .then((history) => {
-        if (cancelled) return;
+        if (isStale()) return;
         if (!history.conversationId || history.runs.length === 0) {
           if (storedConversationId) {
             conversationRef.current = storedConversationId;
@@ -1469,6 +1475,7 @@ export function useAgentOsRun(projectId: string) {
             rebuilt.status === "running")
         ) {
           void ensureAbly(history.conversationId).then(() => {
+            if (isStale()) return;
             if (
               (rebuilt.status === "running" || rebuilt.status === "waiting_for_external") &&
               rebuilt.runId
@@ -1479,12 +1486,14 @@ export function useAgentOsRun(projectId: string) {
         }
       })
       .catch(() => {
-        if (cancelled) return;
+        if (isStale()) return;
         if (storedConversationId) {
           conversationRef.current = storedConversationId;
         }
       });
+    historyRestore.current = restoration;
     return () => {
+      if (historyRestore.current === restoration) historyRestore.current = null;
       cancelled = true;
     };
   }, [ensureAbly, pollRun, projectId, publishFromBuffers]);
@@ -1502,10 +1511,15 @@ export function useAgentOsRun(projectId: string) {
       projectSkillInstallationIds?: string[];
       disabledDefaultSkillInstallationIds?: string[];
     }) => {
+      const generation = conversationGeneration.current;
+      const isStale = () => generation !== conversationGeneration.current;
       const text = input.message.trim();
       const attachmentIds = input.attachmentIds ?? [];
       if (!text && attachmentIds.length === 0) return;
 
+      // Restore the durable identity before admitting a new turn.
+      await historyRestore.current;
+      if (isStale()) return;
       const conversationId = conversationRef.current ?? crypto.randomUUID();
       conversationRef.current = conversationId;
       writeStoredConversationId(projectId, conversationId);
@@ -1523,6 +1537,7 @@ export function useAgentOsRun(projectId: string) {
         projectSkillInstallationIds: input.projectSkillInstallationIds,
         disabledDefaultSkillInstallationIds: input.disabledDefaultSkillInstallationIds,
       });
+      if (isStale()) return;
       const optimistic: OptimisticUser = {
         id: submission.messageId,
         turnId: submission.turnId,
@@ -1563,6 +1578,7 @@ export function useAgentOsRun(projectId: string) {
 
         // Bind optimistic user to this run *before* merging events.
         forgetStartSubmission(projectId, submission);
+        if (isStale()) return;
         pendingUserRef.current = null;
         const buf = ensureRunBuffer(response.runId);
         buf.createdAt = buf.createdAt ?? submission.createdAt;
@@ -1589,6 +1605,7 @@ export function useAgentOsRun(projectId: string) {
         });
 
         await ensureAbly(conversationId);
+        if (isStale()) return;
         // Fire-and-forget: a second send must not await this poll.
         if (
           response.status === "running" ||
@@ -1600,6 +1617,7 @@ export function useAgentOsRun(projectId: string) {
         }
         return response;
       } catch (error) {
+        if (isStale()) return;
         const recovered = [...runsRef.current.values()].find((buffer) =>
           [...buffer.eventsBySeq.values()].some((event) =>
             eventMatchesOptimisticUser(event, optimistic)
@@ -1648,6 +1666,8 @@ export function useAgentOsRun(projectId: string) {
       modelProfileId: string;
       permissionMode?: "ask" | "smart" | "full";
     }) => {
+      const generation = conversationGeneration.current;
+      const isStale = () => generation !== conversationGeneration.current;
       const runId = activeRunIdRef.current ?? state.runId;
       const conversationId = conversationRef.current;
       if (!runId || !conversationId) {
@@ -1710,6 +1730,7 @@ export function useAgentOsRun(projectId: string) {
           modelProfileId: input.modelProfileId,
           permissionMode: input.permissionMode,
         });
+        if (isStale()) return;
         activeRunIdRef.current = response.runId;
         applyToRunBuffer({
           runId: response.runId,
@@ -1734,6 +1755,7 @@ export function useAgentOsRun(projectId: string) {
         }
         return response;
       } catch (error) {
+        if (isStale()) return;
         buffer.optimisticInputResponses = buffer.optimisticInputResponses.filter(
           (message) => message.id !== responseMessage.id
         );
@@ -1767,6 +1789,8 @@ export function useAgentOsRun(projectId: string) {
       permissionMode?: "ask" | "smart" | "full";
       experience?: "mobile_h5";
     }) => {
+      const generation = conversationGeneration.current;
+      const isStale = () => generation !== conversationGeneration.current;
       const runId = activeRunIdRef.current ?? state.runId;
       const conversationId = conversationRef.current;
       if (!runId || !conversationId) {
@@ -1833,6 +1857,7 @@ export function useAgentOsRun(projectId: string) {
           permissionMode: input.permissionMode,
           experience: input.experience,
         });
+        if (isStale()) return;
         activeRunIdRef.current = response.runId;
         applyToRunBuffer({
           runId: response.runId,
@@ -1857,6 +1882,7 @@ export function useAgentOsRun(projectId: string) {
         }
         return response;
       } catch (error) {
+        if (isStale()) return;
         buf.optimisticDecisions = buf.optimisticDecisions.filter((d) => d.id !== decisionMsg.id);
         const journalEvents = [...buf.eventsBySeq.values()];
         const approvalWasJournaled = journalEvents.some(
@@ -1879,6 +1905,9 @@ export function useAgentOsRun(projectId: string) {
   );
 
   const newChat = useCallback(() => {
+    // Invalidate an outstanding initial-history read before clearing the session.
+    conversationGeneration.current += 1;
+    historyRestore.current = null;
     for (const ac of pollAborts.current.values()) ac.abort();
     pollAborts.current.clear();
     ablyLive.current.detach();
@@ -1899,9 +1928,16 @@ export function useAgentOsRun(projectId: string) {
 
   const stop = useCallback(
     async (label = "Stopped") => {
+      const generation = conversationGeneration.current;
       const runId = activeRunIdRef.current;
       if (runId) {
-        const response = await agentOsApi.cancelRun(runId, projectId, label);
+        const response = await agentOsApi
+          .cancelRun(runId, projectId, label)
+          .catch((error: unknown) => {
+            if (generation !== conversationGeneration.current) return undefined;
+            throw error;
+          });
+        if (!response || generation !== conversationGeneration.current) return;
         for (const ac of pollAborts.current.values()) ac.abort();
         pollAborts.current.clear();
         applyToRunBuffer({

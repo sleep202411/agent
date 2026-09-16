@@ -1,10 +1,10 @@
 import { SymbolView } from "expo-symbols";
-import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
 import { useLocale, useTranslations } from "@/i18n";
 
+import { useAgentInputForm } from "../hooks/use-agent-input-form";
 import type { AgentOsPendingUserInput } from "../api/agent-os-api";
 
 const theme = Colors.dark;
@@ -16,23 +16,19 @@ type AgentUserInputCardProps = {
 };
 
 /** Multi-step user input gate — mirrors PC `AgentOsUserInputCard`. */
-export function AgentUserInputCard({ request, busy, onSubmit }: AgentUserInputCardProps) {
+export function AgentUserInputCard(props: AgentUserInputCardProps) {
+  return <AgentUserInputView key={JSON.stringify(props.request)} {...props} />;
+}
+
+function AgentUserInputView({ request, busy, onSubmit }: AgentUserInputCardProps) {
   const t = useTranslations();
   const locale = useLocale();
-  const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
-
   const questions = request.questions;
-  const question = questions[Math.min(step, questions.length - 1)];
-  const isLast = step === questions.length - 1;
-  const selected = question ? answers[question.id] : undefined;
-
-  const [requestId, setRequestId] = useState(request.requestId);
-  if (requestId !== request.requestId) {
-    setRequestId(request.requestId);
-    setStep(0);
-    setAnswers({});
-  }
+  const { step, question, isLast, selected, choose, back, submit } = useAgentInputForm(
+    questions,
+    busy,
+    onSubmit
+  );
 
   if (!question) return null;
 
@@ -42,15 +38,6 @@ export function AgentUserInputCard({ request, busy, onSubmit }: AgentUserInputCa
       : locale === "zh-HK"
         ? `步驟 ${step + 1}/${questions.length}`
         : `步骤 ${step + 1}/${questions.length}`;
-
-  const submit = () => {
-    if (!selected || busy) return;
-    if (!isLast) {
-      setStep((current) => current + 1);
-      return;
-    }
-    onSubmit(answers);
-  };
 
   return (
     <View style={styles.card}>
@@ -87,7 +74,7 @@ export function AgentUserInputCard({ request, busy, onSubmit }: AgentUserInputCa
               accessibilityRole="radio"
               accessibilityState={{ selected: checked }}
               disabled={busy}
-              onPress={() => setAnswers((current) => ({ ...current, [question.id]: option.value }))}
+              onPress={() => choose(option.value)}
               style={({ pressed }) => [
                 styles.option,
                 checked && styles.optionSelected,
@@ -108,7 +95,7 @@ export function AgentUserInputCard({ request, busy, onSubmit }: AgentUserInputCa
           <Pressable
             accessibilityRole="button"
             disabled={busy}
-            onPress={() => setStep((current) => current - 1)}
+            onPress={back}
             style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}
           >
             <SymbolView

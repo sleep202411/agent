@@ -11,11 +11,13 @@ import {
 /** Catch-up: replay a channel's events after a sequence from the durable outbox. */
 async function fetchReplay(
   channel: string,
-  afterSeq: number
+  afterSeq: number,
+  signal: AbortSignal
 ): Promise<{ events: AssetEvent[]; hasMore: boolean }> {
   const qs = new URLSearchParams({ channel, afterSeq: String(afterSeq) });
   const res = await fetch(`/aurora/realtime/replay?${qs.toString()}`, {
     credentials: "include",
+    signal,
   });
   if (!res.ok) throw new Error(`replay http ${res.status}`);
   const body = (await res.json()) as {
@@ -51,6 +53,7 @@ class AssetsRealtimeKernel {
   private readonly subscribers = new Set<AssetsRealtimeHandlers>();
   private socket: AssetsRealtimeClient | null = null;
   private connected = false;
+  private lifetime: AbortController | null = null;
   /** Per-channel last delivered sequence — persists across reconnects, so a
    *  reconnect that missed pushes detects the gap and replays it. */
   private readonly lastSeq = new Map<string, number>();
@@ -85,17 +88,23 @@ class AssetsRealtimeKernel {
   }
 
   private open(): void {
+    const lifetime = new AbortController();
+    this.lifetime = lifetime;
     this.socket = openAssetsRealtime(
       {
         onConnected: () => {
+          if (lifetime.signal.aborted) return;
           this.connected = true;
           for (const sub of this.subscribers) sub.onConnected?.();
         },
         onDisconnected: (reason) => {
+          if (lifetime.signal.aborted) return;
           this.connected = false;
           for (const sub of this.subscribers) sub.onDisconnected?.(reason);
         },
-        onEvent: (event) => this.handleIncoming(event),
+        onEvent: (event) => {
+          if (!lifetime.signal.aborted) this.handleIncoming(event, lifetime.signal);
+        },
       },
       this.options
     );
@@ -109,7 +118,7 @@ class AssetsRealtimeKernel {
    * processing is serialized via `chain`, so delivery is strictly in seq order
    * even while a catch-up is in flight.
    */
-  private handleIncoming(event: AssetEvent): void {
+  private handleIncoming(event: AssetEvent, signal: AbortSignal): void {
     const channel = event.channel;
     const seq = typeof event.seq === "number" ? event.seq : undefined;
     if (!channel || seq === undefined) {
@@ -120,18 +129,25 @@ class AssetsRealtimeKernel {
     // races the catch-up it (or an earlier event) triggered. Delivery is strictly
     // in seq order; .catch keeps one failure from stalling the chain.
     const prev = this.chain.get(channel) ?? Promise.resolve();
-    const next = prev.then(() => this.process(event, channel, seq));
+    const next = prev.then(() => this.process(event, channel, seq, signal));
     this.chain.set(
       channel,
       next.catch(() => {})
     );
   }
 
-  private async process(event: AssetEvent, channel: string, seq: number): Promise<void> {
+  private async process(
+    event: AssetEvent,
+    channel: string,
+    seq: number,
+    signal: AbortSignal
+  ): Promise<void> {
+    if (signal.aborted) return;
     if (event.eventId && this.seen.has(event.eventId)) return;
     const last = this.lastSeq.get(channel);
     if (last !== undefined && seq > last + 1) {
-      await this.catchUp(channel, last);
+      await this.catchUp(channel, last, signal);
+      if (signal.aborted) return;
     }
     const seen = this.lastSeq.get(channel);
     if (seen !== undefined && seq <= seen) return; // already covered (push or replay)
@@ -148,16 +164,18 @@ class AssetsRealtimeKernel {
     this.fanout(event);
   }
 
-  private async catchUp(channel: string, afterSeq: number): Promise<void> {
+  private async catchUp(channel: string, afterSeq: number, signal: AbortSignal): Promise<void> {
     try {
       let after = afterSeq;
       // Bounded so a pathological backlog can't loop forever. Beyond the bound,
       // state-derived consumers still converge — the next delivered event triggers
       // their re-fetch of the canonical state. (A delta-applying consumer would
       // need the §3 snapshot fallback here.)
-      for (let page = 0; page < 50; page++) {
-        const { events, hasMore } = await fetchReplay(channel, after);
+      for (let page = 0; page < 50 && !signal.aborted; page++) {
+        const { events, hasMore } = await fetchReplay(channel, after, signal);
+        if (signal.aborted) return;
         for (const ev of events) {
+          if (signal.aborted) return;
           const s = typeof ev.seq === "number" ? ev.seq : undefined;
           if (s === undefined) continue;
           const seen = this.lastSeq.get(channel);
@@ -178,13 +196,18 @@ class AssetsRealtimeKernel {
   }
 
   private teardown(): void {
+    this.lifetime?.abort();
+    this.lifetime = null;
+    this.lastSeq.clear();
+    this.seen.clear();
+    this.chain.clear();
     this.socket?.close();
     this.socket = null;
     this.connected = false;
     // Drop the singleton so a later subscriber starts a fresh kernel (no leaked
     // Map entry on workspace switch, no stale lastSeq). The consumer's own query
     // re-syncs state on remount.
-    kernels.delete(this.key);
+    if (kernels.get(this.key) === this) kernels.delete(this.key);
   }
 }
 

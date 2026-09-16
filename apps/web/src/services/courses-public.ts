@@ -48,21 +48,27 @@ export function resolveCourseCoverUrl(raw: string | null | undefined): string {
   return resolveAssetUrl(raw, env.BANNER_BASE_URL) ?? "";
 }
 
-export function listPublicCourses(locale: string) {
+export function listPublicCourses(locale: string, signal?: AbortSignal) {
   return api.get<PublicCourseSummary[]>("/project/courses", {
     params: { locale },
+    signal,
   });
 }
 
-export function getPublicCourse(courseId: number | string, locale: string) {
+export function getPublicCourse(courseId: number | string, locale: string, signal?: AbortSignal) {
   return api.get<PublicCourseDetail>(`/project/courses/${encodeURIComponent(String(courseId))}`, {
     params: { locale },
+    signal,
   });
 }
 
-export function getPublicCoursePlayUrl(videoId: number | string, locale: string) {
+export function getPublicCoursePlayUrl(
+  videoId: number | string,
+  locale: string,
+  signal?: AbortSignal
+) {
   return api.post<string>(
     `/project/courses/videos/${encodeURIComponent(String(videoId))}/play-url`,
-    { params: { locale } }
+    { params: { locale }, signal }
   );
 }

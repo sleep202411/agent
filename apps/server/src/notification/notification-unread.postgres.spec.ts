@@ -1,13 +1,16 @@
+import { assertOutboxTestDatabase } from '../conversations/outbox-test-database';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from './notification.service';
 
-const suite =
-  process.env.NOTIFICATION_POSTGRES_INTEGRATION === '1'
-    ? describe
-    : describe.skip;
+const connectionString =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.NOTIFICATION_POSTGRES_INTEGRATION === '1'
+    ? process.env.NOTIFICATION_TEST_DATABASE_URL
+    : undefined);
+const suite = connectionString ? describe : describe.skip;
 
 suite('Unread Crew markers against local PostgreSQL', () => {
   let db: PrismaClient;
@@ -15,15 +18,7 @@ suite('Unread Crew markers against local PostgreSQL', () => {
   const owner = `unread-test-${randomUUID()}`;
   const stranger = `unread-test-${randomUUID()}`;
   beforeAll(async () => {
-    const connectionString = process.env.NOTIFICATION_TEST_DATABASE_URL;
-    if (
-      !connectionString ||
-      !['127.0.0.1', 'localhost'].includes(new URL(connectionString).hostname)
-    ) {
-      throw new Error(
-        'NOTIFICATION_TEST_DATABASE_URL must explicitly point to local PostgreSQL',
-      );
-    }
+    assertOutboxTestDatabase(connectionString!);
     db = new PrismaClient({
       adapter: new PrismaPg({
         connectionString,

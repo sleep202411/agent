@@ -118,6 +118,18 @@ export function useExperiencePreload(manifest: ExperienceRuntimeManifest): {
       return claimed;
     };
 
+    const waitToRetry = () =>
+      new Promise<void>((resolve) => {
+        const finish = () => {
+          clearTimeout(timer);
+          abort.signal.removeEventListener("abort", finish);
+          resolve();
+        };
+        const timer = setTimeout(finish, RETRY_DELAY_MS);
+        abort.signal.addEventListener("abort", finish, { once: true });
+        if (abort.signal.aborted) finish();
+      });
+
     /**
      * One worker owns a clip until it is cached or out of attempts. Handing a
      * retry back to the shared queue would let the last worker exit while a
@@ -125,6 +137,7 @@ export function useExperiencePreload(manifest: ExperienceRuntimeManifest): {
      */
     const warmUntilSettled = async (uri: string) => {
       for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_CLIP; attempt += 1) {
+        if (cancelled) return;
         try {
           await ensureMediaCached(uri, {
             signal: abort.signal,
@@ -136,7 +149,7 @@ export function useExperiencePreload(manifest: ExperienceRuntimeManifest): {
           return;
         } catch {
           if (cancelled || attempt === MAX_ATTEMPTS_PER_CLIP) return;
-          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+          await waitToRetry();
         }
       }
     };
@@ -146,6 +159,7 @@ export function useExperiencePreload(manifest: ExperienceRuntimeManifest): {
         const uri = claimNextUri();
         if (uri === undefined) return;
         await warmUntilSettled(uri);
+        if (cancelled) return;
         activeUris.delete(uri);
         // Settled either way: a clip that never arrived is streamed by playback
         // rather than holding Start shut.

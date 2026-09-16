@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconAlertTriangle, IconCircleCheck, IconRefresh, IconSearch } from "@tabler/icons-react";
+import { useAdminOperation } from "./use-admin-operation";
 import { PageHeader } from "@/components/admin/page-header";
 import { adminUiApiPath } from "@/lib/admin-api";
 import { Button } from "@/components/ui/button";
@@ -64,33 +65,55 @@ export function AdminAuditPanel({
   const [data, setData] = useState(initialData ?? emptyData);
   const [query, setQuery] = useState("");
   const [outcome, setOutcome] = useState<AuditOutcome | "">("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const pending = useRef<ReturnType<typeof begin>>(null);
+  const requestedPage = useRef(initialData?.page ?? 1);
+  const pageSize = initialData?.pageSize ?? 20;
+  function cancelRead() {
+    pending.current?.cancel();
+    pending.current?.finish();
+    pending.current = null;
+    requestedPage.current = 1;
+  }
   const [error, setError] = useState<string | null>(initialError ?? null);
 
+  const refresh = useCallback(
+    async (page = 1) => {
+      const operation = begin("read");
+      if (!operation) return;
+      pending.current = operation;
+      requestedPage.current = page;
+      setError(null);
+      try {
+        const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+        if (query.trim()) params.set("q", query.trim());
+        if (outcome) params.set("outcome", outcome);
+        const nextData = await requestEnvelope<AdminAuditListData>(
+          `/api/admin/audit?${params}`,
+          operation.signal
+        );
+        if (!operation.current()) return;
+        setData(nextData);
+      } catch (err) {
+        if (operation.current()) setError(toErrorMessage(err));
+      } finally {
+        if (pending.current === operation) pending.current = null;
+        operation.finish();
+      }
+    },
+    [begin, query, outcome, pageSize]
+  );
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void refresh({ silent: true });
+      void refresh(1);
     }, 240);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, outcome]);
-
-  async function refresh(options: { silent?: boolean } = {}) {
-    if (!options.silent) setError(null);
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (query.trim()) params.set("q", query.trim());
-      if (outcome) params.set("outcome", outcome);
-      const suffix = params.toString() ? `?${params}` : "";
-      const nextData = await requestEnvelope<AdminAuditListData>(`/api/admin/audit${suffix}`);
-      setData(nextData);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
+    return () => {
+      window.clearTimeout(timer);
+      pending.current?.cancel();
+      pending.current?.finish();
+      pending.current = null;
+    };
+  }, [refresh]);
 
   const columns = useMemo<ColumnDef<AdminAuditRow, unknown>[]>(
     () => [
@@ -215,16 +238,20 @@ export function AdminAuditPanel({
                 <IconSearch className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    cancelRead();
+                    setQuery(event.target.value);
+                  }}
                   className="h-9 w-full rounded-lg border-slate-200 bg-white pl-9 pr-3 text-sm focus-visible:border-slate-950 focus-visible:ring-2 focus-visible:ring-slate-950/10"
                   placeholder="搜索操作、资源或操作者"
                 />
               </label>
               <Select
                 value={outcome === "" ? OUTCOME_ALL : outcome}
-                onValueChange={(value) =>
-                  setOutcome(value === OUTCOME_ALL ? "" : (value as AuditOutcome))
-                }
+                onValueChange={(value) => {
+                  cancelRead();
+                  setOutcome(value === OUTCOME_ALL ? "" : (value as AuditOutcome));
+                }}
               >
                 <SelectTrigger className="h-9 w-full rounded-lg border-slate-200 bg-white px-2.5 text-sm">
                   <SelectValue />
@@ -275,14 +302,15 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-async function requestEnvelope<T>(url: string): Promise<T> {
-  const response = await fetch(adminUiApiPath(url), { cache: "no-store" });
+async function requestEnvelope<T>(url: string, signal: AbortSignal): Promise<T> {
+  const response = await fetch(adminUiApiPath(url), { cache: "no-store", signal });
   const payload = (await response.json().catch(() => null)) as {
     code?: number;
     msg?: string;
     message?: string;
     data?: T;
   } | null;
+  signal.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(payload?.msg ?? payload?.message ?? `请求失败：${response.status}`);
   }

@@ -1,11 +1,13 @@
 "use client";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 // 支付事件 page for the /billing sub-app. Moved AS-IS from
 // ProviderEventsView/PayloadLine (admin-billing-panel.tsx:2760/3077) during the
 // P2 per-page split. The view's controlled props became local state + handlers
 // so this page owns its own filters, refresh, reprocess and ignore actions.
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { IconCircleCheck, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -55,10 +57,10 @@ export function BillingEventsPanel({
   const [eventType, setEventType] = useState("");
   const [query, setQuery] = useState("");
   const [ignoreReasons, setIgnoreReasons] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
-  function providerEventQueryString() {
+  const providerEventQueryString = useMemo(() => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (provider) params.set("provider", provider);
@@ -66,59 +68,85 @@ export function BillingEventsPanel({
     if (query.trim()) params.set("q", query.trim());
     const text = params.toString();
     return text ? `?${text}` : "";
-  }
+  }, [status, provider, eventType, query]);
 
+  const loadEvents = useCallback(
+    (signal: AbortSignal) =>
+      requestEnvelope<AdminBillingProviderEventsData>(
+        `/api/admin/billing/provider-events${providerEventQueryString}`,
+        signal
+      ),
+    [providerEventQueryString]
+  );
   async function refreshProviderEvents() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setProviderEvents(
-        await requestEnvelope<AdminBillingProviderEventsData>(
-          `/api/admin/billing/provider-events${providerEventQueryString()}`
-        )
-      );
+      const data = await loadEvents(operation.signal);
+      if (operation.current()) setProviderEvents(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
-
-  async function handleReprocessProviderEvent(eventId: string) {
-    setLoading(true);
-    setError(null);
-    try {
-      await mutateEnvelope(`/api/admin/billing/provider-events/${eventId}/reprocess`, {});
-      await refreshProviderEvents();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleIgnoreProviderEvent(eventId: string) {
-    const reason = ignoreReasons[eventId]?.trim();
-    if (!reason) {
-      setError("请输入忽略原因。");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      await mutateEnvelope(`/api/admin/billing/provider-events/${eventId}/ignore`, { reason });
-      setIgnoreReasons((current) => {
-        const next = { ...current };
-        delete next[eventId];
-        return next;
-      });
-      await refreshProviderEvents();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const handleReprocessProviderEvent = useCallback(
+    async (eventId: string) => {
+      const operation = begin();
+      if (!operation) return;
+      setError(null);
+      try {
+        await mutateEnvelope(
+          `/api/admin/billing/provider-events/${eventId}/reprocess`,
+          {},
+          "POST",
+          operation.signal
+        );
+        if (!operation.current()) return;
+        const data = await loadEvents(operation.signal);
+        if (operation.current()) setProviderEvents(data);
+      } catch (err) {
+        if (operation.current()) setError(toErrorMessage(err));
+      } finally {
+        operation.finish();
+      }
+    },
+    [begin, loadEvents]
+  );
+  const handleIgnoreProviderEvent = useCallback(
+    async (eventId: string) => {
+      const operation = begin();
+      if (!operation) return;
+      try {
+        const reason = ignoreReasons[eventId]?.trim();
+        if (!reason) {
+          setError("请输入忽略原因。");
+          return;
+        }
+        setError(null);
+        await mutateEnvelope(
+          `/api/admin/billing/provider-events/${eventId}/ignore`,
+          { reason },
+          "POST",
+          operation.signal
+        );
+        if (!operation.current()) return;
+        setIgnoreReasons((current) => {
+          const next = { ...current };
+          if (current[eventId]?.trim() === reason) delete next[eventId];
+          return next;
+        });
+        const data = await loadEvents(operation.signal);
+        if (operation.current()) setProviderEvents(data);
+      } catch (err) {
+        if (operation.current()) setError(toErrorMessage(err));
+      } finally {
+        operation.finish();
+      }
+    },
+    [begin, ignoreReasons, loadEvents]
+  );
 
   const columns = useMemo<ColumnDef<BillingProviderEventRow, unknown>[]>(
     () => [
@@ -306,6 +334,7 @@ export function BillingEventsPanel({
                 重放
               </Button>
               <TextInput
+                disabled={loading}
                 value={ignoreReasons[event.id] ?? ""}
                 onChange={(inputEvent) =>
                   setIgnoreReasons((current) => ({
@@ -332,10 +361,7 @@ export function BillingEventsPanel({
         },
       },
     ],
-    // The action cell reads loading and the ignoreReasons map; the mutation
-    // handlers are render-stable closures used only in onClick/onChange.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loading, ignoreReasons]
+    [loading, ignoreReasons, handleReprocessProviderEvent, handleIgnoreProviderEvent]
   );
 
   return (

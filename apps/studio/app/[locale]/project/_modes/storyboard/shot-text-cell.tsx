@@ -31,10 +31,16 @@ export function ShotTextCell({
   const [isEditing, setIsEditing] = useState(false);
   const draft = useTextDraft(value, onCommit);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const typedEntry = useRef(false);
 
   useEffect(() => {
     if (isEditing && editRef.current) {
       editRef.current.focus();
+      if (typedEntry.current) {
+        const end = editRef.current.value.length;
+        editRef.current.setSelectionRange(end, end);
+      }
+      typedEntry.current = false;
     }
   }, [isEditing]);
 
@@ -58,7 +64,7 @@ export function ShotTextCell({
           setIsEditing(false);
         }}
         onKeyDown={(e) => {
-          if (!onNavigate) return;
+          if (e.nativeEvent.isComposing || !onNavigate) return;
           if (e.key === "Tab") {
             e.preventDefault();
             draft.flush();
@@ -91,9 +97,13 @@ export function ShotTextCell({
       tabIndex={0}
       onClick={() => setIsEditing(true)}
       onKeyDown={(e) => {
+        if (e.nativeEvent.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
         if (e.key === "Enter" || e.key === "F2" || e.key.length === 1) {
           e.preventDefault();
-          if (e.key.length === 1) draft.onChange("");
+          if (e.key.length === 1) {
+            typedEntry.current = true;
+            draft.onChange(e.key);
+          }
           setIsEditing(true);
         } else if (e.key === "Tab" && onNavigate) {
           e.preventDefault();

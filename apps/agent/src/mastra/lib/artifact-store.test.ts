@@ -1,20 +1,6 @@
-/**
- * Integration tests for the LibSQL-backed workflow artifact store.
- *
- * Uses an in-memory libsql DB per test file (`MASTRA_DB_URL` is set
- * before any module that reads it loads). No Redis dependency, no
- * Mastra dependency — these tests exercise the artifact store in
- * isolation so a failure here is unambiguously about this layer.
- */
-
+import { configureArtifactTestDatabase } from "./postgres-test-fixture";
+/** PostgreSQL artifact-store integration; only the dedicated loopback fixture may be reset. */
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-
-// Set the URL BEFORE importing the module under test — `getClient()`
-// captures `process.env.MASTRA_DB_URL` on first call and caches the
-// connection. Using `:memory:` would give every connection a separate
-// DB; `cache=shared` keeps the in-memory image stable across the
-// per-call clients libsql may open internally.
-process.env.MASTRA_DB_URL = "file::memory:?cache=shared";
 
 import {
   MissingArtifactError,
@@ -25,13 +11,17 @@ import {
   _resetForTests,
 } from "./artifact-store";
 
+let fixtureReady = false;
+
 beforeAll(async () => {
+  configureArtifactTestDatabase();
   // Make sure each run starts clean even when vitest reuses the worker.
   await _resetForTests();
+  fixtureReady = true;
 });
 
 afterEach(async () => {
-  await _resetForTests();
+  if (fixtureReady) await _resetForTests();
 });
 
 describe("putArtifact", () => {

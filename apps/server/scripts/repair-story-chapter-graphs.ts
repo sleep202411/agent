@@ -13,7 +13,7 @@ import 'dotenv/config';
  * story_chapter_graph_repairs.
  */
 import { Prisma } from '@prisma/client';
-import { buildPrisma } from '../src/infra/db/db.module';
+import { PrismaService } from '../src/infra/db/db.module';
 import { canonicalJsonHash } from '../src/story-studio/canonical-json';
 import { InteractiveStoryDraftContentSchema } from '../src/story-studio/interactive-film.schema';
 import {
@@ -23,7 +23,7 @@ import {
 } from '../src/story-studio/story-chapter-graph-invariant';
 import { StoryProjectWriteGuardService } from '../src/story-studio/story-project-write-guard.service';
 
-const prisma = buildPrisma();
+const prisma = new PrismaService();
 const writeGuard = new StoryProjectWriteGuardService(prisma);
 const databaseUrl =
   process.env.DATABASE_URL ??

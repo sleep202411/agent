@@ -6,7 +6,7 @@
 // display are preserved verbatim; only the surrounding state/handlers (formerly
 // owned by AdminBillingPanel) are inlined here so the page is self-contained.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IconReceiptRefund, IconRefresh, IconScale, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -32,6 +32,8 @@ import {
 } from "./shared";
 import type { AdminBillingRefundsData, BillingRefundQuoteData, BillingRefundRow } from "./types";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 const emptyRefunds: AdminBillingRefundsData = { items: [], nextCursor: null };
 
 export function BillingRefundsPanel({
@@ -51,7 +53,9 @@ export function BillingRefundsPanel({
   const [refundProvider, setRefundProvider] = useState("");
   const [refundQuery, setRefundQuery] = useState("");
   const [refundMode, setRefundMode] = useState("suggested");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const quoteRevision = useRef(0);
+  const quoteEvidence = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(initialError ?? null);
 
   const canSubmitRefund = Boolean(refundQuote && refundQuote.blockers.length === 0);
@@ -65,58 +69,84 @@ export function BillingRefundsPanel({
     return query ? `?${query}` : "";
   }
 
+  async function loadRefunds(operation: NonNullable<ReturnType<typeof begin>>) {
+    const data = await requestEnvelope<AdminBillingRefundsData>(
+      `/api/admin/billing/refunds${refundQueryString()}`,
+      operation.signal
+    );
+    if (operation.current()) setRefunds(data);
+  }
   async function refreshRefunds() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setRefunds(
-        await requestEnvelope<AdminBillingRefundsData>(
-          `/api/admin/billing/refunds${refundQueryString()}`
-        )
-      );
+      await loadRefunds(operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
-
+  function invalidateQuote() {
+    quoteRevision.current += 1;
+    quoteEvidence.current = null;
+    setRefundQuote(null);
+  }
   async function handleQuoteRefund(formElement: HTMLFormElement) {
-    setLoading(true);
+    const operation = begin("write");
+    if (!operation) return;
+    const revision = quoteRevision.current;
     setError(null);
+    setRefundQuote(null);
+    quoteEvidence.current = null;
     try {
+      const payload = buildRefundQuotePayload(new FormData(formElement));
       const quote = await mutateEnvelope<BillingRefundQuoteData>(
         "/api/admin/billing/refunds/quote",
-        buildRefundQuotePayload(new FormData(formElement))
+        payload,
+        "POST",
+        operation.signal
       );
+      if (!operation.current() || revision !== quoteRevision.current) return;
+      quoteEvidence.current = JSON.stringify(payload);
       setRefundQuote(quote);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
-
   async function handleCreateRefund(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
+    const formElement = event.currentTarget;
+    const operation = begin("write");
+    if (!operation) return;
     setError(null);
-    const form = new FormData(event.currentTarget);
     try {
+      const form = new FormData(formElement);
+      if (quoteEvidence.current !== JSON.stringify(buildRefundQuotePayload(form)))
+        throw new Error("Evaluate the current refund details before submitting.");
       const payload = buildRefundCreatePayload(form, refundQuote);
-      await mutateEnvelope("/api/admin/billing/refunds", {
-        ...payload,
-        idempotencyKey:
-          stringField(form, "idempotencyKey") ||
-          (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `refund-${Date.now()}`),
-      });
-      event.currentTarget.reset();
-      setRefundQuote(null);
-      await refreshRefunds();
+      const identity = formElement.elements.namedItem("idempotencyKey") as HTMLInputElement;
+      const idempotencyKey = stringField(form, "idempotencyKey").trim() || crypto.randomUUID();
+      // Retain the exact identity before transport; a response-loss retry must reuse it.
+      identity.value = idempotencyKey;
+      await mutateEnvelope(
+        "/api/admin/billing/refunds",
+        { ...payload, idempotencyKey },
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
+      formElement.reset();
+      setRefundMode("suggested");
+      invalidateQuote();
+      await loadRefunds(operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
@@ -323,7 +353,12 @@ export function BillingRefundsPanel({
               退款不开放给前台用户；先评估政策，再提交到支付供应商。
             </p>
           </div>
-          <form className="space-y-3" onSubmit={handleCreateRefund}>
+          <form
+            inert={loading}
+            className="space-y-3"
+            onSubmit={handleCreateRefund}
+            onChange={invalidateQuote}
+          >
             <FormLabel
               label="订单 ID"
               help="必须是已支付或已履约订单；退款不会跨国际站/中国站数据库。"
@@ -335,7 +370,14 @@ export function BillingRefundsPanel({
               label="计算方式"
               help="建议金额由后台按订单剩余可退金额、积分可冲回余额、会员未使用周期统一计算。"
             >
-              <Select name="refundMode" value={refundMode} onChange={setRefundMode}>
+              <Select
+                name="refundMode"
+                value={refundMode}
+                onChange={(value) => {
+                  setRefundMode(value);
+                  invalidateQuote();
+                }}
+              >
                 <option value="suggested">按建议金额</option>
                 <option value="amount">指定金额</option>
                 <option value="percent">按剩余可退比例</option>

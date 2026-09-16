@@ -1,8 +1,11 @@
+import type { ProviderExecutionBinding } from '../../provider-adapter';
+import { providerBindingAdmissionEligible } from '../../provider-catalog-eligibility';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
 import {
   applyProviderConcurrencyLimit,
+  capacityTiersFromCatalogSnapshot,
   providerCapacityFromRow,
 } from '../../provider-capacity';
 import { AI_QUEUE_IMAGE, AI_QUEUE_VIDEO } from '../../queue';
@@ -20,6 +23,7 @@ import { createFalModelConfig, toAiModelDefinition } from './fal-schema.mapper';
 
 interface FalCatalogCache {
   expiresAt: number;
+  executionEntries: FalRuntimeEntry[];
   models: AiModelDefinition[];
   runtimeByModelId: Map<string, FalModelRuntimeConfig>;
   runtimeByEndpointId: Map<string, FalModelRuntimeConfig>;
@@ -29,6 +33,7 @@ interface FalCatalogCache {
 export class FalCatalogService {
   private readonly logger = new Logger(FalCatalogService.name);
   private cache: FalCatalogCache | null = null;
+  private cacheRead: Promise<FalCatalogCache> | null = null;
 
   constructor(
     private readonly configService: FalConfigService,
@@ -54,7 +59,9 @@ export class FalCatalogService {
 
   async getRuntimeConfig(
     modelId: string,
+    options?: { forSubmission?: boolean },
   ): Promise<FalModelRuntimeConfig | null> {
+    if (options?.forSubmission && !(await this.getModel(modelId))) return null;
     const cache = await this.getCache();
     return (
       cache.runtimeByModelId.get(modelId) ??
@@ -64,12 +71,37 @@ export class FalCatalogService {
     );
   }
 
+  async getExecutionBinding(
+    modelId: string,
+    endpointId: string,
+  ): Promise<ProviderExecutionBinding | null> {
+    const model = await this.getModel(modelId);
+    if (!model) return null;
+    const cache = await this.getCache();
+    const entry = cache.executionEntries.find(
+      (item) =>
+        item.modelId === model.id && item.runtime.endpointId === endpointId,
+    );
+    return entry ? { deployment: endpointId, ops: entry.ops } : null;
+  }
+
   private async getCache(): Promise<FalCatalogCache> {
     if (this.cache && this.cache.expiresAt > Date.now()) return this.cache;
+    if (this.cacheRead) return this.cacheRead;
+    const pending = this.loadCache().finally(() => {
+      if (this.cacheRead === pending) this.cacheRead = null;
+    });
+    this.cacheRead = pending;
+    return pending;
+  }
+
+  private async loadCache(): Promise<FalCatalogCache> {
     const config = this.configService.config;
     const runtimeByModelId = new Map<string, FalModelRuntimeConfig>();
     const runtimeByEndpointId = new Map<string, FalModelRuntimeConfig>();
-    const dbRuntimes = await this.dbRuntimeConfigs();
+    const dbRuntimes = (await this.dbRuntimeConfigs()).sort(
+      (a, b) => Number(b.admissionEligible) - Number(a.admissionEligible),
+    );
 
     // Register EVERY active binding's endpoint BEFORE the catalog dedupe so
     // poll/cancel can resolve any endpoint a job was actually submitted to
@@ -88,7 +120,9 @@ export class FalCatalogService {
       }
     }
 
-    const runtimeEntries = this.dedupeRuntimeEntries(dbRuntimes);
+    const runtimeEntries = this.dedupeRuntimeEntries(
+      dbRuntimes.filter((entry) => entry.admissionEligible),
+    );
     const models = runtimeEntries.map((entry) => {
       const model = {
         ...toAiModelDefinition(entry.runtime),
@@ -111,6 +145,7 @@ export class FalCatalogService {
     }
 
     this.cache = {
+      executionEntries: dbRuntimes.filter((entry) => entry.admissionEligible),
       expiresAt: Date.now() + config.catalogRefreshMs,
       models,
       runtimeByModelId,
@@ -153,7 +188,13 @@ export class FalCatalogService {
       string,
       Partial<Record<AiGenerationMode, string>>
     >();
+    const endpointsByCanonical = new Map<string, Set<string>>();
     for (const row of rows) {
+      const endpoints =
+        endpointsByCanonical.get(row.canonicalModelId) ?? new Set<string>();
+      endpoints.add(row.endpointId);
+      endpointsByCanonical.set(row.canonicalModelId, endpoints);
+      if (!providerBindingAdmissionEligible(row)) continue;
       const set =
         modesByCanonical.get(row.canonicalModelId) ??
         new Set<AiGenerationMode>();
@@ -208,10 +249,13 @@ export class FalCatalogService {
       });
       // Every sibling runtime of a canonical carries the SAME map, so a
       // poll-time lookup via any endpointId routes identically to submit-time.
+      runtime.strictModeRouting =
+        (endpointsByCanonical.get(row.canonicalModelId)?.size ?? 0) > 1;
       runtime.modeEndpoints = modeEndpointsByCanonical.get(
         row.canonicalModelId,
       );
       return {
+        admissionEligible: providerBindingAdmissionEligible(row),
         runtime,
         modelId: row.canonicalModel.slug,
         name: row.canonicalModel.displayName,
@@ -226,6 +270,9 @@ export class FalCatalogService {
           providerRoutePriority: row.priority,
           providerRouteWeight: row.weight,
           providerCapacity,
+          providerCapacityTiers: capacityTiersFromCatalogSnapshot(
+            row.providerEndpoint.catalogSnapshot,
+          ),
         },
       };
     });
@@ -241,6 +288,7 @@ export class FalCatalogService {
 }
 
 type FalRuntimeEntry = {
+  admissionEligible: boolean;
   runtime: FalModelRuntimeConfig;
   modelId: string;
   name: string;

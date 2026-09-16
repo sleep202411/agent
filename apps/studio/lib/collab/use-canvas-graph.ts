@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 import type { Edge, EdgeChange, Node, NodeChange } from "@xyflow/react";
 import type { Awareness } from "y-protocols/awareness";
@@ -120,6 +120,22 @@ export function useCanvasGraph(
   awareness?: Awareness | null,
   canEdit = true
 ): CanvasGraph {
+  const activeDocument = useRef<Y.Doc | null>(null);
+  const editing = useRef(canEdit);
+  useLayoutEffect(() => {
+    activeDocument.current = doc;
+    return () => {
+      activeDocument.current = null;
+    };
+  }, [doc]);
+  useLayoutEffect(() => {
+    editing.current = canEdit;
+  }, [canEdit]);
+  const canMutate = useCallback(
+    () => !!doc && activeDocument.current === doc && editing.current,
+    [doc]
+  );
+
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [assets, setAssets] = useState<CanvasAsset[]>([]);
@@ -169,14 +185,24 @@ export function useCanvasGraph(
           drag?: Record<string, { x: number; y: number }>;
           selection?: string[];
         };
-        const color = s.user?.color;
-        if (s.drag) {
+        const color = typeof s.user?.color === "string" ? s.user.color : undefined;
+        if (s.drag && typeof s.drag === "object" && !Array.isArray(s.drag)) {
           for (const [id, pos] of Object.entries(s.drag)) {
-            peerDrag.set(id, { x: pos.x, y: pos.y, color });
+            if (
+              pos &&
+              typeof pos === "object" &&
+              typeof pos.x === "number" &&
+              Number.isFinite(pos.x) &&
+              typeof pos.y === "number" &&
+              Number.isFinite(pos.y)
+            ) {
+              peerDrag.set(id, { x: pos.x, y: pos.y, color });
+            }
           }
         }
-        if (s.selection) {
+        if (Array.isArray(s.selection)) {
           for (const id of s.selection) {
+            if (typeof id !== "string") continue;
             if (!peerRing.has(id)) peerRing.set(id, color);
           }
         }
@@ -348,9 +374,12 @@ export function useCanvasGraph(
       const parts: string[] = [];
       awareness.getStates().forEach((state, clientId) => {
         if (clientId === localId) return;
-        const s = state as { drag?: unknown; selection?: unknown };
+        const s = state as { drag?: unknown; selection?: unknown; user?: { color?: unknown } };
         if (s.drag === undefined && s.selection === undefined) return;
-        parts.push(`${clientId}:${stableSig(s.drag)}:${stableSig(s.selection)}`);
+        const color = typeof s.user?.color === "string" ? s.user.color : undefined;
+        parts.push(
+          `${clientId}:${stableSig(s.drag)}:${stableSig(s.selection)}:${stableSig(color)}`
+        );
       });
       return parts.sort().join("|");
     };
@@ -380,7 +409,7 @@ export function useCanvasGraph(
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      if (!doc) return;
+      if (!doc || activeDocument.current !== doc) return;
       const current = (id: string) => {
         const yn = nodesMap(doc).get(id);
         return yn instanceof Y.Map ? readNode(yn) : null;
@@ -465,7 +494,7 @@ export function useCanvasGraph(
       // Viewers (canEdit=false) still update local overlays (selection,
       // measured dims, drag) above so the graph renders + measures correctly,
       // but never commit to the doc — the read-only chokepoint.
-      if (committed && canEdit) {
+      if (committed && canMutate()) {
         doc.transact(() => {
           for (const c of positionCommits) updateNodePosition(doc, c.id, c.pos);
           for (const id of removals) yRemoveNode(doc, id);
@@ -504,12 +533,12 @@ export function useCanvasGraph(
         }
       }
     },
-    [doc, rebuild, awareness, canEdit]
+    [doc, rebuild, awareness, canMutate]
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
-      if (!doc) return;
+      if (!doc || activeDocument.current !== doc) return;
       const removals: string[] = [];
       const writes: CanvasEdgeShape[] = [];
       let overlayOnly = false;
@@ -533,7 +562,7 @@ export function useCanvasGraph(
         }
       }
       const committed = removals.length > 0 || writes.length > 0;
-      if (committed && canEdit) {
+      if (committed && canMutate()) {
         doc.transact(() => {
           for (const id of removals) yRemoveEdge(doc, id);
           for (const e of writes) writeEdge(doc, e);
@@ -542,20 +571,20 @@ export function useCanvasGraph(
         rebuild();
       }
     },
-    [doc, rebuild, canEdit]
+    [doc, rebuild, canMutate]
   );
 
   const addNode = useCallback(
     (node: CanvasNodeShape) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       doc.transact(() => writeNode(doc, node), LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const addEdge = useCallback(
     (edge: CanvasEdgeShape) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       doc.transact(() => {
         const em = edgesMap(doc);
         // Upsert by id — a reconnect keeps the same edge id and just rebinds.
@@ -582,7 +611,7 @@ export function useCanvasGraph(
         if (!duplicate) writeEdge(doc, edge);
       }, LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const patchNodeData = useCallback(
@@ -590,7 +619,7 @@ export function useCanvasGraph(
       id: string,
       patch: Record<string, unknown> | ((node: CanvasNodeShape) => Record<string, unknown>)
     ) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       const yn = nodesMap(doc).get(id);
       const current = yn instanceof Y.Map ? readNode(yn) : null;
       if (!current) return;
@@ -603,36 +632,37 @@ export function useCanvasGraph(
         keys.length === 1 && keys[0] === "generation" ? GENERATION_ORIGIN : LOCAL_ORIGIN;
       doc.transact(() => yPatchNodeData(doc, id, resolved), origin);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const removeNode = useCallback(
     (id: string) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       doc.transact(() => yRemoveNode(doc, id), LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const removeEdge = useCallback(
     (id: string) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       doc.transact(() => yRemoveEdge(doc, id), LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const addLocalNode = useCallback(
     (node: CanvasNodeShape) => {
+      if (!canMutate()) return;
       localOnlyNodes.current.set(node.id, node);
       rebuild();
     },
-    [rebuild]
+    [rebuild, canMutate]
   );
 
   const promoteLocalNode = useCallback(
     (id: string, data: Record<string, unknown>) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       const local = localOnlyNodes.current.get(id);
       if (!local) return;
       const position = dragPositions.current.get(id) ?? local.position;
@@ -649,32 +679,33 @@ export function useCanvasGraph(
       dragPositions.current.delete(id);
       doc.transact(() => writeNode(doc, node), LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const addNodesAndEdges = useCallback(
     (newNodes: CanvasNodeShape[], newEdges: CanvasEdgeShape[]) => {
-      if (!doc || (newNodes.length === 0 && newEdges.length === 0)) return;
+      if (!doc || !canMutate() || (newNodes.length === 0 && newEdges.length === 0)) return;
       doc.transact(() => {
         for (const node of newNodes) writeNode(doc, node);
         for (const edge of newEdges) writeEdge(doc, edge);
       }, LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const selectNodes = useCallback(
     (ids: string[]) => {
+      if (!doc || activeDocument.current !== doc) return;
       selectedNodes.current = new Set(ids);
       awareness?.setLocalStateField("selection", ids);
       rebuild();
     },
-    [rebuild, awareness]
+    [doc, rebuild, awareness]
   );
 
   const updateGroups = useCallback(
     (update: (current: CanvasGroup[]) => CanvasGroup[]): boolean => {
-      if (!doc) return false;
+      if (!doc || !canMutate()) return false;
       let changed = false;
       doc.transact(() => {
         const current = reconcileCanvasGroups(readAllGroups(doc), nodesMap(doc).keys());
@@ -685,12 +716,12 @@ export function useCanvasGraph(
       }, LOCAL_ORIGIN);
       return changed;
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const toggleGroup = useCallback(
     (nodeIds: string[]): string | null => {
-      if (!doc) return null;
+      if (!doc || !canMutate()) return null;
       let selectedGroupId: string | null = null;
       const changed = updateGroups((current) => {
         const persisted = nodeIds.filter((nodeId) => nodesMap(doc).has(nodeId));
@@ -704,12 +735,12 @@ export function useCanvasGraph(
       });
       return changed ? selectedGroupId : null;
     },
-    [doc, updateGroups]
+    [doc, updateGroups, canMutate]
   );
 
   const addNodesToGroup = useCallback(
     (groupId: string, nodeIds: string[]): boolean => {
-      if (!doc) return false;
+      if (!doc || !canMutate()) return false;
       return updateGroups((current) =>
         addNodesToCanvasGroup(
           current,
@@ -718,7 +749,7 @@ export function useCanvasGraph(
         )
       );
     },
-    [doc, updateGroups]
+    [doc, updateGroups, canMutate]
   );
 
   const removeNodesFromGroups = useCallback(
@@ -741,46 +772,50 @@ export function useCanvasGraph(
 
   const restoreFromUpdate = useCallback(
     (targetBytes: Uint8Array | null) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       reconcileCanvasToUpdate(doc, targetBytes, LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const addAssets = useCallback(
     (next: CanvasAsset[]) => {
-      if (!doc || next.length === 0) return;
+      if (!doc || !canMutate() || next.length === 0) return;
       doc.transact(() => yAddAssets(doc, next), LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const removeAsset = useCallback(
     (id: string) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       doc.transact(() => yRemoveAsset(doc, id), LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const renameAssetsByMediaAssetId = useCallback(
     (mediaAssetId: string, name: string) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       doc.transact(() => yRenameAssetsByMediaAssetId(doc, mediaAssetId, name), LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
   const removeAssetsByMediaAssetId = useCallback(
     (mediaAssetId: string) => {
-      if (!doc) return;
+      if (!doc || !canMutate()) return;
       doc.transact(() => yRemoveAssetsByMediaAssetId(doc, mediaAssetId), LOCAL_ORIGIN);
     },
-    [doc]
+    [doc, canMutate]
   );
 
-  const undo = useCallback(() => undoManager.current?.undo(), []);
-  const redo = useCallback(() => undoManager.current?.redo(), []);
+  const undo = useCallback(() => {
+    if (canMutate()) undoManager.current?.undo();
+  }, [canMutate]);
+  const redo = useCallback(() => {
+    if (canMutate()) undoManager.current?.redo();
+  }, [canMutate]);
   const noop = useCallback(() => {}, []);
   const noGroupChange = useCallback(() => false, []);
   const noGroupToggle = useCallback(() => null, []);

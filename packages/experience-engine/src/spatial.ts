@@ -265,13 +265,19 @@ function pointOnSegment(
   end: ExperienceViewportPoint,
   epsilon: number
 ): boolean {
-  const cross = (point.y - start.y) * (end.x - start.x) - (point.x - start.x) * (end.y - start.y);
-  if (Math.abs(cross) > epsilon) return false;
-  const dot = (point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y);
-  if (dot < -epsilon) return false;
-  const lengthSquared =
-    (end.x - start.x) * (end.x - start.x) + (end.y - start.y) * (end.y - start.y);
-  return dot <= lengthSquared + epsilon;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const progress =
+    lengthSquared === 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared)
+        );
+  return (
+    Math.hypot(point.x - (start.x + progress * dx), point.y - (start.y + progress * dy)) <= epsilon
+  );
 }
 
 function interpolateGeometry(

@@ -1,48 +1,42 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
-/**
- * Trailing-debounced autosave for dialog prompt fields.
- *
- * The AI image/video generator dialogs used to persist their prompt only
- * when the user pressed Generate — anything typed and then closed (without
- * generating) was lost. This hook debounces a `save` call on every change
- * and guarantees a final flush when the dialog closes / unmounts, so the
- * latest prompt always reaches the backend.
- *
- * `save` is kept in a ref so callers can pass an inline closure without
- * resetting the debounce timer on every render.
- */
-export function usePromptAutosave(save: (value: string) => void, delay = 800) {
-  const saveRef = useRef(save);
-  saveRef.current = save;
+/** Trailing autosave. A pending edit retains the callback for its own cell. */
+export function usePromptAutosave(save: (value: string) => void, delay = 800, scope = "") {
+  const lifetime = useMemo(() => ({ scope }), [scope]);
+  const activeRef = useRef<typeof lifetime | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pending = useRef<string | null>(null);
+  const pending = useRef<{ value: string; save: (value: string) => void } | null>(null);
 
   const flush = useCallback(() => {
-    if (timer.current) {
+    if (timer.current !== null) {
       clearTimeout(timer.current);
       timer.current = null;
     }
-    if (pending.current != null) {
-      const value = pending.current;
-      pending.current = null;
-      saveRef.current(value);
-    }
+    const edit = pending.current;
+    pending.current = null;
+    edit?.save(edit.value);
   }, []);
 
   const schedule = useCallback(
     (value: string) => {
-      pending.current = value;
-      if (timer.current) clearTimeout(timer.current);
+      if (activeRef.current !== lifetime) return;
+      pending.current = { value, save };
+      if (timer.current !== null) clearTimeout(timer.current);
       timer.current = setTimeout(flush, delay);
     },
-    [flush, delay]
+    [flush, delay, save, lifetime]
   );
 
-  // Flush any pending edit on unmount (dialog closed / navigated away).
-  useEffect(() => () => flush(), [flush]);
+  // Shot navigation flushes the departing cell before admitting the next one.
+  useLayoutEffect(() => {
+    activeRef.current = lifetime;
+    return () => {
+      if (activeRef.current === lifetime) activeRef.current = null;
+      flush();
+    };
+  }, [flush, lifetime]);
 
   return { schedule, flush };
 }

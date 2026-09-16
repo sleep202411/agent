@@ -45,8 +45,10 @@ export function useCrewApplications(
       user?.id ?? null,
     ] as const,
     enabled: !!crewId && enabled && Boolean(user),
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewApplicationPageDTO>(`/crews/${encodeURIComponent(crewId!)}/applications`, {
+        signal,
+        cache: "no-store",
         query: {
           limit: pageSize,
           cursor: pageParam,
@@ -76,9 +78,10 @@ export function useCrewApplication(
   return useQuery({
     queryKey: [...crewKeys.application(crewId ?? "", applicationId ?? ""), user?.id ?? null],
     enabled: !!crewId && !!applicationId && enabled && Boolean(user),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       crewApi.get<CrewApplicationDTO>(
-        `/crews/${encodeURIComponent(crewId!)}/applications/${encodeURIComponent(applicationId!)}`
+        `/crews/${encodeURIComponent(crewId!)}/applications/${encodeURIComponent(applicationId!)}`,
+        { signal, cache: "no-store" }
       ),
   });
 }

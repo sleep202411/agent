@@ -58,7 +58,7 @@ export interface AgentOsPendingUserInputQuestion {
   id: string;
   header?: string;
   question: string;
-  options: Array<{ value: string; label: string; description?: string }>;
+  options: { value: string; label: string; description?: string }[];
 }
 
 /** Snapshot while status=waiting_for_input (UserInputRequired payload). */
@@ -178,7 +178,7 @@ export interface AgentOsSkillMeta {
   alwaysOn: boolean;
   userInvocable: boolean;
   removable: boolean;
-  projectKinds: Array<"platform" | "story">;
+  projectKinds: ("platform" | "story")[];
   workbenchModes: string[];
   priority: number;
 }

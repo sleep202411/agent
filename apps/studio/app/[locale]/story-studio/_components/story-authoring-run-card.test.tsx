@@ -1,3 +1,4 @@
+vi.mock("@/app/_components/auth-provider", () => ({ useAuth: () => ({ user: { id: "alice" } }) }));
 // @vitest-environment jsdom
 
 import { act } from "react";
@@ -410,7 +411,7 @@ describe("Story authoring Agent gates", () => {
     ).toBe("character.courier");
     expect(useQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        queryKey: ["story-studio", "asset-specs", "project-1", "chapter-1"],
+        queryKey: ["story-studio", "asset-specs", "project-1", "chapter-1", "alice"],
         enabled: true,
       })
     );

@@ -12,6 +12,8 @@ import type {
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
 const apiMocks = vi.hoisted(() => ({
+  account: "alice",
+  error: vi.fn(),
   createAsset: vi.fn(),
   getAsset: vi.fn(),
   cancelAsset: vi.fn(),
@@ -23,6 +25,11 @@ const apiMocks = vi.hoisted(() => ({
   retryClip: vi.fn(),
   retryClipAttachment: vi.fn(),
 }));
+
+vi.mock("@/app/_components/auth-provider", () => ({
+  useAuth: () => ({ user: { id: apiMocks.account } }),
+}));
+vi.mock("sonner", () => ({ toast: { error: apiMocks.error } }));
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, unknown>) =>
@@ -56,6 +63,7 @@ describe("StoryProductionGenerationControl", () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     vi.clearAllMocks();
+    apiMocks.account = "alice";
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     container = document.createElement("div");
     document.body.append(container);
@@ -539,6 +547,113 @@ describe("StoryProductionGenerationControl", () => {
     await vi.waitFor(() => expect(apiMocks.getClip).toHaveBeenCalled());
     expect(container.querySelector<HTMLImageElement>('img[alt="Production target"]')).toBeNull();
   });
+
+  it.each(["account", "target", "unmount", "permission"])(
+    "ignores a delayed generation failure after %s replacement",
+    async (mode) => {
+      let reject!: (error: Error) => void;
+      apiMocks.createAsset.mockReturnValue(
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        })
+      );
+      await renderControl(assetTarget(null));
+      await act(async () => button("generate")?.click());
+      expect(apiMocks.createAsset).toHaveBeenCalledOnce();
+      if (mode === "account") {
+        apiMocks.account = "bob";
+        await renderControl(assetTarget(null));
+      } else if (mode === "target") {
+        await renderControl({ ...assetTarget(null), id: "asset-2" });
+      } else if (mode === "permission") {
+        await renderControl(assetTarget(null), false);
+      } else {
+        await act(async () => root.render(null));
+      }
+      await act(async () => reject(new Error("Old generation failed")));
+      expect(apiMocks.error).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not attach an old account's successful generation to its replacement", async () => {
+    const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    let finish!: (value: StoryProductionGeneration) => void;
+    apiMocks.createAsset.mockReturnValue(
+      new Promise<StoryProductionGeneration>((resolve) => {
+        finish = resolve;
+      })
+    );
+    await renderControl(assetTarget(null));
+    await act(async () => button("generate")?.click());
+    apiMocks.account = "bob";
+    await renderControl(assetTarget(null));
+    await act(async () => finish(accepted));
+    expect(apiMocks.getAsset).not.toHaveBeenCalled();
+    expect(button("cancel")).toBeNull();
+    expect(button("generate")).not.toBeNull();
+  });
+
+  it("isolates cached generation status and cancels reads on account replacement", async () => {
+    const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    apiMocks.getAsset.mockImplementation(
+      (_project, _chapter, _target, _generation, signal: AbortSignal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")))
+        )
+    );
+    await renderControl(assetTarget(accepted));
+    expect(apiMocks.getAsset).toHaveBeenCalledOnce();
+    const signal = apiMocks.getAsset.mock.calls[0]![4] as AbortSignal;
+    apiMocks.account = "bob";
+    await renderControl(assetTarget(accepted));
+    expect(signal.aborted).toBe(true);
+    expect(apiMocks.getAsset).toHaveBeenCalledTimes(2);
+    const keys = client
+      .getQueryCache()
+      .getAll()
+      .map((query) => query.queryKey);
+    expect(keys.some((key) => key.at(-1) === "alice")).toBe(true);
+    expect(keys.some((key) => key.at(-1) === "bob")).toBe(true);
+  });
+
+  it.each(["cancel", "retry", "retryAttachment"])(
+    "suppresses an abandoned %s failure and prevents duplicate commands",
+    async (action) => {
+      const value = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+      if (action === "retry") {
+        value.aiJob.status = "failed";
+        value.aiJob.error = { message: "Retry", retryable: true };
+      } else if (action === "retryAttachment") {
+        value.aiJob.status = "completed";
+        value.materialization = { ...value.materialization, status: "failed", canRetry: true };
+      }
+      apiMocks.getAsset.mockResolvedValue(value);
+      const command =
+        action === "cancel"
+          ? apiMocks.cancelAsset
+          : action === "retry"
+            ? apiMocks.retryAsset
+            : apiMocks.retryAssetAttachment;
+      let reject!: (error: Error) => void;
+      command.mockReturnValue(
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        })
+      );
+      await renderControl(assetTarget(latest(value)));
+      await vi.waitFor(() => expect(button(action)).not.toBeNull());
+      await act(async () => {
+        button(action)?.click();
+        button(action)?.click();
+      });
+      expect(command).toHaveBeenCalledOnce();
+      apiMocks.account = "bob";
+      await renderControl(assetTarget(null));
+      await act(async () => reject(new Error("Old command failed")));
+      expect(apiMocks.error).not.toHaveBeenCalled();
+      expect(button("generate")).not.toBeNull();
+    }
+  );
 
   async function renderControl(
     target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>,

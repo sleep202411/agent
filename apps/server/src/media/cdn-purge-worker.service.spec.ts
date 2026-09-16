@@ -66,6 +66,7 @@ describe('CdnPurgeWorkerService', () => {
       mediaModerationAction: {
         findMany: jest
           .fn()
+          .mockResolvedValue([])
           .mockResolvedValueOnce([{ id: row.id }])
           .mockResolvedValueOnce([row]),
         updateMany: actionUpdateMany,
@@ -119,7 +120,7 @@ describe('CdnPurgeWorkerService', () => {
     );
     expect(prisma.mediaModerationAction.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: row.id }),
+        where: expect.objectContaining({ id: row.id, lockedAt: row.lockedAt }),
         data: expect.objectContaining({
           status: MediaModerationActionStatus.completed,
           providerTaskId: 'provider-task-1',
@@ -145,7 +146,7 @@ describe('CdnPurgeWorkerService', () => {
 
     expect(prisma.mediaModerationAction.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: row.id }),
+        where: expect.objectContaining({ id: row.id, lockedAt: row.lockedAt }),
         data: expect.objectContaining({
           status: MediaModerationActionStatus.failed,
           attempt: 1,
@@ -167,7 +168,7 @@ describe('CdnPurgeWorkerService', () => {
 
     expect(prisma.mediaModerationAction.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: row.id }),
+        where: expect.objectContaining({ id: row.id, lockedAt: row.lockedAt }),
         data: expect.objectContaining({
           attempt: 8,
           deadAt: expect.any(Date),

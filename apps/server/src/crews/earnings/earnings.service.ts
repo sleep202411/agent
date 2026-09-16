@@ -1,5 +1,5 @@
 import { assertNewCrewCurrency, formatLedgerAmount } from './ledger-currency';
-import { lockMemberPayouts } from './ledger-lock';
+import { lockMemberPayouts, lockLedgerReceipt } from './ledger-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -200,11 +200,27 @@ export class CrewEarningsService {
     const amount = BigInt(input.amountMinor);
     const idempotencyKey = `crew-earning-manual:${crewId}:${userId}:${input.idempotencyKey}`;
     const created = await this.prisma.$transaction(async (tx) => {
+      await lockLedgerReceipt(tx, idempotencyKey);
       const existing = await tx.crewEarningEntry.findUnique({
         where: { idempotencyKey },
         include: earningInclude,
       });
-      if (existing) return existing;
+      if (existing) {
+        if (
+          existing.crewMemberId !== member.id ||
+          existing.userId !== member.userId ||
+          existing.currency !== input.currency ||
+          existing.amountMinor !== amount ||
+          existing.sourceType !== input.sourceType ||
+          existing.agreementId !== (input.agreementId ?? null) ||
+          existing.title !== input.title ||
+          existing.description !== (input.description || null)
+        )
+          throw new ConflictException(
+            'Earning retry key was already used for different terms.',
+          );
+        return existing;
+      }
       const earning = await tx.crewEarningEntry.create({
         data: {
           crewId,

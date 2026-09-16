@@ -19,11 +19,15 @@ export function useFloatingToolbarVisibility(params: {
   extraHideWhen?: boolean;
 }) {
   const { editor, isSelectionValid, extraHideWhen = false } = params;
-  const [shouldShow, setShouldShow] = useState(false);
+  const [visibility, setVisibility] = useState<{ editor: Editor | null; value: boolean }>({
+    editor: null,
+    value: false,
+  });
   const hideRef = useRef(false);
 
   // --- TX listener: turn on hide when our meta is present, clear it on new Selection without the flag
   useEffect(() => {
+    hideRef.current = false;
     if (!editor) return;
 
     const onTx = ({ transaction }: { transaction: Transaction }) => {
@@ -31,7 +35,7 @@ export function useFloatingToolbarVisibility(params: {
         hideRef.current = true;
         // hide immediately — selectionUpdate won't fire if the transaction
         // re-set an identical selection
-        setShouldShow(false);
+        setVisibility({ editor, value: false });
       } else if (
         // Clear hide flag when a new Selection is made without the meta
         // This ensures first-click on a new selection shows the floating toolbar again
@@ -62,7 +66,7 @@ export function useFloatingToolbarVisibility(params: {
         hideRef.current = false;
         // selection won't change, recompute now
         const valid = isSelectionValid(editor, sel);
-        setShouldShow(valid && !extraHideWhen);
+        setVisibility({ editor, value: valid && !extraHideWhen });
       }
     };
 
@@ -85,10 +89,10 @@ export function useFloatingToolbarVisibility(params: {
       // programmatic kind the hide meta is set for; text selections always
       // clear the flag via the tx listener above.
       if (extraHideWhen || (hideRef.current && !selection.visible)) {
-        setShouldShow(false);
+        setVisibility({ editor, value: false });
         return;
       }
-      setShouldShow(valid);
+      setVisibility({ editor, value: valid });
     };
 
     handleSelectionUpdate();
@@ -98,7 +102,7 @@ export function useFloatingToolbarVisibility(params: {
     };
   }, [editor, extraHideWhen, isSelectionValid]);
 
-  return { shouldShow };
+  return { shouldShow: visibility.editor === editor && editor !== null && visibility.value };
 }
 
 /**

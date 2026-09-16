@@ -123,15 +123,19 @@ export function characterMediaContentUrl(mediaAssetId: string): string {
 
 // ─── Library (workspace 演员池) ─────────────────────────
 
-export async function listCharacters(workspaceId: string): Promise<CharacterSummary[]> {
+export async function listCharacters(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<CharacterSummary[]> {
   const data = await api.get<{ items: CharacterSummary[] }>(`/aurora/characters`, {
     params: { workspaceId },
+    signal,
   });
   return data.items;
 }
 
-export async function getCharacter(id: string): Promise<CharacterDetail> {
-  return api.get<CharacterDetail>(`/aurora/characters/${encodeURIComponent(id)}`);
+export async function getCharacter(id: string, signal?: AbortSignal): Promise<CharacterDetail> {
+  return api.get<CharacterDetail>(`/aurora/characters/${encodeURIComponent(id)}`, { signal });
 }
 
 export interface CreateCharacterInput {
@@ -149,40 +153,49 @@ export interface CreateCharacterInput {
   consent?: { version: string; adultAttested: true };
 }
 
-export async function createCharacter(input: CreateCharacterInput): Promise<CharacterDetail> {
-  return api.post<CharacterDetail>(`/aurora/characters`, { data: input });
+export async function createCharacter(
+  input: CreateCharacterInput,
+  signal?: AbortSignal
+): Promise<CharacterDetail> {
+  return api.post<CharacterDetail>(`/aurora/characters`, { data: input, signal });
 }
 
 export async function updateCharacter(
   id: string,
-  patch: { name?: string; description?: string | null; coverAssetId?: string | null }
+  patch: { name?: string; description?: string | null; coverAssetId?: string | null },
+  signal?: AbortSignal
 ): Promise<CharacterDetail> {
   return api.patch<CharacterDetail>(`/aurora/characters/${encodeURIComponent(id)}`, {
     data: patch,
+    signal,
   });
 }
 
-export async function deleteCharacter(id: string): Promise<void> {
-  await api.delete(`/aurora/characters/${encodeURIComponent(id)}`);
+export async function deleteCharacter(id: string, signal?: AbortSignal): Promise<void> {
+  await api.delete(`/aurora/characters/${encodeURIComponent(id)}`, { signal });
 }
 
 // ─── Character media ────────────────────────────────────
 
 export async function attachCharacterMedia(
   characterId: string,
-  mediaAssetId: string
+  mediaAssetId: string,
+  signal?: AbortSignal
 ): Promise<CharacterDetail> {
   return api.post<CharacterDetail>(`/aurora/characters/${encodeURIComponent(characterId)}/media`, {
     data: { mediaAssetId },
+    signal,
   });
 }
 
 export async function removeCharacterMedia(
   characterId: string,
-  characterMediaId: string
+  characterMediaId: string,
+  signal?: AbortSignal
 ): Promise<CharacterDetail> {
   return api.delete<CharacterDetail>(
-    `/aurora/characters/${encodeURIComponent(characterId)}/media/${encodeURIComponent(characterMediaId)}`
+    `/aurora/characters/${encodeURIComponent(characterId)}/media/${encodeURIComponent(characterMediaId)}`,
+    { signal }
   );
 }
 
@@ -190,10 +203,12 @@ export async function removeCharacterMedia(
  *  desired order (server rewrites sortOrder). */
 export async function reorderCharacterMedia(
   characterId: string,
-  order: string[]
+  order: string[],
+  signal?: AbortSignal
 ): Promise<CharacterDetail> {
   return api.patch<CharacterDetail>(`/aurora/characters/${encodeURIComponent(characterId)}/media`, {
     data: { order },
+    signal,
   });
 }
 
@@ -218,9 +233,13 @@ export interface EnrollmentStatus {
 
 /** Typed errors: 409 ENROLLMENT_ALREADY_COMPLETED, 429 RATE_LIMITED,
  *  409 ACR_ENROLLMENT_PAUSED. */
-export async function createEnrollmentSession(characterId: string): Promise<EnrollmentSession> {
+export async function createEnrollmentSession(
+  characterId: string,
+  signal?: AbortSignal
+): Promise<EnrollmentSession> {
   return api.post<EnrollmentSession>(
-    `/aurora/characters/${encodeURIComponent(characterId)}/enrollment/session`
+    `/aurora/characters/${encodeURIComponent(characterId)}/enrollment/session`,
+    { signal }
   );
 }
 
@@ -228,15 +247,23 @@ export async function createEnrollmentSession(characterId: string): Promise<Enro
  *  sole authority — no client token). Flips the character `active` when the
  *  provider confirms. Typed errors: 409 ENROLLMENT_NOT_COMPLETED (keep
  *  polling status), 409 ENROLLMENT_SESSION_EXPIRED. */
-export async function completeEnrollment(characterId: string): Promise<CharacterDetail> {
+export async function completeEnrollment(
+  characterId: string,
+  signal?: AbortSignal
+): Promise<CharacterDetail> {
   return api.post<CharacterDetail>(
-    `/aurora/characters/${encodeURIComponent(characterId)}/enrollment/complete`
+    `/aurora/characters/${encodeURIComponent(characterId)}/enrollment/complete`,
+    { signal }
   );
 }
 
-export async function getEnrollmentStatus(characterId: string): Promise<EnrollmentStatus> {
+export async function getEnrollmentStatus(
+  characterId: string,
+  signal?: AbortSignal
+): Promise<EnrollmentStatus> {
   return api.get<EnrollmentStatus>(
-    `/aurora/characters/${encodeURIComponent(characterId)}/enrollment/status`
+    `/aurora/characters/${encodeURIComponent(characterId)}/enrollment/status`,
+    { signal }
   );
 }
 
@@ -273,10 +300,12 @@ export interface GrantConsent {
 export async function createProjectGrant(
   characterId: string,
   projectId: string,
-  consent: GrantConsent
+  consent: GrantConsent,
+  signal?: AbortSignal
 ): Promise<ProjectGrantDto> {
   return api.post<ProjectGrantDto>(`/aurora/characters/${encodeURIComponent(characterId)}/grants`, {
     data: { projectId, consent },
+    signal,
   });
 }
 
@@ -290,17 +319,26 @@ export async function listGrantedCharacters(projectId: string): Promise<Characte
 }
 
 /** Active + revoked grant history for a character. */
-export async function listProjectGrants(characterId: string): Promise<ProjectGrantDto[]> {
+export async function listProjectGrants(
+  characterId: string,
+  signal?: AbortSignal
+): Promise<ProjectGrantDto[]> {
   const data = await api.get<{ items: ProjectGrantDto[] }>(
-    `/aurora/characters/${encodeURIComponent(characterId)}/grants`
+    `/aurora/characters/${encodeURIComponent(characterId)}/grants`,
+    { signal }
   );
   return data.items;
 }
 
 /** Withdraw a grant — reachable even if the subject has left the project. */
-export async function revokeProjectGrant(characterId: string, projectId: string): Promise<void> {
+export async function revokeProjectGrant(
+  characterId: string,
+  projectId: string,
+  signal?: AbortSignal
+): Promise<void> {
   await api.delete(
-    `/aurora/characters/${encodeURIComponent(characterId)}/grants/${encodeURIComponent(projectId)}`
+    `/aurora/characters/${encodeURIComponent(characterId)}/grants/${encodeURIComponent(projectId)}`,
+    { signal }
   );
 }
 
@@ -339,30 +377,45 @@ export interface CastingInvitePreview {
  *  Requires project editor. Returns the one-time token → build the accept link. */
 export async function createCastingInvite(
   projectId: string,
-  invitee: { inviteeUserId?: string; inviteeContact?: string }
+  invitee: { inviteeUserId?: string; inviteeContact?: string },
+  signal?: AbortSignal
 ): Promise<CreatedCastingInvite> {
   return api.post<CreatedCastingInvite>(
     `/aurora/projects/${encodeURIComponent(projectId)}/casting-invites`,
-    { data: invitee }
+    { data: invitee, signal }
   );
 }
 
-export async function listCastingInvites(projectId: string): Promise<CastingInviteDto[]> {
+export async function listCastingInvites(
+  projectId: string,
+  signal?: AbortSignal
+): Promise<CastingInviteDto[]> {
   const data = await api.get<{ items: CastingInviteDto[] }>(
-    `/aurora/projects/${encodeURIComponent(projectId)}/casting-invites`
+    `/aurora/projects/${encodeURIComponent(projectId)}/casting-invites`,
+    { signal }
   );
   return data.items;
 }
 
-export async function revokeCastingInvite(projectId: string, inviteId: string): Promise<void> {
+export async function revokeCastingInvite(
+  projectId: string,
+  inviteId: string,
+  signal?: AbortSignal
+): Promise<void> {
   await api.delete(
-    `/aurora/projects/${encodeURIComponent(projectId)}/casting-invites/${encodeURIComponent(inviteId)}`
+    `/aurora/projects/${encodeURIComponent(projectId)}/casting-invites/${encodeURIComponent(inviteId)}`,
+    { signal }
   );
 }
 
 /** Actor previews a casting invite by token (no auth to the project needed). */
-export async function previewCastingInvite(token: string): Promise<CastingInvitePreview> {
-  return api.get<CastingInvitePreview>(`/aurora/casting-invites/${encodeURIComponent(token)}`);
+export async function previewCastingInvite(
+  token: string,
+  signal?: AbortSignal
+): Promise<CastingInvitePreview> {
+  return api.get<CastingInvitePreview>(`/aurora/casting-invites/${encodeURIComponent(token)}`, {
+    signal,
+  });
 }
 
 /** Actor accepts by lending their OWN active real_person character, plus the
@@ -373,10 +426,12 @@ export async function previewCastingInvite(token: string): Promise<CastingInvite
 export async function acceptCastingInvite(
   token: string,
   characterId: string,
-  consent: GrantConsent
+  consent: GrantConsent,
+  signal?: AbortSignal
 ): Promise<void> {
   await api.post(`/aurora/casting-invites/${encodeURIComponent(token)}/accept`, {
     data: { characterId, consent },
+    signal,
   });
 }
 
@@ -407,11 +462,12 @@ export interface LikenessOutputItem {
 /** Every video made from the subject's likeness (optionally one project). */
 export async function listLikenessOutputs(
   characterId: string,
-  projectId?: string
+  projectId?: string,
+  signal?: AbortSignal
 ): Promise<LikenessOutputItem[]> {
   const data = await api.get<{ items: LikenessOutputItem[] }>(
     `/aurora/characters/${encodeURIComponent(characterId)}/outputs`,
-    projectId ? { params: { projectId } } : undefined
+    { params: projectId ? { projectId } : undefined, signal }
   );
   return data.items;
 }
@@ -420,11 +476,12 @@ export async function listLikenessOutputs(
  *  = all of them; `projectId` = one project; `jobId` = one job. */
 export async function takedownLikenessOutputs(
   characterId: string,
-  scope: { projectId?: string; jobId?: string }
+  scope: { projectId?: string; jobId?: string },
+  signal?: AbortSignal
 ): Promise<{ blocked: number }> {
   return api.post<{ blocked: number }>(
     `/aurora/characters/${encodeURIComponent(characterId)}/outputs/takedown`,
-    { data: scope }
+    { data: scope, signal }
   );
 }
 

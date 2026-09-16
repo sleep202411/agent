@@ -1,16 +1,13 @@
+import { ensurePromotionalWalletAccount } from './promotional-wallet-account';
 import {
   ForbiddenException,
   Injectable,
   ConflictException,
 } from '@nestjs/common';
 import {
-  Prisma,
-  WalletAccountStatus,
-  WalletBalanceKind,
   WalletCreditGrantType,
   WalletCurrencyType,
   WalletLedgerEntryType,
-  WalletOwnerType,
   type CheckInConfig,
   type DailyCheckIn,
 } from '@prisma/client';
@@ -23,12 +20,6 @@ import type { UpdateCheckInConfigInput } from './dto';
 const CONFIG_KEY = 'default';
 const DEFAULT_REWARDS = [100, 188, 288, 388, 488, 588, 888];
 const MS_PER_DAY = 86_400_000;
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
-  );
-}
 
 /** UTC midnight for an instant — the canonical check-in "day" (the unique key). */
 function startOfUtcDay(now: Date): Date {
@@ -129,57 +120,50 @@ export class CheckInService {
 
   async checkIn(user: AuthUser) {
     const userId = String(user.userId);
-    const config = await this.getConfig();
-    if (!config.enabled) {
-      throw new ForbiddenException({
-        code: 'CHECK_IN_DISABLED',
-        msg: 'Daily check-in is not available right now.',
+    const { record, raced } = await this.prisma.$transaction(async (tx) => {
+      // Configuration updates wait for admitted claims; readers share the lock.
+      await tx.$queryRaw`SELECT id FROM check_in_configs WHERE key=${CONFIG_KEY} FOR SHARE`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`daily-check-in:${userId}`}, 0))::text`;
+      const [clock] = await tx.$queryRaw<
+        { now: Date }[]
+      >`SELECT clock_timestamp() AS now`;
+      const today = startOfUtcDay(clock.now);
+      const yesterday = new Date(today.getTime() - MS_PER_DAY);
+      const last = await tx.dailyCheckIn.findFirst({
+        where: { userId },
+        orderBy: { checkInDate: 'desc' },
       });
-    }
-    const rewards = config.rewards;
-    const today = startOfUtcDay(new Date());
-    const yesterday = new Date(today.getTime() - MS_PER_DAY);
-
-    const last = await this.prisma.dailyCheckIn.findFirst({
-      where: { userId },
-      orderBy: { checkInDate: 'desc' },
-    });
-
-    // Already checked in today -> idempotent: just (re-)credit and report it.
-    if (last && last.checkInDate.getTime() === today.getTime()) {
-      const credited = await this.creditForRecord(userId, last);
-      return {
-        granted: credited.granted,
-        streakDay: last.streakDay,
-        alreadyCheckedIn: true,
-      };
-    }
-
-    const streakDay =
-      last && last.checkInDate.getTime() === yesterday.getTime()
-        ? last.streakDay + 1
-        : 1;
-    const amount = rewards[(streakDay - 1) % rewards.length];
-
-    // compute_point is workspace-owned -> credits land in the default-workspace pot.
-    const defaultWorkspace = await this.prisma.workspace.findFirst({
-      where: {
-        defaultForUserId: userId,
-        deletedAt: null,
-      },
-      select: { id: true },
-    });
-    if (!defaultWorkspace) {
-      throw new ConflictException({
-        code: 'DEFAULT_WORKSPACE_MISSING',
-        msg: 'No default workspace to receive the credits yet.',
+      // Disabling new claims must not strand an already accepted reward.
+      if (last && last.checkInDate.getTime() === today.getTime()) {
+        return { record: last, raced: true };
+      }
+      const config = this.configDto(
+        await tx.checkInConfig.findUnique({
+          where: { key: CONFIG_KEY },
+        }),
+      );
+      if (!config.enabled) {
+        throw new ForbiddenException({
+          code: 'CHECK_IN_DISABLED',
+          msg: 'Daily check-in is not available right now.',
+        });
+      }
+      const streakDay =
+        last && last.checkInDate.getTime() === yesterday.getTime()
+          ? last.streakDay + 1
+          : 1;
+      const amount = config.rewards[(streakDay - 1) % config.rewards.length];
+      const defaultWorkspace = await tx.workspace.findFirst({
+        where: { defaultForUserId: userId, deletedAt: null },
+        select: { id: true },
       });
-    }
-
-    let record: DailyCheckIn;
-    let raced = false;
-    try {
-      record = await this.prisma.dailyCheckIn.create({
+      if (!defaultWorkspace) {
+        throw new ConflictException({
+          code: 'DEFAULT_WORKSPACE_MISSING',
+          msg: 'No default workspace to receive the credits yet.',
+        });
+      }
+      const record = await tx.dailyCheckIn.create({
         data: {
           userId,
           checkInDate: today,
@@ -188,16 +172,8 @@ export class CheckInService {
           workspaceId: defaultWorkspace.id,
         },
       });
-    } catch (err) {
-      // Raced a concurrent same-day check-in -> the row exists now; credit it.
-      if (!isUniqueViolation(err)) throw err;
-      const existing = await this.prisma.dailyCheckIn.findUnique({
-        where: { userId_checkInDate: { userId, checkInDate: today } },
-      });
-      if (!existing) throw err;
-      record = existing;
-      raced = true;
-    }
+      return { record, raced: false };
+    });
 
     const credited = await this.creditForRecord(userId, record);
     return {
@@ -210,24 +186,10 @@ export class CheckInService {
   /** Credit a check-in record's reward to its workspace pot, idempotently. */
   private async creditForRecord(userId: string, record: DailyCheckIn) {
     const amount = BigInt(record.amount);
-    const account = await this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.workspace,
-          ownerId: record.workspaceId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: record.workspaceId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
-    });
+    const account = await ensurePromotionalWalletAccount(
+      this.prisma,
+      record.workspaceId,
+    );
     const posted = await this.walletLedger.postEntry({
       accountId: account.id,
       entryType: WalletLedgerEntryType.adjustment,

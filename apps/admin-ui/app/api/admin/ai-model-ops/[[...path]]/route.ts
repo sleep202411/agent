@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminPathWithSearch,
   adminUnavailableResponse,
@@ -34,13 +35,13 @@ async function forward(request: NextRequest, context: RouteContext, method: stri
     const path = await adminModelOpsPath(context);
     const url =
       method === "GET" ? adminPathWithSearch(request, path) : adminUrlForRequest(request, path);
-    const upstream = await fetch(url, {
+    const upstream = await adminFetch(request, url, {
       method,
       headers: adminForwardHeaders(request, { json: method !== "GET" }),
       body: method === "GET" ? undefined : await request.text(),
       cache: "no-store",
     });
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

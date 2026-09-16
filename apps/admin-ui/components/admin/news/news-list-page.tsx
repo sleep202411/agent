@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { usePathname, useRouter } from "next/navigation";
 import { IconExternalLink, IconPhoto, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -67,6 +69,16 @@ export function NewsListPage({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { busy, begin } = useAdminOperation();
+  const pending = useRef<ReturnType<typeof begin>>(null);
+  const navigate = useCallback(
+    (url: string) => {
+      pending.current?.cancel();
+      pending.current?.finish();
+      router.push(url);
+    },
+    [router]
+  );
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<NewsArticle | null>(null);
 
@@ -109,9 +121,10 @@ export function NewsListPage({
       if (merged.q) params.set("q", merged.q);
       if (merged.page && merged.page !== "1") params.set("page", merged.page);
       const queryString = params.toString();
-      router.push(queryString ? `${pathname}?${queryString}` : pathname);
+      setDeleteTarget(null);
+      navigate(queryString ? `${pathname}?${queryString}` : pathname);
     },
-    [kind, status, q, pathname, router]
+    [kind, status, q, pathname, navigate]
   );
 
   // Debounce keyword → URL (resets to page 1); skip when unchanged.
@@ -125,17 +138,29 @@ export function NewsListPage({
 
   async function confirmDelete() {
     if (!deleteTarget) return;
+    const operation = begin();
+    if (!operation) return;
+    pending.current = operation;
     setActionError(null);
     try {
-      const response = await fetch(`/api/admin/news/${deleteTarget.id}`, { method: "DELETE" });
+      const response = await fetch(
+        adminUiApiPath(`/api/admin/news/${encodeURIComponent(deleteTarget.id)}`),
+        { method: "DELETE", signal: operation.signal }
+      );
+      if (!operation.current()) return;
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!operation.current()) return;
         throw new Error(body?.error ?? `删除失败：${response.status}`);
       }
       router.refresh();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "删除失败。");
-      throw error; // keep the ConfirmDialog open so the error banner stays visible
+      if (operation.current()) {
+        setActionError(error instanceof Error ? error.message : "删除失败。");
+        throw error;
+      }
+    } finally {
+      operation.finish();
     }
   }
 
@@ -255,7 +280,7 @@ export function NewsListPage({
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/news/${row.original.id}/edit`)}
+              onClick={() => navigate(`/news/${encodeURIComponent(row.original.id)}/edit`)}
             >
               编辑
             </Button>
@@ -263,6 +288,7 @@ export function NewsListPage({
               type="button"
               variant="outline"
               size="sm"
+              disabled={busy}
               onClick={() => setDeleteTarget(row.original)}
               aria-label="删除"
             >
@@ -273,7 +299,7 @@ export function NewsListPage({
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tags]
+    [tags, busy, navigate]
   );
 
   return (
@@ -283,7 +309,7 @@ export function NewsListPage({
         title="新闻资讯"
         description="维护多语言资讯：内部文章走站内详情页，外部链接跳转第三方。简体中文为主语言，其余语言留空则回退到简体。"
       >
-        <Button type="button" size="sm" onClick={() => router.push("/news/new")}>
+        <Button type="button" size="sm" onClick={() => navigate("/news/new")}>
           <IconPlus className="size-4" />
           新建资讯
         </Button>

@@ -24,7 +24,10 @@ import { createHash } from 'crypto';
 import type { LookupUserDTO } from '@repo/shared/users';
 import { PrismaService } from '../infra/db/db.module';
 import { REDIS } from '../infra/redis/redis.module';
-import { JavaUserLookupService } from '../integrations/java/user-lookup.service';
+import {
+  JavaUserLookupService,
+  type RawLookupResult,
+} from '../integrations/java/user-lookup.service';
 
 const LOOKUP_CACHE_TTL_SEC = 5 * 60;
 
@@ -97,7 +100,7 @@ export class UsersService {
     if (!trimmed) return null;
     const cacheKey = `user-lookup:byId:${trimmed}`;
 
-    let raw = await this.tryReadCache(cacheKey);
+    let raw = await this.tryReadCache(cacheKey, trimmed);
     if (!raw) {
       raw = await this.javaLookup.findByUserId(trimmed, cookie);
       if (!raw) return null;
@@ -201,15 +204,26 @@ export class UsersService {
 
   // ─── Cache helpers ─────────────────────────────────────
 
-  private async tryReadCache(key: string) {
+  private async tryReadCache(
+    key: string,
+    expectedUserId?: string,
+  ): Promise<RawLookupResult | null> {
     try {
       const v = await this.redis.get(key);
       if (!v) return null;
-      return JSON.parse(v) as {
-        userId: string;
-        nickname: string;
-        avatar: string | null;
-      };
+      const parsed: unknown = JSON.parse(v);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        return null;
+      const raw = parsed as Record<string, unknown>;
+      if (
+        typeof raw.userId !== 'string' ||
+        !raw.userId.trim() ||
+        typeof raw.nickname !== 'string' ||
+        (raw.avatar !== null && typeof raw.avatar !== 'string') ||
+        (expectedUserId !== undefined && raw.userId !== expectedUserId)
+      )
+        return null;
+      return { userId: raw.userId, nickname: raw.nickname, avatar: raw.avatar };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`lookup cache read failed: ${msg}`);

@@ -40,7 +40,10 @@ function outbox(attempt = 0) {
 function buildHarness(attempt = 0) {
   const claimed = outbox(attempt);
   const tx = {
-    $queryRaw: jest.fn().mockResolvedValue([{ id: claimed.id }]),
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValueOnce([{ id: claimed.id }])
+      .mockResolvedValue([]),
     conversationRealtimeOutbox: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findMany: jest.fn().mockResolvedValue([claimed]),
@@ -134,7 +137,7 @@ describe('ConversationRealtimeOutboxService', () => {
   it('does nothing when another drain cycle is already active', async () => {
     const { service, tx } = buildHarness();
     let release: (() => void) | undefined;
-    tx.$queryRaw.mockImplementationOnce(
+    tx.$queryRaw.mockReset().mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           release = () => resolve([]);
@@ -149,4 +152,30 @@ describe('ConversationRealtimeOutboxService', () => {
     release?.();
     await first;
   });
+});
+
+it('claims conversation deliveries only when ready and retains the 50-message sweep limit', async () => {
+  const { service, tx, conversations } = buildHarness();
+  tx.$queryRaw.mockReset().mockResolvedValue([{ id: 'available-row' }]);
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const paused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  conversations.deliverMessageRealtime.mockImplementationOnce(async () => {
+    entered();
+    await paused;
+  });
+  const work = service.drainOnce();
+  await started;
+  try {
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+  } finally {
+    release();
+    await work;
+  }
+  expect(conversations.deliverMessageRealtime).toHaveBeenCalledTimes(50);
+  expect(tx.$queryRaw).toHaveBeenCalledTimes(50);
 });

@@ -1,5 +1,3 @@
-import { z } from 'zod';
-import { CrewStudioWorkspaceService } from './studio-workspace.service';
 import {
   Body,
   Controller,
@@ -43,33 +41,7 @@ import { CrewProductionService } from './production.service';
 
 @Controller()
 export class CrewProductionController {
-  constructor(
-    private readonly production: CrewProductionService,
-    private readonly workspaces: CrewStudioWorkspaceService,
-  ) {}
-
-  @Get('crews/:crewId/studio-workspace-options')
-  workspaceOptions(@Param('crewId') id: string, @CurrentUser() user: AuthUser) {
-    return this.workspaces.options(parseIdParam(id, 'crewId'), user.userId);
-  }
-
-  @Patch('crews/:crewId/studio-workspace')
-  linkWorkspace(
-    @Param('crewId') id: string,
-    @CurrentUser() user: AuthUser,
-    @Body(
-      new ZodValidationPipe(
-        z.object({ workspaceId: z.string().uuid().nullable() }).strict(),
-      ),
-    )
-    input: { workspaceId: string | null },
-  ) {
-    return this.workspaces.link(
-      parseIdParam(id, 'crewId'),
-      user.userId,
-      input.workspaceId,
-    );
-  }
+  constructor(private readonly production: CrewProductionService) {}
 
   @Get('crews/:crewId/production-overview')
   overview(@Param('crewId') crewIdRaw: string, @CurrentUser() user: AuthUser) {

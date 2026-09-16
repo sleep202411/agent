@@ -1,7 +1,7 @@
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   Prisma,
-  WalletAccountStatus,
   WalletBalanceKind,
   WalletCreditGrantType,
   WalletCurrencyType,
@@ -46,21 +46,28 @@ export class InternalPointsService {
   /** Ingest the user's Java balance into PG exactly once; idempotent per user. */
   async migrate(input: MigratePointsInput) {
     const { userId } = input;
-    const workspaceId = await this.defaultWorkspaceId(userId);
-
     const existing = await this.prisma.pointsMigration.findUnique({
       where: { userId },
     });
-    if (!existing) {
+    let accepted = existing;
+    let alreadyMigrated = Boolean(existing);
+    if (!accepted) {
+      const workspaceId = await this.defaultWorkspaceId(userId);
       try {
-        await this.prisma.pointsMigration.create({
+        accepted = await this.prisma.pointsMigration.create({
           data: { userId, migratedBalance: input.balance, workspaceId },
         });
       } catch (err) {
-        // Raced a concurrent migrate for the same user -> the marker exists now.
         if (!isUniqueViolation(err)) throw err;
+        accepted = await this.prisma.pointsMigration.findUnique({
+          where: { userId },
+        });
+        if (!accepted) throw err;
+        alreadyMigrated = true;
       }
     }
+    const workspaceId = accepted.workspaceId;
+    const migratedBalance = accepted.migratedBalance;
 
     // Credit the ingested balance idempotently (keyed by user). A re-call (or a
     // crash between marker-create and credit) credits exactly once; a different
@@ -71,10 +78,9 @@ export class InternalPointsService {
     // credit is already in the ledger), which previously made this flag lie:
     // alreadyMigrated=false while the balance was already the migrated one.
     let balance: bigint;
-    let alreadyMigrated = Boolean(existing);
-    if (input.balance > 0) {
+    if (migratedBalance > 0) {
       const account = await this.account(workspaceId);
-      const amount = BigInt(input.balance);
+      const amount = BigInt(migratedBalance);
       const posted = await this.walletLedger.postEntry({
         accountId: account.id,
         entryType: WalletLedgerEntryType.credit,
@@ -88,7 +94,7 @@ export class InternalPointsService {
         workspaceId,
         description: 'Legacy points migration',
         reason: 'legacy_points_migration',
-        metadata: { userId, migratedBalance: input.balance },
+        metadata: { userId, migratedBalance },
         creditGrant: {
           grantType: WalletCreditGrantType.migration,
           expiresAt: null,
@@ -266,44 +272,20 @@ export class InternalPointsService {
   }
 
   private async account(workspaceId: string): Promise<WalletAccount> {
-    return this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.workspace,
-          ownerId: workspaceId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: workspaceId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    return ensureWalletAccount(this.prisma, {
+      ownerType: WalletOwnerType.workspace,
+      ownerId: workspaceId,
+      currency: WalletCurrencyType.compute_point,
+      balanceKind: WalletBalanceKind.consumable,
     });
   }
 
   private async communityAccount(userId: string): Promise<WalletAccount> {
-    return this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.user,
-          ownerId: userId,
-          currency: WalletCurrencyType.community_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: WalletOwnerType.user,
-        ownerId: userId,
-        currency: WalletCurrencyType.community_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    return ensureWalletAccount(this.prisma, {
+      ownerType: WalletOwnerType.user,
+      ownerId: userId,
+      currency: WalletCurrencyType.community_point,
+      balanceKind: WalletBalanceKind.consumable,
     });
   }
 

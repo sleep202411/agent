@@ -14,6 +14,8 @@
  * `{ tagId: tagName }` dictionary directly.
  */
 import { useQuery } from "@tanstack/react-query";
+import { useCurrentUser } from "./use-user";
+import { useLocale } from "@/src/i18n/i18n";
 
 export interface Tag {
   id: number;
@@ -34,19 +36,28 @@ export const tagListKeys = {
 };
 
 export function useTagList() {
+  const { user } = useCurrentUser();
+  const locale = useLocale();
   return useQuery<Tag[]>({
-    queryKey: tagListKeys.all,
-    queryFn: async () => {
-      const res = await fetch("/vedio/type/tag/list", {
+    queryKey: [...tagListKeys.all, locale, user?.id ?? "guest"],
+    queryFn: async ({ signal }) => {
+      const headers: Record<string, string> = { "accept-language": locale };
+      if (typeof document !== "undefined") {
+        const match = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
+        headers.Authorization = `Bearer ${match?.[1] ?? ""}`;
+      }
+      const response = await fetch("/vedio/type/tag/list", {
         credentials: "include",
-        headers: tagListHeaders(),
+        headers,
+        signal,
       });
-      if (!res.ok) return [];
-      const json = (await res.json()) as RawTagListResponse;
+      if (!response.ok) return [];
+      const json = (await response.json()) as RawTagListResponse;
+      signal.throwIfAborted();
       const out: Tag[] = [];
       for (const [idStr, name] of Object.entries(json.all ?? {})) {
         const id = Number(idStr);
-        if (Number.isFinite(id) && typeof name === "string" && name.length > 0) {
+        if (Number.isSafeInteger(id) && id > 0 && typeof name === "string" && name.length > 0) {
           out.push({ id, name });
         }
       }
@@ -54,20 +65,4 @@ export function useTagList() {
     },
     staleTime: 10 * 60 * 1000,
   });
-}
-
-/**
- * Minimal headers mirroring what `api-client` would set for an
- * authenticated GET — same locale + bearer token, just without the
- * response unwrap.
- */
-function tagListHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (typeof document !== "undefined") {
-    const lang = document.documentElement.lang;
-    if (lang) headers["accept-language"] = lang;
-    const match = document.cookie.match(/(?:^|;\s*)satoken=([^;]+)/);
-    headers.Authorization = `Bearer ${match?.[1] ?? ""}`;
-  }
-  return headers;
 }

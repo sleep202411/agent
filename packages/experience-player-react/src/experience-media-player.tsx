@@ -255,22 +255,40 @@ export function ExperienceMediaPlayer({
     // other orientation, and without a fresh registration nothing would start
     // the newly loaded source — leaving a still frame over a stalled element
     // with no `playing` coming to take it down.
+    let disposed = false;
+    let playVersion = 0;
     onPlaybackHandle({
       playbackIdentity: rendered.identity,
-      play: () =>
-        playWithSoundFallback(
-          soundFallbackTarget(player, readinessRef.current!, readinessKey),
+      play: () => {
+        const version = ++playVersion;
+        const assertActive = () => {
+          if (disposed || version !== playVersion) throw mediaReadinessAbort();
+        };
+        return playWithSoundFallback(
+          soundFallbackTarget(player, readinessRef.current!, readinessKey, assertActive),
           mutedRef,
           onSoundBlocked
-        ),
-      pause: () => pauseMediaPlayer(player),
-      seek: (seconds) => seekMediaPlayer(player, seconds),
+        );
+      },
+      pause: () => {
+        if (disposed) return;
+        playVersion++;
+        pauseMediaPlayer(player);
+      },
+      seek: (seconds) => {
+        if (!disposed) seekMediaPlayer(player, seconds);
+      },
       setMuted: (nextMuted) => {
+        if (disposed) return;
         mutedRef.current = nextMuted;
         applyPlayerMuted(player, nextMuted);
       },
     });
-    return () => onPlaybackHandle(null);
+    return () => {
+      disposed = true;
+      playVersion++;
+      onPlaybackHandle(null);
+    };
   }, [onPlaybackHandle, onSoundBlocked, readinessKey, rendered.identity, rendered.uri]);
   return (
     <MediaPlayer
@@ -481,11 +499,24 @@ export interface ExperienceSoundFallbackTarget {
 function soundFallbackTarget(
   player: MediaPlayerInstance,
   readiness: ExperienceMediaReadinessGate,
-  readinessKey: string
+  readinessKey: string,
+  assertActive: () => void
 ): ExperienceSoundFallbackTarget {
   return {
-    play: () => playMediaPlayerWhenReady(player, readiness, readinessKey),
-    setMuted: (muted) => applyPlayerMuted(player, muted),
+    play: async () => {
+      assertActive();
+      try {
+        await playMediaPlayerWhenReady(player, readiness, readinessKey, assertActive);
+      } catch (error) {
+        assertActive();
+        throw error;
+      }
+      assertActive();
+    },
+    setMuted: (muted) => {
+      assertActive();
+      applyPlayerMuted(player, muted);
+    },
   };
 }
 
@@ -582,9 +613,11 @@ export async function playWithSoundFallback(
 export async function playMediaPlayerWhenReady(
   player: MediaPlayerInstance,
   readiness: ExperienceMediaReadinessGate,
-  readinessKey: string
+  readinessKey: string,
+  assertActive?: () => void
 ): Promise<void> {
   await readiness.wait(readinessKey);
+  assertActive?.();
   const readyMedia = providerMedia(player);
   if (readyMedia) return readyMedia.play();
   return player.play();

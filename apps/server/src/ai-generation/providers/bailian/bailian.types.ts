@@ -51,6 +51,8 @@ export interface BailianModelRuntimeConfig {
    * submit-time and poll-time endpoint resolution agree. Absent for
    * single-binding models (the lone endpoint is always used).
    */
+  /** Explicit sibling bindings must not fall back into a disabled mode. */
+  strictModeRouting?: boolean;
   modeEndpoints?: Partial<Record<AiGenerationMode, string>>;
   name: string;
   description: string;

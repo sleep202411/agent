@@ -8,6 +8,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("uploadFileViaSignedUrl", () => {
@@ -49,6 +50,24 @@ describe("uploadFileViaSignedUrl", () => {
     });
   });
 
+  it.each([
+    ["constructor", "image/png"],
+    ["__proto__", "application/octet-stream"],
+  ])("uses the normal MIME fallback for extension %s", async (extension, expected) => {
+    const fetchMock = mockUploadPipeline({});
+    vi.stubGlobal("fetch", fetchMock);
+    await uploadFileViaSignedUrl(
+      new File(["image"], `frame.${extension}`, {
+        type: extension === "constructor" ? "image/png" : "",
+      }),
+      { kind: "ai_reference_image" }
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      contentType: expected,
+    });
+    expect(FakeXMLHttpRequest.instances[0]?.headers.get("Content-Type")).toBe(expected);
+  });
+
   it("lets a provider-signed content type override the canonical default case-insensitively", async () => {
     vi.stubGlobal("fetch", mockUploadPipeline({ "content-type": "image/provider-signed" }));
 
@@ -59,6 +78,26 @@ describe("uploadFileViaSignedUrl", () => {
     expect(FakeXMLHttpRequest.instances[0]?.headers).toEqual(
       new Map([["content-type", "image/provider-signed"]])
     );
+  });
+
+  it("removes the cancellation listener when starting the storage request throws", async () => {
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const add = vi.spyOn(controller.signal, "addEventListener");
+    const error = new DOMException("Network unavailable", "NetworkError");
+    vi.spyOn(FakeXMLHttpRequest.prototype, "send").mockImplementation(() => {
+      throw error;
+    });
+    const fetchMock = mockUploadPipeline({});
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png"), {
+        kind: "ai_reference_image",
+        signal: controller.signal,
+      })
+    ).rejects.toBe(error);
+    expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[0]?.[1]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("refuses to start once the caller has already aborted", async () => {
@@ -101,6 +140,84 @@ describe("uploadFileViaSignedUrl", () => {
       })
     ).rejects.toThrow("returned no original media variant");
   });
+  it.each([1, 2])("rejects a failed application envelope at upload stage %s", async (stage) => {
+    const base = mockUploadPipeline({});
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (...args) => {
+        const response = await base(...args);
+        calls += 1;
+        if (calls !== stage) return response;
+        const body = await response.json();
+        return {
+          ...response,
+          json: async () => ({ ...body, code: 403, message: "Upload permission denied" }),
+        } as Response;
+      })
+    );
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png"), { kind: "canvas_input_image" })
+    ).rejects.toThrow("Upload permission denied");
+    expect(base).toHaveBeenCalledTimes(stage);
+    expect(FakeXMLHttpRequest.instances).toHaveLength(stage - 1);
+  });
+
+  it.each([1, 2])("abandons a delayed parsed response at upload stage %s", async (stage) => {
+    const controller = new AbortController();
+    const base = mockUploadPipeline({});
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (...args) => {
+        const response = await base(...args);
+        calls += 1;
+        if (calls !== stage) return response;
+        return {
+          ...response,
+          json: async () => {
+            const body = await response.json();
+            controller.abort();
+            return body;
+          },
+        } as Response;
+      })
+    );
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png"), {
+        kind: "canvas_input_image",
+        signal: controller.signal,
+      })
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(base).toHaveBeenCalledTimes(stage);
+    expect(FakeXMLHttpRequest.instances).toHaveLength(stage - 1);
+  });
+
+  it.each(["plain", "success", "SUCCESS"])(
+    "retains supported %s upload responses",
+    async (format) => {
+      const base = mockUploadPipeline({});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>(async (...args) => {
+          const response = await base(...args);
+          const body = await response.json();
+          return {
+            ...response,
+            json: async () =>
+              format === "plain"
+                ? body.data
+                : format === "success"
+                  ? { success: true, data: body.data }
+                  : { code: "SUCCESS", data: body.data },
+          } as Response;
+        })
+      );
+      await expect(
+        uploadFileViaSignedUrl(new File(["image"], "frame.png"), { kind: "canvas_input_image" })
+      ).resolves.toMatchObject({ mediaAssetId: "asset-1", variantId: "variant-1" });
+    }
+  );
 });
 
 function mockUploadPipeline(headers: Record<string, string>, confirmed?: object) {

@@ -86,20 +86,21 @@ export function openEntityEventsClient(handlers: EntityEventsClientHandlers): En
 
   const connect = () => {
     if (userClosed) return;
-    const tokenHint = url.match(/satoken=([^&]{0,8})/)?.[1] ?? "(none)";
-    console.log(`[entity-events] open attempt#${attempts + 1} token=${tokenHint}`);
+    console.log(`[entity-events] open attempt#${attempts + 1}`);
     const sock = new WebSocket(url);
     ws = sock;
 
     sock.addEventListener("open", () => {
+      if (userClosed || ws !== sock) return;
       const wasReconnect = attempts > 0;
       attempts = 0;
-      console.log(`[entity-events] open success token=${tokenHint}`);
+      console.log(`[entity-events] open success`);
       handlers.onOpen?.();
-      if (wasReconnect) handlers.onReconnected?.();
+      if (!userClosed && ws === sock && wasReconnect) handlers.onReconnected?.();
     });
 
     sock.addEventListener("message", (ev) => {
+      if (userClosed || ws !== sock) return;
       const frame = parseFrame(typeof ev.data === "string" ? ev.data : "");
       if (!frame) return;
       if (frame.event === "entity_changed") {
@@ -112,6 +113,7 @@ export function openEntityEventsClient(handlers: EntityEventsClientHandlers): En
     });
 
     sock.addEventListener("close", (ev) => {
+      if (ws !== sock) return;
       ws = null;
       handlers.onClose?.(ev.code, ev.reason);
       if (userClosed) return;

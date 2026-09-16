@@ -68,7 +68,14 @@ function serviceFixture() {
     .fn()
     .mockReturnValue('https://cdn.example.com/asset');
   const tx = {
+    mediaAsset: {
+      findFirst: jest.fn().mockResolvedValue({ id: ASSET_ID, metadata: null }),
+    },
+    aiProviderMediaAssetGroup: {
+      findFirst: jest.fn().mockResolvedValue({ id: GROUP_ID }),
+    },
     aiProviderMediaAssetMirror: {
+      findUnique: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     $queryRaw: jest.fn().mockResolvedValue([{ next_seq: 2n }]),
@@ -141,6 +148,7 @@ describe('MediaAssetProviderSyncService manual media checks', () => {
       statusReason: null,
       updatedAt: new Date('2026-07-23T12:01:00.000Z'),
     };
+    fixture.tx.aiProviderMediaAssetMirror.findUnique.mockResolvedValue(failed);
     fixture.prisma.aiProviderMediaAssetMirror.findUnique
       .mockResolvedValueOnce(failed)
       .mockResolvedValueOnce(pending);
@@ -181,6 +189,7 @@ describe('MediaAssetProviderSyncService manual media checks', () => {
       statusReason: null,
       updatedAt: new Date('2026-07-23T12:01:00.000Z'),
     };
+    fixture.tx.aiProviderMediaAssetMirror.findUnique.mockResolvedValue(failed);
     fixture.prisma.aiProviderMediaAssetMirror.findUnique
       .mockResolvedValueOnce(failed)
       .mockResolvedValueOnce(processing);

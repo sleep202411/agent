@@ -1,3 +1,4 @@
+import { matchesExecutionBinding } from '../../provider-adapter';
 import { Injectable, Logger } from '@nestjs/common';
 import type {
   AiModelDefinition,
@@ -72,15 +73,41 @@ export class FalProviderAdapter implements ProviderAdapter {
     return input;
   }
 
+  async resolveExecutionBinding(
+    modelId: string,
+    input: Record<string, unknown>,
+  ) {
+    const runtime = await this.requireRuntime(modelId, true);
+    const endpoint = this.resolveSubmitEndpoint(
+      runtime,
+      mapFalProviderRequest(runtime, input),
+    );
+    return this.catalog.getExecutionBinding(modelId, endpoint);
+  }
+
   async startGeneration(
     modelId: string,
     input: Record<string, unknown>,
     ctx: ProviderGenerationContext,
   ): Promise<StartResult> {
     void ctx;
-    const runtime = await this.requireRuntime(modelId);
+    const runtime = await this.requireRuntime(modelId, true);
     const payload = mapFalProviderRequest(runtime, input);
     const submitEndpoint = this.resolveSubmitEndpoint(runtime, payload);
+    if (
+      ctx.expectedExecutionBinding &&
+      !matchesExecutionBinding(
+        ctx.expectedExecutionBinding,
+        await this.catalog.getExecutionBinding(modelId, submitEndpoint),
+      )
+    ) {
+      throw falError(
+        'VALIDATION_ERROR',
+        'The queued generation binding changed before provider submission.',
+        'This model configuration changed while the job was queued. Submit a new request.',
+      );
+    }
+
     const response = await this.client.submit(
       this.configService.config,
       submitEndpoint,
@@ -283,12 +310,16 @@ export class FalProviderAdapter implements ProviderAdapter {
 
   private async requireRuntime(
     modelIdOrEndpointId: string,
+    forSubmission = false,
   ): Promise<FalModelRuntimeConfig> {
     const runtime =
-      (await this.catalog.getRuntimeConfig(modelIdOrEndpointId)) ??
-      (modelIdOrEndpointId.endsWith('/edit')
+      (await this.catalog.getRuntimeConfig(modelIdOrEndpointId, {
+        forSubmission,
+      })) ??
+      (!forSubmission && modelIdOrEndpointId.endsWith('/edit')
         ? await this.catalog.getRuntimeConfig(
             falEditEndpointToConfigKey(modelIdOrEndpointId),
+            { forSubmission },
           )
         : null);
     if (!runtime) {
@@ -335,7 +366,8 @@ export class FalProviderAdapter implements ProviderAdapter {
     if (
       runtime.type === 'image' &&
       runtime.modeEndpoints &&
-      new Set(Object.values(runtime.modeEndpoints)).size > 1
+      (runtime.strictModeRouting ||
+        new Set(Object.values(runtime.modeEndpoints)).size > 1)
     ) {
       const mode = payload.mask_url
         ? 'inpainting'
@@ -344,6 +376,13 @@ export class FalProviderAdapter implements ProviderAdapter {
           : 'text_to_image';
       const endpoint = runtime.modeEndpoints[mode];
       if (endpoint) return endpoint;
+      if (runtime.strictModeRouting) {
+        throw falError(
+          'VALIDATION_ERROR',
+          `The selected fal image model does not support ${mode}.`,
+          'Choose a model that supports these inputs.',
+        );
+      }
     }
     if (!hasReferenceImages) return runtime.endpointId;
 
