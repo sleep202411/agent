@@ -401,16 +401,18 @@ type LookupUser = { userId: string; nickname?: string | null; avatar?: string | 
 async function fetchUserDisplays(userIds: string[]): Promise<Map<string, LookupUser>> {
   const map = new Map<string, LookupUser>();
   if (!userIds.length) return map;
-  try {
-    const res = await api.get<{ users?: LookupUser[] }>("/users/by-ids", {
-      ...AURORA,
-      params: { ids: userIds.slice(0, 50).join(",") },
-    });
-    for (const user of res.users ?? []) {
-      if (user.userId) map.set(user.userId, user);
+  for (let offset = 0; offset < userIds.length; offset += 50) {
+    try {
+      const res = await api.get<{ users?: LookupUser[] }>("/users/by-ids", {
+        ...AURORA,
+        params: { ids: userIds.slice(offset, offset + 50).join(",") },
+      });
+      for (const user of res.users ?? []) {
+        if (user.userId) map.set(user.userId, user);
+      }
+    } catch {
+      // Keep snapshot names for this batch; later contributors can still resolve.
     }
-  } catch {
-    // Fall back to the contributor snapshot name + initial avatar.
   }
   return map;
 }

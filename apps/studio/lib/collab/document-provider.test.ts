@@ -129,3 +129,38 @@ it("recovers unacknowledged and offline edits into the same CRDT document", asyn
     server.destroy();
   }
 });
+
+it("does not restart heartbeat work from an open callback retained after destruction", () => {
+  const opened = Socket.instances[0]!.onopen!;
+  provider.destroy();
+  expect(vi.getTimerCount()).toBe(0);
+  opened();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("ignores a departed socket close after the replacement is synchronized", async () => {
+  const first = Socket.instances[0]!;
+  first.open();
+  first.sync();
+  const closed = first.onclose!;
+  const second = await reconnect();
+  expect(provider.getStatus()).toBe("synced");
+  closed();
+  expect(provider.getStatus()).toBe("synced");
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(Socket.instances).toHaveLength(2);
+  expect(second.readyState).toBe(Socket.OPEN);
+});
+
+it("delivers application events only from the current document socket", async () => {
+  const receive = vi.fn();
+  provider.onAppEvent(receive);
+  const first = Socket.instances[0]!;
+  first.open();
+  first.sync();
+  const message = first.onmessage!;
+  const second = await reconnect();
+  message({ data: JSON.stringify({ event: "app_event", data: { id: "old" } }) });
+  second.frame("app_event", { id: "current" });
+  expect(receive).toHaveBeenCalledExactlyOnceWith({ id: "current" });
+});

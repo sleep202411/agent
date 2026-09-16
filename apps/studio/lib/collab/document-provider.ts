@@ -180,14 +180,17 @@ export class DocumentProvider {
     }
     this.ws = socket;
     socket.onopen = () => {
+      if (this.destroyed || this.ws !== socket) return;
       this.reconnectAttempt = 0;
       this.startPing();
       // The gateway pushes document_snapshot + operations_sync on connect.
     };
     socket.onmessage = (event) => {
+      if (this.destroyed || this.ws !== socket) return;
       if (typeof event.data === "string") this.handleFrame(event.data);
     };
     socket.onclose = () => {
+      if (this.destroyed || this.ws !== socket) return;
       this.stopPing();
       if (this.ws === socket) this.ws = null;
       if (this.destroyed) return;

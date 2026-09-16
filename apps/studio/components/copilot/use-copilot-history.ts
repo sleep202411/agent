@@ -41,9 +41,12 @@ export function useCopilotHistory<UI_MESSAGE extends UIMessage>({
   onLoaded?: (payload: CopilotHistoryPayload<UI_MESSAGE>) => void;
 }) {
   const scopeKey = `${workspaceId ?? "anonymous"}:${mode ?? "copilot"}:${projectId ?? "none"}:${conversationId}`;
-  const scopeKeyRef = useRef(scopeKey);
+  const scopeKeyRef = useRef<string | null>(scopeKey);
   useLayoutEffect(() => {
     scopeKeyRef.current = scopeKey;
+    return () => {
+      scopeKeyRef.current = null;
+    };
   }, [scopeKey]);
   const [state, setState] = useState<CopilotHistoryState>(() => ({
     scopeKey,
