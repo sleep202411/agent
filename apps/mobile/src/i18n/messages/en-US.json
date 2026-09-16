@@ -379,6 +379,8 @@
   "news.tagAll": "All",
   "news.endOfList": "You're all caught up",
   "settings.checkUpdate": "Check for updates",
+  "settings.about": "About",
+  "about.title": "About",
   "update.availableTitle": "New version",
   "update.availableDetail": "A new version is available.",
   "update.updateNow": "Update",

@@ -19,7 +19,7 @@ const COMMUNITY_POINTS: PaywallProduct[] = [
   {
     id: "community_points_500",
     category: "community_points",
-    storeProductId: "community_points_500",
+    storeProductId: "com.fizzdragon.community.credits.500",
     displayPrice: "¥34.80",
     grantsPoints: "500",
   },
