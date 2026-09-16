@@ -66,6 +66,7 @@ export class WorldTravelController {
   private startPromise: Promise<void> | null = null;
   private endPromise: Promise<void> | null = null;
   private disposed = false;
+  private endRequested = false;
   private providerCompleted = false;
   private latestUnreportedStreamStatus: WorldStreamStatus | null = null;
   private streamStatusReportPromise: Promise<void> | null = null;
@@ -144,6 +145,7 @@ export class WorldTravelController {
 
   end(): Promise<void> {
     if (this.endPromise) return this.endPromise;
+    this.endRequested = true;
     const operation = this.endInternal();
     this.endPromise = operation;
     void operation.catch(() => {
@@ -164,12 +166,8 @@ export class WorldTravelController {
         tokenSeconds: 60,
         maxExperienceSeconds: this.options.maxExperienceSeconds,
       });
-      if (this.disposed) {
-        await closeWorldSession(this.options.projectId, session.id, { travelCompleted: false });
-        this.update({ phase: "ended" });
-        return;
-      }
       this.sessionId = session.id;
+      if (this.endRequested) return;
       const factory = this.options.runtimeFactory ?? createWorldTravelRuntime;
       this.runtime = await factory({
         providerKey: session.providerKey,
@@ -185,10 +183,13 @@ export class WorldTravelController {
           onError: (error) => this.handleRuntimeError(error),
         },
       });
+      if (this.endRequested) return;
       const started = await this.runtime.start();
+      if (this.endRequested) return;
       this.boundTravel = await bindWorldTravel(this.options.projectId, session.id, {
         providerTravelId: started.providerTravelId,
       });
+      if (this.endRequested) return;
       this.update({
         phase: "running",
         travelId: this.boundTravel.id,
@@ -208,6 +209,8 @@ export class WorldTravelController {
     if (this.snapshot.phase === "ended") return;
     if (this.snapshot.phase !== "failed") this.update({ phase: "ending" });
     try {
+      // Startup may still acquire resources; release after that work settles.
+      await this.startPromise?.catch(() => undefined);
       await this.release(this.providerCompleted);
       this.update({
         ...(this.snapshot.phase === "failed" ? {} : { phase: "ended" as const }),

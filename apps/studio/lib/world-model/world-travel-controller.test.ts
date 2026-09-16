@@ -251,4 +251,70 @@ describe("WorldTravelController", () => {
     expect(controller.state.phase).toBe("ended");
     expect(vi.getTimerCount()).toBe(0);
   });
+  it.each(["create", "factory", "start", "bind"])(
+    "releases resources when ending during %s",
+    async (stage) => {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const harness = createRuntimeHarness();
+      if (stage === "create")
+        api.createWorldSession.mockImplementationOnce(async () => {
+          await gate;
+          return {
+            id: SESSION_ID,
+            providerKey: "fal:happy-oyster",
+            heartbeatIntervalSeconds: 30,
+            maxExperienceSeconds: 90,
+            connection: { tokenExpiresIn: 60 },
+          };
+        });
+      if (stage === "factory") {
+        const factory = harness.factory.getMockImplementation()!;
+        harness.factory.mockImplementationOnce(async (input) => {
+          await gate;
+          return factory(input);
+        });
+      }
+      if (stage === "start")
+        vi.mocked(harness.runtime.start).mockImplementationOnce(async () => {
+          await gate;
+          return {
+            providerTravelId: "encrypted-travel",
+            firstFrameUrl: null,
+            maxExperienceSeconds: 90,
+          };
+        });
+      if (stage === "bind")
+        api.bindWorldTravel.mockImplementationOnce(async () => {
+          await gate;
+          return { id: TRAVEL_ID };
+        });
+      const controller = createController(harness);
+      const start = controller.start();
+      const operation =
+        stage === "create"
+          ? api.createWorldSession
+          : stage === "factory"
+            ? harness.factory
+            : stage === "start"
+              ? harness.runtime.start
+              : api.bindWorldTravel;
+      await vi.waitFor(() => expect(operation).toHaveBeenCalled());
+      let ended = false;
+      const end = controller.end().then(() => {
+        ended = true;
+      });
+      for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+      const endedBeforeAcquisitionSettled = ended;
+      release();
+      await Promise.all([start, end]);
+      expect(endedBeforeAcquisitionSettled).toBe(false);
+      expect(controller.state.phase).toBe("ended");
+      expect(api.closeWorldSession).toHaveBeenCalledOnce();
+      if (stage !== "create") expect(harness.runtime.dispose).toHaveBeenCalledOnce();
+      if (stage !== "bind") expect(api.bindWorldTravel).not.toHaveBeenCalled();
+    }
+  );
 });
