@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
+import { useRef, useState } from "react";
 import { IconLoader2, IconSparkles } from "@tabler/icons-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -32,6 +33,7 @@ import {
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { StoryPromptComposer, useStoryAssetMentions } from "./story-prompt-composer";
+import { useStoryOperationScope } from "../_lib/use-story-operation-scope";
 import { useStoryProductionAutosave } from "./use-story-production-autosave";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
@@ -41,7 +43,25 @@ import { useStoryProductionGenerationDefaults } from "./use-story-production-gen
  * editable, and the next generation's model is explicit. Generation stays
  * strictly user-clicked.
  */
-export function StoryClipDetailDialog({
+export function StoryClipDetailDialog(
+  props: React.ComponentProps<typeof StoryClipDetailDialogContent>
+) {
+  const { user } = useAuth();
+  return (
+    <StoryClipDetailDialogContent
+      key={JSON.stringify([
+        props.projectId,
+        props.chapterId,
+        props.sequenceId,
+        props.clip.id,
+        user?.id,
+      ])}
+      {...props}
+    />
+  );
+}
+
+function StoryClipDetailDialogContent({
   clip,
   sequenceId,
   projectId,
@@ -59,10 +79,15 @@ export function StoryClipDetailDialog({
   /** False when the owning surface is read-only; inspection stays available. */
   editable?: boolean;
 }) {
+  const { user, isCurrentAccount } = useAuth();
   const t = useTranslations("storyStudio.assetsPage.detailDialog");
   const queryClient = useQueryClient();
   const defaults = useStoryProductionGenerationDefaults(projectId, clip.kind);
   const models = defaults.models;
+  const isCurrent = useStoryOperationScope(
+    JSON.stringify([projectId, chapterId, sequenceId, clip.id, user?.id, open, editable])
+  );
+  const pending = useRef<{ isCurrent: () => boolean; token: symbol } | null>(null);
   const mentions = useStoryAssetMentions(projectId, chapterId);
 
   // null = follow the page-level default until the creator picks explicitly.
@@ -76,6 +101,8 @@ export function StoryClipDetailDialog({
 
   const { values, changeValues, runWithSavedValues } = useStoryProductionAutosave({
     initialValues: { prompt: (clip.kind === "image" ? clip.imagePrompt : clip.videoPrompt) ?? "" },
+    canPersist: () => user?.id != null && isCurrentAccount(user.id),
+    scopeKey: JSON.stringify([projectId, chapterId, sequenceId, clip.id, user?.id, editable]),
     persist: async ({ prompt }) => {
       const key = storyProductionKeys.storyboard(projectId, chapterId);
       const current =
@@ -111,37 +138,64 @@ export function StoryClipDetailDialog({
       );
       return updated.version;
     },
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("saveError"))),
+    onError: (error) => {
+      if (isCurrent()) toast.error(storyApiErrorMessage(error, t("saveError")));
+    },
   });
   const { prompt } = values;
 
   const generateMutation = useMutation({
     retry: false,
-    mutationFn: () =>
-      runWithSavedValues(async (version) => {
-        const model = models.find((candidate) => candidate.id === effectiveModelId);
-        return createStoryStoryboardClipGeneration(
-          projectId,
-          chapterId,
-          sequenceId,
-          clip.id,
-          createStoryProductionIdempotencyKey("story-generate"),
-          {
-            expectedVersion: version,
-            ...(model ? { modelId: model.id, schemaVersion: model.schemaVersion } : {}),
-          }
-        );
-      }),
-    onSuccess: async () => {
-      toast.success(t("generateStarted"));
+    mutationFn: (operation: {
+      isCurrent: () => boolean;
+      token: symbol;
+      run: () => Promise<unknown>;
+    }) => {
+      if (!operation.isCurrent())
+        throw new DOMException("Clip generation view abandoned", "AbortError");
+      return operation.run();
+    },
+    onSuccess: async (_result, operation) => {
       await invalidateStoryboard();
+      if (!operation.isCurrent()) return;
+      toast.success(t("generateStarted"));
       onOpenChange(false);
     },
-    onError: async (error) => {
-      toast.error(storyApiErrorMessage(error, t("generateError")));
+    onError: async (error, operation) => {
       await invalidateStoryboard();
+      if (operation.isCurrent()) toast.error(storyApiErrorMessage(error, t("generateError")));
+    },
+    onSettled: (_result, _error, operation) => {
+      if (pending.current?.token === operation.token) pending.current = null;
     },
   });
+
+  const generate = () => {
+    if (!open || !editable || !prompt.trim() || !isCurrent() || pending.current?.isCurrent())
+      return;
+    const token = Symbol("clip-generation");
+    pending.current = { isCurrent, token };
+    generateMutation.mutate({
+      isCurrent,
+      token,
+      run: () =>
+        runWithSavedValues(async (version) => {
+          if (!isCurrent()) throw new DOMException("Clip generation view abandoned", "AbortError");
+          const model = models.find((candidate) => candidate.id === effectiveModelId);
+          return createStoryStoryboardClipGeneration(
+            projectId,
+            chapterId,
+            sequenceId,
+            clip.id,
+            createStoryProductionIdempotencyKey("story-generate"),
+            {
+              expectedVersion: version,
+              ...(model ? { modelId: model.id, schemaVersion: model.schemaVersion } : {}),
+            }
+          );
+        }),
+    });
+  };
 
   const busy = generateMutation.isPending;
 
@@ -208,7 +262,7 @@ export function StoryClipDetailDialog({
                 type="button"
                 disabled={busy || !prompt.trim()}
                 loading={generateMutation.isPending}
-                onClick={() => generateMutation.mutate()}
+                onClick={generate}
               >
                 {generateMutation.isPending ? (
                   <IconLoader2 className="animate-spin" />

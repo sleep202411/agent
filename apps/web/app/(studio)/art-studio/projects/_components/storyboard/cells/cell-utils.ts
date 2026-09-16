@@ -583,6 +583,43 @@ export function resolveShotValueId(result: unknown) {
   return "";
 }
 
+const cellWrites = new Map<string, object>();
+
+function beginCellWrite(
+  shotId: string,
+  shotColumnId: string,
+  matches: (cell: ShotValue) => boolean
+) {
+  const origin = store.getState();
+  const instance = selectCurrentInstance(origin);
+  const projectId = origin.project.currentProjectId;
+  const detail = instance.detail;
+  const episodeId = instance.activeEpisodeId;
+  const key = JSON.stringify([projectId, episodeId, shotId, shotColumnId]);
+  const operation = {};
+  cellWrites.set(key, operation);
+  return {
+    owns() {
+      const current = store.getState();
+      const next = selectCurrentInstance(current);
+      return (
+        cellWrites.get(key) === operation &&
+        current.project.currentProjectId === projectId &&
+        next.detail === detail &&
+        next.activeEpisodeId === episodeId &&
+        next.rows.some(
+          (row) =>
+            row.shotId === shotId &&
+            row.shotValues?.some((cell) => cell.shotColumnId === shotColumnId && matches(cell))
+        )
+      );
+    },
+    finish() {
+      if (cellWrites.get(key) === operation) cellWrites.delete(key);
+    },
+  };
+}
+
 export async function persistTextCell(
   shotId: string,
   shotColumnId: string,
@@ -593,6 +630,11 @@ export async function persistTextCell(
   // The blur-time save runs non-silent and reconciles the store.
   options?: { richText?: boolean; silent?: boolean }
 ) {
+  const operation = beginCellWrite(
+    shotId,
+    shotColumnId,
+    (cell) => Boolean(options?.silent) || cell.value === value
+  );
   if (!options?.silent) {
     const currentRows = selectCurrentInstance(store.getState()).rows;
     store.dispatch(
@@ -609,7 +651,7 @@ export async function persistTextCell(
     const result = await backendApi.post("/api/user/shotValue/input", {
       data: { shotId, shotColumnId, value },
     });
-    if (options?.silent) return;
+    if (options?.silent || !operation.owns()) return;
     const nextId = resolveShotValueId(result);
 
     if (nextId) {
@@ -625,6 +667,7 @@ export async function persistTextCell(
       );
     }
   } catch (error) {
+    if (!operation.owns()) return;
     console.error("[StoryboardCells] 保存单元格失败:", error);
     // Surface only the blur-time (non-silent) failure; the debounced autosave
     // stays quiet to avoid toast spam while the user is still typing.
@@ -632,6 +675,8 @@ export async function persistTextCell(
       toast.error("Save failed");
       store.dispatch(touchStoryboard());
     }
+  } finally {
+    operation.finish();
   }
 }
 
@@ -657,6 +702,14 @@ export async function persistValueList(
   values: string[],
   patch: Partial<ShotValue>
 ) {
+  const operation = beginCellWrite(
+    shotId,
+    shotColumnId,
+    (cell) =>
+      Array.isArray(cell.values) &&
+      cell.values.length === values.length &&
+      cell.values.every((item, index) => item === values[index])
+  );
   const currentRows = selectCurrentInstance(store.getState()).rows;
   store.dispatch(setRows(upsertShotCell(currentRows, shotId, shotColumnId, { ...patch, values })));
 
@@ -664,6 +717,7 @@ export async function persistValueList(
     const result = await backendApi.post("/api/user/shotValue/input", {
       data: { shotId, shotColumnId, value: "", values },
     });
+    if (!operation.owns()) return;
     const nextId = resolveShotValueId(result);
 
     if (nextId) {
@@ -673,9 +727,12 @@ export async function persistValueList(
       );
     }
   } catch (error) {
+    if (!operation.owns()) return;
     console.error("[StoryboardCells] 保存素材失败:", error);
     toast.error("Save failed");
     store.dispatch(touchStoryboard());
+  } finally {
+    operation.finish();
   }
 }
 

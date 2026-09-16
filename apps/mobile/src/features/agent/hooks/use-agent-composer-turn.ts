@@ -1,5 +1,5 @@
 import * as DocumentPicker from "expo-document-picker";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert } from "react-native";
 
 import { fillMessageTemplate } from "../api/story-production-api";
@@ -16,6 +16,7 @@ import {
   listProjectSkillInstallations,
   type ProjectSkillInstallation,
 } from "../api/project-skills-api";
+import { useStoryRequestScope } from "./use-story-request-scope";
 import type { AgentOsSendExtras } from "./use-agent-os-session";
 
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -42,7 +43,17 @@ function isPermissionMode(value: string | null): value is AgentOsPermissionMode 
   return value === "ask" || value === "smart" || value === "full";
 }
 
-export function useAgentComposerTurn(projectId: string, workbenchMode: string, disabled: boolean) {
+export function useAgentComposerTurn(
+  projectId: string,
+  workbenchMode: string,
+  disabled: boolean,
+  chapterId?: string
+) {
+  const scope = useStoryRequestScope(JSON.stringify([projectId, workbenchMode, chapterId]));
+  const scopeRef = useRef<typeof scope | null>(scope);
+  const disabledRef = useRef(disabled);
+  const uploadRef = useRef<AbortController | null>(null);
+  const preferenceVersion = useRef(0);
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
   const [uploading, setUploading] = useState(false);
   const [permissionMode, setPermissionModeState] = useState<AgentOsPermissionMode>("smart");
@@ -57,66 +68,110 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
     []
   );
 
+  const [previousScope, setPreviousScope] = useState(scope);
+  if (previousScope !== scope) {
+    setPreviousScope(scope);
+    setPendingFiles([]);
+    setUploading(false);
+    setInvocableSkills([]);
+    setInstallations([]);
+    setTurnSkillIds([]);
+    setTurnProjectSkillIds([]);
+    setDisabledProjectDefaultSkillIds([]);
+    setProjectSkillsLoading(Boolean(projectId) && scope.enabled);
+    setProjectSkillsError(false);
+  }
+  useLayoutEffect(() => {
+    scopeRef.current = scope;
+    return () => {
+      scopeRef.current = null;
+      uploadRef.current?.abort();
+      uploadRef.current = null;
+    };
+  }, [scope]);
+  const [previousDisabled, setPreviousDisabled] = useState(disabled);
+  if (previousDisabled !== disabled) {
+    setPreviousDisabled(disabled);
+    if (disabled) setUploading(false);
+  }
+  useLayoutEffect(() => {
+    disabledRef.current = disabled;
+    if (disabled) {
+      uploadRef.current?.abort();
+      uploadRef.current = null;
+    }
+  }, [disabled]);
+  const canEdit = useCallback(
+    () => scopeRef.current === scope && scope.enabled && !disabledRef.current,
+    [scope]
+  );
+
   useEffect(() => {
+    let cancelled = false;
+    const version = preferenceVersion.current;
     void getStoredString(PERM_STORAGE_KEY)
       .then((saved) => {
-        if (isPermissionMode(saved)) setPermissionModeState(saved);
+        if (!cancelled && preferenceVersion.current === version && isPermissionMode(saved))
+          setPermissionModeState(saved);
       })
       .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const setPermissionMode = useCallback((mode: AgentOsPermissionMode) => {
-    setPermissionModeState(mode);
-    void setStoredString(PERM_STORAGE_KEY, mode).catch(() => {});
-  }, []);
+  const setPermissionMode = useCallback(
+    (mode: AgentOsPermissionMode) => {
+      if (!canEdit()) return;
+      preferenceVersion.current += 1;
+      setPermissionModeState(mode);
+      void setStoredString(PERM_STORAGE_KEY, mode).catch(() => {});
+    },
+    [canEdit]
+  );
 
   useEffect(() => {
-    if (!projectId) return;
-    let cancelled = false;
+    if (!projectId || !scope.enabled) return;
+    const request = new AbortController();
     void agentOsApi
-      .listSkills(projectId, workbenchMode)
+      .listSkills(projectId, workbenchMode, request.signal)
       .then((catalog) => {
-        if (cancelled) return;
+        if (request.signal.aborted) return;
         setInvocableSkills(catalog.invocable);
         setTurnSkillIds((current) =>
           current.filter((id) => catalog.invocable.some((skill) => skill.id === id))
         );
       })
       .catch(() => {
-        if (!cancelled) setInvocableSkills([]);
+        if (!request.signal.aborted) setInvocableSkills([]);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, workbenchMode]);
+    return () => request.abort();
+  }, [projectId, workbenchMode, scope]);
 
   const skillsKey = `${projectId}:${skillsTick}`;
   const [previousSkillsKey, setPreviousSkillsKey] = useState(skillsKey);
   if (previousSkillsKey !== skillsKey) {
     setPreviousSkillsKey(skillsKey);
-    setProjectSkillsLoading(Boolean(projectId));
+    setProjectSkillsLoading(Boolean(projectId) && scope.enabled);
     setProjectSkillsError(false);
   }
 
   useEffect(() => {
-    if (!projectId) return;
-    let cancelled = false;
-    void listProjectSkillInstallations("story", projectId)
+    if (!projectId || !scope.enabled) return;
+    const request = new AbortController();
+    void listProjectSkillInstallations("story", projectId, request.signal)
       .then((payload) => {
-        if (cancelled) return;
+        if (request.signal.aborted) return;
         setInstallations(payload.installations);
         setProjectSkillsLoading(false);
       })
       .catch(() => {
-        if (cancelled) return;
-        setInstallations([]);
+        if (request.signal.aborted) return;
         setProjectSkillsLoading(false);
         setProjectSkillsError(true);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, skillsTick]);
+    return () => request.abort();
+  }, [projectId, skillsTick, scope]);
 
   const projectSkillEntries = useMemo((): ProjectSkillComposerEntry[] => {
     const expectedSource = `agent_os:${workbenchMode}`;
@@ -166,17 +221,17 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
 
   const toggleTurnSkill = useCallback(
     (skillId: string) => {
-      if (disabled) return;
+      if (!canEdit()) return;
       setTurnSkillIds((prev) =>
         prev.includes(skillId) ? prev.filter((id) => id !== skillId) : [...prev, skillId]
       );
     },
-    [disabled]
+    [canEdit]
   );
 
   const toggleProjectSkill = useCallback(
     (installationId: string, isDefault: boolean) => {
-      if (disabled) return;
+      if (!canEdit()) return;
       if (isDefault) {
         setDisabledProjectDefaultSkillIds((current) =>
           current.includes(installationId)
@@ -191,7 +246,7 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
           : [...current, installationId]
       );
     },
-    [disabled]
+    [canEdit]
   );
 
   const isProjectSkillActive = useCallback(
@@ -202,12 +257,16 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
     [effectiveDisabledProjectDefaultSkillIds, effectiveTurnProjectSkillIds]
   );
 
-  const removePending = useCallback((id: string) => {
-    setPendingFiles((prev) => prev.filter((file) => file.id !== id));
-  }, []);
+  const removePending = useCallback(
+    (id: string) => {
+      if (!canEdit()) return;
+      setPendingFiles((prev) => prev.filter((file) => file.id !== id));
+    },
+    [canEdit]
+  );
 
   const pickAndUpload = useCallback(async () => {
-    if (disabled || uploading) return;
+    if (!canEdit() || uploadRef.current) return;
     const remaining = Math.max(0, MAX_ATTACHMENTS_PER_TURN - pendingFiles.length);
     if (remaining === 0) {
       Alert.alert(
@@ -218,69 +277,78 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
       );
       return;
     }
-    const picked = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      multiple: true,
-      type: ATTACHMENT_PICKER_TYPES,
-    });
-    if (picked.canceled || !picked.assets?.length) return;
-    if (picked.assets.length > remaining) {
-      Alert.alert(
-        t("agent.composer.attachFile"),
-        fillMessageTemplate(t("agent.composer.attachmentTooMany"), {
-          count: MAX_ATTACHMENTS_PER_TURN,
-        })
-      );
-    }
-    const accepted = picked.assets.slice(0, remaining).flatMap((asset) => {
-      const name = asset.name?.trim() || "attachment";
-      const size = asset.size ?? 0;
-      if (!isAllowedComposerAttachment(name)) {
-        Alert.alert(
-          t("agent.composer.attachFile"),
-          fillMessageTemplate(t("agent.composer.attachmentUnsupportedType"), { name })
-        );
-        return [];
-      }
-      if (size === 0) {
-        Alert.alert(
-          t("agent.composer.attachFile"),
-          fillMessageTemplate(t("agent.composer.attachmentEmpty"), { name })
-        );
-        return [];
-      }
-      if (size > MAX_ATTACHMENT_BYTES) {
-        Alert.alert(
-          t("agent.composer.attachFile"),
-          fillMessageTemplate(t("agent.composer.attachmentTooLarge"), { name, size: 20 })
-        );
-        return [];
-      }
-      return [
-        {
-          uri: asset.uri,
-          name,
-          mimeType: asset.mimeType,
-          size,
-        },
-      ];
-    });
-    if (accepted.length === 0) return;
-
+    const operation = new AbortController();
+    uploadRef.current = operation;
     setUploading(true);
+    const isCurrent = () =>
+      canEdit() && uploadRef.current === operation && !operation.signal.aborted;
     try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: true,
+        type: ATTACHMENT_PICKER_TYPES,
+      });
+      if (!isCurrent()) return;
+      if (picked.canceled || !picked.assets?.length) return;
+      if (picked.assets.length > remaining) {
+        Alert.alert(
+          t("agent.composer.attachFile"),
+          fillMessageTemplate(t("agent.composer.attachmentTooMany"), {
+            count: MAX_ATTACHMENTS_PER_TURN,
+          })
+        );
+      }
+      const accepted = picked.assets.slice(0, remaining).flatMap((asset) => {
+        const name = asset.name?.trim() || "attachment";
+        const size = asset.size ?? 0;
+        if (!isAllowedComposerAttachment(name)) {
+          Alert.alert(
+            t("agent.composer.attachFile"),
+            fillMessageTemplate(t("agent.composer.attachmentUnsupportedType"), { name })
+          );
+          return [];
+        }
+        if (size === 0) {
+          Alert.alert(
+            t("agent.composer.attachFile"),
+            fillMessageTemplate(t("agent.composer.attachmentEmpty"), { name })
+          );
+          return [];
+        }
+        if (size > MAX_ATTACHMENT_BYTES) {
+          Alert.alert(
+            t("agent.composer.attachFile"),
+            fillMessageTemplate(t("agent.composer.attachmentTooLarge"), { name, size: 20 })
+          );
+          return [];
+        }
+        return [
+          {
+            uri: asset.uri,
+            name,
+            mimeType: asset.mimeType,
+            size,
+          },
+        ];
+      });
+      if (accepted.length === 0) return;
+
       const uploaded: AgentOsAttachmentSummary[] = [];
       for (let index = 0; index < accepted.length; index += UPLOAD_CONCURRENCY) {
+        if (!isCurrent()) return;
         const batch = accepted.slice(index, index + UPLOAD_CONCURRENCY);
         const results = await Promise.allSettled(
-          batch.map((file) => agentOsApi.uploadAttachment(projectId, file))
+          batch.map((file) => agentOsApi.uploadAttachment(projectId, file, operation.signal))
         );
+        if (!isCurrent()) return;
         results.forEach((result, batchIndex) => {
           const file = batch[batchIndex];
           if (result.status === "rejected") {
             Alert.alert(
               t("agent.composer.attachFile"),
-              fillMessageTemplate(t("agent.composer.attachmentFailed"), { name: file.name })
+              result.reason instanceof Error
+                ? result.reason.message
+                : fillMessageTemplate(t("agent.composer.attachmentFailed"), { name: file.name })
             );
             return;
           }
@@ -304,14 +372,22 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
           return [...byId.values()];
         });
       }
-    } catch {
-      Alert.alert(t("agent.composer.attachFile"), t("agent.composer.attachmentFailedGeneric"));
+    } catch (error) {
+      if (isCurrent())
+        Alert.alert(
+          t("agent.composer.attachFile"),
+          error instanceof Error ? error.message : t("agent.composer.attachmentFailedGeneric")
+        );
     } finally {
-      setUploading(false);
+      if (uploadRef.current === operation) {
+        uploadRef.current = null;
+        setUploading(false);
+      }
     }
-  }, [disabled, pendingFiles.length, projectId, uploading]);
+  }, [canEdit, pendingFiles.length, projectId]);
 
-  const takeSendExtras = useCallback((): AgentOsSendExtras => {
+  const getSendExtras = useCallback((): AgentOsSendExtras | undefined => {
+    if (!canEdit() || uploadRef.current) return undefined;
     const ready = pendingFiles.filter((file) => file.status === "ready");
     const extras: AgentOsSendExtras = {
       attachmentIds: ready.map((file) => file.id),
@@ -325,18 +401,32 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
           ? effectiveDisabledProjectDefaultSkillIds
           : undefined,
     };
-    setPendingFiles([]);
-    setTurnSkillIds([]);
-    setTurnProjectSkillIds([]);
-    setDisabledProjectDefaultSkillIds([]);
     return extras;
   }, [
+    canEdit,
     effectiveDisabledProjectDefaultSkillIds,
     effectiveTurnProjectSkillIds,
     pendingFiles,
     permissionMode,
     turnSkillIds,
   ]);
+
+  const commitSendExtras = useCallback(
+    (extras: AgentOsSendExtras) => {
+      // Sending itself locks editing; successful consumption needs scope ownership,
+      // not the now-disabled editor flag.
+      if (scopeRef.current !== scope || !scope.enabled) return;
+      setPendingFiles((files) => files.filter((file) => !extras.attachmentIds?.includes(file.id)));
+      setTurnSkillIds((ids) => ids.filter((id) => !extras.skillIds?.includes(id)));
+      setTurnProjectSkillIds((ids) =>
+        ids.filter((id) => !extras.projectSkillInstallationIds?.includes(id))
+      );
+      setDisabledProjectDefaultSkillIds((ids) =>
+        ids.filter((id) => !extras.disabledDefaultSkillInstallationIds?.includes(id))
+      );
+    },
+    [scope]
+  );
 
   return {
     pendingFiles,
@@ -349,13 +439,16 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
     projectSkillEntries,
     projectSkillsLoading,
     projectSkillsError,
-    retryProjectSkills: () => setSkillsTick((value) => value + 1),
+    retryProjectSkills: () => {
+      if (canEdit()) setSkillsTick((value) => value + 1);
+    },
     activeProjectSkillCount,
     toggleProjectSkill,
     isProjectSkillActive,
     pickAndUpload,
     removePending,
     canSendWithoutText: pendingFiles.some((file) => file.status === "ready"),
-    takeSendExtras,
+    getSendExtras,
+    commitSendExtras,
   };
 }

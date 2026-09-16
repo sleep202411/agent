@@ -319,8 +319,18 @@ export class WorkspaceInvitesService {
         created = true;
       });
     } catch (err) {
-      // Raced a concurrent accept by the same user — they're a member now.
       if (!isUniqueViolation(err)) throw err;
+      // A unique failure can roll back any write in the transaction. Only an
+      // independently committed access grant makes this an idempotent success.
+      const hasAccess = await existingInviteAccess(async () => {
+        await this.permissions.requireWorkspaceRole(
+          user.userId,
+          invite.workspaceId,
+          WorkspaceMemberRole.viewer,
+        );
+        return true;
+      });
+      if (!hasAccess) throw err;
     }
 
     // Record the accept regardless of whether this call created the row or

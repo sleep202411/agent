@@ -50,10 +50,9 @@ import { MediaPreviewPanel } from "../media-preview-panel";
 import { ResultGallery } from "../result-gallery";
 import { GenerateButton } from "@/components/ui/generate-button";
 import { backendApi } from "@/src/lib/api";
-import { useAppDispatch, useAppSelector, store } from "@/src/store";
+import { useAppDispatch, useAppSelector } from "@/src/store";
 import {
   selectCurrentInstance,
-  setEpisodes,
   initVideoInstance,
   loadVideoHistory,
   deleteVideoItem,
@@ -81,6 +80,7 @@ import {
 } from "@/src/store/slices/taskSlice";
 import { stripNonMentionTags } from "@/app/(studio)/art-studio/projects/_components/storyboard/cells/cell-utils";
 import { usePromptAutosave } from "../use-prompt-autosave";
+import { useEpisodePromptAutosave } from "../use-episode-prompt-autosave";
 import {
   buildExpandPayload,
   detectPromptLanguage,
@@ -261,45 +261,17 @@ export function AiVideoGeneratorDialog({
   );
 
   // ── Autosave: main prompt → video-prompt cell (debounced, flush on close) ──
-  const { schedule: scheduleSavePrompt, flush: flushPrompt } = usePromptAutosave((value) =>
-    onAutoSavePrompt?.(value)
+  const { schedule: scheduleSavePrompt, flush: flushPrompt } = usePromptAutosave(
+    (value) => onAutoSavePrompt?.(value),
+    800,
+    JSON.stringify([shotId, shotColumnId])
   );
   useEffect(() => {
     if (!open) flushPrompt();
   }, [open, flushPrompt]);
 
   // ── Autosave: 前置/后置提示词 → episode (debounced; mirrors the image dialog) ──
-  const episodeSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveEpisodePrompts = useCallback(
-    (front: string, behind: string) => {
-      if (episodeSaveTimer.current) clearTimeout(episodeSaveTimer.current);
-      episodeSaveTimer.current = setTimeout(() => {
-        const inst = selectCurrentInstance(store.getState());
-        const episode = inst.episodes.find((e) => String(e.id) === String(inst.activeEpisodeId));
-        if (!episode?.id) return;
-        dispatch(
-          setEpisodes(
-            inst.episodes.map((item) =>
-              String(item.id) === String(episode.id)
-                ? { ...item, frontPrompt: front.trim(), behindPrompt: behind.trim() }
-                : item
-            )
-          )
-        );
-        backendApi
-          .post("/api/user/world/update/episode", {
-            data: {
-              id: episode.id,
-              projectId: inst.detail?.id,
-              frontPrompt: front.trim(),
-              behindPrompt: behind.trim(),
-            },
-          })
-          .catch((err) => console.warn("[AiVideoGeneratorDialog] save prompts failed:", err));
-      }, 500);
-    },
-    [dispatch]
-  );
+  const { schedule: saveEpisodePrompts } = useEpisodePromptAutosave();
 
   const key = selectVideoInstanceKey(shotId, shotColumnId);
   const instance = useAppSelector((s) => selectVideoInstance(s, shotId, shotColumnId));

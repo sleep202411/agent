@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { IconArrowLeft } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -27,6 +29,7 @@ const STEP_BY_SEGMENT = {
  * step page including the canvas; the playtest stays chrome-free.
  */
 export function StoryProjectHeader({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
   const segment = useSelectedLayoutSegment();
   const t = useTranslations("storyStudio");
   // Phones give the chat view the whole screen — the bar only shows with work.
@@ -34,9 +37,9 @@ export function StoryProjectHeader({ projectId }: { projectId: string }) {
   const active = STEP_BY_SEGMENT[segment as keyof typeof STEP_BY_SEGMENT];
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "script-workbench", projectId],
-    queryFn: () => getStoryWorkbench(projectId),
-    enabled: Boolean(active),
+    queryKey: ["story-studio", "script-workbench", projectId, user?.id ?? null],
+    queryFn: ({ signal }) => getStoryWorkbench(projectId, undefined, signal),
+    enabled: Boolean(projectId && active && user),
     retry: false,
   });
 

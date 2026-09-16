@@ -11,8 +11,11 @@ export function CrewUnreadMarker({ crewId }: { crewId: string }) {
   const { data } = useQuery({
     queryKey: ["notifications", "crew-unread", user?.id ?? null],
     enabled: Boolean(user?.id),
-    queryFn: () =>
-      crewApi.get<Array<{ crewId: string; count: number }>>("/notifications/unread-crews"),
+    queryFn: ({ signal }) =>
+      crewApi.get<Array<{ crewId: string; count: number }>>("/notifications/unread-crews", {
+        signal,
+        cache: "no-store",
+      }),
     staleTime: 30_000,
     refetchInterval: 60_000,
   });

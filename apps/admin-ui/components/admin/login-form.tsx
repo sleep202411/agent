@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import {
@@ -12,11 +12,29 @@ import {
   IconShieldCheck,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
-import { adminUiApiPath } from "@/lib/admin-api";
+import { adminAuthRequest } from "./admin-auth-request";
 import type { AdminSiteOption } from "@/lib/admin-sites";
 
 export function LoginForm({ site }: { site: AdminSiteOption }) {
+  return <LoginFormContent key={`${site.key}:${site.domain}`} site={site} />;
+}
+
+function LoginFormContent({ site }: { site: AdminSiteOption }) {
   const router = useRouter();
+  const active = useRef(false);
+  const request = useRef<AbortController | null>(null);
+  const authenticated = useRef(false);
+  const copying = useRef<object | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      request.current?.abort();
+      request.current = null;
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
@@ -31,6 +49,13 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
     secret?: string;
     otpauthUri?: string;
   } | null>(null);
+
+  useLayoutEffect(() => {
+    return () => {
+      copying.current = null;
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, [mfaChallenge]);
 
   const otpauthUri = mfaChallenge?.setupRequired ? mfaChallenge.otpauthUri : undefined;
   // Derived during render: only show the QR once it matches the current URI,
@@ -64,61 +89,69 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
   }, [otpauthUri]);
 
   async function copyMfaSecret() {
-    if (!mfaChallenge?.secret) return;
-    await navigator.clipboard.writeText(mfaChallenge.secret);
-    setSecretCopied(true);
-    window.setTimeout(() => setSecretCopied(false), 1800);
+    if (!active.current || copying.current || !mfaChallenge?.secret) return;
+    const operation = {};
+    copying.current = operation;
+    try {
+      await navigator.clipboard.writeText(mfaChallenge.secret);
+      if (!active.current || copying.current !== operation) return;
+      setSecretCopied(true);
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => {
+        if (active.current) setSecretCopied(false);
+      }, 1800);
+    } catch (err) {
+      if (active.current && copying.current === operation)
+        setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (copying.current === operation) copying.current = null;
+    }
   }
-
+  async function authenticate(path: string, body: Record<string, unknown>) {
+    if (!active.current || request.current || authenticated.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    setError(null);
+    setPending(true);
+    try {
+      const data = await adminAuthRequest<{
+        mfa?: NonNullable<typeof mfaChallenge> & { required: boolean };
+      }>(path, body, controller);
+      if (!active.current || request.current !== controller || controller.signal.aborted) return;
+      if (data?.mfa?.required) {
+        setMfaChallenge(data.mfa);
+        setMfaCode("");
+        setSecretCopied(false);
+      } else {
+        authenticated.current = true;
+        router.replace("/");
+        router.refresh();
+      }
+    } catch (err) {
+      if (active.current && request.current === controller)
+        setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (request.current === controller) {
+        request.current = null;
+        if (active.current && !authenticated.current) setPending(false);
+      }
+    }
+  }
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setError(null);
-    setPending(true);
     const formData = new FormData(event.currentTarget);
-    const response = await fetch(adminUiApiPath("/api/admin/auth/login"), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email: formData.get("email"),
-        password: formData.get("password"),
-      }),
+    await authenticate("/api/admin/auth/login", {
+      email: formData.get("email"),
+      password: formData.get("password"),
     });
-    const payload = await response.json().catch(() => null);
-    setPending(false);
-    if (!response.ok || payload?.code !== 200) {
-      setError(payload?.msg ?? payload?.message ?? "登录失败，请检查账号和密码。");
-      return;
-    }
-    if (payload?.data?.mfa?.required) {
-      setMfaChallenge(payload.data.mfa);
-      setMfaCode("");
-      return;
-    }
-    router.replace("/");
-    router.refresh();
   }
-
   async function onVerifyMfa(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!mfaChallenge) return;
-    setError(null);
-    setPending(true);
-    const response = await fetch(adminUiApiPath("/api/admin/auth/mfa/verify"), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        challengeToken: mfaChallenge.challengeToken,
-        code: mfaCode,
-      }),
+    if (!mfaChallenge || !/^\d{6}$/.test(mfaCode)) return;
+    await authenticate("/api/admin/auth/mfa/verify", {
+      challengeToken: mfaChallenge.challengeToken,
+      code: mfaCode,
     });
-    const payload = await response.json().catch(() => null);
-    setPending(false);
-    if (!response.ok || payload?.code !== 200) {
-      setError(payload?.msg ?? payload?.message ?? "MFA 验证失败，请重新输入验证码。");
-      return;
-    }
-    router.replace("/");
-    router.refresh();
   }
 
   if (mfaChallenge) {
@@ -212,6 +245,7 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
           type="button"
           className="w-full text-center text-[12px] font-medium text-slate-500 hover:text-slate-950"
           onClick={() => {
+            if (request.current) return;
             setMfaChallenge(null);
             setError(null);
           }}

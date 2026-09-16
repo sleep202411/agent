@@ -26,7 +26,35 @@ export function adminUrlForRequest(_request: NextRequest, path: string) {
   return adminApiUrl(path);
 }
 
-export async function relayAdminResponse(upstream: Response): Promise<Response> {
+export async function adminFetch(
+  request: NextRequest,
+  url: string,
+  init: RequestInit
+): Promise<Response> {
+  request.signal.throwIfAborted();
+  return fetch(url, { ...init, signal: request.signal });
+}
+
+async function readUpstreamBody(upstream: Response, signal?: AbortSignal): Promise<string> {
+  if (!signal) return upstream.text();
+  signal.throwIfAborted();
+  let onAbort!: () => void;
+  const cancelled = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([upstream.text(), cancelled]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
+export async function relayAdminResponse(
+  upstream: Response,
+  signal?: AbortSignal
+): Promise<Response> {
+  signal?.throwIfAborted();
   const headers: Record<string, string> = {
     "content-type": upstream.headers.get("content-type") ?? "application/json",
   };
@@ -35,12 +63,15 @@ export async function relayAdminResponse(upstream: Response): Promise<Response> 
   const cacheControl = upstream.headers.get("cache-control");
   if (cacheControl) headers["cache-control"] = cacheControl;
 
-  const response = new Response(await upstream.text(), {
+  const bodyless = [204, 205, 304].includes(upstream.status);
+  const response = new Response(bodyless ? null : await readUpstreamBody(upstream, signal), {
     status: upstream.status,
     headers,
   });
-  const setCookie = upstream.headers.get("set-cookie");
-  if (setCookie) response.headers.append("set-cookie", scopeAdminCookie(setCookie));
+  signal?.throwIfAborted();
+  for (const setCookie of upstream.headers.getSetCookie()) {
+    response.headers.append("set-cookie", scopeAdminCookie(setCookie));
+  }
   return response;
 }
 

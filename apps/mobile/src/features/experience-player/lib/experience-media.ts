@@ -19,7 +19,13 @@ export const EXPERIENCE_PLAY_ORIENTATION: ExperienceOrientation = "landscape";
 type PlayableUrl = { url: string; reusableUntilMs: number };
 
 const PLAYABLE_URL_CACHE = new Map<string, PlayableUrl>();
-const RESOLVE_IN_FLIGHT = new Map<string, Promise<string>>();
+type ResolveTask = { promise: Promise<string>; controller: AbortController; users: number };
+const RESOLVE_IN_FLIGHT = new Map<string, ResolveTask>();
+function mediaAbortError() {
+  const error = new Error("Media request cancelled");
+  error.name = "AbortError";
+  return error;
+}
 const RESOLVE_TIMEOUT_MS = 15_000;
 /**
  * Signed URLs are short-lived (the Aurora blob SAS runs ~6 minutes), and a
@@ -43,6 +49,7 @@ export function absolutizeExperienceMediaUri(uri: string): string | undefined {
  * is good for.
  */
 export async function resolvePlayableMediaUrl(uri: string, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) throw mediaAbortError();
   const absolute = absolutizeExperienceMediaUri(uri);
   if (!absolute) {
     throw new Error("Invalid media URI");
@@ -55,15 +62,41 @@ export async function resolvePlayableMediaUrl(uri: string, signal?: AbortSignal)
   if (cached && cached.reusableUntilMs > Date.now()) return cached.url;
   PLAYABLE_URL_CACHE.delete(absolute);
 
-  // A second caller for the same clip joins the resolve in flight rather than
-  // signing a competing URL — and so inherits the first caller's abort signal.
-  const pending = RESOLVE_IN_FLIGHT.get(absolute);
-  if (pending) return pending;
-  const task = signPlayableUrl(absolute, signal).finally(() => {
-    RESOLVE_IN_FLIGHT.delete(absolute);
+  // Share transport, but let each caller retire independently.
+  let task = RESOLVE_IN_FLIGHT.get(absolute);
+  if (!task) {
+    const controller = new AbortController();
+    const created: ResolveTask = { controller, users: 0, promise: Promise.resolve("") };
+    created.promise = signPlayableUrl(absolute, controller.signal).finally(() => {
+      if (RESOLVE_IN_FLIGHT.get(absolute) === created) RESOLVE_IN_FLIGHT.delete(absolute);
+    });
+    RESOLVE_IN_FLIGHT.set(absolute, created);
+    task = created;
+  }
+  const shared = task;
+  shared.users += 1;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: unknown, value?: string) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      shared.users -= 1;
+      if (shared.users === 0) {
+        shared.controller.abort();
+        if (RESOLVE_IN_FLIGHT.get(absolute) === shared) RESOLVE_IN_FLIGHT.delete(absolute);
+      }
+      if (error) reject(error);
+      else resolve(value!);
+    };
+    const abort = () => finish(mediaAbortError());
+    signal?.addEventListener("abort", abort, { once: true });
+    shared.promise.then(
+      (value) => finish(undefined, value),
+      (error) => finish(error)
+    );
+    if (signal?.aborted) abort();
   });
-  RESOLVE_IN_FLIGHT.set(absolute, task);
-  return task;
 }
 
 /** Forget a signature that playback rejected, so the next attempt signs afresh. */
@@ -76,15 +109,21 @@ async function signPlayableUrl(absolute: string, signal?: AbortSignal): Promise<
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS);
   const onAbort = () => controller.abort();
-  signal?.addEventListener("abort", onAbort);
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) onAbort();
 
   try {
+    if (controller.signal.aborted) throw mediaAbortError();
     const response = await fetch(absolute, {
       method: "GET",
       headers: { Range: "bytes=0-0" },
       signal: controller.signal,
     });
 
+    if (controller.signal.aborted) {
+      void response.body?.cancel?.().catch(() => {});
+      throw mediaAbortError();
+    }
     if (!response.ok && response.status !== 206) {
       throw new Error(`Media unavailable (${response.status})`);
     }
@@ -97,7 +136,7 @@ async function signPlayableUrl(absolute: string, signal?: AbortSignal): Promise<
 
     // Drop the probe body — we only needed the redirected Location / final URL.
     try {
-      await response.body?.cancel?.();
+      void response.body?.cancel?.().catch(() => {});
     } catch {
       // ignore
     }
@@ -105,6 +144,7 @@ async function signPlayableUrl(absolute: string, signal?: AbortSignal): Promise<
     return playable;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
+      if (signal?.aborted) throw mediaAbortError();
       throw new Error("Media request timed out");
     }
     throw error;

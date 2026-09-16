@@ -24,8 +24,10 @@ export function useCrewPositions(crewId: string | undefined, pageSize = 50) {
   const query = useInfiniteQuery({
     queryKey: [...crewKeys.positions(crewId ?? ""), user?.id ?? null, pageSize],
     enabled,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewPositionPageDTO>(`/crews/${encodeURIComponent(crewId!)}/positions`, {
+        signal,
+        cache: "no-store",
         query: { limit: pageSize, cursor: pageParam },
       }),
     initialPageParam: undefined as string | undefined,

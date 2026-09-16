@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconFolder, IconLoader2, IconSearch } from "@tabler/icons-react";
@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAuth } from "@/app/_components/auth-provider";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { listProjects, type ProjectRef } from "@/lib/collab/projects-api";
 import {
@@ -45,20 +46,34 @@ interface Candidate {
  * leans on the server's typed 403 for non-editor / project-only-membership
  * cases. A dedicated grantable-projects endpoint would let us pre-filter.
  */
-export function AuthorizeProjectDialog({
-  open,
-  onOpenChange,
-  characterId,
-  grantedProjectIds,
-  onGranted,
-}: {
+type AuthorizeProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   characterId: string;
   /** Already-granted (active) project ids — excluded from the picker. */
   grantedProjectIds: ReadonlySet<string>;
   onGranted: (grant: ProjectGrantDto) => void;
-}) {
+};
+export function AuthorizeProjectDialog(props: AuthorizeProps) {
+  const { user } = useAuth();
+  const { workspaces } = useWorkspace();
+  const viewerId = user?.id == null ? "" : String(user.id);
+  return (
+    <AuthorizeContent
+      key={JSON.stringify([viewerId, props.characterId, workspaces.map((w) => w.id).sort()])}
+      {...props}
+      viewerId={viewerId}
+    />
+  );
+}
+function AuthorizeContent({
+  open,
+  onOpenChange,
+  characterId,
+  grantedProjectIds,
+  onGranted,
+  viewerId,
+}: AuthorizeProps & { viewerId: string }) {
   const t = useTranslations("characters");
   const tc = useTranslations("common");
   const { workspaces } = useWorkspace();
@@ -78,6 +93,13 @@ export function AuthorizeProjectDialog({
     setConsentAttested(false);
   };
 
+  const [openScope, setOpenScope] = useState({ open });
+  if (openScope.open !== open) {
+    setOpenScope({ open });
+    setBusy(false);
+    reset();
+  }
+
   const close = (next: boolean) => {
     if (busy) return;
     onOpenChange(next);
@@ -88,13 +110,13 @@ export function AuthorizeProjectDialog({
   // belongs to. Fanned out per workspace; the server enforces editor-ness.
   const workspaceIds = useMemo(() => workspaces.map((w) => w.id), [workspaces]);
   const projectsQuery = useQuery({
-    queryKey: ["fizzstudio", "grantable-projects", ...workspaceIds] as const,
-    enabled: open && workspaces.length > 0,
+    queryKey: ["fizzstudio", "grantable-projects", viewerId, ...workspaceIds] as const,
+    enabled: open && !!viewerId && workspaces.length > 0,
     staleTime: 30_000,
-    queryFn: async (): Promise<Candidate[]> => {
+    queryFn: async ({ signal }): Promise<Candidate[]> => {
       const perWorkspace = await Promise.all(
         workspaces.map(async (ws) => {
-          const projects = await listProjects(ws.id).catch(() => [] as ProjectRef[]);
+          const projects = await listProjects(ws.id, signal);
           return projects
             .filter((p) => p.status === "active")
             .map((project) => ({ project, workspaceName: ws.name }));
@@ -113,19 +135,50 @@ export function AuthorizeProjectDialog({
     );
   }, [projectsQuery.data, grantedProjectIds, search]);
 
+  const scopeRef = useRef(openScope);
+  const mounted = useRef(false);
+  const active = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    scopeRef.current = openScope;
+    mounted.current = open && !!viewerId;
+    return () => {
+      mounted.current = false;
+      active.current?.abort();
+      active.current = null;
+    };
+  }, [open, openScope, viewerId]);
   const grant = async () => {
-    if (!selected || busy || !(consentRead && consentAttested)) return;
+    if (
+      !mounted.current ||
+      scopeRef.current !== openScope ||
+      active.current ||
+      !selected ||
+      projectsQuery.isError ||
+      grantedProjectIds.has(selected.project.id) ||
+      !(consentRead && consentAttested)
+    )
+      return;
+    const claim = new AbortController();
+    active.current = claim;
+    const current = () => mounted.current && active.current === claim;
     setBusy(true);
     try {
-      const created = await createProjectGrant(characterId, selected.project.id, {
-        version: REAL_PERSON_GRANT_CONSENT_VERSION,
-        adultAttested: true,
-      });
+      const created = await createProjectGrant(
+        characterId,
+        selected.project.id,
+        {
+          version: REAL_PERSON_GRANT_CONSENT_VERSION,
+          adultAttested: true,
+        },
+        claim.signal
+      );
+      if (!current()) return;
       onGranted(created);
       toast.success(t("grantAdded", { project: selected.project.name }));
       reset();
       onOpenChange(false);
     } catch (error) {
+      if (!current()) return;
       const code = characterApiErrorCode(error);
       // Server rejected the consent (stale version / not sent) — bounce back to
       // the consent screen so the user re-accepts the current copy.
@@ -144,7 +197,10 @@ export function AuthorizeProjectDialog({
       };
       toast.error((code && map[code]) || (error instanceof Error ? error.message : tc("error")));
     } finally {
-      setBusy(false);
+      if (current()) {
+        active.current = null;
+        setBusy(false);
+      }
     }
   };
 
@@ -169,7 +225,7 @@ export function AuthorizeProjectDialog({
             </div>
 
             <div className="max-h-72 min-h-24 space-y-0.5 overflow-y-auto">
-              {projectsQuery.isPending ? (
+              {projectsQuery.isPending && workspaces.length > 0 ? (
                 <div className="flex items-center justify-center py-10 text-muted-foreground">
                   <IconLoader2 className="size-5 animate-spin" stroke={1.8} />
                 </div>

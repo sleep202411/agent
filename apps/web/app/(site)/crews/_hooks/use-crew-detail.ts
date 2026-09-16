@@ -8,9 +8,12 @@ import { CrewApiError, crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { CreateCrewInput, CrewDTO, UpdateCrewInput, UpdateCrewListingInput } from "./types";
 
-async function fetchCrewDetail(id: string): Promise<CrewDTO | null> {
+async function fetchCrewDetail(id: string, signal: AbortSignal): Promise<CrewDTO | null> {
   try {
-    return await crewApi.get<CrewDTO>(`/crews/${encodeURIComponent(id)}`);
+    return await crewApi.get<CrewDTO>(`/crews/${encodeURIComponent(id)}`, {
+      signal,
+      cache: "no-store",
+    });
   } catch (err) {
     // 404 → null so the caller can render a not-found UI; everything
     // else propagates to the page's error boundary.
@@ -23,7 +26,7 @@ export function useCrewDetail(id: string) {
   const { user, isLoading } = useCurrentUser();
   return useQuery({
     queryKey: [...crewKeys.detail(id), user?.id ?? null],
-    queryFn: () => fetchCrewDetail(id),
+    queryFn: ({ signal }) => fetchCrewDetail(id, signal),
     enabled: !!id && !isLoading,
   });
 }

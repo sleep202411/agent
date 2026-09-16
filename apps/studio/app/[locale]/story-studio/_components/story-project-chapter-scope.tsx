@@ -30,14 +30,14 @@ export function StoryProjectChapterScope({
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, user } = useAuth();
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const setActiveChapterId = useStoryProjectUiStore((state) => state.setActiveChapterId);
   const requestedChapterId = searchParams.get("chapter");
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "chapter-scope", projectId],
-    queryFn: () => getStoryWorkbench(projectId),
+    queryKey: ["story-studio", "chapter-scope", projectId, user?.id ?? null],
+    queryFn: ({ signal }) => getStoryWorkbench(projectId, undefined, signal),
     retry: shouldRetryStoryProjectAccess,
   });
   const chapterIds = useMemo(
@@ -74,7 +74,7 @@ export function StoryProjectChapterScope({
     () => () => {
       setActiveChapterId(null);
     },
-    [projectId, setActiveChapterId]
+    [projectId, user?.id, setActiveChapterId]
   );
 
   if (workbenchQuery.isError) {

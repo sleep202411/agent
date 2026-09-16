@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
 import { useTranslations } from "next-intl";
 import {
   IconAlertTriangle,
@@ -223,6 +224,27 @@ export function CharacterMediaBoard({
   character: CharacterDetail;
   onDetail: (detail: CharacterDetail) => void;
 }) {
+  const { user } = useAuth();
+  const viewerId = user?.id == null ? "" : String(user.id);
+  if (!viewerId) return null;
+  return (
+    <MediaBoardContent
+      key={JSON.stringify([viewerId, character.id, character.workspaceId])}
+      character={character}
+      onDetail={onDetail}
+      viewerId={viewerId}
+    />
+  );
+}
+function MediaBoardContent({
+  character,
+  onDetail,
+  viewerId,
+}: {
+  character: CharacterDetail;
+  onDetail: (detail: CharacterDetail) => void;
+  viewerId: string;
+}) {
   const t = useTranslations("characters");
   const tc = useTranslations("common");
   const queryClient = useQueryClient();
@@ -232,19 +254,40 @@ export function CharacterMediaBoard({
   /** Serializes order/cover/remove mutations so optimistic order rewrites
    *  never race each other. */
   const [boardBusy, setBoardBusy] = useState(false);
+  const mounted = useRef(false);
+  const boardClaim = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      boardClaim.current?.abort();
+      boardClaim.current = null;
+    };
+  }, []);
+  const beginBoard = () => {
+    if (!mounted.current || boardClaim.current || aborts.current.size > 0) return null;
+    const claim = new AbortController();
+    boardClaim.current = claim;
+    setBoardBusy(true);
+    return claim;
+  };
+  const currentBoard = (claim: AbortController) => mounted.current && boardClaim.current === claim;
+  const finishBoard = (claim: AbortController) => {
+    if (currentBoard(claim)) {
+      boardClaim.current = null;
+      setBoardBusy(false);
+    }
+  };
   const aborts = useRef(new Map<string, AbortController>());
   const uploadsRef = useRef(uploads);
   const inputRefs = useRef(new Map<CharacterMediaKind, HTMLInputElement>());
 
-  useEffect(() => {
-    uploadsRef.current = uploads;
-  }, [uploads]);
-
-  // Abort in-flight uploads + revoke preview URLs on unmount.
-  useEffect(
+  useLayoutEffect(
     () => () => {
       uploadsRef.current.forEach((upload) => URL.revokeObjectURL(upload.previewUrl));
+      uploadsRef.current = [];
       aborts.current.forEach((controller) => controller.abort());
+      aborts.current.clear();
     },
     []
   );
@@ -252,47 +295,62 @@ export function CharacterMediaBoard({
   /** Reconcile to server truth (refetch the detail) — used whenever a
    *  mutation's outcome is ambiguous (failed reorder, failed/duplicate attach). */
   const invalidateDetail = useCallback(
-    () => void queryClient.invalidateQueries({ queryKey: charactersKeys.detail(character.id) }),
-    [queryClient, character.id]
+    () =>
+      void queryClient.invalidateQueries({
+        queryKey: charactersKeys.viewerDetail(character.id, viewerId),
+      }),
+    [queryClient, character.id, viewerId]
   );
 
   const updateUpload = useCallback((id: string, patch: Partial<PendingUpload>) => {
-    setUploads((prev) =>
-      prev.map((upload) => (upload.id === id ? { ...upload, ...patch } : upload))
+    if (!mounted.current) return;
+    uploadsRef.current = uploadsRef.current.map((upload) =>
+      upload.id === id ? { ...upload, ...patch } : upload
     );
+    setUploads(uploadsRef.current);
   }, []);
 
   const dropUpload = useCallback((id: string) => {
     aborts.current.get(id)?.abort();
-    setUploads((prev) => {
-      const dropped = prev.find((upload) => upload.id === id);
-      if (dropped) URL.revokeObjectURL(dropped.previewUrl);
-      return prev.filter((upload) => upload.id !== id);
-    });
+    aborts.current.delete(id);
+    const dropped = uploadsRef.current.find((upload) => upload.id === id);
+    if (dropped) URL.revokeObjectURL(dropped.previewUrl);
+    uploadsRef.current = uploadsRef.current.filter((upload) => upload.id !== id);
+    if (mounted.current) setUploads(uploadsRef.current);
   }, []);
 
   const runUpload = useCallback(
     async (id: string, kind: CharacterMediaKind, file: File, existingAssetId?: string) => {
+      if (!mounted.current || boardClaim.current || aborts.current.has(id)) return;
       const controller = new AbortController();
       aborts.current.set(id, controller);
+      const owned = () => mounted.current && aborts.current.get(id) === controller;
+      const current = () => owned() && !controller.signal.aborted;
       let attaching = false;
       try {
         let assetId = existingAssetId;
         if (!assetId) {
           const result = await uploadFileViaSignedUrl(file, {
             kind: UPLOAD_KIND[kind],
+            workspaceId: character.workspaceId,
             signal: controller.signal,
-            onProgress: (percent) => updateUpload(id, { progress: percent }),
+            onProgress: (percent) => {
+              if (current()) updateUpload(id, { progress: percent });
+            },
           });
+          if (!current()) return;
           assetId = result.mediaAssetId;
           updateUpload(id, { phase: "attaching", progress: 100, mediaAssetId: assetId });
         }
+        if (!current()) return;
         attaching = true;
-        const detail = await attachCharacterMedia(character.id, assetId);
+        const detail = await attachCharacterMedia(character.id, assetId, controller.signal);
+        if (!current()) return;
         onDetail(detail);
         dropUpload(id);
       } catch (error) {
-        if (isUploadAbort(error)) {
+        if (!owned()) return;
+        if (controller.signal.aborted || isUploadAbort(error)) {
           dropUpload(id);
           return;
         }
@@ -316,21 +374,22 @@ export function CharacterMediaBoard({
           error: error instanceof Error ? error.message : t("uploadFailed"),
         });
       } finally {
-        aborts.current.delete(id);
+        if (aborts.current.get(id) === controller) aborts.current.delete(id);
       }
     },
-    [character.id, onDetail, updateUpload, dropUpload, invalidateDetail, t]
+    [character.id, character.workspaceId, onDetail, updateUpload, dropUpload, invalidateDetail, t]
   );
 
   const media = [...character.media].sort((a, b) => a.sortOrder - b.sortOrder);
   const byKind = (kind: CharacterMediaKind) => media.filter((item) => item.mediaKind === kind);
   const pendingCount = (kind: CharacterMediaKind) =>
-    uploads.filter((upload) => upload.kind === kind && upload.phase !== "failed").length;
+    uploadsRef.current.filter((upload) => upload.kind === kind && upload.phase !== "failed").length;
   /** An attach landing mid-reorder would race the optimistic order rewrite, so
    *  moves also wait for in-flight uploads (failed tiles don't block). */
   const uploadsInFlight = uploads.some((upload) => upload.phase !== "failed");
 
   const addFiles = (kind: CharacterMediaKind, files: File[]) => {
+    if (!mounted.current || boardClaim.current) return;
     const room = Math.max(0, CHARACTER_MEDIA_CAPS[kind] - byKind(kind).length - pendingCount(kind));
     const accepted = files.slice(0, room);
     const skipped = files.length - accepted.length;
@@ -339,8 +398,8 @@ export function CharacterMediaBoard({
     }
     for (const file of accepted) {
       const id = crypto.randomUUID();
-      setUploads((prev) => [
-        ...prev,
+      uploadsRef.current = [
+        ...uploadsRef.current,
         {
           id,
           kind,
@@ -349,12 +408,20 @@ export function CharacterMediaBoard({
           progress: 0,
           phase: "uploading",
         },
-      ]);
+      ];
+      setUploads(uploadsRef.current);
       void runUpload(id, kind, file);
     }
   };
 
   const retryUpload = (upload: PendingUpload) => {
+    if (
+      !mounted.current ||
+      boardClaim.current ||
+      aborts.current.has(upload.id) ||
+      !uploadsRef.current.some((item) => item.id === upload.id && item.phase === "failed")
+    )
+      return;
     updateUpload(upload.id, {
       phase: upload.mediaAssetId ? "attaching" : "uploading",
       progress: upload.mediaAssetId ? 100 : 0,
@@ -380,48 +447,61 @@ export function CharacterMediaBoard({
     if (neighbor < 0 || neighbor >= media.length) return;
     const next = [...media];
     [next[index], next[neighbor]] = [next[neighbor], next[index]];
-    setBoardBusy(true);
+    const claim = beginBoard();
+    if (!claim) return;
     // Optimistic: the tiles snap immediately; the server response reconciles.
     onDetail({ ...character, media: next.map((entry, i) => ({ ...entry, sortOrder: i })) });
     try {
-      onDetail(
-        await reorderCharacterMedia(
-          character.id,
-          next.map((entry) => entry.id)
-        )
+      const detail = await reorderCharacterMedia(
+        character.id,
+        next.map((entry) => entry.id),
+        claim.signal
       );
+      if (currentBoard(claim)) onDetail(detail);
     } catch (error) {
+      if (!currentBoard(claim)) return;
       // Don't write the captured pre-move snapshot back (it may itself be
       // stale) — reconcile to server truth instead.
       invalidateDetail();
       toast.error(error instanceof Error ? error.message : tc("error"));
     } finally {
-      setBoardBusy(false);
+      finishBoard(claim);
     }
   };
 
   const setCover = async (item: CharacterMediaItem) => {
     if (boardBusy) return;
-    setBoardBusy(true);
+    const claim = beginBoard();
+    if (!claim) return;
     try {
-      onDetail(await updateCharacter(character.id, { coverAssetId: item.mediaAssetId }));
+      const detail = await updateCharacter(
+        character.id,
+        { coverAssetId: item.mediaAssetId },
+        claim.signal
+      );
+      if (currentBoard(claim)) onDetail(detail);
     } catch (error) {
+      if (!currentBoard(claim)) return;
       toast.error(error instanceof Error ? error.message : tc("error"));
     } finally {
-      setBoardBusy(false);
+      finishBoard(claim);
     }
   };
 
   const confirmRemove = async () => {
     if (!removing || boardBusy) return;
-    setBoardBusy(true);
+    const claim = beginBoard();
+    if (!claim) return;
     try {
-      onDetail(await removeCharacterMedia(character.id, removing.id));
+      const detail = await removeCharacterMedia(character.id, removing.id, claim.signal);
+      if (!currentBoard(claim)) return;
+      onDetail(detail);
       setRemoving(null);
     } catch (error) {
+      if (!currentBoard(claim)) return;
       toast.error(error instanceof Error ? error.message : tc("error"));
     } finally {
-      setBoardBusy(false);
+      finishBoard(claim);
     }
   };
 
@@ -485,7 +565,9 @@ export function CharacterMediaBoard({
           const items = byKind(kind);
           const kindUploads = uploads.filter((upload) => upload.kind === kind);
           const cap = CHARACTER_MEDIA_CAPS[kind];
-          const occupied = items.length + pendingCount(kind);
+          const occupied =
+            items.length +
+            uploads.filter((upload) => upload.kind === kind && upload.phase !== "failed").length;
           const full = occupied >= cap;
 
           return (

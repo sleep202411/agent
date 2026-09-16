@@ -1,3 +1,4 @@
+import { workspaceTestDatabase } from './__tests__/workspace-test-database';
 import { StoryProjectsService } from '../../story-studio/story-projects.service';
 import { StoryCrewAssetsController } from '../assets/story-crew-assets.controller';
 import { StoryPermissionService } from '../../story-studio/story-permission.service';
@@ -12,9 +13,10 @@ import { WorkspacePermissionService } from '../../workspaces/workspace-permissio
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewAssetAccessService } from '../assets/asset-access.service';
 import { CrewAssetsService } from '../assets/assets.service';
+import { CrewProductionService } from './production.service';
 import { CrewStudioWorkspaceService } from './studio-workspace.service';
 
-const url = process.env.CREW_WORKSPACE_TEST_DATABASE_URL;
+const url = workspaceTestDatabase(process.env);
 (url ? describe : describe.skip)(
   'Crew workspace asset loop (PostgreSQL)',
   () => {
@@ -32,13 +34,6 @@ const url = process.env.CREW_WORKSPACE_TEST_DATABASE_URL;
     let assets: CrewAssetsService;
     let access: CrewAssetAccessService;
     beforeAll(async () => {
-      const target = new URL(url!);
-      if (
-        target.hostname !== '127.0.0.1' ||
-        target.port !== '55480' ||
-        target.pathname !== '/crew_workspace_loop_test'
-      )
-        throw new Error('Dedicated local Crew database required');
       db = new PrismaClient({
         adapter: new PrismaPg({ connectionString: url }),
         transactionOptions: { timeout: 15000 },
@@ -123,10 +118,13 @@ const url = process.env.CREW_WORKSPACE_TEST_DATABASE_URL;
     });
     afterAll(async () => {
       if (!db) return;
-      await db.crew.deleteMany({ where: { id: crewId } });
-      await db.mediaAsset.deleteMany({ where: { id: mediaId } });
-      await db.workspace.deleteMany({ where: { id: workspaceId } });
-      await db.$disconnect();
+      try {
+        await db.crew.deleteMany({ where: { id: crewId } });
+        await db.mediaAsset.deleteMany({ where: { id: mediaId } });
+        await db.workspace.deleteMany({ where: { id: workspaceId } });
+      } finally {
+        await db.$disconnect();
+      }
     });
     it('allows only a Crew admin who owns the workspace and audits the link', async () => {
       await expect(links.link(crewId, reader, workspaceId)).rejects.toThrow();
@@ -151,6 +149,105 @@ const url = process.env.CREW_WORKSPACE_TEST_DATABASE_URL;
       expect(await db.crewProductionActivity.count({ where: { crewId } })).toBe(
         1,
       );
+    });
+    it('removes deleted Crew context from every linked workspace project', async () => {
+      await db.crew.update({
+        where: { id: crewId },
+        data: { deletedAt: new Date() },
+      });
+      try {
+        expect((await assets.projectContext(projectId, owner)).crew).toBeNull();
+        expect(
+          (await assets.projectContext(otherProjectId, reader)).crew,
+        ).toBeNull();
+        await expect(
+          assets.listForProject(otherProjectId, reader, {
+            source: 'all',
+            sort: 'modified',
+          }),
+        ).rejects.toThrow();
+      } finally {
+        await db.crew.update({
+          where: { id: crewId },
+          data: { deletedAt: null },
+        });
+      }
+    });
+    it('ignores deleted internal-production Crew links without affecting project access', async () => {
+      await db.crew.update({
+        where: { id: crewId },
+        data: { studioWorkspaceId: null, productionProjectId: projectId },
+      });
+      try {
+        expect((await assets.projectContext(projectId, owner)).crew?.id).toBe(
+          crewId,
+        );
+        await db.crew.update({
+          where: { id: crewId },
+          data: { deletedAt: new Date() },
+        });
+        expect((await assets.projectContext(projectId, owner)).crew).toBeNull();
+      } finally {
+        await db.crew.update({
+          where: { id: crewId },
+          data: {
+            deletedAt: null,
+            productionProjectId: null,
+            studioWorkspaceId: workspaceId,
+          },
+        });
+      }
+    });
+    it('ignores deleted task and Crew associations for a task Canvas', async () => {
+      const state = await db.crewTaskWorkflowState.create({
+        data: {
+          crewId,
+          name: 'Fixture',
+          color: '#ffffff',
+          semantic: 'open',
+          createdByUserId: owner,
+        },
+      });
+      const task = await db.crewTask.create({
+        data: {
+          crewId,
+          number: 100,
+          title: 'Fixture task',
+          workflowStateId: state.id,
+          canvasProjectId: projectId,
+          createdByUserId: owner,
+        },
+      });
+      await db.crew.update({
+        where: { id: crewId },
+        data: { studioWorkspaceId: null },
+      });
+      try {
+        expect((await assets.projectContext(projectId, owner)).crew?.id).toBe(
+          crewId,
+        );
+        await db.crewTask.update({
+          where: { id: task.id },
+          data: { deletedAt: new Date() },
+        });
+        expect((await assets.projectContext(projectId, owner)).crew).toBeNull();
+        await db.crewTask.update({
+          where: { id: task.id },
+          data: { deletedAt: null },
+        });
+        await db.crew.update({
+          where: { id: crewId },
+          data: { deletedAt: new Date() },
+        });
+        expect((await assets.projectContext(projectId, owner)).crew).toBeNull();
+      } finally {
+        await db.crewTask.delete({ where: { id: task.id } });
+        await db.crewTaskWorkflowState.delete({ where: { id: state.id } });
+        await db.crew.update({
+          where: { id: crewId },
+          data: { deletedAt: null, studioWorkspaceId: workspaceId },
+        });
+      }
     });
     it('concurrent canvas saves reuse one named folder and one file, visible from a second project', async () => {
       const results = await Promise.all(
@@ -387,6 +484,33 @@ const url = process.env.CREW_WORKSPACE_TEST_DATABASE_URL;
       await expect(
         assets.saveFromCanvas(documentId, owner, mediaId),
       ).rejects.toThrow('Canvas project not found');
+    });
+    it('switches between existing project links and workspace links without losing project access', async () => {
+      const prisma = db as PrismaService;
+      const production = new CrewProductionService(
+        prisma,
+        new CrewAuthorizationService(prisma),
+        access,
+        {
+          broadcastCrewTaskProjectChange: () => Promise.resolve(undefined),
+        } as never,
+        new WorkspacePermissionService(prisma),
+      );
+      await production.linkStudioProject(crewId, owner, { projectId });
+      const select = { studioProjectId: true, studioWorkspaceId: true };
+      expect(
+        await db.crew.findUniqueOrThrow({ where: { id: crewId }, select }),
+      ).toEqual({ studioProjectId: projectId, studioWorkspaceId: null });
+      expect((await assets.projectContext(projectId, owner)).crew?.id).toBe(
+        crewId,
+      );
+      await links.link(crewId, owner, workspaceId);
+      expect(
+        await db.crew.findUniqueOrThrow({ where: { id: crewId }, select }),
+      ).toEqual({ studioProjectId: null, studioWorkspaceId: workspaceId });
+      expect(
+        (await assets.projectContext(otherProjectId, owner)).crew?.id,
+      ).toBe(crewId);
     });
     it('removes a Crew reference without deleting its original Studio media', async () => {
       const node = await db.crewAssetNode.findFirstOrThrow({

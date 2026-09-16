@@ -60,6 +60,7 @@ import type {
   SystemMessageKind,
 } from '@repo/shared/conversation';
 import { newShortId } from '../common/id';
+import { conversationUnreadCounts } from '../conversations/unread-counts';
 import { PrismaService } from '../infra/db/db.module';
 import {
   ConversationsService,
@@ -89,72 +90,6 @@ export class OrdersService {
     buyerId: string,
     input: SubmitOrderInput,
   ): Promise<ServiceOrder> {
-    const service = await this.prisma.creatorService.findUnique({
-      where: { id: input.serviceId },
-      select: {
-        id: true,
-        creatorId: true,
-        status: true,
-        deletedAt: true,
-        title: true,
-      },
-    });
-    if (!service || service.deletedAt) {
-      throw new NotFoundException('Service not found');
-    }
-    if (service.status !== 'listed') {
-      throw new ConflictException('Service is not currently accepting orders');
-    }
-    if (service.creatorId === buyerId) {
-      throw new BadRequestException('Cannot order your own service');
-    }
-
-    // Idempotent retry: if (buyer, idempotencyKey) already maps to
-    // an order, return it without re-creating. The partial-unique
-    // index in the migration also gives us DB-level protection
-    // against a race that beats this check.
-    if (input.idempotencyKey) {
-      const existing = await this.prisma.serviceOrder.findFirst({
-        where: { buyerId, idempotencyKey: input.idempotencyKey },
-      });
-      if (existing) return existing;
-    }
-
-    const pkg = await this.prisma.servicePackage.findFirst({
-      where: { serviceId: service.id, tier: input.packageTier },
-    });
-    if (!pkg) {
-      throw new BadRequestException(
-        `Package tier '${input.packageTier}' not offered for this service`,
-      );
-    }
-
-    // Materialize the questionnaire snapshot from current service
-    // questions + buyer answers.
-    const questions = await this.prisma.serviceRequirementQuestion.findMany({
-      where: { serviceId: service.id },
-      orderBy: { displayOrder: 'asc' },
-    });
-    const answerById = new Map(
-      input.answers.map((a) => [a.questionId, a.answer]),
-    );
-    const questionnaire: OrderQuestionnaireEntry[] = questions.map((q) => ({
-      prompt: q.prompt,
-      required: q.required,
-      answer: (answerById.get(q.id) ?? '').trim(),
-    }));
-    for (const entry of questionnaire) {
-      if (entry.required && entry.answer.length === 0) {
-        throw new BadRequestException({
-          message: `Required answer missing: ${entry.prompt}`,
-          field: 'answers',
-        });
-      }
-    }
-
-    this.assertBindingsBelongToBuyer(buyerId, input.bindings);
-
-    const snapshot = packageToSnapshot(pkg);
     const orderId = newShortId();
 
     // Collect WS broadcasts to fire AFTER $transaction commits so a
@@ -165,6 +100,97 @@ export class OrdersService {
 
     const order = await this.prisma
       .$transaction(async (tx) => {
+        // One buyer/service inquiry becomes one order at a time. Subsequent
+        // deliberate orders open a fresh inquiry after the first one evolves.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`service-order:${buyerId}:${input.serviceId}`}, 0))`;
+        // Owner edits take FOR UPDATE on this row. Read availability, package
+        // and questionnaire only after admission, preserving one coherent offer.
+        await tx.$queryRaw`SELECT id FROM creator_services WHERE id = ${input.serviceId} FOR SHARE`;
+        // Idempotent retry: if (buyer, idempotencyKey) already maps to
+        // an order, return it without re-creating. The partial-unique
+        // index in the migration also gives us DB-level protection
+        // against a race that beats this check.
+        if (input.idempotencyKey) {
+          const existing = await tx.serviceOrder.findFirst({
+            where: { buyerId, idempotencyKey: input.idempotencyKey },
+          });
+          if (existing) {
+            this.assertOrderReceiptService(existing, input.serviceId);
+            return existing;
+          }
+        }
+
+        const service = await tx.creatorService.findUnique({
+          where: { id: input.serviceId },
+          select: {
+            id: true,
+            creatorId: true,
+            status: true,
+            deletedAt: true,
+            title: true,
+            version: true,
+          },
+        });
+        if (!service || service.deletedAt) {
+          throw new NotFoundException('Service not found');
+        }
+        if (service.status !== 'listed') {
+          throw new ConflictException(
+            'Service is not currently accepting orders',
+          );
+        }
+        if (service.creatorId === buyerId) {
+          throw new BadRequestException('Cannot order your own service');
+        }
+
+        if (
+          input.expectedServiceVersion !== undefined &&
+          service.version !== input.expectedServiceVersion
+        ) {
+          throw new ConflictException({
+            message:
+              'The service offer has changed. Reload it and review the package and questions before submitting.',
+            field: 'expectedServiceVersion',
+            actual: service.version,
+          });
+        }
+
+        const pkg = await tx.servicePackage.findFirst({
+          where: { serviceId: service.id, tier: input.packageTier },
+        });
+        if (!pkg) {
+          throw new BadRequestException(
+            `Package tier '${input.packageTier}' not offered for this service`,
+          );
+        }
+
+        // Materialize the questionnaire snapshot from current service
+        // questions + buyer answers.
+        const questions = await tx.serviceRequirementQuestion.findMany({
+          where: { serviceId: service.id },
+          orderBy: { displayOrder: 'asc' },
+        });
+        const answerById = new Map(
+          input.answers.map((a) => [a.questionId, a.answer]),
+        );
+        const questionnaire: OrderQuestionnaireEntry[] = questions.map((q) => ({
+          prompt: q.prompt,
+          required: q.required,
+          answer: (answerById.get(q.id) ?? '').trim(),
+        }));
+        for (const entry of questionnaire) {
+          if (entry.required && entry.answer.length === 0) {
+            throw new BadRequestException({
+              message: `Required answer missing: ${entry.prompt}`,
+              field: 'answers',
+            });
+          }
+        }
+
+        this.assertBindingsBelongToBuyer(buyerId, input.bindings);
+
+        const snapshot = packageToSnapshot(pkg);
+
         // 1. Open the inquiry conversation (or resume an existing one
         //    for this triple — likely cold but allow warm).
         const conv = await this.conversations.openServiceConversation(
@@ -244,7 +270,14 @@ export class OrdersService {
           const existing = await this.prisma.serviceOrder.findFirst({
             where: { buyerId, idempotencyKey: input.idempotencyKey },
           });
-          if (existing) return existing;
+          if (existing) {
+            this.assertOrderReceiptService(existing, input.serviceId);
+            // These arrays belong to the failed transaction, not the winning
+            // order. Its rolled-back messages must never reach realtime clients.
+            pendingMessages.length = 0;
+            pendingContextChanges.length = 0;
+            return existing;
+          }
         }
         throw err;
       });
@@ -272,7 +305,8 @@ export class OrdersService {
     const participant = await this.prisma.conversationParticipant.findUnique({
       where: { conversationId_userId: { conversationId, userId: buyerId } },
     });
-    if (!participant) throw new NotFoundException('Conversation not found');
+    if (!participant || participant.leftAt)
+      throw new NotFoundException('Conversation not found');
     if (participant.role !== 'buyer') {
       throw new ForbiddenException('Only the buyer can accept a proposal');
     }
@@ -286,7 +320,9 @@ export class OrdersService {
         'Conversation is not a service inquiry — cannot accept proposal here',
       );
     }
-    const creatorPart = conv.participants.find((p) => p.role === 'creator');
+    const creatorPart = conv.participants.find(
+      (p) => p.role === 'creator' && !p.leftAt,
+    );
     if (!creatorPart) {
       throw new ConflictException('Conversation has no creator participant');
     }
@@ -310,13 +346,15 @@ export class OrdersService {
 
     this.assertBindingsBelongToBuyer(buyerId, bindings);
 
-    const snapshot = proposalToSnapshot(payload.proposal);
     const orderId = newShortId();
 
     const pendingMessages: PrismaMessage[] = [];
     const pendingContextChanges: PendingContextChange[] = [];
 
     const order = await this.prisma.$transaction(async (tx) => {
+      // Share admission with questionnaire orders for this buyer/service pair.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`service-order:${buyerId}:${conv.contextId}`}, 0))`;
+      await tx.$queryRaw`SELECT user_id FROM conversation_participants WHERE conversation_id = ${conversationId} ORDER BY user_id FOR SHARE`;
       // Lock EVERY proposal row in this conversation (ASC by id)
       // and re-check the target's status. Same-order locking
       // serializes concurrent accept/decline txns even when they
@@ -324,12 +362,44 @@ export class OrdersService {
       // cancel-siblings sweep below could deadlock against a
       // sibling tx holding the other proposal's lock.
       await lockProposalsAndAssertOpen(tx, conversationId, proposalMessageId);
+      await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId} FOR UPDATE`;
+      const current = await tx.conversation.findUnique({
+        where: { id: conversationId },
+        include: { participants: { where: { leftAt: null } } },
+      });
+      if (
+        !current ||
+        current.contextType !== 'service' ||
+        current.contextId !== conv.contextId
+      ) {
+        throw new ConflictException(
+          'Conversation is no longer a service inquiry',
+        );
+      }
+      const currentBuyer = current.participants.find(
+        (p) => p.userId === buyerId,
+      );
+      if (!currentBuyer) throw new NotFoundException('Conversation not found');
+      if (currentBuyer.role !== 'buyer')
+        throw new ForbiddenException('Only the buyer can accept a proposal');
+      const currentCreator = current.participants.find(
+        (p) => p.role === 'creator',
+      );
+      if (!currentCreator)
+        throw new ConflictException('Conversation has no creator participant');
+      const lockedProposal = await tx.message.findUniqueOrThrow({
+        where: { id: proposalMessageId },
+      });
+      const currentPayload = lockedProposal.payload as MessagePayload | null;
+      if (!currentPayload || currentPayload.kind !== 'proposal')
+        throw new BadRequestException('Proposal payload missing');
+      const snapshot = proposalToSnapshot(currentPayload.proposal);
 
       const row = await tx.serviceOrder.create({
         data: {
           id: orderId,
           buyerId,
-          creatorId: creatorPart.userId,
+          creatorId: currentCreator.userId,
           serviceId: conv.contextId, // service id while still in service ctx
           packageSnapshot: snapshot as unknown as Prisma.InputJsonValue,
           // Proposal-accept skips pending_creator — the creator
@@ -482,50 +552,29 @@ export class OrdersService {
     };
     const rows = await this.prisma.serviceOrder.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       take: opts.limit + 1,
       ...(opts.cursor ? { skip: 1, cursor: { id: opts.cursor } } : {}),
       include: {
         service: { select: { title: true } },
-        // Eager-load conversation + participants so the card
-        // projection can compute lastActivityAt (= max of order
-        // updatedAt and conversation lastMessageAt) and per-viewer
-        // unread count without N follow-up queries.
-        conversation: {
-          include: {
-            participants: { where: { userId: viewerId } },
-          },
-        },
+        conversation: { select: { lastMessageAt: true } },
       },
     });
     const hasMore = rows.length > opts.limit;
     const page = hasMore ? rows.slice(0, opts.limit) : rows;
 
-    // Unread counts: one COUNT(*) per row. Could be folded into a
-    // single GROUP BY raw query later, but at limit=24 this is
-    // already a single round-trip's worth of work and the
-    // simpler-to-read code wins.
-    const hydrated = await Promise.all(
-      page.map(async (r) => {
-        const me = r.conversation.participants[0];
-        // conv.lastMessageAt is already "max of everything that
-        // matters" by construction: every order transition emits a
-        // system message (via persistSystem inside the same tx),
-        // which bumps lastMessageAt. So we don't need a separate
-        // max-with-status-timestamp computation.
-        const lastActivityAt = r.conversation.lastMessageAt;
-        const unread = await this.prisma.message.count({
-          where: {
-            conversationId: r.conversationId,
-            deletedAt: null,
-            NOT: { authorId: viewerId },
-            ...(me?.lastReadAt ? { createdAt: { gt: me.lastReadAt } } : {}),
-          },
-        });
-        return Object.assign(r, {
-          _lastActivityAt: lastActivityAt,
-          _unreadCount: unread,
-        });
+    // Share the inbox's null-author and full read-cursor semantics, in one
+    // grouped query for the already authorized order page.
+    const counts = await conversationUnreadCounts(
+      this.prisma,
+      page.map((r) => r.conversationId),
+      [viewerId],
+    );
+    const unread = new Map(counts.map((r) => [r.conversationId, r.unread]));
+    const hydrated = page.map((r) =>
+      Object.assign(r, {
+        _lastActivityAt: r.conversation.lastMessageAt,
+        _unreadCount: unread.get(r.conversationId) ?? 0,
       }),
     );
     return {
@@ -631,6 +680,14 @@ export class OrdersService {
     return updated;
   }
 
+  private assertOrderReceiptService(order: ServiceOrder, serviceId: string) {
+    if (order.serviceId !== serviceId) {
+      throw new ConflictException(
+        'Order retry key was already used for a different service',
+      );
+    }
+  }
+
   private async requireOrder(orderId: string): Promise<ServiceOrder> {
     const order = await this.prisma.serviceOrder.findUnique({
       where: { id: orderId },
@@ -651,17 +708,6 @@ export class OrdersService {
     }
   }
 
-  /**
-   * Best-effort existence check on FD-binding ids the buyer
-   * provided. Some of these tables are Java-owned, so we don't
-   * have direct FK enforcement — we validate the buyer's right to
-   * bind here.
-   *
-   * Phase 1b: accept any non-empty string. Hardening (look up the
-   * IP/episode/crew and verify the buyer's permission to bind) is
-   * tracked as follow-up — these are optional fields today, so a
-   * bad value is at worst a dangling pointer.
-   */
   /**
    * Phase 1b: bindings are rejected at the Zod layer via
    * `BindingsSchema.refine` in dto.ts, so by the time we reach

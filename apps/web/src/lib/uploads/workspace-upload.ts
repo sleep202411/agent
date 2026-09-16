@@ -16,10 +16,12 @@ export interface UploadUrlResponse {
 }
 
 export interface RequestWorkspaceUploadUrlOptions {
+  signal?: AbortSignal;
   requestData?: Record<string, unknown>;
 }
 
 export interface UploadWorkspaceFileOptions {
+  signal?: AbortSignal;
   uploadType: string;
   sourceType?: string;
   requestData?: Record<string, unknown>;
@@ -205,6 +207,7 @@ export async function requestWorkspaceUploadUrl(
   options?: RequestWorkspaceUploadUrlOptions
 ) {
   return backendApi.post<UploadUrlResponse>("/api/user/file/getUploadUrl", {
+    signal: options?.signal,
     data: {
       fileName,
       uploadType,
@@ -216,9 +219,11 @@ export async function requestWorkspaceUploadUrl(
 export async function uploadFileToSignedUrl(
   signedUrl: string,
   file: File,
-  options?: { method?: string; headers?: Record<string, string> }
+  options?: { method?: string; headers?: Record<string, string>; signal?: AbortSignal }
 ) {
+  options?.signal?.throwIfAborted();
   const response = await fetch(signedUrl, {
+    signal: options?.signal,
     method: options?.method ?? "PUT",
     headers: {
       "Content-Type": file.type || "application/octet-stream",
@@ -227,16 +232,13 @@ export async function uploadFileToSignedUrl(
     body: file,
   });
 
+  options?.signal?.throwIfAborted();
   if (!response.ok) {
     throw new Error("Upload failed");
   }
 
   return extractStoragePathFromSignedUrl(signedUrl);
 }
-
-// ─── MD5 dedup cache ──────────────────────────────────────
-
-const uploadedMd5Cache = new Map<string, UploadedWorkspaceFile>();
 
 export class DuplicateFileError extends Error {
   constructor(fileName: string) {
@@ -268,6 +270,7 @@ export async function computeFileHash(file: File): Promise<string> {
  * end-to-end every time the env / signer / bucket config drifted.
  */
 export interface ChatAttachmentUploadOptions {
+  signal?: AbortSignal;
   maxSize?: number;
   accept?: string | string[];
 }
@@ -294,11 +297,12 @@ export async function uploadChatAttachment(
   file: File,
   options: ChatAttachmentUploadOptions = {}
 ): Promise<UploadedChatAttachment> {
+  options.signal?.throwIfAborted();
   const rules = normalizeAccept(options.accept);
   if (rules.length > 0 && !rules.some((rule) => matchesAcceptRule(file, rule))) {
     throw new Error("unsupportedFileType");
   }
-  const maxSize = options.maxSize ?? CHAT_ATTACHMENT_MAX_SIZE;
+  const maxSize = Math.min(options.maxSize ?? CHAT_ATTACHMENT_MAX_SIZE, CHAT_ATTACHMENT_MAX_SIZE);
   if (file.size > maxSize) {
     throw new Error("fileSizeExceedMb");
   }
@@ -307,6 +311,7 @@ export async function uploadChatAttachment(
   form.append("file", file, file.name);
 
   const res = await fetch("/aurora/assistant/upload-attachment", {
+    signal: options.signal,
     method: "POST",
     credentials: "include",
     body: form,
@@ -319,6 +324,7 @@ export async function uploadChatAttachment(
     } catch {
       /* ignore */
     }
+    options.signal?.throwIfAborted();
     throw new Error(msg);
   }
   const body = (await res.json()) as {
@@ -329,6 +335,7 @@ export async function uploadChatAttachment(
     chars: number;
     excerpt?: string;
   };
+  options.signal?.throwIfAborted();
   return {
     ref: body.ref,
     name: body.filename,
@@ -340,13 +347,11 @@ export async function uploadChatAttachment(
 }
 
 export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFileOptions) {
+  options.signal?.throwIfAborted();
   const validationError = validateWorkspaceUploadFile(file, options);
   if (validationError) {
     throw new Error(validationError);
   }
-
-  // Compute hash for cache tracking (no longer blocks duplicate uploads)
-  const hash = await computeFileHash(file);
 
   const requestData = { ...(options.requestData ?? {}) };
   if (options.sourceType) {
@@ -360,9 +365,10 @@ export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFi
   const uploadInfo = await requestWorkspaceUploadUrl(
     options.fileName || file.name || `file_${Date.now()}`,
     options.uploadType,
-    { requestData }
+    { requestData, signal: options.signal }
   );
 
+  options.signal?.throwIfAborted();
   if (!uploadInfo.url) {
     throw new Error("Failed to get upload URL");
   }
@@ -370,6 +376,7 @@ export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFi
   const path = await uploadFileToSignedUrl(uploadInfo.url, file, {
     method: String(uploadInfo.method ?? "PUT"),
     headers: uploadInfo.headers,
+    signal: options.signal,
   });
 
   const result: UploadedWorkspaceFile = {
@@ -380,14 +387,15 @@ export async function uploadWorkspaceFile(file: File, options: UploadWorkspaceFi
     mimeType: file.type,
   };
 
-  uploadedMd5Cache.set(hash, result);
+  options.signal?.throwIfAborted();
   return result;
 }
 
-export async function uploadProjectImage(file: File) {
+export async function uploadProjectImage(file: File, signal?: AbortSignal) {
   const uploaded = await uploadWorkspaceFile(file, {
     uploadType: "PROJECT",
     sourceType: "LOCAL",
+    signal,
   });
   return uploaded.path;
 }

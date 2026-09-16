@@ -594,3 +594,131 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     expect(runs.failAuthoring).not.toHaveBeenCalled();
   });
 });
+
+describe('Story worker shutdown admission', () => {
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((yes) => {
+      resolve = yes;
+    });
+    return { promise, resolve };
+  }
+  it.each([
+    'expireProposals',
+    'recoverOrphanedApplyingRuns',
+    'claimApplyingRuns',
+    'claimAuthoringRuns',
+    'loadAuthoringJob',
+  ] as const)('stops after a delayed %s', async (method) => {
+    const { runs, pipeline, worker } = harness();
+    const entered = deferred<void>(),
+      release = deferred<unknown>();
+    runs[method].mockReset().mockImplementationOnce(async () => {
+      entered.resolve();
+      return await release.promise;
+    });
+    const work = worker.drainOnce();
+    await entered.promise;
+    worker.onModuleDestroy();
+    release.resolve(
+      method === 'loadAuthoringJob'
+        ? { kind: 'job', job: JOB }
+        : method.startsWith('claim')
+          ? [{ id: RUN_ID }]
+          : undefined,
+    );
+    await work;
+    await worker.authoringIdle();
+    worker.wake();
+    await worker.drainOnce();
+    expect(runs.expireProposals).toHaveBeenCalledTimes(1);
+    expect(runs.executeClaimedRun).not.toHaveBeenCalled();
+    expect(pipeline.author).not.toHaveBeenCalled();
+    expect(runs.completeAuthoring).not.toHaveBeenCalled();
+    expect(runs.failAuthoring).not.toHaveBeenCalled();
+    const timer = jest.spyOn(global, 'setInterval');
+    try {
+      worker.onApplicationBootstrap();
+      expect(timer).not.toHaveBeenCalled();
+    } finally {
+      timer.mockRestore();
+    }
+  });
+  it.each(['shutdown', 'lease loss'])(
+    'ignores successful late authoring and progress after %s',
+    async (reason) => {
+      jest.useFakeTimers();
+      try {
+        const { runs, pipeline, worker } = harness();
+        const entered = deferred<void>(),
+          release = deferred<void>();
+        let signal: AbortSignal | undefined;
+        pipeline.author.mockImplementationOnce(
+          async (args: {
+            signal: AbortSignal;
+            onStage: (stage: 'foundation') => Promise<void>;
+          }) => {
+            signal = args.signal;
+            entered.resolve();
+            await release.promise;
+            await args.onStage('foundation');
+            return { screenplay: AUTHORED_SCREENPLAY };
+          },
+        );
+        await worker.drainOnce();
+        await entered.promise;
+        if (reason === 'shutdown') worker.onModuleDestroy();
+        else {
+          runs.renewAuthoringLease.mockResolvedValue(false);
+          await jest.advanceTimersByTimeAsync(HEARTBEAT_MS);
+        }
+        expect(signal?.aborted).toBe(true);
+        const renewals = runs.renewAuthoringLease.mock.calls.length;
+        await jest.advanceTimersByTimeAsync(HEARTBEAT_MS);
+        expect(runs.renewAuthoringLease).toHaveBeenCalledTimes(renewals);
+        release.resolve();
+        await worker.authoringIdle();
+        expect(runs.advanceAuthoringStage).not.toHaveBeenCalled();
+        expect(runs.completeAuthoring).not.toHaveBeenCalled();
+        expect(runs.failAuthoring).not.toHaveBeenCalled();
+        worker.onModuleDestroy();
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
+  it('does not retry a stale completion returned after shutdown', async () => {
+    const { runs, worker } = harness();
+    const entered = deferred<void>(),
+      release = deferred<void>();
+    runs.completeAuthoring.mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+      return { kind: 'stale_base' };
+    });
+    await worker.drainOnce();
+    await entered.promise;
+    worker.onModuleDestroy();
+    release.resolve();
+    await worker.authoringIdle();
+    expect(runs.loadAuthoringJob).toHaveBeenCalledTimes(1);
+    expect(runs.failAuthoring).not.toHaveBeenCalled();
+  });
+  it('finishes an admitted apply without starting another authoring claim', async () => {
+    const { runs, worker } = harness();
+    const entered = deferred<void>(),
+      release = deferred<void>();
+    runs.claimApplyingRuns.mockResolvedValue([{ id: RUN_ID }]);
+    runs.executeClaimedRun.mockImplementationOnce(async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    const work = worker.drainOnce();
+    await entered.promise;
+    worker.onModuleDestroy();
+    release.resolve();
+    await work;
+    expect(runs.executeClaimedRun).toHaveBeenCalledTimes(1);
+    expect(runs.claimAuthoringRuns).not.toHaveBeenCalled();
+  });
+});

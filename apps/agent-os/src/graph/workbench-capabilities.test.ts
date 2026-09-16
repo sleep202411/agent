@@ -1,3 +1,4 @@
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import { describe, expect, it, vi } from "vitest";
 import { resolveSkillMounts } from "@repo/agent-skills";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
@@ -21,6 +22,12 @@ const runtime = {
     execute: async () => ({ ok: true, data: {} }),
   },
 } as unknown as ToolRuntimeContext;
+
+describe("tool registry admission", () => {
+  it.each(["constructor", "toString", "__proto__"])("rejects inherited name %s", (id) => {
+    expect(() => buildLangChainTools(runtime, [id])).toThrow("unknown deployed tool");
+  });
+});
 
 describe("skill mounts (system workbench skills)", () => {
   it("storyboard mount includes shot writes", () => {
@@ -259,7 +266,9 @@ describe("skill mounts (system workbench skills)", () => {
       },
       onToolEvent,
     } as unknown as ToolRuntimeContext;
-    const list = buildLangChainTools(fencedRuntime, ["characters.list"])[0]!;
+    const list: StructuredToolInterface = buildLangChainTools(fencedRuntime, [
+      "characters.list",
+    ])[0]!;
 
     await expect(
       list.invoke({}, { toolCall: { id: "stale-call" } } as never)

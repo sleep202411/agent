@@ -17,6 +17,7 @@
 // computation (admin-billing-panel.tsx:714-724 / 1170-1173).
 
 import { useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -83,21 +84,23 @@ export function BillingProvidersPanel({
   initialError?: string | null;
 }) {
   const [overview, setOverview] = useState<AdminBillingOverviewData | null>(initialOverview);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
       const nextOverview = await requestEnvelope<AdminBillingOverviewData>(
-        "/api/admin/billing/overview"
+        "/api/admin/billing/overview",
+        operation.signal
       );
-      setOverview(nextOverview);
+      if (operation.current()) setOverview(nextOverview);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -70,43 +71,58 @@ export class AppReleaseService {
   }
 
   async update(id: string, input: UpdateAppReleaseInput) {
-    const existing = await this.prisma.appRelease.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('release not found');
-    try {
-      return await this.prisma.appRelease.update({
-        where: { id },
-        data: {
-          ...(input.versionName !== undefined && {
-            versionName: input.versionName,
-          }),
-          ...(input.versionCode !== undefined && {
-            versionCode: input.versionCode,
-          }),
-          ...(input.downloadUrl !== undefined && {
-            downloadUrl: input.downloadUrl,
-          }),
-          ...(input.releaseNotes !== undefined && {
-            releaseNotes: input.releaseNotes,
-          }),
-          ...(input.minSupportedCode !== undefined && {
-            minSupportedCode: input.minSupportedCode,
-          }),
-          ...(input.active !== undefined && { active: input.active }),
-        },
-      });
-    } catch (err) {
-      // Renumbering onto an existing (platform, versionCode) → clean 409, same
-      // as create(), not an opaque 500.
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
-        const versionCode = input.versionCode ?? existing.versionCode;
-        throw new ConflictException(
-          `${existing.platform} 版本号 ${versionCode} 已存在，请改用编辑`,
-        );
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM app_releases WHERE id = ${id}::uuid FOR UPDATE`;
+      const existing = await tx.appRelease.findUnique({ where: { id } });
+      if (!existing) throw new NotFoundException('release not found');
+      const versionCode = input.versionCode ?? existing.versionCode;
+      const minimum =
+        input.minSupportedCode === undefined
+          ? existing.minSupportedCode
+          : input.minSupportedCode;
+      if (minimum !== null && minimum > versionCode) {
+        throw new BadRequestException({
+          code: 'APP_RELEASE_INVALID_VERSION_RANGE',
+          msg: 'Minimum supported version cannot exceed the release version.',
+        });
       }
-      throw err;
-    }
+      try {
+        const result = await tx.appRelease.update({
+          where: { id },
+          data: {
+            ...(input.versionName !== undefined && {
+              versionName: input.versionName,
+            }),
+            ...(input.versionCode !== undefined && {
+              versionCode: input.versionCode,
+            }),
+            ...(input.downloadUrl !== undefined && {
+              downloadUrl: input.downloadUrl,
+            }),
+            ...(input.releaseNotes !== undefined && {
+              releaseNotes: input.releaseNotes,
+            }),
+            ...(input.minSupportedCode !== undefined && {
+              minSupportedCode: input.minSupportedCode,
+            }),
+            ...(input.active !== undefined && { active: input.active }),
+          },
+        });
+        return result;
+      } catch (err) {
+        // Renumbering onto an existing (platform, versionCode) → clean 409, same
+        // as create(), not an opaque 500.
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          const versionCode = input.versionCode ?? existing.versionCode;
+          throw new ConflictException(
+            `${existing.platform} 版本号 ${versionCode} 已存在，请改用编辑`,
+          );
+        }
+        throw err;
+      }
+    });
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { type FormEvent, useCallback, useMemo, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { type ColumnDef } from "@tanstack/react-table";
 import { IconEdit, IconPlus, IconRefresh, IconRobot, IconSearch } from "@tabler/icons-react";
 import { PageHeader } from "@/components/admin/page-header";
@@ -85,208 +86,289 @@ export function AgentUsersPanel({
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
   const [identityFilter, setIdentityFilter] = useState<IdentityFilter>("");
-  const [loading, setLoading] = useState(false);
-  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+  const { busy: loading, begin: beginList } = useAdminOperation();
+  const { busy: drawerBusy, begin: beginDrawer } = useAdminOperation();
+  const listOperation = useRef<ReturnType<typeof beginList>>(null);
+  const drawerOperation = useRef<ReturnType<typeof beginDrawer>>(null);
+  const writing = useRef(false);
+  const ready = useRef(false);
+  const activeDrawer = useRef<DrawerState | null>(null);
+  const [detailReady, setDetailReady] = useState(false);
+  const [drawerRevision, setDrawerRevision] = useState(0);
+  const requestedPage = useRef(1);
+  const [loadedFilter, setLoadedFilter] = useState("||");
+  const filter = `${q.trim()}|${statusFilter}|${identityFilter}`;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(initialData.error);
   const [drawer, setDrawer] = useState<DrawerState | null>(null);
 
-  const openEdit = useCallback(async (agent: AdminAgentUser) => {
-    setDrawer({ mode: "edit", agent });
-    setLoadingDetailId(agent.id);
+  function cancelDrawer() {
+    drawerOperation.current?.cancel();
+    drawerOperation.current?.finish();
+    drawerOperation.current = null;
+    writing.current = false;
+    setSaving(false);
+    ready.current = false;
+    activeDrawer.current = null;
+    setDrawer(null);
+    setError(null);
+  }
+  async function openEdit(agent: AdminAgentUser) {
+    if (writing.current) return;
+    const operation = beginDrawer("read");
+    if (!operation) return;
+    drawerOperation.current = operation;
+    ready.current = false;
+    setDetailReady(false);
+    const target: DrawerState = { mode: "edit", agent };
+    activeDrawer.current = target;
+    setDrawer(target);
+    setDrawerRevision((value) => value + 1);
     setError(null);
     try {
-      const detail = await requestEnvelope<AdminAgentUser>(`/api/admin/agent-users/${agent.id}`);
-      setDrawer((current) =>
-        current?.mode === "edit" && current.agent.id === agent.id
-          ? { mode: "edit", agent: detail }
-          : current
+      const detail = await requestEnvelope<AdminAgentUser>(
+        `/api/admin/agent-users/${encodeURIComponent(agent.id)}`,
+        operation.signal
       );
-    } catch (detailError) {
-      setError(toErrorMessage(detailError));
+      if (!operation.current()) return;
+      const loaded: DrawerState = { mode: "edit", agent: detail };
+      activeDrawer.current = loaded;
+      setDrawer(loaded);
+      ready.current = true;
+      setDetailReady(true);
+    } catch (error) {
+      if (operation.current()) setError(toErrorMessage(error));
     } finally {
-      setLoadingDetailId(null);
-    }
-  }, []);
-
-  const columns = useMemo<ColumnDef<AdminAgentUser, unknown>[]>(
-    () => [
-      {
-        accessorKey: "displayName",
-        header: "Agent",
-        cell: ({ row }) => (
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600">
-                <IconRobot className="size-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="truncate font-medium text-slate-950">{row.original.displayName}</p>
-                <p className="truncate font-mono text-[11px] text-slate-500">
-                  @{row.original.handle}
-                </p>
-              </div>
-            </div>
-          </div>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: "状态",
-        cell: ({ row }) => <AgentStatusPill status={row.original.status} />,
-      },
-      {
-        accessorKey: "identityStatus",
-        header: "身份",
-        cell: ({ row }) => (
-          <div className="space-y-1">
-            <IdentityStatusPill status={row.original.identityStatus} />
-            {row.original.platformUserId ? (
-              <p className="font-mono text-[11px] text-slate-500">{row.original.platformUserId}</p>
-            ) : null}
-          </div>
-        ),
-      },
-      {
-        id: "locale",
-        header: "区域",
-        cell: ({ row }) => (
-          <div className="text-[12px] leading-5">
-            <p className="font-medium text-slate-700">{row.original.locale}</p>
-            <p className="text-slate-500">
-              {[row.original.region, row.original.timezone].filter(Boolean).join(" · ")}
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "persona",
-        header: "性格 / 兴趣",
-        cell: ({ row }) => (
-          <div className="max-w-[260px] text-[12px] leading-5 text-slate-600">
-            <p className="line-clamp-2 text-slate-700">{personaSummary(row.original.persona)}</p>
-            <p className="truncate text-slate-500">{interestsSummary(row.original.persona)}</p>
-          </div>
-        ),
-      },
-      {
-        id: "schedule",
-        header: "作息",
-        cell: ({ row }) => (
-          <div className="text-[12px] leading-5 text-slate-600">
-            <p className="font-medium text-slate-700">{scheduleWindow(row.original.schedule)}</p>
-            <p className="text-slate-500">{scheduleBudget(row.original.schedule)}</p>
-          </div>
-        ),
-      },
-      {
-        id: "policy",
-        header: "行为策略",
-        cell: ({ row }) => (
-          <div className="max-w-[220px] text-[12px] leading-5 text-slate-600">
-            <p className="truncate">{capabilitiesSummary(row.original.policy)}</p>
-            <p className="text-slate-500">{limitsSummary(row.original.policy)}</p>
-          </div>
-        ),
-      },
-      {
-        id: "runs",
-        header: "运行",
-        cell: ({ row }) => (
-          <div className="text-[12px] leading-5">
-            <p className="font-medium text-slate-700">
-              {row.original.runCount} runs · {row.original.actionCount} actions
-            </p>
-            <p className="text-slate-500">
-              {row.original.latestRun ? (
-                <RunStatusPill status={row.original.latestRun.status} />
-              ) : (
-                "尚未运行"
-              )}
-            </p>
-          </div>
-        ),
-      },
-      {
-        id: "memories",
-        header: "记忆",
-        cell: ({ row }) => (
-          <div className="text-[12px] leading-5">
-            <p className="font-medium text-slate-700">{row.original.memoryCount} 条</p>
-            <p className="text-slate-500">长期偏好 / 关系 / 摘要</p>
-          </div>
-        ),
-      },
-      {
-        accessorKey: "updatedAt",
-        header: "更新",
-        cell: ({ row }) => (
-          <div className="text-[12px] leading-5 text-slate-600">
-            <p>{formatDate(row.original.updatedAt)}</p>
-            <p className="text-slate-500">last run {formatDate(row.original.lastRunAt)}</p>
-          </div>
-        ),
-      },
-      {
-        id: "actions",
-        header: "操作",
-        enableSorting: false,
-        meta: { pin: "right" },
-        cell: ({ row }) => (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={loadingDetailId === row.original.id}
-            onClick={() => void openEdit(row.original)}
-          >
-            <IconEdit className="size-3.5" />
-            {loadingDetailId === row.original.id ? "加载" : "编辑"}
-          </Button>
-        ),
-      },
-    ],
-    [loadingDetailId, openEdit]
-  );
-
-  async function refresh() {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ page: "1", pageSize: "50" });
-      if (q.trim()) params.set("q", q.trim());
-      if (statusFilter) params.set("status", statusFilter);
-      if (identityFilter) params.set("identityStatus", identityFilter);
-      const data = await requestEnvelope<AdminAgentUserListData>(
-        `/api/admin/agent-users?${params.toString()}`
-      );
-      setList(data);
-    } catch (refreshError) {
-      setError(toErrorMessage(refreshError));
-    } finally {
-      setLoading(false);
+      if (drawerOperation.current === operation) drawerOperation.current = null;
+      operation.finish();
     }
   }
+  function openCreate() {
+    if (writing.current) return;
+    cancelDrawer();
+    const target: DrawerState = { mode: "create" };
+    activeDrawer.current = target;
+    ready.current = true;
+    setDetailReady(true);
+    setDrawerRevision((value) => value + 1);
+    setDrawer(target);
+  }
+  const columns: ColumnDef<AdminAgentUser, unknown>[] = [
+    {
+      accessorKey: "displayName",
+      header: "Agent",
+      cell: ({ row }) => (
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-600">
+              <IconRobot className="size-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate font-medium text-slate-950">{row.original.displayName}</p>
+              <p className="truncate font-mono text-[11px] text-slate-500">
+                @{row.original.handle}
+              </p>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      accessorKey: "status",
+      header: "状态",
+      cell: ({ row }) => <AgentStatusPill status={row.original.status} />,
+    },
+    {
+      accessorKey: "identityStatus",
+      header: "身份",
+      cell: ({ row }) => (
+        <div className="space-y-1">
+          <IdentityStatusPill status={row.original.identityStatus} />
+          {row.original.platformUserId ? (
+            <p className="font-mono text-[11px] text-slate-500">{row.original.platformUserId}</p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "locale",
+      header: "区域",
+      cell: ({ row }) => (
+        <div className="text-[12px] leading-5">
+          <p className="font-medium text-slate-700">{row.original.locale}</p>
+          <p className="text-slate-500">
+            {[row.original.region, row.original.timezone].filter(Boolean).join(" · ")}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "persona",
+      header: "性格 / 兴趣",
+      cell: ({ row }) => (
+        <div className="max-w-[260px] text-[12px] leading-5 text-slate-600">
+          <p className="line-clamp-2 text-slate-700">{personaSummary(row.original.persona)}</p>
+          <p className="truncate text-slate-500">{interestsSummary(row.original.persona)}</p>
+        </div>
+      ),
+    },
+    {
+      id: "schedule",
+      header: "作息",
+      cell: ({ row }) => (
+        <div className="text-[12px] leading-5 text-slate-600">
+          <p className="font-medium text-slate-700">{scheduleWindow(row.original.schedule)}</p>
+          <p className="text-slate-500">{scheduleBudget(row.original.schedule)}</p>
+        </div>
+      ),
+    },
+    {
+      id: "policy",
+      header: "行为策略",
+      cell: ({ row }) => (
+        <div className="max-w-[220px] text-[12px] leading-5 text-slate-600">
+          <p className="truncate">{capabilitiesSummary(row.original.policy)}</p>
+          <p className="text-slate-500">{limitsSummary(row.original.policy)}</p>
+        </div>
+      ),
+    },
+    {
+      id: "runs",
+      header: "运行",
+      cell: ({ row }) => (
+        <div className="text-[12px] leading-5">
+          <p className="font-medium text-slate-700">
+            {row.original.runCount} runs · {row.original.actionCount} actions
+          </p>
+          <p className="text-slate-500">
+            {row.original.latestRun ? (
+              <RunStatusPill status={row.original.latestRun.status} />
+            ) : (
+              "尚未运行"
+            )}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "memories",
+      header: "记忆",
+      cell: ({ row }) => (
+        <div className="text-[12px] leading-5">
+          <p className="font-medium text-slate-700">{row.original.memoryCount} 条</p>
+          <p className="text-slate-500">长期偏好 / 关系 / 摘要</p>
+        </div>
+      ),
+    },
+    {
+      accessorKey: "updatedAt",
+      header: "更新",
+      cell: ({ row }) => (
+        <div className="text-[12px] leading-5 text-slate-600">
+          <p>{formatDate(row.original.updatedAt)}</p>
+          <p className="text-slate-500">last run {formatDate(row.original.lastRunAt)}</p>
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "操作",
+      enableSorting: false,
+      meta: { pin: "right" },
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={
+            saving || (drawerBusy && drawer?.mode === "edit" && drawer.agent.id === row.original.id)
+          }
+          onClick={() => void openEdit(row.original)}
+        >
+          <IconEdit className="size-3.5" />
+          {drawerBusy && drawer?.mode === "edit" && drawer.agent.id === row.original.id
+            ? "加载"
+            : "编辑"}
+        </Button>
+      ),
+    },
+  ];
 
-  async function submitAgent(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!drawer) return;
-    setSaving(true);
+  async function readList(operation: NonNullable<ReturnType<typeof beginList>>, page: number) {
+    const params = new URLSearchParams({ page: String(page), pageSize: "50" });
+    if (q.trim()) params.set("q", q.trim());
+    if (statusFilter) params.set("status", statusFilter);
+    if (identityFilter) params.set("identityStatus", identityFilter);
+    const data = await requestEnvelope<AdminAgentUserListData>(
+      `/api/admin/agent-users?${params}`,
+      operation.signal
+    );
+    if (!operation.current()) return;
+    setList(data);
+    setLoadedFilter(filter);
+  }
+  async function refresh(page = 1) {
+    if (writing.current) return;
+    const operation = beginList("read");
+    if (!operation) return;
+    listOperation.current = operation;
+    requestedPage.current = page;
     setError(null);
     try {
-      const form = new FormData(event.currentTarget);
-      const payload = buildAgentPayload(form, drawer.mode);
-      const url =
-        drawer.mode === "edit"
-          ? `/api/admin/agent-users/${drawer.agent.id}`
-          : "/api/admin/agent-users";
-      await mutateEnvelope<AdminAgentUser>(url, payload, drawer.mode === "edit" ? "PATCH" : "POST");
-      setDrawer(null);
-      await refresh();
-    } catch (submitError) {
-      setError(toErrorMessage(submitError));
+      await readList(operation, page);
+    } catch (error) {
+      if (operation.current()) setError(toErrorMessage(error));
     } finally {
-      setSaving(false);
+      if (listOperation.current === operation) listOperation.current = null;
+      operation.finish();
+    }
+  }
+  async function submitAgent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = activeDrawer.current;
+    if (!target || !ready.current) return;
+    const operation = beginDrawer();
+    if (!operation) return;
+    drawerOperation.current = operation;
+    writing.current = true;
+    setSaving(true);
+    listOperation.current?.cancel();
+    listOperation.current?.finish();
+    listOperation.current = null;
+    setError(null);
+    setError(null);
+    let accepted = false;
+    try {
+      const form = new FormData(event.currentTarget);
+      const payload = buildAgentPayload(form, target.mode);
+      const url =
+        target.mode === "edit"
+          ? `/api/admin/agent-users/${encodeURIComponent(target.agent.id)}`
+          : "/api/admin/agent-users";
+      await mutateEnvelope<AdminAgentUser>(
+        url,
+        payload,
+        target.mode === "edit" ? "PATCH" : "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
+      accepted = true;
+      activeDrawer.current = null;
+      setDrawer(null);
+      requestedPage.current = 1;
+      await readList(operation, 1);
+    } catch (error) {
+      if (operation.current()) {
+        if (accepted) setError(toErrorMessage(error));
+        else setError(toErrorMessage(error));
+      }
+    } finally {
+      if (drawerOperation.current === operation) {
+        drawerOperation.current = null;
+        writing.current = false;
+        if (operation.current()) setSaving(false);
+      }
+      operation.finish();
     }
   }
 
@@ -299,11 +381,16 @@ export function AgentUsersPanel({
         icon={<IconRobot className="size-5" />}
         actions={
           <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={refresh} disabled={loading}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void refresh(loadedFilter === filter ? requestedPage.current : 1)}
+              disabled={loading || saving}
+            >
               <IconRefresh className={cn("size-4", loading && "animate-spin")} />
               刷新
             </Button>
-            <Button type="button" onClick={() => setDrawer({ mode: "create" })}>
+            <Button type="button" onClick={openCreate} disabled={saving}>
               <IconPlus className="size-4" />
               新建Agent
             </Button>
@@ -322,6 +409,7 @@ export function AgentUsersPanel({
       </div>
 
       <form
+        inert={saving}
         className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white p-3 lg:flex-row lg:items-center"
         onSubmit={(event) => {
           event.preventDefault();
@@ -331,6 +419,7 @@ export function AgentUsersPanel({
         <div className="relative min-w-0 flex-1">
           <IconSearch className="pointer-events-none absolute left-2.5 top-2.5 size-4 text-slate-400" />
           <Input
+            disabled={saving}
             value={q}
             onChange={(event) => setQ(event.target.value)}
             className="pl-8"
@@ -338,7 +427,12 @@ export function AgentUsersPanel({
           />
         </div>
         <div className="w-full lg:w-[160px]">
-          <Select value={statusFilter} onChange={(value) => setStatusFilter(value as StatusFilter)}>
+          <Select
+            value={statusFilter}
+            onChange={(value) => {
+              if (!writing.current) setStatusFilter(value as StatusFilter);
+            }}
+          >
             <option value="">全部状态</option>
             <option value="active">Active</option>
             <option value="paused">Paused</option>
@@ -348,14 +442,16 @@ export function AgentUsersPanel({
         <div className="w-full lg:w-[160px]">
           <Select
             value={identityFilter}
-            onChange={(value) => setIdentityFilter(value as IdentityFilter)}
+            onChange={(value) => {
+              if (!writing.current) setIdentityFilter(value as IdentityFilter);
+            }}
           >
             <option value="">全部身份</option>
             <option value="shadow">Shadow</option>
             <option value="bound">Bound</option>
           </Select>
         </div>
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading || saving}>
           <IconSearch className="size-4" />
           查询
         </Button>
@@ -372,7 +468,7 @@ export function AgentUsersPanel({
       <Sheet
         open={drawer !== null}
         onOpenChange={(open) => {
-          if (!open) setDrawer(null);
+          if (!open) cancelDrawer();
         }}
       >
         <SheetContent
@@ -380,7 +476,11 @@ export function AgentUsersPanel({
           style={DRAWER_STYLE}
         >
           {drawer ? (
-            <form className="flex min-h-0 flex-1 flex-col" onSubmit={submitAgent}>
+            <form
+              key={drawerRevision}
+              className="flex min-h-0 flex-1 flex-col"
+              onSubmit={submitAgent}
+            >
               <SheetHeader className="border-b border-slate-200 px-5 py-4">
                 <SheetTitle>{drawer.mode === "edit" ? "编辑 Agent" : "新建 Agent"}</SheetTitle>
                 <SheetDescription>
@@ -389,19 +489,17 @@ export function AgentUsersPanel({
                     : "创建 Nest 自有的 shadow Agent 身份。"}
                 </SheetDescription>
               </SheetHeader>
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-                <AgentUserFormFields drawer={drawer} />
+              <div
+                inert={saving || !detailReady}
+                className="min-h-0 flex-1 overflow-y-auto px-5 py-5"
+              >
+                <AgentUserFormFields key={String(detailReady)} drawer={drawer} />
               </div>
               <SheetFooter className="flex-row justify-end border-t border-slate-200 bg-slate-50 px-5 py-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setDrawer(null)}
-                  disabled={saving}
-                >
+                <Button type="button" variant="outline" onClick={cancelDrawer} disabled={saving}>
                   取消
                 </Button>
-                <Button type="submit" disabled={saving}>
+                <Button type="submit" disabled={saving || !detailReady}>
                   {saving ? "保存中…" : "保存"}
                 </Button>
               </SheetFooter>

@@ -145,6 +145,7 @@ export async function exportTimelineToMp4(
     );
   }
 
+  options.signal?.throwIfAborted();
   const eligible = shots.filter((shot) => Boolean(shot.videoUrl));
   if (eligible.length === 0) {
     throw new TimelineExportError("Timeline has no shots with a video URL to export.");
@@ -157,193 +158,234 @@ export async function exportTimelineToMp4(
   // duration once and reuse it for both video and audio bounds.
   const probed: ProbedShot[] = [];
   let firstProbeError: unknown = null;
-  await Promise.all(
-    eligible.map(async (shot) => {
-      const input = new Input({
-        source: new UrlSource(shot.videoUrl!),
-        formats: ALL_FORMATS,
-      });
-      try {
-        const videoTrack = await input.getPrimaryVideoTrack();
-        if (!videoTrack) {
-          console.warn(`[timeline-export] shot ${shot.id}: no primary video track, skipping`);
-          input.dispose();
-          return;
-        }
-        const audioTrack = await input.getPrimaryAudioTrack();
-        const sourceDuration = await input.computeDuration([videoTrack]);
-        const requested = shot.duration && shot.duration > 0 ? shot.duration : sourceDuration;
-        // Clip request down to source length — we can't synthesise
-        // extra frames yet. Going the other way (request shorter
-        // than source) is the common case and works naturally via
-        // the bounded `samples(0, end)` iterator below.
-        const effectiveDuration = Math.min(requested, sourceDuration);
-        probed.push({ shot, input, videoTrack, audioTrack, effectiveDuration });
-      } catch (error) {
-        console.error(`[timeline-export] shot ${shot.id} probe failed:`, error);
-        if (firstProbeError == null) firstProbeError = error;
-        input.dispose();
-      }
-    })
-  );
-
-  // Probe results may be out of order due to concurrent fetches —
-  // restore the user's original shot ordering before encoding.
-  probed.sort(
-    (a, b) =>
-      eligible.findIndex((s) => s.id === a.shot.id) - eligible.findIndex((s) => s.id === b.shot.id)
-  );
-
-  if (probed.length === 0) {
-    const detail =
-      firstProbeError instanceof Error
-        ? firstProbeError.message
-        : firstProbeError != null
-          ? String(firstProbeError)
-          : "no per-shot error captured";
-    throw new TimelineExportError(
-      `Couldn't open any of the timeline's video sources (likely CORS or unsupported format). First failure: ${detail}`,
-      firstProbeError ?? undefined
-    );
-  }
-
-  const hasAnyAudio = probed.some((p) => p.audioTrack !== null);
-
-  // Phase 2: build the output and its tracks. Tracks must be
-  // declared before output.start().
-  const output = new Output({
-    format: new Mp4OutputFormat(),
-    target: new BufferTarget(),
-  });
-
-  const videoSource = new VideoSampleSource({
-    codec: "avc",
-    bitrate: options.bitrate ?? QUALITY_MEDIUM,
-    keyFrameInterval: options.keyFrameInterval ?? 2,
-    // Allow shots with different intrinsic resolutions to flow through
-    // the same encoder by letterboxing into the first shot's frame
-    // box. `'deny'` (Mediabunny default) would error out on any size
-    // mismatch, which is too strict for a creator-platform timeline
-    // where shots come from heterogeneous AI providers.
-    sizeChangeBehavior: "contain",
-  });
-  output.addVideoTrack(videoSource);
-
-  // Only add an audio track if at least one shot has audio; an
-  // empty AAC track would either fail to mux or produce a "silent
-  // track with no samples" that confuses some players.
-  let audioSource: AudioSampleSource | null = null;
-  if (hasAnyAudio) {
-    audioSource = new AudioSampleSource({
-      codec: "aac",
-      bitrate: options.audioBitrate ?? 128_000,
-      // Normalise every input to stereo / 48 kHz before encode.
-      // Without this, a shot recorded at 44.1 kHz mono followed by
-      // a 48 kHz stereo shot would trip the AAC encoder on config
-      // change. This is the audio analogue of `sizeChangeBehavior:
-      // "contain"` on the video side.
-      transform: {
-        numberOfChannels: 2,
-        sampleRate: 48000,
-      },
-    });
-    output.addAudioTrack(audioSource);
-  }
-
-  await output.start();
-
-  // Phase 3: encode each shot. Per-shot we run video and audio in
-  // parallel — they're independent sample streams, and serialising
-  // them would unnecessarily double wall time. Backpressure is
-  // already handled inside each `await source.add(sample)`.
-  let timelineOffsetSeconds = 0;
-  let processedShots = 0;
-  let totalFramesEncoded = 0;
-  let firstShotError: unknown = null;
-
-  for (const { shot, input, videoTrack, audioTrack, effectiveDuration } of probed) {
-    if (options.signal?.aborted) {
-      // Caller cancelled — finalise what we already encoded so the
-      // user at least gets a valid (truncated) MP4.
-      break;
-    }
-
-    const offset = timelineOffsetSeconds;
-    let shotFramesEncoded = 0;
-
+  const inputs = new Set<Input>();
+  let pendingOutput: Output | null = null;
+  const releaseInput = (input: Input) => {
+    if (!inputs.delete(input)) return;
     try {
-      const encodeVideo = async () => {
-        const sink = new VideoSampleSink(videoTrack);
-        for await (const sample of sink.samples(0, effectiveDuration)) {
-          if (options.signal?.aborted) {
-            sample.close();
-            break;
-          }
-          sample.setTimestamp(sample.timestamp + offset);
-          await videoSource.add(sample);
-          sample.close();
-          shotFramesEncoded += 1;
-        }
-      };
-
-      const encodeAudio = async () => {
-        if (!audioSource || !audioTrack) return;
-        const sink = new AudioSampleSink(audioTrack);
-        for await (const sample of sink.samples(0, effectiveDuration)) {
-          if (options.signal?.aborted) {
-            sample.close();
-            break;
-          }
-          sample.setTimestamp(sample.timestamp + offset);
-          await audioSource.add(sample);
-          sample.close();
-        }
-      };
-
-      await Promise.all([encodeVideo(), encodeAudio()]);
-
-      timelineOffsetSeconds += effectiveDuration;
-      totalFramesEncoded += shotFramesEncoded;
-      console.info(
-        `[timeline-export] shot ${shot.id}: ${shotFramesEncoded} frames, ${effectiveDuration.toFixed(2)}s` +
-          (audioTrack ? " (+audio)" : "")
-      );
-    } catch (error) {
-      // Per-shot failure: log + continue. Surfacing this as a thrown
-      // error would discard the user's already-encoded earlier shots.
-      // The "no frames at all" guard after the loop catches the
-      // pathological case where every shot failed.
-      console.error(`[timeline-export] shot ${shot.id} failed:`, error);
-      if (firstShotError == null) firstShotError = error;
-    } finally {
       input.dispose();
+    } catch (error) {
+      console.warn("[timeline-export] input cleanup failed:", error);
+    }
+  };
+  const onAbort = () => {
+    for (const input of inputs) releaseInput(input);
+  };
+  options.signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    await Promise.all(
+      eligible.map(async (shot) => {
+        let input: Input | null = null;
+        try {
+          options.signal?.throwIfAborted();
+          input = new Input({ source: new UrlSource(shot.videoUrl!), formats: ALL_FORMATS });
+          inputs.add(input);
+          const videoTrack = await input.getPrimaryVideoTrack();
+          options.signal?.throwIfAborted();
+          if (!videoTrack) {
+            console.warn(`[timeline-export] shot ${shot.id}: no primary video track, skipping`);
+            releaseInput(input);
+            return;
+          }
+          const audioTrack = await input.getPrimaryAudioTrack();
+          options.signal?.throwIfAborted();
+          const sourceDuration = await input.computeDuration([videoTrack]);
+          options.signal?.throwIfAborted();
+          const requested = shot.duration && shot.duration > 0 ? shot.duration : sourceDuration;
+          // Clip request down to source length — we can't synthesise
+          // extra frames yet. Going the other way (request shorter
+          // than source) is the common case and works naturally via
+          // the bounded `samples(0, end)` iterator below.
+          const effectiveDuration = Math.min(requested, sourceDuration);
+          probed.push({ shot, input, videoTrack, audioTrack, effectiveDuration });
+        } catch (error) {
+          console.error(`[timeline-export] shot ${shot.id} probe failed:`, error);
+          if (firstProbeError == null) firstProbeError = error;
+          if (input) releaseInput(input);
+        }
+      })
+    );
+
+    options.signal?.throwIfAborted();
+    // Probe results may be out of order due to concurrent fetches —
+    // restore the user's original shot ordering before encoding.
+    probed.sort(
+      (a, b) =>
+        eligible.findIndex((s) => s.id === a.shot.id) -
+        eligible.findIndex((s) => s.id === b.shot.id)
+    );
+
+    if (probed.length === 0) {
+      const detail =
+        firstProbeError instanceof Error
+          ? firstProbeError.message
+          : firstProbeError != null
+            ? String(firstProbeError)
+            : "no per-shot error captured";
+      throw new TimelineExportError(
+        `Couldn't open any of the timeline's video sources (likely CORS or unsupported format). First failure: ${detail}`,
+        firstProbeError ?? undefined
+      );
     }
 
-    processedShots += 1;
-    options.onProgress?.(processedShots / probed.length);
+    const hasAnyAudio = probed.some((p) => p.audioTrack !== null);
+
+    // Phase 2: build the output and its tracks. Tracks must be
+    // declared before output.start().
+    const output = new Output({
+      format: new Mp4OutputFormat(),
+      target: new BufferTarget(),
+    });
+
+    pendingOutput = output;
+    const videoSource = new VideoSampleSource({
+      codec: "avc",
+      bitrate: options.bitrate ?? QUALITY_MEDIUM,
+      keyFrameInterval: options.keyFrameInterval ?? 2,
+      // Allow shots with different intrinsic resolutions to flow through
+      // the same encoder by letterboxing into the first shot's frame
+      // box. `'deny'` (Mediabunny default) would error out on any size
+      // mismatch, which is too strict for a creator-platform timeline
+      // where shots come from heterogeneous AI providers.
+      sizeChangeBehavior: "contain",
+    });
+    output.addVideoTrack(videoSource);
+
+    // Only add an audio track if at least one shot has audio; an
+    // empty AAC track would either fail to mux or produce a "silent
+    // track with no samples" that confuses some players.
+    let audioSource: AudioSampleSource | null = null;
+    if (hasAnyAudio) {
+      audioSource = new AudioSampleSource({
+        codec: "aac",
+        bitrate: options.audioBitrate ?? 128_000,
+        // Normalise every input to stereo / 48 kHz before encode.
+        // Without this, a shot recorded at 44.1 kHz mono followed by
+        // a 48 kHz stereo shot would trip the AAC encoder on config
+        // change. This is the audio analogue of `sizeChangeBehavior:
+        // "contain"` on the video side.
+        transform: {
+          numberOfChannels: 2,
+          sampleRate: 48000,
+        },
+      });
+      output.addAudioTrack(audioSource);
+    }
+
+    await output.start();
+
+    // Phase 3: encode each shot. Per-shot we run video and audio in
+    // parallel — they're independent sample streams, and serialising
+    // them would unnecessarily double wall time. Backpressure is
+    // already handled inside each `await source.add(sample)`.
+    let timelineOffsetSeconds = 0;
+    let processedShots = 0;
+    let totalFramesEncoded = 0;
+    let firstShotError: unknown = null;
+
+    for (const { shot, input, videoTrack, audioTrack, effectiveDuration } of probed) {
+      if (options.signal?.aborted) {
+        // Caller cancelled — finalise what we already encoded so the
+        // user at least gets a valid (truncated) MP4.
+        break;
+      }
+
+      const offset = timelineOffsetSeconds;
+      let shotFramesEncoded = 0;
+
+      try {
+        const encodeVideo = async () => {
+          const sink = new VideoSampleSink(videoTrack);
+          for await (const sample of sink.samples(0, effectiveDuration)) {
+            if (options.signal?.aborted) {
+              sample.close();
+              break;
+            }
+            try {
+              sample.setTimestamp(sample.timestamp + offset);
+              await videoSource.add(sample);
+              shotFramesEncoded += 1;
+            } finally {
+              sample.close();
+            }
+          }
+        };
+
+        const encodeAudio = async () => {
+          if (!audioSource || !audioTrack) return;
+          const sink = new AudioSampleSink(audioTrack);
+          for await (const sample of sink.samples(0, effectiveDuration)) {
+            if (options.signal?.aborted) {
+              sample.close();
+              break;
+            }
+            try {
+              sample.setTimestamp(sample.timestamp + offset);
+              await audioSource.add(sample);
+            } finally {
+              sample.close();
+            }
+          }
+        };
+
+        const encoded = await Promise.allSettled([encodeVideo(), encodeAudio()]);
+        const failure = encoded.find((result) => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
+
+        timelineOffsetSeconds += effectiveDuration;
+        totalFramesEncoded += shotFramesEncoded;
+        console.info(
+          `[timeline-export] shot ${shot.id}: ${shotFramesEncoded} frames, ${effectiveDuration.toFixed(2)}s` +
+            (audioTrack ? " (+audio)" : "")
+        );
+      } catch (error) {
+        // Per-shot failure: log + continue. Surfacing this as a thrown
+        // error would discard the user's already-encoded earlier shots.
+        // The "no frames at all" guard after the loop catches the
+        // pathological case where every shot failed.
+        console.error(`[timeline-export] shot ${shot.id} failed:`, error);
+        if (firstShotError == null) firstShotError = error;
+      } finally {
+        releaseInput(input);
+      }
+
+      processedShots += 1;
+      options.onProgress?.(processedShots / probed.length);
+    }
+
+    if (totalFramesEncoded === 0) {
+      const detail =
+        firstShotError instanceof Error
+          ? firstShotError.message
+          : firstShotError != null
+            ? String(firstShotError)
+            : "no per-shot error captured";
+      throw new TimelineExportError(
+        `Export produced no frames (likely CORS or unsupported codec). First failure: ${detail}`,
+        firstShotError ?? undefined
+      );
+    }
+
+    await output.finalize();
+    pendingOutput = null;
+
+    const buffer = (output.target as BufferTarget).buffer;
+    if (!buffer) {
+      throw new TimelineExportError("Output finalised without producing a buffer.");
+    }
+
+    return new Blob([buffer], { type: "video/mp4" });
+  } finally {
+    options.signal?.removeEventListener("abort", onAbort);
+    for (const input of inputs) releaseInput(input);
+    if (pendingOutput) {
+      try {
+        await pendingOutput.cancel();
+      } catch (error) {
+        console.warn("[timeline-export] output cleanup failed:", error);
+      }
+    }
   }
-
-  if (totalFramesEncoded === 0) {
-    const detail =
-      firstShotError instanceof Error
-        ? firstShotError.message
-        : firstShotError != null
-          ? String(firstShotError)
-          : "no per-shot error captured";
-    throw new TimelineExportError(
-      `Export produced no frames (likely CORS or unsupported codec). First failure: ${detail}`,
-      firstShotError ?? undefined
-    );
-  }
-
-  await output.finalize();
-
-  const buffer = (output.target as BufferTarget).buffer;
-  if (!buffer) {
-    throw new TimelineExportError("Output finalised without producing a buffer.");
-  }
-
-  return new Blob([buffer], { type: "video/mp4" });
 }
 
 /**

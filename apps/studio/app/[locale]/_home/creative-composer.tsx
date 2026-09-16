@@ -8,7 +8,7 @@
  * Keeping model/settings/cost OFF the home keeps the entry frictionless.
  */
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { IconArrowUp, IconLayoutGrid, IconRefresh, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -80,12 +80,30 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
     showTypedPlaceholder
   );
   const canSubmit = prompt.trim().length > 0;
+  const submission = useMemo(() => ({ prompt, modality }), [prompt, modality]);
+  const activeSubmission = useRef<{ scope: typeof submission; navigated: boolean } | null>(null);
+  useLayoutEffect(() => {
+    activeSubmission.current = { scope: submission, navigated: false };
+    return () => {
+      activeSubmission.current = null;
+    };
+  }, [submission]);
 
   const submit = () => {
-    if (!canSubmit) return;
+    const operation = activeSubmission.current;
+    if (!canSubmit || operation?.scope !== submission || operation.navigated) return;
     const dest = modality === "image" ? "/images" : modality === "video" ? "/video" : "/canvas";
     const nextHref = `${dest}?prompt=${encodeURIComponent(prompt.trim())}`;
-    requireAuth(() => router.push(nextHref));
+    requireAuth(() => {
+      if (activeSubmission.current !== operation || operation.navigated) return;
+      operation.navigated = true;
+      try {
+        router.push(nextHref);
+      } catch (error) {
+        operation.navigated = false;
+        throw error;
+      }
+    });
   };
 
   const applySuggestion = (suggestion: (typeof SUGGESTION_GROUPS)[number][number]) => {
@@ -137,7 +155,13 @@ export function CreativeComposer({ theme: t }: { theme: Theme }) {
             onFocus={() => setIsPromptFocused(true)}
             onBlur={() => setIsPromptFocused(false)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.repeat &&
+                !e.nativeEvent.isComposing &&
+                e.nativeEvent.keyCode !== 229
+              ) {
                 e.preventDefault();
                 submit();
               }

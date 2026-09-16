@@ -811,31 +811,6 @@ export interface CrewStudioProjectSummaryDTO {
   workspace: { id: string; name: string };
 }
 
-export type CrewStudioProjectDisabledReason = "already_linked" | "insufficient_permission";
-
-export interface CrewStudioProjectOptionDTO {
-  id: string;
-  name: string;
-  description: string | null;
-  selected: boolean;
-  selectable: boolean;
-  disabledReason: CrewStudioProjectDisabledReason | null;
-  linkedCrewName: string | null;
-}
-
-export interface CrewStudioProjectOptionsDTO {
-  linkedProjectId: string | null;
-  workspaces: Array<{
-    id: string;
-    name: string;
-    projects: CrewStudioProjectOptionDTO[];
-  }>;
-}
-
-export interface LinkCrewStudioProjectResult {
-  studioProject: CrewStudioProjectSummaryDTO | null;
-}
-
 export interface UpdateCrewProductionProjectInput {
   expectedVersion: number;
   status?: CrewProductionStatus;

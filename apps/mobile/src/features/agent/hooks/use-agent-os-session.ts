@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { ApiRequestError } from "@/lib/api-client";
 import { getLocale, t } from "@/i18n";
@@ -31,6 +31,7 @@ import {
 import { isAgentOsId } from "../lib/ids";
 import { resolveDefaultChapterId } from "../api/studio-projects-api";
 import type { AgentMessage } from "../types";
+import { useStoryRequestScope } from "./use-story-request-scope";
 
 const POLL_MS_ACTIVE = 400;
 const POLL_MS_IDLE = 1_500;
@@ -63,6 +64,31 @@ type SessionState = {
   pendingExternal: AgentOsPendingExternal | null;
   error?: string;
 };
+
+function emptySession(): SessionState {
+  return {
+    conversationId: null,
+    modelProfileId: null,
+    runId: null,
+    status: "idle",
+    pendingApproval: null,
+    pendingUserInput: null,
+    pendingExternal: null,
+  };
+}
+
+function pollDelay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+    if (signal.aborted) done();
+  });
+}
 
 function displayLocale(): AgentOsDisplayLocale {
   const locale = getLocale();
@@ -127,18 +153,11 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
   const projectId = options.projectId.trim();
   const workbenchMode = options.workbenchMode.trim() || "story";
   const chapterIdOpt = options.chapterId?.trim() || "";
+  const scope = useStoryRequestScope(JSON.stringify([projectId, chapterIdOpt, workbenchMode]));
   const configured = isAgentOsId(projectId);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [runEvents, setRunEvents] = useState<AgentOsEvent[]>([]);
-  const [session, setSession] = useState<SessionState>({
-    conversationId: null,
-    modelProfileId: null,
-    runId: null,
-    status: "idle",
-    pendingApproval: null,
-    pendingUserInput: null,
-    pendingExternal: null,
-  });
+  const [session, setSession] = useState<SessionState>(emptySession);
   const [sending, setSending] = useState(false);
 
   const conversationIdRef = useRef<string | null>(null);
@@ -156,11 +175,77 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
     decision: "approve" | "reject";
   } | null>(null);
   const pollAbortRef = useRef<AbortController | null>(null);
-
-  const stopPolling = useCallback(() => {
+  const operationRef = useRef<AbortController | null>(null);
+  const currentSessionRef = useRef(session);
+  useLayoutEffect(() => {
+    currentSessionRef.current = session;
+  }, [session]);
+  const sendRetryRef = useRef<{
+    key: string;
+    clientSubmissionId: string;
+    turnId: string;
+    messageId: string;
+    at: string;
+  } | null>(null);
+  const approvalRetryRef = useRef<{ key: string; id: string } | null>(null);
+  const inputRetryRef = useRef<{ key: string; id: string } | null>(null);
+  const scopeRef = useRef<typeof scope | null>(scope);
+  const [previousScope, setPreviousScope] = useState(scope);
+  if (previousScope !== scope) {
+    setPreviousScope(scope);
+    setMessages([]);
+    setRunEvents([]);
+    setSession(emptySession());
+    setSending(false);
+  }
+  useLayoutEffect(() => {
+    scopeRef.current = scope;
+    sendRetryRef.current = null;
+    approvalRetryRef.current = null;
+    inputRetryRef.current = null;
+    conversationIdRef.current = null;
+    modelProfileIdRef.current = null;
+    lastSequenceRef.current = 0;
+    eventsBufRef.current = [];
+    userPromptRef.current = null;
+    hitlReplyRef.current = null;
+    return () => {
+      scopeRef.current = null;
+      operationRef.current?.abort();
+      operationRef.current = null;
+      pollAbortRef.current?.abort();
+      pollAbortRef.current = null;
+    };
+  }, [scope]);
+  const isCurrent = useCallback(
+    (operation: AbortController) =>
+      scopeRef.current === scope && operationRef.current === operation && !operation.signal.aborted,
+    [scope]
+  );
+  const beginOperation = useCallback(() => {
+    if (scopeRef.current !== scope || !scope.enabled || operationRef.current) return null;
+    const operation = new AbortController();
+    operationRef.current = operation;
     pollAbortRef.current?.abort();
     pollAbortRef.current = null;
-  }, []);
+    setSending(true);
+    return operation;
+  }, [scope]);
+  const finishOperation = useCallback(
+    (operation: AbortController) => {
+      if (isCurrent(operation)) {
+        operationRef.current = null;
+        setSending(false);
+      }
+    },
+    [isCurrent]
+  );
+
+  const stopPolling = useCallback(() => {
+    if (scopeRef.current !== scope) return;
+    pollAbortRef.current?.abort();
+    pollAbortRef.current = null;
+  }, [scope]);
 
   const rebuildMessages = useCallback((runId: string) => {
     const hitl = hitlReplyRef.current;
@@ -212,6 +297,7 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
 
   const pollRun = useCallback(
     async (runId: string, projectId: string) => {
+      if (scopeRef.current !== scope) return;
       stopPolling();
       const ac = new AbortController();
       pollAbortRef.current = ac;
@@ -226,6 +312,8 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
             lastSequenceRef.current,
             ac.signal
           );
+          if (ac.signal.aborted || pollAbortRef.current !== ac || scopeRef.current !== scope)
+            return;
           failures = 0;
           ingestRunPage(runId, page);
 
@@ -248,7 +336,7 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         }
 
         const delay = failures > 0 ? Math.min(POLL_MS_IDLE * 2 ** failures, 5_000) : POLL_MS_ACTIVE;
-        await new Promise((r) => setTimeout(r, delay));
+        await pollDelay(delay, ac.signal);
       }
 
       if (!ac.signal.aborted) {
@@ -258,14 +346,16 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
           error: "Poll timed out",
         }));
       }
-      pollAbortRef.current = null;
+      if (pollAbortRef.current === ac) pollAbortRef.current = null;
     },
-    [ingestRunPage, stopPolling]
+    [ingestRunPage, stopPolling, scope]
   );
 
-  const ensureModelProfile = useCallback(async () => {
+  const ensureModelProfile = useCallback(async (signal: AbortSignal) => {
+    signal.throwIfAborted();
     if (modelProfileIdRef.current) return modelProfileIdRef.current;
-    const { mobileDefaultModelProfileId } = await agentOsApi.listModels();
+    const { mobileDefaultModelProfileId } = await agentOsApi.listModels(signal);
+    signal.throwIfAborted();
     if (!mobileDefaultModelProfileId) throw new Error("No mobile default model configured");
     modelProfileIdRef.current = mobileDefaultModelProfileId;
     setSession((prev) => ({ ...prev, modelProfileId: mobileDefaultModelProfileId }));
@@ -274,6 +364,7 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
 
   const restore = useCallback(
     async (conversationId?: string) => {
+      if (scopeRef.current !== scope || !scope.enabled) return;
       if (!configured) {
         setSession((prev) => ({
           ...prev,
@@ -282,9 +373,16 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         }));
         return;
       }
+      const operation = beginOperation();
+      if (!operation) return;
       setSession((prev) => ({ ...prev, status: "restoring" }));
       try {
-        const history = await agentOsApi.getConversation(projectId, conversationId);
+        const history = await agentOsApi.getConversation(
+          projectId,
+          conversationId,
+          operation.signal
+        );
+        if (!isCurrent(operation)) return;
         conversationIdRef.current = history.conversationId;
         const last = history.runs.at(-1);
         eventsBufRef.current = last?.events ?? [];
@@ -312,44 +410,74 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
           void pollRun(last.runId, projectId);
         }
       } catch (error) {
+        if (!isCurrent(operation)) return;
         setSession((prev) => ({
           ...prev,
           status: "error",
           error: error instanceof Error ? error.message : String(error),
         }));
+      } finally {
+        finishOperation(operation);
       }
     },
-    [configured, projectId, pollRun]
+    [beginOperation, isCurrent, finishOperation, configured, projectId, pollRun, scope]
   );
 
   const send = useCallback(
-    async (text: string, extras?: AgentOsSendExtras) => {
+    async (text: string, extras?: AgentOsSendExtras): Promise<boolean> => {
+      if (scopeRef.current !== scope || !scope.enabled) return false;
       const trimmed = text.trim();
       const attachmentIds = extras?.attachmentIds?.filter((id) => id.trim()) ?? [];
       const attachmentNames = extras?.attachmentNames?.filter((name) => name.trim()) ?? [];
-      if (!trimmed && attachmentIds.length === 0) return;
+      if (!trimmed && attachmentIds.length === 0) return false;
       if (!configured) {
         setSession((prev) => ({
           ...prev,
           status: "error",
           error: "Studio projectId is required",
         }));
-        return;
+        return false;
       }
-      setSending(true);
+      const operation = beginOperation();
+      if (!operation) return false;
       stopPolling();
       hitlReplyRef.current = null;
       try {
-        const modelProfileId = await ensureModelProfile();
+        const modelProfileId = await ensureModelProfile(operation.signal);
+        if (!isCurrent(operation)) return false;
         if (!conversationIdRef.current) {
           conversationIdRef.current = newClientUuid();
         }
         const conversationId = conversationIdRef.current;
-        const chapterId = chapterIdOpt || (await resolveDefaultChapterId(projectId));
-        const clientSubmissionId = newClientUuid();
-        const turnId = newClientUuid();
-        const messageId = newClientUuid();
-        const at = new Date().toISOString();
+        const chapterId =
+          chapterIdOpt || (await resolveDefaultChapterId(projectId, operation.signal));
+        if (!isCurrent(operation)) return false;
+        const retryKey = JSON.stringify({
+          projectId,
+          conversationId,
+          chapterId,
+          modelProfileId,
+          workbenchMode,
+          message: trimmed,
+          attachmentIds: [...new Set(attachmentIds)],
+          permissionMode: extras?.permissionMode ?? "smart",
+          skillIds: [...new Set(extras?.skillIds ?? [])].sort(),
+          projectSkillInstallationIds: [
+            ...new Set(extras?.projectSkillInstallationIds ?? []),
+          ].sort(),
+          disabledDefaultSkillInstallationIds: [
+            ...new Set(extras?.disabledDefaultSkillInstallationIds ?? []),
+          ].sort(),
+        });
+        if (sendRetryRef.current?.key !== retryKey)
+          sendRetryRef.current = {
+            key: retryKey,
+            clientSubmissionId: newClientUuid(),
+            turnId: newClientUuid(),
+            messageId: newClientUuid(),
+            at: new Date().toISOString(),
+          };
+        const { clientSubmissionId, turnId, messageId, at } = sendRetryRef.current;
         userPromptRef.current = {
           text: trimmed,
           at,
@@ -359,7 +487,9 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         lastSequenceRef.current = 0;
         setRunEvents([]);
         setMessages((prev) => [
-          ...prev,
+          ...prev.filter(
+            (message) => message.id !== `user:${messageId}` && message.id !== `err:${messageId}`
+          ),
           {
             id: `user:${messageId}`,
             role: "user",
@@ -369,23 +499,28 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
           },
         ]);
 
-        const run = await agentOsApi.startRun({
-          projectId,
-          conversationId,
-          clientSubmissionId,
-          turnId,
-          messageId,
-          message: trimmed,
-          modelProfileId,
-          workbenchMode,
-          workbenchContext: { chapterId, experience: AGENT_OS_MOBILE_EXPERIENCE },
-          permissionMode: extras?.permissionMode ?? "smart",
-          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
-          skillIds: extras?.skillIds,
-          projectSkillInstallationIds: extras?.projectSkillInstallationIds,
-          disabledDefaultSkillInstallationIds: extras?.disabledDefaultSkillInstallationIds,
-        });
+        const run = await agentOsApi.startRun(
+          {
+            projectId,
+            conversationId,
+            clientSubmissionId,
+            turnId,
+            messageId,
+            message: trimmed,
+            modelProfileId,
+            workbenchMode,
+            workbenchContext: { chapterId, experience: AGENT_OS_MOBILE_EXPERIENCE },
+            permissionMode: extras?.permissionMode ?? "smart",
+            attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+            skillIds: extras?.skillIds,
+            projectSkillInstallationIds: extras?.projectSkillInstallationIds,
+            disabledDefaultSkillInstallationIds: extras?.disabledDefaultSkillInstallationIds,
+          },
+          operation.signal
+        );
+        if (!isCurrent(operation)) return false;
 
+        sendRetryRef.current = null;
         setSession((prev) => ({ ...prev, conversationId }));
         setMessages((prev) => prev.filter((message) => message.id !== `user:${messageId}`));
         ingestRunPage(run.runId, run);
@@ -393,7 +528,9 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         if (!isTerminalRunStatus(run.status) && !isWaitingForUserStatus(run.status)) {
           void pollRun(run.runId, projectId);
         }
+        return true;
       } catch (error) {
+        if (!isCurrent(operation)) return false;
         const message =
           error instanceof ApiRequestError
             ? error.message
@@ -404,22 +541,27 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         setMessages((prev) => [
           ...prev,
           {
-            id: `err:${Date.now()}`,
+            id: `err:${sendRetryRef.current?.messageId ?? Date.now()}`,
             role: "assistant",
             text: message,
             createdAt: new Date().toISOString(),
           },
         ]);
+        return false;
       } finally {
-        setSending(false);
+        finishOperation(operation);
       }
     },
     [
+      beginOperation,
+      isCurrent,
+      finishOperation,
       configured,
       projectId,
       workbenchMode,
       chapterIdOpt,
       ensureModelProfile,
+      scope,
       ingestRunPage,
       pollRun,
       stopPolling,
@@ -435,9 +577,27 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
       if (!runId || !conversationId || !modelProfileId || !pending?.approvalId || !configured) {
         return;
       }
+      if (
+        currentSessionRef.current.runId !== runId ||
+        currentSessionRef.current.pendingApproval?.approvalId !== pending.approvalId
+      )
+        return;
+      const operation = beginOperation();
+      if (!operation) return;
       const transcriptText =
         responseText?.trim() ||
         (decision === "approve" ? t("agent.approved") : t("agent.rejected"));
+      const locale = displayLocale();
+      const retryKey = JSON.stringify([
+        runId,
+        pending.approvalId,
+        decision,
+        transcriptText,
+        locale,
+      ]);
+      if (approvalRetryRef.current?.key !== retryKey)
+        approvalRetryRef.current = { key: retryKey, id: newClientUuid() };
+      const responseId = approvalRetryRef.current.id;
       const at = new Date().toISOString();
       hitlReplyRef.current = { text: transcriptText, at, decision };
       rebuildMessages(runId);
@@ -449,33 +609,45 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
 
       setSending(true);
       try {
-        const next = await agentOsApi.resolveApproval({
-          runId,
-          decision,
-          projectId: projectId,
-          conversationId,
-          modelProfileId,
-          approvalId: pending.approvalId,
-          responseId: newClientUuid(),
-          responseText: transcriptText,
-          locale: displayLocale(),
-          experience: AGENT_OS_MOBILE_EXPERIENCE,
-        });
+        const next = await agentOsApi.resolveApproval(
+          {
+            runId,
+            decision,
+            projectId: projectId,
+            conversationId,
+            modelProfileId,
+            approvalId: pending.approvalId,
+            responseId,
+            responseText: transcriptText,
+            locale,
+            experience: AGENT_OS_MOBILE_EXPERIENCE,
+          },
+          operation.signal
+        );
+        if (!isCurrent(operation)) return;
+        approvalRetryRef.current = null;
         ingestRunPage(runId, next);
         if (!isTerminalRunStatus(next.status) && !isWaitingForUserStatus(next.status)) {
           void pollRun(runId, projectId);
         }
       } catch (error) {
+        if (!isCurrent(operation)) return;
+        hitlReplyRef.current = null;
+        rebuildMessages(runId);
         setSession((prev) => ({
           ...prev,
-          status: "error",
+          status: "waiting_for_approval",
+          pendingApproval: pending,
           error: error instanceof Error ? error.message : String(error),
         }));
       } finally {
-        setSending(false);
+        finishOperation(operation);
       }
     },
     [
+      beginOperation,
+      isCurrent,
+      finishOperation,
       configured,
       ingestRunPage,
       projectId,
@@ -496,40 +668,75 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         return;
       }
 
+      if (
+        currentSessionRef.current.runId !== runId ||
+        currentSessionRef.current.pendingUserInput?.requestId !== pending.requestId
+      )
+        return;
+      const operation = beginOperation();
+      if (!operation) return;
+      const retryKey = JSON.stringify([
+        runId,
+        pending.requestId,
+        Object.entries(answers).sort(([a], [b]) => a.localeCompare(b)),
+      ]);
+      if (inputRetryRef.current?.key !== retryKey)
+        inputRetryRef.current = { key: retryKey, id: newClientUuid() };
+      const responseId = inputRetryRef.current.id;
       setSending(true);
       try {
-        const next = await agentOsApi.answerUserInput({
-          runId,
-          projectId: projectId,
-          conversationId,
-          modelProfileId,
-          requestId: pending.requestId,
-          responseId: newClientUuid(),
-          answers,
-        });
+        const next = await agentOsApi.answerUserInput(
+          {
+            runId,
+            projectId: projectId,
+            conversationId,
+            modelProfileId,
+            requestId: pending.requestId,
+            responseId,
+            answers,
+          },
+          operation.signal
+        );
+        if (!isCurrent(operation)) return;
+        inputRetryRef.current = null;
         ingestRunPage(runId, next);
         if (!isTerminalRunStatus(next.status) && !isWaitingForUserStatus(next.status)) {
           void pollRun(runId, projectId);
         }
       } catch (error) {
+        if (!isCurrent(operation)) return;
         setSession((prev) => ({
           ...prev,
-          status: "error",
+          status: "waiting_for_input",
+          pendingUserInput: pending,
           error: error instanceof Error ? error.message : String(error),
         }));
       } finally {
-        setSending(false);
+        finishOperation(operation);
       }
     },
-    [configured, ingestRunPage, projectId, pollRun, session.pendingUserInput, session.runId]
+    [
+      beginOperation,
+      isCurrent,
+      finishOperation,
+      configured,
+      ingestRunPage,
+      projectId,
+      pollRun,
+      session.pendingUserInput,
+      session.runId,
+    ]
   );
 
   const cancel = useCallback(async () => {
     const runId = session.runId;
-    if (!runId || !configured) return;
+    if (!runId || !configured || currentSessionRef.current.runId !== runId) return;
+    const operation = beginOperation();
+    if (!operation) return;
     stopPolling();
     try {
-      await agentOsApi.cancelRun(runId, projectId, "user_stop");
+      await agentOsApi.cancelRun(runId, projectId, "user_stop", operation.signal);
+      if (!isCurrent(operation)) return;
       setSession((prev) => ({
         ...prev,
         status: "cancelled",
@@ -538,15 +745,33 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         pendingExternal: null,
       }));
     } catch (error) {
+      if (!isCurrent(operation)) return;
       setSession((prev) => ({
         ...prev,
         status: "error",
         error: error instanceof Error ? error.message : String(error),
       }));
+    } finally {
+      finishOperation(operation);
     }
-  }, [configured, projectId, session.runId, stopPolling]);
+  }, [
+    beginOperation,
+    isCurrent,
+    finishOperation,
+    configured,
+    projectId,
+    session.runId,
+    stopPolling,
+  ]);
 
   const newChat = useCallback(() => {
+    if (scopeRef.current !== scope) return;
+    operationRef.current?.abort();
+    operationRef.current = null;
+    approvalRetryRef.current = null;
+    inputRetryRef.current = null;
+    sendRetryRef.current = null;
+    currentSessionRef.current = emptySession();
     stopPolling();
     conversationIdRef.current = null;
     lastSequenceRef.current = 0;
@@ -565,9 +790,7 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
       pendingUserInput: null,
       pendingExternal: null,
     });
-  }, [stopPolling]);
-
-  useEffect(() => () => stopPolling(), [stopPolling]);
+  }, [stopPolling, scope]);
 
   const activity = useMemo(
     () => deriveAgentActivity(runEvents, session.status, session.pendingExternal),

@@ -25,7 +25,8 @@ export default function CreatorsScreen() {
   const insets = useSafeAreaInsets();
   const { isAuthenticated, openLogin } = useAuthGate();
   const [creators, setCreators] = useState<CreatorSummary[]>([]);
-  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const offsetRef = useRef(0);
   const [requiresLogin, setRequiresLogin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -33,68 +34,96 @@ export default function CreatorsScreen() {
   const [error, setError] = useState<string>();
   const browseVersion = useBrowseVersion();
   const hasDataRef = useRef(false);
-  const loadingMoreRef = useRef(false);
+  const loadingMoreRef = useRef<object | null>(null);
+  const replacingRef = useRef(false);
+  const sequenceRef = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++sequenceRef.current;
+    replacingRef.current = true;
+    loadingMoreRef.current = null;
+    setLoadingMore(false);
+    setRefreshing(false);
     // Public directory (our Nest endpoint reads client_user directly), so this
     // loads for guests too; re-fetch on sign-in to lift the 50-row guest cap.
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
       const page = await getCreators(PAGE_SIZE);
+      if (seq !== sequenceRef.current) return;
       hasDataRef.current = true;
       setCreators(page.creators);
-      setTotal(page.total);
+      offsetRef.current = page.creators.length;
+      setHasMore(page.creators.length > 0 && offsetRef.current < page.total);
       setRequiresLogin(page.requiresLogin);
     } catch (loadError) {
-      if (!hasDataRef.current) {
+      if (seq === sequenceRef.current && !hasDataRef.current) {
         setError(loadError instanceof Error ? loadError.message : t("creators.loadErrorFallback"));
       }
     } finally {
-      setLoading(false);
+      if (seq === sequenceRef.current) {
+        replacingRef.current = false;
+        setLoading(false);
+      }
     }
   }, [t]);
 
   useEffect(() => {
-    let alive = true;
-    void (async () => {
-      // Ignore a stale resolution if auth/version changed mid-flight.
-      await load();
-      if (!alive) return;
-    })();
+    // Synchronize the directory and its request indicators with the current browse scope.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load();
     return () => {
-      alive = false;
+      sequenceRef.current += 1;
+      loadingMoreRef.current = null;
+      replacingRef.current = false;
     };
   }, [isAuthenticated, browseVersion, load]);
 
   // Authed users keep loading by offset until `total` is reached. Guests stop
   // at the public cap and get the "Sign in to see more" button instead.
-  const canLoadMore = isAuthenticated && !requiresLogin && creators.length < total;
+  const canLoadMore = isAuthenticated && !requiresLogin && hasMore;
 
   const loadMore = useCallback(async () => {
-    if (!canLoadMore || loadingMoreRef.current) return;
-    loadingMoreRef.current = true;
+    if (!canLoadMore || replacingRef.current || loadingMoreRef.current) return;
+    const operation = {};
+    const seq = sequenceRef.current;
+    loadingMoreRef.current = operation;
     setLoadingMore(true);
     try {
-      const page = await getCreators(PAGE_SIZE, creators.length);
+      const page = await getCreators(PAGE_SIZE, offsetRef.current);
+      if (seq !== sequenceRef.current) return;
       setCreators((current) => {
         const seen = new Set(current.map((creator) => creator.id));
-        return [...current, ...page.creators.filter((creator) => !seen.has(creator.id))];
+        return [
+          ...current,
+          ...page.creators.filter((creator) => {
+            if (seen.has(creator.id)) return false;
+            seen.add(creator.id);
+            return true;
+          }),
+        ];
       });
-      setTotal(page.total);
+      offsetRef.current += page.creators.length;
+      setHasMore(page.creators.length > 0 && offsetRef.current < page.total);
       setRequiresLogin(page.requiresLogin);
+    } catch {
+      // Retain the loaded directory and position for the next pagination retry.
     } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
+      if (loadingMoreRef.current === operation) {
+        loadingMoreRef.current = null;
+        setLoadingMore(false);
+      }
     }
-  }, [canLoadMore, creators.length]);
+  }, [canLoadMore]);
 
   const onRefresh = useCallback(async () => {
+    const pending = load();
+    const seq = sequenceRef.current;
     setRefreshing(true);
     try {
-      await load();
+      await pending;
     } finally {
-      setRefreshing(false);
+      if (seq === sequenceRef.current) setRefreshing(false);
     }
   }, [load]);
 

@@ -59,12 +59,16 @@ type ActiveGrant = EntitlementGrant & {
 @Injectable()
 export class EntitlementService {
   private planCache: PlanCache | null = null;
+  private planCacheEpoch = 0;
+  private planCacheRead: Promise<PlanCache> | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
 
   /** Drop the in-process plan cache — call after any admin plan mutation. */
   invalidatePlanCache(): void {
+    this.planCacheEpoch += 1;
     this.planCache = null;
+    this.planCacheRead = null;
   }
 
   async resolveForUser(
@@ -304,19 +308,58 @@ export class EntitlementService {
    * (BillingService.activeMembershipPlanForKeyTx), so these two together are
    * every path that creates an EntitlementGrant.
    */
-  async grantComplimentary(input: {
-    subjectType: BillingSubjectType;
-    subjectId: string;
-    planKey: string;
-    durationDays: number;
-    sourceType: string;
-    sourceId: string;
-    metadata?: Record<string, unknown>;
-  }): Promise<EntitlementGrant> {
+  async grantComplimentary(
+    input: {
+      subjectType: BillingSubjectType;
+      subjectId: string;
+      planKey: string;
+      durationDays: number;
+      sourceType: string;
+      sourceId: string;
+      metadata?: Record<string, unknown>;
+    },
+    transaction?: Prisma.TransactionClient,
+  ): Promise<EntitlementGrant> {
     // Store the key the same way resolution reads it, so the row the grant was
     // validated against is the row that later resolves its benefits.
     const planKey = this.normalizeGrantablePlanKey(input.planKey);
-    return this.prisma.$transaction(async (tx) => {
+    const write = async (tx: Prisma.TransactionClient) => {
+      // Serialize retries of one source before checking its immutable result.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`entitlement:source:${input.sourceType}:${input.sourceId}`})::bigint)
+      `;
+      const existing = await tx.entitlementGrant.findUnique({
+        where: {
+          sourceType_sourceId: {
+            sourceType: input.sourceType,
+            sourceId: input.sourceId,
+          },
+        },
+      });
+      if (existing) {
+        const metadata = existing.metadata as Record<string, unknown> | null;
+        if (
+          existing.subjectType !== input.subjectType ||
+          existing.subjectId !== input.subjectId ||
+          existing.planKey !== planKey ||
+          (input.metadata?.requestFingerprint !== undefined &&
+            metadata?.requestFingerprint !== input.metadata.requestFingerprint)
+        ) {
+          throw new ConflictException({
+            code: 'ENTITLEMENT_GRANT_INTENT_CONFLICT',
+            msg: 'This grant intent was already used for a different request.',
+          });
+        }
+        // Replays do not extend the period or publish another fulfilled event,
+        // including when the original grant has subsequently been revoked.
+        return existing;
+      }
+      // Distinct complimentary grants for the same subject/plan must stack
+      // after the latest committed period rather than overlap each other.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`entitlement:period:${input.subjectType}:${input.subjectId}:${planKey}`})::bigint)
+      `;
+      await tx.$queryRaw`SELECT id FROM billing_membership_plans WHERE plan_key=${planKey} FOR SHARE`;
       await this.assertGrantablePlan(planKey, input.subjectType, tx);
       const now = new Date();
       const latest = await tx.entitlementGrant.findFirst({
@@ -357,7 +400,8 @@ export class EntitlementService {
       });
       await enqueueEntitlementChanged(tx, grant, 'fulfilled');
       return grant;
-    });
+    };
+    return transaction ? write(transaction) : this.prisma.$transaction(write);
   }
 
   /**
@@ -424,22 +468,33 @@ export class EntitlementService {
   // ─── plan-row cache (benefits source of truth) ─────────────────────────
 
   private async loadPlanCache(): Promise<PlanCache> {
-    if (this.planCache && this.planCache.expiresAt > Date.now()) {
+    if (this.planCache && this.planCache.expiresAt > Date.now())
       return this.planCache;
-    }
-    const plans = await this.prisma.billingMembershipPlan.findMany({
-      where: {
-        status: BillingMembershipPlanStatus.active,
-        archivedAt: null,
-      },
-    });
-    const cache: PlanCache = {
-      expiresAt: Date.now() + PLAN_CACHE_TTL_MS,
-      byKey: new Map(plans.map((plan) => [plan.planKey, plan])),
-      benefitsByKey: new Map(),
-    };
-    this.planCache = cache;
-    return cache;
+    if (this.planCacheRead) return this.planCacheRead;
+    const epoch = this.planCacheEpoch;
+    const pending: Promise<PlanCache> = this.prisma.billingMembershipPlan
+      .findMany({
+        where: { status: BillingMembershipPlanStatus.active, archivedAt: null },
+      })
+      .then((plans) => {
+        if (epoch !== this.planCacheEpoch) return this.loadPlanCache();
+        const cache: PlanCache = {
+          expiresAt: Date.now() + PLAN_CACHE_TTL_MS,
+          byKey: new Map(plans.map((plan) => [plan.planKey, plan])),
+          benefitsByKey: new Map(),
+        };
+        this.planCache = cache;
+        return cache;
+      })
+      .catch((error: unknown) => {
+        if (epoch !== this.planCacheEpoch) return this.loadPlanCache();
+        throw error;
+      })
+      .finally(() => {
+        if (this.planCacheRead === pending) this.planCacheRead = null;
+      });
+    this.planCacheRead = pending;
+    return pending;
   }
 
   private async activePlanByKey(
@@ -455,7 +510,8 @@ export class EntitlementService {
    * sold plan must surface immediately, never silently degrade.
    */
   private planBenefits(plan: BillingMembershipPlan): MembershipBenefits {
-    const cache = this.planCache;
+    const cache =
+      this.planCache?.byKey.get(plan.planKey) === plan ? this.planCache : null;
     const cached = cache?.benefitsByKey.get(plan.planKey);
     if (cached) return cached;
     const benefits = parseMembershipBenefits(plan.planKey, plan.benefits);

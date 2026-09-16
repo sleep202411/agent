@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCoin, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { fetchIpRevenueConfig, updateIpRevenueConfig } from "@/lib/admin-ip-commerce-client";
 import { ErrorBanner, formatShareBps, StatusPill, toErrorMessage } from "./shared";
 import type { IpRevenueConfigData, IpRevenueContributor } from "./types";
+
+import { useAdminOperation } from "../use-admin-operation";
 
 type ContributorDraft = {
   id: string;
@@ -39,6 +41,12 @@ function contributorLabel(contributor: IpRevenueContributor) {
 }
 
 export function IpRevenueSection({ ipId, locale }: { ipId: string; locale?: string }) {
+  return <IpRevenueView key={ipId} ipId={ipId} locale={locale} />;
+}
+
+function IpRevenueView({ ipId, locale }: { ipId: string; locale?: string }) {
+  const { busy, begin } = useAdminOperation();
+  const dirty = useRef(false);
   const [config, setConfig] = useState<IpRevenueConfigData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +58,8 @@ export function IpRevenueSection({ ipId, locale }: { ipId: string; locale?: stri
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  function hydrate(data: IpRevenueConfigData) {
+  const hydrate = useCallback((data: IpRevenueConfigData) => {
+    dirty.current = false;
     setConfig(data);
     setOverridePercent(bpsToPercentText(data.creatorRevenueShareBps));
     setContributorDrafts(
@@ -62,30 +71,32 @@ export function IpRevenueSection({ ipId, locale }: { ipId: string; locale?: stri
     );
     setSaved(false);
     setSaveError(null);
-  }
+  }, []);
 
-  async function load() {
+  const load = useCallback(async () => {
+    if (dirty.current) return;
+    const operation = begin("read");
+    if (!operation) return;
     setLoading(true);
     setError(null);
     try {
-      hydrate(await fetchIpRevenueConfig(ipId, locale));
+      const data = await fetchIpRevenueConfig(ipId, locale, operation.signal);
+      if (operation.current() && !dirty.current) hydrate(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      if (operation.current()) setLoading(false);
+      operation.finish();
     }
-  }
+  }, [begin, ipId, locale, hydrate]);
 
   useEffect(() => {
-    // Defer the fetch (and its loading setState) out of the synchronous effect
-    // body — matches admin-audit-panel and keeps cascading renders away.
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-    // Reload whenever the selected IP / locale changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ipId, locale]);
+  }, [load]);
 
   function updateContributor(id: string, next: Partial<ContributorDraft>) {
+    dirty.current = true;
     setContributorDrafts((current) =>
       current.map((draft) => (draft.id === id ? { ...draft, ...next } : draft))
     );
@@ -114,25 +125,33 @@ export function IpRevenueSection({ ipId, locale }: { ipId: string; locale?: stri
       setSaveError("参与分成的贡献者比例之和不能超过 100%。");
       return;
     }
+    const operation = begin();
+    if (!operation) return;
     setSaving(true);
     setSaveError(null);
     setSaved(false);
     try {
-      const result = await updateIpRevenueConfig(ipId, {
-        creatorRevenueShareBps: overrideBps,
-        contributors: contributorDrafts.map((draft) => ({
-          id: draft.id,
-          revenueEligible: draft.revenueEligible,
-          revenueShareBps: draft.revenueEligible ? percentTextToBps(draft.sharePercent) : null,
-        })),
-        expectedVersion: config.version,
-      });
+      const result = await updateIpRevenueConfig(
+        ipId,
+        {
+          creatorRevenueShareBps: overrideBps,
+          contributors: contributorDrafts.map((draft) => ({
+            id: draft.id,
+            revenueEligible: draft.revenueEligible,
+            revenueShareBps: draft.revenueEligible ? percentTextToBps(draft.sharePercent) : null,
+          })),
+          expectedVersion: config.version,
+        },
+        operation.signal
+      );
+      if (!operation.current()) return;
       hydrate(result);
       setSaved(true);
     } catch (err) {
-      setSaveError(toErrorMessage(err));
+      if (operation.current()) setSaveError(toErrorMessage(err));
     } finally {
-      setSaving(false);
+      if (operation.current()) setSaving(false);
+      operation.finish();
     }
   }
 
@@ -185,8 +204,10 @@ export function IpRevenueSection({ ipId, locale }: { ipId: string; locale?: stri
             min={0}
             max={100}
             step="0.01"
+            disabled={busy}
             value={overridePercent}
             onChange={(event) => {
+              dirty.current = true;
               setOverridePercent(event.target.value);
               setSaved(false);
             }}
@@ -234,7 +255,7 @@ export function IpRevenueSection({ ipId, locale }: { ipId: string; locale?: stri
                     type="button"
                     variant={draft.revenueEligible ? "default" : "outline"}
                     size="sm"
-                    disabled={!linked}
+                    disabled={busy || !linked}
                     title={linked ? undefined : "未绑定账号，无法参与分成"}
                     onClick={() =>
                       updateContributor(draft.id, { revenueEligible: !draft.revenueEligible })
@@ -251,7 +272,7 @@ export function IpRevenueSection({ ipId, locale }: { ipId: string; locale?: stri
                     onChange={(event) =>
                       updateContributor(draft.id, { sharePercent: event.target.value })
                     }
-                    disabled={!linked || !draft.revenueEligible}
+                    disabled={busy || !linked || !draft.revenueEligible}
                     placeholder="%"
                     aria-label="贡献者分成比例"
                     className="h-9 w-24"
@@ -268,7 +289,7 @@ export function IpRevenueSection({ ipId, locale }: { ipId: string; locale?: stri
       {saveError ? <p className="mt-2 text-sm text-red-600">{saveError}</p> : null}
       <div className="mt-4 flex items-center justify-end gap-3">
         {saved ? <p className="text-[12px] text-emerald-600">已保存</p> : null}
-        <Button type="button" onClick={() => void save()} disabled={saving || overSplit}>
+        <Button type="button" onClick={() => void save()} disabled={busy || overSplit}>
           <IconCoin className="size-3.5" />
           {saving ? "保存中…" : "保存分成配置"}
         </Button>

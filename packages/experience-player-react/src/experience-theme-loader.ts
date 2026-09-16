@@ -16,6 +16,7 @@ export async function loadExperienceTheme(
   manifest: ExperienceRuntimeManifest,
   signal?: AbortSignal
 ): Promise<ExperienceThemeConfig> {
+  signal?.throwIfAborted();
   const asset = manifest.assets.find(
     (candidate) => candidate.assetId === manifest.theme.configAssetId
   );
@@ -27,8 +28,10 @@ export async function loadExperienceTheme(
     throw new Error(`Theme ${manifest.theme.themeId} could not be loaded (${response.status})`);
   }
   const input: unknown = await response.json();
+  signal?.throwIfAborted();
   const json = ExperienceJsonValueSchema.parse(input);
   const digest = await sha256(canonicalizeExperienceJson(json));
+  signal?.throwIfAborted();
   if (digest !== asset.sha256) {
     throw new Error(`Theme ${manifest.theme.themeId} failed integrity validation`);
   }

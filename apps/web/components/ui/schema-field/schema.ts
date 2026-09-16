@@ -76,10 +76,10 @@ export interface RawAiModel {
 
 function inferType(path?: string): AiModel["type"] {
   if (!path) return "image";
+  if (path.includes("/video/lip/sync") || path.includes("/lipsync/")) return "lipsync";
+  if (/(?:^|\/)music(?:\/|$)/.test(path)) return "music";
   if (path.includes("/video/")) return "video";
   if (path.includes("/audio/") || path.includes("/voice/")) return "audio";
-  if (path.includes("/lipsync/")) return "lipsync";
-  if (path.includes("/music/")) return "music";
   if (path.includes("/image/")) return "image";
   return "image";
 }
@@ -164,9 +164,11 @@ export function normalizeAiModel(raw: RawAiModel, locale = "en-US"): AiModel {
   }
 
   if (videoLengths.length > 0) {
-    const lengthValues = videoLengths
-      .map((v: unknown) => Number(v))
-      .filter((v: number) => !Number.isNaN(v));
+    const lengthValues = [
+      ...new Set(
+        videoLengths.map((v: unknown) => Number(v)).filter((v: number) => Number.isFinite(v))
+      ),
+    ];
     properties.videoLength = {
       type: "integer",
       title: "Duration",

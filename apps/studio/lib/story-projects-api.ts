@@ -521,11 +521,13 @@ export async function listStoryProjects(query: {
 
 export async function getStoryWorkbench(
   projectId: string,
-  chapterId?: string
+  chapterId?: string,
+  signal?: AbortSignal
 ): Promise<StoryWorkbench> {
   const workbench = await api.get<StoryWorkbench>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/workbench`,
     {
+      signal,
       params: chapterId ? { chapterId } : undefined,
       requestScope: "project",
     }
@@ -587,11 +589,12 @@ export async function archiveStoryChapter(
 
 export async function getStoryCanvasLayout(
   projectId: string,
-  chapterId: string
+  chapterId: string,
+  signal?: AbortSignal
 ): Promise<StoryCanvasLayout> {
   return api.get<StoryCanvasLayout>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/canvas-layout`,
-    { requestScope: "project" }
+    { requestScope: "project", signal }
   );
 }
 
@@ -612,11 +615,12 @@ export async function getStoryCandidateAssets(
 
 export async function addStoryCandidateAsset(
   projectId: string,
-  mediaAssetId: string
+  mediaAssetId: string,
+  signal?: AbortSignal
 ): Promise<StoryCandidateAsset> {
   const value = await api.put<unknown>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/candidate-assets/${encodeURIComponent(mediaAssetId)}`,
-    { requestScope: "project" }
+    { requestScope: "project", signal }
   );
   assertStoryCandidateAsset(value);
   return value;

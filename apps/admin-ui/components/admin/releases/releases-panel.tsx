@@ -5,7 +5,7 @@
 // offered. Create a row per store/APK release; set 强制更新版本号 to force
 // builds older than it; toggle 停用 to pull a bad announcement.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { IconDeviceMobile, IconEdit, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +29,8 @@ import {
   type AppReleasesData,
 } from "./releases-types";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 type DialogState = { mode: "create" } | { mode: "edit"; row: AppReleaseRow } | null;
 
 export function ReleasesPanel({
@@ -45,15 +47,33 @@ export function ReleasesPanel({
   const [rows, setRows] = useState<AppReleaseRow[]>(initialData?.items ?? []);
   const [error, setError] = useState<string | null>(initialError);
   const [dialog, setDialog] = useState<DialogState>(null);
-  const [busy, setBusy] = useState(false);
+  const { busy, begin } = useAdminOperation();
+  const writing = useRef(false);
+  const activeDialog = useRef<DialogState>(null);
+  const openDialog = (next: DialogState) => {
+    if (writing.current) return;
+    activeDialog.current = next;
+    setDialog(next);
+    setError(null);
+  };
 
+  const load = async (operation: NonNullable<ReturnType<typeof begin>>) => {
+    const data = await requestEnvelope<AppReleasesData>(
+      "/api/admin/app-releases",
+      operation.signal
+    );
+    if (operation.current()) setRows(data.items);
+  };
   const refresh = async () => {
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      const data = await requestEnvelope<AppReleasesData>("/api/admin/app-releases");
-      setRows(data.items);
+      await load(operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
+    } finally {
+      operation.finish();
     }
   };
 
@@ -69,44 +89,72 @@ export function ReleasesPanel({
   }, [rows]);
 
   const submit = async (form: FormData) => {
-    setBusy(true);
+    if (!dialog || activeDialog.current !== dialog) return;
+    const operation = begin("write");
+    if (!operation) return;
+    writing.current = true;
     setError(null);
     try {
       const notes = stringField(form, "releaseNotes").trim();
       const minCode = stringField(form, "minSupportedCode").trim();
       const payload: Record<string, unknown> = {
         versionName: stringField(form, "versionName").trim(),
-        versionCode: Number(stringField(form, "versionCode")),
+        versionCode: parseVersionCode(stringField(form, "versionCode")),
         downloadUrl: stringField(form, "downloadUrl").trim(),
         releaseNotes: notes || null,
-        minSupportedCode: minCode ? Number(minCode) : null,
+        minSupportedCode: minCode ? parseVersionCode(minCode) : null,
       };
+      if (
+        payload.minSupportedCode !== null &&
+        (payload.minSupportedCode as number) > (payload.versionCode as number)
+      )
+        throw new Error("Minimum supported version cannot exceed the release version.");
       if (dialog?.mode === "create") {
         payload.platform = stringField(form, "platform");
         payload.active = true;
-        await mutateEnvelope("/api/admin/app-releases", payload, "POST");
+        await mutateEnvelope("/api/admin/app-releases", payload, "POST", operation.signal);
       } else if (dialog?.mode === "edit") {
-        await mutateEnvelope(`/api/admin/app-releases/${dialog.row.id}`, payload, "PATCH");
+        await mutateEnvelope(
+          `/api/admin/app-releases/${dialog.row.id}`,
+          payload,
+          "PATCH",
+          operation.signal
+        );
       }
+      if (!operation.current()) return;
+      activeDialog.current = null;
       setDialog(null);
-      await refresh();
+      await load(operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setBusy(false);
+      if (operation.current()) writing.current = false;
+      operation.finish();
     }
   };
 
   const toggleActive = async (row: AppReleaseRow) => {
-    setBusy(true);
+    const operation = begin("write");
+    if (!operation) return;
+    writing.current = true;
     setError(null);
     try {
-      await mutateEnvelope(`/api/admin/app-releases/${row.id}`, { active: !row.active }, "PATCH");
-      await refresh();
+      await mutateEnvelope(
+        `/api/admin/app-releases/${row.id}`,
+        { active: !row.active },
+        "PATCH",
+        operation.signal
+      );
+      if (!operation.current()) return;
+      setRows((previous) =>
+        previous.map((item) => (item.id === row.id ? { ...item, active: !row.active } : item))
+      );
+      await load(operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setBusy(false);
+      if (operation.current()) writing.current = false;
+      operation.finish();
     }
   };
 
@@ -123,7 +171,7 @@ export function ReleasesPanel({
               <IconRefresh className="size-3.5" />
               刷新
             </Button>
-            <Button size="sm" onClick={() => setDialog({ mode: "create" })} disabled={busy}>
+            <Button size="sm" onClick={() => openDialog({ mode: "create" })} disabled={busy}>
               <IconPlus className="size-3.5" />
               新建发布
             </Button>
@@ -175,7 +223,7 @@ export function ReleasesPanel({
                       <Button
                         variant="outline"
                         size="xs"
-                        onClick={() => setDialog({ mode: "edit", row })}
+                        onClick={() => openDialog({ mode: "edit", row })}
                         disabled={busy}
                       >
                         <IconEdit className="size-3" />
@@ -203,7 +251,7 @@ export function ReleasesPanel({
           key={dialog.mode === "edit" ? dialog.row.id : "create"}
           state={dialog}
           busy={busy}
-          onClose={() => setDialog(null)}
+          onClose={() => openDialog(null)}
           onSubmit={submit}
         />
       ) : null}
@@ -241,6 +289,7 @@ function ReleaseDialog({
       }
     >
       <form
+        inert={busy}
         id="release-form"
         className="grid gap-4"
         onSubmit={(event) => {
@@ -298,4 +347,12 @@ function ReleaseDialog({
       </form>
     </AdminDialog>
   );
+}
+
+function parseVersionCode(raw: string) {
+  const value = raw.trim();
+  const number = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(number) || number < 1 || number > 2147483647)
+    throw new Error("Version codes must be whole numbers between 1 and 2147483647.");
+  return number;
 }

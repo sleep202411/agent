@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconBuilding, IconLink } from "@tabler/icons-react";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -55,7 +55,14 @@ function WorkspacePickerSession({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
-  useEffect(() => () => request.current?.abort(), []);
+  const active = useRef(false);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      request.current?.abort();
+    };
+  }, []);
   const options = useQuery({
     queryKey: ["crew-studio-workspaces", crewId, userId],
     queryFn: ({ signal }) =>
@@ -66,7 +73,7 @@ function WorkspacePickerSession({
     retry: false,
   });
   async function select(workspaceId: string | null) {
-    if (request.current || disabled) return;
+    if (!active.current || !userId || request.current || disabled) return;
     const controller = new AbortController();
     request.current = controller;
     setSaving(true);
@@ -80,6 +87,7 @@ function WorkspacePickerSession({
       await client.invalidateQueries({
         queryKey: [...crewKeys.productionOverview(crewId), userId],
       });
+      if (controller.signal.aborted) return;
       await client.invalidateQueries({ queryKey: ["crew-studio-workspaces", crewId, userId] });
       if (!controller.signal.aborted) setOpen(false);
     } catch (err) {

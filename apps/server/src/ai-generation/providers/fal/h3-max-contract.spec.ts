@@ -14,9 +14,13 @@ function setup() {
     ...entry.binding,
     id: entry.endpoint.endpointId,
     canonicalModelId: 'minimax-h3-max',
-    canonicalModel: { ...plan.canonical, id: 'minimax-h3-max' },
+    canonicalModel: {
+      ...plan.canonical,
+      archivedAt: null,
+      id: 'minimax-h3-max',
+    },
     providerAccount: { id: 'fal', status: 'active' },
-    providerEndpoint: entry.endpoint,
+    providerEndpoint: { ...entry.endpoint, archivedAt: null },
   }));
   const config = {
     config: { enabled: true, catalogRefreshMs: 60000, pollDelayMs: 5000 },

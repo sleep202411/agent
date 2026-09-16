@@ -84,7 +84,8 @@ async function main() {
   );
   if (!write) return;
 
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma = buildPrisma();

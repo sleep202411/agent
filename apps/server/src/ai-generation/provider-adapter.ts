@@ -15,7 +15,13 @@
  * or schedule a status poll.
  */
 
-import type { AiJobError, AiJobType, AiModelDefinition } from './types';
+import type {
+  AiJobError,
+  AiJobType,
+  AiModelDefinition,
+  AiModelOpsMetadata,
+  AiExecutionBindingIdentity,
+} from './types';
 export type { AiModelDefinition } from './types';
 
 /**
@@ -38,6 +44,8 @@ export class ReferencePreparationError extends Error {
  * built from jobId).
  */
 export interface ProviderGenerationContext {
+  /** Frozen explicit binding; old jobs without this retain legacy routing. */
+  expectedExecutionBinding?: AiExecutionBindingIdentity;
   /** Our AiJob.id — for log correlation and webhook URL construction. */
   jobId: string;
   /** Owning user — providers often pass it for abuse tracking. */
@@ -226,6 +234,11 @@ export type WebhookResult =
  *   - async providers (fal.ai / Replicate) implement at least one of
  *     `pollStatus` and `parseWebhook` (typically both)
  */
+export interface ProviderExecutionBinding {
+  deployment: string;
+  ops: AiModelOpsMetadata;
+}
+
 export interface ProviderAdapter {
   /** Stable identifier — used as the `provider` column value in DB. */
   readonly provider: string;
@@ -239,6 +252,12 @@ export interface ProviderAdapter {
 
   /** Look up one model by id — for submit-time validation. */
   getModel(modelId: string): Promise<AiModelDefinition | null>;
+
+  /** Resolve explicit mode bindings using the normalized provider input, without submitting. */
+  resolveExecutionBinding?(
+    modelId: string,
+    input: Record<string, unknown>,
+  ): Promise<ProviderExecutionBinding | null>;
 
   /**
    * Provider-specific input normalization on top of generic JSON
@@ -305,4 +324,19 @@ export interface ProviderAdapter {
    * fail without provider knowledge.
    */
   mapError(err: unknown): AiJobError;
+}
+
+/** Exact identities, never a fallback to another endpoint or account. */
+export function matchesExecutionBinding(
+  expected: AiExecutionBindingIdentity,
+  actual: ProviderExecutionBinding | null,
+): boolean {
+  return (
+    actual !== null &&
+    actual.deployment === expected.deployment &&
+    actual.ops.canonicalModelId === expected.canonicalModelId &&
+    actual.ops.providerAccountId === expected.providerAccountId &&
+    actual.ops.providerBindingId === expected.providerBindingId &&
+    actual.ops.providerEndpointId === expected.providerEndpointId
+  );
 }

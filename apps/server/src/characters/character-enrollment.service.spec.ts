@@ -1,3 +1,4 @@
+import { HttpException } from '@nestjs/common';
 import { CharacterEnrollmentService } from './character-enrollment.service';
 import {
   consentTextSha256,
@@ -5,6 +6,27 @@ import {
   encryptEnrollmentToken,
   REAL_PERSON_CONSENT_VERSION,
 } from './consent';
+
+const originalRegion = process.env.NEXT_PUBLIC_SITE_REGION;
+afterEach(() => {
+  if (originalRegion === undefined) delete process.env.NEXT_PUBLIC_SITE_REGION;
+  else process.env.NEXT_PUBLIC_SITE_REGION = originalRegion;
+});
+function expectHttpFailure(
+  action: () => unknown,
+  code: string,
+  status: number,
+) {
+  try {
+    action();
+  } catch (error: unknown) {
+    if (!(error instanceof HttpException)) throw error;
+    expect(error.getStatus()).toBe(status);
+    expect(error.getResponse()).toMatchObject({ code });
+    return;
+  }
+  throw new Error(`Expected ${code} to reject the action`);
+}
 
 const TOKEN_KEY = Buffer.alloc(32, 7).toString('base64');
 
@@ -66,65 +88,55 @@ describe('requireRealPersonCreateAllowed (design §2.1a-c gates)', () => {
   });
 
   it('501s while the feature flag is off', () => {
-    expect(() =>
-      makeService({ realPersonEnabled: false }).requireRealPersonCreateAllowed({
-        consent: VALID_CONSENT,
-        context: {},
-      }),
-    ).toThrow(
-      expect.objectContaining({
-        response: expect.objectContaining({
-          code: 'REAL_PERSON_NOT_AVAILABLE',
-        }) as unknown,
-      }),
+    expectHttpFailure(
+      () =>
+        makeService({
+          realPersonEnabled: false,
+        }).requireRealPersonCreateAllowed({
+          consent: VALID_CONSENT,
+          context: {},
+        }),
+      'REAL_PERSON_NOT_AVAILABLE',
+      501,
     );
   });
-
   it('403s on the CN cell (PIPL cross-border precondition, §0)', () => {
-    expect(() =>
-      makeService({ region: 'cn' }).requireRealPersonCreateAllowed({
-        consent: VALID_CONSENT,
-        context: {},
-      }),
-    ).toThrow(
-      expect.objectContaining({
-        response: expect.objectContaining({
-          code: 'CN_REAL_PERSON_UNAVAILABLE',
-        }) as unknown,
-      }),
+    expectHttpFailure(
+      () =>
+        makeService({ region: 'cn' }).requireRealPersonCreateAllowed({
+          consent: VALID_CONSENT,
+          context: {},
+        }),
+      'CN_REAL_PERSON_UNAVAILABLE',
+      403,
     );
   });
-
   it('blocks enrollment inside the ACR T-7d window (§6.1)', () => {
-    expect(() =>
-      makeService({
-        acrExpiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-      }).requireRealPersonCreateAllowed({
-        consent: VALID_CONSENT,
-        context: {},
-      }),
-    ).toThrow(
-      expect.objectContaining({
-        response: expect.objectContaining({
-          code: 'ACR_ENROLLMENT_PAUSED',
-        }) as unknown,
-      }),
+    expectHttpFailure(
+      () =>
+        makeService({
+          acrExpiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+        }).requireRealPersonCreateAllowed({
+          consent: VALID_CONSENT,
+          context: {},
+        }),
+      'ACR_ENROLLMENT_PAUSED',
+      409,
     );
   });
-
   it('rejects a stale consent version and a missing adult attestation', () => {
     for (const consent of [
       { version: 'realperson-consent-v0-old', adultAttested: true as const },
       undefined,
     ]) {
-      expect(() =>
-        makeService().requireRealPersonCreateAllowed({ consent, context: {} }),
-      ).toThrow(
-        expect.objectContaining({
-          response: expect.objectContaining({
-            code: 'CONSENT_REQUIRED',
-          }) as unknown,
-        }),
+      expectHttpFailure(
+        () =>
+          makeService().requireRealPersonCreateAllowed({
+            consent,
+            context: {},
+          }),
+        'CONSENT_REQUIRED',
+        400,
       );
     }
   });

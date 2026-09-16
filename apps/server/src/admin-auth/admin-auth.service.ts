@@ -1,3 +1,4 @@
+import { writeAdminAudit, type AuditInput } from './admin-audit';
 import {
   BadRequestException,
   HttpException,
@@ -65,19 +66,6 @@ const adminUserInclude = {
 type AdminUserWithRoles = Prisma.AdminUserGetPayload<{
   include: typeof adminUserInclude;
 }>;
-
-type AuditInput = {
-  actor?: AdminActor | null;
-  action: string;
-  resourceType: string;
-  resourceId?: string | null;
-  outcome?: AdminAuditOutcome;
-  reason?: string | null;
-  metadata?: Prisma.InputJsonValue;
-  before?: Prisma.InputJsonValue | null;
-  after?: Prisma.InputJsonValue | null;
-  context?: AdminRequestContext;
-};
 
 type AdminLoginOutcome =
   | {
@@ -152,35 +140,61 @@ export class AdminAuthService implements OnModuleInit {
     }
 
     const authenticatedUser = user as AdminUserWithRoles;
-    if (authenticatedUser.requireMfa) {
-      const challenge = await this.createMfaChallenge(
-        authenticatedUser,
-        context,
-      );
-      await this.writeAudit({
-        action: 'admin.auth.mfa.challenge',
-        resourceType: 'admin_user',
-        resourceId: authenticatedUser.id,
-        metadata: {
-          email: authenticatedUser.email,
-          setupRequired: challenge.setupRequired,
-        },
-        context,
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${authenticatedUser.id}::uuid FOR UPDATE`;
+      const current = await tx.adminUser.findUnique({
+        where: { id: authenticatedUser.id },
+        include: adminUserInclude,
       });
-      return {
-        kind: 'mfa',
-        challenge: {
-          required: true,
-          setupRequired: challenge.setupRequired,
-          challengeToken: challenge.challengeToken,
-          expiresAt: challenge.expiresAt.toISOString(),
-          secret: challenge.secret,
-          otpauthUri: challenge.otpauthUri,
-        },
-      };
-    }
-
-    return this.createSessionForUser(authenticatedUser, context);
+      const [clock] = await tx.$queryRaw<
+        { nowMs: number }[]
+      >`SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::double precision AS "nowMs"`;
+      const now = new Date(clock.nowMs);
+      if (
+        !current ||
+        current.status !== AdminUserStatus.active ||
+        current.passwordHash !== authenticatedUser.passwordHash ||
+        (current.lockedUntil && current.lockedUntil > now)
+      ) {
+        throw new UnauthorizedException({
+          code: 'ADMIN_AUTH_INVALID_CREDENTIALS',
+          msg: '后台账号或密码错误，或账号未启用。',
+        });
+      }
+      if (current.requireMfa) {
+        const challenge = await this.createMfaChallenge(
+          current,
+          context,
+          tx,
+          now,
+        );
+        await this.writeAudit(
+          {
+            action: 'admin.auth.mfa.challenge',
+            resourceType: 'admin_user',
+            resourceId: current.id,
+            metadata: {
+              email: current.email,
+              setupRequired: challenge.setupRequired,
+            },
+            context,
+          },
+          tx,
+        );
+        return {
+          kind: 'mfa',
+          challenge: {
+            required: true,
+            setupRequired: challenge.setupRequired,
+            challengeToken: challenge.challengeToken,
+            expiresAt: challenge.expiresAt.toISOString(),
+            secret: challenge.secret,
+            otpauthUri: challenge.otpauthUri,
+          },
+        };
+      }
+      return this.createSessionForUser(current, context, tx);
+    });
   }
 
   async verifyMfa(
@@ -192,104 +206,133 @@ export class AdminAuthService implements OnModuleInit {
     expiresAt: Date;
   }> {
     const tokenHash = hashSessionToken(input.challengeToken);
-    const challenge = await this.prisma.adminMfaChallenge.findUnique({
-      where: { tokenHash },
-      include: {
-        user: {
-          include: adminUserInclude,
-        },
-      },
-    });
-    if (
-      !challenge ||
-      challenge.consumedAt ||
-      challenge.expiresAt <= new Date() ||
-      challenge.user.status !== AdminUserStatus.active
-    ) {
-      throw new UnauthorizedException({
-        code: 'ADMIN_MFA_CHALLENGE_INVALID',
-        msg: 'MFA 验证已失效，请重新登录。',
-      });
-    }
-
-    const setupRequired = challenge.purpose === 'setup';
-    const secret = setupRequired
-      ? challenge.secretEncrypted
-        ? decryptTotpSecret(challenge.secretEncrypted)
-        : null
-      : challenge.user.mfaSecretHash
-        ? decryptTotpSecret(challenge.user.mfaSecretHash)
-        : null;
-    if (!secret || !verifyTotpCode({ secret, code: input.code })) {
-      await this.writeAudit({
-        action: 'admin.auth.mfa.verify',
-        resourceType: 'admin_user',
-        resourceId: challenge.user.id,
-        outcome: AdminAuditOutcome.failure,
-        reason: 'Invalid MFA code.',
-        metadata: { email: challenge.user.email, setupRequired },
-        context,
-      });
-      throw new UnauthorizedException({
-        code: 'ADMIN_MFA_CODE_INVALID',
-        msg: 'MFA 验证码错误或已过期。',
-      });
-    }
-
-    await this.prisma.$transaction([
-      ...(setupRequired
-        ? [
-            this.prisma.adminUser.update({
-              where: { id: challenge.user.id },
-              data: {
-                requireMfa: true,
-                mfaSecretHash: encryptTotpSecret(secret),
-                mfaEnabledAt: new Date(),
-              },
-            }),
-          ]
-        : []),
-      this.prisma.adminMfaChallenge.update({
-        where: { id: challenge.id },
-        data: { consumedAt: new Date() },
-      }),
-    ]);
-    await this.writeAudit({
-      action: setupRequired ? 'admin.auth.mfa.enroll' : 'admin.auth.mfa.verify',
-      resourceType: 'admin_user',
-      resourceId: challenge.user.id,
-      metadata: { email: challenge.user.email },
-      context,
-    });
-
-    const user = setupRequired
-      ? await this.prisma.adminUser.findUniqueOrThrow({
+    let failureUser:
+      | { id: string; email: string; setupRequired: boolean }
+      | undefined;
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const candidate = await tx.adminMfaChallenge.findUnique({
+          where: { tokenHash },
+          select: { id: true, userId: true },
+        });
+        if (!candidate) throw this.invalidMfaChallenge();
+        await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${candidate.userId}::uuid FOR UPDATE`;
+        await tx.$queryRaw`SELECT id FROM admin_mfa_challenges WHERE id=${candidate.id}::uuid FOR UPDATE`;
+        const challenge = await tx.adminMfaChallenge.findUnique({
+          where: { id: candidate.id },
+          include: { user: { include: adminUserInclude } },
+        });
+        const [clock] = await tx.$queryRaw<
+          { nowMs: number }[]
+        >`SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::double precision AS "nowMs"`;
+        const now = new Date(clock.nowMs);
+        if (
+          !challenge ||
+          challenge.consumedAt ||
+          challenge.expiresAt <= now ||
+          challenge.user.status !== AdminUserStatus.active ||
+          (challenge.user.lockedUntil && challenge.user.lockedUntil > now)
+        )
+          throw this.invalidMfaChallenge();
+        const setupRequired = challenge.purpose === 'setup';
+        if (setupRequired && challenge.user.mfaSecretHash)
+          throw this.invalidMfaChallenge();
+        const encodedSecret = setupRequired
+          ? challenge.secretEncrypted
+          : challenge.user.mfaSecretHash;
+        const secret = encodedSecret ? decryptTotpSecret(encodedSecret) : null;
+        if (
+          !secret ||
+          !verifyTotpCode({
+            secret,
+            code: input.code,
+            now: now.getTime(),
+          })
+        ) {
+          failureUser = {
+            id: challenge.user.id,
+            email: challenge.user.email,
+            setupRequired,
+          };
+          throw new UnauthorizedException({
+            code: 'ADMIN_MFA_CODE_INVALID',
+            msg: 'MFA 验证码错误或已过期。',
+          });
+        }
+        if (setupRequired)
+          await tx.adminUser.update({
+            where: { id: challenge.user.id },
+            data: {
+              requireMfa: true,
+              mfaSecretHash: encryptTotpSecret(secret),
+              mfaEnabledAt: now,
+            },
+          });
+        const consumed =
+          await tx.$executeRaw`UPDATE admin_mfa_challenges SET consumed_at=clock_timestamp() WHERE id=${challenge.id}::uuid AND consumed_at IS NULL AND expires_at>clock_timestamp()`;
+        if (consumed !== 1) throw this.invalidMfaChallenge();
+        await this.writeAudit(
+          {
+            action: setupRequired
+              ? 'admin.auth.mfa.enroll'
+              : 'admin.auth.mfa.verify',
+            resourceType: 'admin_user',
+            resourceId: challenge.user.id,
+            metadata: { email: challenge.user.email },
+            context,
+          },
+          tx,
+        );
+        const user = await tx.adminUser.findUniqueOrThrow({
           where: { id: challenge.user.id },
           include: adminUserInclude,
-        })
-      : challenge.user;
-    const outcome = await this.createSessionForUser(user, context);
-    if (outcome.kind !== 'session') {
-      throw new BadRequestException({
-        code: 'ADMIN_MFA_SESSION_FAILED',
-        msg: 'MFA 验证成功，但会话创建失败。',
+        });
+        const outcome = await this.createSessionForUser(user, context, tx);
+        if (outcome.kind !== 'session')
+          throw new BadRequestException({
+            code: 'ADMIN_MFA_SESSION_FAILED',
+            msg: 'MFA 验证成功，但会话创建失败。',
+          });
+        return {
+          result: outcome.result,
+          sessionToken: outcome.sessionToken,
+          expiresAt: outcome.expiresAt,
+        };
       });
+    } catch (error) {
+      if (failureUser)
+        await this.writeAudit({
+          action: 'admin.auth.mfa.verify',
+          resourceType: 'admin_user',
+          resourceId: failureUser.id,
+          outcome: AdminAuditOutcome.failure,
+          reason: 'Invalid MFA code.',
+          metadata: {
+            email: failureUser.email,
+            setupRequired: failureUser.setupRequired,
+          },
+          context,
+        });
+      throw error;
     }
-    return {
-      result: outcome.result,
-      sessionToken: outcome.sessionToken,
-      expiresAt: outcome.expiresAt,
-    };
+  }
+
+  private invalidMfaChallenge() {
+    return new UnauthorizedException({
+      code: 'ADMIN_MFA_CHALLENGE_INVALID',
+      msg: 'MFA 验证已失效，请重新登录。',
+    });
   }
 
   private async createSessionForUser(
     user: AdminUserWithRoles,
     context: AdminRequestContext,
+    db: Prisma.TransactionClient,
   ): Promise<AdminLoginOutcome> {
     const sessionToken = generateSessionToken();
     const tokenHash = hashSessionToken(sessionToken);
     const expiresAt = sessionExpiresAt();
-    const session = await this.prisma.adminSession.create({
+    const session = await db.adminSession.create({
       data: {
         userId: user.id,
         tokenHash,
@@ -298,7 +341,7 @@ export class AdminAuthService implements OnModuleInit {
         userAgent: context.userAgent,
       },
     });
-    await this.prisma.adminUser.update({
+    await db.adminUser.update({
       where: { id: user.id },
       data: {
         lastLoginAt: new Date(),
@@ -306,22 +349,28 @@ export class AdminAuthService implements OnModuleInit {
         lockedUntil: null,
       },
     });
-    await this.recordLoginAttempt({
-      email: user.email,
-      userId: user.id,
-      outcome: AdminLoginAttemptOutcome.success,
-      context,
-    });
+    await this.recordLoginAttempt(
+      {
+        email: user.email,
+        userId: user.id,
+        outcome: AdminLoginAttemptOutcome.success,
+        context,
+      },
+      db,
+    );
 
     const actor = this.toActor(user, session.id);
-    await this.writeAudit({
-      actor,
-      action: 'admin.auth.login',
-      resourceType: 'admin_user',
-      resourceId: user.id,
-      metadata: { email: user.email },
-      context,
-    });
+    await this.writeAudit(
+      {
+        actor,
+        action: 'admin.auth.login',
+        resourceType: 'admin_user',
+        resourceId: user.id,
+        metadata: { email: user.email },
+        context,
+      },
+      db,
+    );
 
     return {
       kind: 'session',
@@ -360,51 +409,95 @@ export class AdminAuthService implements OnModuleInit {
     }
 
     const tokenHash = hashSessionToken(sessionToken);
-    const session = await this.prisma.adminSession.findUnique({
+    const candidate = await this.prisma.adminSession.findUnique({
       where: { tokenHash },
-      include: {
-        user: {
-          include: adminUserInclude,
-        },
-      },
+      select: { id: true, userId: true },
     });
-    const now = new Date();
-    if (
-      !session ||
-      session.status !== AdminSessionStatus.active ||
-      session.expiresAt <= now ||
-      session.user.status !== AdminUserStatus.active
-    ) {
+    if (!candidate)
       throw new UnauthorizedException({
         code: 'ADMIN_SESSION_INVALID',
         msg: '后台登录已失效，请重新登录。',
       });
-    }
-
-    await this.prisma.adminSession.update({
-      where: { id: session.id },
-      data: {
-        lastSeenAt: now,
-        ipAddress: context?.ipAddress ?? session.ipAddress,
-        userAgent: context?.userAgent ?? session.userAgent,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${candidate.userId}::uuid FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM admin_sessions WHERE id=${candidate.id}::uuid FOR UPDATE`;
+      const session = await tx.adminSession.findUnique({
+        where: { tokenHash },
+        include: { user: { include: adminUserInclude } },
+      });
+      if (!session)
+        throw new UnauthorizedException({
+          code: 'ADMIN_SESSION_INVALID',
+          msg: '后台登录已失效，请重新登录。',
+        });
+      const actor = this.toActor(session.user, session.id);
+      await this.assertOwnSession(tx, actor);
+      const [clock] = await tx.$queryRaw<
+        { milliseconds: number }[]
+      >`SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::double precision AS milliseconds`;
+      await tx.adminSession.update({
+        where: { id: session.id },
+        data: {
+          lastSeenAt: new Date(clock.milliseconds),
+          ipAddress: context?.ipAddress ?? session.ipAddress,
+          userAgent: context?.userAgent ?? session.userAgent,
+        },
+      });
+      await this.assertOwnSession(tx, actor);
+      return actor;
     });
-
-    return this.toActor(session.user, session.id);
   }
 
   async logout(actor: AdminActor, context: AdminRequestContext): Promise<void> {
-    await this.prisma.adminSession.updateMany({
-      where: { id: actor.sessionId, status: AdminSessionStatus.active },
-      data: { status: AdminSessionStatus.revoked, revokedAt: new Date() },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${actor.id}::uuid FOR SHARE`;
+      await tx.adminSession.updateMany({
+        where: {
+          id: actor.sessionId,
+          userId: actor.id,
+          status: AdminSessionStatus.active,
+        },
+        data: { status: AdminSessionStatus.revoked, revokedAt: new Date() },
+      });
+      await this.writeAudit(
+        {
+          actor,
+          action: 'admin.auth.logout',
+          resourceType: 'admin_session',
+          resourceId: actor.sessionId,
+          context,
+        },
+        tx,
+      );
     });
-    await this.writeAudit({
-      actor,
-      action: 'admin.auth.logout',
-      resourceType: 'admin_session',
-      resourceId: actor.sessionId,
-      context,
+  }
+
+  private async ownAccountWrite<T>(
+    actor: AdminActor,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${actor.id}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM admin_sessions WHERE id=${actor.sessionId}::uuid AND user_id=${actor.id}::uuid FOR SHARE`;
+      await this.assertOwnSession(tx, actor);
+      const result = await work(tx);
+      await this.assertOwnSession(tx, actor);
+      return result;
     });
+  }
+
+  private async assertOwnSession(
+    tx: Prisma.TransactionClient,
+    actor: AdminActor,
+  ) {
+    const [row] = await tx.$queryRaw<
+      { valid: boolean }[]
+    >`SELECT EXISTS(SELECT 1 FROM admin_sessions s JOIN admin_users u ON u.id=s.user_id WHERE s.id=${actor.sessionId}::uuid AND u.id=${actor.id}::uuid AND s.status='active' AND s.expires_at>clock_timestamp() AND u.status='active') AS valid`;
+    if (!row?.valid)
+      throw new UnauthorizedException({
+        code: 'ADMIN_SESSION_INVALID',
+        msg: '后台登录已失效，请重新登录。',
+      });
   }
 
   async updateOwnProfile(
@@ -412,40 +505,45 @@ export class AdminAuthService implements OnModuleInit {
     input: AdminProfileUpdateInput,
     context: AdminRequestContext,
   ): Promise<AdminAuthResult> {
-    const before = await this.prisma.adminUser.findUniqueOrThrow({
-      where: { id: actor.id },
-      select: { id: true, email: true, displayName: true, avatarUrl: true },
+    return this.ownAccountWrite(actor, async (tx) => {
+      const before = await tx.adminUser.findUniqueOrThrow({
+        where: { id: actor.id },
+        select: { id: true, email: true, displayName: true, avatarUrl: true },
+      });
+      const updated = await tx.adminUser.update({
+        where: { id: actor.id },
+        data: {
+          displayName: input.displayName,
+          avatarUrl: input.avatarUrl,
+        },
+        include: adminUserInclude,
+      });
+      const nextActor = this.toActor(updated, actor.sessionId);
+      await this.writeAudit(
+        {
+          actor: nextActor,
+          action: 'admin.account.profile.update',
+          resourceType: 'admin_user',
+          resourceId: actor.id,
+          before: {
+            id: before.id,
+            email: before.email,
+            displayName: before.displayName,
+            avatarUrl: before.avatarUrl,
+          },
+          after: {
+            id: updated.id,
+            email: updated.email,
+            displayName: updated.displayName,
+            avatarUrl: updated.avatarUrl,
+          },
+          metadata: { fields: Object.keys(input) },
+          context,
+        },
+        tx,
+      );
+      return this.authResultForActor(nextActor, tx);
     });
-    const updated = await this.prisma.adminUser.update({
-      where: { id: actor.id },
-      data: {
-        displayName: input.displayName,
-        avatarUrl: input.avatarUrl,
-      },
-      include: adminUserInclude,
-    });
-    const nextActor = this.toActor(updated, actor.sessionId);
-    await this.writeAudit({
-      actor: nextActor,
-      action: 'admin.account.profile.update',
-      resourceType: 'admin_user',
-      resourceId: actor.id,
-      before: {
-        id: before.id,
-        email: before.email,
-        displayName: before.displayName,
-        avatarUrl: before.avatarUrl,
-      },
-      after: {
-        id: updated.id,
-        email: updated.email,
-        displayName: updated.displayName,
-        avatarUrl: updated.avatarUrl,
-      },
-      metadata: { fields: Object.keys(input) },
-      context,
-    });
-    return this.authResultForActor(nextActor);
   }
 
   async changeOwnPassword(
@@ -453,45 +551,40 @@ export class AdminAuthService implements OnModuleInit {
     input: AdminPasswordChangeInput,
     context: AdminRequestContext,
   ): Promise<AdminAuthResult> {
-    const user = await this.prisma.adminUser.findUniqueOrThrow({
-      where: { id: actor.id },
-      include: adminUserInclude,
-    });
-    if (
-      !user.passwordHash ||
-      !verifyAdminPassword(input.currentPassword, user.passwordHash)
-    ) {
-      await this.writeAudit({
-        actor,
-        action: 'admin.account.password.change',
-        resourceType: 'admin_user',
-        resourceId: actor.id,
-        outcome: AdminAuditOutcome.failure,
-        reason: 'Invalid current password.',
-        context,
+    return this.ownAccountWrite(actor, async (tx) => {
+      const user = await tx.adminUser.findUniqueOrThrow({
+        where: { id: actor.id },
+        include: adminUserInclude,
       });
-      throw new UnauthorizedException({
-        code: 'ADMIN_CURRENT_PASSWORD_INVALID',
-        msg: '当前密码不正确。',
+      if (
+        !user.passwordHash ||
+        !verifyAdminPassword(input.currentPassword, user.passwordHash)
+      ) {
+        throw new UnauthorizedException({
+          code: 'ADMIN_CURRENT_PASSWORD_INVALID',
+          msg: '当前密码不正确。',
+        });
+      }
+      const previousHashes = await this.recentPasswordHashes(actor.id, tx);
+      const issues = validateAdminPasswordPolicy({
+        password: input.newPassword,
+        email: user.email,
+        displayName: user.displayName,
+        previousHashes,
       });
-    }
-    const previousHashes = await this.recentPasswordHashes(actor.id);
-    const issues = validateAdminPasswordPolicy({
-      password: input.newPassword,
-      email: user.email,
-      displayName: user.displayName,
-      previousHashes,
-    });
-    if (issues.length) {
-      throw new BadRequestException({
-        code: 'ADMIN_PASSWORD_POLICY_FAILED',
-        msg: issues.join(' '),
-        issues: issues.map((message) => ({ message })),
+      if (issues.length) {
+        throw new BadRequestException({
+          code: 'ADMIN_PASSWORD_POLICY_FAILED',
+          msg: issues.join(' '),
+          issues: issues.map((message) => ({ message })),
+        });
+      }
+      await tx.adminMfaChallenge.updateMany({
+        where: { userId: actor.id, consumedAt: null },
+        data: { consumedAt: new Date() },
       });
-    }
-    const passwordHash = hashAdminPassword(input.newPassword);
-    await this.prisma.$transaction([
-      this.prisma.adminUser.update({
+      const passwordHash = hashAdminPassword(input.newPassword);
+      await tx.adminUser.update({
         where: { id: actor.id },
         data: {
           passwordHash,
@@ -499,90 +592,106 @@ export class AdminAuthService implements OnModuleInit {
           failedLoginCount: 0,
           lockedUntil: null,
         },
-      }),
-      this.prisma.adminPasswordHistory.create({
+      });
+      await tx.adminPasswordHistory.create({
         data: { userId: actor.id, passwordHash },
-      }),
-      this.prisma.adminSession.updateMany({
+      });
+      await tx.adminSession.updateMany({
         where: {
           userId: actor.id,
           id: { not: actor.sessionId },
           status: AdminSessionStatus.active,
         },
         data: { status: AdminSessionStatus.revoked, revokedAt: new Date() },
-      }),
-    ]);
-    await this.writeAudit({
-      actor,
-      action: 'admin.account.password.change',
-      resourceType: 'admin_user',
-      resourceId: actor.id,
-      metadata: { revokedOtherSessions: true },
-      context,
+      });
+      await this.writeAudit(
+        {
+          actor,
+          action: 'admin.account.password.change',
+          resourceType: 'admin_user',
+          resourceId: actor.id,
+          metadata: { revokedOtherSessions: true },
+          context,
+        },
+        tx,
+      );
+      const refreshed = await tx.adminUser.findUniqueOrThrow({
+        where: { id: actor.id },
+        include: adminUserInclude,
+      });
+      return this.authResultForActor(
+        this.toActor(refreshed, actor.sessionId),
+        tx,
+      );
+    }).catch(async (error: unknown) => {
+      if (
+        error instanceof UnauthorizedException &&
+        (error.getResponse() as { code?: string }).code ===
+          'ADMIN_CURRENT_PASSWORD_INVALID'
+      ) {
+        await this.writeAudit({
+          actor,
+          action: 'admin.account.password.change',
+          resourceType: 'admin_user',
+          resourceId: actor.id,
+          outcome: AdminAuditOutcome.failure,
+          reason: 'Invalid current password.',
+          context,
+        });
+      }
+      throw error;
     });
-    const refreshed = await this.prisma.adminUser.findUniqueOrThrow({
-      where: { id: actor.id },
-      include: adminUserInclude,
-    });
-    return this.authResultForActor(this.toActor(refreshed, actor.sessionId));
   }
 
   async resetOwnMfa(
     actor: AdminActor,
     context: AdminRequestContext,
   ): Promise<AdminAuthResult> {
-    const updated = await this.prisma.adminUser.update({
-      where: { id: actor.id },
-      data: {
-        requireMfa: true,
-        mfaSecretHash: null,
-        mfaEnabledAt: null,
-        failedLoginCount: 0,
-        lockedUntil: null,
-      },
-      include: adminUserInclude,
+    return this.ownAccountWrite(actor, async (tx) => {
+      await tx.adminMfaChallenge.updateMany({
+        where: { userId: actor.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      const updated = await tx.adminUser.update({
+        where: { id: actor.id },
+        data: {
+          requireMfa: true,
+          mfaSecretHash: null,
+          mfaEnabledAt: null,
+          failedLoginCount: 0,
+          lockedUntil: null,
+        },
+        include: adminUserInclude,
+      });
+      await tx.adminSession.updateMany({
+        where: {
+          userId: actor.id,
+          id: { not: actor.sessionId },
+          status: AdminSessionStatus.active,
+        },
+        data: { status: AdminSessionStatus.revoked, revokedAt: new Date() },
+      });
+      const nextActor = this.toActor(updated, actor.sessionId);
+      await this.writeAudit(
+        {
+          actor: nextActor,
+          action: 'admin.account.mfa.reset',
+          resourceType: 'admin_user',
+          resourceId: actor.id,
+          metadata: { requireMfa: true },
+          context,
+        },
+        tx,
+      );
+      return this.authResultForActor(nextActor, tx);
     });
-    await this.prisma.adminSession.updateMany({
-      where: {
-        userId: actor.id,
-        id: { not: actor.sessionId },
-        status: AdminSessionStatus.active,
-      },
-      data: { status: AdminSessionStatus.revoked, revokedAt: new Date() },
-    });
-    const nextActor = this.toActor(updated, actor.sessionId);
-    await this.writeAudit({
-      actor: nextActor,
-      action: 'admin.account.mfa.reset',
-      resourceType: 'admin_user',
-      resourceId: actor.id,
-      metadata: { requireMfa: true },
-      context,
-    });
-    return this.authResultForActor(nextActor);
   }
 
-  async writeAudit(input: AuditInput): Promise<void> {
-    const metadata = input.metadata ?? {};
-
-    await this.prisma.adminAuditLog.create({
-      data: {
-        actorUserId: input.actor?.id,
-        actorSessionId: input.actor?.sessionId,
-        siteScope: (input.actor?.siteScope ??
-          AdminSiteScope.all) as AdminSiteScope,
-        action: input.action,
-        resourceType: input.resourceType,
-        resourceId: input.resourceId,
-        outcome: input.outcome ?? AdminAuditOutcome.success,
-        reason: input.reason,
-        ipAddress: input.context?.ipAddress,
-        userAgent: input.context?.userAgent,
-        before: input.before ?? undefined,
-        after: input.after ?? undefined,
-        metadata,
-      },
-    });
+  async writeAudit(
+    input: AuditInput,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    await writeAdminAudit(db, input);
   }
 
   toActor(user: AdminUserWithRoles, sessionId: string): AdminActor {
@@ -609,8 +718,9 @@ export class AdminAuthService implements OnModuleInit {
 
   private async authResultForActor(
     actor: AdminActor,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<AdminAuthResult> {
-    const session = await this.prisma.adminSession.findUnique({
+    const session = await db.adminSession.findUnique({
       where: { id: actor.sessionId },
       select: { expiresAt: true },
     });
@@ -634,8 +744,11 @@ export class AdminAuthService implements OnModuleInit {
     };
   }
 
-  private async recentPasswordHashes(userId: string) {
-    const history = await this.prisma.adminPasswordHistory.findMany({
+  private async recentPasswordHashes(
+    userId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const history = await db.adminPasswordHistory.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
       take: 5,
@@ -702,38 +815,58 @@ export class AdminAuthService implements OnModuleInit {
     user: AdminUserWithRoles | null,
     context: AdminRequestContext,
   ): Promise<never> {
-    let lockedUntil: Date | null = null;
-    if (user) {
-      const failedLoginCount = user.failedLoginCount + 1;
-      lockedUntil =
-        failedLoginCount >= MAX_EMAIL_FAILURES
-          ? new Date(Date.now() + LOCKOUT_MS)
-          : null;
-      await this.prisma.adminUser.update({
-        where: { id: user.id },
-        data: {
-          failedLoginCount,
-          lockedUntil,
+    const lockedUntil = await this.prisma.$transaction(async (tx) => {
+      let lockedUntil: Date | null = null;
+      let current: AdminUserWithRoles | null = null;
+      if (user) {
+        await tx.$queryRaw`SELECT id FROM admin_users WHERE id=${user.id}::uuid FOR UPDATE`;
+        current = await tx.adminUser.findUnique({
+          where: { id: user.id },
+          include: adminUserInclude,
+        });
+      }
+      if (current) {
+        const [clock] = await tx.$queryRaw<
+          { nowMs: number }[]
+        >`SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::double precision AS "nowMs"`;
+        const now = new Date(clock.nowMs);
+        const failedLoginCount = current.failedLoginCount + 1;
+        lockedUntil =
+          current.lockedUntil && current.lockedUntil > now
+            ? current.lockedUntil
+            : failedLoginCount >= MAX_EMAIL_FAILURES
+              ? new Date(now.getTime() + LOCKOUT_MS)
+              : null;
+        await tx.adminUser.update({
+          where: { id: current.id },
+          data: { failedLoginCount, lockedUntil },
+        });
+      }
+      await this.recordLoginAttempt(
+        {
+          email,
+          userId: current?.id,
+          outcome: AdminLoginAttemptOutcome.failure,
+          reason: 'invalid_credentials',
+          context,
         },
-      });
-    }
-    await this.recordLoginAttempt({
-      email,
-      userId: user?.id,
-      outcome: AdminLoginAttemptOutcome.failure,
-      reason: 'invalid_credentials',
-      context,
-    });
-    await this.writeAudit({
-      action: 'admin.auth.login',
-      resourceType: 'admin_user',
-      resourceId: user?.id,
-      outcome: AdminAuditOutcome.failure,
-      reason: lockedUntil
-        ? 'Invalid credentials. Account locked.'
-        : 'Invalid admin credentials or inactive account.',
-      metadata: { email, lockedUntil: lockedUntil?.toISOString() ?? null },
-      context,
+        tx,
+      );
+      await this.writeAudit(
+        {
+          action: 'admin.auth.login',
+          resourceType: 'admin_user',
+          resourceId: current?.id,
+          outcome: AdminAuditOutcome.failure,
+          reason: lockedUntil
+            ? 'Invalid credentials. Account locked.'
+            : 'Invalid admin credentials or inactive account.',
+          metadata: { email, lockedUntil: lockedUntil?.toISOString() ?? null },
+          context,
+        },
+        tx,
+      );
+      return lockedUntil;
     });
     throw new UnauthorizedException({
       code: 'ADMIN_AUTH_INVALID_CREDENTIALS',
@@ -743,14 +876,17 @@ export class AdminAuthService implements OnModuleInit {
     });
   }
 
-  private async recordLoginAttempt(input: {
-    email: string;
-    userId?: string;
-    outcome: AdminLoginAttemptOutcome;
-    reason?: string;
-    context: AdminRequestContext;
-  }) {
-    await this.prisma.adminLoginAttempt.create({
+  private async recordLoginAttempt(
+    input: {
+      email: string;
+      userId?: string;
+      outcome: AdminLoginAttemptOutcome;
+      reason?: string;
+      context: AdminRequestContext;
+    },
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    await db.adminLoginAttempt.create({
       data: {
         email: input.email,
         userId: input.userId,
@@ -765,12 +901,14 @@ export class AdminAuthService implements OnModuleInit {
   private async createMfaChallenge(
     user: AdminUserWithRoles,
     context: AdminRequestContext,
+    db: Prisma.TransactionClient,
+    now: Date,
   ) {
     const setupRequired = !user.mfaSecretHash;
     const secret = setupRequired ? generateTotpSecret() : undefined;
     const challengeToken = generateMfaChallengeToken();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-    await this.prisma.adminMfaChallenge.create({
+    const expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
+    await db.adminMfaChallenge.create({
       data: {
         userId: user.id,
         tokenHash: hashSessionToken(challengeToken),

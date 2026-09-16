@@ -22,7 +22,7 @@ export default defineConfig({
       NEXT_PUBLIC_SITE_REGION: "com",
       NEXT_PUBLIC_OSS_BASE_URL: "https://oss.test.invalid",
       NEXT_PUBLIC_BANNER_BASE_URL: "https://banner.test.invalid",
-      NEXT_PUBLIC_STUDIO_HOST: "https://studio.test.invalid",
+      NEXT_PUBLIC_STUDIO_HOST: "studio.test.invalid",
     },
     include: [
       "app/**/*.test.{ts,tsx}",

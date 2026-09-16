@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { useAuth } from "./auth-provider";
 import { ShareDialog } from "./share-dialog";
 import {
   IconBolt,
@@ -105,6 +106,16 @@ function WorkspaceBalance({ workspaceId, enabled }: { workspaceId: string; enabl
 }
 
 export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }) {
+  const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
+  return (
+    <WorkspaceSwitcherView
+      key={JSON.stringify([user?.id, activeWorkspace?.id])}
+      collapsed={collapsed}
+    />
+  );
+}
+function WorkspaceSwitcherView({ collapsed }: { collapsed: boolean }) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const roleLabel = (r: string) =>
@@ -129,6 +140,16 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
   const [teamDescription, setTeamDescription] = useState("");
   const [teamIcon, setTeamIcon] = useState<string | null>("aurora");
   const [busy, setBusy] = useState(false);
+  const mounted = useRef(false);
+  const pendingCreate = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      pendingCreate.current?.abort();
+      pendingCreate.current = null;
+    };
+  }, []);
 
   if (!activeWorkspace) {
     return (
@@ -142,6 +163,9 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
   }
 
   const resetCreate = () => {
+    pendingCreate.current?.abort();
+    pendingCreate.current = null;
+    setBusy(false);
     setCreating(false);
     setTeamName("");
     setTeamDescription("");
@@ -150,20 +174,28 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
 
   const onCreateTeam = async () => {
     const name = teamName.trim();
-    if (!name || busy) return;
+    if (!name || !creating || !mounted.current || pendingCreate.current) return;
+    const operation = new AbortController();
+    pendingCreate.current = operation;
+    const current = () => mounted.current && pendingCreate.current === operation;
     setBusy(true);
     try {
       const avatarUrl =
         teamIcon && typeof window !== "undefined"
           ? `${window.location.origin}${presetUrl(teamIcon)}`
           : undefined;
-      await createWorkspace(name, teamDescription, avatarUrl);
+      await createWorkspace(name, teamDescription, avatarUrl, operation.signal);
+      if (!current()) return;
       resetCreate();
       toast.success(t("teamCreated", { name }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("createWorkspaceFailed"));
+      if (current())
+        toast.error(error instanceof Error ? error.message : t("createWorkspaceFailed"));
     } finally {
-      setBusy(false);
+      if (current()) {
+        pendingCreate.current = null;
+        setBusy(false);
+      }
     }
   };
 
@@ -364,6 +396,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
                   id="team-name"
                   autoFocus
                   placeholder={t("teamNamePlaceholder")}
+                  disabled={busy}
                   value={teamName}
                   maxLength={120}
                   className={FIELD_CONTROL}
@@ -378,6 +411,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
                 <Textarea
                   id="team-description"
                   placeholder={t("teamDescriptionPlaceholder")}
+                  disabled={busy}
                   value={teamDescription}
                   maxLength={500}
                   rows={3}
@@ -405,6 +439,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
                       type="button"
                       aria-label={t("presetIconLabel", { name: id })}
                       aria-pressed={teamIcon === id}
+                      disabled={busy}
                       onClick={() => setTeamIcon(id)}
                       className={cn(
                         "size-11 overflow-hidden rounded-full transition",

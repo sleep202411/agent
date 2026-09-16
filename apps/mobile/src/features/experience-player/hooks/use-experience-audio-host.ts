@@ -196,7 +196,9 @@ class ExperienceAudioHost {
       .then(async () => {
         for (const effect of effects) await this.#apply(effect);
       })
-      .catch((error: unknown) => this.#onError(runtimeErrorMessage(error)));
+      .catch((error: unknown) => {
+        if (!this.#disposed) this.#onError(runtimeErrorMessage(error));
+      });
   }
 
   async dispose(): Promise<void> {
@@ -208,7 +210,8 @@ class ExperienceAudioHost {
     // Only release the session while this host still owns it — a chapter switch
     // disposes us after the incoming host has already unlocked, and the recheck
     // inside the queued transition covers it unlocking while we wait.
-    if (sessionOwner !== this) return;
+    // An in-flight unlock may acquire ownership after dispose starts. Always
+    // queue this check behind it; the queued check also protects a newer host.
     await runSessionTransition(async () => {
       if (sessionOwner !== this) return;
       sessionOwner = null;
@@ -252,7 +255,7 @@ class ExperienceAudioHost {
   async #play(effect: Extract<AudioEffect, { kind: "audio.play" }>): Promise<void> {
     const cue = this.#manifest.audio?.cues.find((candidate) => candidate.cueId === effect.cueId);
     if (!cue) throw new Error(`Unknown audio cue ${effect.cueId}`);
-    if (!this.#acceptConcurrency(cue)) return;
+    if (!this.#acceptConcurrency(cue, false)) return;
     const asset = this.#manifest.assets.find(
       (candidate): candidate is ExperienceAudioAsset =>
         candidate.assetId === effect.assetId && candidate.kind === "audio"
@@ -273,6 +276,8 @@ class ExperienceAudioHost {
 
     const localUri = await ensureAudioCached(variant.uri, variant.sha256);
     if (this.#disposed) return;
+    // Replace an existing cue only once the incoming bytes are available.
+    if (!this.#acceptConcurrency(cue)) return;
 
     const player = createAudioPlayer({ uri: localUri }, { updateInterval: 250 });
     player.loop = cue.loop;
@@ -305,14 +310,15 @@ class ExperienceAudioHost {
     this.#refreshDucking();
   }
 
-  #acceptConcurrency(cue: ExperienceAudioCue): boolean {
+  #acceptConcurrency(cue: ExperienceAudioCue, stopOverflow = true): boolean {
     const concurrency = cue.concurrency;
     if (!concurrency) return true;
     const group = [...this.#active.values()].filter(
-      (playback) => playback.cue.concurrency?.groupId === concurrency.groupId
+      (playback) => !playback.stopping && playback.cue.concurrency?.groupId === concurrency.groupId
     );
     if (group.length < concurrency.maxInstances) return true;
     if (concurrency.overflowBehavior === "reject-new") return false;
+    if (!stopOverflow) return true;
     const victim =
       concurrency.overflowBehavior === "stop-oldest"
         ? group.reduce((oldest, item) => (item.startedAt < oldest.startedAt ? item : oldest))
@@ -352,15 +358,19 @@ class ExperienceAudioHost {
   #teardown(playback: ActivePlayback): void {
     this.#cancelRamp(playback, "envelope");
     this.#cancelRamp(playback, "busGain");
-    playback.statusSub?.remove();
-    playback.statusSub = null;
-    try {
-      playback.player.pause();
-      playback.player.remove();
-    } catch {
-      // Player may already be released.
-    }
     this.#active.delete(playback.key);
+    for (const release of [
+      () => playback.statusSub?.remove(),
+      () => playback.player.pause(),
+      () => playback.player.remove(),
+    ]) {
+      try {
+        release();
+      } catch {
+        // A detached subscription/player must not prevent the other releases.
+      }
+    }
+    playback.statusSub = null;
   }
 
   #setBusGain(busId: string, gain: number, durationMs: number): void {

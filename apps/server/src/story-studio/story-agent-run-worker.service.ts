@@ -54,6 +54,7 @@ export class StoryAgentRunWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopping || this.timer) return;
     if (!this.enabled) {
       this.logger.log('Story Agent run worker is disabled by configuration');
       return;
@@ -83,22 +84,26 @@ export class StoryAgentRunWorkerService
 
   /** Low-latency local wake; DB polling remains the cross-pod source of truth. */
   wake(): void {
-    if (!this.enabled) return;
+    if (!this.enabled || this.stopping) return;
     queueMicrotask(() => void this.drainOnce());
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (!this.enabled || this.draining) return;
+    if (!this.enabled || this.stopping || this.draining) return;
     this.draining = true;
     try {
       await this.runs.expireProposals(Math.max(1, batch));
+      if (this.stopping) return;
       await this.runs.recoverOrphanedApplyingRuns(batch);
+      if (this.stopping) return;
       const claimed = await this.runs.claimApplyingRuns(
         this.workerId,
         Math.max(1, batch),
       );
+      if (this.stopping) return;
       await Promise.all(
         claimed.map(async ({ id }) => {
+          if (this.stopping) return;
           try {
             await this.runs.executeClaimedRun(id, this.workerId);
           } catch (error) {
@@ -124,6 +129,7 @@ export class StoryAgentRunWorkerService
           }
         }),
       );
+      if (this.stopping) return;
       const authoringSlots =
         MAX_CONCURRENT_AUTHORING - this.authoringInFlight.size;
       if (authoringSlots > 0) {
@@ -132,6 +138,7 @@ export class StoryAgentRunWorkerService
           Math.min(authoringSlots, Math.max(1, batch)),
         );
         for (const { id } of authoring) {
+          if (this.stopping) break;
           // Detached on purpose: an authoring run awaits model calls for tens
           // of seconds. Holding the drain over that await would starve the
           // apply pipeline, expiry sweeps, and orphan recovery — a confirmed
@@ -173,12 +180,14 @@ export class StoryAgentRunWorkerService
   private async executeAuthoringRun(runId: string): Promise<void> {
     let staleRetried = false;
     for (;;) {
+      if (this.stopping) return;
       const load = await this.runs.loadAuthoringJob(runId, this.workerId);
-      if (load.kind !== 'job') return;
+      if (this.stopping || load.kind !== 'job') return;
 
       const controller = new AbortController();
       this.inflightAuthoring.add(controller);
       const heartbeat = setInterval(() => {
+        if (this.stopping || controller.signal.aborted) return;
         this.runs
           .renewAuthoringLease(runId, this.workerId)
           .then((alive) => {
@@ -188,6 +197,13 @@ export class StoryAgentRunWorkerService
       }, AUTHORING_HEARTBEAT_MS);
       heartbeat.unref?.();
 
+      const advanceStage = (
+        stage: Parameters<StoryAgentRunService['advanceAuthoringStage']>[2],
+      ) => {
+        if (this.stopping || controller.signal.aborted)
+          return Promise.resolve();
+        return this.runs.advanceAuthoringStage(runId, this.workerId, stage);
+      };
       let authored: StoryAuthoringPipelineResult | null = null;
       let screenplay: StoryScreenplay | undefined;
       let document: StoryAuthoringPipelineResult['document'];
@@ -199,8 +215,7 @@ export class StoryAgentRunWorkerService
             authored = await this.pipeline.author({
               job: load.job,
               signal: controller.signal,
-              onStage: (stage) =>
-                this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+              onStage: advanceStage,
             });
             break;
           case 'plot':
@@ -216,8 +231,7 @@ export class StoryAgentRunWorkerService
                 instructions: load.job.brief.brief,
                 creativeProfile: load.job.creativeProfile,
                 signal: controller.signal,
-                onStage: (stage) =>
-                  this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+                onStage: advanceStage,
               });
               screenplay = compiled.screenplay;
               document = compiled.document;
@@ -239,8 +253,7 @@ export class StoryAgentRunWorkerService
               screenplay,
               creativeProfile: load.job.creativeProfile,
               signal: controller.signal,
-              onStage: (stage) =>
-                this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+              onStage: advanceStage,
             });
             break;
           case 'storyboard':
@@ -257,8 +270,7 @@ export class StoryAgentRunWorkerService
               assetPlan,
               creativeProfile: load.job.creativeProfile,
               signal: controller.signal,
-              onStage: (stage) =>
-                this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+              onStage: advanceStage,
             });
             break;
           case 'noop':
@@ -286,6 +298,7 @@ export class StoryAgentRunWorkerService
         this.inflightAuthoring.delete(controller);
       }
 
+      if (this.stopping || controller.signal.aborted) return;
       const completion =
         load.job.targetStage === 'script'
           ? await this.runs.completeAuthoring(runId, this.workerId, {
@@ -307,6 +320,7 @@ export class StoryAgentRunWorkerService
                 ...(storyboardPlan ? { storyboardPlan } : {}),
                 authoredAgainst: load.job.snapshot,
               });
+      if (this.stopping || controller.signal.aborted) return;
       switch (completion.kind) {
         case 'completed':
         case 'skip':

@@ -1,5 +1,7 @@
 "use client";
 
+import { useCharacterOperation } from "../_lib/use-character-operation";
+
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -173,6 +175,12 @@ export function CharactersGrid() {
   const [deleting, setDeleting] = useState<CharacterSummary | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  const operation = useCharacterOperation(workspaceId ?? "none", () => {
+    setDeleting(null);
+    setDeleteBusy(false);
+    setCreateOpen(false);
+  });
+
   // Deleting a live real_person likeness IS consent revocation — the confirm
   // dialog must say so (provider assets deleted, jobs cancelled, 30-day purge).
   const deletingIsRevoke = deleting?.kind === "real_person" && deleting.status !== "revoked";
@@ -180,17 +188,22 @@ export function CharactersGrid() {
   const confirmDelete = async () => {
     if (!deleting || deleteBusy) return;
     const revoke = deletingIsRevoke;
+    const run = operation.start();
+    if (!run) return;
     setDeleteBusy(true);
     try {
-      await deleteCharacter(deleting.id);
+      await deleteCharacter(deleting.id, run.signal);
+      if (!operation.isCurrent(run)) return;
       queryClient.removeQueries({ queryKey: charactersKeys.detail(deleting.id) });
       await queryClient.invalidateQueries({ queryKey: charactersKeys.lists() });
+      if (!operation.isCurrent(run)) return;
       setDeleting(null);
       toast.success(revoke ? t("characterRevoked") : t("characterDeleted"));
     } catch (error) {
+      if (!operation.isCurrent(run)) return;
       toast.error(error instanceof Error ? error.message : tc("error"));
     } finally {
-      setDeleteBusy(false);
+      if (operation.finish(run)) setDeleteBusy(false);
     }
   };
 

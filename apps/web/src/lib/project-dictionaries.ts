@@ -1,32 +1,26 @@
 import { backendApi } from "@/src/lib/api";
 import type { ProjectDictionaries } from "@/src/types/workspace";
 
-let _dictionariesCache: Promise<ProjectDictionaries> | null = null;
-
-export function fetchProjectDictionaries(): Promise<ProjectDictionaries> {
-  if (_dictionariesCache) return _dictionariesCache;
-  _dictionariesCache = _fetchProjectDictionaries().catch((err) => {
-    _dictionariesCache = null; // 失败时清缓存，允许重试
-    throw err;
-  });
-  return _dictionariesCache;
-}
-
-async function _fetchProjectDictionaries(): Promise<ProjectDictionaries> {
+export async function fetchProjectDictionaries(signal?: AbortSignal): Promise<ProjectDictionaries> {
+  signal?.throwIfAborted();
   // Product-types and painting-styles still require a trailing slash on the
   // Java endpoint, which Next.js 16's `rewrites()` normalizes away — those
   // two route through the Nest proxy (apps/server/.../dictionaries.controller.ts).
   // `aspect-ratios` had its trailing slash removed on the Java side, so we
   // call `/anon/...` directly through the Next rewrite.
   const [typeMapResult, styleOptionsResult, sizeMetaResult] = await Promise.allSettled([
-    backendApi.get<Record<string, string>>("/aurora/dictionaries/product-types"),
+    backendApi.get<Record<string, string>>("/aurora/dictionaries/product-types", { signal }),
     backendApi.get<Array<{ id?: string | number; info?: string; picLink?: string }>>(
-      "/aurora/dictionaries/painting-styles"
+      "/aurora/dictionaries/painting-styles",
+      { signal }
     ),
     backendApi.get<{ AspectRatioTypeEnum?: Record<string, string> }>(
-      "/anon/enumMeta/getEnumBySimpleName/AspectRatioTypeEnum"
+      "/anon/enumMeta/getEnumBySimpleName/AspectRatioTypeEnum",
+      { signal }
     ),
   ]);
+
+  signal?.throwIfAborted();
 
   const typeMap = typeMapResult.status === "fulfilled" ? typeMapResult.value : {};
   const styleOptions = styleOptionsResult.status === "fulfilled" ? styleOptionsResult.value : [];

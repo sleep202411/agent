@@ -57,24 +57,25 @@ export class MediaModerationAdminService {
     adminId: string,
     input: UpdateMediaAssetModerationInput,
   ) {
-    const existing = await this.prisma.mediaAsset.findFirst({
-      where: { id: assetId, deletedAt: null },
-      select: {
-        id: true,
-        moderationStatus: true,
-        storageProvider: true,
-        objectKey: true,
-        metadata: true,
-      },
-    });
-    if (!existing)
-      throw new NotFoundException('Media asset not found or deleted.');
-
-    const now = new Date();
-    const isBlock =
-      input.moderationStatus === MediaAssetModerationStatus.blocked;
-
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM media_assets WHERE id=${assetId}::uuid FOR UPDATE`;
+      const existing = await tx.mediaAsset.findFirst({
+        where: { id: assetId, deletedAt: null },
+        select: {
+          id: true,
+          moderationStatus: true,
+          storageProvider: true,
+          objectKey: true,
+          metadata: true,
+        },
+      });
+      if (!existing)
+        throw new NotFoundException('Media asset not found or deleted.');
+
+      const now = new Date();
+      const isBlock =
+        input.moderationStatus === MediaAssetModerationStatus.blocked;
+
       const updated = await tx.mediaAsset.update({
         where: { id: assetId },
         data: {

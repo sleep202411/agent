@@ -26,35 +26,50 @@ export function fetchIpCommerceSettings(): Promise<IpCommerceSettingsData> {
   return requestEnvelope<IpCommerceSettingsData>("/api/admin/ip-commerce/settings");
 }
 
-export function updateIpCommerceSetting(key: string, valueInt: number): Promise<IpCommerceSetting> {
+export function updateIpCommerceSetting(
+  key: string,
+  valueInt: number,
+  signal?: AbortSignal
+): Promise<IpCommerceSetting> {
   return requestEnvelope<IpCommerceSetting>(
     `/api/admin/ip-commerce/settings/${encodeURIComponent(key)}`,
     {
       method: "PATCH",
+      signal,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ valueInt }),
     }
   );
 }
 
-export function updateIpCommerceRevenueShare(valueInt: number): Promise<IpCommerceSetting> {
-  return updateIpCommerceSetting(REVENUE_SHARE_SETTING_KEY, valueInt);
+export function updateIpCommerceRevenueShare(
+  valueInt: number,
+  signal?: AbortSignal
+): Promise<IpCommerceSetting> {
+  return updateIpCommerceSetting(REVENUE_SHARE_SETTING_KEY, valueInt, signal);
 }
 
-export function fetchIpRevenueConfig(ipId: string, locale?: string): Promise<IpRevenueConfigData> {
+export function fetchIpRevenueConfig(
+  ipId: string,
+  locale?: string,
+  signal?: AbortSignal
+): Promise<IpRevenueConfigData> {
   return requestEnvelope<IpRevenueConfigData>(
-    `/api/admin/ip-commerce/ips/${encodeURIComponent(ipId)}/revenue-config${toSearch({ locale })}`
+    `/api/admin/ip-commerce/ips/${encodeURIComponent(ipId)}/revenue-config${toSearch({ locale })}`,
+    { signal }
   );
 }
 
 export function updateIpRevenueConfig(
   ipId: string,
-  body: UpdateIpRevenueConfigInput
+  body: UpdateIpRevenueConfigInput,
+  signal?: AbortSignal
 ): Promise<IpRevenueConfigData> {
   return requestEnvelope<IpRevenueConfigData>(
     `/api/admin/ip-commerce/ips/${encodeURIComponent(ipId)}/revenue-config`,
     {
       method: "PATCH",
+      signal,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }
@@ -62,17 +77,21 @@ export function updateIpRevenueConfig(
 }
 
 export function fetchAdminRevenueEntries(
-  query: Record<string, string | undefined>
+  query: Record<string, string | undefined>,
+  signal?: AbortSignal
 ): Promise<AdminRevenueEntriesData> {
   return requestEnvelope<AdminRevenueEntriesData>(
-    `/api/admin/ip-commerce/revenue/entries${toSearch({ limit: "30", ...query })}`
+    `/api/admin/ip-commerce/revenue/entries${toSearch({ limit: "30", ...query })}`,
+    { signal }
   );
 }
 
 export function fetchAdminOrderRevenueBreakdown(
-  orderId: string
+  orderId: string,
+  signal?: AbortSignal
 ): Promise<AdminOrderRevenueBreakdownData> {
   return requestEnvelope<AdminOrderRevenueBreakdownData>(
-    `/api/admin/ip-commerce/orders/${encodeURIComponent(orderId)}/revenue-breakdown`
+    `/api/admin/ip-commerce/orders/${encodeURIComponent(orderId)}/revenue-breakdown`,
+    { signal }
   );
 }

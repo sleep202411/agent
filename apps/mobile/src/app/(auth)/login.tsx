@@ -1,6 +1,8 @@
+import { useAuthFormLifetime, useDelayedAuthFocus } from "@/auth/use-auth-form-lifetime";
+import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { Image } from "expo-image";
 import * as Linking from "expo-linking";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -17,19 +19,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  armResendDeadline,
   completeAuthSheet,
   hydratePendingCode,
   hydrateResendClock,
   maskIdentifier,
   normalizeIdentifier,
   readPendingCode,
-  RESEND_COOLDOWN_SECONDS,
   secondsUntilResend,
   sendLoginCode,
   skipAuthSheet,
   useAuth,
-  writePendingCode,
   type NormalizedIdentifier,
 } from "@/auth";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -78,7 +77,21 @@ export default function LoginScreen() {
   const [focusedField, setFocusedField] = useState<FieldName | undefined>();
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState<string | undefined>();
-  const [sendingCode, setSendingCode] = useState(false);
+  const focused = useIsFocused();
+  const operation = useAuthFormOperation(
+    JSON.stringify(["login", params.identifier, params.step]),
+    focused
+  );
+  const { capture, markEdited } = useAuthFormLifetime(
+    JSON.stringify(["login", params.identifier, params.step]),
+    focused
+  );
+  useDelayedAuthFocus(
+    passwordInputRef,
+    focused && step === "password",
+    JSON.stringify([params.identifier, params.step])
+  );
+  const sendingCode = operation.busy;
   const [resendIn, setResendIn] = useState(0);
   /** When true, authenticated effect must NOT dismiss — onboarding owns the next screen. */
   const [awaitingOnboarding, setAwaitingOnboarding] = useState(false);
@@ -105,12 +118,16 @@ export default function LoginScreen() {
   }, [resendIn]);
 
   useEffect(() => {
+    if (!focused) return;
     let cancelled = false;
+    const current = capture();
+    const pristine = capture(true);
     void (async () => {
       await Promise.all([hydrateResendClock(), hydratePendingCode()]);
-      if (cancelled) return;
+      if (cancelled || !current()) return;
       const remaining = secondsUntilResend();
       setResendIn(remaining);
+      if (!pristine()) return;
 
       // Returning from forgot-password: stay on the password step (web
       // cancel_reset parity). Don't override with a pending sign-in code.
@@ -119,7 +136,6 @@ export default function LoginScreen() {
         if (typeof params.identifier === "string" && params.identifier) {
           setIdentifierText(params.identifier);
         }
-        setTimeout(() => passwordInputRef.current?.focus(), 50);
         return;
       }
 
@@ -134,15 +150,24 @@ export default function LoginScreen() {
     return () => {
       cancelled = true;
     };
-  }, [params.identifier, params.step]);
+  }, [params.identifier, params.step, focused, capture]);
 
   useEffect(() => {
-    if (auth.status !== "authenticated" || awaitingOnboarding) return;
+    if (
+      !focused ||
+      operation.busy ||
+      auth.status !== "authenticated" ||
+      awaitingOnboarding ||
+      auth.session?.isNewUser
+    )
+      return;
     completeAuthSheet(router);
-  }, [auth.status, awaitingOnboarding, router]);
+  }, [auth.status, auth.session?.isNewUser, awaitingOnboarding, focused, operation.busy, router]);
 
   function openSitePath(path: string) {
+    const current = capture();
     void Linking.openURL(`${SITE_BASE_URL}${path}`).catch(() => {
+      if (!current()) return;
       setLocalError(t("auth.linkFailed"));
     });
   }
@@ -155,7 +180,7 @@ export default function LoginScreen() {
     return a.kind === b.kind && a.account === b.account;
   }
 
-  async function finishSession(session: { isNewUser?: boolean }) {
+  function finishSession(session: { isNewUser?: boolean }) {
     if (session.isNewUser) {
       setAwaitingOnboarding(true);
       router.replace("/profile-setup");
@@ -164,11 +189,8 @@ export default function LoginScreen() {
     // Effect will call completeAuthSheet once status is authenticated.
   }
 
-  async function sendCodeFor(next: NormalizedIdentifier) {
-    await sendLoginCode(next);
+  function acceptCode(next: NormalizedIdentifier) {
     const at = Date.now();
-    armResendDeadline(at + RESEND_COOLDOWN_SECONDS * 1000);
-    writePendingCode({ account: next, mode: "signin" });
     setNormalized(next);
     setCode("");
     setStep("code");
@@ -176,6 +198,7 @@ export default function LoginScreen() {
   }
 
   async function handleContinueIdentifier() {
+    markEdited();
     const next = normalizeIdentifier(identifierText);
     if (!next) {
       setLocalError(t("auth.errorIdentifierInvalid"));
@@ -203,14 +226,13 @@ export default function LoginScreen() {
       return;
     }
 
-    setSendingCode(true);
-    try {
-      await sendCodeFor(next);
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
-    } finally {
-      setSendingCode(false);
-    }
+    await operation.run(
+      () => sendLoginCode(next),
+      () => acceptCode(next),
+      (error) => {
+        setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
+      }
+    );
   }
 
   async function handleVerifyCode(nextCode: string) {
@@ -220,16 +242,18 @@ export default function LoginScreen() {
       return;
     }
     setLocalError(undefined);
-    try {
-      const session = await auth.continueWithCode(normalized, nextCode.trim());
-      await finishSession(session);
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : t("auth.errorCodeIncorrect"));
-      setCode("");
-    }
+    await operation.run(
+      () => auth.continueWithCode(normalized, nextCode.trim()),
+      finishSession,
+      (error) => {
+        setLocalError(error instanceof Error ? error.message : t("auth.errorCodeIncorrect"));
+        setCode("");
+      }
+    );
   }
 
   function handleCodeChange(value: string) {
+    markEdited();
     setCode(value);
     clearLocalError();
     // Match web auth-flow: auto-submit once the sixth digit lands
@@ -241,15 +265,14 @@ export default function LoginScreen() {
 
   async function handleResend() {
     if (!normalized || resendIn > 0 || sendingCode) return;
-    setSendingCode(true);
     setLocalError(undefined);
-    try {
-      await sendCodeFor(normalized);
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
-    } finally {
-      setSendingCode(false);
-    }
+    await operation.run(
+      () => sendLoginCode(normalized),
+      () => acceptCode(normalized),
+      (error) => {
+        setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
+      }
+    );
   }
 
   async function handlePasswordSignIn() {
@@ -268,15 +291,13 @@ export default function LoginScreen() {
     }
     setLocalError(undefined);
     setNormalized(next);
-    try {
-      const session = await auth.signIn({
-        identifier: next.account,
-        password,
-      });
-      await finishSession(session);
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : t("auth.errorCredentialsIncorrect"));
-    }
+    await operation.run(
+      () => auth.signIn({ identifier: next.account, password }),
+      finishSession,
+      (error) => {
+        setLocalError(error instanceof Error ? error.message : t("auth.errorCredentialsIncorrect"));
+      }
+    );
   }
 
   const termsCheckbox = (
@@ -284,6 +305,7 @@ export default function LoginScreen() {
       accessibilityRole="checkbox"
       accessibilityState={{ checked: acceptedTerms }}
       onPress={() => {
+        markEdited();
         setAcceptedTerms((current) => !current);
         clearLocalError();
       }}
@@ -370,6 +392,7 @@ export default function LoginScreen() {
                       ]}
                     >
                       <TextInput
+                        editable={!isSubmitting}
                         accessibilityLabel={t("auth.identifierLabel")}
                         autoCapitalize="none"
                         autoComplete="username"
@@ -377,6 +400,7 @@ export default function LoginScreen() {
                         keyboardType="email-address"
                         onBlur={() => setFocusedField(undefined)}
                         onChangeText={(value) => {
+                          markEdited();
                           setIdentifierText(value);
                           clearLocalError();
                         }}
@@ -422,6 +446,7 @@ export default function LoginScreen() {
                       ]}
                     >
                       <TextInput
+                        editable={!isSubmitting}
                         accessibilityLabel={t("auth.identifierLabel")}
                         autoCapitalize="none"
                         autoComplete="username"
@@ -429,6 +454,7 @@ export default function LoginScreen() {
                         keyboardType="email-address"
                         onBlur={() => setFocusedField(undefined)}
                         onChangeText={(value) => {
+                          markEdited();
                           setIdentifierText(value);
                           clearLocalError();
                         }}
@@ -453,12 +479,14 @@ export default function LoginScreen() {
                       ]}
                     >
                       <TextInput
+                        editable={!isSubmitting}
                         ref={passwordInputRef}
                         accessibilityLabel={t("auth.passwordLabel")}
                         autoCapitalize="none"
                         autoComplete="password"
                         onBlur={() => setFocusedField(undefined)}
                         onChangeText={(value) => {
+                          markEdited();
                           setPassword(value);
                           clearLocalError();
                         }}
@@ -578,7 +606,9 @@ export default function LoginScreen() {
                   <View style={styles.codeActions}>
                     <Pressable
                       accessibilityRole="button"
+                      disabled={isSubmitting}
                       onPress={() => {
+                        markEdited();
                         setStep("identifier");
                         setCode("");
                         clearLocalError();
@@ -611,13 +641,14 @@ export default function LoginScreen() {
               {step === "identifier" ? (
                 <Pressable
                   accessibilityRole="button"
+                  disabled={isSubmitting}
                   onPress={() => {
+                    markEdited();
                     // Mirror web: keep whatever was typed and open the password
                     // step immediately — account stays editable there.
                     setPassword("");
                     setStep("password");
                     clearLocalError();
-                    setTimeout(() => passwordInputRef.current?.focus(), 50);
                   }}
                   style={({ pressed }) => [styles.secondaryAction, pressedStyle(pressed)]}
                 >
@@ -629,7 +660,9 @@ export default function LoginScreen() {
                 <View style={styles.passwordFooter}>
                   <Pressable
                     accessibilityRole="button"
+                    disabled={isSubmitting}
                     onPress={() => {
+                      markEdited();
                       setStep("identifier");
                       setPassword("");
                       clearLocalError();

@@ -281,6 +281,17 @@ export class ProjectInvitesService {
       });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
+      // A unique failure can roll back any write in the transaction. Only an
+      // independently committed access grant makes this an idempotent success.
+      const hasAccess = await existingInviteAccess(async () => {
+        await this.permissions.requireProjectRole(
+          user.userId,
+          invite.projectId,
+          ProjectMemberRole.viewer,
+        );
+        return true;
+      });
+      if (!hasAccess) throw err;
     }
 
     await this.audit.record({

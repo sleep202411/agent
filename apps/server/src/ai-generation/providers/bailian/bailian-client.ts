@@ -81,6 +81,7 @@ export class BailianClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
     let response: Response;
+    let raw: string;
     try {
       response = await fetch(url, {
         ...init,
@@ -91,8 +92,13 @@ export class BailianClient {
         },
         signal: controller.signal,
       });
+      raw = await response.text().catch(() => '');
+      controller.signal.throwIfAborted();
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
         throw bailianError(
           'PROVIDER_TIMEOUT',
           `Alibaba Model Studio request timed out after ${config.requestTimeoutMs}ms`,
@@ -110,11 +116,10 @@ export class BailianClient {
     }
 
     if (!response.ok) {
-      const raw = await response.text().catch(() => '');
       throw mapBailianHttpError(response.status, raw);
     }
 
-    return (await response.json()) as T;
+    return JSON.parse(raw) as T;
   }
 }
 

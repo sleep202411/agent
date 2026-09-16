@@ -49,7 +49,7 @@ export class AgnesProviderAdapter implements ProviderAdapter {
     ctx: ProviderGenerationContext,
   ): Promise<StartResult> {
     void ctx;
-    const runtime = await this.requireRuntime(modelId);
+    const runtime = await this.requireRuntime(modelId, true);
     const payload = mapAgnesProviderRequest(runtime, input);
 
     if (runtime.type === 'image') {
@@ -139,8 +139,10 @@ export class AgnesProviderAdapter implements ProviderAdapter {
     return mapAgnesUnknownError(err);
   }
 
-  private async requireRuntime(modelId: string) {
-    const runtime = await this.catalog.getRuntimeConfig(modelId);
+  private async requireRuntime(modelId: string, forSubmission = false) {
+    const runtime = await this.catalog.getRuntimeConfig(modelId, {
+      forSubmission,
+    });
     if (!runtime) {
       throw agnesError(
         'VALIDATION_ERROR',

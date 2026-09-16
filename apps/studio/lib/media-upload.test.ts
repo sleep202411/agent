@@ -101,6 +101,84 @@ describe("uploadFileViaSignedUrl", () => {
       })
     ).rejects.toThrow("returned no original media variant");
   });
+  it.each([1, 2])("rejects a failed application envelope at upload stage %s", async (stage) => {
+    const base = mockUploadPipeline({});
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (...args) => {
+        const response = await base(...args);
+        calls += 1;
+        if (calls !== stage) return response;
+        const body = await response.json();
+        return {
+          ...response,
+          json: async () => ({ ...body, code: 403, message: "Upload permission denied" }),
+        } as Response;
+      })
+    );
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png"), { kind: "canvas_input_image" })
+    ).rejects.toThrow("Upload permission denied");
+    expect(base).toHaveBeenCalledTimes(stage);
+    expect(FakeXMLHttpRequest.instances).toHaveLength(stage - 1);
+  });
+
+  it.each([1, 2])("abandons a delayed parsed response at upload stage %s", async (stage) => {
+    const controller = new AbortController();
+    const base = mockUploadPipeline({});
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (...args) => {
+        const response = await base(...args);
+        calls += 1;
+        if (calls !== stage) return response;
+        return {
+          ...response,
+          json: async () => {
+            const body = await response.json();
+            controller.abort();
+            return body;
+          },
+        } as Response;
+      })
+    );
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png"), {
+        kind: "canvas_input_image",
+        signal: controller.signal,
+      })
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(base).toHaveBeenCalledTimes(stage);
+    expect(FakeXMLHttpRequest.instances).toHaveLength(stage - 1);
+  });
+
+  it.each(["plain", "success", "SUCCESS"])(
+    "retains supported %s upload responses",
+    async (format) => {
+      const base = mockUploadPipeline({});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn<typeof fetch>(async (...args) => {
+          const response = await base(...args);
+          const body = await response.json();
+          return {
+            ...response,
+            json: async () =>
+              format === "plain"
+                ? body.data
+                : format === "success"
+                  ? { success: true, data: body.data }
+                  : { code: "SUCCESS", data: body.data },
+          } as Response;
+        })
+      );
+      await expect(
+        uploadFileViaSignedUrl(new File(["image"], "frame.png"), { kind: "canvas_input_image" })
+      ).resolves.toMatchObject({ mediaAssetId: "asset-1", variantId: "variant-1" });
+    }
+  );
 });
 
 function mockUploadPipeline(headers: Record<string, string>, confirmed?: object) {

@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUrlForRequest,
   adminUnavailableResponse,
@@ -10,11 +11,15 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const upstream = await fetch(adminUrlForRequest(request, "/billing/check-in/config"), {
-      headers: adminForwardHeaders(request),
-      cache: "no-store",
-    });
-    return relayAdminResponse(upstream);
+    const upstream = await adminFetch(
+      request,
+      adminUrlForRequest(request, "/billing/check-in/config"),
+      {
+        headers: adminForwardHeaders(request),
+        cache: "no-store",
+      }
+    );
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }
@@ -22,13 +27,17 @@ export async function GET(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const upstream = await fetch(adminUrlForRequest(request, "/billing/check-in/config"), {
-      method: "PATCH",
-      headers: adminForwardHeaders(request, { json: true }),
-      body: await request.text(),
-      cache: "no-store",
-    });
-    return relayAdminResponse(upstream);
+    const upstream = await adminFetch(
+      request,
+      adminUrlForRequest(request, "/billing/check-in/config"),
+      {
+        method: "PATCH",
+        headers: adminForwardHeaders(request, { json: true }),
+        body: await request.text(),
+        cache: "no-store",
+      }
+    );
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

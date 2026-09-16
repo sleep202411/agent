@@ -137,7 +137,9 @@ function installFetch() {
       });
       if (method === "GET" && url.endsWith("/production-overview")) {
         return jsonResponse({
-          studioProject: legacyProject,
+          studioProject: legacyProject
+            ? { ...legacyProject, workspace: { id: "legacy-workspace", name: "Legacy workspace" } }
+            : null,
           studioWorkspace: linkedWorkspaceId ? { id: linkedWorkspaceId, name: "Studio" } : null,
           capabilities: { linkWorkspace: canLink },
         });
@@ -541,6 +543,11 @@ describe("Link workspace", () => {
     const header = document.querySelector('header[aria-label="Crew header"]');
     expect(header?.contains(trigger)).toBe(true);
     expect(header?.contains(byText("button", "New folder"))).toBe(false);
+    expect(
+      [...document.querySelectorAll("button")].filter(
+        (button) => button.textContent === "Link workspace"
+      )
+    ).toHaveLength(1);
     await click(trigger);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));

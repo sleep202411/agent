@@ -1,7 +1,7 @@
-import { Platform } from "react-native";
-
 import { appEnv, resolveAssetUrl } from "@/config";
-import { api, type ApiResponse } from "@/lib/api-client";
+import { api, ApiRequestError, type ApiResponse } from "@/lib/api-client";
+
+import { sendAuthCode } from "./send-auth-code";
 
 import type {
   AuthResult,
@@ -42,8 +42,18 @@ function looksLikeUser(record: Record<string, unknown>) {
 
 function readCookie(name: string): string | undefined {
   if (typeof document === "undefined") return undefined;
-  const match = document.cookie.match(new RegExp("(?:^|;\\s*)" + name + "=([^;]+)"));
-  return match ? decodeURIComponent(match[1]) : undefined;
+  const key = `${encodeURIComponent(name)}=`;
+  const value = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(key))
+    ?.slice(key.length);
+  if (value === undefined) return undefined;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {
@@ -90,21 +100,6 @@ function readIsNewUser(envelope: unknown): boolean {
   return false;
 }
 
-/** Web dev runs on localhost — backend Set-Cookie uses prod domains the browser rejects. */
-function persistSessionCookie(token: AuthToken) {
-  if (Platform.OS !== "web" || typeof document === "undefined") return;
-
-  const secure = window.location.protocol === "https:" ? "; Secure" : "";
-  const maxAge = 60 * 60 * 24 * 30;
-  const host = window.location.hostname;
-  const domain =
-    host === "localhost" || /^[\d.]+$/.test(host)
-      ? ""
-      : `; Domain=.${host.split(".").slice(-2).join(".")}`;
-
-  document.cookie = `${token.tokenName}=${token.tokenValue}; Path=/${domain}; Max-Age=${maxAge}; SameSite=Lax${secure}`;
-}
-
 function normalizeUser(raw: unknown): AuthUser | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const user = raw as AuthUser;
@@ -122,8 +117,6 @@ function toAuthResult(envelope: unknown): AuthResult {
   const payloadRecord = objectRecord(payload);
   const wrappedUser = payloadRecord.user ?? payloadRecord.userInfo ?? payloadRecord.info;
   const token = readSessionToken(payload, root);
-
-  if (token) persistSessionCookie(token);
 
   return {
     raw: root,
@@ -171,13 +164,12 @@ async function sendGetCode(
   identifier: NormalizedIdentifier,
   resetPassword: boolean
 ): Promise<void> {
-  await api.get<ApiResponse<unknown>>("/user/new/getCode", {
-    params: {
-      type: identifier.kind,
-      account: identifier.account,
-      resetPassword,
-    },
-  });
+  await sendAuthCode(identifier, resetPassword ? "reset" : "signin", () =>
+    api.get<ApiResponse<unknown>>("/user/new/getCode", {
+      params: { type: identifier.kind, account: identifier.account, resetPassword },
+      retry: false,
+    })
+  );
 }
 
 /** Sign-in / auto-register OTP (`resetPassword=false`). */
@@ -242,7 +234,7 @@ async function sessionFromAuthResult(
   try {
     freshUser = await getCurrentUser(authResult.token);
   } catch (error) {
-    if (!authResult.user) throw error;
+    if (!authResult.user || (error instanceof ApiRequestError && error.status === 401)) throw error;
   }
 
   const user = freshUser ?? authResult.user;
@@ -278,7 +270,7 @@ export async function getCurrentUser(token?: AuthToken) {
 }
 
 export async function logout() {
-  await api.get<unknown>("/user/logout");
+  await api.get<unknown>("/user/logout", { retry: false });
 }
 
 /** Bind invite code once: `POST /user/recommendationcode/bind` (authed). */

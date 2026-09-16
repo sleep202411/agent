@@ -30,10 +30,12 @@ export const AUTH_STATUS = {
 // ─── API ──────────────────────────────────────────────
 
 /** 获取可选认证角色列表（AI工程师、导演、编剧等） */
-export const getCertificationRoles = () => api.get<Record<string, string>>("/project/role/list");
+export const getCertificationRoles = (signal?: AbortSignal) =>
+  api.get<Record<string, string>>("/project/role/list", { signal });
 
 /** 获取我的认证列表 */
-export const getMyCertifications = () => api.post<Certification[]>("/project/role/mylist");
+export const getMyCertifications = (signal?: AbortSignal) =>
+  api.post<Certification[]>("/project/role/mylist", { signal });
 
 /** 新增认证 */
 export const submitCertification = (data: {

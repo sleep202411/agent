@@ -112,9 +112,7 @@ export class MediaAssetUrlResolverService {
    * SELECT a compile error.
    */
   resolvePublicUrl(asset: GatedMediaAsset): string | null {
-    if (asset.deletedAt || asset.status === 'deleted') return null;
-    if (asset.status != null && asset.status !== 'ready') return null;
-    if (asset.moderationStatus === 'blocked') return null;
+    if (!canExposeAsset(asset)) return null;
     try {
       return this.resolve(asset);
     } catch {
@@ -126,12 +124,15 @@ export class MediaAssetUrlResolverService {
     assertAssetCanResolveUrl(asset);
 
     const variant = asset.variants?.find(
-      (candidate) =>
-        candidate.variantKey === variantKey &&
-        candidate.status !== 'deleted' &&
-        candidate.status !== 'blocked' &&
-        !candidate.deletedAt,
+      (candidate) => candidate.variantKey === variantKey,
     );
+    if (
+      variant &&
+      (variant.deletedAt ||
+        (variant.status != null && variant.status !== 'ready'))
+    ) {
+      throw new Error(`media asset variant "${variantKey}" is not ready`);
+    }
     const placement = pickPlacement(variant?.placements);
     if (placement) return this.resolvePlacement(placement);
     if (variantKey === 'original') return this.resolve(asset);
@@ -262,7 +263,7 @@ export function resolveMediaPublicVariantUrl(
   asset: GatedMediaAsset,
   variantKey: string,
 ): string | null {
-  if (resolveMediaPublicUrl(asset) == null) return null;
+  if (!canExposeAsset(asset)) return null;
   try {
     sharedResolver ??= new MediaAssetUrlResolverService();
     return sharedResolver.resolveVariant(asset, variantKey);
@@ -285,8 +286,7 @@ export function resolveMediaPlaybackUrl(asset: GatedMediaAsset): {
   contentType: string | null;
 } {
   sharedResolver ??= new MediaAssetUrlResolverService();
-  const original = sharedResolver.resolvePublicUrl(asset);
-  if (original == null) return { url: null, contentType: null };
+  if (!canExposeAsset(asset)) return { url: null, contentType: null };
 
   const hls = asset.variants?.find(
     (v) =>
@@ -302,7 +302,15 @@ export function resolveMediaPlaybackUrl(asset: GatedMediaAsset): {
       // HLS variant unresolvable (e.g. missing placement) — keep the original.
     }
   }
-  return { url: original, contentType: null };
+  return { url: sharedResolver.resolvePublicUrl(asset), contentType: null };
+}
+
+function canExposeAsset(asset: GatedMediaAsset): boolean {
+  return (
+    !asset.deletedAt &&
+    (asset.status == null || asset.status === 'ready') &&
+    asset.moderationStatus !== 'blocked'
+  );
 }
 
 function assertAssetCanResolveUrl(asset: ResolvableMediaAsset): void {

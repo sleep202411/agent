@@ -31,6 +31,17 @@ const STORAGE_KEY = "fd.auth.resendUntil";
 
 /** Epoch ms before which no send may go out. 0 = nothing armed. */
 let deadline = 0;
+let pendingSend: symbol | null = null;
+
+/** Reserve the tab's send slot until the transport settles. */
+export function claimCodeSend(): (() => void) | null {
+  if (pendingSend) return null;
+  const claim = Symbol();
+  pendingSend = claim;
+  return () => {
+    if (pendingSend === claim) pendingSend = null;
+  };
+}
 
 /** When the next send is allowed, as epoch ms. */
 export function readResendDeadline(): number {

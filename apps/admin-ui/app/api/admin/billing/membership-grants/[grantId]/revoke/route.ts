@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUrlForRequest,
   adminUnavailableResponse,
@@ -15,7 +16,8 @@ type RouteContext = {
 export async function POST(request: NextRequest, context: RouteContext) {
   const { grantId } = await context.params;
   try {
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(request, `/billing/membership-grants/${grantId}/revoke`),
       {
         method: "POST",
@@ -23,7 +25,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         cache: "no-store",
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

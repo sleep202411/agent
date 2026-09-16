@@ -2394,6 +2394,7 @@
     "missingRequired": "Title and pitch are required.",
     "publishNeedsTier": "Publishing needs at least one enabled tier.",
     "tierIncomplete": "{tier} tier is missing {field}. Fill it in, or turn the tier off.",
+    "tierInvalidNumber": "{tier} tier has an invalid {field}. Enter a valid value or turn the tier off.",
     "tierField": {
       "title": "a name",
       "description": "a description"
@@ -4295,6 +4296,11 @@
     "taskCompleted": "Completed",
     "taskFailed": "Failed",
     "taskCancelled": "Cancelled",
+    "tasksTitle": "Tasks",
+    "tasksDescription": "Generation, Agent and Story production tasks",
+    "taskAgent": "Agent task",
+    "taskProduction": "Production task",
+    "taskWaiting": "Awaiting action",
     "taskImage": "Generate Image",
     "taskVideo": "Generate Video",
     "taskAudio": "Generate Audio",
@@ -5062,17 +5068,6 @@
       "dateInput": "Date or time period",
       "dateInputPlaceholder": "Try 2027-05, 2027-Q4, or 2027-05-20",
       "labels": "Labels",
-      "searchStudioProjects": "Search workspaces and projects…",
-      "loadingStudioProjects": "Loading projects…",
-      "noStudioProjects": "No matching projects.",
-      "unlinkStudioProject": "Unlink Studio project",
-      "workspaceHasNoProjects": "No projects in this workspace.",
-      "projectLinkFailed": "The Studio project could not be linked.",
-      "projectOptionsFailed": "Projects could not be loaded.",
-      "projectDisabled": {
-        "alreadyLinked": "Already linked to {crew}.",
-        "insufficient_permission": "You need edit access to link this project."
-      },
       "addLabel": "Add label",
       "addAnotherLabel": "Add another label",
       "searchLabels": "Search labels…",
@@ -5803,7 +5798,6 @@
   "crewWorkbench": {
     "projectUsage": "Studio project usage",
     "header": "Crew header",
-    "linkCanvas": "Link Canvas",
     "globalNavigation": "Crew workspace navigation",
     "crewSwitcherNavigation": "Crew switcher",
     "allCrews": "All crews",
@@ -7778,6 +7772,7 @@
     "proposalSentToast": "Proposal sent.",
     "proposalSendFailed": "Failed to send proposal.",
     "proposalPriceInvalid": "Enter a valid price.",
+    "proposalNumberInvalid": "Enter a whole number within the allowed range for {field}.",
     "proposalScopePlaceholder": "One bullet per line. What's included.",
     "proposalScopeHint": "Visible on the proposal card. Keep it concrete.",
     "proposalNoteLabel": "Note (optional)",

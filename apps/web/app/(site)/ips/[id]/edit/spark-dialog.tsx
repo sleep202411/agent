@@ -14,7 +14,7 @@
  *     without filling something doesn't blank an existing value.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   IconCloudUpload,
   IconFileText,
@@ -23,6 +23,7 @@ import {
   IconSparkles,
   IconX,
 } from "@tabler/icons-react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,16 +75,30 @@ function bytesToMB(bytes: number): string {
   return (bytes / (1024 * 1024)).toFixed(0);
 }
 
-export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps) {
+export function SparkDialog(props: SparkDialogProps) {
+  const { user } = useCurrentUser();
+  return <SparkDialogContent key={JSON.stringify([user?.id, props.projectId])} {...props} />;
+}
+function SparkDialogContent({ open, onOpenChange, projectId }: SparkDialogProps) {
   const t = useTranslations("ipEdit");
   // Dropzone + AI-pill copy is shared with the create dialog (same UX
   // element, identical strings) — read those keys from the ipCreate
   // namespace rather than duplicating them under ipEdit.
   const tc = useTranslations("ipCreate");
 
-  const [name, setName] = useState("");
+  const [name, setNameState] = useState("");
+  const nameRef = useRef("");
+  const setName = (value: string) => {
+    nameRef.current = value;
+    setNameState(value);
+  };
   const [typeId, setTypeId] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescriptionState] = useState("");
+  const descriptionRef = useRef("");
+  const setDescription = (value: string) => {
+    descriptionRef.current = value;
+    setDescriptionState(value);
+  };
   const [tagIds, setTagIds] = useState<number[]>([]);
 
   const [analyzeStatus, setAnalyzeStatus] = useState<AnalyzeStatus>("idle");
@@ -97,20 +112,31 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
   const { data: typeList = [] } = useIPTypes();
   const { data: tagCatalog = [] } = useIPTagList();
 
-  // Reset on close. Form starts blank — Spark fills via the dropzone or
-  // the user types. On Apply, empty fields are skipped so opening Spark
-  // and applying without filling anything is a no-op.
-  useEffect(() => {
-    if (open) return;
-    setName("");
+  const [openScope, setOpenScope] = useState({ open });
+  if (openScope.open !== open) {
+    setOpenScope({ open });
+    setNameState("");
     setTypeId("");
-    setDescription("");
+    setDescriptionState("");
     setTagIds([]);
     setAnalyzeStatus("idle");
     setAnalyzedFileName("");
     setAiFilledFields(new Set());
     setDragOver(false);
-  }, [open]);
+  }
+
+  const active = useRef(false);
+  const operation = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    active.current = openScope.open;
+    nameRef.current = "";
+    descriptionRef.current = "";
+    return () => {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+    };
+  }, [openScope]);
 
   const markAi = (field: AiField) => {
     setAiFilledFields((prev) => {
@@ -140,24 +166,28 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
   };
 
   const handleFile = async (file: File) => {
+    if (!active.current || operation.current) return;
     const validationError = validateFile(file);
     if (validationError) {
       toast.error(validationError);
       return;
     }
 
+    const request = new AbortController();
+    operation.current = request;
     setAnalyzedFileName(file.name);
     setAnalyzeStatus("analyzing");
 
     try {
-      const result = await analyze.mutateAsync(file);
+      const result = await analyze.mutateAsync({ file, signal: request.signal });
+      if (!active.current || request.signal.aborted || operation.current !== request) return;
       // Apply only fields the AI returned, and only if the user hasn't
       // already typed something in. Don't overwrite manual edits.
-      if (result.name && !name.trim()) {
+      if (result.name && !nameRef.current.trim()) {
         setName(result.name);
         markAi("name");
       }
-      if (result.description && !description.trim()) {
+      if (result.description && !descriptionRef.current.trim()) {
         setDescription(result.description);
         markAi("description");
       }
@@ -172,9 +202,11 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
       }
       setTagIds(Array.from(matched));
       setAnalyzeStatus("success");
-    } catch (err) {
-      console.error("[SparkDialog] analyze failed", err);
-      setAnalyzeStatus("error");
+    } catch {
+      if (active.current && !request.signal.aborted && operation.current === request)
+        setAnalyzeStatus("error");
+    } finally {
+      if (operation.current === request) operation.current = null;
     }
   };
 
@@ -186,6 +218,9 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
   };
 
   const handleClearAnalysis = () => {
+    if (update.isPending) return;
+    operation.current?.abort();
+    operation.current = null;
     setAnalyzeStatus("idle");
     setAnalyzedFileName("");
     if (aiFilledFields.has("name")) setName("");
@@ -195,12 +230,13 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
     setTagIds([]);
   };
 
-  const handleApply = () => {
+  const handleApply = async () => {
+    if (!active.current || operation.current) return;
     const trimmedName = name.trim();
     const trimmedDesc = description.trim();
     // Skip blank fields so we don't accidentally clear backend values
     // the user never touched in this Spark session.
-    const payload: Parameters<typeof update.mutate>[0] = { id: Number(projectId) };
+    const payload: Parameters<typeof update.mutateAsync>[0] = { id: Number(projectId) };
     if (trimmedName) payload.name = trimmedName;
     if (typeId) payload.typeId = typeId;
     if (trimmedDesc) payload.description = trimmedDesc;
@@ -209,16 +245,19 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
       toast.warning(t("sparkNothingToApply"));
       return;
     }
-    update.mutate(payload, {
-      onSuccess: () => {
-        toast.success(t("sparkApplied"));
-        onOpenChange(false);
-      },
-      onError: (err) => {
-        const msg = err instanceof Error ? err.message : "";
-        toast.error(msg || t("saveFailed"));
-      },
-    });
+    const request = new AbortController();
+    operation.current = request;
+    try {
+      await update.mutateAsync(payload);
+      if (!active.current || request.signal.aborted || operation.current !== request) return;
+      toast.success(t("sparkApplied"));
+      onOpenChange(false);
+    } catch (err) {
+      if (!active.current || request.signal.aborted || operation.current !== request) return;
+      toast.error(err instanceof Error && err.message ? err.message : t("saveFailed"));
+    } finally {
+      if (operation.current === request) operation.current = null;
+    }
   };
 
   const applying = update.isPending;
@@ -275,6 +314,7 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
               {aiFilledFields.has("name") && <AiSuggestedChip label={tc("aiSuggested")} />}
             </FieldLabel>
             <Input
+              disabled={applying}
               value={name}
               onChange={(e) => {
                 setName(e.target.value.slice(0, 80));
@@ -289,6 +329,7 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
               {aiFilledFields.has("typeId") && <AiSuggestedChip label={tc("aiSuggested")} />}
             </FieldLabel>
             <Select
+              disabled={applying}
               value={typeId}
               onValueChange={(v) => {
                 setTypeId(v);
@@ -314,6 +355,7 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
               {aiFilledFields.has("description") && <AiSuggestedChip label={tc("aiSuggested")} />}
             </FieldLabel>
             <Textarea
+              disabled={applying}
               value={description}
               onChange={(e) => {
                 setDescription(e.target.value.slice(0, 500));
@@ -323,7 +365,11 @@ export function SparkDialog({ open, onOpenChange, projectId }: SparkDialogProps)
             />
           </Field>
 
-          <Button onClick={handleApply} disabled={applying || !hasContent} className="w-full">
+          <Button
+            onClick={handleApply}
+            disabled={applying || analyzeStatus === "analyzing" || !hasContent}
+            className="w-full"
+          >
             {applying ? (
               <IconLoader2 className="size-3.5 animate-spin" />
             ) : (

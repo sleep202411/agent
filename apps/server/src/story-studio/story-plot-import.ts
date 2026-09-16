@@ -422,7 +422,7 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
   const reachable = new Set<string>();
   const queue = [entryNodeId];
   for (let i = 0; i < queue.length; i++) {
-    const current = queue[i]!;
+    const current = queue[i];
     if (reachable.has(current)) continue;
     reachable.add(current);
     queue.push(...adjacency.get(current)!);

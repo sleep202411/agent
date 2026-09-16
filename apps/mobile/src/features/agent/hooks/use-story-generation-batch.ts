@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import {
   storyGenerationBatchHasPendingItems,
@@ -8,6 +8,7 @@ import {
   type StoryStoryboardSequence,
 } from "../api/story-production-api";
 import { isAgentOsId } from "../lib/ids";
+import { useStoryRequestScope } from "./use-story-request-scope";
 
 const POLL_MS = 1_500;
 
@@ -39,9 +40,22 @@ export function useStoryGenerationBatch(
   const [actionError, setActionError] = useState<string | null>(null);
   const [mutating, setMutating] = useState(false);
   const [tick, setTick] = useState(0);
-  const ok = isAgentOsId(projectId) && isAgentOsId(chapterId) && isAgentOsId(batchId);
-
-  const identity = `${projectId}:${chapterId}:${batchId}`;
+  const identity = useStoryRequestScope(`${projectId}:${chapterId}:${batchId}`);
+  const ok =
+    identity.enabled && isAgentOsId(projectId) && isAgentOsId(chapterId) && isAgentOsId(batchId);
+  const currentScope = useRef<typeof identity | null>(identity);
+  const activeRead = useRef<AbortController | null>(null);
+  const activeAction = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    currentScope.current = identity;
+    return () => {
+      currentScope.current = null;
+      activeRead.current?.abort();
+      activeAction.current?.abort();
+      activeRead.current = null;
+      activeAction.current = null;
+    };
+  }, [identity]);
   const [previousIdentity, setPreviousIdentity] = useState(identity);
   if (previousIdentity !== identity) {
     setPreviousIdentity(identity);
@@ -51,11 +65,12 @@ export function useStoryGenerationBatch(
     setLoading(ok);
     setError(null);
     setActionError(null);
+    setMutating(false);
   }
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
-      if (!ok) return;
+      if (!ok || currentScope.current !== identity || activeAction.current) return;
       return storyProductionApi
         .getGenerationBatch(projectId, chapterId, batchId, signal)
         .then(async (next) => {
@@ -80,6 +95,9 @@ export function useStoryGenerationBatch(
             if (signal?.aborted) return;
             setStoryboard(sequences);
             setAssets([]);
+          } else {
+            setAssets([]);
+            setStoryboard([]);
           }
         })
         .catch((err: unknown) => {
@@ -90,44 +108,68 @@ export function useStoryGenerationBatch(
           if (!signal?.aborted) setLoading(false);
         });
     },
-    [batchId, chapterId, ok, projectId]
+    [batchId, chapterId, ok, projectId, identity]
   );
 
   useEffect(() => {
-    if (!ok) return;
+    if (!ok || mutating) return;
     const ac = new AbortController();
+    activeRead.current = ac;
     void load(ac.signal);
-    return () => ac.abort();
-  }, [load, ok, tick]);
+    return () => {
+      ac.abort();
+      if (activeRead.current === ac) activeRead.current = null;
+    };
+  }, [load, ok, tick, mutating]);
 
   useEffect(() => {
-    if (!ok || !batch || !storyGenerationBatchHasPendingItems(batch)) return;
+    if (!ok || mutating || !batch || !storyGenerationBatchHasPendingItems(batch)) return;
     const timer = setTimeout(() => setTick((value) => value + 1), POLL_MS);
     return () => clearTimeout(timer);
-  }, [batch, ok]);
+  }, [batch, ok, mutating]);
 
   const mutate = useCallback(
     async (action: "cancel" | "resume") => {
-      if (!ok) return;
+      if (!ok || currentScope.current !== identity || activeAction.current) return;
+      const controller = new AbortController();
+      activeAction.current = controller;
+      activeRead.current?.abort();
       setMutating(true);
+      const current = () =>
+        currentScope.current === identity &&
+        !controller.signal.aborted &&
+        activeAction.current === controller;
       try {
         const next =
           action === "cancel"
-            ? await storyProductionApi.cancelGenerationBatch(projectId, chapterId, batchId)
-            : await storyProductionApi.resumeGenerationBatch(projectId, chapterId, batchId);
+            ? await storyProductionApi.cancelGenerationBatch(
+                projectId,
+                chapterId,
+                batchId,
+                controller.signal
+              )
+            : await storyProductionApi.resumeGenerationBatch(
+                projectId,
+                chapterId,
+                batchId,
+                controller.signal
+              );
+        if (!current()) return;
         setBatch(next);
         setActionError(null);
-        setTick((value) => value + 1);
       } catch (err) {
+        if (!current()) return;
         setActionError(err instanceof Error ? err.message : String(err));
-        // Resume may have queued on the server even if the client rejected the
-        // envelope — reload so the transcript can catch up.
-        setTick((value) => value + 1);
       } finally {
-        setMutating(false);
+        if (current()) {
+          activeAction.current = null;
+          setMutating(false);
+          // A response failure may still have accepted work server-side.
+          setTick((value) => value + 1);
+        }
       }
     },
-    [batchId, chapterId, ok, projectId]
+    [batchId, chapterId, ok, projectId, identity]
   );
 
   return {
@@ -139,6 +181,7 @@ export function useStoryGenerationBatch(
     actionError,
     mutating,
     retry: () => {
+      if (!ok || currentScope.current !== identity || activeAction.current) return;
       setLoading(true);
       setError(null);
       setTick((value) => value + 1);

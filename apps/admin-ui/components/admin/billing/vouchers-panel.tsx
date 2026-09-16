@@ -4,6 +4,7 @@
 // and view / track redemptions. A voucher is redeemed for a DIRECT grant (today
 // compute_point credits) — distinct from 促销优惠 (which discount an order).
 
+import { useAdminOperation } from "../use-admin-operation";
 import { useMemo, useState } from "react";
 import { IconCopy, IconGift, IconPlus, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -60,23 +61,28 @@ function VoucherStatusPill({ status }: { status: VoucherStatus }) {
   );
 }
 
-export function BillingVouchersPanel({
-  siteKey,
-  siteLabel,
-  databaseLabel,
-  initialVouchers,
-  initialError,
-}: {
+type BillingVouchersPanelProps = {
   siteKey: BillingSiteKey;
   siteLabel: string;
   databaseLabel: string;
   initialVouchers: AdminBillingVouchersData | null;
   initialError?: string | null;
-}) {
+};
+
+export function BillingVouchersPanel(props: BillingVouchersPanelProps) {
+  return <BillingVouchersView key={props.siteKey} {...props} />;
+}
+
+function BillingVouchersView({
+  siteLabel,
+  databaseLabel,
+  initialVouchers,
+  initialError,
+}: BillingVouchersPanelProps) {
+  const { busy: loading, begin } = useAdminOperation();
   const [vouchers, setVouchers] = useState(initialVouchers ?? emptyVouchers);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [generated, setGenerated] = useState<GenerateVouchersResult | null>(null);
 
@@ -89,47 +95,58 @@ export function BillingVouchersPanel({
   }
 
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setVouchers(
-        await requestEnvelope<AdminBillingVouchersData>(
-          `/api/admin/billing/vouchers${queryString()}`
-        )
+      const data = await requestEnvelope<AdminBillingVouchersData>(
+        `/api/admin/billing/vouchers${queryString()}`,
+        operation.signal
       );
+      if (operation.current()) setVouchers(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handleGenerate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
-    // Capture the form before the await: React nulls currentTarget post-sync.
     const formEl = event.currentTarget;
-    const form = new FormData(formEl);
-    const computeCreditAmount = stringField(form, "computeCreditAmount");
-    const expiresAt = stringField(form, "expiresAt");
-    const codePrefix = stringField(form, "codePrefix");
     try {
-      const result = await mutateEnvelope<GenerateVouchersResult>("/api/admin/billing/vouchers", {
-        count: Number(stringField(form, "count")),
-        grantType: "compute_credits",
-        computeCreditAmount: computeCreditAmount ? Number(computeCreditAmount) : undefined,
-        expiresAt: expiresAt || undefined,
-        codePrefix: codePrefix || undefined,
-        note: stringField(form, "note") || undefined,
-      });
+      const form = new FormData(formEl);
+      const computeCreditAmount = stringField(form, "computeCreditAmount");
+      const expiresAt = stringField(form, "expiresAt");
+      const codePrefix = stringField(form, "codePrefix");
+      const result = await mutateEnvelope<GenerateVouchersResult>(
+        "/api/admin/billing/vouchers",
+        {
+          count: Number(stringField(form, "count")),
+          grantType: "compute_credits",
+          computeCreditAmount: computeCreditAmount ? Number(computeCreditAmount) : undefined,
+          expiresAt: expiresAt || undefined,
+          codePrefix: codePrefix || undefined,
+          note: stringField(form, "note") || undefined,
+        },
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
       formEl.reset();
       setGenerated(result);
-      await refresh();
+      const data = await requestEnvelope<AdminBillingVouchersData>(
+        `/api/admin/billing/vouchers${queryString()}`,
+        operation.signal
+      );
+      if (operation.current()) setVouchers(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
@@ -263,10 +280,17 @@ export function BillingVouchersPanel({
           <form onSubmit={handleGenerate} className="mt-4 grid gap-3">
             <div className="grid grid-cols-2 gap-2">
               <FormLabel label="数量" help="本批生成的兑换码数量（1-1000）。">
-                <TextInput name="count" required inputMode="numeric" placeholder="100" />
+                <TextInput
+                  disabled={loading}
+                  name="count"
+                  required
+                  inputMode="numeric"
+                  placeholder="100"
+                />
               </FormLabel>
               <FormLabel label="面额（算力积分）" help="每个码核销到账的算力积分数量。">
                 <TextInput
+                  disabled={loading}
                   name="computeCreditAmount"
                   required
                   inputMode="numeric"
@@ -275,13 +299,13 @@ export function BillingVouchersPanel({
               </FormLabel>
             </div>
             <FormLabel label="码前缀" help="可选，默认 FIZZ。仅字母数字，便于识别活动。">
-              <TextInput name="codePrefix" placeholder="FIZZ" />
+              <TextInput disabled={loading} name="codePrefix" placeholder="FIZZ" />
             </FormLabel>
             <FormLabel label="有效期" help="留空表示长期有效；过期后无法核销。">
-              <TextInput name="expiresAt" type="datetime-local" />
+              <TextInput disabled={loading} name="expiresAt" type="datetime-local" />
             </FormLabel>
             <FormLabel label="备注" help="内部运营备注，可选。">
-              <TextInput name="note" placeholder="例如：双十一活动" />
+              <TextInput disabled={loading} name="note" placeholder="例如：双十一活动" />
             </FormLabel>
             <Button type="submit" disabled={loading}>
               <IconPlus className="size-3.5" />

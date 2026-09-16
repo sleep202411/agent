@@ -11,9 +11,24 @@ describe("production prompt autosave", () => {
   let editor: ReturnType<typeof useStoryProductionAutosave<{ prompt: string }>>;
   const persist = vi.fn<(values: { prompt: string }) => Promise<number>>();
   const onError = vi.fn();
+  let currentAccount = "alice";
 
-  function Editor({ prompt = "Initial" }: { prompt?: string }) {
-    editor = useStoryProductionAutosave({ initialValues: { prompt }, persist, onError });
+  function Editor({
+    prompt = "Initial",
+    owner = "alice",
+    save = persist,
+  }: {
+    prompt?: string;
+    owner?: string;
+    save?: typeof persist;
+  }) {
+    editor = useStoryProductionAutosave({
+      initialValues: { prompt },
+      persist: save,
+      onError,
+      canPersist: () => currentAccount === owner,
+      scopeKey: owner,
+    });
     return (
       <input
         value={editor.values.prompt}
@@ -24,6 +39,7 @@ describe("production prompt autosave", () => {
 
   beforeEach(async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    currentAccount = "alice";
     vi.useFakeTimers();
     vi.resetAllMocks();
     persist.mockResolvedValue(2);
@@ -139,5 +155,66 @@ describe("production prompt autosave", () => {
       await expect(editor.runWithSavedValues(submit)).rejects.toBe(error);
     });
     expect(submit).not.toHaveBeenCalled();
+  });
+  it("does not flush old-account typing or accept retained callbacks after account replacement", async () => {
+    await edit("Private edit");
+    const retained = editor;
+    currentAccount = "bob";
+    await act(async () => root.render(null));
+    await act(async () => vi.advanceTimersByTimeAsync(400));
+    expect(persist).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    await expect(retained.runWithSavedValues(vi.fn())).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    retained.changeValues({ prompt: "abandoned" });
+    await act(async () => vi.advanceTimersByTimeAsync(400));
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("does not start generation after a save finishes in an abandoned view", async () => {
+    let finish!: (version: number) => void;
+    persist.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const submit = vi.fn();
+    let run!: Promise<unknown>;
+    await act(async () => {
+      run = editor.runWithSavedValues(submit);
+    });
+    const rejection = expect(run).rejects.toMatchObject({ name: "AbortError" });
+    await act(async () => root.render(null));
+    await act(async () => {
+      finish(2);
+      await rejection;
+    });
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it("keeps scheduled typing bound to its captured persistence callback", async () => {
+    await edit("Original target");
+    const otherPersist = vi.fn().mockResolvedValue(3);
+    await act(async () => root.render(<Editor save={otherPersist} />));
+    await act(async () => vi.advanceTimersByTimeAsync(400));
+    expect(persist).toHaveBeenCalledWith({ prompt: "Original target" });
+    expect(otherPersist).not.toHaveBeenCalled();
+  });
+
+  it("suppresses delayed autosave errors after the observed account changes", async () => {
+    let fail!: (error: Error) => void;
+    persist.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        })
+    );
+    await edit("Pending edit");
+    await act(async () => vi.advanceTimersByTimeAsync(400));
+    currentAccount = "bob";
+    await act(async () => fail(new Error("Old failure")));
+    expect(onError).not.toHaveBeenCalled();
   });
 });

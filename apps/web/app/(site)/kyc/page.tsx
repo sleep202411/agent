@@ -14,7 +14,7 @@
  *   6. Parse the response, then POST /user/certify/query to confirm
  *      backend status, invalidate user-info + auth-status caches.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Script from "next/script";
 import { IconLoader2 } from "@tabler/icons-react";
@@ -40,6 +40,10 @@ const ID_CARD_REGEX =
   /(^[1-9]\d{5}(18|19|20)\d{2}((0[1-9])|(1[0-2]))(([0-2][1-9])|10|20|30|31)\d{3}[0-9Xx]$)|(^[1-9]\d{5}\d{2}((0[1-9])|(1[0-2]))(([0-2][1-9])|10|20|30|31)\d{3}$)/;
 
 export default function KycPage() {
+  const { data: user } = useUserInfo();
+  return <KycForm key={user?.id ?? "guest"} />;
+}
+function KycForm() {
   const t = useTranslations("kyc");
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -52,36 +56,67 @@ export default function KycPage() {
   const [idCard, setIdCard] = useState("");
   const [verifyFailed, setVerifyFailed] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
-  const responseHandledRef = useRef(false);
+  const owner = useRef<object | null>(null);
+  const initClaim = useRef<object | null>(null);
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const responseHandledRef = useRef<{ response: string; owner: object } | null>(null);
+  useLayoutEffect(() => {
+    owner.current = {};
+    return () => {
+      owner.current = null;
+      initClaim.current = null;
+      if (redirectTimer.current != null) clearTimeout(redirectTimer.current);
+    };
+  }, []);
 
   // Handle the `?response=...` payload Aliyun appends on redirect back.
   // Guarded with a ref so re-renders don't re-parse.
   useEffect(() => {
     const response = searchParams?.get("response");
-    if (!response || responseHandledRef.current) return;
-    responseHandledRef.current = true;
+    const scope = owner.current;
+    if (!response || !scope || !userInfo?.id) return;
+    if (
+      responseHandledRef.current?.response === response &&
+      responseHandledRef.current.owner === scope
+    )
+      return;
+    responseHandledRef.current = { response, owner: scope };
 
+    const currentResponse = () =>
+      owner.current === scope &&
+      responseHandledRef.current?.owner === scope &&
+      responseHandledRef.current.response === response;
     void (async () => {
+      let consumed = false;
+      let failure = t("certificationResultParseFailed");
       try {
-        const parsed = JSON.parse(decodeURIComponent(response)) as {
+        const parsed = JSON.parse(
+          response.startsWith("{") ? response : decodeURIComponent(response)
+        ) as {
           code?: string;
           reason?: string;
           extInfo?: { certifyId?: string };
         };
         const code = parsed.code;
         const certifyId = parsed.extInfo?.certifyId;
+        consumed = code !== "1000";
 
         if (code === "1000") {
-          // Backend confirms final status + invalidates caches.
-          if (certifyId) {
-            try {
-              await doQuery(certifyId);
-            } catch {
-              /* swallow — Aliyun already said success, query is best-effort */
-            }
+          if (typeof certifyId !== "string" || !certifyId.trim())
+            throw new Error("Missing verification identifier");
+          failure = t("certificationNotPassed");
+          const result = await doQuery(certifyId);
+          if (!currentResponse()) return;
+          consumed = true;
+          if (result.status !== "T") {
+            toast.error(t("certificationNotPassed"));
+            setVerifyFailed(true);
+            return;
           }
           toast.success(t("certificationSuccess"));
-          setTimeout(() => router.replace("/profile"), 1200);
+          redirectTimer.current = setTimeout(() => {
+            if (currentResponse()) router.replace("/profile");
+          }, 1200);
         } else if (code === "1003") {
           toast.error(t("certificationCancelled"));
           setVerifyFailed(true);
@@ -93,19 +128,23 @@ export default function KycPage() {
           setVerifyFailed(true);
         }
       } catch {
-        toast.error(t("certificationResultParseFailed"));
+        if (!currentResponse()) return;
+        toast.error(failure);
+        setVerifyFailed(true);
       } finally {
         // Strip the ?response= so a page refresh doesn't re-trigger parsing.
-        if (typeof window !== "undefined") {
+        if (consumed && currentResponse() && typeof window !== "undefined") {
           const url = new URL(window.location.href);
           url.searchParams.delete("response");
           window.history.replaceState(null, "", url.toString());
         }
       }
     })();
-  }, [searchParams, doQuery, router, t]);
+  }, [searchParams, doQuery, router, t, userInfo?.id]);
 
   const handleVerify = async () => {
+    const scope = owner.current;
+    if (!scope || initClaim.current) return;
     if (!realName.trim()) {
       toast.warning(t("pleaseEnterRealName"));
       return;
@@ -123,6 +162,8 @@ export default function KycPage() {
       return;
     }
 
+    const claim = {};
+    initClaim.current = claim;
     try {
       const metaInfo = JSON.stringify(window.getMetaInfo());
       const returnUrl = `${window.location.origin}/kyc`;
@@ -135,6 +176,7 @@ export default function KycPage() {
         returnUrl,
       });
 
+      if (owner.current !== scope || initClaim.current !== claim) return;
       if (!result?.certifyUrl) {
         throw new Error("missing certifyUrl");
       }
@@ -142,9 +184,12 @@ export default function KycPage() {
       // and will bounce back to returnUrl with ?response=... on completion.
       window.location.href = result.certifyUrl;
     } catch (err) {
+      if (owner.current !== scope || initClaim.current !== claim) return;
       setVerifyFailed(true);
       const message = err instanceof Error ? err.message : t("getCertifyUrlFailed");
       toast.error(message);
+    } finally {
+      if (initClaim.current === claim) initClaim.current = null;
     }
   };
 

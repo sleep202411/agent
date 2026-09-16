@@ -57,8 +57,10 @@ async function main(): Promise<void> {
     if (issues.length) throw new Error(issues.join(' '));
   }
 
-  const passwordFields: Prisma.AdminUserCreateInput &
-    Prisma.AdminUserUpdateInput = options.password
+  const passwordFields: Pick<
+    Prisma.AdminUserCreateInput,
+    'passwordHash' | 'passwordChangedAt'
+  > = options.password
     ? {
         passwordHash: hashAdminPassword(options.password),
         passwordChangedAt: new Date(),

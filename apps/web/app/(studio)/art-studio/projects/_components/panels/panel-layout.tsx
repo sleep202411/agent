@@ -89,7 +89,6 @@ export function PanelLayout({
       {/* Footer */}
       {footer && !loading && <div className="shrink-0 p-4">{footer}</div>}
 
-      {/* eslint-disable-next-line react/no-danger */}
       <style
         dangerouslySetInnerHTML={{
           __html: `@keyframes panel-open { from { width: 0; opacity: 0; } }`,

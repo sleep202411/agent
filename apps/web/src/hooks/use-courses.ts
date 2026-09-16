@@ -303,14 +303,34 @@ function courseVideoProgressKey(storageID: number | string) {
   return `course_video_progress_${storageID}`;
 }
 
+function readCourseStorage(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeCourseStorage(key: string, value: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    /* Playback remains available without storage. */
+  }
+}
+
 export function readStoredEpisodeProgress(storageID: number | string): CourseVideoProgress | null {
   if (typeof window === "undefined") return null;
 
-  const storedValue = window.localStorage.getItem(courseVideoProgressKey(storageID));
+  const storedValue = readCourseStorage(courseVideoProgressKey(storageID));
   if (!storedValue) return null;
 
   try {
     const parsedValue = JSON.parse(storedValue) as Partial<CourseVideoProgress>;
+    if (!parsedValue || parsedValue.currentTime == null || parsedValue.duration == null)
+      return null;
     const currentTime = Number(parsedValue.currentTime);
     const duration = Number(parsedValue.duration);
     const updatedAt = Number(parsedValue.updatedAt);
@@ -322,7 +342,7 @@ export function readStoredEpisodeProgress(storageID: number | string): CourseVid
     return {
       currentTime: Math.min(Math.max(currentTime, 0), duration),
       duration,
-      updatedAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+      updatedAt: Number.isFinite(updatedAt) && updatedAt >= 0 ? updatedAt : 0,
     };
   } catch {
     return null;
@@ -347,7 +367,12 @@ export function writeStoredEpisodeProgress(
   stableProgressKey?: string
 ) {
   if (typeof window === "undefined") return;
-  if (!Number.isFinite(progress.duration) || progress.duration <= 0) return;
+  if (
+    !Number.isFinite(progress.currentTime) ||
+    !Number.isFinite(progress.duration) ||
+    progress.duration <= 0
+  )
+    return;
 
   const payload = JSON.stringify({
     currentTime: Math.min(Math.max(progress.currentTime, 0), progress.duration),
@@ -355,9 +380,9 @@ export function writeStoredEpisodeProgress(
     updatedAt: Date.now(),
   });
 
-  window.localStorage.setItem(courseVideoProgressKey(episodeID), payload);
+  writeCourseStorage(courseVideoProgressKey(episodeID), payload);
   if (stableProgressKey) {
-    window.localStorage.setItem(courseVideoProgressKey(stableProgressKey), payload);
+    writeCourseStorage(courseVideoProgressKey(stableProgressKey), payload);
   }
 }
 
@@ -377,13 +402,13 @@ function parseSeriesID(seriesID: string | number | undefined): number | null {
 function readStoredEpisodeID(seriesID: number): number | null {
   if (typeof window === "undefined") return null;
 
-  const storedEpisodeID = Number(window.localStorage.getItem(`course_progress_${seriesID}`));
-  return Number.isInteger(storedEpisodeID) ? storedEpisodeID : null;
+  const storedEpisodeID = Number(readCourseStorage(`course_progress_${seriesID}`));
+  return Number.isSafeInteger(storedEpisodeID) && storedEpisodeID > 0 ? storedEpisodeID : null;
 }
 
 function readStoredStableEpisodeKey(seriesStableKey: string): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(`course_progress_key_${seriesStableKey}`);
+  return readCourseStorage(`course_progress_key_${seriesStableKey}`);
 }
 
 /**
@@ -395,10 +420,17 @@ export function writeStoredEpisodeID(
   stableEpisodeKey?: string,
   seriesStableKey?: string
 ) {
+  if (
+    !Number.isSafeInteger(seriesID) ||
+    seriesID <= 0 ||
+    !Number.isSafeInteger(episodeID) ||
+    episodeID <= 0
+  )
+    return;
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(`course_progress_${seriesID}`, String(episodeID));
+  writeCourseStorage(`course_progress_${seriesID}`, String(episodeID));
   if (stableEpisodeKey && seriesStableKey) {
-    window.localStorage.setItem(`course_progress_key_${seriesStableKey}`, stableEpisodeKey);
+    writeCourseStorage(`course_progress_key_${seriesStableKey}`, stableEpisodeKey);
   }
 }
 

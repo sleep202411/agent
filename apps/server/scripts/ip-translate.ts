@@ -149,7 +149,8 @@ async function main() {
   const cleanup = a.includes('--cleanup');
   const seedIds = seedOnly || cleanup ? seedIpIds() : [];
 
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma = buildPrisma();

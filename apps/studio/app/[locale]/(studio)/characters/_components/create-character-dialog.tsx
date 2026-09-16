@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { IconLoader2, IconMasksTheater, IconUserScan } from "@tabler/icons-react";
@@ -27,7 +26,8 @@ import {
   REAL_PERSON_CONSENT_VERSION,
   type CharacterKind,
 } from "@/lib/characters-api";
-import { charactersKeys } from "../_lib/use-characters";
+import { useCharacterOperation } from "../_lib/use-character-operation";
+import { useApplyCharacterDetail } from "../_lib/use-characters";
 import { RealPersonConsent } from "./real-person-consent";
 
 const NAME_MAX = 64;
@@ -55,7 +55,7 @@ export function CreateCharacterDialog({
   const t = useTranslations("characters");
   const tc = useTranslations("common");
   const router = useRouter();
-  const queryClient = useQueryClient();
+  const applyDetail = useApplyCharacterDetail();
   const activeWorkspace = useActiveWorkspace();
   // real_person v1 lives ONLY in the subject's default workspace (design §0);
   // the server 400s (REAL_PERSON_PERSONAL_ONLY) in a team, so gate the option
@@ -81,6 +81,11 @@ export function CreateCharacterDialog({
     setConsentAttested(false);
   };
 
+  const operation = useCharacterOperation(JSON.stringify([workspaceId, open]), () => {
+    resetForm();
+    setBusy(false);
+  });
+
   const close = (next: boolean) => {
     if (busy) return;
     onOpenChange(next);
@@ -92,24 +97,30 @@ export function CreateCharacterDialog({
     const trimmedDescription = description.trim();
     if (!trimmedName || !workspaceId || busy) return;
     if (kind === "real_person" && !(consentRead && consentAttested)) return;
+    const run = operation.start();
+    if (!run) return;
     setBusy(true);
     setNameError(null);
     try {
-      const detail = await createCharacter({
-        workspaceId,
-        kind,
-        name: trimmedName,
-        ...(trimmedDescription ? { description: trimmedDescription } : {}),
-        ...(kind === "real_person"
-          ? { consent: { version: REAL_PERSON_CONSENT_VERSION, adultAttested: true as const } }
-          : {}),
-      });
-      queryClient.setQueryData(charactersKeys.detail(detail.id), detail);
-      void queryClient.invalidateQueries({ queryKey: charactersKeys.lists() });
+      const detail = await createCharacter(
+        {
+          workspaceId,
+          kind,
+          name: trimmedName,
+          ...(trimmedDescription ? { description: trimmedDescription } : {}),
+          ...(kind === "real_person"
+            ? { consent: { version: REAL_PERSON_CONSENT_VERSION, adultAttested: true as const } }
+            : {}),
+        },
+        run.signal
+      );
+      if (!operation.isCurrent(run)) return;
+      applyDetail(detail);
       resetForm();
       onOpenChange(false);
       router.push(`/characters/${detail.id}`);
     } catch (error) {
+      if (!operation.isCurrent(run)) return;
       const message = error instanceof Error ? error.message : tc("error");
       const code = characterApiErrorCode(error);
       // Name conflicts belong on the field (back on the details step);
@@ -133,7 +144,7 @@ export function CreateCharacterDialog({
         toast.error(message);
       }
     } finally {
-      setBusy(false);
+      if (operation.finish(run)) setBusy(false);
     }
   };
 

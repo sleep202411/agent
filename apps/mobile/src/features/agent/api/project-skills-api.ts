@@ -29,11 +29,11 @@ export type ProjectSkillInstallation = {
     capabilities: ProjectSkillScope[];
     workbenchModes: string[];
   };
-  defaults: Array<{
+  defaults: {
     scope: ProjectSkillScope;
     workbenchMode: string | null;
     sourceSurface: string | null;
-  }>;
+  }[];
 };
 
 export type ProjectSkillInstallationsResponse = {

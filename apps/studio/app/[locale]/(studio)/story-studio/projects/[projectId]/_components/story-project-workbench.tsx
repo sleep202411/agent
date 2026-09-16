@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -53,10 +55,11 @@ export function StoryProjectWorkbench({
   stage: WorkbenchStage;
   earningsWebBase?: string;
 }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio");
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "workbench", projectId],
-    queryFn: () => getStoryWorkbench(projectId),
+    queryKey: ["story-studio", "workbench", projectId, user?.id ?? null],
+    queryFn: ({ signal }) => getStoryWorkbench(projectId, undefined, signal),
     retry: false,
   });
   const workspaceId = workbenchQuery.data?.project.workspaceId ?? null;

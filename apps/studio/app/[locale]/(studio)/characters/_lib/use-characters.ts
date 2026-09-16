@@ -10,21 +10,27 @@ import { getCharacter, listCharacters, type CharacterDetail } from "@/lib/charac
 /**
  * React-query surface for the character library (matches the use-ai-catalog
  * keying convention). The list is workspace-scoped (the library is the
- * workspace 演员池); details are id-scoped and shared across surfaces.
+ * workspace 演员池); details are account/id-scoped and shared across that account’s surfaces.
  */
 export const charactersKeys = {
   all: ["fizzstudio", "characters"] as const,
   lists: () => [...charactersKeys.all, "list"] as const,
   list: (workspaceId: string | null) => [...charactersKeys.lists(), workspaceId ?? "none"] as const,
   detail: (id: string) => [...charactersKeys.all, "detail", id] as const,
+  viewerList: (workspaceId: string | null, userId: string | null) =>
+    [...charactersKeys.list(workspaceId), userId] as const,
+  viewerDetail: (id: string, userId: string | null) =>
+    [...charactersKeys.detail(id), userId] as const,
 };
 
 /** Workspace library list — disabled until the active workspace is known. */
 export function useCharacters(workspaceId: string | null) {
+  const { user } = useAuth();
+  const userId = user?.id != null ? String(user.id) : null;
   return useQuery({
-    queryKey: charactersKeys.list(workspaceId),
-    queryFn: () => listCharacters(workspaceId as string),
-    enabled: workspaceId !== null,
+    queryKey: charactersKeys.viewerList(workspaceId, userId),
+    queryFn: ({ signal }) => listCharacters(workspaceId as string, signal),
+    enabled: workspaceId !== null && userId !== null,
     staleTime: 30_000,
   });
 }
@@ -32,9 +38,12 @@ export function useCharacters(workspaceId: string | null) {
 /** One character with its ordered media. No retry: a 404 (deleted / foreign
  *  workspace) must surface as the not-found state, not three spinners. */
 export function useCharacter(id: string) {
+  const { user } = useAuth();
+  const userId = user?.id != null ? String(user.id) : null;
   return useQuery({
-    queryKey: charactersKeys.detail(id),
-    queryFn: () => getCharacter(id),
+    queryKey: charactersKeys.viewerDetail(id, userId),
+    queryFn: ({ signal }) => getCharacter(id, signal),
+    enabled: !!id && userId !== null,
     staleTime: 15_000,
     retry: false,
   });
@@ -48,12 +57,15 @@ export function useCharacter(id: string) {
  */
 export function useApplyCharacterDetail(): (detail: CharacterDetail) => void {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const userId = user?.id != null ? String(user.id) : null;
   return useCallback(
     (detail: CharacterDetail) => {
-      queryClient.setQueryData(charactersKeys.detail(detail.id), detail);
+      if (userId === null) return;
+      queryClient.setQueryData(charactersKeys.viewerDetail(detail.id, userId), detail);
       void queryClient.invalidateQueries({ queryKey: charactersKeys.lists() });
     },
-    [queryClient]
+    [queryClient, userId]
   );
 }
 

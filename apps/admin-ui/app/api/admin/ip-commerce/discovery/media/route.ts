@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminPathWithSearch,
   adminUnavailableResponse,
@@ -17,13 +18,17 @@ export async function POST(request: NextRequest) {
       ...(adminForwardHeaders(request) as Record<string, string>),
       "content-type": request.headers.get("content-type") ?? "application/octet-stream",
     };
-    const upstream = await fetch(adminPathWithSearch(request, "/ip-commerce/discovery/media"), {
-      method: "POST",
-      headers,
-      body,
-      cache: "no-store",
-    });
-    return relayAdminResponse(upstream);
+    const upstream = await adminFetch(
+      request,
+      adminPathWithSearch(request, "/ip-commerce/discovery/media"),
+      {
+        method: "POST",
+        headers,
+        body,
+        cache: "no-store",
+      }
+    );
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

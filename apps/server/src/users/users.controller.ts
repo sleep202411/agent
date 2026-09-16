@@ -64,6 +64,14 @@ export class UsersController {
     @Query('phone') phone?: string,
     @Query('checkCrewId') checkCrewId?: string,
   ) {
+    for (const [field, value] of Object.entries({
+      account,
+      email,
+      phone,
+      checkCrewId,
+    })) {
+      assertScalarQuery(value, field);
+    }
     const accountT = (account ?? email ?? phone)?.trim() || undefined;
     if (!accountT) {
       throw new BadRequestException({
@@ -101,6 +109,7 @@ export class UsersController {
     @ViewerCookie() cookie: string,
     @Query('id') id?: string,
   ) {
+    assertScalarQuery(id, 'id');
     const trimmed = (id ?? '').trim();
     if (!trimmed) {
       throw new BadRequestException({ message: 'id required' });
@@ -129,6 +138,7 @@ export class UsersController {
     @ViewerCookie() cookie: string,
     @Query('ids') ids?: string,
   ) {
+    assertScalarQuery(ids, 'ids');
     const raw = (ids ?? '').trim();
     if (!raw) {
       return { users: [] };
@@ -156,5 +166,14 @@ export class UsersController {
     });
     const users = await this.svc.lookupByUserIds(parsed, cookie);
     return { users };
+  }
+}
+
+function assertScalarQuery(value: unknown, field: string): void {
+  if (value !== undefined && typeof value !== 'string') {
+    throw new BadRequestException({
+      message: `${field} must be a single string`,
+      field,
+    });
   }
 }

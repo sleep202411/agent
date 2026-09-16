@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useLayoutEffect, useRef, useState } from "react";
 import { IconCertificate, IconLoader2, IconPlus, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -44,12 +45,21 @@ interface CertificationDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function CertificationDialog({ open, onOpenChange }: CertificationDialogProps) {
+export function CertificationDialog(props: CertificationDialogProps) {
+  const { user } = useCurrentUser();
+  return <CertificationDialogContent key={user?.id ?? "guest"} {...props} />;
+}
+function CertificationDialogContent({ open, onOpenChange }: CertificationDialogProps) {
   const t = useTranslations("profile");
-  const tc = useTranslations("common");
   const { data: certifications, isLoading } = useMyCertifications();
   const { data: certRoles } = useCertificationRoles();
   const [addOpen, setAddOpen] = useState(false);
+  const [formRevision, setFormRevision] = useState(0);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    setAddOpen(false);
+  }
   const [editCert, setEditCert] = useState<Certification | null>(null);
 
   const statusLabel = (status: number) => {
@@ -91,6 +101,7 @@ export function CertificationDialog({ open, onOpenChange }: CertificationDialogP
                   <Button
                     onClick={() => {
                       setEditCert(null);
+                      setFormRevision((revision) => revision + 1);
                       setAddOpen(true);
                     }}
                   >
@@ -108,6 +119,7 @@ export function CertificationDialog({ open, onOpenChange }: CertificationDialogP
                     onClick={() => {
                       if (cert.authStatus === AUTH_STATUS.REJECTED) {
                         setEditCert(cert);
+                        setFormRevision((revision) => revision + 1);
                         setAddOpen(true);
                       }
                     }}
@@ -123,6 +135,7 @@ export function CertificationDialog({ open, onOpenChange }: CertificationDialogP
                   className="w-full"
                   onClick={() => {
                     setEditCert(null);
+                    setFormRevision((revision) => revision + 1);
                     setAddOpen(true);
                   }}
                 >
@@ -135,7 +148,12 @@ export function CertificationDialog({ open, onOpenChange }: CertificationDialogP
         </DialogContent>
       </Dialog>
 
-      <CertificationFormDialog open={addOpen} onOpenChange={setAddOpen} editCert={editCert} />
+      <CertificationFormDialog
+        key={JSON.stringify([editCert?.id ?? "new", formRevision])}
+        open={open && addOpen}
+        onOpenChange={setAddOpen}
+        editCert={editCert}
+      />
     </>
   );
 }
@@ -154,17 +172,33 @@ function CertificationFormDialog({
   const t = useTranslations("profile");
   const tc = useTranslations("common");
   const { data: certRoles } = useCertificationRoles();
-  const { mutate: doSubmit, isPending: submitting } = useSubmitCertification();
-  const { mutate: doUpdate, isPending: updating } = useUpdateCertification();
+  const { mutateAsync: doSubmit, isPending: submitting } = useSubmitCertification();
+  const { mutateAsync: doUpdate, isPending: updating } = useUpdateCertification();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [roleId, setRoleId] = useState("");
+  const [roleId, setRoleId] = useState(editCert ? String(editCert.authRoleId) : "");
   const [files, setFiles] = useState<Array<{ src: string; preview?: string }>>([]);
   const [uploading, setUploading] = useState(false);
 
-  const isPending = submitting || updating;
+  const [saving, setSaving] = useState(false);
+  const operation = useRef<AbortController | null>(null);
+  const active = useRef(false);
+  const previews = useRef(new Set<string>());
+  useLayoutEffect(() => {
+    active.current = open;
+    const owned = previews.current;
+    return () => {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+      for (const url of owned) URL.revokeObjectURL(url);
+      owned.clear();
+    };
+  }, [open]);
+  const isPending = saving || submitting || updating;
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!active.current || operation.current) return;
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
@@ -174,19 +208,30 @@ function CertificationFormDialog({
       return;
     }
 
+    const request = new AbortController();
+    operation.current = request;
     setUploading(true);
     try {
-      const path = await api.upload<string>("/user/uploadAratar", file);
-      setFiles((prev) => [...prev, { src: buildOssUrl(path), preview: URL.createObjectURL(file) }]);
+      const path = await api.upload<string>("/user/uploadAratar", file, "file", {
+        signal: request.signal,
+      });
+      if (request.signal.aborted || !active.current) return;
+      const preview = URL.createObjectURL(file);
+      previews.current.add(preview);
+      setFiles((prev) => [...prev, { src: buildOssUrl(path), preview }]);
     } catch {
-      toast.error(t("coverUploadFailed"));
+      if (!request.signal.aborted && active.current) toast.error(t("coverUploadFailed"));
     } finally {
-      setUploading(false);
+      if (operation.current === request) {
+        operation.current = null;
+        if (active.current) setUploading(false);
+      }
     }
   };
 
-  const handleSubmit = () => {
-    if (!roleId) {
+  const handleSubmit = async () => {
+    if (!active.current || operation.current) return;
+    if (!roleId || !certRoles || !Object.hasOwn(certRoles, roleId)) {
       toast.warning(t("selectRole"));
       return;
     }
@@ -200,18 +245,22 @@ function CertificationFormDialog({
       file: files.map((f) => ({ src: f.src })),
     };
 
-    const onSuccess = () => {
+    const request = new AbortController();
+    operation.current = request;
+    setSaving(true);
+    try {
+      if (editCert?.id) await doUpdate({ ...payload, id: editCert.id });
+      else await doSubmit(payload);
+      if (!active.current || request.signal.aborted) return;
       toast.success(t("certSubmitSuccess"));
       onOpenChange(false);
-      setRoleId("");
-      setFiles([]);
-    };
-    const onError = () => toast.error(t("certSubmitFailed"));
-
-    if (editCert?.id) {
-      doUpdate({ ...payload, id: editCert.id }, { onSuccess, onError });
-    } else {
-      doSubmit(payload, { onSuccess, onError });
+    } catch {
+      if (active.current && !request.signal.aborted) toast.error(t("certSubmitFailed"));
+    } finally {
+      if (operation.current === request) {
+        operation.current = null;
+        if (active.current) setSaving(false);
+      }
     }
   };
 
@@ -230,7 +279,7 @@ function CertificationFormDialog({
         <DialogBody>
           <Field>
             <FieldLabel>{t("certRole")}</FieldLabel>
-            <Select value={roleId} onValueChange={setRoleId}>
+            <Select value={roleId} onValueChange={setRoleId} disabled={isPending || uploading}>
               <SelectTrigger>
                 <SelectValue placeholder={t("selectRole")} />
               </SelectTrigger>
@@ -259,7 +308,14 @@ function CertificationFormDialog({
                   />
                   <button
                     type="button"
-                    onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
+                    disabled={isPending || uploading}
+                    onClick={() => {
+                      if (file.preview) {
+                        URL.revokeObjectURL(file.preview);
+                        previews.current.delete(file.preview);
+                      }
+                      setFiles((prev) => prev.filter((_, i) => i !== index));
+                    }}
                     className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
                   >
                     <IconX className="size-3" />
@@ -269,7 +325,7 @@ function CertificationFormDialog({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
+                disabled={uploading || isPending}
                 className="flex size-20 items-center justify-center rounded-lg border border-dashed border-border text-muted-foreground transition-colors hover:border-primary hover:text-primary"
               >
                 {uploading ? (
@@ -298,7 +354,10 @@ function CertificationFormDialog({
           >
             {tc("cancel")}
           </Button>
-          <Button onClick={handleSubmit} disabled={isPending || uploading}>
+          <Button
+            onClick={handleSubmit}
+            disabled={isPending || uploading || !certRoles || !Object.hasOwn(certRoles, roleId)}
+          >
             {isPending ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
             {tc("submit")}
           </Button>

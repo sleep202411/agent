@@ -104,3 +104,30 @@ it("prevents overlap and discards responses from a previous account", async () =
   expect(box.textContent).not.toContain("Old result");
   expect(box.querySelector("input")!.value).toBe("");
 });
+
+it.each(["cancel", "account", "unmount"])(
+  "releases a stalled request deadline on %s",
+  async (reason) => {
+    vi.useFakeTimers();
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise(() => {}) as never);
+    await input();
+    await submit();
+    const signal = vi.mocked(api.post).mock.calls[0][1]!.signal!;
+    expect(vi.getTimerCount()).toBe(1);
+    await act(async () => {
+      if (reason === "cancel") {
+        const cancel = Array.from(box.querySelectorAll("button")).find(
+          (button) => button.textContent === "cancel"
+        )!;
+        cancel.click();
+      } else if (reason === "account") {
+        state.id = "bob";
+        root.render(<ViewerAssistance />);
+      } else {
+        root.render(null);
+      }
+    });
+    expect(signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  }
+);

@@ -14,7 +14,8 @@ const WORKSPACE = '00000000-0000-4000-8000-000000000001';
 const PROJECT = '00000000-0000-4000-8000-000000000002';
 
 /** Executes the real authorization SQL without connecting to any configured DB. */
-describe('Story workspace authorization in PostgreSQL', () => {
+// node:test owns completion and reports failures for these registrations.
+void describe('Story workspace authorization in PostgreSQL', () => {
   let db: PGlite;
   const service = new StoryPermissionService(null as never, null as never);
   beforeAll(async () => {
@@ -64,14 +65,14 @@ describe('Story workspace authorization in PostgreSQL', () => {
       );
     });
   }
-  it('allows a workspace editor to generate without duplicating project memberships', async () => {
+  void it('allows a workspace editor to generate without duplicating project memberships', async () => {
     assert.equal((await authorize('editor', 'story.generate')).role, 'editor');
     assert.equal(
       (await db.query('SELECT * FROM story_project_members')).rows.length,
       0,
     );
   });
-  it('does not grant workspace-wide access to the project-only directory entry', async () => {
+  void it('does not grant workspace-wide access to the project-only directory entry', async () => {
     await db.exec("UPDATE workspace_members SET access_scope='project_only'");
     await assert.rejects(
       authorize('editor', 'story.read'),
@@ -80,7 +81,7 @@ describe('Story workspace authorization in PostgreSQL', () => {
         'STORY_PROJECT_NOT_FOUND',
     );
   });
-  it('preserves direct project access for an invited viewer without generation access', async () => {
+  void it('preserves direct project access for an invited viewer without generation access', async () => {
     await db.exec(
       `INSERT INTO story_project_members VALUES ('guest-member', '${PROJECT}', 'guest', 'viewer', 'active', NULL)`,
     );
@@ -93,7 +94,7 @@ describe('Story workspace authorization in PostgreSQL', () => {
     );
   });
   for (const status of ['removed', 'suspended'])
-    it(`denies ${status} workspace members`, async () => {
+    void it(`denies ${status} workspace members`, async () => {
       await db.query('UPDATE workspace_members SET status=$1', [status]);
       await assert.rejects(
         authorize('editor', 'story.read'),
@@ -102,7 +103,7 @@ describe('Story workspace authorization in PostgreSQL', () => {
           'STORY_PROJECT_NOT_FOUND',
       );
     });
-  it('does not let billing-only membership spend shared credits', async () => {
+  void it('does not let billing-only membership spend shared credits', async () => {
     await db.exec("UPDATE workspace_members SET role='billing'");
     await assert.rejects(
       authorize('editor', 'story.generate'),
@@ -111,7 +112,7 @@ describe('Story workspace authorization in PostgreSQL', () => {
         'STORY_PERMISSION_DENIED',
     );
   });
-  it('denies access after the workspace is deleted', async () => {
+  void it('denies access after the workspace is deleted', async () => {
     await db.exec('UPDATE workspaces SET deleted_at=now()');
     await assert.rejects(
       authorize('editor', 'story.read'),

@@ -1,3 +1,4 @@
+import { providerBindingAdmissionEligible } from '../../provider-catalog-eligibility';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
@@ -23,6 +24,7 @@ import {
 interface CatalogCache {
   expiresAt: number;
   models: AiModelDefinition[];
+  lookupModels: AiModelDefinition[];
   runtimeById: Map<string, BytePlusSpeechRuntimeConfig>;
 }
 
@@ -30,6 +32,7 @@ interface CatalogCache {
 export class BytePlusSpeechCatalogService {
   private readonly logger = new Logger(BytePlusSpeechCatalogService.name);
   private cache: CatalogCache | null = null;
+  private cacheRead: Promise<CatalogCache> | null = null;
 
   constructor(
     private readonly configService: BytePlusSpeechConfigService,
@@ -42,7 +45,7 @@ export class BytePlusSpeechCatalogService {
 
   async getModel(modelId: string): Promise<AiModelDefinition | null> {
     return (
-      (await this.getCache()).models.find(
+      (await this.getCache()).lookupModels.find(
         (model) =>
           model.id === modelId ||
           model.deployment === modelId ||
@@ -53,28 +56,49 @@ export class BytePlusSpeechCatalogService {
 
   async getRuntimeConfig(
     modelId: string,
+    options?: { forSubmission?: boolean },
   ): Promise<BytePlusSpeechRuntimeConfig | null> {
+    if (options?.forSubmission && !(await this.getModel(modelId))) return null;
     return (await this.getCache()).runtimeById.get(modelId) ?? null;
   }
 
   private async getCache(): Promise<CatalogCache> {
     if (this.cache && this.cache.expiresAt > Date.now()) return this.cache;
-    const entries = await this.dbRuntimeConfigs();
+    if (this.cacheRead) return this.cacheRead;
+    const pending = this.loadCache().finally(() => {
+      if (this.cacheRead === pending) this.cacheRead = null;
+    });
+    this.cacheRead = pending;
+    return pending;
+  }
+
+  private async loadCache(): Promise<CatalogCache> {
+    const entries = (await this.dbRuntimeConfigs()).sort(
+      (a, b) => Number(b.admissionEligible) - Number(a.admissionEligible),
+    );
     const runtimeById = new Map<string, BytePlusSpeechRuntimeConfig>();
-    const models = entries.map((entry) => {
-      const model = toBytePlusSpeechModelDefinition({
-        config: entry.runtime,
-        source: 'byteplus-speech-config',
-        ops: entry.ops,
-      });
-      for (const key of [
-        model.id,
-        model.deployment,
-        `${model.provider}/${model.deployment}`,
-      ]) {
-        runtimeById.set(key, entry.runtime);
-      }
-      return model;
+    const seenModelIds = new Set<string>();
+    const lookupModels = entries
+      .map((entry) => {
+        const model = toBytePlusSpeechModelDefinition({
+          config: entry.runtime,
+          source: 'byteplus-speech-config',
+          ops: entry.ops,
+        });
+        for (const key of [
+          model.id,
+          model.deployment,
+          `${model.provider}/${model.deployment}`,
+        ]) {
+          if (!runtimeById.has(key)) runtimeById.set(key, entry.runtime);
+        }
+        return model;
+      })
+      .filter((_model, index) => entries[index].admissionEligible);
+    const models = lookupModels.filter((model) => {
+      if (seenModelIds.has(model.id)) return false;
+      seenModelIds.add(model.id);
+      return true;
     });
     if (this.configService.config.enabled && entries.length === 0) {
       this.logger.warn(
@@ -84,6 +108,7 @@ export class BytePlusSpeechCatalogService {
     this.cache = {
       expiresAt: Date.now() + this.configService.config.catalogRefreshMs,
       models,
+      lookupModels,
       runtimeById,
     };
     return this.cache;
@@ -113,6 +138,7 @@ export class BytePlusSpeechCatalogService {
         8;
       const enabled = this.configService.config.enabled;
       return {
+        admissionEligible: providerBindingAdmissionEligible(row),
         runtime: createBytePlusSpeechRuntimeConfig({
           modelId: row.canonicalModel.slug,
           endpointId: row.endpointId,
@@ -163,6 +189,7 @@ export class BytePlusSpeechCatalogService {
 }
 
 interface BytePlusSpeechRuntimeEntry {
+  admissionEligible: boolean;
   runtime: BytePlusSpeechRuntimeConfig;
   ops: NonNullable<AiModelDefinition['ops']>;
 }

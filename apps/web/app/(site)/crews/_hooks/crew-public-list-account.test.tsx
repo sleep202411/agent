@@ -3,7 +3,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { crewApi } from "./api";
-import { useCrewList, usePublicCreatorCrews } from "./use-crew-list";
+import { useCrewList, usePublicCreatorCrews, useMyCrews } from "./use-crew-list";
+
+import { useCrewDetail } from "./use-crew-detail";
+import { useCrewPositions } from "./use-positions";
 
 const session = vi.hoisted(() => ({ id: "alice" as string | null, loading: false }));
 vi.mock("@/src/hooks/use-user", () => ({
@@ -85,4 +88,36 @@ it("waits for account resolution before requesting viewer-filtered lists", async
   view.render();
   await settle();
   expect(crewApi.get).toHaveBeenCalledTimes(2);
+});
+
+it("abandons viewer-dependent Crew reads on account replacement while retaining guest access", async () => {
+  const reads: Array<{ signal: AbortSignal; resolve: (value: unknown) => void }> = [];
+  vi.mocked(crewApi.get).mockImplementation((_path, options) => {
+    expect(options?.cache).toBe("no-store");
+    return new Promise((resolve) =>
+      reads.push({ signal: options!.signal as AbortSignal, resolve })
+    );
+  });
+  const view = mount(() => [
+    useCrewList(),
+    useMyCrews(),
+    usePublicCreatorCrews("creator"),
+    useCrewDetail("crew"),
+    useCrewPositions("crew"),
+  ]);
+  expect(reads).toHaveLength(5);
+  session.id = null;
+  view.render();
+  expect(reads).toHaveLength(9);
+  expect(reads.slice(0, 5).every((read) => read.signal.aborted)).toBe(true);
+  expect(reads.slice(5).every((read) => !read.signal.aborted)).toBe(true);
+  await act(async () =>
+    reads.slice(0, 5).forEach((read) => read.resolve({ items: [], nextCursor: null }))
+  );
+  expect(
+    client
+      .getQueryCache()
+      .findAll()
+      .every((query) => query.state.data === undefined)
+  ).toBe(true);
 });

@@ -9,6 +9,7 @@
 // admin 手动发的可提前收回；购买所得的只读（退款流程处理）。
 
 import { useEffect, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconCircleCheckFilled, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -84,7 +85,12 @@ type GrantMembershipDialogProps = {
 
 export function GrantMembershipDialog(props: GrantMembershipDialogProps) {
   if (!props.open) return null;
-  return <GrantMembershipDialogContent {...props} />;
+  return (
+    <GrantMembershipDialogContent
+      key={JSON.stringify([props.workspace?.id, props.initialIdentifier])}
+      {...props}
+    />
+  );
 }
 
 function GrantMembershipDialogContent({
@@ -107,7 +113,8 @@ function GrantMembershipDialogContent({
   const [grantsError, setGrantsError] = useState<string | null>(null);
   const [lookupDone, setLookupDone] = useState(false);
   const [looking, setLooking] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const { busy: submitting, begin } = useAdminOperation();
+  const { busy: plansLoading, begin: beginPlans } = useAdminOperation();
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [granted, setGranted] = useState<MembershipGrant | null>(null);
@@ -128,6 +135,8 @@ function GrantMembershipDialogContent({
     Boolean(note.trim()) &&
     !grantsLoading &&
     !grantsError &&
+    !plansLoading &&
+    !plansError &&
     !submitting;
 
   useEffect(() => {
@@ -143,41 +152,54 @@ function GrantMembershipDialogContent({
   }, [initialIdentifier, workspace]);
 
   async function loadPlans() {
-    setPlans([]);
-    setPlanKey("");
+    const operation = beginPlans("read");
+    if (!operation) return;
     setPlansError(null);
     try {
       const data = await requestEnvelope<{ items: GrantablePlan[] }>(
-        workspace ? TEAM_PLANS_URL : PERSONAL_PLANS_URL
+        workspace ? TEAM_PLANS_URL : PERSONAL_PLANS_URL,
+        operation.signal
       );
+      if (!operation.current()) return;
       const items = data?.items ?? [];
       setPlans(items);
-      // 服务端按 rank 升序返回，默认选最高档。
-      setPlanKey(items[items.length - 1]?.planKey ?? "");
+      setPlanKey((current) =>
+        items.some((plan) => plan.planKey === current) ? current : (items.at(-1)?.planKey ?? "")
+      );
     } catch (err) {
-      setPlansError(toErrorMessage(err));
+      if (operation.current()) setPlansError(toErrorMessage(err));
+    } finally {
+      operation.finish();
     }
   }
-
+  const readGrants = (
+    target: { subjectType: "user" | "workspace"; subjectId: string },
+    signal: AbortSignal
+  ) =>
+    requestEnvelope<MembershipGrant[]>(
+      `/api/admin/billing/membership-grants?subjectType=${target.subjectType}&subjectId=${encodeURIComponent(target.subjectId)}`,
+      signal
+    );
   async function loadGrants(target: { subjectType: "user" | "workspace"; subjectId: string }) {
+    const operation = begin("read");
+    if (!operation) return;
     setGrantsLoading(true);
     setGrantsError(null);
     try {
-      const rows = await requestEnvelope<MembershipGrant[]>(
-        `/api/admin/billing/membership-grants?subjectType=${target.subjectType}&subjectId=${encodeURIComponent(target.subjectId)}`
-      );
-      setGrants(rows ?? []);
+      const rows = await readGrants(target, operation.signal);
+      if (operation.current()) setGrants(rows ?? []);
     } catch (err) {
-      setGrants([]);
-      setGrantsError(toErrorMessage(err));
+      if (operation.current()) setGrantsError(toErrorMessage(err));
     } finally {
-      setGrantsLoading(false);
+      if (operation.current()) setGrantsLoading(false);
+      operation.finish();
     }
   }
-
   async function lookup(idArg?: string) {
     const id = (idArg ?? identifier).trim();
     if (!id) return;
+    const operation = begin("read");
+    if (!operation) return;
     setLooking(true);
     setError(null);
     setGrantsError(null);
@@ -187,62 +209,103 @@ function GrantMembershipDialogContent({
     setGranted(null);
     try {
       const u = await requestEnvelope<LegacyUser | null>(
-        `/api/admin/legacy-points/users/${encodeURIComponent(id)}`
+        `/api/admin/legacy-points/users/${encodeURIComponent(id)}`,
+        operation.signal
       );
+      if (!operation.current()) return;
       setUser(u);
       setLookupDone(true);
-      setGrants([]);
-      if (u) await loadGrants({ subjectType: "user", subjectId: u.userId });
+      if (u) {
+        setGrantsLoading(true);
+        try {
+          const rows = await readGrants(
+            { subjectType: "user", subjectId: u.userId },
+            operation.signal
+          );
+          if (operation.current()) setGrants(rows ?? []);
+        } catch (err) {
+          if (operation.current()) setGrantsError(toErrorMessage(err));
+        }
+      }
     } catch (err) {
-      setError(toErrorMessage(err));
-      setUser(null);
-      setLookupDone(true);
+      if (operation.current()) {
+        setError(toErrorMessage(err));
+        setUser(null);
+        setLookupDone(true);
+      }
     } finally {
-      setLooking(false);
+      if (operation.current()) {
+        setLooking(false);
+        setGrantsLoading(false);
+      }
+      operation.finish();
     }
   }
-
   async function submit() {
     if (!canSubmit || !subject) return;
-    setSubmitting(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
-      const grant = await mutateEnvelope<MembershipGrant>("/api/admin/billing/membership-grants", {
-        ...subject,
-        planKey,
-        durationDays: parsedDays,
-        note: note.trim(),
-      });
+      const grant = await mutateEnvelope<MembershipGrant>(
+        "/api/admin/billing/membership-grants",
+        { ...subject, planKey, durationDays: parsedDays, note: note.trim() },
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
       setGranted(grant);
       setNote("");
-      await loadGrants(subject);
-      onGranted?.();
+      try {
+        const rows = await readGrants(subject, operation.signal);
+        if (operation.current()) {
+          setGrants(rows ?? []);
+          setGrantsError(null);
+        }
+      } catch (err) {
+        if (operation.current()) setGrantsError(toErrorMessage(err));
+      }
+      if (operation.current()) onGranted?.();
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setSubmitting(false);
+      operation.finish();
     }
   }
-
   async function revoke(grantId: string) {
-    if (!subject || revokingId) return;
+    if (!subject) return;
+    const operation = begin();
+    if (!operation) return;
     setRevokingId(grantId);
     setError(null);
     try {
       await mutateEnvelope<MembershipGrant>(
         `/api/admin/billing/membership-grants/${grantId}/revoke`,
-        {}
+        {},
+        "POST",
+        operation.signal
       );
-      await loadGrants(subject);
-      onGranted?.();
+      if (!operation.current()) return;
+      try {
+        const rows = await readGrants(subject, operation.signal);
+        if (operation.current()) {
+          setGrants(rows ?? []);
+          setGrantsError(null);
+        }
+      } catch (err) {
+        if (operation.current()) setGrantsError(toErrorMessage(err));
+      }
+      if (operation.current()) onGranted?.();
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setRevokingId(null);
+      if (operation.current()) setRevokingId(null);
+      operation.finish();
     }
   }
 
   function grantAgain() {
+    if (submitting) return;
     setGranted(null);
     setNote("");
     setError(null);
@@ -270,7 +333,13 @@ function GrantMembershipDialogContent({
       footer={
         granted ? (
           <>
-            <Button type="button" variant="outline" size="sm" onClick={grantAgain}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={submitting}
+              onClick={grantAgain}
+            >
               再发一笔
             </Button>
             <Button type="button" size="sm" onClick={onClose}>
@@ -324,7 +393,7 @@ function GrantMembershipDialogContent({
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div inert={submitting} className="space-y-4">
           {workspace ? (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-700">
               <span>
@@ -341,7 +410,13 @@ function GrantMembershipDialogContent({
                   <TextInput
                     value={identifier}
                     placeholder="手机号或邮箱"
-                    onChange={(event) => setIdentifier(event.target.value)}
+                    onChange={(event) => {
+                      if (submitting) return;
+                      setIdentifier(event.target.value);
+                      setUser(null);
+                      setGrants([]);
+                      setLookupDone(false);
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") void lookup();
                     }}
@@ -413,7 +488,7 @@ function GrantMembershipDialogContent({
                         type="button"
                         size="xs"
                         variant="outline"
-                        disabled={revokingId === g.id}
+                        disabled={submitting}
                         onClick={() => void revoke(g.id)}
                       >
                         {revokingId === g.id

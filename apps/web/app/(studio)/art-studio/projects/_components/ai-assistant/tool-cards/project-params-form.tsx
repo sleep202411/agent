@@ -5,6 +5,7 @@ import { IconArrowRight } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector } from "@/src/store";
 import { selectCurrentInstance, type ProjectDetail } from "@/src/store/slices/projectSlice";
@@ -58,12 +59,17 @@ export function isProjectParamsComplete(
 ): boolean {
   if (!detail) return false;
   return Boolean(
-    detail.aspectRatioType &&
+    typeof detail.aspectRatioType === "string" &&
+    detail.aspectRatioType.trim() &&
     typeof detail.chapterLength === "number" &&
+    Number.isFinite(detail.chapterLength) &&
     detail.chapterLength > 0 &&
-    detail.stylePainting &&
+    typeof detail.stylePainting === "string" &&
+    detail.stylePainting.trim() &&
     typeof targetEpisodeCount === "number" &&
-    targetEpisodeCount >= EPISODE_COUNT_MIN
+    Number.isSafeInteger(targetEpisodeCount) &&
+    targetEpisodeCount >= EPISODE_COUNT_MIN &&
+    targetEpisodeCount <= EPISODE_COUNT_MAX
   );
 }
 
@@ -100,7 +106,13 @@ interface ProjectParamsFormProps {
   suggested?: ProjectParamsSuggestion;
 }
 
-export function ProjectParamsForm({
+export function ProjectParamsForm(props: ProjectParamsFormProps) {
+  const { user } = useCurrentUser();
+  const projectId = useAppSelector((s) => s.project.currentProjectId);
+  return <ScopedProjectParamsForm key={JSON.stringify([user?.id, projectId])} {...props} />;
+}
+
+function ScopedProjectParamsForm({
   onSubmitted,
   readOnly = false,
   suggested,
@@ -139,6 +151,7 @@ export function ProjectParamsForm({
 
   const [dictionaries, setDictionaries] = useState<ProjectDictionaries | null>(null);
   const [loadingDict, setLoadingDict] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
   const [aspectRatioType, setAspectRatioType] = useState(
     detail?.aspectRatioType || suggested?.aspectRatioType || ""
   );
@@ -166,20 +179,25 @@ export function ProjectParamsForm({
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     setLoadingDict(true);
-    fetchProjectDictionaries()
+    setConfigError(null);
+    fetchProjectDictionaries(controller.signal)
       .then((d) => {
         if (active) setDictionaries(d);
       })
       .catch((err) => {
-        console.error("[ProjectParamsForm] load dictionaries failed", err);
-        if (active) toast.error(tp("loadConfigFailed"));
+        if (active) {
+          setConfigError(err instanceof Error ? err.message : tp("loadConfigFailed"));
+          toast.error(tp("loadConfigFailed"));
+        }
       })
       .finally(() => {
         if (active) setLoadingDict(false);
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [tp]);
 
@@ -187,24 +205,25 @@ export function ProjectParamsForm({
   const episodeCountNum = Number(episodeCount);
   const shotsPerEpisodeNum = Number(shotsPerEpisode);
   const episodeCountValid =
-    Number.isFinite(episodeCountNum) &&
+    Number.isSafeInteger(episodeCountNum) &&
     episodeCountNum >= EPISODE_COUNT_MIN &&
     episodeCountNum <= EPISODE_COUNT_MAX;
   const shotsPerEpisodeValid =
-    Number.isFinite(shotsPerEpisodeNum) &&
+    Number.isSafeInteger(shotsPerEpisodeNum) &&
     shotsPerEpisodeNum >= SHOTS_PER_EPISODE_MIN &&
     shotsPerEpisodeNum <= SHOTS_PER_EPISODE_MAX;
   const canSubmit =
     !readOnly &&
     !loadingDict &&
-    Boolean(aspectRatioType) &&
-    Boolean(stylePainting) &&
+    configError === null &&
+    Boolean(dictionaries?.sizeOptions.some((option) => option.value === aspectRatioType)) &&
+    Boolean(dictionaries?.styleOptions.some((option) => option.id === stylePainting)) &&
     Boolean(chapterLength) &&
-    Number.isFinite(chapterLengthNum) &&
+    Number.isSafeInteger(chapterLengthNum) &&
     chapterLengthNum > 0 &&
     episodeCountValid &&
     shotsPerEpisodeValid;
-  const controlsDisabled = loadingDict || readOnly;
+  const controlsDisabled = loadingDict || readOnly || !dictionaries || configError !== null;
 
   const handleSubmit = () => {
     if (!canSubmit) {

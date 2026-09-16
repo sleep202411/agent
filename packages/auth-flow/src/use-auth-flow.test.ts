@@ -48,6 +48,7 @@ interface Harness {
 const mounted: Array<() => void> = [];
 
 interface MountOptions {
+  request?: AuthTransport["request"];
   initialMode?: AuthMode;
   initialIdentifier?: string;
   initialInviteCode?: string;
@@ -66,6 +67,7 @@ function mount(options?: MountOptions): Harness {
   const transport: AuthTransport = {
     async request(input) {
       requests.push(input);
+      if (options?.request) return options.request(input);
       if (input.path.endsWith("/reset/password")) {
         // A reset is always an EXISTING account; onboarding must not run.
         return { status: 200, body: { code: 200, token: "tok-1", userId: "42" } };
@@ -704,5 +706,71 @@ describe("password reset", () => {
       // Normalized on the way out, exactly like the sign-in flow.
       query: { email: "isaac@example.com" },
     });
+  });
+});
+
+describe("pending code-send ownership", () => {
+  function pendingResponse() {
+    let finish!: () => void;
+    const promise = new Promise<{ status: number; body: { code: number } }>((resolve) => {
+      finish = () => resolve({ status: 200, body: { code: 200 } });
+    });
+    return { promise, finish };
+  }
+  it("releases admission after failure so the active flow can retry", async () => {
+    let attempts = 0;
+    const harness = mount({
+      request: () => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(new Error("offline"))
+          : Promise.resolve({ status: 200, body: { code: 200 } });
+      },
+    });
+    await act(async () => harness.controller.actions.setIdentifier(PHONE));
+    await act(async () => harness.controller.actions.submitIdentifier());
+    expect(harness.controller.state.error).not.toBeNull();
+    await act(async () => harness.controller.actions.submitIdentifier());
+    expect(harness.sends).toHaveLength(2);
+    expect(harness.controller.state.step).toBe("code");
+  });
+  it("admits only one pending code send across mounted dialogs", async () => {
+    const pending = pendingResponse();
+    const first = mount({ request: () => pending.promise });
+    const second = mount();
+    await act(async () => first.controller.actions.setIdentifier(PHONE));
+    await act(async () => second.controller.actions.setIdentifier(OTHER_PHONE));
+    await act(async () => first.controller.actions.submitIdentifier());
+    await act(async () => second.controller.actions.submitIdentifier());
+    const secondCount = second.sends.length;
+    await act(async () => pending.finish());
+    expect(first.sends).toHaveLength(1);
+    expect(secondCount).toBe(0);
+  });
+  it("retains pending-send admission across close and reopen", async () => {
+    const pending = pendingResponse();
+    const harness = mount({ request: () => pending.promise });
+    await act(async () => harness.controller.actions.setIdentifier(PHONE));
+    await act(async () => harness.controller.actions.submitIdentifier());
+    harness.setActive(false);
+    harness.setActive(true);
+    await act(async () => harness.controller.actions.setIdentifier(OTHER_PHONE));
+    await act(async () => harness.controller.actions.submitIdentifier());
+    const count = harness.sends.length;
+    await act(async () => pending.finish());
+    expect(count).toBe(1);
+  });
+  it("keeps a replacement dialog on its own input after an old send completes", async () => {
+    const pending = pendingResponse();
+    const harness = mount({ request: () => pending.promise });
+    await act(async () => harness.controller.actions.setIdentifier(PHONE));
+    await act(async () => harness.controller.actions.submitIdentifier());
+    harness.setActive(false);
+    harness.setActive(true);
+    await act(async () => harness.controller.actions.setIdentifier(OTHER_PHONE));
+    await act(async () => pending.finish());
+    expect(harness.controller.state.step).toBe("identifier");
+    expect(harness.controller.state.identifier).toBe(OTHER_PHONE);
+    expect(harness.events).toEqual([]);
   });
 });

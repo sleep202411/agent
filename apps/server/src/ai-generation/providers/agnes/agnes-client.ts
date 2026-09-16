@@ -92,6 +92,7 @@ export class AgnesClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
     let response: Response;
+    let raw: string;
     try {
       response = await fetch(url, {
         ...init,
@@ -102,8 +103,13 @@ export class AgnesClient {
         },
         signal: controller.signal,
       });
+      raw = await response.text().catch(() => '');
+      controller.signal.throwIfAborted();
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
         throw agnesError(
           'PROVIDER_TIMEOUT',
           `Agnes AI request timed out after ${config.requestTimeoutMs}ms`,
@@ -119,10 +125,9 @@ export class AgnesClient {
     }
 
     if (!response.ok) {
-      const raw = await response.text().catch(() => '');
       throw mapAgnesHttpError(response.status, raw);
     }
 
-    return (await response.json()) as T;
+    return JSON.parse(raw) as T;
   }
 }

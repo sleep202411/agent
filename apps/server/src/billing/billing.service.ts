@@ -1,3 +1,5 @@
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
+import { expireLapsedGrantsTx } from '../workspaces/wallet-ledger.service';
 import {
   BadRequestException,
   ConflictException,
@@ -662,12 +664,13 @@ export class BillingService {
       ? Prisma.sql`AND t.project_id = ${query.projectId}::uuid`
       : Prisma.empty;
     const rows = await this.prisma.$queryRaw<
-      Array<{ day: Date; credits: bigint }>
+      Array<{ day: Date; credits: string }>
     >(Prisma.sql`
-      SELECT (e.created_at AT TIME ZONE 'UTC')::date AS day, SUM(e.amount)::bigint AS credits
+      SELECT (e.created_at AT TIME ZONE 'UTC')::date AS day, SUM(e.amount)::text AS credits
       FROM wallet_ledger_entries e
       JOIN wallet_transactions t ON t.id = e.transaction_id
       WHERE e.account_id IN (${Prisma.join(accountIds)})
+        AND t.status = 'posted'
         AND e.entry_type::text IN ('settle','debit')
         AND e.created_at >= ${from}
         ${projectFilter}
@@ -737,17 +740,18 @@ export class BillingService {
       Array<{
         actorUserId: string | null;
         projectId: string | null;
-        credits: bigint;
+        credits: string;
         jobs: bigint;
       }>
     >(Prisma.sql`
       SELECT t.actor_user_id AS "actorUserId",
              t.project_id AS "projectId",
-             SUM(e.amount)::bigint AS credits,
+             SUM(e.amount)::text AS credits,
              COUNT(*)::bigint AS jobs
       FROM wallet_ledger_entries e
       JOIN wallet_transactions t ON t.id = e.transaction_id
       WHERE e.account_id IN (${Prisma.join(accountIds)})
+        AND t.status = 'posted'
         AND e.entry_type::text IN ('settle','debit')
         AND e.created_at >= ${from}
         ${projectFilter}
@@ -763,7 +767,7 @@ export class BillingService {
     ];
     const projects = projectIds.length
       ? await this.prisma.platformProject.findMany({
-          where: { id: { in: projectIds } },
+          where: { id: { in: projectIds }, workspaceId, deletedAt: null },
           select: { id: true, name: true },
         })
       : [];
@@ -790,26 +794,38 @@ export class BillingService {
         byMember.set(userId, member);
       }
       const jobs = Number(row.jobs);
-      member.totalCredits += row.credits;
+      member.totalCredits += BigInt(row.credits);
       member.totalJobs += jobs;
       member.projects.push({
         projectId: row.projectId,
         projectName: row.projectId
           ? (projectNameById.get(row.projectId) ?? null)
           : null,
-        credits: row.credits,
+        credits: BigInt(row.credits),
         jobs,
       });
     }
 
     const members = [...byMember.values()]
-      .sort((a, b) => (b.totalCredits > a.totalCredits ? 1 : -1))
+      .sort((a, b) =>
+        a.totalCredits === b.totalCredits
+          ? a.userId.localeCompare(b.userId)
+          : b.totalCredits > a.totalCredits
+            ? 1
+            : -1,
+      )
       .map((member) => ({
         userId: member.userId,
         totalCredits: member.totalCredits.toString(),
         totalJobs: member.totalJobs,
         projects: member.projects
-          .sort((a, b) => (b.credits > a.credits ? 1 : -1))
+          .sort((a, b) =>
+            a.credits === b.credits
+              ? (a.projectId ?? '').localeCompare(b.projectId ?? '')
+              : b.credits > a.credits
+                ? 1
+                : -1,
+          )
           .map((project) => ({
             projectId: project.projectId,
             projectName: project.projectName,
@@ -882,45 +898,67 @@ export class BillingService {
     const workspaceNameFilter = workspaceNeedle
       ? Prisma.sql`AND w.name ILIKE ${likeContainsPattern(workspaceNeedle)} ESCAPE '\\'`
       : Prisma.empty;
-    // Cap raw pairs so a busy window cannot blow memory before rollup.
-    const pairLimit = Math.min(query.limit * 20, 2000);
-
+    // Aggregate before limiting display rows. Member ranking and headline
+    // totals must include every matching ledger entry, not just the top pairs.
     const rows = await this.prisma.$queryRaw<
       Array<{
-        actorUserId: string | null;
+        actorUserId: string;
         workspaceId: string;
-        credits: bigint;
-        jobs: bigint;
-        imageJobs: bigint;
-        videoJobs: bigint;
+        credits: string;
+        jobs: string;
+        imageJobs: string;
+        videoJobs: string;
+        memberImageJobs: string;
+        memberVideoJobs: string;
+        memberCredits: string;
+        memberJobs: string;
+        memberWorkspaces: string;
+        totalCredits: string;
+        memberCount: string;
+        workspaceCount: string;
       }>
     >(Prisma.sql`
-      SELECT t.actor_user_id AS "actorUserId",
-             a.owner_id AS "workspaceId",
-             SUM(e.amount)::bigint AS credits,
-             COUNT(*)::bigint AS jobs,
-             COUNT(*) FILTER (WHERE j.type::text = 'image')::bigint AS "imageJobs",
-             COUNT(*) FILTER (WHERE j.type::text = 'video')::bigint AS "videoJobs"
-      FROM wallet_ledger_entries e
-      JOIN wallet_transactions t ON t.id = e.transaction_id
-      JOIN wallet_accounts a ON a.id = e.account_id
-      -- owner_id is varchar; workspaces.id is uuid — cast before comparing.
-      JOIN workspaces w ON w.id::text = a.owner_id AND w.deleted_at IS NULL
-      LEFT JOIN ai_jobs j
-        ON t.source_type = 'ai_job'
-       AND j.id::text = t.source_id
-      WHERE a.owner_type::text = 'workspace'
-        AND a.currency::text = 'compute_point'
-        AND a.balance_kind::text = 'consumable'
-        AND e.entry_type::text IN ('settle', 'debit')
-        AND e.created_at >= ${from}
-        ${workspaceIdFilter}
-        ${actorFilter}
-        ${kindFilter}
-        ${workspaceNameFilter}
-      GROUP BY t.actor_user_id, a.owner_id
-      ORDER BY credits DESC
-      LIMIT ${pairLimit}
+      WITH pairs AS (
+        SELECT COALESCE(t.actor_user_id, 'unknown') AS actor,
+               a.owner_id AS workspace, SUM(e.amount) AS credits, COUNT(*) AS jobs,
+               COUNT(*) FILTER (WHERE j.type::text = 'image') AS image_jobs,
+               COUNT(*) FILTER (WHERE j.type::text = 'video') AS video_jobs
+        FROM wallet_ledger_entries e
+        JOIN wallet_transactions t ON t.id = e.transaction_id
+        JOIN wallet_accounts a ON a.id = e.account_id
+        JOIN workspaces w ON w.id::text = a.owner_id AND w.deleted_at IS NULL
+        LEFT JOIN ai_jobs j ON t.source_type = 'ai_job' AND j.id::text = t.source_id
+        WHERE a.owner_type::text = 'workspace'
+          AND a.currency::text = 'compute_point'
+          AND a.balance_kind::text = 'consumable'
+          AND t.status = 'posted'
+          AND e.entry_type::text IN ('settle', 'debit')
+          AND e.created_at >= ${from}
+          ${workspaceIdFilter} ${actorFilter} ${kindFilter} ${workspaceNameFilter}
+        GROUP BY COALESCE(t.actor_user_id, 'unknown'), a.owner_id
+      ), totals AS (
+        SELECT SUM(credits)::text AS credits,
+               COUNT(DISTINCT actor)::text AS members,
+               COUNT(DISTINCT workspace)::text AS workspaces FROM pairs
+      ), selected AS (
+        SELECT actor, SUM(credits) AS credits, SUM(jobs) AS jobs, SUM(image_jobs) AS image_jobs, SUM(video_jobs) AS video_jobs, COUNT(*) AS workspaces
+        FROM pairs GROUP BY actor ORDER BY credits DESC, actor ASC LIMIT ${query.limit}
+      ), details AS (
+        SELECT p.*, s.credits AS member_credits, s.jobs AS member_jobs,
+               s.image_jobs AS member_image_jobs, s.video_jobs AS member_video_jobs,
+               s.workspaces AS member_workspaces,
+               ROW_NUMBER() OVER (PARTITION BY p.actor ORDER BY p.credits DESC, p.workspace ASC) AS ordinal
+        FROM pairs p JOIN selected s ON s.actor = p.actor
+      )
+      SELECT d.actor AS "actorUserId", d.workspace AS "workspaceId",
+             d.credits::text AS credits, d.jobs::text AS jobs,
+             d.image_jobs::text AS "imageJobs", d.video_jobs::text AS "videoJobs",
+             d.member_image_jobs::text AS "memberImageJobs", d.member_video_jobs::text AS "memberVideoJobs",
+             d.member_credits::text AS "memberCredits", d.member_jobs::text AS "memberJobs",
+             d.member_workspaces::text AS "memberWorkspaces",
+             t.credits AS "totalCredits", t.members AS "memberCount", t.workspaces AS "workspaceCount"
+      FROM details d CROSS JOIN totals t WHERE d.ordinal <= 20
+      ORDER BY d.member_credits DESC, d.actor ASC, d.credits DESC, d.workspace ASC
     `);
 
     if (rows.length === 0) {
@@ -993,6 +1031,7 @@ export class BillingService {
       rawUserId: string;
       totalCredits: bigint;
       totalJobs: number;
+      workspaceCount: number;
       totalImageJobs: number;
       totalVideoJobs: number;
       workspaces: WorkspaceAgg[];
@@ -1004,10 +1043,11 @@ export class BillingService {
       if (!member) {
         member = {
           rawUserId,
-          totalCredits: 0n,
-          totalJobs: 0,
-          totalImageJobs: 0,
-          totalVideoJobs: 0,
+          totalCredits: BigInt(row.memberCredits),
+          totalJobs: Number(row.memberJobs),
+          workspaceCount: Number(row.memberWorkspaces),
+          totalImageJobs: Number(row.memberImageJobs),
+          totalVideoJobs: Number(row.memberVideoJobs),
           workspaces: [],
         };
         byMember.set(rawUserId, member);
@@ -1015,13 +1055,9 @@ export class BillingService {
       const jobs = Number(row.jobs);
       const imageJobs = Number(row.imageJobs);
       const videoJobs = Number(row.videoJobs);
-      member.totalCredits += row.credits;
-      member.totalJobs += jobs;
-      member.totalImageJobs += imageJobs;
-      member.totalVideoJobs += videoJobs;
       member.workspaces.push({
         workspaceId: row.workspaceId,
-        credits: row.credits,
+        credits: BigInt(row.credits),
         jobs,
         imageJobs,
         videoJobs,
@@ -1029,7 +1065,13 @@ export class BillingService {
     }
 
     const members = [...byMember.values()]
-      .sort((a, b) => (b.totalCredits > a.totalCredits ? 1 : -1))
+      .sort((a, b) =>
+        a.totalCredits === b.totalCredits
+          ? a.rawUserId.localeCompare(b.rawUserId)
+          : b.totalCredits > a.totalCredits
+            ? 1
+            : -1,
+      )
       .slice(0, query.limit)
       .map((member) => {
         const legacy =
@@ -1049,7 +1091,13 @@ export class BillingService {
           totalImageJobs: member.totalImageJobs,
           totalVideoJobs: member.totalVideoJobs,
           workspaces: member.workspaces
-            .sort((a, b) => (b.credits > a.credits ? 1 : -1))
+            .sort((a, b) =>
+              a.credits === b.credits
+                ? a.workspaceId.localeCompare(b.workspaceId)
+                : b.credits > a.credits
+                  ? 1
+                  : -1,
+            )
             .map((ws) => {
               const meta = workspaceById.get(ws.workspaceId);
               return {
@@ -1066,20 +1114,13 @@ export class BillingService {
         };
       });
 
-    let totalCredits = 0n;
-    const workspaceSet = new Set<string>();
-    for (const member of members) {
-      totalCredits += BigInt(member.totalCredits);
-      for (const ws of member.workspaces) workspaceSet.add(ws.workspaceId);
-    }
-
     return {
       rangeDays: query.days,
       workspaceKind: query.workspaceKind,
       workspaceId: query.workspaceId ?? null,
-      totalCredits: totalCredits.toString(),
-      memberCount: members.length,
-      workspaceCount: workspaceSet.size,
+      totalCredits: rows[0].totalCredits,
+      memberCount: Number(rows[0].memberCount),
+      workspaceCount: Number(rows[0].workspaceCount),
       members,
     };
   }
@@ -1383,80 +1424,84 @@ export class BillingService {
     adminId: string,
     input: UpdateAdminMembershipPlanInput,
   ) {
-    const existing = await this.prisma.billingMembershipPlan.findUnique({
-      where: { id: planId },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'BILLING_MEMBERSHIP_PLAN_NOT_FOUND',
-        msg: 'Membership plan not found.',
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_membership_plans WHERE id=${planId}::uuid FOR UPDATE`;
+      const existing = await tx.billingMembershipPlan.findUnique({
+        where: { id: planId },
       });
-    }
-    const nextProductType =
-      (input.productType as BillingProductType | undefined) ??
-      existing.productType;
-    const nextSubjectType =
-      (input.subjectType as BillingSubjectType | undefined) ??
-      existing.subjectType;
-    assertMembershipPlanShape(nextProductType, nextSubjectType);
-    const nextIncludedSeats = input.includedSeats ?? existing.includedSeats;
-    const nextMaxSeats =
-      input.maxSeats === undefined ? existing.maxSeats : input.maxSeats;
-    if (nextMaxSeats != null && nextMaxSeats < nextIncludedSeats) {
-      throw new BadRequestException({
-        code: 'BILLING_MEMBERSHIP_PLAN_SEATS_INVALID',
-        msg: 'Maximum seats cannot be below included seats.',
-      });
-    }
-    const archivedAt =
-      input.status === undefined
-        ? undefined
-        : input.status === 'archived'
-          ? new Date()
-          : null;
+      if (!existing) {
+        throw new NotFoundException({
+          code: 'BILLING_MEMBERSHIP_PLAN_NOT_FOUND',
+          msg: 'Membership plan not found.',
+        });
+      }
+      const nextProductType =
+        (input.productType as BillingProductType | undefined) ??
+        existing.productType;
+      const nextSubjectType =
+        (input.subjectType as BillingSubjectType | undefined) ??
+        existing.subjectType;
+      assertMembershipPlanShape(nextProductType, nextSubjectType);
+      const nextIncludedSeats = input.includedSeats ?? existing.includedSeats;
+      const nextMaxSeats =
+        input.maxSeats === undefined ? existing.maxSeats : input.maxSeats;
+      if (nextMaxSeats != null && nextMaxSeats < nextIncludedSeats) {
+        throw new BadRequestException({
+          code: 'BILLING_MEMBERSHIP_PLAN_SEATS_INVALID',
+          msg: 'Maximum seats cannot be below included seats.',
+        });
+      }
+      const archivedAt =
+        input.status === undefined
+          ? undefined
+          : input.status === 'archived'
+            ? new Date()
+            : null;
 
-    const plan = await this.prisma.billingMembershipPlan.update({
-      where: { id: planId },
-      data: {
-        productType: input.productType as BillingProductType | undefined,
-        subjectType: input.subjectType as BillingSubjectType | undefined,
-        status: input.status as BillingMembershipPlanStatus | undefined,
-        rank: input.rank,
-        name: input.name,
-        description:
-          input.description === undefined ? undefined : input.description,
-        includedComputeCredits: input.includedComputeCredits,
-        includedSeats: input.includedSeats,
-        maxSeats: input.maxSeats === undefined ? undefined : input.maxSeats,
-        seatOverageAllowed: input.seatOverageAllowed,
-        billingIntervalDefault:
-          input.billingIntervalDefault === undefined
-            ? undefined
-            : (input.billingIntervalDefault as BillingPriceInterval),
-        marketing: input.marketing
-          ? (input.marketing as Prisma.InputJsonValue)
-          : undefined,
-        metadata: input.metadata
-          ? (input.metadata as Prisma.InputJsonValue)
-          : undefined,
-        archivedAt,
-        updatedById: adminId,
-      },
-    });
-    const prices = await this.prisma.billingPrice.findMany({
-      where: { grantsPlanKey: plan.planKey },
-      include: {
-        item: true,
-        providerBindings: {
-          where: { archivedAt: null },
-          orderBy: [{ provider: 'asc' }, { createdAt: 'desc' }],
+      const plan = await tx.billingMembershipPlan.update({
+        where: { id: planId },
+        data: {
+          productType: input.productType as BillingProductType | undefined,
+          subjectType: input.subjectType as BillingSubjectType | undefined,
+          status: input.status as BillingMembershipPlanStatus | undefined,
+          rank: input.rank,
+          name: input.name,
+          description:
+            input.description === undefined ? undefined : input.description,
+          includedComputeCredits: input.includedComputeCredits,
+          includedSeats: input.includedSeats,
+          maxSeats: input.maxSeats === undefined ? undefined : input.maxSeats,
+          seatOverageAllowed: input.seatOverageAllowed,
+          billingIntervalDefault:
+            input.billingIntervalDefault === undefined
+              ? undefined
+              : (input.billingIntervalDefault as BillingPriceInterval),
+          marketing: input.marketing
+            ? (input.marketing as Prisma.InputJsonValue)
+            : undefined,
+          metadata: input.metadata
+            ? (input.metadata as Prisma.InputJsonValue)
+            : undefined,
+          archivedAt,
+          updatedById: adminId,
         },
-        _count: { select: { orders: true, subscriptions: true } },
-      },
+      });
+      const prices = await tx.billingPrice.findMany({
+        where: { grantsPlanKey: plan.planKey },
+        include: {
+          item: true,
+          providerBindings: {
+            where: { archivedAt: null },
+            orderBy: [{ provider: 'asc' }, { createdAt: 'desc' }],
+          },
+          _count: { select: { orders: true, subscriptions: true } },
+        },
+      });
+      // Status/rank edits change entitlement resolution + upgrade ordering.
+      return this.adminMembershipPlanDto(plan, prices);
     });
-    // Status/rank edits change entitlement resolution + upgrade ordering.
     this.entitlements.invalidatePlanCache();
-    return this.adminMembershipPlanDto(plan, prices);
+    return result;
   }
 
   async getAdminOverview() {
@@ -1623,50 +1668,51 @@ export class BillingService {
     };
   }
 
-  async getAdminWalletAccountDetail(accountId: string) {
-    const [account, entries, grants] = await Promise.all([
-      this.prisma.walletAccount.findUnique({
-        where: { id: accountId },
-        include: {
-          _count: { select: { ledgerEntries: true } },
-        },
-      }),
-      this.prisma.walletLedgerEntry.findMany({
-        where: { accountId },
-        include: {
-          account: true,
-          transaction: true,
-          creditAllocations: {
-            include: {
-              grant: {
-                select: {
-                  id: true,
-                  grantType: true,
-                  status: true,
-                  validFrom: true,
-                  expiresAt: true,
-                  sourceType: true,
-                  sourceId: true,
-                },
+  async getAdminWalletAccountDetail(
+    accountId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const account = await db.walletAccount.findUnique({
+      where: { id: accountId },
+      include: {
+        _count: { select: { ledgerEntries: true } },
+      },
+    });
+    const entries = await db.walletLedgerEntry.findMany({
+      where: { accountId },
+      include: {
+        account: true,
+        transaction: true,
+        creditAllocations: {
+          include: {
+            grant: {
+              select: {
+                id: true,
+                grantType: true,
+                status: true,
+                validFrom: true,
+                expiresAt: true,
+                sourceType: true,
+                sourceId: true,
               },
             },
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
           },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
         },
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: 100,
-      }),
-      this.prisma.walletCreditGrant.findMany({
-        where: { accountId },
-        orderBy: [
-          { status: 'asc' },
-          { expiresAt: { sort: 'asc', nulls: 'last' } },
-          { createdAt: 'desc' },
-          { id: 'desc' },
-        ],
-        take: 100,
-      }),
-    ]);
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 100,
+    });
+    const grants = await db.walletCreditGrant.findMany({
+      where: { accountId },
+      orderBy: [
+        { status: 'asc' },
+        { expiresAt: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'desc' },
+        { id: 'desc' },
+      ],
+      take: 100,
+    });
 
     if (!account) {
       throw new NotFoundException({
@@ -1707,7 +1753,20 @@ export class BillingService {
     accountId: string,
     input: CreateAdminWalletAdjustmentInput,
   ) {
-    const account = await this.prisma.walletAccount.findUnique({
+    return this.prisma.$transaction((tx) =>
+      this.postAdminWalletAdjustmentTx(tx, adminId, accountId, input),
+    );
+  }
+
+  private async postAdminWalletAdjustmentTx(
+    tx: Prisma.TransactionClient,
+    adminId: string,
+    accountId: string,
+    input: CreateAdminWalletAdjustmentInput,
+  ) {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${accountId}`})::bigint)`;
+    await tx.$queryRaw`SELECT id FROM wallet_accounts WHERE id=${accountId}::uuid FOR UPDATE`;
+    const account = await tx.walletAccount.findUnique({
       where: { id: accountId },
     });
     if (!account) {
@@ -1737,7 +1796,8 @@ export class BillingService {
 
     const amount = input.amount;
     const isPositive = amount > 0n;
-    await this.walletLedger.postEntry({
+    await expireLapsedGrantsTx(tx, account.id);
+    await this.walletLedger.postEntryTx(tx, {
       accountId: account.id,
       entryType: WalletLedgerEntryType.adjustment,
       amount: amount > 0n ? amount : -amount,
@@ -1775,61 +1835,76 @@ export class BillingService {
         : undefined,
     });
 
-    return this.getAdminWalletAccountDetail(account.id);
+    return this.getAdminWalletAccountDetail(account.id, tx);
   }
 
   async createAdminWorkspaceWalletCredit(
     adminId: string,
     input: CreateAdminWorkspaceWalletCreditInput,
   ) {
-    const workspace = await this.prisma.workspace.findFirst({
-      where: { id: input.workspaceId, deletedAt: null },
-      select: { id: true, name: true, status: true },
-    });
-    if (!workspace) {
-      throw new NotFoundException({
-        code: 'WORKSPACE_NOT_FOUND',
-        msg: 'Workspace not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM workspaces WHERE id=${input.workspaceId}::uuid FOR SHARE`;
+      const workspace = await tx.workspace.findFirst({
+        where: { id: input.workspaceId, deletedAt: null },
+        select: { id: true, name: true, status: true },
       });
-    }
-    if (workspace.status !== WorkspaceStatus.active) {
-      throw new ConflictException({
-        code: 'WORKSPACE_NOT_ACTIVE',
-        msg: 'Only active workspaces can be credited.',
-      });
-    }
+      if (!workspace) {
+        throw new NotFoundException({
+          code: 'WORKSPACE_NOT_FOUND',
+          msg: 'Workspace not found.',
+        });
+      }
+      if (workspace.status !== WorkspaceStatus.active) {
+        throw new ConflictException({
+          code: 'WORKSPACE_NOT_ACTIVE',
+          msg: 'Only active workspaces can be credited.',
+        });
+      }
 
-    const account = await this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: WalletOwnerType.workspace,
-          ownerId: workspace.id,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
+      // Avoid taking an existing wallet row lock before the ledger advisory lock.
+      await tx.walletAccount.createMany({
+        data: [
+          {
+            id: randomUUID(),
+            ownerType: WalletOwnerType.workspace,
+            ownerId: workspace.id,
+            currency: WalletCurrencyType.compute_point,
+            balanceKind: WalletBalanceKind.consumable,
+            status: WalletAccountStatus.active,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      const account = await tx.walletAccount.findUniqueOrThrow({
+        where: {
+          ownerType_ownerId_currency_balanceKind: {
+            ownerType: WalletOwnerType.workspace,
+            ownerId: workspace.id,
+            currency: WalletCurrencyType.compute_point,
+            balanceKind: WalletBalanceKind.consumable,
+          },
         },
-      },
-      create: {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: workspace.id,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
-    });
+      });
 
-    return this.createAdminWalletAdjustment(adminId, account.id, {
-      amount: input.amount,
-      grantType: input.grantType,
-      expiresAt: input.expiresAt,
-      reason: input.reason,
-      idempotencyKey: input.idempotencyKey,
-      metadata: {
-        ...input.metadata,
-        subject: 'workspace',
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-      },
+      const result = await this.postAdminWalletAdjustmentTx(
+        tx,
+        adminId,
+        account.id,
+        {
+          amount: input.amount,
+          grantType: input.grantType,
+          expiresAt: input.expiresAt,
+          reason: input.reason,
+          idempotencyKey: input.idempotencyKey,
+          metadata: {
+            ...input.metadata,
+            subject: 'workspace',
+            workspaceId: workspace.id,
+            workspaceName: workspace.name,
+          },
+        },
+      );
+      return result;
     });
   }
 
@@ -2228,24 +2303,29 @@ export class BillingService {
   }
 
   async updateAdminPrice(priceId: string, input: UpdateAdminBillingPriceInput) {
-    const price = await this.prisma.billingPrice.findUnique({
-      where: { id: priceId },
-      include: { item: true },
-    });
-    if (!price) {
-      throw new NotFoundException({
-        code: 'BILLING_PRICE_NOT_FOUND',
-        msg: 'Billing price not found.',
+    return this.prisma.$transaction(async (tx) => {
+      const target = await tx.billingPrice.findUnique({
+        where: { id: priceId },
+        select: { itemId: true },
       });
-    }
-    const archivedAt =
-      input.archived === undefined
-        ? price.archivedAt
-        : input.archived
-          ? new Date()
-          : null;
-    await this.prisma.$transaction([
-      this.prisma.billingCatalogItem.update({
+      if (target)
+        await tx.$queryRaw`SELECT id FROM billing_catalog_items WHERE id=${target.itemId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM billing_prices WHERE id=${priceId}::uuid FOR UPDATE`;
+      const price = await tx.billingPrice.findUnique({
+        where: { id: priceId },
+      });
+      if (!price)
+        throw new NotFoundException({
+          code: 'BILLING_PRICE_NOT_FOUND',
+          msg: 'Billing price not found.',
+        });
+      const archivedAt =
+        input.archived === undefined
+          ? price.archivedAt
+          : input.archived
+            ? new Date()
+            : null;
+      await tx.billingCatalogItem.update({
         where: { id: price.itemId },
         data: {
           name: input.itemName ?? undefined,
@@ -2254,8 +2334,8 @@ export class BillingService {
               ? undefined
               : input.itemDescription,
         },
-      }),
-      this.prisma.billingPrice.update({
+      });
+      await tx.billingPrice.update({
         where: { id: priceId },
         data: {
           isActive: input.isActive ?? undefined,
@@ -2264,51 +2344,54 @@ export class BillingService {
             ? (input.priceMetadata as Prisma.InputJsonValue)
             : undefined,
         },
-      }),
-    ]);
-    return this.getAdminPrice(priceId);
+      });
+      return this.getAdminPrice(priceId, tx);
+    });
   }
 
   async upsertAdminProviderBinding(
     priceId: string,
     input: UpsertAdminBillingProviderBindingInput,
   ) {
-    const price = await this.prisma.billingPrice.findUnique({
-      where: { id: priceId },
-    });
-    if (!price) {
-      throw new NotFoundException({
-        code: 'BILLING_PRICE_NOT_FOUND',
-        msg: 'Billing price not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_prices WHERE id=${priceId}::uuid FOR UPDATE`;
+      const price = await tx.billingPrice.findUnique({
+        where: { id: priceId },
       });
-    }
-    const existing = await this.prisma.billingProviderPriceBinding.findFirst({
-      where: {
-        priceId,
-        provider: input.provider as PaymentProvider,
-        archivedAt: null,
-      },
-    });
-    const data = {
-      providerProductId: input.providerProductId ?? null,
-      providerPriceId: input.providerPriceId ?? null,
-      providerMode: input.providerMode ?? null,
-      status: input.status as BillingProviderBindingStatus,
-      syncError: null,
-      metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
-    };
-    if (existing) {
-      return this.prisma.billingProviderPriceBinding.update({
-        where: { id: existing.id },
-        data,
+      if (!price) {
+        throw new NotFoundException({
+          code: 'BILLING_PRICE_NOT_FOUND',
+          msg: 'Billing price not found.',
+        });
+      }
+      const existing = await tx.billingProviderPriceBinding.findFirst({
+        where: {
+          priceId,
+          provider: input.provider as PaymentProvider,
+          archivedAt: null,
+        },
       });
-    }
-    return this.prisma.billingProviderPriceBinding.create({
-      data: {
-        priceId,
-        provider: input.provider as PaymentProvider,
-        ...data,
-      },
+      const data = {
+        providerProductId: input.providerProductId ?? null,
+        providerPriceId: input.providerPriceId ?? null,
+        providerMode: input.providerMode ?? null,
+        status: input.status as BillingProviderBindingStatus,
+        syncError: null,
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+      };
+      if (existing) {
+        return tx.billingProviderPriceBinding.update({
+          where: { id: existing.id },
+          data,
+        });
+      }
+      return tx.billingProviderPriceBinding.create({
+        data: {
+          priceId,
+          provider: input.provider as PaymentProvider,
+          ...data,
+        },
+      });
     });
   }
 
@@ -2512,97 +2595,113 @@ export class BillingService {
     adminId: string,
     input: UpdateAdminBillingPromotionInput,
   ) {
-    const existing = await this.prisma.billingPromotion.findUnique({
-      where: { id: promotionId },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'BILLING_PROMOTION_NOT_FOUND',
-        msg: 'Billing promotion not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_promotions WHERE id=${promotionId}::uuid FOR UPDATE`;
+      const existing = await tx.billingPromotion.findUnique({
+        where: { id: promotionId },
       });
-    }
-    const promotion = await this.prisma.billingPromotion.update({
-      where: { id: promotionId },
-      data: {
-        name: input.name ?? undefined,
-        description:
-          input.description === undefined ? undefined : input.description,
-        status: input.status as BillingPromotionStatus | undefined,
-        startsAt: input.startsAt === undefined ? undefined : input.startsAt,
-        endsAt: input.endsAt === undefined ? undefined : input.endsAt,
-        maxRedemptions:
-          input.maxRedemptions === undefined ? undefined : input.maxRedemptions,
-        maxRedemptionsPerUser:
-          input.maxRedemptionsPerUser === undefined
-            ? undefined
-            : input.maxRedemptionsPerUser,
-        metadata: input.metadata
-          ? (input.metadata as Prisma.InputJsonValue)
-          : undefined,
-        updatedById: adminId,
-        archivedAt:
-          input.archived === undefined
-            ? undefined
-            : input.archived
-              ? new Date()
-              : null,
-      },
-      include: {
-        appliesItem: true,
-        appliesPrice: { include: { item: true } },
-        providerBindings: { orderBy: [{ provider: 'asc' }] },
-        _count: { select: { redemptions: true } },
-      },
+      if (!existing) {
+        throw new NotFoundException({
+          code: 'BILLING_PROMOTION_NOT_FOUND',
+          msg: 'Billing promotion not found.',
+        });
+      }
+      const startsAt =
+        input.startsAt === undefined ? existing.startsAt : input.startsAt;
+      const endsAt =
+        input.endsAt === undefined ? existing.endsAt : input.endsAt;
+      if (startsAt && endsAt && endsAt <= startsAt)
+        throw new BadRequestException({
+          code: 'BILLING_PROMOTION_TIME_WINDOW_INVALID',
+          msg: 'Promotion end time must be after start time.',
+        });
+      const promotion = await tx.billingPromotion.update({
+        where: { id: promotionId },
+        data: {
+          name: input.name ?? undefined,
+          description:
+            input.description === undefined ? undefined : input.description,
+          status: input.status as BillingPromotionStatus | undefined,
+          startsAt: input.startsAt === undefined ? undefined : input.startsAt,
+          endsAt: input.endsAt === undefined ? undefined : input.endsAt,
+          maxRedemptions:
+            input.maxRedemptions === undefined
+              ? undefined
+              : input.maxRedemptions,
+          maxRedemptionsPerUser:
+            input.maxRedemptionsPerUser === undefined
+              ? undefined
+              : input.maxRedemptionsPerUser,
+          metadata: input.metadata
+            ? (input.metadata as Prisma.InputJsonValue)
+            : undefined,
+          updatedById: adminId,
+          archivedAt:
+            input.archived === undefined
+              ? undefined
+              : input.archived
+                ? new Date()
+                : null,
+        },
+        include: {
+          appliesItem: true,
+          appliesPrice: { include: { item: true } },
+          providerBindings: { orderBy: [{ provider: 'asc' }] },
+          _count: { select: { redemptions: true } },
+        },
+      });
+      return this.adminPromotionDto(promotion);
     });
-    return this.adminPromotionDto(promotion);
   }
 
   async upsertAdminPromotionProviderBinding(
     promotionId: string,
     input: UpsertAdminBillingPromotionProviderBindingInput,
   ) {
-    const promotion = await this.prisma.billingPromotion.findUnique({
-      where: { id: promotionId },
-    });
-    if (!promotion) {
-      throw new NotFoundException({
-        code: 'BILLING_PROMOTION_NOT_FOUND',
-        msg: 'Billing promotion not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_promotions WHERE id=${promotionId}::uuid FOR UPDATE`;
+      const promotion = await tx.billingPromotion.findUnique({
+        where: { id: promotionId },
       });
-    }
-    if (
-      promotion.appliesProductType === BillingProductType.compute_point_pack
-    ) {
-      assertComputePointPromotionProviderAllowed(
-        input.provider as PaymentProvider,
-      );
-    }
-    const existing =
-      await this.prisma.billingPromotionProviderBinding.findFirst({
+      if (!promotion) {
+        throw new NotFoundException({
+          code: 'BILLING_PROMOTION_NOT_FOUND',
+          msg: 'Billing promotion not found.',
+        });
+      }
+      if (
+        promotion.appliesProductType === BillingProductType.compute_point_pack
+      ) {
+        assertComputePointPromotionProviderAllowed(
+          input.provider as PaymentProvider,
+        );
+      }
+      const existing = await tx.billingPromotionProviderBinding.findFirst({
         where: {
           promotionId,
           provider: input.provider as PaymentProvider,
           archivedAt: null,
         },
       });
-    const data = {
-      providerCouponId: input.providerCouponId ?? null,
-      status: input.status as BillingProviderBindingStatus,
-      syncError: null,
-      metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
-    };
-    if (existing) {
-      return this.prisma.billingPromotionProviderBinding.update({
-        where: { id: existing.id },
-        data,
+      const data = {
+        providerCouponId: input.providerCouponId ?? null,
+        status: input.status as BillingProviderBindingStatus,
+        syncError: null,
+        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
+      };
+      if (existing) {
+        return tx.billingPromotionProviderBinding.update({
+          where: { id: existing.id },
+          data,
+        });
+      }
+      return tx.billingPromotionProviderBinding.create({
+        data: {
+          promotionId,
+          provider: input.provider as PaymentProvider,
+          ...data,
+        },
       });
-    }
-    return this.prisma.billingPromotionProviderBinding.create({
-      data: {
-        promotionId,
-        provider: input.provider as PaymentProvider,
-        ...data,
-      },
     });
   }
 
@@ -2884,31 +2983,35 @@ export class BillingService {
   }
 
   async ignoreAdminProviderEvent(eventId: string, reason: string) {
-    const event = await this.prisma.billingPaymentProviderEvent.findUnique({
-      where: { id: eventId },
-      select: { id: true, status: true },
-    });
-    if (!event) {
-      throw new NotFoundException({
-        code: 'BILLING_PROVIDER_EVENT_NOT_FOUND',
-        msg: 'Billing provider event not found.',
+    const id = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${eventId}`})::bigint)`;
+      const event = await tx.billingPaymentProviderEvent.findUnique({
+        where: { id: eventId },
+        select: { id: true, status: true },
       });
-    }
-    if (event.status === PaymentProviderEventStatus.processed) {
-      throw new ConflictException({
-        code: 'BILLING_PROVIDER_EVENT_ALREADY_PROCESSED',
-        msg: 'Processed provider events cannot be ignored.',
+      if (!event) {
+        throw new NotFoundException({
+          code: 'BILLING_PROVIDER_EVENT_NOT_FOUND',
+          msg: 'Billing provider event not found.',
+        });
+      }
+      if (event.status === PaymentProviderEventStatus.processed) {
+        throw new ConflictException({
+          code: 'BILLING_PROVIDER_EVENT_ALREADY_PROCESSED',
+          msg: 'Processed provider events cannot be ignored.',
+        });
+      }
+      await tx.billingPaymentProviderEvent.update({
+        where: { id: event.id },
+        data: {
+          status: PaymentProviderEventStatus.ignored,
+          processedAt: new Date(),
+          error: reason,
+        },
       });
-    }
-    await this.prisma.billingPaymentProviderEvent.update({
-      where: { id: event.id },
-      data: {
-        status: PaymentProviderEventStatus.ignored,
-        processedAt: new Date(),
-        error: reason,
-      },
+      return event.id;
     });
-    return this.getAdminProviderEvent(event.id);
+    return this.getAdminProviderEvent(id);
   }
 
   async quoteAdminRefund(
@@ -2924,18 +3027,40 @@ export class BillingService {
     adminId: string,
     input: CreateAdminBillingRefundInput,
   ) {
-    const existing = await this.prisma.billingRefund.findUnique({
-      where: { idempotencyKey: input.idempotencyKey },
-      include: {
-        order: { include: { item: true } },
-        paymentIntent: true,
-      },
+    const admitted = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:refund_intent:${input.idempotencyKey}`})::bigint)`;
+      const existing = await tx.billingRefund.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { order: { include: { item: true } }, paymentIntent: true },
+      });
+      if (existing) {
+        const metadata = isRecord(existing.metadata) ? existing.metadata : {};
+        const fingerprint = metadata.requestFingerprint;
+        if (
+          existing.requestedById !== adminId ||
+          existing.orderId !== input.orderId ||
+          existing.reasonCode !== input.reasonCode ||
+          existing.operatorNote !== (input.operatorNote || null) ||
+          (typeof fingerprint === 'string'
+            ? fingerprint !== refundIntentFingerprint(adminId, input)
+            : (input.amountMinor !== undefined &&
+                existing.amountMinor !== input.amountMinor) ||
+              (input.percentBps !== undefined &&
+                metadata.requestedPercentBps !== input.percentBps))
+        ) {
+          throw new ConflictException({
+            code: 'BILLING_REFUND_INTENT_CONFLICT',
+            msg: 'This refund intent was already used for a different request.',
+          });
+        }
+        return { kind: 'replay' as const, existing };
+      }
+      const prepared = await this.prepareAdminRefundTx(tx, adminId, input);
+      return { kind: 'admitted' as const, prepared };
     });
-    if (existing) return this.adminRefundDto(existing);
-
-    const prepared = await this.prisma.$transaction((tx) =>
-      this.prepareAdminRefundTx(tx, adminId, input),
-    );
+    if (admitted.kind === 'replay')
+      return this.adminRefundDto(admitted.existing);
+    const prepared = admitted.prepared;
 
     const adapter = this.providerRegistry.get(prepared.refund.provider);
     if (!adapter.createRefund) {
@@ -3111,6 +3236,7 @@ export class BillingService {
 
     const { order, promotionReservation } = await this.prisma.$transaction(
       async (tx) => {
+        await this.lockCheckoutWorkspace(tx, user, subject);
         if (isMembershipProductType(price.item.productType)) {
           const now = new Date();
           const productTypes = membershipProductAxis(price.item.productType);
@@ -3286,6 +3412,7 @@ export class BillingService {
             data: { redemptionCount: { increment: 1 } },
           });
         }
+        await this.checkCheckoutWorkspace(tx, user, subject);
         return { order, promotionReservation };
       },
     );
@@ -3505,6 +3632,7 @@ export class BillingService {
     const subtotalAmountMinor = price.amountMinor;
     const txResult = await this.prisma
       .$transaction(async (tx) => {
+        await this.lockCheckoutWorkspace(tx, user, subject);
         const promotionReservation = input.promotionCode
           ? await this.reserveCheckoutPromotionTx(tx, {
               userId: user.userId,
@@ -3622,6 +3750,7 @@ export class BillingService {
             data: { redemptionCount: { increment: 1 } },
           });
         }
+        await this.checkCheckoutWorkspace(tx, user, subject);
         return { order, promotionReservation };
       })
       // Lost the (userId, idempotencyKey) race with a concurrent first-time
@@ -3891,49 +4020,54 @@ export class BillingService {
     const requestId = randomUUID();
     const orderNo = createOrderNo();
 
-    const order = await this.prisma.billingOrder
-      .create({
-        data: {
-          orderNo,
-          idempotencyKey: input.idempotencyKey,
-          userId: user.userId,
-          workspaceId: subject.workspaceId,
-          subjectType: subject.subjectType,
-          subjectId: subject.subjectId,
-          orderType,
-          status: BillingOrderStatus.pending_payment,
-          itemId: anchor.itemId,
-          priceId: anchor.id,
-          providerBindingId: null,
-          provider,
-          currency: anchor.currency,
-          subtotalAmountMinor: amountMinor,
-          discountAmountMinor: 0n,
-          amountMinor,
-          quantity: 1,
-          grantsWalletAmount: grantSnapshot,
-          grantsWalletCurrency: anchor.grantsWalletCurrency,
-          grantsWalletBalanceKind:
-            anchor.grantsWalletBalanceKind ?? WalletBalanceKind.consumable,
-          description: anchor.item.name,
-          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-          metadata: {
-            checkout: {
-              successUrl: input.successUrl,
-              backUrl: input.backUrl,
+    const order = await this.prisma
+      .$transaction(async (tx) => {
+        await this.lockCheckoutWorkspace(tx, user, subject);
+        const created = await tx.billingOrder.create({
+          data: {
+            orderNo,
+            idempotencyKey: input.idempotencyKey,
+            userId: user.userId,
+            workspaceId: subject.workspaceId,
+            subjectType: subject.subjectType,
+            subjectId: subject.subjectId,
+            orderType,
+            status: BillingOrderStatus.pending_payment,
+            itemId: anchor.itemId,
+            priceId: anchor.id,
+            providerBindingId: null,
+            provider,
+            currency: anchor.currency,
+            subtotalAmountMinor: amountMinor,
+            discountAmountMinor: 0n,
+            amountMinor,
+            quantity: 1,
+            grantsWalletAmount: grantSnapshot,
+            grantsWalletCurrency: anchor.grantsWalletCurrency,
+            grantsWalletBalanceKind:
+              anchor.grantsWalletBalanceKind ?? WalletBalanceKind.consumable,
+            description: anchor.item.name,
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+            metadata: {
+              checkout: {
+                successUrl: input.successUrl,
+                backUrl: input.backUrl,
+              },
+              customRecharge: {
+                amountDollars: input.amountDollars,
+                currency: input.currency,
+                shopperCountry: country,
+              },
+              // AppLovin (Axon) ad-attribution, read back at payment success to
+              // build the S2S conversion report. Omitted when no attribution was
+              // supplied; purely additive — never affects pricing/fulfilment.
+              ...appLovinMetadataPatch(input.attribution),
             },
-            customRecharge: {
-              amountDollars: input.amountDollars,
-              currency: input.currency,
-              shopperCountry: country,
-            },
-            // AppLovin (Axon) ad-attribution, read back at payment success to
-            // build the S2S conversion report. Omitted when no attribution was
-            // supplied; purely additive — never affects pricing/fulfilment.
-            ...appLovinMetadataPatch(input.attribution),
           },
-        },
-        include: { price: true },
+          include: { price: true },
+        });
+        await this.checkCheckoutWorkspace(tx, user, subject);
+        return created;
       })
       // Lost the (userId, idempotencyKey) race with a concurrent first-time
       // request: the order now exists, so replay through the idempotency branch
@@ -4130,23 +4264,55 @@ export class BillingService {
         });
       }
       await adapter.cancelSubscription({
-        requestId: randomUUID(),
+        requestId: subscription.id,
         providerSubscriptionId: subscription.providerSubscriptionId,
         prorationBehavior: 'NONE',
       });
     }
 
-    const now = new Date();
-    const updated = await this.prisma.billingSubscription.update({
-      where: { id: subscription.id },
-      data: {
-        status: BillingSubscriptionStatus.canceled,
-        cancelAtPeriodEnd: true,
-        canceledAt: now,
-        endedAt: subscription.currentPeriodEnd ?? now,
-        version: { increment: 1 },
-      },
-      include: { price: { include: { item: true } } },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM billing_subscriptions WHERE id=${subscription.id}::uuid FOR UPDATE`;
+      const current = await tx.billingSubscription.findUnique({
+        where: { id: subscription.id },
+        include: { price: { include: { item: true } } },
+      });
+      if (!current) {
+        throw new NotFoundException({
+          code: 'BILLING_SUBSCRIPTION_NOT_FOUND',
+          msg: 'Subscription not found.',
+        });
+      }
+      if (
+        current.provider !== subscription.provider ||
+        current.providerSubscriptionId !==
+          subscription.providerSubscriptionId ||
+        current.subjectType !== subscription.subjectType ||
+        current.subjectId !== subscription.subjectId
+      ) {
+        throw new ConflictException({
+          code: 'BILLING_SUBSCRIPTION_CHANGED',
+          msg: 'Subscription changed during cancellation. Refresh and try again.',
+        });
+      }
+      // Preserve a webhook or another cancellation completed during the provider
+      // wait. For an active subscription, retain the latest paid period.
+      if (
+        current.status === BillingSubscriptionStatus.canceled ||
+        current.status === BillingSubscriptionStatus.expired
+      )
+        return current;
+      const now = new Date();
+      return tx.billingSubscription.update({
+        where: { id: current.id },
+        data: {
+          status: BillingSubscriptionStatus.canceled,
+          cancelAtPeriodEnd: true,
+          canceledAt: now,
+          endedAt: current.currentPeriodEnd ?? now,
+          version: { increment: 1 },
+        },
+        include: { price: { include: { item: true } } },
+      });
     });
     return this.subscriptionDto(updated);
   }
@@ -4429,7 +4595,7 @@ export class BillingService {
         SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${input.provider}:${input.providerEventId}`})::bigint)
       `;
 
-      const existing = await tx.billingPaymentProviderEvent.findUnique({
+      let existing = await tx.billingPaymentProviderEvent.findUnique({
         where: {
           provider_providerEventId: {
             provider: input.provider,
@@ -4437,6 +4603,12 @@ export class BillingService {
           },
         },
       });
+      if (existing) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${existing.id}`})::bigint)`;
+        existing = await tx.billingPaymentProviderEvent.findUniqueOrThrow({
+          where: { id: existing.id },
+        });
+      }
       if (existing?.status === PaymentProviderEventStatus.processed) {
         return existing;
       }
@@ -4469,6 +4641,7 @@ export class BillingService {
     eventId: string,
     options: { allowProcessedNoop?: boolean } = {},
   ): Promise<BillingPaymentProviderEvent> {
+    let failureRevision: string | null = null;
     let accrueOrderId: string | null = null;
     let reverseOrderId: string | null = null;
     try {
@@ -4476,6 +4649,11 @@ export class BillingService {
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${eventId}`})::bigint)
         `;
+        // A later ingestion or decision must survive delayed failure recovery.
+        const [revision] = await tx.$queryRaw<
+          { revision: string }[]
+        >`SELECT xmin::text AS revision FROM billing_payment_provider_events WHERE id=${eventId}::uuid FOR UPDATE`;
+        failureRevision = revision?.revision ?? null;
         const providerEvent =
           await tx.billingPaymentProviderEvent.findUniqueOrThrow({
             where: { id: eventId },
@@ -4620,7 +4798,7 @@ export class BillingService {
       return result;
     } catch (err) {
       if (!isProviderEventAlreadyProcessedError(err)) {
-        await this.markProviderEventFailed(eventId, err);
+        await this.markProviderEventFailed(eventId, err, failureRevision);
       }
       throw err;
     }
@@ -4629,15 +4807,13 @@ export class BillingService {
   private async markProviderEventFailed(
     eventId: string,
     err: unknown,
+    revision: string | null,
   ): Promise<void> {
-    await this.prisma.billingPaymentProviderEvent
-      .update({
-        where: { id: eventId },
-        data: {
-          status: PaymentProviderEventStatus.failed,
-          processedAt: new Date(),
-          error: providerEventErrorMessage(err),
-        },
+    if (!revision) return;
+    await this.prisma
+      .$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:provider_event:${eventId}`})::bigint)`;
+        await tx.$executeRaw`UPDATE billing_payment_provider_events SET status='failed', processed_at=clock_timestamp(), error=${providerEventErrorMessage(err)} WHERE id=${eventId}::uuid AND xmin::text=${revision} AND status <> 'processed'`;
       })
       .catch(() => undefined);
   }
@@ -5638,6 +5814,7 @@ export class BillingService {
         operatorNote: input.operatorNote || null,
         requestedById: adminId,
         metadata: {
+          requestFingerprint: refundIntentFingerprint(adminId, input),
           orderNo: order.orderNo,
           activeRefundAmountMinor: activeRefundAmount.toString(),
           calculationMode: quote.policy.calculationMode,
@@ -5928,6 +6105,14 @@ export class BillingService {
     const refund = await tx.billingRefund.findUniqueOrThrow({
       where: { id: refundId },
     });
+    // A delayed acknowledgement cannot reopen a terminal refund.
+    if (
+      refund.status === BillingRefundStatus.succeeded ||
+      refund.status === BillingRefundStatus.failed ||
+      refund.status === BillingRefundStatus.canceled
+    ) {
+      return this.getAdminRefundForTx(tx, refund.id);
+    }
     const providerStatus = result.providerStatus ?? refund.providerStatus;
     await tx.billingRefund.update({
       where: { id: refund.id },
@@ -7009,23 +7194,11 @@ export class BillingService {
       order,
       WalletCurrencyType.compute_point,
     );
-    const account = await tx.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          currency: WalletCurrencyType.compute_point,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        currency: WalletCurrencyType.compute_point,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    const account = await ensureWalletAccount(tx, {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+      currency: WalletCurrencyType.compute_point,
+      balanceKind: WalletBalanceKind.consumable,
     });
     const idempotencyKey = `billing_order:${order.id}:membership_included:compute_point`;
     const existing = await tx.walletTransaction.findUnique({
@@ -7265,23 +7438,11 @@ export class BillingService {
       grantCurrency,
     );
 
-    const account = await tx.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          currency: grantCurrency,
-          balanceKind: grantBalanceKind,
-        },
-      },
-      create: {
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        currency: grantCurrency,
-        balanceKind: grantBalanceKind,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
+    const account = await ensureWalletAccount(tx, {
+      ownerType: owner.ownerType,
+      ownerId: owner.ownerId,
+      currency: grantCurrency,
+      balanceKind: grantBalanceKind,
     });
 
     const idempotencyKey = `billing_order:${order.id}:wallet_grant:${grantCurrency}`;
@@ -7477,6 +7638,30 @@ export class BillingService {
     });
   }
 
+  private async lockCheckoutWorkspace(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    subject: { subjectType: BillingSubjectType; subjectId: string },
+  ): Promise<void> {
+    if (subject.subjectType !== BillingSubjectType.workspace) return;
+    await tx.$queryRaw`SELECT id FROM workspaces WHERE id = ${subject.subjectId}::uuid FOR SHARE`;
+    await this.checkCheckoutWorkspace(tx, user, subject);
+  }
+
+  private async checkCheckoutWorkspace(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    subject: { subjectType: BillingSubjectType; subjectId: string },
+  ): Promise<void> {
+    if (subject.subjectType !== BillingSubjectType.workspace) return;
+    await this.permissions.requireWorkspaceRole(
+      user.userId,
+      subject.subjectId,
+      WorkspaceMemberRole.billing,
+      tx,
+    );
+  }
+
   private async resolveCheckoutSubject(
     user: AuthUser,
     price: PriceWithItem,
@@ -7669,8 +7854,11 @@ export class BillingService {
     };
   }
 
-  private async getAdminPrice(priceId: string) {
-    const price = await this.prisma.billingPrice.findUniqueOrThrow({
+  private async getAdminPrice(
+    priceId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const price = await db.billingPrice.findUniqueOrThrow({
       where: { id: priceId },
       include: {
         item: true,
@@ -9203,6 +9391,24 @@ function allowedReturnOrigins(): Set<string> {
   origins.add('https://studio.fizzdragon.com');
   origins.add('https://fizzdragon.fizzspace.cn');
   return origins;
+}
+
+function refundIntentFingerprint(
+  adminId: string,
+  input: CreateAdminBillingRefundInput,
+): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify([
+        adminId,
+        input.orderId,
+        input.amountMinor?.toString() ?? null,
+        input.percentBps ?? null,
+        input.reasonCode,
+        input.operatorNote || null,
+      ]),
+    )
+    .digest('hex');
 }
 
 /** Escape `\`, `%`, `_` so user input is treated as a literal ILIKE substring. */

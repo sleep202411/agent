@@ -62,3 +62,10 @@ describe("requiresApproval", () => {
     expect(riskForCanvasTool("unknown.tool")).toBe("critical");
   });
 });
+
+it.each(["constructor", "toString", "__proto__"])(
+  "classifies unknown inherited name %s conservatively",
+  (id) => {
+    expect(riskForCanvasTool(id)).toBe("critical");
+  }
+);

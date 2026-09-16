@@ -102,6 +102,7 @@ export async function requestEnvelope<T>(url: string, init?: RequestInit): Promi
     issues?: Array<{ path?: string; message?: string }>;
     data?: T;
   } | null;
+  init?.signal?.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(formatAdminError(payload, response.status));
   }

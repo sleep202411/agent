@@ -1,5 +1,7 @@
+import { useAuthFormLifetime, useDelayedAuthFocus } from "@/auth/use-auth-form-lifetime";
+import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import * as Linking from "expo-linking";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useIsFocused, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -16,7 +18,6 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
-  armResendDeadline,
   completeAuthSheet,
   hydratePendingCode,
   hydrateResendClock,
@@ -24,11 +25,9 @@ import {
   maskIdentifier,
   normalizeIdentifier,
   readPendingCode,
-  RESEND_COOLDOWN_SECONDS,
   secondsUntilResend,
   sendResetCode,
   useAuth,
-  writePendingCode,
   type NormalizedIdentifier,
 } from "@/auth";
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -75,7 +74,21 @@ export default function ForgotPasswordScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [focusedField, setFocusedField] = useState<"password" | "confirm" | undefined>();
   const [resendIn, setResendIn] = useState(0);
-  const [sendingCode, setSendingCode] = useState(false);
+  const focused = useIsFocused();
+  const operation = useAuthFormOperation(
+    JSON.stringify(["forgot-password", params.identifier]),
+    focused
+  );
+  const { capture, markEdited } = useAuthFormLifetime(
+    JSON.stringify(["forgot-password", params.identifier]),
+    focused
+  );
+  useDelayedAuthFocus(
+    passwordInputRef,
+    focused && step === "password",
+    JSON.stringify([params.identifier])
+  );
+  const sendingCode = operation.busy;
   const [localError, setLocalError] = useState<string>();
   const [hydrated, setHydrated] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -101,21 +114,23 @@ export default function ForgotPasswordScreen() {
   // by auto-jumping to the code step — a sign-in OTP in particular must
   // not open the reset code UI (it cannot complete a reset).
   useEffect(() => {
+    if (!focused) return;
     let cancelled = false;
+    const current = capture();
+    const pristine = capture(true);
     void (async () => {
       await Promise.all([hydrateResendClock(), hydratePendingCode()]);
-      if (cancelled) return;
+      if (cancelled || !current()) return;
       setResendIn(secondsUntilResend());
       const pending = readPendingCode();
-      if (!identifierText.trim() && pending) {
-        setIdentifierText(pending.account.account);
-      }
+      if (pending && pristine())
+        setIdentifierText((current) => (current.trim() ? current : pending.account.account));
       setHydrated(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [focused, capture]);
 
   function canResumeResetCode(next: NormalizedIdentifier): boolean {
     const pending = readPendingCode();
@@ -129,9 +144,9 @@ export default function ForgotPasswordScreen() {
     !(typedIdentifier !== null && canResumeResetCode(typedIdentifier));
 
   useEffect(() => {
-    if (auth.status !== "authenticated") return;
+    if (!focused || operation.busy || auth.status !== "authenticated") return;
     completeAuthSheet(router);
-  }, [auth.status, router]);
+  }, [auth.status, focused, operation.busy, router]);
 
   function returnToPasswordLogin() {
     router.replace({
@@ -144,16 +159,15 @@ export default function ForgotPasswordScreen() {
   }
 
   function openSitePath(path: string) {
+    const current = capture();
     void Linking.openURL(`${SITE_BASE_URL}${path}`).catch(() => {
+      if (!current()) return;
       setLocalError(t("auth.linkFailed"));
     });
   }
 
-  async function sendResetCodeFor(next: NormalizedIdentifier) {
-    await sendResetCode(next);
+  function acceptCode(next: NormalizedIdentifier) {
     const at = Date.now();
-    armResendDeadline(at + RESEND_COOLDOWN_SECONDS * 1000);
-    writePendingCode({ account: next, mode: "reset" });
     setNormalized(next);
     setCode("");
     setStep("code");
@@ -161,6 +175,7 @@ export default function ForgotPasswordScreen() {
   }
 
   async function handleContinueIdentifier() {
+    markEdited();
     const next = normalizeIdentifier(identifierText);
     if (!next) {
       setLocalError(t("auth.errorIdentifierInvalid"));
@@ -188,14 +203,13 @@ export default function ForgotPasswordScreen() {
       return;
     }
 
-    setSendingCode(true);
-    try {
-      await sendResetCodeFor(next);
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
-    } finally {
-      setSendingCode(false);
-    }
+    await operation.run(
+      () => sendResetCode(next),
+      () => acceptCode(next),
+      (error) => {
+        setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
+      }
+    );
   }
 
   function handleConfirmCode(nextCode: string) {
@@ -205,10 +219,10 @@ export default function ForgotPasswordScreen() {
     // Reset flow: Java verifies the code together with the new password —
     // advance to the password step (web parity).
     setStep("password");
-    setTimeout(() => passwordInputRef.current?.focus(), 50);
   }
 
   function handleCodeChange(value: string) {
+    markEdited();
     setCode(value);
     setLocalError(undefined);
     if (value.length === CODE_LENGTH && !isSubmitting) {
@@ -218,15 +232,14 @@ export default function ForgotPasswordScreen() {
 
   async function handleResend() {
     if (!normalized || resendIn > 0 || sendingCode) return;
-    setSendingCode(true);
     setLocalError(undefined);
-    try {
-      await sendResetCodeFor(normalized);
-    } catch (error) {
-      setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
-    } finally {
-      setSendingCode(false);
-    }
+    await operation.run(
+      () => sendResetCode(normalized),
+      () => acceptCode(normalized),
+      (error) => {
+        setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
+      }
+    );
   }
 
   async function handleSubmitNewPassword() {
@@ -245,17 +258,13 @@ export default function ForgotPasswordScreen() {
       return;
     }
     setLocalError(undefined);
-    try {
-      await auth.resetPasswordAndSignIn({
-        identifier: normalized.account,
-        code,
-        password,
-      });
-      // Effect completes the auth sheet once authenticated.
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t("auth.errorServer");
-      setLocalError(message);
-    }
+    await operation.run(
+      () => auth.resetPasswordAndSignIn({ identifier: normalized.account, code, password }),
+      () => {},
+      (error) => {
+        setLocalError(error instanceof Error ? error.message : t("auth.errorServer"));
+      }
+    );
   }
 
   const title =
@@ -348,6 +357,7 @@ export default function ForgotPasswordScreen() {
                         inputMode="email"
                         keyboardType="email-address"
                         onChangeText={(value) => {
+                          markEdited();
                           setIdentifierText(value);
                           setLocalError(undefined);
                         }}
@@ -370,6 +380,7 @@ export default function ForgotPasswordScreen() {
                     accessibilityRole="checkbox"
                     accessibilityState={{ checked: acceptedTerms }}
                     onPress={() => {
+                      markEdited();
                       setAcceptedTerms((current) => !current);
                       setLocalError(undefined);
                     }}
@@ -437,6 +448,7 @@ export default function ForgotPasswordScreen() {
                         editable={!isSubmitting}
                         onBlur={() => setFocusedField(undefined)}
                         onChangeText={(value) => {
+                          markEdited();
                           setPassword(value);
                           setLocalError(undefined);
                         }}
@@ -479,6 +491,7 @@ export default function ForgotPasswordScreen() {
                         editable={!isSubmitting}
                         onBlur={() => setFocusedField(undefined)}
                         onChangeText={(value) => {
+                          markEdited();
                           setConfirmPassword(value);
                           setLocalError(undefined);
                         }}
@@ -560,6 +573,7 @@ export default function ForgotPasswordScreen() {
                   <View style={styles.codeActions}>
                     <Pressable
                       onPress={() => {
+                        markEdited();
                         setStep("identifier");
                         setCode("");
                         setLocalError(undefined);

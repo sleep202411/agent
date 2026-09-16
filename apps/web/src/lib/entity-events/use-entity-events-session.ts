@@ -11,6 +11,7 @@
  * on next render cycle.
  */
 import { useEffect } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import type { EntityEvent } from "@repo/shared/entity-events";
 import { useAppDispatch, useAppStore } from "@/src/store";
 import {
@@ -29,12 +30,17 @@ import { openEntityEventsClient } from "./entity-events-client";
 export function useEntityEventsSession(opts: { enabled: boolean }) {
   const dispatch = useAppDispatch();
   const store = useAppStore();
+  const { user } = useCurrentUser();
+  const viewerId = user?.id;
 
   useEffect(() => {
-    if (!opts.enabled) return;
+    if (!opts.enabled || !viewerId) return;
+    let closed = false;
+    const controller = new AbortController();
     const client = openEntityEventsClient({
       onOpen: () => console.log("[entity-events] WS connected"),
       onEntityChanged: (event: EntityEvent) => {
+        if (closed) return;
         console.log("[entity-events] received:", event);
         switch (event.entity) {
           case "project": {
@@ -45,7 +51,11 @@ export function useEntityEventsSession(opts: { enabled: boolean }) {
             // source of truth.
             const targetProjectId = event.projectId ?? store.getState().project.currentProjectId;
             if (targetProjectId) {
-              void refreshProjectDetail(dispatch, targetProjectId);
+              void refreshProjectDetail(dispatch, targetProjectId, {
+                isCurrent: () =>
+                  !closed && store.getState().project.currentProjectId === targetProjectId,
+                signal: controller.signal,
+              });
             }
             break;
           }
@@ -82,7 +92,9 @@ export function useEntityEventsSession(opts: { enabled: boolean }) {
       },
     });
     return () => {
+      closed = true;
+      controller.abort();
       client.close();
     };
-  }, [dispatch, store, opts.enabled]);
+  }, [dispatch, store, opts.enabled, viewerId]);
 }

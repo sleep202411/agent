@@ -30,6 +30,8 @@ import type {
 } from "./types";
 import { emptyLedgerJournals, emptyLedgerOverview } from "./types";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 export function BillingLedgerPanel({
   siteLabel,
   databaseLabel,
@@ -48,7 +50,7 @@ export function BillingLedgerPanel({
   const [journalType, setJournalType] = useState("");
   const [provider, setProvider] = useState("");
   const [currency, setCurrency] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
   function ledgerQueryString() {
@@ -61,21 +63,28 @@ export function BillingLedgerPanel({
   }
 
   async function refreshLedger() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
       const [nextOverview, nextJournals] = await Promise.all([
-        requestEnvelope<AdminBillingLedgerOverviewData>("/api/admin/billing/ledger/overview"),
+        requestEnvelope<AdminBillingLedgerOverviewData>(
+          "/api/admin/billing/ledger/overview",
+          operation.signal
+        ),
         requestEnvelope<AdminBillingLedgerJournalsData>(
-          `/api/admin/billing/ledger/journals${ledgerQueryString()}`
+          `/api/admin/billing/ledger/journals${ledgerQueryString()}`,
+          operation.signal
         ),
       ]);
+      if (!operation.current()) return;
       setOverview(nextOverview);
       setJournals(nextJournals);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
+      operation.cancel();
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 

@@ -131,11 +131,19 @@ export function TvStage(props: TvStageProps) {
       player.reset();
       return;
     }
+    // Let Video.js infer its MOV alias when this browser rejects QuickTime's
+    // MIME hint. The original URL/bytes remain unchanged; codec support is
+    // still decided by the native decoder. Preserve browsers accepting it.
+    const inferMovType =
+      item.trailerType?.toLowerCase() === "video/quicktime" &&
+      /\.mov(?:[?#]|$)/i.test(item.trailer) &&
+      !document.createElement("video").canPlayType(item.trailerType);
     player.src({
       src: item.trailer,
-      type:
-        item.trailerType &&
-        /^(video\/|application\/(?:vnd\.apple\.mpegurl|x-mpegurl))/i.test(item.trailerType)
+      type: inferMovType
+        ? undefined
+        : item.trailerType &&
+            /^(video\/|application\/(?:vnd\.apple\.mpegurl|x-mpegurl))/i.test(item.trailerType)
           ? item.trailerType
           : /\.m3u8(?:[?#]|$)/i.test(item.trailer)
             ? "application/x-mpegURL"

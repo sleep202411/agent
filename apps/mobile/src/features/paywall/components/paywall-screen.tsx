@@ -4,7 +4,7 @@ import IconCoins from "@tabler/icons-react-native/icons/IconCoins";
 import IconCrown from "@tabler/icons-react-native/icons/IconCrown";
 import IconSparkles from "@tabler/icons-react-native/icons/IconSparkles";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { useMemo, type ComponentType } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -35,7 +35,7 @@ import {
   yearlySavePercent,
 } from "../lib/catalog";
 import { currentCheckoutChannel, type CheckoutChannel } from "../lib/checkout-channel";
-import { fetchComputeWalletBalance } from "../lib/compute-wallet";
+import { useComputeWalletBalance } from "../lib/use-compute-wallet-balance";
 import { isPaywallCategory, PAYWALL_CATEGORIES, type PaywallCategory } from "../lib/paywall-store";
 import { usePaywallSelection } from "../lib/use-paywall-selection";
 
@@ -209,7 +209,7 @@ export function PaywallScreen() {
     : "community_points";
   const { selected, setSelected, productId, setProductId, computeAmount, setComputeAmount } =
     usePaywallSelection(initialCategory);
-  const [computeBalance, setComputeBalance] = useState<string | null>(null);
+  const computeBalance = useComputeWalletBalance();
   const channel = useMemo(() => currentCheckoutChannel(), []);
   const unsupported = channel === "web";
   const membership = isMembershipCategory(selected);
@@ -221,16 +221,6 @@ export function PaywallScreen() {
   const product = computePoints ? computeProduct : catalogProduct;
   const pointsCheckout = selected === "community_points" || selected === "compute_points";
   const stackedFooter = membership || pointsCheckout;
-
-  useEffect(() => {
-    let cancelled = false;
-    void fetchComputeWalletBalance().then((compute) => {
-      if (!cancelled) setComputeBalance(compute);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const notifyUnavailable = () => {
     Alert.alert(t("paywall.tryAgainLater"), undefined, [{ text: t("common.ok") }]);
