@@ -707,7 +707,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
   } as const;
 
   const allowed = new Set(toolIds);
-  const unknown = [...allowed].filter((id) => !(id in byRegistryId));
+  const unknown = [...allowed].filter((id) => !Object.hasOwn(byRegistryId, id));
   if (unknown.length > 0) {
     throw new Error(`Skill snapshot requested unknown deployed tool(s): ${unknown.join(", ")}`);
   }

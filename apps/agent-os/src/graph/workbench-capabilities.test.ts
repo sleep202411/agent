@@ -23,6 +23,12 @@ const runtime = {
   },
 } as unknown as ToolRuntimeContext;
 
+describe("tool registry admission", () => {
+  it.each(["constructor", "toString", "__proto__"])("rejects inherited name %s", (id) => {
+    expect(() => buildLangChainTools(runtime, [id])).toThrow("unknown deployed tool");
+  });
+});
+
 describe("skill mounts (system workbench skills)", () => {
   it("storyboard mount includes shot writes", () => {
     const mount = resolveSkillMounts({

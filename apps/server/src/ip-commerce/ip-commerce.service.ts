@@ -3721,7 +3721,7 @@ export class IpCommerceService {
     let recorded = false;
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      recorded = await this.prisma.$transaction(async (tx) => {
         if (input.idempotencyKey) {
           await tx.$executeRaw`
             SELECT pg_advisory_xact_lock(hashtext(${`ip:view:${input.idempotencyKey}`})::bigint)
@@ -3730,7 +3730,7 @@ export class IpCommerceService {
             where: { idempotencyKey: input.idempotencyKey },
             select: { id: true },
           });
-          if (existing) return;
+          if (existing) return false;
         }
 
         await tx.ipViewEvent.create({
@@ -3745,10 +3745,15 @@ export class IpCommerceService {
           },
         });
         await this.incrementViewAggregateTx(tx, ipId, actor.actorKind, now);
-        recorded = true;
+        return true;
       });
     } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
+      if (!isUniqueViolation(error) || !input.idempotencyKey) throw error;
+      const existing = await this.prisma.ipViewEvent.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        select: { id: true },
+      });
+      if (!existing) throw error;
     }
 
     return {
