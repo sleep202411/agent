@@ -79,13 +79,15 @@ export function openQuotaClient(handlers: QuotaClientHandlers): QuotaClient {
     ws = sock;
 
     sock.addEventListener("open", () => {
+      if (userClosed || ws !== sock) return;
       const wasReconnect = attempts > 0;
       attempts = 0;
       handlers.onOpen?.();
-      if (wasReconnect) handlers.onReconnected?.();
+      if (!userClosed && ws === sock && wasReconnect) handlers.onReconnected?.();
     });
 
     sock.addEventListener("message", (ev) => {
+      if (userClosed || ws !== sock) return;
       const frame = parseFrame(typeof ev.data === "string" ? ev.data : "");
       if (!frame) return;
       if (frame.event === "quota_updated") {
@@ -98,6 +100,7 @@ export function openQuotaClient(handlers: QuotaClientHandlers): QuotaClient {
     });
 
     sock.addEventListener("close", (ev) => {
+      if (ws !== sock) return;
       ws = null;
       handlers.onClose?.(ev.code, ev.reason);
       if (userClosed) return;
