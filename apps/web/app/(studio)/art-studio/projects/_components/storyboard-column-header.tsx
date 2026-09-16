@@ -20,7 +20,7 @@ import {
   BatchGenerateConfig,
   StoryboardBatchGenerateDialog,
 } from "@/app/(studio)/art-studio/projects/_components/storyboard-batch-generate-dialog";
-import { useAppSelector, useAppDispatch } from "@/src/store";
+import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import {
   setBatchGeneratingActive,
@@ -354,7 +354,26 @@ interface BatchRun {
 
 const activeBatchRuns = new Map<string, BatchRun>();
 
-export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; icon?: ReactNode }) {
+interface ColumnHeaderProps {
+  column: ShotColumn;
+  icon?: ReactNode;
+}
+export function StoryboardColumnHeader(props: ColumnHeaderProps) {
+  const projectId = useAppSelector((state) => state.project.currentProjectId);
+  return (
+    <StoryboardColumnHeaderSession
+      key={JSON.stringify([projectId, props.column.id])}
+      {...props}
+      projectId={projectId}
+    />
+  );
+}
+
+function StoryboardColumnHeaderSession({
+  column,
+  icon,
+  projectId,
+}: ColumnHeaderProps & { projectId: string | null }) {
   const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const rows = useAppSelector((state) => selectCurrentInstance(state).rows);
@@ -378,8 +397,13 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
   const [voiceAutoloadLoading, setVoiceAutoloadLoading] = useState(false);
   const [showBatchGenerateDialog, setShowBatchGenerateDialog] = useState(false);
   const [showBatchVoiceDialog, setShowBatchVoiceDialog] = useState(false);
-  const projectId = useAppSelector((state) => state.project.currentProjectId);
+
   const batchRun = useRef<BatchRun | null>(null);
+  const associationRequests = useRef(new Map<string, AbortController>());
+  const currentAssociation = (kind: string, controller: AbortController) =>
+    associationRequests.current.get(kind) === controller &&
+    !controller.signal.aborted &&
+    store.getState().project.currentProjectId === projectId;
   const isCurrent = (run: BatchRun) =>
     batchRun.current === run &&
     activeBatchRuns.get(run.projectId) === run &&
@@ -412,6 +436,8 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
 
   useLayoutEffect(
     () => () => {
+      associationRequests.current.forEach((request) => request.abort());
+      associationRequests.current.clear();
       const run = batchRun.current;
       if (!run) return;
       batchRun.current = null;
@@ -425,42 +451,70 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
   );
 
   const handleAutoload = async () => {
-    if (!column.id) return;
+    if (
+      !column.id ||
+      !projectId ||
+      store.getState().project.currentProjectId !== projectId ||
+      associationRequests.current.has("column")
+    )
+      return;
+    const controller = new AbortController();
+    associationRequests.current.set("column", controller);
     setAutoloadLoading(true);
     try {
       await backendApi.post("/api/ai/chat/autoload/column", {
         data: { columnId: String(column.id), recoverOldData },
         timeout: 300_000,
+        signal: controller.signal,
       });
+      if (!currentAssociation("column", controller)) return;
       toast.success(t("autoAssociateSuccess"));
       setShowAutoloadDialog(false);
       setRecoverOldData(false);
       store.dispatch(touchStoryboard());
     } catch (error) {
+      if (!currentAssociation("column", controller)) return;
       console.error("[StoryboardColumnHeader] 自动关联失败:", error);
       toast.error(t("autoAssociateFailed"));
     } finally {
-      setAutoloadLoading(false);
+      if (currentAssociation("column", controller)) {
+        associationRequests.current.delete("column");
+        setAutoloadLoading(false);
+      }
     }
   };
 
   const handleVoiceAutoload = async () => {
-    if (!column.id) return;
+    if (
+      !column.id ||
+      !projectId ||
+      store.getState().project.currentProjectId !== projectId ||
+      associationRequests.current.has("voice")
+    )
+      return;
+    const controller = new AbortController();
+    associationRequests.current.set("voice", controller);
     setVoiceAutoloadLoading(true);
     try {
       await backendApi.post("/api/ai/chat/autoload/voice", {
         data: { columnId: String(column.id), recoverOldData: voiceRecoverOldData },
         timeout: 300_000,
+        signal: controller.signal,
       });
+      if (!currentAssociation("voice", controller)) return;
       toast.success(t("associateVoiceSuccess"));
       setShowVoiceAutoloadDialog(false);
       setVoiceRecoverOldData(false);
       store.dispatch(touchStoryboard());
     } catch (error) {
+      if (!currentAssociation("voice", controller)) return;
       console.error("[StoryboardColumnHeader] 一键关联角色配音失败:", error);
       toast.error(t("associateVoiceFailed"));
     } finally {
-      setVoiceAutoloadLoading(false);
+      if (currentAssociation("voice", controller)) {
+        associationRequests.current.delete("voice");
+        setVoiceAutoloadLoading(false);
+      }
     }
   };
 

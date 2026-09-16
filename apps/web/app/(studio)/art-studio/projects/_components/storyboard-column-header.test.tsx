@@ -60,7 +60,11 @@ vi.mock("@/components/ui/dialog", () =>
       "DialogFooter",
       "DialogHeader",
       "DialogTitle",
-    ].map((k) => [k, () => null])
+    ].map((k) => [
+      k,
+      ({ children, open }: { children: ReactNode; open?: boolean }) =>
+        k === "Dialog" && !open ? null : <>{children}</>,
+    ])
   )
 );
 vi.mock("@/components/ui/tooltip", () =>
@@ -196,3 +200,58 @@ it("releases the pending inter-item delay when departing", async () => {
   expect(h.post).toHaveBeenCalledTimes(1);
   expect(h.success).not.toHaveBeenCalled();
 });
+
+it.each(["image_prompt", "dialogue"])(
+  "ignores abandoned %s association responses",
+  async (presetColumnKey) => {
+    let resolve!: (v: unknown) => void;
+    h.post.mockReturnValueOnce(
+      new Promise((r) => {
+        resolve = r;
+      })
+    );
+    const target = { id: "associate", presetColumnKey };
+    await act(async () => root.render(<StoryboardColumnHeader column={target} />));
+    await act(async () => document.querySelector("button")!.click());
+    await act(async () =>
+      Array.from(document.querySelectorAll("button"))
+        .find((b) => b.textContent === "confirm")!
+        .click()
+    );
+    const signal = h.post.mock.calls[0]![1].signal as AbortSignal | undefined;
+    h.project = "second";
+    await act(async () => root.render(<StoryboardColumnHeader column={target} />));
+    h.dispatch.mockClear();
+    await act(async () => resolve({}));
+    expect(signal?.aborted).toBe(true);
+    expect(h.success).not.toHaveBeenCalled();
+    expect(h.dispatch).not.toHaveBeenCalled();
+  }
+);
+
+it.each(["image_prompt", "dialogue"])(
+  "retains %s association retry and blocks duplicate confirmation",
+  async (presetColumnKey) => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.post.mockRejectedValueOnce(new Error("temporary")).mockResolvedValue({});
+    await act(async () =>
+      root.render(<StoryboardColumnHeader column={{ id: "associate", presetColumnKey }} />)
+    );
+    await act(async () => document.querySelector("button")!.click());
+    const confirm = () =>
+      Array.from(document.querySelectorAll("button"))
+        .find((b) => b.textContent === "confirm")!
+        .click();
+    await act(async () => {
+      confirm();
+      confirm();
+    });
+    expect(h.post).toHaveBeenCalledTimes(1);
+    expect(h.success).not.toHaveBeenCalled();
+    await act(async () => confirm());
+    expect(h.post).toHaveBeenCalledTimes(2);
+    expect(h.success).toHaveBeenCalledOnce();
+    expect(h.dispatch).toHaveBeenCalledWith({ type: "touch" });
+    error.mockRestore();
+  }
+);
