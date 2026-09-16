@@ -239,6 +239,7 @@ export function useCopyToClipboard(config?: UseCopyToClipboardConfig) {
   useHotkeys(
     COPY_TO_CLIPBOARD_SHORTCUT_KEY,
     (event) => {
+      if (!editor?.isFocused) return;
       event.preventDefault(); // prevent native copy behavior
       handleCopyToClipboard();
     },
