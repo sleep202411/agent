@@ -436,9 +436,18 @@ export class MediaAssetProviderSyncService
         throw error;
       });
     if (group.externalGroupId !== externalGroupId) {
+      // Group-identity drift cleanup is best-effort: a queue/Redis fault must
+      // not 500 the user-facing readiness request — the periodic teardown
+      // reconciler (reconcileTeardowns) will pick the orphan up.
       await this.enqueueCriticalTeardown({
         externalAssetIds: [],
         externalGroupIds: [externalGroupId],
+      }).catch((error: unknown) => {
+        this.logger.warn(
+          `Unable to queue drifted provider group cleanup: ${externalGroupId}: ${String(
+            error instanceof Error ? error.message : error,
+          )}`,
+        );
       });
     }
     return group.status === AiProviderAssetGroupStatus.active ? group.id : null;

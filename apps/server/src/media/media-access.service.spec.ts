@@ -960,22 +960,23 @@ describe('MediaAccessService canvas-context grant', () => {
   }
 
   it('denies a teammate without canvas context (control)', async () => {
-    const service = makeService(denyingBase(), {
-      requireDocument: jest.fn(),
-    });
+    const documentAccess = {
+      requireDocumentRef: jest.fn(),
+      referencedAssetIds: jest.fn(),
+    };
+    const service = makeService(denyingBase(), documentAccess);
     await expect(
       service.issueBrowserAccessUrl('viewer', ASSET_ID, {
         variantKey: 'original',
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(documentAccess.requireDocumentRef).not.toHaveBeenCalled();
   });
 
   it('grants when the viewer can read the document and the asset is on it', async () => {
     const documentAccess = {
-      requireDocument: jest.fn().mockResolvedValue({
-        id: DOC_ID,
-        contentSnapshot: { nodes: [{ data: { mediaAssetId: ASSET_ID } }] },
-      }),
+      requireDocumentRef: jest.fn().mockResolvedValue({ id: DOC_ID }),
+      referencedAssetIds: jest.fn().mockResolvedValue(new Set([ASSET_ID])),
     };
     const service = makeService(denyingBase(), documentAccess);
     await expect(
@@ -986,19 +987,20 @@ describe('MediaAccessService canvas-context grant', () => {
     ).resolves.toMatchObject({
       url: 'https://blob.example.com/a.png?sig=read',
     });
-    expect(documentAccess.requireDocument).toHaveBeenCalledWith(
+    expect(documentAccess.requireDocumentRef).toHaveBeenCalledWith(
       'viewer',
       DOC_ID,
       'read',
     );
+    expect(documentAccess.referencedAssetIds).toHaveBeenCalledWith(DOC_ID, [
+      ASSET_ID,
+    ]);
   });
 
   it('still denies when the document does not reference the asset', async () => {
     const documentAccess = {
-      requireDocument: jest.fn().mockResolvedValue({
-        id: DOC_ID,
-        contentSnapshot: { nodes: [] },
-      }),
+      requireDocumentRef: jest.fn().mockResolvedValue({ id: DOC_ID }),
+      referencedAssetIds: jest.fn().mockResolvedValue(new Set<string>()),
     };
     const service = makeService(denyingBase(), documentAccess);
     await expect(
@@ -1011,7 +1013,7 @@ describe('MediaAccessService canvas-context grant', () => {
 
   it('still denies when the viewer cannot read the document', async () => {
     const documentAccess = {
-      requireDocument: jest
+      requireDocumentRef: jest
         .fn()
         .mockRejectedValue(
           new NotFoundException({ code: 'DOCUMENT_NOT_FOUND' }),
@@ -1024,6 +1026,21 @@ describe('MediaAccessService canvas-context grant', () => {
         documentId: DOC_ID,
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('fails loud when the canvas-context probe hits an infrastructure error', async () => {
+    const documentAccess = {
+      requireDocumentRef: jest
+        .fn()
+        .mockRejectedValue(new Error('connection refused')),
+    };
+    const service = makeService(denyingBase(), documentAccess);
+    await expect(
+      service.issueBrowserAccessUrl('viewer', ASSET_ID, {
+        variantKey: 'original',
+        documentId: DOC_ID,
+      }),
+    ).rejects.toThrow('connection refused');
   });
 });
 
