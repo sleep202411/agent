@@ -34,6 +34,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { withAttachedUiOptions } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
+import { parseCanonicalGenerationModes } from './generation-mode-capability';
 import { FalCatalogService } from './providers/fal/fal-catalog.service';
 import { BailianCatalogService } from './providers/bailian/bailian-catalog.service';
 import { BytePlusCatalogService } from './providers/byteplus/byteplus-catalog.service';
@@ -157,6 +158,14 @@ export class AiCanonicalCatalogService {
         const withCanonicalFields: AiModelDefinition = {
           ...finalizeCatalogModel(model, canonical.uiPolicy),
           ...(canonical.vendor ? { vendor: canonical.vendor } : {}),
+          // Single capability authority: the canonical's admin-curated
+          // generation_modes overrides whatever the provider mapper inferred
+          // from its binding. A mis-declared binding must never widen (or
+          // narrow) the modes a model can be quoted for — the kling-motion
+          // i2v-only incident came exactly from trusting the binding side.
+          generationModes: parseCanonicalGenerationModes(
+            canonical.generationModes,
+          ),
         };
         models.push({
           model: withCanonicalFields,

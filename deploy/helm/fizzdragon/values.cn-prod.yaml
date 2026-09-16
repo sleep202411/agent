@@ -222,6 +222,12 @@ server:
     # bucket. This explicit override prevents the CN cell from ever inheriting
     # the .com Singapore bucket when resolving those keys.
     LEGACY_OSS_BASE_URL: https://shotive.oss-cn-hangzhou.aliyuncs.com
+    # CN mobile H5 generation defaults — explicit even though they match .com
+    # today, so the two cells can drift deliberately. Both ids are validated
+    # against the CN catalog at server boot; minimax-h3-max is deliberately
+    # NOT used (it has never been catalogued in any production cell).
+    AGENT_OS_MOBILE_IMAGE_MODEL: wan-image-2.7
+    AGENT_OS_MOBILE_VIDEO_MODEL: minimax-h3
     # CN banner bucket for crew logos (relative keys). Admin DTOs resolve
     # crew.logo with this base; never inherit the .com Singapore banner bucket.
     BANNER_BASE_URL: https://banner.fizzspace.cn

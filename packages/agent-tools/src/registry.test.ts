@@ -32,6 +32,10 @@ describe("agent-tools registry", () => {
     expect(riskForTool("story.generation.quoteAssets")).toBe("reversible");
     expect(riskForTool("story.generation.confirmBatch")).toBe("critical");
     expect(riskForTool("story.generation.getBatch")).toBe("read");
+    expect(riskForTool("story.generation.resumeBatch")).toBe("sensitive");
+    expect(toolDescriptorsForModel().some((t) => t.id === "story.generation.resumeBatch")).toBe(
+      true
+    );
   });
 
   it("validates bounded structured user questions", () => {

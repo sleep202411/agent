@@ -162,11 +162,33 @@ export type AssetEvent = (
       /** Logical media asset identity whose provider mirror changed. */
       assetId: string;
       workspaceId?: string | null;
-      /** pending | processing | active | failed | disabled | deleted. */
+      /** pending | processing | active | disabled | deleted. */
       mirrorStatus: string;
       /** Typed upstream verdict when failed: moderation | stale | ... */
       statusReason?: string | null;
       updatedAt: string;
+      ts: number;
+    }
+  | {
+      /**
+       * A compute-point credit just landed on a workspace wallet and at least
+       * one previously INSUFFICIENT_COMPUTE_POINTS-blocked Story generation
+       * batch now has enough balance to resume from its first unfinished
+       * item. Notify-only: the creator decides whether to continue — nothing
+       * auto-resumes.
+       */
+      kind: "story_generation_batches_resumable";
+      workspaceId: string;
+      /** New balance after the credit, stringified bigint for JSON safety. */
+      availableBalance: string;
+      /** Batches whose next unfinished item the balance now covers. */
+      batches: Array<{
+        batchId: string;
+        projectId: string;
+        chapterId: string;
+        /** Points needed for the first unfinished item. */
+        requiredPoints: string;
+      }>;
       ts: number;
     }
   | StoryAgentRunRealtimeEvent
