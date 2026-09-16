@@ -1,4 +1,4 @@
-import { generateObject, NoObjectGeneratedError } from 'ai';
+import { APICallError, generateObject, NoObjectGeneratedError } from 'ai';
 import { z } from 'zod';
 import {
   runStoryAuthoringStage,
@@ -282,5 +282,168 @@ describe('runStoryAuthoringStage', () => {
     expect(repair).toContain('Separate the ending at block 217.');
     expect(repair).toContain('{"value":"wrong"}');
     expect(mockedGenerateObject.mock.calls[2]?.[0]?.prompt).toBe(repair);
+  });
+
+  it('waits out provider throttling without burning the attempt budget', async () => {
+    jest.useFakeTimers();
+    try {
+      mockedGenerateObject
+        .mockRejectedValueOnce(
+          new APICallError({
+            url: 'https://maas.example/chat',
+            statusCode: 429,
+            isRetryable: true,
+            requestBodyValues: {},
+            message:
+              'Allocated quota exceeded, please increase your quota limit. For details, see: https://www.alibabacloud.com/help/en/model-studio/error-code#token-limit',
+          }),
+        )
+        .mockResolvedValueOnce({ object: { value: 'ok' } } as never);
+      const attempts: Array<[number, string, string?]> = [];
+      const onAttempt = (
+        attempt: number,
+        outcome: 'ok' | 'error',
+        detail?: string,
+      ) => {
+        attempts.push([attempt, outcome, detail]);
+      };
+      const request = runStoryAuthoringStage({} as never, {
+        stage: 'structure',
+        schema: z.object({ value: z.string() }),
+        system: 'system',
+        prompt: 'prompt',
+        maxOutputTokens: 1_024,
+        // A single attempt still survives one throttle window.
+        maxAttempts: 1,
+        timeoutMs: 1_000,
+        signal: new AbortController().signal,
+        onAttempt,
+      });
+      const settled = request.then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (error: unknown) => ({ status: 'rejected' as const, error }),
+      );
+      // Still inside the first 15s backoff window.
+      expect(mockedGenerateObject).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(15_000);
+      expect(await settled).toEqual({
+        status: 'fulfilled',
+        value: { value: 'ok' },
+      });
+      expect(mockedGenerateObject).toHaveBeenCalledTimes(2);
+      expect(attempts[0][1]).toBe('error');
+      expect(attempts[0][2]).toContain('throttled by provider');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('detects quota rejections by message even outside API error status codes', async () => {
+    jest.useFakeTimers();
+    try {
+      mockedGenerateObject
+        .mockRejectedValueOnce(
+          new Error(
+            'Allocated quota exceeded, please increase your quota limit.',
+          ),
+        )
+        .mockResolvedValueOnce({ object: { value: 'ok' } } as never);
+      const request = runStoryAuthoringStage({} as never, {
+        stage: 'structure',
+        schema: z.object({ value: z.string() }),
+        system: 'system',
+        prompt: 'prompt',
+        maxOutputTokens: 1_024,
+        maxAttempts: 1,
+        timeoutMs: 1_000,
+        signal: new AbortController().signal,
+      });
+      const settled = request.then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (error: unknown) => ({ status: 'rejected' as const, error }),
+      );
+      await jest.advanceTimersByTimeAsync(14_999);
+      expect(mockedGenerateObject).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      expect((await settled).status).toBe('fulfilled');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('honors the provider retry-after header instead of the default ladder', async () => {
+    jest.useFakeTimers();
+    try {
+      mockedGenerateObject
+        .mockRejectedValueOnce(
+          new APICallError({
+            url: 'https://maas.example/chat',
+            statusCode: 429,
+            isRetryable: true,
+            requestBodyValues: {},
+            responseHeaders: { 'retry-after-ms': '5000' },
+            message: 'Allocated quota exceeded, please increase your quota.',
+          }),
+        )
+        .mockResolvedValueOnce({ object: { value: 'ok' } } as never);
+      const request = runStoryAuthoringStage({} as never, {
+        stage: 'structure',
+        schema: z.object({ value: z.string() }),
+        system: 'system',
+        prompt: 'prompt',
+        maxOutputTokens: 1_024,
+        maxAttempts: 1,
+        timeoutMs: 1_000,
+        signal: new AbortController().signal,
+      });
+      const settled = request.then(
+        (value) => ({ status: 'fulfilled' as const, value }),
+        (error: unknown) => ({ status: 'rejected' as const, error }),
+      );
+      // The default first wait would be 15s; 5s must be exactly enough.
+      await jest.advanceTimersByTimeAsync(4_999);
+      expect(mockedGenerateObject).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(1);
+      expect((await settled).status).toBe('fulfilled');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('stops waiting after the bounded throttle budget and fails the attempt', async () => {
+    jest.useFakeTimers();
+    try {
+      mockedGenerateObject.mockRejectedValue(
+        new APICallError({
+          url: 'https://maas.example/chat',
+          statusCode: 429,
+          isRetryable: true,
+          requestBodyValues: {},
+          message: 'Allocated quota exceeded, please increase your quota.',
+        }),
+      );
+      const request = runStoryAuthoringStage({} as never, {
+        stage: 'structure',
+        schema: z.object({ value: z.string() }),
+        system: 'system',
+        prompt: 'prompt',
+        maxOutputTokens: 1_024,
+        maxAttempts: 1,
+        timeoutMs: 1_000,
+        signal: new AbortController().signal,
+      });
+      let rejection: unknown;
+      const settled = request.catch((error: unknown) => {
+        rejection = error;
+      });
+      await jest.advanceTimersByTimeAsync(15_000 + 30_000 + 60_000);
+      await settled;
+      expect(rejection).toBeInstanceOf(StoryAuthoringStageError);
+      expect((rejection as Error).message).toContain('exhausted 1 attempts');
+      // The original call plus one per bounded wait.
+      expect(mockedGenerateObject).toHaveBeenCalledTimes(4);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

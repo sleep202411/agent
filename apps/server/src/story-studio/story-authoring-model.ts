@@ -1,5 +1,6 @@
 import { createAlibaba } from '@ai-sdk/alibaba';
 import {
+  APICallError,
   generateObject,
   jsonSchema,
   NoObjectGeneratedError,
@@ -144,6 +145,64 @@ export class StoryAuthoringStageError extends Error {
   }
 }
 
+const THROTTLE_BACKOFF_MS = [15_000, 30_000, 60_000];
+
+/**
+ * Provider throttling ("Allocated quota exceeded … #token-limit") is transient
+ * on a minute scale but arrives in bursts under the pipeline's concurrent
+ * stages; retrying instantly only burns the attempt budget. Wait out the
+ * throttle window before retrying the SAME attempt, honoring the provider's
+ * retry-after header when present.
+ */
+function isThrottleError(error: unknown): boolean {
+  if (APICallError.isInstance(error)) {
+    if (error.statusCode === 429) return true;
+    const headers = error.responseHeaders ?? {};
+    if ('retry-after' in headers || 'retry-after-ms' in headers) return true;
+  }
+  const message =
+    `${(error as Error | undefined)?.message ?? ''}`.toLowerCase();
+  return (
+    message.includes('allocated quota exceeded') ||
+    message.includes('throttling') ||
+    message.includes('token-limit')
+  );
+}
+
+function throttleDelayMs(error: unknown, wait: number): number {
+  const cap = THROTTLE_BACKOFF_MS[THROTTLE_BACKOFF_MS.length - 1];
+  if (APICallError.isInstance(error)) {
+    const headers = error.responseHeaders ?? {};
+    const retryAfterMs = Number(headers['retry-after-ms']);
+    if (Number.isFinite(retryAfterMs) && retryAfterMs > 0)
+      return Math.min(retryAfterMs, cap);
+    const retryAfterSeconds = Number(headers['retry-after']);
+    if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0)
+      return Math.min(retryAfterSeconds * 1_000, cap);
+  }
+  return THROTTLE_BACKOFF_MS[Math.min(wait, THROTTLE_BACKOFF_MS.length - 1)];
+}
+
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abortReason = (): Error =>
+      signal.reason instanceof Error ? signal.reason : new Error('Aborted');
+    if (signal.aborted) {
+      reject(abortReason());
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortReason());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export interface StoryAuthoringStageCall<T> {
   /** Stage key, for error codes/logs. */
   stage: string;
@@ -200,19 +259,38 @@ export async function runStoryAuthoringStage<T>(
   for (let attempt = 1; attempt <= call.maxAttempts; attempt += 1) {
     try {
       const prompt = call.refreshPrompt?.() ?? call.prompt;
-      const result = await generateObject({
-        model,
-        schema: providerSchema,
-        system: call.system,
-        prompt: repairNote ? `${prompt}\n\n${repairNote}` : prompt,
-        maxRetries: 0,
-        maxOutputTokens: call.maxOutputTokens,
-        providerOptions: { alibaba: { enableThinking: false } },
-        abortSignal: AbortSignal.any([
-          call.signal,
-          AbortSignal.timeout(call.timeoutMs),
-        ]),
-      });
+      const invokeGenerate = () =>
+        generateObject({
+          model,
+          schema: providerSchema,
+          system: call.system,
+          prompt: repairNote ? `${prompt}\n\n${repairNote}` : prompt,
+          maxRetries: 0,
+          maxOutputTokens: call.maxOutputTokens,
+          providerOptions: { alibaba: { enableThinking: false } },
+          abortSignal: AbortSignal.any([
+            call.signal,
+            AbortSignal.timeout(call.timeoutMs),
+          ]),
+        });
+      let result: Awaited<ReturnType<typeof invokeGenerate>>;
+      for (let wait = 0; ; wait += 1) {
+        try {
+          result = await invokeGenerate();
+          break;
+        } catch (error) {
+          if (call.signal.aborted) throw error;
+          if (wait >= THROTTLE_BACKOFF_MS.length || !isThrottleError(error))
+            throw error;
+          const delayMs = throttleDelayMs(error, wait);
+          call.onAttempt?.(
+            attempt,
+            'error',
+            `throttled by provider; waiting ${delayMs}ms before retrying attempt ${attempt} (wait ${wait + 1}/${THROTTLE_BACKOFF_MS.length}): ${describeModelError(error)}`,
+          );
+          await sleepAbortable(delayMs, call.signal);
+        }
+      }
       // providerSchema validates and transforms the wire object into T.
       const value: T = (result as { object: T }).object;
       const issues: string[] = call.validate?.(value) ?? [];
