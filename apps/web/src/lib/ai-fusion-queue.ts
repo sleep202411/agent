@@ -90,7 +90,8 @@ async function executeTask(taskId: string) {
       timeout: 360_000,
     });
 
-    const storagePath = normalizeStoragePath(String(response ?? ""));
+    const storagePath = typeof response === "string" ? normalizeStoragePath(response) : "";
+    if (!storagePath) throw new Error("No character fusion result returned");
     const url = buildOssUrl(storagePath);
 
     const output: TaskOutput = { url, storagePath };

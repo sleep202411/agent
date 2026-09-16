@@ -79,7 +79,8 @@ function parseLipSyncPath(result: unknown): string {
   }
   if (result && typeof result === "object") {
     const record = result as Record<string, unknown>;
-    return String(record.storagePath ?? record.filePath ?? record.path ?? record.url ?? "").trim();
+    const path = record.storagePath ?? record.filePath ?? record.path ?? record.url;
+    return typeof path === "string" ? path.trim() : "";
   }
   return "";
 }
