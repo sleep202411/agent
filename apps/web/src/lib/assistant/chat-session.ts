@@ -55,11 +55,14 @@ interface ActiveSession {
   handlers: ChatSessionHandlers;
   // IDs we've queued to pull from the store but haven't fetched yet.
   pendingIds: Set<string>;
+  readingIds: Set<string>;
+  supersededReadIds: Set<string>;
   draining: Promise<void> | null;
   closed: boolean;
   controller: AbortController;
   // The last agentState we pushed up, so we don't re-fire identical events.
   lastAgentState: ChatAgentState | null;
+  agentStateRevision: number;
 }
 
 const sessions = new Map<string, ActiveSession>();
@@ -71,10 +74,13 @@ function drainPending(session: ActiveSession): Promise<void> {
     while (!session.closed && session.pendingIds.size > 0) {
       const ids = [...session.pendingIds];
       session.pendingIds.clear();
+      session.readingIds = new Set(ids);
+      session.supersededReadIds.clear();
       try {
         const fetched = await fetchMessagesByIds(session.projectId, ids, session.controller.signal);
         for (const msg of fetched) {
           if (session.closed) return;
+          if (session.supersededReadIds.has(msg.id)) continue;
           try {
             session.handlers.onMessage(msg);
           } catch (err) {
@@ -85,6 +91,9 @@ function drainPending(session: ActiveSession): Promise<void> {
         if (session.closed) return;
         console.warn("[chat-session] get-messages failed:", err);
         session.handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
+      } finally {
+        session.readingIds.clear();
+        session.supersededReadIds.clear();
       }
     }
   })().finally(() => {
@@ -98,10 +107,13 @@ function openSession(projectId: string, handlers: ChatSessionHandlers): ActiveSe
     projectId,
     handlers,
     pendingIds: new Set<string>(),
+    readingIds: new Set<string>(),
+    supersededReadIds: new Set<string>(),
     draining: null,
     closed: false,
     controller: new AbortController(),
     lastAgentState: null as ChatAgentState | null,
+    agentStateRevision: 0,
   } as ActiveSession;
 
   session.client = openChatEventsClient(projectId, {
@@ -117,6 +129,9 @@ function openSession(projectId: string, handlers: ChatSessionHandlers): ActiveSe
       // get-messages only if the server omitted it (legacy / transitional
       // shape).
       if (inlineMessage) {
+        // A complete inline message supersedes any older pull for this ID.
+        session.pendingIds.delete(id);
+        if (session.readingIds.has(id)) session.supersededReadIds.add(id);
         try {
           session.handlers.onMessage(inlineMessage as unknown as AssistantMessage);
         } catch (err) {
@@ -148,12 +163,13 @@ function openSession(projectId: string, handlers: ChatSessionHandlers): ActiveSe
       if (session.closed) return;
       if (state === session.lastAgentState) return;
       session.lastAgentState = state;
+      const revision = ++session.agentStateRevision;
       // On transition to terminal states, wait for any pending fetches so
       // consumers see final content before the idle hook runs.
       if (state === "idle" || state === "failed") {
         void (async () => {
           await drainPending(session);
-          if (!session.closed && session.lastAgentState === state)
+          if (!session.closed && session.agentStateRevision === revision)
             session.handlers.onAgentState?.(state);
         })();
       } else {

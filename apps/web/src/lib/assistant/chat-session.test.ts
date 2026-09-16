@@ -108,3 +108,45 @@ it("continues queued reads and drops superseded idle notifications", async () =>
   await vi.waitFor(() => expect(onMessage).toHaveBeenCalledTimes(2));
   expect(state.mock.calls).toEqual([["thinking"]]);
 });
+it("does not report a superseded idle transition twice after another turn", async () => {
+  let resolve!: (value: AssistantMessage[]) => void;
+  mocks.read.mockReturnValue(
+    new Promise<AssistantMessage[]>((r) => {
+      resolve = r;
+    })
+  );
+  const state = vi.fn();
+  ensureSession("p", { onMessage: vi.fn(), onAgentState: state });
+  const handlers = mocks.handlers[0]!;
+  handlers.onMessageList?.(["m"]);
+  handlers.onAgentState?.("idle");
+  handlers.onAgentState?.("thinking");
+  handlers.onAgentState?.("idle");
+  resolve([message]);
+  await vi.waitFor(() => expect(state.mock.calls.some(([value]) => value === "idle")).toBe(true));
+  expect(state.mock.calls).toEqual([["thinking"], ["idle"]]);
+});
+it("keeps newer inline content while delivering other fetched messages", async () => {
+  let resolve!: (value: AssistantMessage[]) => void;
+  mocks.read.mockReturnValue(
+    new Promise<AssistantMessage[]>((r) => {
+      resolve = r;
+    })
+  );
+  const received: AssistantMessage[] = [];
+  ensureSession("p", { onMessage: (value) => received.push(value) });
+  const handlers = mocks.handlers[0]!;
+  handlers.onMessageList?.(["m", "other"]);
+  const updated = {
+    ...message,
+    parts: [{ type: "text", text: "new", state: "done" }],
+  } as AssistantMessage;
+  handlers.onMessageChanged?.(
+    "m",
+    updated as unknown as Parameters<NonNullable<ChatEventsClientHandlers["onMessageChanged"]>>[1]
+  );
+  const other = { ...message, id: "other" };
+  resolve([message, other]);
+  await vi.waitFor(() => expect(received.some((value) => value.id === "other")).toBe(true));
+  expect(received).toEqual([updated, other]);
+});
