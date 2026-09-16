@@ -29,7 +29,7 @@ export function canonicalizeJson(value: unknown, path = '$'): CanonicalJson {
   }
 
   if (Array.isArray(value)) {
-    return value.map((item, index) =>
+    return Array.from(value, (item, index) =>
       canonicalizeJson(item, `${path}[${index}]`),
     );
   }

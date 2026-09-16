@@ -21,3 +21,9 @@ it("preserves parsed JSON keys named __proto__ at every depth", () => {
     '{"__proto__":"literal","nested":{"__proto__":{"value":1}},"z":0}'
   );
 });
+
+it("rejects sparse arrays instead of hashing missing slots as explicit null", () => {
+  const sparse = new Array<unknown>(1);
+  expect(() => canonicalJsonString({ values: sparse })).toThrow("Unsupported JSON value");
+  expect(canonicalJsonString({ values: [null] })).toBe('{"values":[null]}');
+});

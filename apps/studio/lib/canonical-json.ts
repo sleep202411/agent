@@ -13,7 +13,7 @@ function canonicalizeJson(value: unknown, path = "$"): CanonicalJson {
     return Object.is(value, -0) ? 0 : value;
   }
   if (Array.isArray(value)) {
-    return value.map((item, index) => canonicalizeJson(item, `${path}[${index}]`));
+    return Array.from(value, (item, index) => canonicalizeJson(item, `${path}[${index}]`));
   }
   if (typeof value === "object") {
     const prototype = Reflect.getPrototypeOf(value);

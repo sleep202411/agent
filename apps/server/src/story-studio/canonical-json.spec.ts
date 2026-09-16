@@ -67,3 +67,11 @@ it('preserves parsed prototype-named keys in canonical content and hashes', () =
   );
   expect(Object.getPrototypeOf(canonicalizeJson(input))).toBe(Object.prototype);
 });
+
+it('rejects sparse arrays instead of hashing missing slots as explicit null', () => {
+  const sparse = new Array<unknown>(1);
+  expect(() => canonicalJsonString({ values: sparse })).toThrow(
+    'Unsupported JSON value',
+  );
+  expect(canonicalJsonString({ values: [null] })).toBe('{"values":[null]}');
+});
