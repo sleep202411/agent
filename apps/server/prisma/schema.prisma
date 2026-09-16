@@ -6230,6 +6230,9 @@ enum AiOutboxEventType {
   media_asset_moderation_changed
   /// Compute/community wallet balance changed (top-up / spend / refund / expiry).
   wallet_changed
+  /// Compute credit landed and previously insufficient-points-blocked Story
+  /// generation batches are now resumable (notify-only; never auto-resumes).
+  story_generation_batches_resumable
   /// Plan / entitlement changed (upgrade, seat change, refund-revoke).
   entitlement_changed
   /// Workspace membership changed (member added / removed / role changed).
@@ -9252,6 +9255,12 @@ model StoryGenerationBatch {
   cancelledAt              DateTime?                  @map("cancelled_at") @db.Timestamptz(6)
   completedAt              DateTime?                  @map("completed_at") @db.Timestamptz(6)
   handoffResultDeliveredAt DateTime?                  @map("handoff_result_delivered_at") @db.Timestamptz(6)
+  /// Set when continuation delivery can never succeed (e.g. the source
+  /// Agent OS run reached a terminal status before the batch settled).
+  /// Durable poison-pill marker so the continuation worker stops
+  /// re-queuing the batch every sweep; reason keeps the journal error code.
+  handoffAbandonedAt        DateTime?                  @map("handoff_abandoned_at") @db.Timestamptz(6)
+  handoffAbandonReason      Json?                      @map("handoff_abandon_reason") @db.JsonB
   lastDispatchedAt         DateTime?                  @map("last_dispatched_at") @db.Timestamptz(6)
   createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
