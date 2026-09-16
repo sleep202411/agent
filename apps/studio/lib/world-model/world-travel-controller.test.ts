@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreateWorldTravelRuntimeInput, WorldTravelRuntime } from "./world-travel-runtime";
 
 const api = vi.hoisted(() => ({
@@ -62,6 +62,7 @@ function createController(harness: ReturnType<typeof createRuntimeHarness>) {
 }
 
 describe("WorldTravelController", () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.clearAllMocks();
     api.createWorldSession.mockResolvedValue({
@@ -193,5 +194,61 @@ describe("WorldTravelController", () => {
     expect(harness.runtime.resume).toHaveBeenCalledOnce();
 
     await controller.dispose();
+  });
+  it.each(["pause", "resume"] as const)(
+    "does not revive an ended session after delayed %s",
+    async (action) => {
+      const harness = createRuntimeHarness();
+      const controller = createController(harness);
+      await controller.start();
+      if (action === "resume") await controller.pause();
+      let finish!: () => void;
+      vi.mocked(harness.runtime[action]).mockImplementationOnce(
+        () =>
+          new Promise<void>((r) => {
+            finish = r;
+          })
+      );
+      const pending = controller[action]();
+      await controller.end();
+      finish();
+      await pending;
+      expect(controller.state.phase).toBe("ended");
+    }
+  );
+  it("ignores provider events after ending", async () => {
+    const harness = createRuntimeHarness();
+    const controller = createController(harness);
+    await controller.start();
+    await controller.end();
+    const ended = controller.state;
+    harness.events()?.onStatusChange?.("PLAYING");
+    harness.events()?.onFirstFrame?.("late.jpg");
+    harness.events()?.onError?.(new Error("late"));
+    expect(controller.state).toEqual(ended);
+    expect(api.reportWorldTravelStatus).not.toHaveBeenCalled();
+  });
+  it.each(["heartbeat", "token"])("ignores delayed %s failure after ending", async (kind) => {
+    vi.useFakeTimers();
+    let reject!: (e: Error) => void;
+    const request = kind === "heartbeat" ? api.heartbeatWorldSession : api.refreshWorldSessionToken;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((_r, j) => {
+          reject = j;
+        })
+    );
+    if (kind === "token")
+      api.heartbeatWorldSession.mockResolvedValue({ alive: true, heartbeatIntervalSeconds: 30 });
+    const harness = createRuntimeHarness();
+    const controller = createController(harness);
+    await controller.start();
+    await vi.advanceTimersByTimeAsync(kind === "heartbeat" ? 30_000 : 45_000);
+    await controller.end();
+    reject(new Error("late network error"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controller.state.phase).toBe("ended");
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

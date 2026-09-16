@@ -115,14 +115,26 @@ export class WorldTravelController {
 
   async pause() {
     this.requirePhase("running", "pause");
-    await this.requireRuntime().pause();
-    this.update({ phase: "paused" });
+    const runtime = this.requireRuntime();
+    await runtime.pause();
+    if (
+      this.acceptsRuntimeUpdates() &&
+      this.runtime === runtime &&
+      this.snapshot.phase === "running"
+    )
+      this.update({ phase: "paused" });
   }
 
   async resume() {
     this.requirePhase("paused", "resume");
-    await this.requireRuntime().resume();
-    this.update({ phase: "running" });
+    const runtime = this.requireRuntime();
+    await runtime.resume();
+    if (
+      this.acceptsRuntimeUpdates() &&
+      this.runtime === runtime &&
+      this.snapshot.phase === "paused"
+    )
+      this.update({ phase: "running" });
   }
 
   rewind(seconds: number) {
@@ -166,7 +178,9 @@ export class WorldTravelController {
         maxExperienceSeconds: session.maxExperienceSeconds,
         events: {
           onStatusChange: (streamStatus) => this.handleStreamStatus(streamStatus),
-          onFirstFrame: (firstFrameUrl) => this.update({ firstFrameUrl }),
+          onFirstFrame: (firstFrameUrl) => {
+            if (this.acceptsRuntimeUpdates()) this.update({ firstFrameUrl });
+          },
           onCompleted: () => this.handleProviderCompleted(),
           onError: (error) => this.handleRuntimeError(error),
         },
@@ -233,16 +247,18 @@ export class WorldTravelController {
   }
 
   private scheduleHeartbeat(seconds: number) {
-    if (!this.sessionId || this.disposed) return;
+    if (!this.sessionId || !this.acceptsRuntimeUpdates()) return;
     this.heartbeatTimer = setTimeout(
       async () => {
         const sessionId = this.sessionId;
-        if (!sessionId || this.disposed) return;
+        if (!sessionId || !this.acceptsRuntimeUpdates()) return;
         try {
           const response = await heartbeatWorldSession(this.options.projectId, sessionId);
+          if (!this.acceptsRuntimeUpdates() || this.sessionId !== sessionId) return;
           if (!response.alive) throw new Error("The world session expired.");
           this.scheduleHeartbeat(response.heartbeatIntervalSeconds);
         } catch (error) {
+          if (!this.acceptsRuntimeUpdates() || this.sessionId !== sessionId) return;
           this.fail(error);
           this.endInBackground();
         }
@@ -252,18 +268,20 @@ export class WorldTravelController {
   }
 
   private scheduleTokenRefresh(expiresInSeconds: number) {
-    if (!this.sessionId || this.disposed) return;
+    if (!this.sessionId || !this.acceptsRuntimeUpdates()) return;
     const refreshAfterSeconds = Math.max(5, expiresInSeconds - Math.min(15, expiresInSeconds / 2));
     this.tokenTimer = setTimeout(async () => {
       const sessionId = this.sessionId;
-      if (!sessionId || this.disposed) return;
+      if (!sessionId || !this.acceptsRuntimeUpdates()) return;
       try {
         const response = await refreshWorldSessionToken(this.options.projectId, sessionId, {
           tokenSeconds: 60,
         });
+        if (!this.acceptsRuntimeUpdates() || this.sessionId !== sessionId) return;
         this.runtime?.updateToken(response.token);
         this.scheduleTokenRefresh(response.tokenExpiresIn);
       } catch (error) {
+        if (!this.acceptsRuntimeUpdates() || this.sessionId !== sessionId) return;
         this.fail(error);
         this.endInBackground();
       }
@@ -271,6 +289,7 @@ export class WorldTravelController {
   }
 
   private handleStreamStatus(streamStatus: WorldStreamStatus) {
+    if (!this.acceptsRuntimeUpdates()) return;
     this.streamStatusReportBlocked = false;
     this.latestUnreportedStreamStatus = streamStatus;
     this.update({ streamStatus });
@@ -278,11 +297,13 @@ export class WorldTravelController {
   }
 
   private handleProviderCompleted() {
+    if (!this.acceptsRuntimeUpdates()) return;
     this.providerCompleted = true;
     this.endInBackground();
   }
 
   private handleRuntimeError(error: unknown) {
+    if (!this.acceptsRuntimeUpdates()) return;
     this.fail(error);
     this.endInBackground();
   }
@@ -292,6 +313,7 @@ export class WorldTravelController {
   }
 
   private reportLatestStreamStatus() {
+    if (!this.acceptsRuntimeUpdates()) return Promise.resolve();
     if (this.streamStatusReportPromise || this.streamStatusReportBlocked) {
       return this.streamStatusReportPromise ?? Promise.resolve();
     }
@@ -309,7 +331,7 @@ export class WorldTravelController {
   }
 
   private async flushStreamStatusReports() {
-    while (this.latestUnreportedStreamStatus && this.boundTravel) {
+    while (this.acceptsRuntimeUpdates() && this.latestUnreportedStreamStatus && this.boundTravel) {
       const status = this.latestUnreportedStreamStatus;
       const travelId = this.boundTravel.id;
       this.latestUnreportedStreamStatus = null;
@@ -319,12 +341,17 @@ export class WorldTravelController {
           streamStatusChangedAtMs: Date.now(),
         });
       } catch (error) {
+        if (!this.acceptsRuntimeUpdates() || this.boundTravel?.id !== travelId) return;
         if (!this.latestUnreportedStreamStatus) this.latestUnreportedStreamStatus = status;
         this.streamStatusReportBlocked = true;
         if (!this.disposed) this.update({ error });
         return;
       }
     }
+  }
+
+  private acceptsRuntimeUpdates() {
+    return !this.disposed && ["starting", "running", "paused"].includes(this.snapshot.phase);
   }
 
   private requireRuntime() {
