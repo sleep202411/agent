@@ -169,14 +169,24 @@ export function useCanvasGraph(
           drag?: Record<string, { x: number; y: number }>;
           selection?: string[];
         };
-        const color = s.user?.color;
-        if (s.drag) {
+        const color = typeof s.user?.color === "string" ? s.user.color : undefined;
+        if (s.drag && typeof s.drag === "object" && !Array.isArray(s.drag)) {
           for (const [id, pos] of Object.entries(s.drag)) {
-            peerDrag.set(id, { x: pos.x, y: pos.y, color });
+            if (
+              pos &&
+              typeof pos === "object" &&
+              typeof pos.x === "number" &&
+              Number.isFinite(pos.x) &&
+              typeof pos.y === "number" &&
+              Number.isFinite(pos.y)
+            ) {
+              peerDrag.set(id, { x: pos.x, y: pos.y, color });
+            }
           }
         }
-        if (s.selection) {
+        if (Array.isArray(s.selection)) {
           for (const id of s.selection) {
+            if (typeof id !== "string") continue;
             if (!peerRing.has(id)) peerRing.set(id, color);
           }
         }
