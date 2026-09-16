@@ -1,8 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import { localizePath } from "@/src/i18n/locale-url";
-import { useLocale } from "@/src/i18n/i18n";
 import { IconCube, IconLink } from "@tabler/icons-react";
 import { toast } from "sonner";
 
@@ -22,7 +19,6 @@ export function CrewWorkbenchHeader({
   pageTitle: string;
   showProductionActions: boolean;
 }) {
-  const locale = useLocale();
   const t = useTranslations("crewTaskProject");
   const tw = useTranslations("crewWorkbench");
   const overview = useCrewProductionOverview(crewId, showProductionActions);
@@ -62,17 +58,6 @@ export function CrewWorkbenchHeader({
             legacyProject={overview.data?.studioProject ?? null}
             disabled={!overview.data?.capabilities.linkWorkspace}
           />
-        ) : null}
-        {showProductionActions && overview.data?.studioProject ? (
-          <Link
-            className="rounded-md px-2 py-2 text-xs text-[#858a95] hover:text-white"
-            href={localizePath(
-              `/fizzstudio/billing?${new URLSearchParams({ workspaceId: overview.data.studioProject.workspace.id, projectId: overview.data.studioProject.id })}`,
-              locale === "zh-CN" || locale === "zh-HK" ? locale : "en-US"
-            )}
-          >
-            {tw("projectUsage")}
-          </Link>
         ) : null}
         <Button
           color="muted"

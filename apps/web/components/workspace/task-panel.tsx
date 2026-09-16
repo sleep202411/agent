@@ -97,7 +97,7 @@ interface TaskPanelProps {
 
 export function TaskPanel({ userId, className, onSelectTask }: TaskPanelProps) {
   const t = useTranslations("workspace");
-  const { error, retry } = useTaskFetch(userId);
+  useTaskFetch(userId);
 
   const tasks = useAppSelector((s) => s.task.tasks);
 
@@ -113,20 +113,12 @@ export function TaskPanel({ userId, className, onSelectTask }: TaskPanelProps) {
     return { activeTasks: active, tasksToShow: toShow };
   }, [tasks]);
 
-  if (tasksToShow.length === 0 && error === null) {
+  if (tasksToShow.length === 0) {
     return null;
   }
 
   return (
     <div className={cn("space-y-3", className)}>
-      {error !== null && (
-        <div role="status" className="text-sm text-muted-foreground">
-          {t("taskLoadError")}{" "}
-          <button type="button" className="underline" onClick={retry}>
-            {t("taskRetry")}
-          </button>
-        </div>
-      )}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">
           {activeTasks.length > 0

@@ -55,11 +55,25 @@ for (const [locale, messages] of [
       expect(host.textContent).toContain(messages.workspace[key]);
   });
 }
-it("shows a retryable failure without exposing backend error details", async () => {
+it("keeps the official empty layout after an initial read failure", async () => {
   h.error = "internal database hostname";
   await act(async () => root.render(<TaskPanel userId="owner" />));
-  expect(host.textContent).toContain(en.workspace.taskLoadError);
-  expect(host.textContent).not.toContain("internal database hostname");
-  await act(async () => host.querySelector("button")!.click());
-  expect(h.retry).toHaveBeenCalledTimes(1);
+  expect(host.innerHTML).toBe("");
+});
+it("retains loaded task rows after a failed refresh without extra controls", async () => {
+  h.tasks.image = {
+    id: "image",
+    type: "image",
+    status: "running",
+    source: "server",
+    input: {},
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  await act(async () => root.render(<TaskPanel userId="owner" />));
+  const before = host.innerHTML;
+  h.error = "offline";
+  await act(async () => root.render(<TaskPanel userId="owner" />));
+  expect(host.innerHTML).toBe(before);
+  expect(host.querySelector("button")).toBeNull();
 });
