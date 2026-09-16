@@ -21,7 +21,7 @@ export function useDismiss(open: boolean, onDismiss: () => void) {
       if (!target?.closest("[data-popover-zone]")) cb.current();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") cb.current();
+      if (event.key === "Escape" && !event.isComposing) cb.current();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown);
