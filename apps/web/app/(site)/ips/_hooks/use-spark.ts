@@ -47,38 +47,49 @@ export interface SparkDraft {
  *  rejected client-side with a clear error. */
 export const SPARK_MAX_BYTES = 20 * 1024 * 1024;
 
-async function analyzeBrief(file: File): Promise<SparkDraft> {
+type AnalyzeBriefInput = File | { file: File; signal?: AbortSignal };
+async function analyzeBrief(input: AnalyzeBriefInput): Promise<SparkDraft> {
+  const { file, signal } = input instanceof File ? { file: input, signal: undefined } : input;
+  signal?.throwIfAborted();
   const formData = new FormData();
   formData.append("file", file);
   const controller = new AbortController();
-  // Brief analysis can take a while on a long PDF — a generous client
-  // timeout is friendlier than a confusing AbortError.
-  const timer = setTimeout(() => controller.abort(), 300_000);
-  let res: Response;
+  const cancel = () => controller.abort(signal?.reason);
+  signal?.addEventListener("abort", cancel, { once: true });
+  const timer = setTimeout(() => controller.abort(new Error("Analysis timed out")), 300_000);
   try {
-    res = await fetch("/aurora/spark/analyze", {
-      method: "POST",
-      credentials: "include",
-      body: formData,
-      signal: controller.signal,
-    });
-  } catch (err) {
-    const isTimeout = err instanceof DOMException && err.name === "AbortError";
-    throw new Error(isTimeout ? "Analysis timed out" : "Network connection failed");
+    let res: Response;
+    try {
+      res = await fetch("/aurora/spark/analyze", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+        signal: controller.signal,
+      });
+    } catch {
+      controller.signal.throwIfAborted();
+      throw new Error("Network connection failed");
+    }
+    controller.signal.throwIfAborted();
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = (await res.json()) as {
+      code?: number;
+      success?: boolean;
+      msg?: string;
+      message?: string;
+      data?: SparkDraft | null;
+    };
+    controller.signal.throwIfAborted();
+    const ok = body.success === true || body.code === 0 || body.code === 200;
+    if (!ok) throw new Error(body.msg || body.message || "Analysis failed");
+    return body.data ?? {};
+  } catch (error) {
+    controller.signal.throwIfAborted();
+    throw error;
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", cancel);
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = (await res.json()) as {
-    code?: number;
-    success?: boolean;
-    msg?: string;
-    message?: string;
-    data?: SparkDraft | null;
-  };
-  const ok = body.success === true || body.code === 0 || body.code === 200;
-  if (!ok) throw new Error(body.msg || body.message || "Analysis failed");
-  return body.data ?? {};
 }
 
 export function useSparkAnalyze() {

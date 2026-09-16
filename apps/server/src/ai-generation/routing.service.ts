@@ -51,6 +51,7 @@ export interface AiRoutingDecision {
   provider: AiProvider;
   model: AiModelDefinition;
   snapshot: AiRoutingSnapshot;
+  providerRuntimeLimitBeforeCapacity?: number;
 }
 
 @Injectable()
@@ -170,9 +171,11 @@ export class AiGenerationRoutingService {
       model.ops?.providerCapacityTiers,
       stringInput(args.body.input?.resolution),
     );
-    const maxProviderRuntimeSeconds = applyProviderRuntimeLimit(
+    const providerRuntimeLimitBeforeCapacity =
       queuePolicy?.maxProviderRuntimeSeconds ??
-        (model.type === 'video' ? 45 * 60 : 10 * 60),
+      (model.type === 'video' ? 45 * 60 : 10 * 60);
+    const maxProviderRuntimeSeconds = applyProviderRuntimeLimit(
+      providerRuntimeLimitBeforeCapacity,
       providerCapacity,
     );
     const requiredPlan = this.entitlements.requiredPlan(
@@ -189,6 +192,7 @@ export class AiGenerationRoutingService {
       adapter,
       provider,
       model,
+      providerRuntimeLimitBeforeCapacity,
       snapshot: {
         version: '2026-05-27',
         routeId: `${freeCampaign ? `campaign:${freeCampaign.id}` : strategy}:${provider}:${model.id}`,
@@ -199,15 +203,7 @@ export class AiGenerationRoutingService {
         selectedModelId: model.id,
         selectedDeployment: model.deployment,
         selectedCanonicalModelId: model.ops?.canonicalModelId,
-        // TODO(mode-routing-attribution): for multi-endpoint models (e.g.
-        // seedance 2.0) these snapshot the PRIMARY binding/endpoint chosen at
-        // routing time. The fal adapter resolves the real endpoint per mode at
-        // submit (runtime.modeEndpoints) and StartResult.providerEndpoint is
-        // persisted on the attempt (worker.service.ts), so attempt-level
-        // endpoint attribution is truthful. Binding-id attribution would need
-        // model.ops to carry a mode->bindingId map (or back-propagation from
-        // StartResult into the snapshot) — do that as one deliberate change,
-        // not here.
+        // Explicit mode bindings are refined after schema/prompt normalization.
         selectedProviderBindingId: model.ops?.providerBindingId,
         selectedProviderEndpointId: model.ops?.providerEndpointId,
         fallbackAllowed: configuredRoute?.fallbackAllowed === true,
@@ -569,4 +565,46 @@ function trustedReferenceBillingFacts(
     }
   }
   return media;
+}
+
+/** Freeze explicit mode attribution/capacity before a job or wallet hold is written. */
+export async function refineProviderExecutionRouting(
+  decision: AiRoutingDecision,
+  normalizedInput: Record<string, unknown>,
+): Promise<void> {
+  if (!decision.adapter?.resolveExecutionBinding) return;
+  const binding = await decision.adapter.resolveExecutionBinding(
+    decision.model.id,
+    normalizedInput,
+  );
+  // Legacy synthesized endpoints do not have an explicit control-plane binding.
+  if (!binding) return;
+  const snapshot = decision.snapshot;
+  if (binding.ops.canonicalModelId !== snapshot.selectedCanonicalModelId) {
+    throw new ConflictException({
+      code: 'MODEL_BINDING_CHANGED',
+      msg: 'The model binding changed. Refresh and retry.',
+    });
+  }
+  const capacity = selectProviderCapacity(
+    binding.ops.providerCapacity,
+    binding.ops.providerCapacityTiers,
+    stringInput(normalizedInput.resolution),
+  );
+  snapshot.executionBindingIdentity = {
+    deployment: binding.deployment,
+    canonicalModelId: binding.ops.canonicalModelId,
+    providerAccountId: binding.ops.providerAccountId,
+    providerBindingId: binding.ops.providerBindingId,
+    providerEndpointId: binding.ops.providerEndpointId,
+  };
+  snapshot.selectedDeployment = binding.deployment;
+  snapshot.selectedProviderBindingId = binding.ops.providerBindingId;
+  snapshot.selectedProviderEndpointId = binding.ops.providerEndpointId;
+  snapshot.policy.providerCapacity = capacity;
+  snapshot.policy.runtime.maxProviderRuntimeSeconds = applyProviderRuntimeLimit(
+    decision.providerRuntimeLimitBeforeCapacity ??
+      snapshot.policy.runtime.maxProviderRuntimeSeconds,
+    capacity,
+  );
 }

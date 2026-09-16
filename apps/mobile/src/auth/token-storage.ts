@@ -8,15 +8,30 @@ const SECURE_STORE_OPTIONS: SecureStore.SecureStoreOptions = {
   keychainService: "fizzdragon.mobile.auth",
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
 export async function readStoredSession(): Promise<AuthSession | undefined> {
   const raw = await getStoredString(STORAGE_KEY, SECURE_STORE_OPTIONS);
 
   if (!raw) return undefined;
 
   try {
-    const parsed = JSON.parse(raw) as AuthSession;
-    if (!parsed || typeof parsed !== "object" || !parsed.user) return undefined;
-    return parsed;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || !isRecord(parsed.user)) return undefined;
+    if (parsed.region !== "global" && parsed.region !== "cn") return undefined;
+    if (typeof parsed.updatedAt !== "string") return undefined;
+    if (
+      parsed.token !== undefined &&
+      (!isRecord(parsed.token) ||
+        typeof parsed.token.tokenName !== "string" ||
+        !parsed.token.tokenName.trim() ||
+        typeof parsed.token.tokenValue !== "string" ||
+        !parsed.token.tokenValue.trim())
+    )
+      return undefined;
+    return parsed as unknown as AuthSession;
   } catch {
     await clearStoredSession();
     return undefined;

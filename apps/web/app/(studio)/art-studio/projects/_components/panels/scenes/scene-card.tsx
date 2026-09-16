@@ -16,7 +16,6 @@ export function SceneCard({ scene, onEdit }: { scene: ScenePanelItem; onEdit: ()
       >
         {scene.name ?? ""}
       </button>
-      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div className="relative aspect-video w-full" onClick={(e) => e.stopPropagation()}>
         {hasImages ? (
           <Stack

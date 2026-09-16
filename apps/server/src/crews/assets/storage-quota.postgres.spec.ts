@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -18,7 +19,7 @@ const url =
     let crewId: string;
     const expires = () => new Date(Date.now() + 60000);
     beforeAll(() => {
-      const target = new URL(url!);
+      const target = postgresFixtureUrl(url!);
       if (
         target.hostname !== '127.0.0.1' ||
         !(

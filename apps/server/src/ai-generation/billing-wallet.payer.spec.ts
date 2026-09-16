@@ -6,29 +6,18 @@ jest.mock('../workspaces/wallet-realtime', () => ({
 
 /** Projects spend from their workspace; frozen historical payers remain authoritative. */
 describe('AiGenerationBillingWalletService payer resolution', () => {
-  function expectUpsertPayer(
-    upsert: jest.Mock,
+  function expectAdmissionPayer(
+    createMany: jest.Mock,
     expected: { ownerType: 'user' | 'workspace'; ownerId: string },
   ) {
-    const calls = upsert.mock.calls as unknown[][];
-    const input = calls[0]?.[0] as
-      | {
-          where?: {
-            ownerType_ownerId_currency_balanceKind?: {
-              ownerType?: string;
-              ownerId?: string;
-            };
-          };
-        }
-      | undefined;
-
-    expect(input?.where?.ownerType_ownerId_currency_balanceKind).toMatchObject(
-      expected,
-    );
+    expect(createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining(expected)],
+      skipDuplicates: true,
+    });
   }
 
   function buildTx() {
-    const upsert = jest.fn(() =>
+    const createMany = jest.fn(() =>
       Promise.resolve({ id: 'acct-1', currency: 'compute_point' }),
     );
     const grant = {
@@ -52,7 +41,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
         findFirst: jest.fn(),
       },
       walletAccount: {
-        upsert,
+        createMany,
         findUniqueOrThrow: jest.fn(() =>
           Promise.resolve({
             id: 'acct-1',
@@ -92,7 +81,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       },
       $executeRaw: jest.fn(() => Promise.resolve(1)),
     };
-    return { tx, upsert };
+    return { tx, createMany };
   }
 
   const job = (overrides: Partial<Record<string, unknown>> = {}) =>
@@ -111,28 +100,28 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
     }) as never;
 
   it('charges the project workspace for an invited collaborator', async () => {
-    const { tx, upsert } = buildTx();
+    const { tx, createMany } = buildTx();
     const service = new AiGenerationBillingWalletService(
       null as never,
       null as never,
     );
     await service.reserveForJobInTransaction({ tx: tx as never, job: job() });
 
-    expectUpsertPayer(upsert, {
+    expectAdmissionPayer(createMany, {
       ownerType: 'workspace',
       ownerId: 'host-ws',
     });
   });
 
   it('never queries the actor workspace while resolving a project payer', async () => {
-    const { tx, upsert } = buildTx();
+    const { tx, createMany } = buildTx();
     const service = new AiGenerationBillingWalletService(
       null as never,
       null as never,
     );
     await service.reserveForJobInTransaction({ tx: tx as never, job: job() });
 
-    expectUpsertPayer(upsert, {
+    expectAdmissionPayer(createMany, {
       ownerType: 'workspace',
       ownerId: 'host-ws',
     });
@@ -141,7 +130,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
   });
 
   it('charges the same workspace when the actor is the project owner', async () => {
-    const { tx, upsert } = buildTx();
+    const { tx, createMany } = buildTx();
     const service = new AiGenerationBillingWalletService(
       null as never,
       null as never,
@@ -151,14 +140,14 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       job: job({ userId: 'owner-user' }),
     });
 
-    expectUpsertPayer(upsert, {
+    expectAdmissionPayer(createMany, {
       ownerType: 'workspace',
       ownerId: 'host-ws',
     });
   });
 
   it('uses the immutable job payer instead of inferring it from workspace scope', async () => {
-    const { tx, upsert } = buildTx();
+    const { tx, createMany } = buildTx();
     const service = new AiGenerationBillingWalletService(
       null as never,
       null as never,
@@ -171,7 +160,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       }),
     });
 
-    expectUpsertPayer(upsert, {
+    expectAdmissionPayer(createMany, {
       ownerType: 'user',
       ownerId: 'guest-user',
     });
@@ -196,7 +185,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
   });
 
   it('fails closed without a resolved workspace rather than spending a user wallet', async () => {
-    const { tx, upsert } = buildTx();
+    const { tx, createMany } = buildTx();
     const service = new AiGenerationBillingWalletService(
       null as never,
       null as never,
@@ -209,7 +198,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
     ).rejects.toMatchObject({
       response: { code: 'GENERATION_WORKSPACE_REQUIRED' },
     });
-    expect(upsert).not.toHaveBeenCalled();
+    expect(createMany).not.toHaveBeenCalled();
   });
 
   it('sweeps expired grants before returning the payer balance', async () => {

@@ -1,6 +1,7 @@
 "use client";
 
-import { type ChangeEvent, useId, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import {
   IconCertificate,
   IconCopy,
@@ -93,49 +94,55 @@ export function CertificatesPanel({
   const [userIdFilter, setUserIdFilter] = useState("");
   const [certNoFilter, setCertNoFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<AdminCertificateStatusFilter>("all");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [mode, setMode] = useState<"create" | "edit">("create");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [saving, setSaving] = useState(false);
+  const saving = loading;
   const [formError, setFormError] = useState<string | null>(null);
 
   const [revokeTarget, setRevokeTarget] = useState<AdminCertificateRow | null>(null);
   const [revokeReason, setRevokeReason] = useState("");
-  const [revoking, setRevoking] = useState(false);
+  const revoking = loading;
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const pageActive = useMemo(() => items.filter((row) => !row.revokedAt).length, [items]);
   const pageRevoked = items.length - pageActive;
 
+  async function readPage(targetPage: number, signal: AbortSignal) {
+    const params = new URLSearchParams({ page: String(targetPage), pageSize: String(pageSize) });
+    if (userIdFilter.trim()) params.set("userId", userIdFilter.trim());
+    if (certNoFilter.trim()) params.set("certNo", certNoFilter.trim());
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    return requestEnvelope<AdminCertificatesData>(`/api/admin/certificates?${params.toString()}`, {
+      signal,
+    });
+  }
+  function acceptPage(data: AdminCertificatesData) {
+    setItems(data.items);
+    setTotal(data.total);
+    setPage(data.page);
+  }
   async function refresh(targetPage = page) {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      const params = new URLSearchParams();
-      params.set("page", String(targetPage));
-      params.set("pageSize", String(pageSize));
-      if (userIdFilter.trim()) params.set("userId", userIdFilter.trim());
-      if (certNoFilter.trim()) params.set("certNo", certNoFilter.trim());
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      const data = await requestEnvelope<AdminCertificatesData>(
-        `/api/admin/certificates?${params.toString()}`
-      );
-      setItems(data.items);
-      setTotal(data.total);
-      setPage(data.page);
+      const data = await readPage(targetPage, operation.signal);
+      if (operation.current()) acceptPage(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   function openCreate() {
+    if (loading) return;
     setMode("create");
     setEditingId(null);
     setDraft(EMPTY_DRAFT);
@@ -144,6 +151,7 @@ export function CertificatesPanel({
   }
 
   function openEdit(row: AdminCertificateRow) {
+    if (loading) return;
     setMode("edit");
     setEditingId(row.id);
     setDraft({
@@ -175,7 +183,8 @@ export function CertificatesPanel({
       return;
     }
 
-    setSaving(true);
+    const operation = begin();
+    if (!operation) return;
     try {
       if (mode === "create") {
         const payload = {
@@ -189,6 +198,7 @@ export function CertificatesPanel({
         };
         await requestEnvelope("/api/admin/certificates", {
           method: "POST",
+          signal: operation.signal,
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
         });
@@ -202,64 +212,85 @@ export function CertificatesPanel({
         };
         await requestEnvelope(`/api/admin/certificates/${encodeURIComponent(editingId)}`, {
           method: "PATCH",
+          signal: operation.signal,
           headers: { "content-type": "application/json" },
           body: JSON.stringify(payload),
         });
       }
+      if (!operation.current()) return;
       setSheetOpen(false);
-      await refresh(mode === "create" ? 1 : page);
+      const data = await readPage(mode === "create" ? 1 : page, operation.signal);
+      if (operation.current()) acceptPage(data);
     } catch (err) {
-      setFormError(toErrorMessage(err));
+      if (operation.current()) {
+        setFormError(toErrorMessage(err));
+        setError(toErrorMessage(err));
+      }
     } finally {
-      setSaving(false);
+      operation.finish();
     }
   }
 
   async function confirmRevoke() {
     if (!revokeTarget) return;
-    setRevoking(true);
+    const operation = begin();
+    if (!operation) return;
     setRevokeError(null);
     try {
       await requestEnvelope(
         `/api/admin/certificates/${encodeURIComponent(revokeTarget.id)}/revoke`,
         {
           method: "POST",
+          signal: operation.signal,
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ reason: revokeReason.trim() || null }),
         }
       );
+      if (!operation.current()) return;
       setRevokeTarget(null);
       setRevokeReason("");
-      await refresh();
+      const data = await readPage(page, operation.signal);
+      if (operation.current()) acceptPage(data);
     } catch (err) {
-      setRevokeError(toErrorMessage(err));
+      if (operation.current()) {
+        setRevokeError(toErrorMessage(err));
+        setError(toErrorMessage(err));
+      }
     } finally {
-      setRevoking(false);
+      operation.finish();
     }
   }
 
   async function restore(row: AdminCertificateRow) {
-    // ConfirmDialog closes once onConfirm resolves and shows no error of its
-    // own, so surface failures through the panel's error banner here.
-    try {
-      await requestEnvelope(`/api/admin/certificates/${encodeURIComponent(row.id)}/restore`, {
-        method: "POST",
-      });
-      await refresh();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    }
+    await confirmMutation(
+      `/api/admin/certificates/${encodeURIComponent(row.id)}/restore`,
+      "POST",
+      page
+    );
   }
-
   async function remove(row: AdminCertificateRow) {
+    await confirmMutation(
+      `/api/admin/certificates/${encodeURIComponent(row.id)}`,
+      "DELETE",
+      items.length === 1 && page > 1 ? page - 1 : page
+    );
+  }
+  async function confirmMutation(url: string, method: "POST" | "DELETE", targetPage: number) {
+    const operation = begin();
+    if (!operation) return;
+    setError(null);
     try {
-      await requestEnvelope(`/api/admin/certificates/${encodeURIComponent(row.id)}`, {
-        method: "DELETE",
-      });
-      // If we just removed the last row on a page past the first, step back.
-      await refresh(items.length === 1 && page > 1 ? page - 1 : page);
+      await requestEnvelope(url, { method, signal: operation.signal });
+      if (!operation.current()) return;
+      const data = await readPage(targetPage, operation.signal);
+      if (operation.current()) acceptPage(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) {
+        setError(toErrorMessage(err));
+        throw err;
+      }
+    } finally {
+      operation.finish();
     }
   }
 
@@ -276,7 +307,7 @@ export function CertificatesPanel({
               <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
               刷新
             </Button>
-            <Button size="sm" onClick={openCreate}>
+            <Button size="sm" disabled={loading} onClick={openCreate}>
               <IconPlus className="size-3.5" />
               签发证书
             </Button>
@@ -412,7 +443,12 @@ export function CertificatesPanel({
                     </Td>
                     <Td className="text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <Button variant="outline" size="sm" onClick={() => openEdit(row)}>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={loading}
+                          onClick={() => openEdit(row)}
+                        >
                           <IconEdit className="size-3.5" />
                           编辑
                         </Button>
@@ -423,7 +459,7 @@ export function CertificatesPanel({
                             confirmLabel="恢复"
                             onConfirm={() => restore(row)}
                             trigger={
-                              <Button variant="outline" size="sm">
+                              <Button variant="outline" size="sm" disabled={loading}>
                                 <IconRotateClockwise className="size-3.5" />
                                 恢复
                               </Button>
@@ -433,7 +469,9 @@ export function CertificatesPanel({
                           <Button
                             variant="outline"
                             size="sm"
+                            disabled={loading}
                             onClick={() => {
+                              if (loading) return;
                               setRevokeTarget(row);
                               setRevokeReason(row.revokedReason ?? "");
                               setRevokeError(null);
@@ -450,7 +488,7 @@ export function CertificatesPanel({
                           destructive
                           onConfirm={() => remove(row)}
                           trigger={
-                            <Button variant="destructive" size="sm">
+                            <Button variant="destructive" size="sm" disabled={loading}>
                               <IconTrash className="size-3.5" />
                               删除
                             </Button>
@@ -501,7 +539,7 @@ export function CertificatesPanel({
             <SheetTitle>{mode === "create" ? "签发证书" : "编辑证书"}</SheetTitle>
           </SheetHeader>
 
-          <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
+          <div inert={loading} className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
             <FormField
               label="用户 ID"
               hint="证书所属用户的 ID（来自 Java 用户系统）。签发后不可修改。"
@@ -611,6 +649,9 @@ export function CertificatesPanel({
             <div className="space-y-1.5">
               <Label className="text-[13px] font-medium text-slate-700">证书图片</Label>
               <CertificateImageField
+                key={`${mode}:${editingId ?? "new"}`}
+                begin={begin}
+                busy={loading}
                 value={{ assetId: draft.imageAssetId, url: draft.imageUrl }}
                 onChange={(next) =>
                   setDraft((d) => ({ ...d, imageAssetId: next.assetId, imageUrl: next.url }))
@@ -655,6 +696,7 @@ export function CertificatesPanel({
           <div className="space-y-1.5">
             <Label className="text-[13px] text-slate-700">吊销原因（可选）</Label>
             <Textarea
+              disabled={revoking}
               value={revokeReason}
               onChange={(event) => setRevokeReason(event.target.value)}
               placeholder="例如：违规内容 / 误发"
@@ -682,40 +724,64 @@ export function CertificatesPanel({
 function CertificateImageField({
   value,
   onChange,
+  begin,
+  busy,
 }: {
   value: { assetId: string; url: string };
   onChange: (next: { assetId: string; url: string }) => void;
+  begin: ReturnType<typeof useAdminOperation>["begin"];
+  busy: boolean;
 }) {
   const inputId = useId();
-  const [uploading, setUploading] = useState(false);
+  const uploading = busy;
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [localPreview, setLocalPreview] = useState<string | null>(null);
+  const pending = useRef<ReturnType<typeof begin>>(null);
+  const previewRef = useRef<string | null>(null);
+  useEffect(
+    () => () => {
+      pending.current?.cancel();
+      pending.current?.finish();
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+      previewRef.current = null;
+    },
+    []
+  );
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     if (!file) return;
-    const preview = URL.createObjectURL(file);
-    setLocalPreview(preview);
-    setUploading(true);
+    const operation = begin();
+    if (!operation) return;
+    pending.current = operation;
     setUploadError(null);
+    let preview: string | null = null;
     try {
+      preview = URL.createObjectURL(file);
+      previewRef.current = preview;
+      setLocalPreview(preview);
       const form = new FormData();
       form.append("file", file);
       const data = await requestEnvelope<{ asset: { id: string; url: string | null } | null }>(
         "/api/admin/certificates/media",
-        { method: "POST", body: form }
+        { method: "POST", body: form, signal: operation.signal }
       );
+      if (!operation.current()) return;
       if (!data.asset) throw new Error("上传失败");
       onChange({
         assetId: data.asset.id,
         url: adminMediaContentUrl(data.asset.id) ?? data.asset.url ?? "",
       });
     } catch (err) {
-      setUploadError(toErrorMessage(err));
-      setLocalPreview(null);
+      if (operation.current()) setUploadError(toErrorMessage(err));
     } finally {
-      setUploading(false);
+      if (preview && previewRef.current === preview) {
+        URL.revokeObjectURL(preview);
+        previewRef.current = null;
+        if (operation.current()) setLocalPreview(null);
+      }
+      operation.finish();
     }
   }
 
@@ -746,6 +812,7 @@ function CertificateImageField({
           <input
             id={inputId}
             type="file"
+            disabled={busy}
             accept="image/*"
             className="hidden"
             onChange={(event) => void handleFile(event)}

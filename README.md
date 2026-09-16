@@ -10,7 +10,8 @@ apps/
   studio/         FizzStudio 画布应用（Next.js）
   admin-ui/       内部运营后台（Next.js，中文）
   server/         NestJS 后端（AI 生成 / Agent / Java 代理 / billing）
-  agent/          StoryOS 多智能体（Mastra）
+  agent-os/       当前 Agent OS（LangGraph / Temporal）
+  agent/          旧 StoryOS（Mastra，现有部署仍引用，不新增功能）
   mobile/         移动端（Expo / React Native）
 packages/
   shared/             跨应用共享代码
@@ -26,47 +27,75 @@ deploy/
 
 ## Getting Started
 
+Use the Node and npm versions declared in `package.json` (CI uses Node 24.18.1).
+Configure the required app environments before starting services.
+
 ```bash
-# 安装依赖
 npm install
 
-# 启动所有服务
+# Start configured dev services (13 persistent tasks; concurrency is 16).
 npm run dev
 
-# 只启动前端
-npx turbo dev --filter=web
-
-# 只启动后端
-npx turbo dev --filter=server
+# Start one app, when only that app is needed.
+npx turbo run dev --filter=web
+npx turbo run dev --filter=studio
+npx turbo run dev --filter=server
 ```
 
-| Service         | URL                   |
-| --------------- | --------------------- |
-| Web (Next.js)   | http://localhost:3000 |
-| Server (NestJS) | http://localhost:3001 |
+The server's `dev` task delegates to `start:dev`, including its shared-package
+build prerequisite. Root dev also includes Agent OS and the still-referenced
+legacy Agent; each requires its own environment. Starting the frontend alone
+does not start Aurora or establish a working backend connection.
+
+| Service              | Local URL             |
+| -------------------- | --------------------- |
+| Web                  | http://localhost:9527 |
+| Studio               | http://localhost:9540 |
+| Admin UI             | http://localhost:9530 |
+| Aurora / Nest server | http://localhost:4399 |
+
+If a port is occupied, check the existing process and stop the appropriate dev
+session before starting a replacement.
 
 ## Environment Variables
 
+Place Next.js environment files at the app root: `apps/web/.env.local` and
+`apps/studio/.env.local`, **not** inside either app's `app/` directory. Restart
+the affected dev process after changing environment values. Keep existing
+local environment files and credentials out of commits.
+
 ### Web (`apps/web/.env.local`)
 
-```bash
-JAVA_CONTENT_URL=http://120.26.152.164:8091
-JAVA_STUDIO_URL=http://120.26.152.164:8090
-SERVER_URL=http://localhost:3001
-NEXT_PUBLIC_OSS_BASE_URL=https://fizzspace-test.oss-cn-hangzhou.aliyuncs.com
+Set `JAVA_CONTENT_URL` and `JAVA_STUDIO_URL` to the approved test backends for
+the intended site. For an independently configured local Aurora server:
+
+```dotenv
+SERVER_URL=http://localhost:4399
 ```
+
+See `apps/web/.env.example` for the remaining Web settings.
+
+### Studio (`apps/studio/.env.local`)
+
+Studio requires `AURORA_PROXY_TARGET`, `JAVA_CONTENT_URL`, `JAVA_STUDIO_URL`
+and `NEXT_PUBLIC_SITE_REGION`. Use the approved site values for the Java URLs
+and site region; they have no implicit production fallback. For local Aurora,
+which serves its routes without the `/aurora` prefix:
+
+```dotenv
+AURORA_PROXY_TARGET=http://localhost:4399
+AURORA_STRIP_PREFIX=1
+```
+
+These proxy settings are also build inputs. A successful frontend start does
+not prove that those upstream services are available.
 
 ### Server (`apps/server/.env`)
 
-```bash
-JAVA_STUDIO_URL=http://120.26.152.164:8090
-JAVA_CONTENT_URL=http://120.26.152.164:8091
-ALIBABA_API_KEY=sk-xxx
-ALIBABA_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-PORT=3001
-```
-
-参考 `apps/web/.env.example` 和 `apps/server/.env.example` 获取完整变量列表。
+Use `apps/server/.env.example` as a reference and configure the approved local
+database, Redis, Java integration and any enabled provider settings. The
+`start:dev` script sets port 4399. Do not run deployment scripts to resolve a
+local startup problem.
 
 ## Build
 

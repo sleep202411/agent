@@ -90,9 +90,6 @@ export type {
   CrewProductionUpdateDTO,
   CrewProductionUpdateHealth,
   CrewStudioProjectSummaryDTO,
-  CrewStudioProjectOptionDTO,
-  CrewStudioProjectOptionsDTO,
-  CrewStudioProjectDisabledReason,
   UpdateCrewProductionProjectInput,
   CreateCrewProductionResourceInput,
   CreateCrewProductionActivityInput,
@@ -123,8 +120,6 @@ export type {
 } from "./types";
 export {
   useCrewProductionOverview,
-  useCrewStudioProjectOptions,
-  useLinkCrewStudioProject,
   useCrewEpisodes,
   useSaveCrewProductionDocument,
   useUpdateCrewProductionProject,

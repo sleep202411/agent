@@ -59,10 +59,12 @@ export type { ExperienceGameSummary, ExperienceGameListResponse, ExperienceGameD
 export async function listPublishedInteractiveFilms(options?: {
   page?: number;
   pageSize?: number;
+  signal?: AbortSignal;
 }): Promise<ExperienceGameListResponse> {
   try {
     const data = await api.get<unknown>(`${INTERACTIVE_FILM_API_PATH}/games`, {
       service: "studio",
+      signal: options?.signal,
       params: {
         ...(options?.page != null ? { page: options.page } : {}),
         ...(options?.pageSize != null ? { pageSize: options.pageSize } : {}),

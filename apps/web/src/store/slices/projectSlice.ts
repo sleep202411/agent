@@ -368,6 +368,7 @@ export const defaultSizeOptions: AiSizeOption[] = [
 function taskStatusToLegacy(status: ReduxTaskStatus): ResultStatus {
   switch (status) {
     case "pending":
+    case "waiting":
       return "waiting";
     case "running":
       return "generating";
@@ -541,6 +542,7 @@ type VideoResultStatus = "waiting" | "generating" | "success" | "failed";
 function taskStatusToVideoStatus(status: ReduxTaskStatus): VideoResultStatus {
   switch (status) {
     case "pending":
+    case "waiting":
       return "waiting";
     case "running":
       return "generating";
@@ -1420,8 +1422,9 @@ export const projectSlice = createSlice({
       const key = `${action.payload.shotId}:${action.payload.columnId}`;
       delete inst.batchCompletedCells[key];
     },
-    clearBatchGenerating: (state) => {
-      const inst = getInstance(state);
+    clearBatchGenerating: (state, action: PayloadAction<string | undefined>) => {
+      const inst =
+        action.payload === undefined ? getInstance(state) : state.instances[action.payload];
       if (inst) {
         inst.batchGeneratingActive = false;
         inst.batchGeneratingCells = {};

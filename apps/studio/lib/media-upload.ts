@@ -82,6 +82,7 @@ async function postJson<T extends object>(
   signal?: AbortSignal,
   headers?: Record<string, string>
 ): Promise<T> {
+  assertUploadActive(signal);
   const res = await fetch(endpoint, {
     method: "POST",
     credentials: "include",
@@ -89,7 +90,10 @@ async function postJson<T extends object>(
     body: JSON.stringify(body),
     signal,
   });
+  assertUploadActive(signal);
   let json: Partial<T> & {
+    code?: string | number;
+    success?: boolean;
     error?: string;
     message?: string | { message?: string; code?: string };
     msg?: string;
@@ -100,11 +104,27 @@ async function postJson<T extends object>(
   } catch {
     /* non-JSON body — fall through to the HTTP-status error */
   }
+  assertUploadActive(signal);
+  if (!json || typeof json !== "object" || Array.isArray(json)) {
+    throw new Error(`${label} returned an invalid response`);
+  }
   if (!res.ok) {
     throw new Error(errorMessageFromJson(json) || `${label} failed: HTTP ${res.status}`);
   }
+  const hasEnvelopeStatus = "code" in json || "success" in json;
+  const successfulEnvelope =
+    json.success === true ||
+    json.code === "SUCCESS" ||
+    (typeof json.code === "number" && json.code >= 200 && json.code < 300);
+  if (hasEnvelopeStatus && !successfulEnvelope) {
+    throw new Error(errorMessageFromJson(json) || `${label} failed`);
+  }
   // The server may wrap in a { code, data } envelope.
   return (json.data ?? json) as T;
+}
+
+function assertUploadActive(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException("Upload aborted", "AbortError");
 }
 
 function errorMessageFromJson(json: {
@@ -122,7 +142,7 @@ function errorMessageFromJson(json: {
 function contentTypeForFile(file: File, explicit?: string): string {
   if (explicit) return explicit;
   const extension = file.name.split(".").pop()?.toLowerCase();
-  if (extension && CONTENT_TYPE_BY_EXTENSION[extension]) {
+  if (extension && Object.hasOwn(CONTENT_TYPE_BY_EXTENSION, extension)) {
     return CONTENT_TYPE_BY_EXTENSION[extension];
   }
   return file.type || "application/octet-stream";
@@ -193,7 +213,12 @@ function putBytesToStorage(
       reject(new DOMException("Upload aborted", "AbortError"));
     };
 
-    xhr.send(file);
+    try {
+      xhr.send(file);
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 }
 

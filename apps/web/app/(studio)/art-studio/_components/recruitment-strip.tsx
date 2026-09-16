@@ -1,6 +1,7 @@
 "use client";
+import { useCurrentUser } from "@/src/hooks/use-user";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { IconCheck, IconUserSearch, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { UserAvatar } from "@/components/user-avatar";
@@ -32,11 +33,40 @@ function avatarUrl(path: string | null | undefined): string | undefined {
 }
 
 export function RecruitmentStrip() {
+  const { user } = useCurrentUser();
+  return <RecruitmentContent key={user?.id ?? "guest"} />;
+}
+function useDecisionGuard(enabled = true) {
+  const active = useRef(false);
+  const claim = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    active.current = enabled;
+    return () => {
+      active.current = false;
+      claim.current = null;
+    };
+  }, [enabled]);
+  return {
+    pending: () => claim.current !== null,
+    begin: () => {
+      if (!active.current || claim.current) return null;
+      const token = {};
+      claim.current = token;
+      return token;
+    },
+    current: (token: object) => active.current && claim.current === token,
+    finish: (token: object) => {
+      if (claim.current === token) claim.current = null;
+    },
+  };
+}
+function RecruitmentContent() {
   const t = useTranslations("workspace");
   const { data, isLoading } = useRecruitmentList();
   const { data: roleMap } = useCertificationRoles();
   const [rejectTarget, setRejectTarget] = useState<JobApplicant | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [rejectRevision, setRejectRevision] = useState(0);
 
   const list = data ?? [];
 
@@ -58,6 +88,7 @@ export function RecruitmentStrip() {
               item={item}
               roleName={item.roleId ? roleMap?.[String(item.roleId)] : undefined}
               onRejectClick={() => {
+                setRejectRevision((revision) => revision + 1);
                 setRejectTarget(item);
                 setRejectReason("");
               }}
@@ -66,6 +97,7 @@ export function RecruitmentStrip() {
       </div>
 
       <RejectDialog
+        key={rejectRevision}
         target={rejectTarget}
         reason={rejectReason}
         onReasonChange={setRejectReason}
@@ -86,16 +118,21 @@ function RecruitmentRow({
 }) {
   const t = useTranslations("workspace");
   const agree = useAgreeJobApply();
+  const decision = useDecisionGuard();
   const avatar = avatarUrl(item.applyUsernameAvatar);
   const name = item.applyUsername || t("unnamedUser");
   const applyDate = item.createTime ? item.createTime.split("T")[0] : "—";
 
   const handleAgree = async () => {
+    const token = decision.begin();
+    if (!token) return;
     try {
       await agree.mutateAsync(item.id);
-      toast.success(t("passSuccess"));
+      if (decision.current(token)) toast.success(t("passSuccess"));
     } catch {
-      toast.error(t("processFailed"));
+      if (decision.current(token)) toast.error(t("processFailed"));
+    } finally {
+      decision.finish(token);
     }
   };
 
@@ -115,7 +152,9 @@ function RecruitmentRow({
           size="sm"
           variant="soft"
           color="muted"
-          onClick={onRejectClick}
+          onClick={() => {
+            if (!decision.pending()) onRejectClick();
+          }}
           disabled={agree.isPending}
         >
           <IconX className="size-3.5" />
@@ -144,15 +183,21 @@ function RejectDialog({
   const t = useTranslations("workspace");
   const refuse = useRefuseJobApply();
   const open = target !== null;
+  const decision = useDecisionGuard(open);
 
   const handleConfirm = async () => {
     if (!target) return;
+    const token = decision.begin();
+    if (!token) return;
     try {
       await refuse.mutateAsync({ applyId: target.id, message: reason });
+      if (!decision.current(token)) return;
       toast.success(t("rejectSuccess"));
       onClose();
     } catch {
-      toast.error(t("processFailed"));
+      if (decision.current(token)) toast.error(t("processFailed"));
+    } finally {
+      decision.finish(token);
     }
   };
 
@@ -163,6 +208,7 @@ function RejectDialog({
           <DialogTitle>{t("confirmReject")}</DialogTitle>
         </DialogHeader>
         <Textarea
+          disabled={refuse.isPending}
           value={reason}
           onChange={(e) => onReasonChange(e.target.value)}
           placeholder={t("rejectReasonPlaceholder")}

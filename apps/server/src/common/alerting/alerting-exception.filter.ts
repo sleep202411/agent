@@ -113,8 +113,16 @@ function errorSnapshot(exception: unknown): {
     message:
       typeof exception === 'string'
         ? exception
-        : JSON.stringify(exception ?? null),
+        : serializeUnknownException(exception),
   };
+}
+
+function serializeUnknownException(exception: unknown): string {
+  try {
+    return JSON.stringify(exception ?? null) ?? 'Unknown thrown value';
+  } catch {
+    return 'Unserializable thrown value';
+  }
 }
 
 function header(request: HttpRequestLike, name: string): string | undefined {

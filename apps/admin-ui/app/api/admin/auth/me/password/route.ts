@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUnavailableResponse,
   adminUrlForRequest,
@@ -10,13 +11,13 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
-    const response = await fetch(adminUrlForRequest(request, "/auth/me/password"), {
+    const response = await adminFetch(request, adminUrlForRequest(request, "/auth/me/password"), {
       method: "POST",
       headers: adminForwardHeaders(request, { json: true }),
       body: await request.text(),
       cache: "no-store",
     });
-    return relayAdminResponse(response);
+    return await relayAdminResponse(response, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

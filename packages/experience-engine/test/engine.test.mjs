@@ -736,3 +736,45 @@ test("defensively rejects reserved state paths without polluting Object.prototyp
   );
   assert.equal({}.polluted, undefined);
 });
+
+test("repeated polygon vertices do not turn the whole viewport into a hit target", () => {
+  const transform = createMediaContentTransform(
+    { width: 100, height: 100 },
+    { width: 100, height: 100 },
+    "contain"
+  );
+  const points = [
+    { x: 0.2, y: 0.2 },
+    { x: 0.8, y: 0.2 },
+    { x: 0.8, y: 0.8 },
+    { x: 0.2, y: 0.8 },
+  ];
+  for (const repeated of [
+    [...points, points[0]],
+    [points[0], ...points],
+  ]) {
+    const geometry = { kind: "polygon", points: repeated };
+    assert.equal(hitTestExperienceGeometry(geometry, { x: 5, y: 5 }, transform), false);
+    assert.equal(hitTestExperienceGeometry(geometry, { x: 50, y: 50 }, transform), true);
+    assert.equal(hitTestExperienceGeometry(geometry, { x: 20, y: 20 }, transform), true);
+  }
+});
+
+test("very short polygon edges retain a distance-based boundary tolerance", () => {
+  const transform = createMediaContentTransform(
+    { width: 100, height: 100 },
+    { width: 100, height: 100 },
+    "contain"
+  );
+  const geometry = {
+    kind: "polygon",
+    points: [
+      { x: 0.2, y: 0.2 },
+      { x: 0.2000000001, y: 0.2 },
+      { x: 0.8, y: 0.8 },
+      { x: 0.2, y: 0.8 },
+    ],
+  };
+  assert.equal(hitTestExperienceGeometry(geometry, { x: 90, y: 10 }, transform), false);
+  assert.equal(hitTestExperienceGeometry(geometry, { x: 20, y: 50 }, transform), true);
+});

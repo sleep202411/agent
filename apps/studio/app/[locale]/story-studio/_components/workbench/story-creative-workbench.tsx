@@ -34,7 +34,8 @@ import {
 } from "@/components/canvas/authoring/media-actions-context";
 import { StoryCandidateAssetsPanel } from "../project-canvas/story-candidate-assets-panel";
 import { useStoryCandidateAssets } from "../project-canvas/use-story-candidate-assets";
-import { ensureStoryCanvasDocument } from "@/lib/collab/projects-api";
+import { useStoryCanvasDocument } from "../../_lib/use-story-documents";
+import { useAuth } from "@/app/_components/auth-provider";
 import { getStoryWorkbench, storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import { useCanvasConnection } from "@/app/[locale]/project/_components/canvas-connection-context";
@@ -50,20 +51,18 @@ export function StoryCreativeWorkbench({
   projectId: string;
   activeMode: StoryWorkbenchMode;
 }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.canvas.creativeWorkbench");
   const projectT = useTranslations("project");
   const commonT = useTranslations("common");
   const [shareOpen, setShareOpen] = useState(false);
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "workbench-shell", projectId],
-    queryFn: () => getStoryWorkbench(projectId),
+    queryKey: ["story-studio", "workbench-shell", projectId, user?.id ?? null],
+    queryFn: ({ signal }) => getStoryWorkbench(projectId, undefined, signal),
+    enabled: Boolean(projectId && user),
     staleTime: 20_000,
   });
-  const documentQuery = useQuery({
-    queryKey: ["story-studio", "creative-document", projectId],
-    queryFn: () => ensureStoryCanvasDocument(projectId),
-    staleTime: Number.POSITIVE_INFINITY,
-  });
+  const documentQuery = useStoryCanvasDocument(projectId);
 
   if (workbenchQuery.isPending || documentQuery.isPending) {
     return <WorkbenchLoading label={t("status.loading")} />;

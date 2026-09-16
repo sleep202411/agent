@@ -19,6 +19,7 @@
 // /billing/promotions rows. Both are passed in from the server page.
 
 import { useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -77,7 +78,7 @@ export function BillingBindingsPanel({
   const [promotions, setPromotions] = useState<BillingPromotionRow[]>(
     initialPromotions?.items ?? []
   );
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
   const bindingRiskCount = useMemo(
@@ -100,50 +101,51 @@ export function BillingBindingsPanel({
     [promotions]
   );
 
+  async function load(operation: NonNullable<ReturnType<typeof begin>>) {
+    const [nextOverview, nextPromotions] = await Promise.all([
+      requestEnvelope<AdminBillingOverviewData>("/api/admin/billing/overview", operation.signal),
+      requestEnvelope<AdminBillingPromotionsData>(
+        "/api/admin/billing/promotions",
+        operation.signal
+      ),
+    ]);
+    if (!operation.current()) return;
+    setProviderBindings(nextOverview.providerBindings);
+    setActiveProviderBindings(nextOverview.metrics.activeProviderBindings);
+    setIncompleteProviderBindings(nextOverview.metrics.incompleteProviderBindings);
+    setPromotions(nextPromotions.items);
+  }
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      const [nextOverview, nextPromotions] = await Promise.all([
-        requestEnvelope<AdminBillingOverviewData>("/api/admin/billing/overview"),
-        requestEnvelope<AdminBillingPromotionsData>("/api/admin/billing/promotions"),
-      ]);
-      setProviderBindings(nextOverview.providerBindings);
-      setActiveProviderBindings(nextOverview.metrics.activeProviderBindings);
-      setIncompleteProviderBindings(nextOverview.metrics.incompleteProviderBindings);
-      setPromotions(nextPromotions.items);
+      await load(operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.cancel();
+      operation.finish();
     }
   }
-
-  async function handleSyncPriceBinding(bindingId: string) {
-    setLoading(true);
+  async function sync(path: string) {
+    const operation = begin("write");
+    if (!operation) return;
     setError(null);
     try {
-      await mutateEnvelope(`/api/admin/billing/provider-bindings/${bindingId}/sync`, {});
-      await refresh();
+      await mutateEnvelope(path, {}, "POST", operation.signal);
+      if (operation.current()) await load(operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.cancel();
+      operation.finish();
     }
   }
-
-  async function handleSyncPromotionBinding(bindingId: string) {
-    setLoading(true);
-    setError(null);
-    try {
-      await mutateEnvelope(`/api/admin/billing/promotion-provider-bindings/${bindingId}/sync`, {});
-      await refresh();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
+  const handleSyncPriceBinding = (id: string) =>
+    sync(`/api/admin/billing/provider-bindings/${encodeURIComponent(id)}/sync`);
+  const handleSyncPromotionBinding = (id: string) =>
+    sync(`/api/admin/billing/promotion-provider-bindings/${encodeURIComponent(id)}/sync`);
 
   return (
     <div className="space-y-4">

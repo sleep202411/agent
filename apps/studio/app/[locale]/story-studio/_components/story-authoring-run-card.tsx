@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { type ReactNode, useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -113,15 +115,16 @@ export function StoryAuthoringProposalTranscript({
   artifact: AgentOsTranscriptArtifact;
   mobileH5?: boolean;
 }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.authoringRun");
   const reference = artifact.reference;
   const storyRunId = reference.kind === "story_stage_proposal" ? reference.storyAgentRunId : null;
   const { proposal, run } = useStoryProposal(projectId, storyRunId);
   const chapterId = proposal && run?.id === storyRunId ? run.chapterId : null;
   const currentAssetsQuery = useQuery({
-    queryKey: storyProductionKeys.assets(projectId, chapterId),
+    queryKey: storyProductionKeys.assets(projectId, chapterId, user?.id ?? null),
     queryFn: ({ signal }) => listStoryAssetSpecs(projectId, chapterId as string, signal),
-    enabled: Boolean(chapterId && proposal && isStoryAssetProposal(proposal)),
+    enabled: Boolean(projectId && user && chapterId && proposal && isStoryAssetProposal(proposal)),
     retry: false,
   });
   if (!proposal) return null;

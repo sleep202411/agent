@@ -22,7 +22,7 @@ export function useUserInfo() {
   const locale = useLocale();
   return useQuery<UserInfoResolved>({
     queryKey: userKeys.infoOf(locale),
-    queryFn: getUserInfo,
+    queryFn: ({ signal }) => getUserInfo(signal),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -133,7 +133,6 @@ export function useUploadBanner() {
 // ─── Referral Code ────────────────────────────────────
 
 export function useReferralCode() {
-  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: getRecommendationCode,
   });

@@ -484,8 +484,8 @@ export class AirwallexProvider implements PaymentProviderAdapter {
     const clientId = requiredEnv('AIRWALLEX_CLIENT_ID');
     const apiKey = requiredEnv('AIRWALLEX_API_KEY');
     const loginAs = process.env.AIRWALLEX_LOGIN_AS_ACCOUNT_ID;
-    const response = await fetch(
-      `${apiBaseUrl()}/api/v1/authentication/login`,
+    const { response, body } = await this.readJsonResponse(
+      '/api/v1/authentication/login',
       {
         method: 'POST',
         headers: {
@@ -496,11 +496,6 @@ export class AirwallexProvider implements PaymentProviderAdapter {
         },
       },
     );
-
-    const body = (await response.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
     if (!response.ok) {
       throw new ServiceUnavailableException({
         code: 'AIRWALLEX_AUTH_FAILED',
@@ -532,7 +527,7 @@ export class AirwallexProvider implements PaymentProviderAdapter {
       body?: unknown;
     },
   ): Promise<T> {
-    const response = await fetch(`${apiBaseUrl()}${path}`, {
+    const { response, body } = await this.readJsonResponse(path, {
       method: options.method,
       headers: {
         Authorization: `Bearer ${options.token}`,
@@ -541,7 +536,6 @@ export class AirwallexProvider implements PaymentProviderAdapter {
       body:
         options.body === undefined ? undefined : JSON.stringify(options.body),
     });
-    const body = (await response.json().catch(() => ({}))) as T;
     if (!response.ok) {
       throw new ServiceUnavailableException({
         code: 'AIRWALLEX_API_FAILED',
@@ -549,7 +543,46 @@ export class AirwallexProvider implements PaymentProviderAdapter {
         details: body,
       });
     }
-    return body;
+    return body as T;
+  }
+  /** Bound both headers and body; abort alone is insufficient for an abandoned transport. */
+  private async readJsonResponse(
+    path: string,
+    options: RequestInit,
+  ): Promise<{ response: Response; body: Record<string, unknown> }> {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new ServiceUnavailableException({
+          code: 'AIRWALLEX_REQUEST_TIMEOUT',
+          msg: 'Airwallex request timed out.',
+        });
+        controller.abort(error);
+        reject(error);
+      }, 30_000);
+    });
+    try {
+      return await Promise.race([
+        (async () => {
+          const response = await fetch(`${apiBaseUrl()}${path}`, {
+            ...options,
+            signal: controller.signal,
+          });
+          controller.signal.throwIfAborted();
+          const body = (await response.json().catch(() => {
+            controller.signal.throwIfAborted();
+            // Preserve existing handling of malformed/non-JSON provider errors.
+            return {};
+          })) as Record<string, unknown>;
+          controller.signal.throwIfAborted();
+          return { response, body };
+        })(),
+        timeout,
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 }
 

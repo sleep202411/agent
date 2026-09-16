@@ -51,6 +51,9 @@ jobs:
       - name: Generate database client
         run: npm run db:generate -w server
 
+      - name: Create dedicated legacy Agent test database
+        run: docker exec "${{ job.services.postgres.id }}" createdb -U fizzdragon fizzdragon_legacy_agent_test
+
       - name: Apply product database migrations
         run: npm run db:deploy -w server
 
@@ -68,10 +71,34 @@ jobs:
       - name: Install media test dependencies
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
 
+      - name: Start local upload-test storage
+        run: |
+          docker run --detach --name fizz-ci-minio \
+            --publish 127.0.0.1:19000:9000 \
+            --env MINIO_ROOT_USER=fizz-local-test \
+            --env MINIO_ROOT_PASSWORD=fizz-local-test-password \
+            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
+            server /data
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:19000/minio/health/ready; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs fizz-ci-minio
+          exit 1
+
       - name: Test
         env:
           TASK01_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+          LEGACY_AGENT_TEST_DATABASE_URL: postgres://fizzdragon:fizzdragon@127.0.0.1:55439/fizzdragon_legacy_agent_test?sslmode=disable
         run: npx turbo run test --concurrency=2
+
+      - name: Multipart upload integration
+        env:
+          TASK01_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+          EPISODE_UPLOAD_INTEGRATION: "1"
+        run: npm run test -w server -- --runInBand --runTestsByPath src/media/episode-upload.integration.spec.ts
 
       # Build-only fixtures: no production credentials or live service calls.
       - name: Build
@@ -87,3 +114,7 @@ jobs:
           JAVA_CONTENT_URL: http://127.0.0.1:18080
           JAVA_STUDIO_URL: http://127.0.0.1:18081
         run: npx turbo run build --concurrency=1
+
+      - name: Remove local upload-test storage
+        if: always()
+        run: docker rm --force fizz-ci-minio || true

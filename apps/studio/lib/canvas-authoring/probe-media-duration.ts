@@ -11,9 +11,10 @@ const PROBE_TIMEOUT_MS = 12_000;
 
 export function probeMediaDurationSeconds(
   source: File | string,
-  kind: "video" | "audio"
+  kind: "video" | "audio",
+  signal?: AbortSignal
 ): Promise<number | null> {
-  if (typeof window === "undefined") return Promise.resolve(null);
+  if (signal?.aborted || typeof window === "undefined") return Promise.resolve(null);
 
   return new Promise((resolve) => {
     const el = document.createElement(kind);
@@ -28,6 +29,7 @@ export function probeMediaDurationSeconds(
       if (settled) return;
       settled = true;
       window.clearTimeout(timeoutId);
+      signal?.removeEventListener("abort", abort);
       el.onloadedmetadata = null;
       el.onerror = null;
       el.removeAttribute("src");
@@ -43,7 +45,14 @@ export function probeMediaDurationSeconds(
       resolve(seconds);
     };
 
+    const abort = () => finish(null);
     const timeoutId = window.setTimeout(() => finish(null), PROBE_TIMEOUT_MS);
+
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      finish(null);
+      return;
+    }
 
     el.onloadedmetadata = () => {
       const raw = el.duration;

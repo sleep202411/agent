@@ -102,6 +102,7 @@ export class AiCanonicalCatalogService {
             status: 'active',
             archivedAt: null,
             providerAccount: { status: 'active', archivedAt: null },
+            providerEndpoint: { status: 'active', archivedAt: null },
           },
           orderBy: [
             { priority: 'asc' },

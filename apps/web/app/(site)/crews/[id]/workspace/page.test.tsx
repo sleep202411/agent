@@ -148,12 +148,6 @@ vi.mock("@/app/(site)/crews/_hooks/use-production", () => ({
   useCrewProductionOverview: () => ({
     data: { studioProject: null, capabilities: { manage: true } },
   }),
-  useCrewStudioProjectOptions: () => ({
-    data: { workspaces: [] },
-    isLoading: false,
-    isError: false,
-  }),
-  useLinkCrewStudioProject: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/app/(site)/crews/_hooks/use-crew-permissions", () => ({
@@ -172,6 +166,13 @@ vi.mock("@/app/(site)/crews/[id]/workspace/_hooks/use-anchor-deeplink", () => ({
 vi.mock("@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation", () => ({
   useCrewConversation: () => state.chatThread,
 }));
+
+vi.mock(
+  "@/app/(site)/crews/[id]/workspace/_components/workbench/crew-studio-workspace-picker",
+  () => ({
+    CrewStudioWorkspacePicker: () => <button aria-label="Link workspace">Link workspace</button>,
+  })
+);
 
 // Panes and dialogs are stubbed: this suite is about which one mounts,
 // not what each renders.
@@ -373,7 +374,7 @@ afterEach(() => {
 });
 
 describe("crew workspace tabs", () => {
-  it("keeps one crew header and canvas action mounted while switching surfaces", () => {
+  it("keeps one crew header and workspace action mounted while switching surfaces", () => {
     render();
     const header = document.querySelector('header[aria-label="Crew header"]');
     expect(header).not.toBeNull();

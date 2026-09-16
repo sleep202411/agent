@@ -1,3 +1,4 @@
+import { useCurrentUser } from "./use-user";
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import {
   getMyProjects,
@@ -22,17 +23,22 @@ export const myProjectKeys = {
 };
 
 export function useMyPersonalWorks() {
+  const { user } = useCurrentUser();
   return useQuery<PersonalWork[]>({
-    queryKey: myProjectKeys.works,
-    queryFn: () => getMyPersonalWorks(1, 50),
+    queryKey: [...myProjectKeys.works, user?.id ?? null],
+    enabled: Boolean(user?.id),
+    queryFn: ({ signal }) => getMyPersonalWorks(1, 50, signal),
   });
 }
 
 export function useCreatePersonalWork() {
+  const { user } = useCurrentUser();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: createPersonalWork,
-    onSuccess: () => qc.invalidateQueries({ queryKey: myProjectKeys.works }),
+    onMutate: () => ({ accountId: user?.id ?? null }),
+    onSuccess: (_data, _variables, context) =>
+      qc.invalidateQueries({ queryKey: [...myProjectKeys.works, context?.accountId ?? null] }),
   });
 }
 
@@ -44,14 +50,18 @@ export function useUploadPersonalVideo() {
 }
 
 export function useUpdatePersonalWork() {
+  const { user } = useCurrentUser();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: updatePersonalWork,
-    onSuccess: () => qc.invalidateQueries({ queryKey: myProjectKeys.works }),
+    onMutate: () => ({ accountId: user?.id ?? null }),
+    onSuccess: (_data, _variables, context) =>
+      qc.invalidateQueries({ queryKey: [...myProjectKeys.works, context?.accountId ?? null] }),
   });
 }
 
 export function useMyProjects() {
+  const { user } = useCurrentUser();
   return useInfiniteQuery<
     MyProjectsResponse,
     Error,
@@ -59,8 +69,9 @@ export function useMyProjects() {
     readonly unknown[],
     number
   >({
-    queryKey: myProjectKeys.projects,
-    queryFn: ({ pageParam }) => getMyProjects(pageParam, MY_PROJECTS_PAGE_SIZE),
+    queryKey: [...myProjectKeys.projects, user?.id ?? null],
+    enabled: Boolean(user?.id),
+    queryFn: ({ pageParam, signal }) => getMyProjects(pageParam, MY_PROJECTS_PAGE_SIZE, signal),
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
       const loaded = allPages.reduce((acc, p) => acc + (p.data?.length ?? 0), 0);
@@ -71,16 +82,19 @@ export function useMyProjects() {
 }
 
 export function useMyJoinedProjects() {
+  const { user } = useCurrentUser();
   return useQuery<Project[]>({
-    queryKey: myProjectKeys.joined,
-    queryFn: () => getMyJoinedProjects(1, 50),
+    queryKey: [...myProjectKeys.joined, user?.id ?? null],
+    enabled: Boolean(user?.id),
+    queryFn: ({ signal }) => getMyJoinedProjects(1, 50, signal),
   });
 }
 
 export function useProjectProfits(id: string) {
+  const { user } = useCurrentUser();
   return useQuery<ProfitInfo>({
-    queryKey: ["project", "profits", id],
-    queryFn: () => getProjectProfits(id),
-    enabled: !!id,
+    queryKey: ["project", "profits", id, user?.id ?? null],
+    queryFn: ({ signal }) => getProjectProfits(id, signal),
+    enabled: !!id && Boolean(user?.id),
   });
 }

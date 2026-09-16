@@ -545,6 +545,50 @@ describe("TV IP list", () => {
     await waitForSource("ip-1");
   });
 
+  it.each(["resolve", "reject"] as const)(
+    "abandons pending channel navigation when search changes (%s)",
+    async (outcome) => {
+      let resolvePage!: (value: unknown) => void;
+      let rejectPage!: (error: Error) => void;
+      harness.list
+        .mockReset()
+        .mockImplementation((config: { params: { q?: string; cursor?: string } }) => {
+          if (config.params.q)
+            return Promise.resolve({
+              items: [makeIp("new-ip", "Search result")],
+              nextCursor: null,
+            });
+          if (!config.params.cursor)
+            return Promise.resolve({ items: [ips[0]], nextCursor: "page-2" });
+          return new Promise((resolve, reject) => {
+            resolvePage = resolve;
+            rejectPage = reject;
+          });
+        });
+      await render();
+      await waitForSource("ip-1");
+      act(() => player().trigger("ended"));
+      expect(container.textContent).toContain("tv.loadingChannel");
+      const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+      act(() => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(
+          input,
+          "new"
+        );
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "new" }));
+      });
+      expect(container.textContent).not.toContain("tv.loadingChannel");
+      await act(async () => {
+        if (outcome === "resolve") resolvePage({ items: [ips[1]], nextCursor: null });
+        else rejectPage(new Error("Abandoned navigation failure"));
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      });
+      await waitForText("Search result");
+      expect(container.textContent).not.toContain("Abandoned navigation failure");
+      expect(selected()).toContain("Search result");
+    }
+  );
+
   it("surfaces a next-page failure and lets the viewer retry without losing the channel", async () => {
     harness.list
       .mockReset()
@@ -606,6 +650,67 @@ describe("TV IP list", () => {
     );
     act(() => player().trigger("ended"));
     await waitForSource("ip-2");
+  });
+
+  it.each([
+    ["video/quicktime", "mov", false, "video/mp4"],
+    ["video/quicktime", "mov", true, "video/quicktime"],
+    ["video/webm", "webm", false, "video/webm"],
+    ["application/x-mpegURL", "m3u8", false, "application/x-mpegURL"],
+  ])(
+    "admits %s %s sources while preserving supported hints (%s)",
+    async (type, extension, quicktimeSupported, expected) => {
+      vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockImplementation((mime) =>
+        mime === "video/quicktime" && !quicktimeSupported ? "" : "probably"
+      );
+      const ip = makeIp("compat", "Compatibility");
+      ip.trailerAsset = {
+        ...ip.trailerAsset!,
+        url: `https://cdn.test/compat.${extension}?version=1`,
+        contentType: type,
+      };
+      harness.list.mockResolvedValue({ items: [ip], nextCursor: null });
+      await render();
+      await vi.waitFor(() => {
+        expect(player().currentSrc()).toBe(ip.trailerAsset!.url);
+        expect(player().currentType()).toBe(expected);
+      });
+    }
+  );
+
+  it("uses the same MOV admission when selecting a published episode", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockImplementation((mime) =>
+      mime === "video/quicktime" ? "" : "probably"
+    );
+    const ip = makeIp("ip-1", "First IP");
+    const media = {
+      ...ip.trailerAsset!,
+      url: "https://cdn.test/episode.mov",
+      contentType: "video/quicktime",
+    };
+    ip.episodes = [
+      {
+        id: "mov-episode",
+        episodeNo: 1,
+        title: "MOV episode",
+        status: "published",
+        mediaAsset: media,
+      },
+    ] as typeof ip.episodes;
+    harness.list.mockResolvedValue({ items: [ip], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="tv.episodeSelector"]'
+    )!;
+    await act(async () => {
+      select.value = "mov-episode";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await vi.waitFor(() => {
+      expect(player().currentSrc()).toBe(media.url);
+      expect(player().currentType()).toBe("video/mp4");
+    });
   });
 
   it("retries a failed source on the same player", async () => {

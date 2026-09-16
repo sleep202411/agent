@@ -22,7 +22,7 @@
  * Java handler is otherwise stable.
  *
  * Security: the shared `pwd`, viewer cookies, and contact PII never
- * land in logs — `safeUrl` strips `pwd`, and we surface only
+ * land in logs — `safeUrl` omits contact/secret query parameters, and we surface only
  * `{ userId, nickname, avatar }` to BFF callers (skipping the
  * `contact` / `study` / `description` fields Java returns).
  */
@@ -97,8 +97,8 @@ export class JavaUserLookupService {
       () => controller.abort(),
       JAVA_REQUEST_TIMEOUT_MS,
     );
-    // Log-safe URL: strip pwd value.
-    const safeUrl = url.replace(/([?&])pwd=[^&]+/i, '$1pwd=***');
+    // Contact and the shared secret are query parameters: log only the endpoint.
+    const safeUrl = `${JAVA_CONTENT_URL}${JAVA_USER_BY_ACCOUNT_PATH}`;
 
     let envelope: JavaEnvelope;
     try {
@@ -118,11 +118,11 @@ export class JavaUserLookupService {
           upstream: 'java',
         });
       }
-      envelope = (await res.json()) as JavaEnvelope;
+      envelope = parseLookupEnvelope(await res.json());
     } catch (err) {
       if (err instanceof ServiceUnavailableException) throw err;
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`Java lookup failed: ${msg} (${safeUrl})`);
+      // Transport errors may echo their request URL, including private query data.
+      this.logger.error(`Java lookup failed (${safeUrl})`);
       throw new ServiceUnavailableException({
         message: 'User lookup service unavailable',
         upstream: 'java',
@@ -136,18 +136,16 @@ export class JavaUserLookupService {
     //   code: 404 → not found
     //   anything non-200 → bubble up as upstream issue
     if (envelope.code === 302) {
-      this.logger.warn(`Java ${safeUrl} rejected: ${envelope.msg ?? 'unauth'}`);
+      this.logger.warn(`Java ${safeUrl} rejected: unauth`);
       throw new ServiceUnavailableException({
         message: 'User lookup not authorised',
         upstream: 'java',
         upstreamCode: 302,
       });
     }
-    if (envelope.code === 404 || envelope.info == null) return null;
+    if (envelope.code === 404) return null;
     if (envelope.code !== undefined && envelope.code !== 200) {
-      this.logger.warn(
-        `Java ${safeUrl} envelope code=${envelope.code} msg=${envelope.msg}`,
-      );
+      this.logger.warn(`Java ${safeUrl} returned an unsuccessful envelope`);
       throw new ServiceUnavailableException({
         message: 'User lookup service error',
         upstream: 'java',
@@ -311,7 +309,7 @@ export class JavaUserLookupService {
           upstream: 'java',
         });
       }
-      envelope = (await res.json()) as JavaEnvelope;
+      envelope = parseLookupEnvelope(await res.json());
     } catch (err) {
       if (err instanceof ServiceUnavailableException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
@@ -331,7 +329,7 @@ export class JavaUserLookupService {
         upstreamCode: 302,
       });
     }
-    if (envelope.code === 404 || envelope.info == null) return null;
+    if (envelope.code === 404) return null;
     if (envelope.code !== undefined && envelope.code !== 200) {
       throw new ServiceUnavailableException({
         message: 'User lookup service error',
@@ -348,4 +346,11 @@ export class JavaUserLookupService {
       avatar: raw.avatar ?? null,
     };
   }
+}
+
+function parseLookupEnvelope(value: unknown): JavaEnvelope {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Invalid user lookup response');
+  }
+  return value as JavaEnvelope;
 }

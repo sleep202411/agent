@@ -1,3 +1,4 @@
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import { createHash } from 'node:crypto';
 import {
   ConflictException,
@@ -7,7 +8,6 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
-  WalletAccountStatus,
   WalletBalanceKind,
   WalletCurrencyType,
   WalletOwnerType,
@@ -364,9 +364,5 @@ function ensureAccount(
     currency: WalletCurrencyType.community_point,
     balanceKind,
   };
-  return tx.walletAccount.upsert({
-    where: { ownerType_ownerId_currency_balanceKind: identity },
-    create: { ...identity, status: WalletAccountStatus.active },
-    update: {},
-  });
+  return ensureWalletAccount(tx, identity);
 }

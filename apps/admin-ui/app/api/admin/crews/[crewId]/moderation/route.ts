@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUrlForRequest,
   adminUnavailableResponse,
@@ -14,7 +15,8 @@ export async function POST(
 ) {
   try {
     const { crewId } = await params;
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(request, `/crews/${encodeURIComponent(crewId)}/moderation`),
       {
         method: "POST",
@@ -23,7 +25,7 @@ export async function POST(
         cache: "no-store",
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

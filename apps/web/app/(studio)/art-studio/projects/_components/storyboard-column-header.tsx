@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { IconDownload, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,7 @@ import {
   BatchGenerateConfig,
   StoryboardBatchGenerateDialog,
 } from "@/app/(studio)/art-studio/projects/_components/storyboard-batch-generate-dialog";
-import { useAppSelector, useAppDispatch } from "@/src/store";
+import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
 import {
   setBatchGeneratingActive,
@@ -39,6 +39,7 @@ import {
 } from "@/app/(studio)/art-studio/projects/_components/storyboard-batch-voice-dialog";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 import { env } from "@/src/env";
+import { downloadBatch, batchAssetName } from "./storyboard-download";
 
 const BATCH_INTERVAL = 10_000;
 const IMAGE_DEFAULT_PRESET_KEYS = ["description", "shot_size", "perspective", "style_planting"];
@@ -330,32 +331,49 @@ function getRowImageUrl(row: ShotRow) {
   return ossUrl(file?.url || file?.path);
 }
 
-async function downloadBlob(url: string, fileName: string) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-  const blob = await response.blob();
-  const downloadUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = downloadUrl;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(downloadUrl);
-}
-
-function sleep(ms: number, timerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>) {
+function sleep(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
-    timerRef.current = setTimeout(() => {
-      timerRef.current = null;
+    if (signal.aborted) {
       resolve();
-    }, ms);
+      return;
+    }
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
   });
 }
 
-export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; icon?: ReactNode }) {
+interface BatchRun {
+  projectId: string;
+  controller: AbortController;
+}
+
+const activeBatchRuns = new Map<string, BatchRun>();
+
+interface ColumnHeaderProps {
+  column: ShotColumn;
+  icon?: ReactNode;
+}
+export function StoryboardColumnHeader(props: ColumnHeaderProps) {
+  const projectId = useAppSelector((state) => state.project.currentProjectId);
+  return (
+    <StoryboardColumnHeaderSession
+      key={JSON.stringify([projectId, props.column.id])}
+      {...props}
+      projectId={projectId}
+    />
+  );
+}
+
+function StoryboardColumnHeaderSession({
+  column,
+  icon,
+  projectId,
+}: ColumnHeaderProps & { projectId: string | null }) {
   const t = useTranslations("storyboard");
   const tc = useTranslations("common");
   const rows = useAppSelector((state) => selectCurrentInstance(state).rows);
@@ -379,7 +397,33 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
   const [voiceAutoloadLoading, setVoiceAutoloadLoading] = useState(false);
   const [showBatchGenerateDialog, setShowBatchGenerateDialog] = useState(false);
   const [showBatchVoiceDialog, setShowBatchVoiceDialog] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const batchRun = useRef<BatchRun | null>(null);
+  const downloadRequest = useRef<AbortController | null>(null);
+  const mounted = useRef(false);
+  const associationRequests = useRef(new Map<string, AbortController>());
+  const currentAssociation = (kind: string, controller: AbortController) =>
+    associationRequests.current.get(kind) === controller &&
+    !controller.signal.aborted &&
+    store.getState().project.currentProjectId === projectId;
+  const isCurrent = (run: BatchRun) =>
+    batchRun.current === run &&
+    activeBatchRuns.get(run.projectId) === run &&
+    !run.controller.signal.aborted &&
+    store.getState().project.currentProjectId === run.projectId;
+  const beginRun = (): BatchRun | null => {
+    if (
+      !projectId ||
+      store.getState().project.currentProjectId !== projectId ||
+      selectCurrentInstance(store.getState()).batchGeneratingActive
+    )
+      return null;
+    activeBatchRuns.get(projectId)?.controller.abort();
+    const run = { projectId, controller: new AbortController() };
+    activeBatchRuns.set(projectId, run);
+    batchRun.current = run;
+    return run;
+  };
 
   const showBatchGenerate =
     column.presetColumnKey === "image_path" ||
@@ -392,57 +436,108 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
   const isDescriptionColumn = column.presetColumnKey === "description";
   const isDialogueColumn = column.presetColumnKey === "dialogue";
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    mounted.current = true;
     return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-        timerRef.current = null;
+      mounted.current = false;
+      downloadRequest.current?.abort();
+      downloadRequest.current = null;
+      associationRequests.current.forEach((request) => request.abort());
+      associationRequests.current.clear();
+      const run = batchRun.current;
+      if (!run) return;
+      batchRun.current = null;
+      run.controller.abort();
+      if (activeBatchRuns.get(run.projectId) === run) {
+        activeBatchRuns.delete(run.projectId);
+        store.dispatch(clearBatchGenerating(run.projectId));
       }
-      store.dispatch(clearBatchGenerating());
     };
-  }, []);
+  }, [projectId, column.id]);
 
   const handleAutoload = async () => {
-    if (!column.id) return;
+    if (
+      !column.id ||
+      !projectId ||
+      store.getState().project.currentProjectId !== projectId ||
+      associationRequests.current.has("column")
+    )
+      return;
+    const controller = new AbortController();
+    associationRequests.current.set("column", controller);
     setAutoloadLoading(true);
     try {
       await backendApi.post("/api/ai/chat/autoload/column", {
         data: { columnId: String(column.id), recoverOldData },
         timeout: 300_000,
+        signal: controller.signal,
       });
+      if (!currentAssociation("column", controller)) return;
       toast.success(t("autoAssociateSuccess"));
       setShowAutoloadDialog(false);
       setRecoverOldData(false);
       store.dispatch(touchStoryboard());
     } catch (error) {
+      if (!currentAssociation("column", controller)) return;
       console.error("[StoryboardColumnHeader] 自动关联失败:", error);
       toast.error(t("autoAssociateFailed"));
     } finally {
-      setAutoloadLoading(false);
+      if (currentAssociation("column", controller)) {
+        associationRequests.current.delete("column");
+        setAutoloadLoading(false);
+      }
     }
   };
 
   const handleVoiceAutoload = async () => {
-    if (!column.id) return;
+    if (
+      !column.id ||
+      !projectId ||
+      store.getState().project.currentProjectId !== projectId ||
+      associationRequests.current.has("voice")
+    )
+      return;
+    const controller = new AbortController();
+    associationRequests.current.set("voice", controller);
     setVoiceAutoloadLoading(true);
     try {
       await backendApi.post("/api/ai/chat/autoload/voice", {
         data: { columnId: String(column.id), recoverOldData: voiceRecoverOldData },
         timeout: 300_000,
+        signal: controller.signal,
       });
+      if (!currentAssociation("voice", controller)) return;
       toast.success(t("associateVoiceSuccess"));
       setShowVoiceAutoloadDialog(false);
       setVoiceRecoverOldData(false);
       store.dispatch(touchStoryboard());
     } catch (error) {
+      if (!currentAssociation("voice", controller)) return;
       console.error("[StoryboardColumnHeader] 一键关联角色配音失败:", error);
       toast.error(t("associateVoiceFailed"));
     } finally {
-      setVoiceAutoloadLoading(false);
+      if (currentAssociation("voice", controller)) {
+        associationRequests.current.delete("voice");
+        setVoiceAutoloadLoading(false);
+      }
     }
   };
 
   const handleBatchExport = async (type: "image" | "video") => {
+    if (
+      !mounted.current ||
+      !projectId ||
+      store.getState().project.currentProjectId !== projectId ||
+      downloadRequest.current
+    )
+      return;
+    const controller = new AbortController();
+    downloadRequest.current = controller;
+    const current = () =>
+      mounted.current &&
+      downloadRequest.current === controller &&
+      !controller.signal.aborted &&
+      store.getState().project.currentProjectId === projectId;
     try {
       const finalAssets = rows
         .map((row, rowIndex) => {
@@ -452,7 +547,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
           if (!path) return null;
           return {
             url: ossUrl(path),
-            name: `shot_${rowIndex + 1}_final.${String(path).split(".").pop() || (type === "image" ? "png" : "mp4")}`,
+            name: batchAssetName(path, rowIndex, type),
           };
         })
         .filter((item): item is { url: string; name: string } => Boolean(item?.url));
@@ -468,18 +563,20 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
           : t("startExportVideos", { count: finalAssets.length })
       );
 
-      for (const asset of finalAssets) {
-        try {
-          await downloadBlob(asset.url, asset.name);
-        } catch (error) {
-          console.error("[StoryboardColumnHeader] 下载素材失败:", asset.url, error);
-        }
+      const successful = await downloadBatch(finalAssets, controller.signal);
+      if (!current()) return;
+      if (!successful) {
+        toast.error(type === "image" ? t("exportImagesFailed") : t("exportVideosFailed"));
+        return;
       }
 
       toast.success(type === "image" ? t("finalizedImagesExported") : t("finalizedVideosExported"));
     } catch (error) {
+      if (!current()) return;
       console.error("[StoryboardColumnHeader] 批量导出失败:", error);
       toast.error(type === "image" ? t("exportImagesFailed") : t("exportVideosFailed"));
+    } finally {
+      if (downloadRequest.current === controller) downloadRequest.current = null;
     }
   };
 
@@ -527,6 +624,8 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       return;
     }
 
+    const run = beginRun();
+    if (!run) return;
     store.dispatch(setBatchGeneratingActive(true));
     queue.forEach((item) =>
       store.dispatch(
@@ -539,6 +638,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       let interrupted = false;
       for (let index = 0; index < queue.length; index += 1) {
         const item = queue[index];
+        if (!isCurrent(run)) return;
         if (!selectCurrentInstance(store.getState()).batchGeneratingActive) {
           interrupted = true;
           break;
@@ -557,6 +657,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
                 videoLength: config.videoLength || undefined,
               },
               timeout: 360_000,
+              signal: run.controller.signal,
             });
           } else {
             await backendApi.post("/api/ai/image/generate/basic", {
@@ -569,32 +670,45 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
                 watermark: false,
               },
               timeout: 360_000,
+              signal: run.controller.signal,
             });
           }
+          if (!isCurrent(run)) return;
           store.dispatch(setBatchCompleted({ shotId: item.shotId, columnId: item.columnId }));
         } catch (error) {
+          if (!isCurrent(run)) return;
           console.error("[StoryboardColumnHeader] 批量生成失败:", item.shotId, error);
         } finally {
-          store.dispatch(
-            setBatchGenerating({ shotId: item.shotId, columnId: item.columnId, generating: false })
-          );
+          if (isCurrent(run))
+            store.dispatch(
+              setBatchGenerating({
+                shotId: item.shotId,
+                columnId: item.columnId,
+                generating: false,
+              })
+            );
         }
 
         if (
           index < queue.length - 1 &&
           selectCurrentInstance(store.getState()).batchGeneratingActive
         ) {
-          await sleep(BATCH_INTERVAL, timerRef);
+          await sleep(BATCH_INTERVAL, run.controller.signal);
         }
       }
 
+      if (!isCurrent(run)) return;
       if (interrupted) {
         toast.warning(t("batchGenerateAborted"));
       } else {
         toast.success(t("batchGenerateComplete"));
       }
     } finally {
-      store.dispatch(clearBatchGenerating());
+      if (isCurrent(run)) {
+        batchRun.current = null;
+        activeBatchRuns.delete(run.projectId);
+        store.dispatch(clearBatchGenerating());
+      }
     }
   };
 
@@ -624,6 +738,8 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       return;
     }
 
+    const run = beginRun();
+    if (!run) return;
     store.dispatch(setBatchGeneratingActive(true));
     queue.forEach((item) =>
       store.dispatch(
@@ -636,6 +752,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
       let interrupted = false;
       for (let index = 0; index < queue.length; index += 1) {
         const item = queue[index];
+        if (!isCurrent(run)) return;
         if (!selectCurrentInstance(store.getState()).batchGeneratingActive) {
           interrupted = true;
           break;
@@ -651,31 +768,44 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
               voice_id: config.voiceId || undefined,
             },
             timeout: 360_000,
+            signal: run.controller.signal,
           });
+          if (!isCurrent(run)) return;
           store.dispatch(setBatchCompleted({ shotId: item.shotId, columnId: item.columnId }));
         } catch (error) {
+          if (!isCurrent(run)) return;
           console.error("[StoryboardColumnHeader] 批量配音失败:", item.shotId, error);
         } finally {
-          store.dispatch(
-            setBatchGenerating({ shotId: item.shotId, columnId: item.columnId, generating: false })
-          );
+          if (isCurrent(run))
+            store.dispatch(
+              setBatchGenerating({
+                shotId: item.shotId,
+                columnId: item.columnId,
+                generating: false,
+              })
+            );
         }
 
         if (
           index < queue.length - 1 &&
           selectCurrentInstance(store.getState()).batchGeneratingActive
         ) {
-          await sleep(BATCH_INTERVAL, timerRef);
+          await sleep(BATCH_INTERVAL, run.controller.signal);
         }
       }
 
+      if (!isCurrent(run)) return;
       if (interrupted) {
         toast.warning(t("batchVoiceAborted"));
       } else {
         toast.success(t("batchVoiceComplete"));
       }
     } finally {
-      store.dispatch(clearBatchGenerating());
+      if (isCurrent(run)) {
+        batchRun.current = null;
+        activeBatchRuns.delete(run.projectId);
+        store.dispatch(clearBatchGenerating());
+      }
     }
   };
 

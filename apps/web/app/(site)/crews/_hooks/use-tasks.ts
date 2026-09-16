@@ -49,8 +49,11 @@ export function useCrewTaskProject(crewId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.taskProject(crewId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
-    queryFn: () =>
-      crewApi.get<CrewTaskProjectDTO>(`/crews/${encodeURIComponent(crewId)}/task-project`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewTaskProjectDTO>(`/crews/${encodeURIComponent(crewId)}/task-project`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
@@ -69,8 +72,10 @@ export function useCrewTaskView(
     queryKey: [...crewKeys.taskView(crewId, input), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId) && Boolean(input.viewId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewTaskPageDTO>(`/crews/${encodeURIComponent(crewId)}/tasks`, {
+        signal,
+        cache: "no-store",
         query: {
           viewId: input.viewId,
           query: input.query || undefined,
@@ -105,8 +110,10 @@ export function useCrewTaskOptions(
     queryKey: [...crewKeys.taskOptions(crewId, input), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewTaskOptionPageDTO>(`/crews/${encodeURIComponent(crewId)}/task-options`, {
+        signal,
+        cache: "no-store",
         query: {
           ...input,
           activeOnly: input.activeOnly ? "true" : undefined,
@@ -128,8 +135,11 @@ export function useCrewTaskSummary(crewId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.taskSummary(crewId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
-    queryFn: () =>
-      crewApi.get<CrewTaskSummaryDTO>(`/crews/${encodeURIComponent(crewId)}/task-summary`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewTaskSummaryDTO>(`/crews/${encodeURIComponent(crewId)}/task-summary`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
@@ -140,8 +150,10 @@ export function useCrewTaskActivity(crewId: string, enabled = true) {
     queryKey: [...crewKeys.taskActivity(crewId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewTaskActivityPageDTO>(`/crews/${encodeURIComponent(crewId)}/task-activity`, {
+        signal,
+        cache: "no-store",
         query: { cursor: pageParam, limit: 30 },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
@@ -654,7 +666,11 @@ export function useCrewTask(taskId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.task(taskId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(taskId),
-    queryFn: () => crewApi.get<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
@@ -665,8 +681,10 @@ export function useCrewTaskTimeline(taskId: string, enabled = true) {
     queryKey: [...crewKeys.taskTimeline(taskId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(taskId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewTaskTimelinePageDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/timeline`, {
+        signal,
+        cache: "no-store",
         query: { cursor: pageParam, limit: 30 },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,

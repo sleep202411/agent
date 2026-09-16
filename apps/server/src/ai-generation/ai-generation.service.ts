@@ -43,7 +43,10 @@ import { ProviderRegistry } from './provider-registry.service';
 import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
 import { AiPromptCompilerService } from './prompt-compiler.service';
 import { AiGenerationQueueService } from './queue.service';
-import { AiGenerationRoutingService } from './routing.service';
+import {
+  AiGenerationRoutingService,
+  refineProviderExecutionRouting,
+} from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
 import { AiCanonicalCatalogService } from './canonical-catalog.service';
 import type { AiPromptReferenceBinding } from './prompt-document.types';
@@ -308,6 +311,7 @@ export class AiGenerationService {
       skillSnapshot,
     });
     const normalizedInput = promptCompilation.normalizedInput;
+    await refineProviderExecutionRouting(decision, normalizedInput);
     const prompt = promptCompilation.snapshot.displayText;
     await this.requireReferenceAccess(
       user.userId,
@@ -368,7 +372,7 @@ export class AiGenerationService {
             type: model.type,
             provider,
             modelId: model.id,
-            deployment: model.deployment,
+            deployment: snapshot.selectedDeployment,
             canonicalModelId: snapshot.selectedCanonicalModelId ?? null,
             providerBindingId: snapshot.selectedProviderBindingId ?? null,
             schemaVersion: model.schemaVersion,

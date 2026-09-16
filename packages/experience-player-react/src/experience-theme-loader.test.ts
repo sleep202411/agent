@@ -67,4 +67,44 @@ describe("loadExperienceTheme", () => {
       "failed integrity validation"
     );
   });
+  it("stops before hashing a body resolved after cancellation", async () => {
+    let resolveBody!: (value: unknown) => void;
+    const body = new Promise<unknown>((resolve) => {
+      resolveBody = resolve;
+    });
+    const response = new Response();
+    vi.spyOn(response, "json").mockReturnValue(body);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(response);
+    const digest = vi.spyOn(globalThis.crypto.subtle, "digest");
+    const controller = new AbortController();
+    const pending = loadExperienceTheme(manifest(), controller.signal);
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await Promise.resolve();
+    controller.abort();
+    resolveBody(THEME);
+    await rejected;
+    expect(digest).not.toHaveBeenCalled();
+  });
+
+  it("rejects cancellation while the digest is pending", async () => {
+    let resolveDigest!: (value: ArrayBuffer) => void;
+    let started!: () => void;
+    const hashing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    vi.spyOn(globalThis.crypto.subtle, "digest").mockImplementation(() => {
+      started();
+      return new Promise<ArrayBuffer>((resolve) => {
+        resolveDigest = resolve;
+      });
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(THEME)));
+    const controller = new AbortController();
+    const pending = loadExperienceTheme(manifest(), controller.signal);
+    const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await hashing;
+    controller.abort();
+    resolveDigest(Uint8Array.from(Buffer.from(themeHash(), "hex")).buffer);
+    await rejected;
+  });
 });

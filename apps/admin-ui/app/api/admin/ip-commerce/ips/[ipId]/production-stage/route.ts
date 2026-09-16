@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUnavailableResponse,
   adminUrlForRequest,
@@ -11,7 +12,8 @@ export const dynamic = "force-dynamic";
 export async function PATCH(request: NextRequest, context: { params: Promise<{ ipId: string }> }) {
   try {
     const { ipId } = await context.params;
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(request, `/ip-commerce/ips/${encodeURIComponent(ipId)}/production-stage`),
       {
         method: "PATCH",
@@ -21,7 +23,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         signal: request.signal,
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

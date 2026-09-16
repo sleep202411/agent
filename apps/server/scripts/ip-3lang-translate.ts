@@ -109,7 +109,8 @@ async function main() {
     readFileSync(resolve(OUT, 'plan-3lang.json'), 'utf-8'),
   ) as Row[];
 
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma = buildPrisma();

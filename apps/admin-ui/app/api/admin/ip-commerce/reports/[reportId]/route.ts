@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUnavailableResponse,
   adminUrlForRequest,
@@ -14,7 +15,8 @@ export async function PATCH(
 ) {
   try {
     const { reportId } = await context.params;
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(request, `/ip-commerce/reports/${encodeURIComponent(reportId)}`),
       {
         method: "PATCH",
@@ -23,7 +25,7 @@ export async function PATCH(
         cache: "no-store",
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

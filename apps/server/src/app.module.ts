@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { TasksModule } from './tasks/tasks.module';
 import { APP_GUARD } from '@nestjs/core';
 import { AdminAuthModule } from './admin-auth';
 import { AgentUsersModule } from './agent-users';
@@ -76,6 +77,7 @@ const agentOsGatewayEnabled = (() => {
     CopilotModule,
     SparkModule,
     AiGenerationModule,
+    TasksModule,
     RealtimeModule,
     NotificationModule,
     QuotaModule,

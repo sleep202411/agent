@@ -33,8 +33,10 @@ export function useCursorVisibility({ editor, overlayHeight = 0 }: CursorVisibil
   });
 
   useEffect(() => {
+    if (!editor || windowHeight <= 0) return;
+    let disposed = false;
     const ensureCursorVisibility = () => {
-      if (!editor) return;
+      if (disposed || editor.isDestroyed) return;
 
       const { state, view } = editor;
       if (!view.hasFocus()) return;
@@ -62,6 +64,11 @@ export function useCursorVisibility({ editor, overlayHeight = 0 }: CursorVisibil
     };
 
     ensureCursorVisibility();
+    editor.on("selectionUpdate", ensureCursorVisibility);
+    return () => {
+      disposed = true;
+      editor.off("selectionUpdate", ensureCursorVisibility);
+    };
   }, [editor, overlayHeight, windowHeight, rect.height]);
 
   return rect;

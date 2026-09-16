@@ -112,10 +112,16 @@ export function useElementRect({
     updateRect();
 
     const cleanup: (() => void)[] = [];
+    let disposed = false;
+    let frame: number | null = null;
 
     if (useResizeObserver && hasResizeObserver) {
       const resizeObserver = new ResizeObserver(() => {
-        window.requestAnimationFrame(updateRect);
+        if (disposed || frame !== null) return;
+        frame = window.requestAnimationFrame(() => {
+          frame = null;
+          if (!disposed) updateRect();
+        });
       });
       resizeObserver.observe(targetElement);
       cleanup.push(() => resizeObserver.disconnect());
@@ -127,11 +133,13 @@ export function useElementRect({
     window.addEventListener("resize", handleUpdate, true);
 
     cleanup.push(() => {
-      window.removeEventListener("scroll", handleUpdate);
-      window.removeEventListener("resize", handleUpdate);
+      window.removeEventListener("scroll", handleUpdate, true);
+      window.removeEventListener("resize", handleUpdate, true);
     });
 
     return () => {
+      disposed = true;
+      if (frame !== null) window.cancelAnimationFrame(frame);
       cleanup.forEach((fn) => fn());
     };
   }, [enabled, getTargetElement, updateRect, useResizeObserver]);

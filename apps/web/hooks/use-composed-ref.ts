@@ -1,45 +1,30 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useCallback, type Ref, type RefObject } from "react";
 
-// basically Exclude<React.ClassAttributes<T>["ref"], string>
-type UserRef<T> = ((instance: T | null) => void) | React.RefObject<T | null> | null | undefined;
+type UserRef<T> = Ref<T> | undefined;
 
-const updateRef = <T>(ref: NonNullable<UserRef<T>>, value: T | null) => {
-  if (typeof ref === "function") {
-    ref(value);
-  } else if (ref && typeof ref === "object" && "current" in ref) {
-    // Safe assignment without MutableRefObject
-    const mutableRef = ref as { current: T | null };
-    mutableRef.current = value;
-  }
-};
+function updateRef<T>(ref: UserRef<T>, value: T | null) {
+  if (typeof ref === "function") return ref(value);
+  if (ref) ref.current = value;
+}
 
 export const useComposedRef = <T extends HTMLElement>(
-  libRef: React.RefObject<T | null>,
+  libRef: RefObject<T | null>,
   userRef: UserRef<T>
-) => {
-  const prevUserRef = useRef<UserRef<T>>(null);
-
-  return useCallback(
+) =>
+  useCallback(
     (instance: T | null) => {
-      if (libRef && "current" in libRef) {
-        const mutableLibRef = libRef as { current: T | null };
-        mutableLibRef.current = instance;
-      }
-
-      if (prevUserRef.current) {
-        updateRef(prevUserRef.current, null);
-      }
-
-      prevUserRef.current = userRef;
-
-      if (userRef) {
-        updateRef(userRef, instance);
-      }
+      libRef.current = instance;
+      const cleanup = updateRef(userRef, instance);
+      if (instance === null) return;
+      return () => {
+        libRef.current = null;
+        if (typeof cleanup === "function") cleanup();
+        else updateRef(userRef, null);
+      };
     },
     [libRef, userRef]
   );
-};
 
 export default useComposedRef;

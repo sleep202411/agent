@@ -25,6 +25,7 @@ function makeService(
   } = {},
 ) {
   const tx = {
+    $queryRaw: jest.fn(() => Promise.resolve([])),
     characterConsentRecord: {
       create: jest.fn(() => Promise.resolve({ id: 'consent-1' })),
     },
@@ -42,7 +43,11 @@ function makeService(
         Promise.resolve(opts.activeGrantsForCharacter ?? []),
       ),
       findFirst: jest.fn(() =>
-        Promise.resolve((opts.activeGrantsForCharacter ?? [])[0] ?? null),
+        Promise.resolve(
+          opts.existingGrant ??
+            (opts.activeGrantsForCharacter ?? [])[0] ??
+            null,
+        ),
       ),
       update: jest.fn(() => Promise.resolve({})),
     },
@@ -77,6 +82,11 @@ function makeService(
       Promise.resolve().then(() => fn(tx)),
     ),
   };
+  Object.assign(tx, {
+    studioCharacter: prisma.studioCharacter,
+    platformProject: prisma.platformProject,
+    projectMember: prisma.projectMember,
+  });
   const featureFlags = {
     config: {
       enabled: true,

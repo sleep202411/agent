@@ -2394,6 +2394,7 @@
     "missingRequired": "标题与简介为必填项。",
     "publishNeedsTier": "发布需要至少开启一个档位。",
     "tierIncomplete": "「{tier}」档缺少{field}。请补齐，或关闭该档。",
+    "tierInvalidNumber": "「{tier}」档的{field}无效。请输入有效值，或关闭该档。",
     "tierField": {
       "title": "档位名称",
       "description": "档位描述"
@@ -4295,6 +4296,11 @@
     "taskCompleted": "已完成",
     "taskFailed": "失败",
     "taskCancelled": "已取消",
+    "tasksTitle": "任务",
+    "tasksDescription": "生成、Agent 与 Story 制作任务",
+    "taskAgent": "Agent 任务",
+    "taskProduction": "制作任务",
+    "taskWaiting": "等待操作",
     "taskImage": "生成图片",
     "taskVideo": "生成视频",
     "taskAudio": "生成音频",
@@ -5062,17 +5068,6 @@
       "dateInput": "日期或时间段",
       "dateInputPlaceholder": "例如 2027-05、2027-Q4 或 2027-05-20",
       "labels": "标签",
-      "searchStudioProjects": "搜索工作区和项目…",
-      "loadingStudioProjects": "正在加载项目…",
-      "noStudioProjects": "没有匹配的项目。",
-      "unlinkStudioProject": "解除 Studio 项目关联",
-      "workspaceHasNoProjects": "这个工作区暂无项目。",
-      "projectLinkFailed": "无法关联 Studio 项目。",
-      "projectOptionsFailed": "无法加载项目。",
-      "projectDisabled": {
-        "alreadyLinked": "已关联到剧组「{crew}」。",
-        "insufficient_permission": "需要项目编辑权限才能关联。"
-      },
       "addLabel": "添加标签",
       "addAnotherLabel": "继续添加标签",
       "searchLabels": "搜索标签…",
@@ -5803,7 +5798,6 @@
   "crewWorkbench": {
     "projectUsage": "Studio 项目消耗",
     "header": "剧组工具栏",
-    "linkCanvas": "关联画布",
     "globalNavigation": "剧组工作台导航",
     "crewSwitcherNavigation": "切换剧组",
     "allCrews": "全部剧组",
@@ -7778,6 +7772,7 @@
     "proposalSentToast": "报价已发送。",
     "proposalSendFailed": "发送报价失败。",
     "proposalPriceInvalid": "请填写有效价格。",
+    "proposalNumberInvalid": "请为{field}输入允许范围内的整数。",
     "proposalScopePlaceholder": "一行一条，列出包含内容。",
     "proposalScopeHint": "会展示在报价卡片上，写具体一点。",
     "proposalNoteLabel": "备注（可选）",
@@ -9970,6 +9965,9 @@
     "normal": "正常（1×）"
   },
   "crewWorkspaceLink": {
+    "legacyProject": "项目：{name}",
+    "legacyDescription": "目前仅关联 {name}，现有剧组素材访问仍限于此画布项目。选择您拥有的工作区以替换此关联，并与该工作区内的项目共享。",
+    "unlinkProject": "取消项目关联",
     "link": "关联工作区",
     "description": "仅剧组管理员可关联自己拥有的工作区。其中的项目可使用共享剧组资产；受限文件夹保留原有权限。",
     "failed": "工作区关联保存失败。",

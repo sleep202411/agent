@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import {
   addComment,
   createCommentThread,
@@ -11,15 +11,9 @@ import {
 } from "./comments-api";
 import type { DocumentProvider } from "./document-provider";
 
-const COMMENTS_CHANGED = "comments_changed";
+import { useDocumentFeed } from "./use-document-feed";
 
-function isCommentsChanged(data: unknown): boolean {
-  return (
-    typeof data === "object" &&
-    data !== null &&
-    (data as { type?: string }).type === COMMENTS_CHANGED
-  );
-}
+const COMMENTS_CHANGED = "comments_changed";
 
 export interface DocumentCommentsHandle {
   threads: CommentThreadDto[];
@@ -38,75 +32,46 @@ export function useDocumentComments(
   documentId: string | null,
   provider: DocumentProvider | null
 ): DocumentCommentsHandle {
-  const [threads, setThreads] = useState<CommentThreadDto[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const refetch = useCallback(async () => {
-    if (!documentId) return;
-    try {
-      setThreads(await listCommentThreads(documentId));
-    } catch {
-      /* 401 raises the login dialog; transient errors retry on next signal */
-    }
-  }, [documentId]);
-
-  useEffect(() => {
-    if (!documentId) {
-      /* eslint-disable-next-line react-hooks/set-state-in-effect */
-      setThreads([]);
-      return;
-    }
-    let cancelled = false;
-
-    setLoading(true);
-    void refetch().finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [documentId, refetch]);
-
-  // Refetch when a peer reports a comment change.
-  useEffect(() => {
-    if (!provider) return;
-    return provider.onAppEvent((data) => {
-      if (isCommentsChanged(data)) void refetch();
-    });
-  }, [provider, refetch]);
+  const {
+    rows: threads,
+    loading,
+    refetch,
+    isActive,
+  } = useDocumentFeed(documentId, provider, COMMENTS_CHANGED, listCommentThreads);
 
   const notifyPeers = useCallback(() => {
+    if (!isActive()) return;
     provider?.broadcastAppEvent({ type: COMMENTS_CHANGED });
-  }, [provider]);
+  }, [provider, isActive]);
 
   const createThread = useCallback(
     async (input: CreateThreadInput) => {
-      if (!documentId) return;
+      if (!documentId || !isActive()) return;
       await createCommentThread(documentId, input);
       await refetch();
       notifyPeers();
     },
-    [documentId, refetch, notifyPeers]
+    [documentId, refetch, notifyPeers, isActive]
   );
 
   const reply = useCallback(
     async (threadId: string, body: string) => {
-      if (!documentId) return;
+      if (!documentId || !isActive()) return;
       await addComment(documentId, threadId, body);
       await refetch();
       notifyPeers();
     },
-    [documentId, refetch, notifyPeers]
+    [documentId, refetch, notifyPeers, isActive]
   );
 
   const resolve = useCallback(
     async (threadId: string) => {
-      if (!documentId) return;
+      if (!documentId || !isActive()) return;
       await resolveCommentThread(documentId, threadId);
       await refetch();
       notifyPeers();
     },
-    [documentId, refetch, notifyPeers]
+    [documentId, refetch, notifyPeers, isActive]
   );
 
   return { threads, loading, createThread, reply, resolve };

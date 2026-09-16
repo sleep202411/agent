@@ -1,25 +1,43 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
-import { config } from 'dotenv';
-import { resolve } from 'node:path';
-import { buildPrisma, type PrismaService } from '../infra/db/db.module';
+import type { PrismaService } from '../infra/db/db.module';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import {
   CreatorEarningsService,
   EarningsQuerySchema,
 } from './creator-earnings.service';
 
-config({ path: resolve(__dirname, '../../.env'), quiet: true });
-const integration =
-  process.env.CREATOR_EARNINGS_POSTGRES_TEST === '1' ? describe : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.CREATOR_EARNINGS_POSTGRES_TEST === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const integration = databaseUrl ? describe : describe.skip;
+// The fixture deliberately uses a 30-second transaction; allow its completion
+// and rollback before Jest tears down the database client.
+jest.setTimeout(60000);
 integration('Creator earnings read model (local PostgreSQL)', () => {
-  let prisma: ReturnType<typeof buildPrisma>;
+  let prisma: PrismaClient;
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL ?? '');
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
-      url.port !== '5433'
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw new Error('Tests require local PostgreSQL on port 5433.');
-    prisma = buildPrisma();
+      throw new Error(
+        'Explicitly allowed named loopback test database required.',
+      );
+    prisma = new PrismaClient({
+      adapter: new PrismaPg({
+        connectionString: databaseUrl,
+        options: '-c timezone=UTC',
+      }),
+      transactionOptions: { timeout: 15000 },
+    });
     await prisma.$connect();
   });
   afterAll(async () => {

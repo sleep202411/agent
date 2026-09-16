@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import {
   BadRequestException,
   ConflictException,
@@ -6,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   AgentActionStatus,
+  type AgentAction,
   AgentMemoryStatus,
   AgentMemoryType,
   AgentRunStatus,
@@ -32,7 +34,7 @@ import type {
 
 const agentUserListInclude = {
   runs: {
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 1,
   },
   _count: {
@@ -46,16 +48,16 @@ const agentUserListInclude = {
 
 const agentUserDetailInclude = {
   runs: {
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 5,
   },
   actions: {
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: 10,
   },
   memories: {
     where: { status: AgentMemoryStatus.active },
-    orderBy: { updatedAt: 'desc' },
+    orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
     take: 20,
   },
   _count: {
@@ -95,7 +97,7 @@ export class AgentUsersService {
       this.prisma.agentUser.findMany({
         where,
         include: agentUserListInclude,
-        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
       }),
@@ -158,8 +160,11 @@ export class AgentUsersService {
     return this.toAgentUserDetailDto(agent);
   }
 
-  async ensureRunnable(agentUserId: string) {
-    const agent = await this.findAgentUser(agentUserId);
+  async ensureRunnable(
+    agentUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const agent = await this.findAgentUser(agentUserId, db);
     if (agent.status !== AgentUserStatus.active) {
       throw new BadRequestException({
         code: 'AGENT_USER_NOT_RUNNABLE',
@@ -211,70 +216,75 @@ export class AgentUsersService {
     input: UpdateAdminAgentUserInput,
     adminId: string,
   ) {
-    const existing = await this.findAgentUser(agentUserId);
-    const nextIdentityStatus =
-      input.identityStatus ??
-      (input.platformUserId === undefined
-        ? existing.identityStatus
-        : input.platformUserId
-          ? AgentUserIdentityStatus.bound
-          : AgentUserIdentityStatus.shadow);
-    const nextPlatformUserId =
-      input.platformUserId === undefined
-        ? existing.platformUserId
-        : input.platformUserId
-          ? decodeUserId(input.platformUserId)
-          : input.platformUserId;
-    this.assertIdentityBinding(nextIdentityStatus, nextPlatformUserId);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_users WHERE id=${agentUserId}::uuid FOR UPDATE`;
+      const existing = await this.findAgentUser(agentUserId, tx);
+      const nextIdentityStatus =
+        input.identityStatus ??
+        (input.platformUserId === undefined
+          ? existing.identityStatus
+          : input.platformUserId
+            ? AgentUserIdentityStatus.bound
+            : AgentUserIdentityStatus.shadow);
+      const nextPlatformUserId =
+        input.platformUserId === undefined
+          ? existing.platformUserId
+          : input.platformUserId
+            ? decodeUserId(input.platformUserId)
+            : input.platformUserId;
+      this.assertIdentityBinding(nextIdentityStatus, nextPlatformUserId);
 
-    const nextStatus = input.status ?? existing.status;
-    const data: Prisma.AgentUserUpdateInput = {
-      updatedByAdminId: adminId,
-      ...(input.displayName !== undefined
-        ? { displayName: input.displayName }
-        : {}),
-      ...(input.avatarUrl !== undefined
-        ? { avatarUrl: input.avatarUrl ?? null }
-        : {}),
-      ...(input.status !== undefined
-        ? { status: input.status as AgentUserStatus }
-        : {}),
-      ...(nextIdentityStatus !== existing.identityStatus ||
-      input.identityStatus !== undefined
-        ? { identityStatus: nextIdentityStatus }
-        : {}),
-      ...(input.platformUserId !== undefined
-        ? { platformUserId: input.platformUserId ?? null }
-        : {}),
-      ...(input.simulatedEmail !== undefined
-        ? { simulatedEmail: input.simulatedEmail ?? null }
-        : {}),
-      ...(input.locale !== undefined ? { locale: input.locale } : {}),
-      ...(input.region !== undefined ? { region: input.region ?? null } : {}),
-      ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
-      ...(input.persona !== undefined ? { persona: json(input.persona) } : {}),
-      ...(input.schedule !== undefined
-        ? { schedule: json(input.schedule) }
-        : {}),
-      ...(input.policy !== undefined ? { policy: json(input.policy) } : {}),
-      ...(input.notes !== undefined ? { notes: input.notes ?? null } : {}),
-      disabledAt:
-        nextStatus === AgentUserStatus.disabled
-          ? (existing.disabledAt ?? new Date())
-          : null,
-    };
+      const nextStatus = input.status ?? existing.status;
+      const data: Prisma.AgentUserUpdateInput = {
+        updatedByAdminId: adminId,
+        ...(input.displayName !== undefined
+          ? { displayName: input.displayName }
+          : {}),
+        ...(input.avatarUrl !== undefined
+          ? { avatarUrl: input.avatarUrl ?? null }
+          : {}),
+        ...(input.status !== undefined
+          ? { status: input.status as AgentUserStatus }
+          : {}),
+        ...(nextIdentityStatus !== existing.identityStatus ||
+        input.identityStatus !== undefined
+          ? { identityStatus: nextIdentityStatus }
+          : {}),
+        ...(input.platformUserId !== undefined
+          ? { platformUserId: nextPlatformUserId ?? null }
+          : {}),
+        ...(input.simulatedEmail !== undefined
+          ? { simulatedEmail: input.simulatedEmail ?? null }
+          : {}),
+        ...(input.locale !== undefined ? { locale: input.locale } : {}),
+        ...(input.region !== undefined ? { region: input.region ?? null } : {}),
+        ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
+        ...(input.persona !== undefined
+          ? { persona: json(input.persona) }
+          : {}),
+        ...(input.schedule !== undefined
+          ? { schedule: json(input.schedule) }
+          : {}),
+        ...(input.policy !== undefined ? { policy: json(input.policy) } : {}),
+        ...(input.notes !== undefined ? { notes: input.notes ?? null } : {}),
+        disabledAt:
+          nextStatus === AgentUserStatus.disabled
+            ? (existing.disabledAt ?? new Date())
+            : null,
+      };
 
-    try {
-      const agent = await this.prisma.agentUser.update({
-        where: { id: agentUserId },
-        data,
-        include: agentUserDetailInclude,
-      });
-      return this.toAgentUserDetailDto(agent);
-    } catch (error) {
-      this.throwUniqueConflict(error);
-      throw error;
-    }
+      try {
+        const agent = await tx.agentUser.update({
+          where: { id: agentUserId },
+          data,
+          include: agentUserDetailInclude,
+        });
+        return this.toAgentUserDetailDto(agent);
+      } catch (error) {
+        this.throwUniqueConflict(error);
+        throw error;
+      }
+    });
   }
 
   async listRuns(agentUserId: string, query: ListAgentRunsQuery) {
@@ -288,7 +298,7 @@ export class AgentUsersService {
       this.prisma.agentRun.count({ where }),
       this.prisma.agentRun.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }],
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
         include: { _count: { select: { actions: true } } },
@@ -319,7 +329,7 @@ export class AgentUsersService {
       this.prisma.agentAction.count({ where }),
       this.prisma.agentAction.findMany({
         where,
-        orderBy: [{ createdAt: 'desc' }],
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
       }),
@@ -346,7 +356,7 @@ export class AgentUsersService {
       this.prisma.agentMemory.count({ where }),
       this.prisma.agentMemory.findMany({
         where,
-        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
       }),
@@ -360,9 +370,10 @@ export class AgentUsersService {
   }
 
   async createRun(agentUserId: string, input: CreateAgentRunInput) {
-    await this.ensureRunnable(agentUserId);
-    const now = new Date();
     const run = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_users WHERE id=${agentUserId}::uuid FOR UPDATE`;
+      await this.ensureRunnable(agentUserId, tx);
+      const now = new Date();
       const created = await tx.agentRun.create({
         data: {
           agentUserId,
@@ -383,24 +394,25 @@ export class AgentUsersService {
   }
 
   async completeRun(runId: string, input: CompleteAgentRunInput) {
-    const existing = await this.prisma.agentRun.findUnique({
-      where: { id: runId },
-      select: { id: true, agentUserId: true, status: true, startedAt: true },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'AGENT_RUN_NOT_FOUND',
-        msg: 'Agent 运行记录不存在。',
-      });
-    }
-    if (isTerminalRunStatus(existing.status)) {
-      throw new BadRequestException({
-        code: 'AGENT_RUN_ALREADY_TERMINAL',
-        msg: 'Agent 运行记录已结束，不能重复完成。',
-      });
-    }
-    const now = new Date();
     const run = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_runs WHERE id=${runId}::uuid FOR UPDATE`;
+      const existing = await tx.agentRun.findUnique({
+        where: { id: runId },
+        select: { id: true, agentUserId: true, status: true, startedAt: true },
+      });
+      if (!existing) {
+        throw new NotFoundException({
+          code: 'AGENT_RUN_NOT_FOUND',
+          msg: 'Agent 运行记录不存在。',
+        });
+      }
+      if (isTerminalRunStatus(existing.status)) {
+        throw new BadRequestException({
+          code: 'AGENT_RUN_ALREADY_TERMINAL',
+          msg: 'Agent 运行记录已结束，不能重复完成。',
+        });
+      }
+      const now = new Date();
       const updated = await tx.agentRun.update({
         where: { id: runId },
         data: {
@@ -429,7 +441,10 @@ export class AgentUsersService {
       const existing = await this.prisma.agentAction.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
       });
-      if (existing) return this.toAgentActionDto(existing);
+      if (existing) {
+        this.assertActionReceipt(existing, agentUserId, input);
+        return this.toAgentActionDto(existing);
+      }
     }
     if (input.runId) {
       const run = await this.prisma.agentRun.findUnique({
@@ -470,10 +485,33 @@ export class AgentUsersService {
         const existing = await this.prisma.agentAction.findUniqueOrThrow({
           where: { idempotencyKey: input.idempotencyKey },
         });
+        this.assertActionReceipt(existing, agentUserId, input);
         return this.toAgentActionDto(existing);
       }
       throw error;
     }
+  }
+
+  // The runner may observe a different result/status when retrying an already
+  // executed action (for example a view becomes "already recorded"). Preserve
+  // the first receipt; compare its identity and command, not later observations.
+  private assertActionReceipt(
+    existing: AgentAction,
+    agentUserId: string,
+    input: CreateAgentActionInput,
+  ) {
+    if (
+      existing.agentUserId !== agentUserId ||
+      existing.runId !== (input.runId ?? null) ||
+      existing.actionType !== input.actionType ||
+      existing.targetType !== (input.targetType ?? null) ||
+      existing.targetId !== (input.targetId ?? null) ||
+      !isDeepStrictEqual(existing.input, input.input)
+    )
+      throw new ConflictException({
+        code: 'AGENT_ACTION_RETRY_CONFLICT',
+        msg: 'Agent action retry key was already used for a different action.',
+      });
   }
 
   async upsertMemory(agentUserId: string, input: UpsertAgentMemoryInput) {
@@ -533,43 +571,48 @@ export class AgentUsersService {
     memoryId: string,
     input: UpdateAgentMemoryInput,
   ) {
-    const existing = await this.findMemory(agentUserId, memoryId);
-    const sourceActionIds =
-      input.sourceActionIds !== undefined
-        ? uniqueStrings(input.sourceActionIds)
-        : undefined;
-    if (sourceActionIds) {
-      await this.assertActionOwnership(agentUserId, sourceActionIds);
-    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM agent_memories WHERE id=${memoryId}::uuid AND agent_user_id=${agentUserId}::uuid FOR UPDATE`;
+      const existing = await this.findMemory(agentUserId, memoryId, tx);
+      const sourceActionIds =
+        input.sourceActionIds !== undefined
+          ? uniqueStrings(input.sourceActionIds)
+          : undefined;
+      if (sourceActionIds) {
+        await this.assertActionOwnership(agentUserId, sourceActionIds, tx);
+      }
 
-    const nextStatus = input.status
-      ? (input.status as AgentMemoryStatus)
-      : existing.status;
-    const data: Prisma.AgentMemoryUpdateInput = {
-      ...(input.status !== undefined
-        ? {
-            status: nextStatus,
-            archivedAt:
-              nextStatus === AgentMemoryStatus.archived
-                ? (existing.archivedAt ?? new Date())
-                : null,
-          }
-        : {}),
-      ...(input.summary !== undefined ? { summary: input.summary } : {}),
-      ...(input.content !== undefined ? { content: json(input.content) } : {}),
-      ...(input.confidence !== undefined
-        ? { confidence: input.confidence }
-        : {}),
-      ...(input.weight !== undefined ? { weight: input.weight } : {}),
-      ...(sourceActionIds !== undefined
-        ? { sourceActionIds: { set: sourceActionIds } }
-        : {}),
-    };
-    const memory = await this.prisma.agentMemory.update({
-      where: { id: existing.id },
-      data,
+      const nextStatus = input.status
+        ? (input.status as AgentMemoryStatus)
+        : existing.status;
+      const data: Prisma.AgentMemoryUpdateInput = {
+        ...(input.status !== undefined
+          ? {
+              status: nextStatus,
+              archivedAt:
+                nextStatus === AgentMemoryStatus.archived
+                  ? (existing.archivedAt ?? new Date())
+                  : null,
+            }
+          : {}),
+        ...(input.summary !== undefined ? { summary: input.summary } : {}),
+        ...(input.content !== undefined
+          ? { content: json(input.content) }
+          : {}),
+        ...(input.confidence !== undefined
+          ? { confidence: input.confidence }
+          : {}),
+        ...(input.weight !== undefined ? { weight: input.weight } : {}),
+        ...(sourceActionIds !== undefined
+          ? { sourceActionIds: { set: sourceActionIds } }
+          : {}),
+      };
+      const memory = await tx.agentMemory.update({
+        where: { id: existing.id },
+        data,
+      });
+      return this.toAgentMemoryDto(memory);
     });
-    return this.toAgentMemoryDto(memory);
   }
 
   private buildAdminWhere(
@@ -599,8 +642,11 @@ export class AgentUsersService {
     return where;
   }
 
-  private async findAgentUser(agentUserId: string) {
-    const agent = await this.prisma.agentUser.findUnique({
+  private async findAgentUser(
+    agentUserId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const agent = await db.agentUser.findUnique({
       where: { id: agentUserId },
     });
     if (!agent) {
@@ -612,8 +658,12 @@ export class AgentUsersService {
     return agent;
   }
 
-  private async findMemory(agentUserId: string, memoryId: string) {
-    const memory = await this.prisma.agentMemory.findFirst({
+  private async findMemory(
+    agentUserId: string,
+    memoryId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const memory = await db.agentMemory.findFirst({
       where: { id: memoryId, agentUserId },
     });
     if (!memory) {
@@ -628,9 +678,10 @@ export class AgentUsersService {
   private async assertActionOwnership(
     agentUserId: string,
     actionIds: string[],
+    db: Prisma.TransactionClient = this.prisma,
   ) {
     if (!actionIds.length) return;
-    const ownedCount = await this.prisma.agentAction.count({
+    const ownedCount = await db.agentAction.count({
       where: { agentUserId, id: { in: actionIds } },
     });
     if (ownedCount !== actionIds.length) {

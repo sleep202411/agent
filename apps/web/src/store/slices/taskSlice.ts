@@ -1,6 +1,7 @@
 import {
   createAsyncThunk,
   createSelector,
+  original,
   createSlice,
   type PayloadAction,
 } from "@reduxjs/toolkit";
@@ -8,9 +9,9 @@ import { backendApi } from "@/src/lib/api";
 
 // ─── Types ──────────────────────────────────────────────
 
-export type TaskType = "image" | "video" | "audio" | "fusion" | "lip_sync";
+export type TaskType = "image" | "video" | "audio" | "fusion" | "lip_sync" | "agent" | "production";
 
-export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type TaskStatus = "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled";
 
 /** Task origin: "local" = created by frontend queue, "server" = synced from backend */
 export type TaskSource = "local" | "server";
@@ -61,10 +62,12 @@ export function createTaskId(): string {
 // ─── State ──────────────────────────────────────────────
 
 interface TaskState {
+  ownerId: string | null;
   tasks: Record<string, Task>;
 }
 
 const initialState: TaskState = {
+  ownerId: null,
   tasks: {},
 };
 
@@ -74,6 +77,11 @@ export const taskSlice = createSlice({
   name: "task",
   initialState,
   reducers: {
+    setTaskOwner: (state, action: PayloadAction<string | null>) => {
+      if (state.ownerId === action.payload) return;
+      state.ownerId = action.payload;
+      state.tasks = {};
+    },
     addTask: (
       state,
       action: PayloadAction<
@@ -144,6 +152,35 @@ export const taskSlice = createSlice({
     setTasks: (state, action: PayloadAction<Task[]>) => {
       state.tasks = {};
       for (const t of action.payload) state.tasks[t.id] = t;
+    },
+
+    reconcileTaskSnapshot: (
+      state,
+      action: PayloadAction<{
+        tasks: Task[];
+        baseline: Record<string, Task>;
+        managedIdPrefixes?: string[];
+      }>
+    ) => {
+      const { tasks, baseline, managedIdPrefixes } = action.payload;
+      const current = original(state.tasks)!;
+      const next: Record<string, Task> = {};
+      for (const task of tasks) {
+        // A removed task must not be resurrected by an older in-flight read.
+        if (baseline[task.id] && !current[task.id]) continue;
+        const existing = current[task.id];
+        next[task.id] =
+          existing && (existing.source === "local" || existing !== baseline[task.id])
+            ? existing
+            : task;
+      }
+      for (const task of Object.values(current)) {
+        const outsideSnapshot =
+          managedIdPrefixes && !managedIdPrefixes.some((prefix) => task.id.startsWith(prefix));
+        if (outsideSnapshot || task.source === "local" || task !== baseline[task.id])
+          next[task.id] = task;
+      }
+      state.tasks = next;
     },
 
     removeTask: (state, action: PayloadAction<string>) => {
@@ -222,6 +259,7 @@ export const taskSlice = createSlice({
 });
 
 export const {
+  setTaskOwner,
   addTask,
   startTask,
   completeTask,
@@ -229,6 +267,7 @@ export const {
   cancelTask,
   retryTask,
   setTasks,
+  reconcileTaskSnapshot,
   removeTask,
   clearCompleted,
   applyEvent,
@@ -401,7 +440,7 @@ export const selectTasksByType = (state: { task: TaskState }, type: TaskType) =>
 // Memoized selectors — safe for useSelector
 export const selectActiveTasks = createSelector([selectTasks], (tasks) =>
   Object.values(tasks)
-    .filter((t) => t.status === "pending" || t.status === "running")
+    .filter((t) => t.status === "pending" || t.status === "running" || t.status === "waiting")
     .sort((a, b) => b.createdAt - a.createdAt)
 );
 
@@ -417,7 +456,7 @@ export const selectHasActiveTasks = (
   shotColumnId?: string
 ) =>
   Object.values(state.task.tasks).some((t) => {
-    if (t.status !== "pending" && t.status !== "running") return false;
+    if (t.status !== "pending" && t.status !== "running" && t.status !== "waiting") return false;
     if (shotId && t.shotId !== shotId) return false;
     if (shotColumnId && t.shotColumnId !== shotColumnId) return false;
     return true;

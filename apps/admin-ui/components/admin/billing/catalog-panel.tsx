@@ -14,7 +14,8 @@
 // prices page (later stage) keeps a focused price-management surface; the
 // CreatePriceForm can move there then without changing this page's data flow.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconCloudUpload, IconPlus, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -77,121 +78,122 @@ export function BillingCatalogPanel({
   const [priceProvider, setPriceProvider] = useState("");
   const [search, setSearch] = useState("");
   const [createPriceDialogOpen, setCreatePriceDialogOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [editingPrice, setEditingPrice] = useState<BillingPriceRow | null>(null);
 
-  function priceQueryString() {
-    const params = new URLSearchParams();
-    // Load all types; the family tab filters client-side.
-    if (priceProvider) params.set("provider", priceProvider);
-    const query = params.toString();
-    return query ? `?${query}` : "";
-  }
-
-  async function refreshPrices() {
-    setLoading(true);
+  const loadPrices = useCallback(
+    (signal: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (priceProvider) params.set("provider", priceProvider);
+      return requestEnvelope<AdminBillingPricesData>(`/api/admin/billing/prices?${params}`, signal);
+    },
+    [priceProvider]
+  );
+  const appliedProvider = useRef(priceProvider);
+  const refreshPrices = useCallback(async () => {
+    const operation = begin("read");
+    if (!operation) return;
+    appliedProvider.current = priceProvider;
     setError(null);
     try {
-      setPrices(
-        await requestEnvelope<AdminBillingPricesData>(
-          `/api/admin/billing/prices${priceQueryString()}`
-        )
-      );
+      const data = await loadPrices(operation.signal);
+      if (operation.current()) setPrices(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
-  }
-
-  // Auto-apply server-side filters on change. SSR-provided initialPrices already
-  // populate the table, so skip the initial mount to avoid a redundant fetch.
-  const didMountRef = useRef(false);
+  }, [begin, loadPrices, priceProvider]);
+  // A filter changed during a mutation is applied once the write releases its claim.
   useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
-    void refreshPrices();
-    // refreshPrices is a render-stable closure that reads the latest filter state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceProvider]);
+    if (!loading && appliedProvider.current !== priceProvider) void refreshPrices();
+  }, [loading, priceProvider, refreshPrices]);
 
   async function handleCreatePrice(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const provider = stringField(form, "provider");
-    const walletCurrency = stringField(form, "grantsWalletCurrency");
-    const walletAmount = stringField(form, "grantsWalletAmount");
-    const planKey = stringField(form, "grantsPlanKey");
-    const grantDurationDays = stringField(form, "grantDurationDays");
-    const productType = stringField(form, "productType");
-    const currency = stringField(form, "currency").toUpperCase();
-    const amountMinor = stringField(form, "amountMinor");
-    const originalAmountMinor = stringField(form, "originalAmountMinor");
-    const computeTopupMetadata =
-      productType === "compute_point_pack"
-        ? {
-            topupKind: "compute_point",
-            rateMode: currency === "USD" ? "usd_cent_anchor" : "explicit_admin_pricing",
-            cell: siteKey,
-            entrySurface: "fizzstudio_compute_topup",
-          }
-        : undefined;
-    // Merge the display compare-at into priceMetadata (the studio strikes through
-    // metadata.originalAmountMinor); send undefined when nothing to set.
-    const priceMetadata = {
-      ...(computeTopupMetadata ?? {}),
-      ...(originalAmountMinor ? { originalAmountMinor } : {}),
-    };
     try {
-      await mutateEnvelope("/api/admin/billing/prices", {
-        itemCode: buildBillingItemCode({
+      const form = new FormData(formElement);
+      const provider = stringField(form, "provider");
+      const walletCurrency = stringField(form, "grantsWalletCurrency");
+      const walletAmount = stringField(form, "grantsWalletAmount");
+      const planKey = stringField(form, "grantsPlanKey");
+      const grantDurationDays = stringField(form, "grantDurationDays");
+      const productType = stringField(form, "productType");
+      const currency = stringField(form, "currency").toUpperCase();
+      const amountMinor = stringField(form, "amountMinor");
+      const originalAmountMinor = stringField(form, "originalAmountMinor");
+      const computeTopupMetadata =
+        productType === "compute_point_pack"
+          ? {
+              topupKind: "compute_point",
+              rateMode: currency === "USD" ? "usd_cent_anchor" : "explicit_admin_pricing",
+              cell: siteKey,
+              entrySurface: "fizzstudio_compute_topup",
+            }
+          : undefined;
+      // Merge the display compare-at into priceMetadata (the studio strikes through
+      // metadata.originalAmountMinor); send undefined when nothing to set.
+      const priceMetadata = {
+        ...(computeTopupMetadata ?? {}),
+        ...(originalAmountMinor ? { originalAmountMinor } : {}),
+      };
+      await mutateEnvelope(
+        "/api/admin/billing/prices",
+        {
+          itemCode: buildBillingItemCode({
+            productType,
+            walletAmount,
+            planKey,
+            currency,
+            amountMinor,
+          }),
+          itemName: stringField(form, "itemName"),
+          itemDescription: stringField(form, "itemDescription") || undefined,
           productType,
-          walletAmount,
-          planKey,
           currency,
           amountMinor,
-        }),
-        itemName: stringField(form, "itemName"),
-        itemDescription: stringField(form, "itemDescription") || undefined,
-        productType,
-        currency,
-        amountMinor,
-        interval: stringField(form, "interval"),
-        subjectType: stringField(form, "subjectType"),
-        grantsWalletCurrency: walletCurrency || undefined,
-        grantsWalletAmount: walletCurrency && walletAmount ? walletAmount : undefined,
-        grantsPlanKey: planKey || undefined,
-        grantDurationDays: grantDurationDays ? Number(grantDurationDays) : undefined,
-        priceMetadata: Object.keys(priceMetadata).length ? priceMetadata : undefined,
-        providerBindings: provider
-          ? [
-              {
-                provider,
-                status: "sync_pending",
-              },
-            ]
-          : [],
-      });
+          interval: stringField(form, "interval"),
+          subjectType: stringField(form, "subjectType"),
+          grantsWalletCurrency: walletCurrency || undefined,
+          grantsWalletAmount: walletCurrency && walletAmount ? walletAmount : undefined,
+          grantsPlanKey: planKey || undefined,
+          grantDurationDays: grantDurationDays ? Number(grantDurationDays) : undefined,
+          priceMetadata: Object.keys(priceMetadata).length ? priceMetadata : undefined,
+          providerBindings: provider
+            ? [
+                {
+                  provider,
+                  status: "sync_pending",
+                },
+              ]
+            : [],
+        },
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
       formElement.reset();
       setCreatePriceDialogOpen(false);
-      await refreshPrices();
+      if (!operation.current()) return;
+      const data = await loadPrices(operation.signal);
+      if (operation.current()) setPrices(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   // Set / clear the display compare-at (原价) on an existing price. Sends the
   // FULL merged metadata (updateAdminPrice replaces it) so other keys survive.
   async function handleUpdatePriceCompareAt(price: BillingPriceRow, originalAmountMinor: string) {
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     const nextMetadata: Record<string, unknown> = { ...price.metadata };
     if (originalAmountMinor) nextMetadata.originalAmountMinor = originalAmountMinor;
@@ -200,40 +202,60 @@ export function BillingCatalogPanel({
       await mutateEnvelope(
         `/api/admin/billing/prices/${price.id}`,
         { priceMetadata: nextMetadata },
-        "PATCH"
+        "PATCH",
+        operation.signal
       );
+      if (!operation.current()) return;
       setEditingPrice(null);
-      await refreshPrices();
+      if (!operation.current()) return;
+      const data = await loadPrices(operation.signal);
+      if (operation.current()) setPrices(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handleSyncPriceBinding(bindingId: string) {
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
-      await mutateEnvelope(`/api/admin/billing/provider-bindings/${bindingId}/sync`, {});
-      await refreshPrices();
+      await mutateEnvelope(
+        `/api/admin/billing/provider-bindings/${bindingId}/sync`,
+        {},
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
+      const data = await loadPrices(operation.signal);
+      if (operation.current()) setPrices(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handleSyncPending() {
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
-      await mutateEnvelope("/api/admin/billing/provider-bindings/sync-pending", {});
-      await refreshPrices();
+      await mutateEnvelope(
+        "/api/admin/billing/provider-bindings/sync-pending",
+        {},
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
+      const data = await loadPrices(operation.signal);
+      if (operation.current()) setPrices(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
@@ -275,7 +297,9 @@ export function BillingCatalogPanel({
         onFamilyChange={setFamily}
         onProviderChange={setPriceProvider}
         onSearchChange={setSearch}
-        onCreateDialogOpenChange={setCreatePriceDialogOpen}
+        onCreateDialogOpenChange={(open) => {
+          if (!loading) setCreatePriceDialogOpen(open);
+        }}
         onRefresh={() => void refreshPrices()}
         onSyncPending={() => void handleSyncPending()}
         onCreatePrice={handleCreatePrice}
@@ -288,7 +312,9 @@ export function BillingCatalogPanel({
           key={editingPrice.id}
           price={editingPrice}
           loading={loading}
-          onClose={() => setEditingPrice(null)}
+          onClose={() => {
+            if (!loading) setEditingPrice(null);
+          }}
           onSubmit={handleUpdatePriceCompareAt}
         />
       ) : null}
@@ -338,6 +364,7 @@ function PriceCompareAtDialog({
           help="留空表示不显示折扣。例如售价 2700、原价 3000 显示 -10%。"
         >
           <TextInput
+            disabled={loading}
             inputMode="numeric"
             value={value}
             onChange={(event) => setValue(event.target.value)}
@@ -525,16 +552,18 @@ function CatalogView({
         enableSorting: false,
         meta: { pin: "right" },
         cell: ({ row }) => (
-          <Button variant="outline" size="sm" onClick={() => onEditPrice(row.original)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={() => onEditPrice(row.original)}
+          >
             原价
           </Button>
         ),
       },
     ],
-    // onSyncBinding / onEditPrice are render-stable closures used only in onClick;
-    // the column defs never need to rebuild for them.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
+    [onSyncBinding, onEditPrice, loading]
   );
 
   return (
@@ -634,7 +663,7 @@ function CatalogView({
           </>
         }
       >
-        <CreatePriceForm onSubmit={onCreatePrice} siteKey={siteKey} />
+        <CreatePriceForm onSubmit={onCreatePrice} siteKey={siteKey} loading={loading} />
       </AdminDialog>
     </>
   );
@@ -643,9 +672,11 @@ function CatalogView({
 function CreatePriceForm({
   onSubmit,
   siteKey,
+  loading,
 }: {
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   siteKey: BillingSiteKey;
+  loading: boolean;
 }) {
   const defaults = computePointCatalogDefaults(siteKey);
   const [productType, setProductType] = useState("compute_point_pack");
@@ -719,7 +750,7 @@ function CreatePriceForm({
   }
 
   return (
-    <form id="catalog-create-price-form" onSubmit={onSubmit} className="grid gap-4">
+    <form inert={loading} id="catalog-create-price-form" onSubmit={onSubmit} className="grid gap-4">
       <FormLabel
         label="商品名称"
         help="运营后台展示名，不等同于支付供应商侧商品名；同步时会复制到 provider payload。"

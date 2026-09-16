@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import { useAdminOperation } from "./use-admin-operation";
 import {
   IconAlertTriangle,
   IconCircleCheck,
@@ -125,7 +134,9 @@ export function AdminUsersPanel({
   const [data, setData] = useState<AdminUsersListData>(initialData ?? emptyData);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AdminUserStatus | "">("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const sessionRead = useRef<ReturnType<typeof begin>>(null);
+  const requestedQuery = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingKey, setPendingKey] = useState<string | null>(null);
@@ -154,42 +165,69 @@ export function AdminUsersPanel({
     [currentUserId, data.items]
   );
 
+  const loadUsers = useCallback(
+    (signal: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (query.trim()) params.set("q", query.trim());
+      if (status) params.set("status", status);
+      return requestEnvelope<AdminUsersListData>(`/api/admin/users?${params}`, { signal });
+    },
+    [query, status]
+  );
+  const queryKey = JSON.stringify([query, status]);
+  const refreshUsers = useCallback(
+    async (options: { silent?: boolean } = {}) => {
+      const operation = begin("read");
+      if (!operation) return;
+      requestedQuery.current = queryKey;
+      if (!options.silent) setNotice(null);
+      setError(null);
+      try {
+        const result = await loadUsers(operation.signal);
+        if (operation.current()) setData(result);
+      } catch (err) {
+        if (operation.current()) setError(toErrorMessage(err));
+      } finally {
+        operation.finish();
+      }
+    },
+    [begin, loadUsers, queryKey]
+  );
   useEffect(() => {
+    if (loading || sessionTarget || requestedQuery.current === queryKey) return;
     const timer = window.setTimeout(() => {
       void refreshUsers({ silent: true });
     }, 240);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, status]);
-
-  async function refreshUsers(options: { silent?: boolean } = {}) {
-    if (!options.silent) setNotice(null);
-    setError(null);
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (query.trim()) params.set("q", query.trim());
-      if (status) params.set("status", status);
-      const suffix = params.toString() ? `?${params}` : "";
-      const nextData = await requestEnvelope<AdminUsersListData>(`/api/admin/users${suffix}`);
-      setData(nextData);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+  }, [loading, sessionTarget, queryKey, refreshUsers]);
+  const loadSessions = (userId: string, signal: AbortSignal) =>
+    requestEnvelope<{ items: AdminSessionRow[] }>(`/api/admin/users/${userId}/sessions`, {
+      signal,
+    });
+  function closeSessions() {
+    if (pendingKey) return;
+    sessionRead.current?.cancel();
+    sessionRead.current?.finish();
+    sessionRead.current = null;
+    setSessionTarget(null);
+    setSessions([]);
+    setSessionsLoading(false);
   }
 
   async function createAdminUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const operation = begin();
+    if (!operation) return;
     setNotice(null);
     setError(null);
     setPendingKey("create");
     try {
       const created = await requestEnvelope<AdminUserRow>("/api/admin/users", {
         method: "POST",
+        signal: operation.signal,
         body: JSON.stringify(createForm),
       });
+      if (!operation.current()) return;
       setNotice(`已创建后台账号：${created.email}`);
       setCreateForm({
         email: "",
@@ -199,11 +237,14 @@ export function AdminUsersPanel({
         requireMfa: true,
         status: "active",
       });
-      await refreshUsers({ silent: true });
+      if (!operation.current()) return;
+      const users = await loadUsers(operation.signal);
+      if (operation.current()) setData(users);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setPendingKey(null);
+      if (operation.current()) setPendingKey(null);
+      operation.finish();
     }
   }
 
@@ -211,6 +252,8 @@ export function AdminUsersPanel({
     user: AdminUserRow,
     input: Partial<Pick<AdminUserRow, "status" | "displayName" | "roleKey" | "requireMfa">>
   ) {
+    const operation = begin();
+    if (!operation) return;
     setNotice(null);
     setError(null);
     const actionKey = `${user.id}:${Object.keys(input).join(",")}`;
@@ -218,21 +261,27 @@ export function AdminUsersPanel({
     try {
       const updated = await requestEnvelope<AdminUserRow>(`/api/admin/users/${user.id}`, {
         method: "PATCH",
+        signal: operation.signal,
         body: JSON.stringify(input),
       });
+      if (!operation.current()) return;
       setData((current) => ({
         ...current,
         items: current.items.map((item) => (item.id === updated.id ? updated : item)),
       }));
+      if (!operation.current()) return;
       setNotice(`已更新 ${updated.displayName} 的账号设置。`);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setPendingKey(null);
+      if (operation.current()) setPendingKey(null);
+      operation.finish();
     }
   }
 
   async function revokeSessions(user: AdminUserRow) {
+    const operation = begin();
+    if (!operation) return;
     setNotice(null);
     setError(null);
     const actionKey = `${user.id}:revoke`;
@@ -240,18 +289,24 @@ export function AdminUsersPanel({
     try {
       const result = await requestEnvelope<{ revokedCount: number }>(
         `/api/admin/users/${user.id}/revoke-sessions`,
-        { method: "POST" }
+        { method: "POST", signal: operation.signal }
       );
+      if (!operation.current()) return;
       setNotice(`已撤销 ${result.revokedCount} 个活跃会话。`);
-      await refreshUsers({ silent: true });
+      if (!operation.current()) return;
+      const users = await loadUsers(operation.signal);
+      if (operation.current()) setData(users);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setPendingKey(null);
+      if (operation.current()) setPendingKey(null);
+      operation.finish();
     }
   }
 
   async function resetMfa(user: AdminUserRow) {
+    const operation = begin();
+    if (!operation) return;
     setNotice(null);
     setError(null);
     const actionKey = `${user.id}:reset-mfa`;
@@ -259,60 +314,75 @@ export function AdminUsersPanel({
     try {
       const updated = await requestEnvelope<AdminUserRow>(`/api/admin/users/${user.id}/reset-mfa`, {
         method: "POST",
+        signal: operation.signal,
       });
+      if (!operation.current()) return;
       setData((current) => ({
         ...current,
         items: current.items.map((item) => (item.id === updated.id ? updated : item)),
       }));
+      if (!operation.current()) return;
       setNotice(`已重置 ${updated.displayName} 的 MFA，账号下次登录需要重新绑定。`);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) {
+        setError(toErrorMessage(err));
+        throw err;
+      }
     } finally {
-      setPendingKey(null);
+      if (operation.current()) setPendingKey(null);
+      operation.finish();
     }
   }
 
   async function openSessions(user: AdminUserRow) {
+    const operation = begin("read");
+    if (!operation) return;
+    sessionRead.current = operation;
     setSessionTarget(user);
     setSessions([]);
     setError(null);
     setSessionsLoading(true);
     try {
-      const data = await requestEnvelope<{ items: AdminSessionRow[] }>(
-        `/api/admin/users/${user.id}/sessions`
-      );
-      setSessions(data.items);
+      const result = await loadSessions(user.id, operation.signal);
+      if (operation.current()) setSessions(result.items);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setSessionsLoading(false);
+      if (operation.current()) setSessionsLoading(false);
+      operation.finish();
     }
   }
 
   async function revokeSingleSession(session: AdminSessionRow) {
     if (!sessionTarget) return;
+    const operation = begin();
+    if (!operation) return;
     setPendingKey(`${session.id}:revoke-session`);
     setError(null);
     try {
       const result = await requestEnvelope<{ revokedCount: number }>(
         `/api/admin/users/${sessionTarget.id}/sessions/${session.id}/revoke`,
-        { method: "POST" }
+        { method: "POST", signal: operation.signal }
       );
+      if (!operation.current()) return;
       setNotice(`已撤销 ${result.revokedCount} 个会话。`);
-      await openSessions(sessionTarget);
-      await refreshUsers({ silent: true });
+      const sessionData = await loadSessions(sessionTarget.id, operation.signal);
+      if (!operation.current()) return;
+      setSessions(sessionData.items);
+      if (!operation.current()) return;
+      const users = await loadUsers(operation.signal);
+      if (operation.current()) setData(users);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setPendingKey(null);
+      if (operation.current()) setPendingKey(null);
+      operation.finish();
     }
   }
 
   async function submitPasswordReset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!resetTarget) return;
-    setNotice(null);
-    setError(null);
     if (resetPassword.length < 12) {
       setError("新密码至少需要 12 位，并包含大小写字母、数字和符号。");
       return;
@@ -321,278 +391,286 @@ export function AdminUsersPanel({
       setError("两次输入的新密码不一致。");
       return;
     }
+    const operation = begin();
+    if (!operation) return;
+    setNotice(null);
+    setError(null);
     const actionKey = `${resetTarget.id}:reset-password`;
     setPendingKey(actionKey);
     try {
       await requestEnvelope<AdminUserRow>(`/api/admin/users/${resetTarget.id}/reset-password`, {
         method: "POST",
+        signal: operation.signal,
         body: JSON.stringify({ password: resetPassword }),
       });
+      if (!operation.current()) return;
       setNotice(`已重置 ${resetTarget.displayName} 的登录密码，并撤销旧会话。`);
       setResetTarget(null);
       setResetPassword("");
       setResetPasswordConfirm("");
-      await refreshUsers({ silent: true });
+      if (!operation.current()) return;
+      const users = await loadUsers(operation.signal);
+      if (operation.current()) setData(users);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setPendingKey(null);
+      if (operation.current()) setPendingKey(null);
+      operation.finish();
     }
   }
 
-  const userColumns = useMemo<ColumnDef<AdminUserRow, unknown>[]>(
-    () => [
-      {
-        accessorKey: "displayName",
-        header: "管理员",
-        cell: ({ row }) => {
-          const user = row.original;
-          const isSelf = user.id === currentUserId;
-          return (
-            <div className="flex items-center gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[12px] font-semibold text-slate-700">
-                {user.displayName.slice(0, 1).toUpperCase()}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-medium text-slate-950">{user.displayName}</p>
-                  {isSelf ? (
-                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                      当前账号
-                    </span>
-                  ) : null}
-                </div>
-                <p className="truncate text-[12px] text-slate-500">{user.email}</p>
-              </div>
+  const userColumns: ColumnDef<AdminUserRow, unknown>[] = [
+    {
+      accessorKey: "displayName",
+      header: "管理员",
+      cell: ({ row }) => {
+        const user = row.original;
+        const isSelf = user.id === currentUserId;
+        return (
+          <div className="flex items-center gap-3">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[12px] font-semibold text-slate-700">
+              {user.displayName.slice(0, 1).toUpperCase()}
             </div>
-          );
-        },
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="truncate text-sm font-medium text-slate-950">{user.displayName}</p>
+                {isSelf ? (
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                    当前账号
+                  </span>
+                ) : null}
+              </div>
+              <p className="truncate text-[12px] text-slate-500">{user.email}</p>
+            </div>
+          </div>
+        );
       },
-      {
-        accessorKey: "status",
-        header: "状态",
-        cell: ({ row }) => {
-          const user = row.original;
-          const isSelf = user.id === currentUserId;
-          return (
-            <>
-              <Select
-                value={user.status}
-                onChange={(value) => void updateUser(user, { status: value as AdminUserStatus })}
-                disabled={isSelf || pendingKey === `${user.id}:status`}
-                options={statusOptions}
-                className="h-8 min-w-[104px]"
-              />
-              <StatusPill status={user.status} />
-            </>
-          );
-        },
-      },
-      {
-        accessorKey: "roleKey",
-        header: "角色",
-        cell: ({ row }) => {
-          const user = row.original;
-          const isSelf = user.id === currentUserId;
-          const roleSelectOptions =
-            user.roleKey === "super_admin" ? roleOptions : assignableRoleOptions;
-          return (
+    },
+    {
+      accessorKey: "status",
+      header: "状态",
+      cell: ({ row }) => {
+        const user = row.original;
+        const isSelf = user.id === currentUserId;
+        return (
+          <>
             <Select
-              value={user.roleKey}
-              onChange={(value) => void updateUser(user, { roleKey: value as AdminRoleKey })}
-              disabled={
-                isSelf || user.roleKey === "super_admin" || pendingKey === `${user.id}:roleKey`
-              }
-              options={roleSelectOptions}
-              className="h-8 min-w-[112px]"
+              value={user.status}
+              onChange={(value) => void updateUser(user, { status: value as AdminUserStatus })}
+              disabled={loading || isSelf || pendingKey === `${user.id}:status`}
+              options={statusOptions}
+              className="h-8 min-w-[104px]"
             />
-          );
-        },
+            <StatusPill status={user.status} />
+          </>
+        );
       },
-      {
-        id: "mfa",
-        header: "MFA",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const user = row.original;
-          const isSelf = user.id === currentUserId;
-          return (
-            <>
-              <label className="flex items-center gap-2 text-[12px] text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={user.requireMfa}
-                  disabled={isSelf || pendingKey === `${user.id}:requireMfa`}
-                  onChange={(event) => void updateUser(user, { requireMfa: event.target.checked })}
-                  className="size-4 rounded border-slate-300"
-                />
-                {user.mfaEnabledAt ? "已绑定" : user.requireMfa ? "待绑定" : "未要求"}
-              </label>
-              {user.lockedUntil ? (
-                <p className="mt-1 text-[11px] text-amber-700">登录锁定中</p>
-              ) : null}
-            </>
-          );
-        },
+    },
+    {
+      accessorKey: "roleKey",
+      header: "角色",
+      cell: ({ row }) => {
+        const user = row.original;
+        const isSelf = user.id === currentUserId;
+        const roleSelectOptions =
+          user.roleKey === "super_admin" ? roleOptions : assignableRoleOptions;
+        return (
+          <Select
+            value={user.roleKey}
+            onChange={(value) => void updateUser(user, { roleKey: value as AdminRoleKey })}
+            disabled={
+              loading ||
+              isSelf ||
+              user.roleKey === "super_admin" ||
+              pendingKey === `${user.id}:roleKey`
+            }
+            options={roleSelectOptions}
+            className="h-8 min-w-[112px]"
+          />
+        );
       },
-      {
-        accessorKey: "activeSessionCount",
-        header: "会话",
-        cell: ({ row }) => {
-          const user = row.original;
-          return (
-            <button
-              type="button"
-              className="rounded-md px-2 py-1 text-left text-sm font-medium text-slate-950 hover:bg-slate-100"
-              onClick={() => void openSessions(user)}
-            >
-              {user.activeSessionCount}
-              <span className="ml-1 text-[12px] text-slate-500">活跃</span>
-            </button>
-          );
-        },
-      },
-      {
-        accessorKey: "lastLoginAt",
-        header: "最近登录",
-        cell: ({ row }) => {
-          const user = row.original;
-          return (
-            <>
-              <DateText value={user.lastLoginAt} />
-              <p className="mt-0.5 text-[11px] text-slate-400">更新 {formatDate(user.updatedAt)}</p>
-            </>
-          );
-        },
-      },
-      {
-        id: "actions",
-        header: "操作",
-        enableSorting: false,
-        meta: { pin: "right" },
-        cell: ({ row }) => {
-          const user = row.original;
-          const isSelf = user.id === currentUserId;
-          return (
-            <div className="flex justify-end gap-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setResetTarget(user)}
-                disabled={pendingKey === `${user.id}:reset-password`}
-              >
-                <IconKey className="size-3.5" />
-                {isSelf ? "改密码" : "重置密码"}
-              </Button>
-              <ConfirmDialog
-                title="确认重置 MFA？"
-                description={
-                  isSelf
-                    ? "当前会话会保留，其他会话会被撤销；下次登录需要重新绑定 MFA。"
-                    : `将清空 ${user.displayName} 的 MFA 绑定，该账号下次登录需要重新绑定。`
-                }
-                confirmLabel="确认重置"
-                destructive
-                onConfirm={() => resetMfa(user)}
-                trigger={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={pendingKey === `${user.id}:reset-mfa`}
-                  >
-                    MFA
-                  </Button>
-                }
+    },
+    {
+      id: "mfa",
+      header: "MFA",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const user = row.original;
+        const isSelf = user.id === currentUserId;
+        return (
+          <>
+            <label className="flex items-center gap-2 text-[12px] text-slate-600">
+              <input
+                type="checkbox"
+                checked={user.requireMfa}
+                disabled={loading || isSelf || pendingKey === `${user.id}:requireMfa`}
+                onChange={(event) => void updateUser(user, { requireMfa: event.target.checked })}
+                className="size-4 rounded border-slate-300"
               />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => void revokeSessions(user)}
-                disabled={user.activeSessionCount === 0 || pendingKey === `${user.id}:revoke`}
-              >
-                撤销
-              </Button>
-            </div>
-          );
-        },
+              {user.mfaEnabledAt ? "已绑定" : user.requireMfa ? "待绑定" : "未要求"}
+            </label>
+            {user.lockedUntil ? (
+              <p className="mt-1 text-[11px] text-amber-700">登录锁定中</p>
+            ) : null}
+          </>
+        );
       },
-    ],
-    // updateUser / openSessions / resetMfa / revokeSessions / setResetTarget are
-    // render-stable closures used only in onClick / onChange; columns only need to
-    // rebuild when currentUserId or the pending action key changes the disabled state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentUserId, pendingKey]
-  );
+    },
+    {
+      accessorKey: "activeSessionCount",
+      header: "会话",
+      cell: ({ row }) => {
+        const user = row.original;
+        return (
+          <button
+            type="button"
+            className="rounded-md px-2 py-1 text-left text-sm font-medium text-slate-950 hover:bg-slate-100"
+            disabled={Boolean(pendingKey)}
+            onClick={() => void openSessions(user)}
+          >
+            {user.activeSessionCount}
+            <span className="ml-1 text-[12px] text-slate-500">活跃</span>
+          </button>
+        );
+      },
+    },
+    {
+      accessorKey: "lastLoginAt",
+      header: "最近登录",
+      cell: ({ row }) => {
+        const user = row.original;
+        return (
+          <>
+            <DateText value={user.lastLoginAt} />
+            <p className="mt-0.5 text-[11px] text-slate-400">更新 {formatDate(user.updatedAt)}</p>
+          </>
+        );
+      },
+    },
+    {
+      id: "actions",
+      header: "操作",
+      enableSorting: false,
+      meta: { pin: "right" },
+      cell: ({ row }) => {
+        const user = row.original;
+        const isSelf = user.id === currentUserId;
+        return (
+          <div className="flex justify-end gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setResetPassword("");
+                setResetPasswordConfirm("");
+                setResetTarget(user);
+              }}
+              disabled={loading || pendingKey === `${user.id}:reset-password`}
+            >
+              <IconKey className="size-3.5" />
+              {isSelf ? "改密码" : "重置密码"}
+            </Button>
+            <ConfirmDialog
+              title="确认重置 MFA？"
+              description={
+                isSelf
+                  ? "当前会话会保留，其他会话会被撤销；下次登录需要重新绑定 MFA。"
+                  : `将清空 ${user.displayName} 的 MFA 绑定，该账号下次登录需要重新绑定。`
+              }
+              confirmLabel="确认重置"
+              destructive
+              onConfirm={() => resetMfa(user)}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || pendingKey === `${user.id}:reset-mfa`}
+                >
+                  MFA
+                </Button>
+              }
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void revokeSessions(user)}
+              disabled={
+                loading || user.activeSessionCount === 0 || pendingKey === `${user.id}:revoke`
+              }
+            >
+              撤销
+            </Button>
+          </div>
+        );
+      },
+    },
+  ];
 
-  const sessionColumns = useMemo<ColumnDef<AdminSessionRow, unknown>[]>(
-    () => [
-      {
-        accessorKey: "status",
-        header: "状态",
-        cell: ({ row }) => (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
-            {sessionStatusLabel(row.original.status)}
-          </span>
-        ),
+  const sessionColumns: ColumnDef<AdminSessionRow, unknown>[] = [
+    {
+      accessorKey: "status",
+      header: "状态",
+      cell: ({ row }) => (
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">
+          {sessionStatusLabel(row.original.status)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "ipAddress",
+      header: "IP",
+      cell: ({ row }) => {
+        const session = row.original;
+        return (
+          <>
+            <p className="text-slate-900">{session.ipAddress ?? "-"}</p>
+            <p className="max-w-[280px] truncate text-[11px] text-slate-400">
+              {session.userAgent ?? "unknown"}
+            </p>
+          </>
+        );
       },
-      {
-        accessorKey: "ipAddress",
-        header: "IP",
-        cell: ({ row }) => {
-          const session = row.original;
-          return (
-            <>
-              <p className="text-slate-900">{session.ipAddress ?? "-"}</p>
-              <p className="max-w-[280px] truncate text-[11px] text-slate-400">
-                {session.userAgent ?? "unknown"}
-              </p>
-            </>
-          );
-        },
+    },
+    {
+      accessorKey: "lastSeenAt",
+      header: "最近活跃",
+      cell: ({ row }) => (
+        <span className="text-slate-600">{formatDate(row.original.lastSeenAt)}</span>
+      ),
+    },
+    {
+      accessorKey: "expiresAt",
+      header: "过期时间",
+      cell: ({ row }) => (
+        <span className="text-slate-600">{formatDate(row.original.expiresAt)}</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "操作",
+      enableSorting: false,
+      meta: { pin: "right" },
+      cell: ({ row }) => {
+        const session = row.original;
+        return (
+          <div className="text-right">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={
+                loading ||
+                session.status !== "active" ||
+                pendingKey === `${session.id}:revoke-session`
+              }
+              onClick={() => void revokeSingleSession(session)}
+            >
+              撤销
+            </Button>
+          </div>
+        );
       },
-      {
-        accessorKey: "lastSeenAt",
-        header: "最近活跃",
-        cell: ({ row }) => (
-          <span className="text-slate-600">{formatDate(row.original.lastSeenAt)}</span>
-        ),
-      },
-      {
-        accessorKey: "expiresAt",
-        header: "过期时间",
-        cell: ({ row }) => (
-          <span className="text-slate-600">{formatDate(row.original.expiresAt)}</span>
-        ),
-      },
-      {
-        id: "actions",
-        header: "操作",
-        enableSorting: false,
-        meta: { pin: "right" },
-        cell: ({ row }) => {
-          const session = row.original;
-          return (
-            <div className="text-right">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={
-                  session.status !== "active" || pendingKey === `${session.id}:revoke-session`
-                }
-                onClick={() => void revokeSingleSession(session)}
-              >
-                撤销
-              </Button>
-            </div>
-          );
-        },
-      },
-    ],
-    // revokeSingleSession is a render-stable closure used only in onClick; columns
-    // only rebuild when the pending action key changes the disabled state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pendingKey]
-  );
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -697,8 +775,14 @@ export function AdminUsersPanel({
                 className="h-9 w-full"
                 type="button"
                 variant="outline"
-                onClick={() => currentUser && setResetTarget(currentUser)}
-                disabled={!currentUser}
+                onClick={() => {
+                  if (currentUser) {
+                    setResetPassword("");
+                    setResetPasswordConfirm("");
+                    setResetTarget(currentUser);
+                  }
+                }}
+                disabled={loading || !currentUser}
               >
                 <IconKey className="size-4" />
                 修改我的密码
@@ -716,7 +800,9 @@ export function AdminUsersPanel({
                     className="h-9 w-full"
                     type="button"
                     variant="outline"
-                    disabled={!currentUser || pendingKey === `${currentUser.id}:reset-mfa`}
+                    disabled={
+                      loading || !currentUser || pendingKey === `${currentUser.id}:reset-mfa`
+                    }
                   >
                     <IconShieldCheck className="size-4" />
                     重新绑定 MFA
@@ -749,7 +835,7 @@ export function AdminUsersPanel({
                 <p className="text-[12px] text-slate-500">创建到当前站点数据库。</p>
               </div>
             </div>
-            <form className="mt-4 space-y-3" onSubmit={createAdminUser}>
+            <form inert={Boolean(pendingKey)} className="mt-4 space-y-3" onSubmit={createAdminUser}>
               <FieldLabel label="邮箱">
                 <Input
                   required
@@ -826,7 +912,11 @@ export function AdminUsersPanel({
                 />
                 <span>要求首次登录绑定 MFA。企业后台账号默认开启。</span>
               </label>
-              <Button className="h-9 w-full" type="submit" disabled={pendingKey === "create"}>
+              <Button
+                className="h-9 w-full"
+                type="submit"
+                disabled={loading || pendingKey === "create"}
+              >
                 <IconUserPlus className="size-4" />
                 {pendingKey === "create" ? "创建中" : "创建管理员"}
               </Button>
@@ -854,7 +944,7 @@ export function AdminUsersPanel({
       <Dialog
         open={resetTarget !== null}
         onOpenChange={(value) => {
-          if (!value) {
+          if (!value && !pendingKey) {
             setResetTarget(null);
             setResetPassword("");
             setResetPasswordConfirm("");
@@ -882,7 +972,12 @@ export function AdminUsersPanel({
               </DialogClose>
             </DialogHeader>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-              <form id="password-reset-form" onSubmit={submitPasswordReset} className="space-y-3">
+              <form
+                inert={Boolean(pendingKey)}
+                id="password-reset-form"
+                onSubmit={submitPasswordReset}
+                className="space-y-3"
+              >
                 <FieldLabel label="新密码">
                   <Input
                     type="password"
@@ -909,6 +1004,7 @@ export function AdminUsersPanel({
               <Button
                 type="button"
                 variant="outline"
+                disabled={Boolean(pendingKey)}
                 onClick={() => {
                   setResetTarget(null);
                   setResetPassword("");
@@ -920,7 +1016,7 @@ export function AdminUsersPanel({
               <Button
                 type="submit"
                 form="password-reset-form"
-                disabled={pendingKey === `${resetTarget.id}:reset-password`}
+                disabled={loading || pendingKey === `${resetTarget.id}:reset-password`}
               >
                 确认重置
               </Button>
@@ -932,10 +1028,7 @@ export function AdminUsersPanel({
       <Dialog
         open={sessionTarget !== null}
         onOpenChange={(value) => {
-          if (!value) {
-            setSessionTarget(null);
-            setSessions([]);
-          }
+          if (!value) closeSessions();
         }}
       >
         {sessionTarget ? (
@@ -1103,6 +1196,7 @@ async function requestEnvelope<T>(url: string, init: RequestInit = {}): Promise<
     issues?: Array<{ path?: string; message: string }>;
     data?: T;
   } | null;
+  init.signal?.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     const issueText = payload?.issues?.map((issue) => issue.message).join("；");
     throw new Error(

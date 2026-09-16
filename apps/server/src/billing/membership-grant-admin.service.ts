@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -97,7 +98,7 @@ export class MembershipGrantAdminService {
         subjectType: input.subjectType,
         subjectId: input.subjectId,
       },
-      orderBy: [{ createdAt: 'desc' }],
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: 50,
     });
     return grants.map((grant) => toView(grant, now));
@@ -107,19 +108,24 @@ export class MembershipGrantAdminService {
     adminId: string,
     input: GrantMembershipInput,
   ): Promise<MembershipGrantView> {
-    await this.assertGrantTarget(input);
-    const grant = await this.entitlements.grantComplimentary({
-      subjectType: input.subjectType,
-      subjectId: input.subjectId,
-      planKey: input.planKey,
-      durationDays: input.durationDays,
-      sourceType: ADMIN_GRANT_SOURCE,
-      // Every admin grant is a distinct source — grantComplimentary's
-      // idempotency is per sourceId, and "grant again" must stack, not no-op.
-      sourceId: randomUUID(),
-      metadata: { note: input.note, grantedBy: adminId },
+    return this.prisma.$transaction(async (tx) => {
+      await this.assertGrantTarget(input, tx);
+      const grant = await this.entitlements.grantComplimentary(
+        {
+          subjectType: input.subjectType,
+          subjectId: input.subjectId,
+          planKey: input.planKey,
+          durationDays: input.durationDays,
+          sourceType: ADMIN_GRANT_SOURCE,
+          // Every admin grant is a distinct source — grantComplimentary's
+          // idempotency is per sourceId, and "grant again" must stack, not no-op.
+          sourceId: randomUUID(),
+          metadata: { note: input.note, grantedBy: adminId },
+        },
+        tx,
+      );
+      return toView(grant, new Date());
     });
-    return toView(grant, new Date());
   }
 
   /**
@@ -128,6 +134,7 @@ export class MembershipGrantAdminService {
    */
   async revoke(grantId: string): Promise<MembershipGrantView> {
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM entitlement_grants WHERE id=${grantId}::uuid FOR UPDATE`;
       const existing = await tx.entitlementGrant.findUnique({
         where: { id: grantId },
       });
@@ -137,7 +144,9 @@ export class MembershipGrantAdminService {
           'Only admin-issued grants can be revoked here; refund the order instead.',
         );
       }
-      const now = new Date();
+      const [{ now }] = await tx.$queryRaw<
+        { now: Date }[]
+      >`SELECT clock_timestamp() AS now`;
       const effectiveStatus = effectiveStatusAt(existing, now);
       if (
         effectiveStatus !== EntitlementGrantStatus.active &&
@@ -171,10 +180,14 @@ export class MembershipGrantAdminService {
     });
   }
 
-  private async assertGrantTarget(input: GrantMembershipInput): Promise<void> {
+  private async assertGrantTarget(
+    input: GrantMembershipInput,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
     if (input.subjectType === BillingSubjectType.user) return;
 
-    const workspace = await this.prisma.workspace.findFirst({
+    await tx.$queryRaw`SELECT id FROM workspaces WHERE id=${input.subjectId}::uuid FOR SHARE`;
+    const workspace = await tx.workspace.findFirst({
       where: { id: input.subjectId, deletedAt: null },
       select: { status: true },
     });

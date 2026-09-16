@@ -42,11 +42,12 @@ interface NegotiateResponse {
   message?: string;
 }
 
-async function negotiate(workspaceId?: string): Promise<NegotiateData> {
+async function negotiate(signal: AbortSignal, workspaceId?: string): Promise<NegotiateData> {
   const res = await fetch("/aurora/realtime/negotiate/assets", {
     credentials: "include",
     headers: workspaceId ? { "X-Fizz-Workspace-Id": workspaceId } : undefined,
     method: "POST",
+    signal,
   });
   if (!res.ok) throw new Error(`negotiate http ${res.status}`);
   const body = (await res.json()) as NegotiateResponse;
@@ -65,6 +66,7 @@ export function openAssetsRealtime(
   handlers: AssetsRealtimeHandlers,
   options: AssetsRealtimeOptions = {}
 ): AssetsRealtimeClient {
+  const controller = new AbortController();
   let userClosed = false;
   let backend: AssetsRealtimeClient | null = null;
   const isClosed = () => userClosed;
@@ -72,7 +74,7 @@ export function openAssetsRealtime(
   void (async () => {
     let access: NegotiateData;
     try {
-      access = await negotiate(options.workspaceId);
+      access = await negotiate(controller.signal, options.workspaceId);
     } catch (err) {
       if (!userClosed) {
         handlers.onDisconnected?.(err instanceof Error ? err.message : "negotiate_failed");
@@ -82,14 +84,16 @@ export function openAssetsRealtime(
     if (userClosed) return;
     backend =
       access.transport === "self-hosted"
-        ? openSelfHosted(access, options, handlers, isClosed)
-        : await openWebPubSub(options, handlers, isClosed);
+        ? openSelfHosted(access, options, handlers, isClosed, controller.signal)
+        : await openWebPubSub(options, handlers, isClosed, controller.signal);
     if (userClosed) backend.close();
   })();
 
   return {
     close() {
+      if (userClosed) return;
       userClosed = true;
+      controller.abort();
       backend?.close();
     },
   };
@@ -98,12 +102,14 @@ export function openAssetsRealtime(
 async function openWebPubSub(
   options: AssetsRealtimeOptions,
   handlers: AssetsRealtimeHandlers,
-  isClosed: () => boolean
+  isClosed: () => boolean,
+  signal: AbortSignal
 ): Promise<AssetsRealtimeClient> {
   const { WebPubSubClient } = await import("@azure/web-pubsub-client");
+  if (isClosed()) return { close() {} };
 
   const client = new WebPubSubClient(
-    { getClientAccessUrl: async () => (await negotiate(options.workspaceId)).url },
+    { getClientAccessUrl: async () => (await negotiate(signal, options.workspaceId)).url },
     { autoReconnect: true, autoRejoinGroups: true }
   );
 
@@ -111,6 +117,7 @@ async function openWebPubSub(
     if (!isClosed()) handlers.onConnected?.();
   });
   client.on("group-message", (msg) => {
+    if (isClosed()) return;
     const data = msg.message.data as AssetEvent | undefined;
     if (!data || typeof data.kind !== "string") return;
     handlers.onEvent?.(data);
@@ -141,7 +148,8 @@ function openSelfHosted(
   initial: NegotiateData,
   options: AssetsRealtimeOptions,
   handlers: AssetsRealtimeHandlers,
-  isClosed: () => boolean
+  isClosed: () => boolean,
+  signal: AbortSignal
 ): AssetsRealtimeClient {
   let ws: WebSocket | null = null;
   let stopped = false;
@@ -171,7 +179,7 @@ function openSelfHosted(
     attempt += 1;
     const delay = Math.min(1_000 * 2 ** Math.min(attempt, 4), MAX_RECONNECT_DELAY_MS);
     reconnectTimer = setTimeout(() => {
-      void negotiate(options.workspaceId)
+      void negotiate(signal, options.workspaceId)
         .then((access) => {
           if (!stopped && !isClosed()) connect(access);
         })
@@ -187,9 +195,12 @@ function openSelfHosted(
       scheduleReconnect();
       return;
     }
+    const socket = ws;
     ws.onopen = () => {
+      if (stopped || isClosed() || ws !== socket) return;
       attempt = 0;
       if (!isClosed()) handlers.onConnected?.();
+      if (stopped || isClosed() || ws !== socket) return;
       pingTimer = setInterval(() => {
         if (ws?.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ event: "ping" }));
@@ -197,6 +208,7 @@ function openSelfHosted(
       }, PING_INTERVAL_MS);
     };
     ws.onmessage = (ev) => {
+      if (stopped || isClosed() || ws !== socket) return;
       let parsed: unknown;
       try {
         parsed = JSON.parse(typeof ev.data === "string" ? ev.data : "");
@@ -209,6 +221,8 @@ function openSelfHosted(
       if (typeof event.kind === "string") handlers.onEvent?.(event);
     };
     ws.onclose = () => {
+      if (ws !== socket) return;
+      ws = null;
       stopPing();
       if (stopped || isClosed()) return;
       handlers.onDisconnected?.("disconnected");

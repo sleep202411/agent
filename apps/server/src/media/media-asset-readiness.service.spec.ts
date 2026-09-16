@@ -235,7 +235,7 @@ describe('readiness with canonical media access', () => {
       prisma as never,
       {} as never,
       workspaces as never,
-      {} as never,
+      { canReadStudioReference: jest.fn().mockResolvedValue(false) } as never,
       documents as never,
     );
     const service = new MediaAssetReadinessService(prisma as never, access, [

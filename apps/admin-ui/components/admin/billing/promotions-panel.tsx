@@ -5,7 +5,8 @@
 // :1840/2066); the promotion state, refresh, and mutation handlers mirror the
 // monolith's AdminBillingPanel verbatim. Shared primitives come from "./shared".
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconPlus, IconRefresh, IconSearch, IconTicket } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -71,147 +72,187 @@ export function BillingPromotionsPanel({
   const [promotionStatus, setPromotionStatus] = useState("");
   const [promotionProvider, setPromotionProvider] = useState("");
   const [promotionQuery, setPromotionQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [editing, setEditing] = useState<BillingPromotionRow | null>(null);
 
-  function promotionQueryString() {
-    const params = new URLSearchParams();
-    if (promotionStatus) params.set("status", promotionStatus);
-    if (promotionProvider) params.set("provider", promotionProvider);
-    if (promotionQuery.trim()) params.set("q", promotionQuery.trim());
-    const query = params.toString();
-    return query ? `?${query}` : "";
-  }
-
+  const loadPromotions = useCallback(
+    (signal: AbortSignal) => {
+      const params = new URLSearchParams();
+      if (promotionStatus) params.set("status", promotionStatus);
+      if (promotionProvider) params.set("provider", promotionProvider);
+      if (promotionQuery.trim()) params.set("q", promotionQuery.trim());
+      return requestEnvelope<AdminBillingPromotionsData>(
+        `/api/admin/billing/promotions?${params}`,
+        signal
+      );
+    },
+    [promotionStatus, promotionProvider, promotionQuery]
+  );
   async function refreshPromotions() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setPromotions(
-        await requestEnvelope<AdminBillingPromotionsData>(
-          `/api/admin/billing/promotions${promotionQueryString()}`
-        )
-      );
+      const data = await loadPromotions(operation.signal);
+      if (operation.current()) setPromotions(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handleCreatePromotion(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     // Capture the form element NOW: React nulls event.currentTarget after the
     // handler's sync phase, so reading it after the await below would throw.
     const formEl = event.currentTarget;
-    const form = new FormData(formEl);
-    const provider = stringField(form, "provider");
-    const applyMode = stringField(form, "applyMode") || "code";
-    const discountType = stringField(form, "discountType") || "percent";
-    const percentOff = stringField(form, "percentOff");
-    const amountOff = stringField(form, "amountOff");
-    const amountOffCurrency = stringField(form, "amountOffCurrency");
-    const appliesProductType = stringField(form, "appliesProductType");
-    const maxRedemptions = stringField(form, "maxRedemptions");
-    const maxRedemptionsPerUser = stringField(form, "maxRedemptionsPerUser");
-    const durationType = stringField(form, "durationType") || "once";
-    const durationCount = stringField(form, "durationCount");
-    const durationUnit = stringField(form, "durationUnit");
-    const startsAt = stringField(form, "startsAt");
-    const endsAt = stringField(form, "endsAt");
-    const metadata =
-      appliesProductType === "compute_point_pack"
-        ? {
-            surface: "fizzstudio_compute_topup",
-            cell: siteKey,
-            providerCouponRequired: true,
-          }
-        : undefined;
     try {
-      await mutateEnvelope("/api/admin/billing/promotions", {
-        applyMode,
-        // Automatic sales carry no code.
-        code: applyMode === "code" ? stringField(form, "code") : undefined,
-        name: stringField(form, "name"),
-        description: stringField(form, "description") || undefined,
-        status: stringField(form, "status"),
-        percentOffBps:
-          discountType === "percent" && percentOff
-            ? Math.round(Number(percentOff) * 100)
-            : undefined,
-        amountOffMinor:
-          discountType === "amount" && amountOff ? Math.round(Number(amountOff) * 100) : undefined,
-        amountOffCurrency: discountType === "amount" ? amountOffCurrency || undefined : undefined,
-        durationType,
-        durationCount:
-          durationType === "repeating" && durationCount ? Number(durationCount) : undefined,
-        durationUnit: durationType === "repeating" && durationUnit ? durationUnit : undefined,
-        startsAt: startsAt || undefined,
-        endsAt: endsAt || undefined,
-        appliesProductType: appliesProductType || undefined,
-        maxRedemptions: maxRedemptions ? Number(maxRedemptions) : undefined,
-        // Per-user limits are a coupon concept; automatic sales apply to everyone.
-        maxRedemptionsPerUser:
-          applyMode === "code" && maxRedemptionsPerUser ? Number(maxRedemptionsPerUser) : undefined,
-        metadata,
-        providerBindings: provider
-          ? [
-              {
-                provider,
-                status: "sync_pending",
-              },
-            ]
-          : [],
-      });
+      const form = new FormData(formEl);
+      const provider = stringField(form, "provider");
+      const applyMode = stringField(form, "applyMode") || "code";
+      const discountType = stringField(form, "discountType") || "percent";
+      const percentOff = stringField(form, "percentOff");
+      const amountOff = stringField(form, "amountOff");
+      const amountOffCurrency = stringField(form, "amountOffCurrency");
+      const appliesProductType = stringField(form, "appliesProductType");
+      const maxRedemptions = stringField(form, "maxRedemptions");
+      const maxRedemptionsPerUser = stringField(form, "maxRedemptionsPerUser");
+      const durationType = stringField(form, "durationType") || "once";
+      const durationCount = stringField(form, "durationCount");
+      const durationUnit = stringField(form, "durationUnit");
+      const startsAt = stringField(form, "startsAt");
+      const endsAt = stringField(form, "endsAt");
+      const metadata =
+        appliesProductType === "compute_point_pack"
+          ? {
+              surface: "fizzstudio_compute_topup",
+              cell: siteKey,
+              providerCouponRequired: true,
+            }
+          : undefined;
+      await mutateEnvelope(
+        "/api/admin/billing/promotions",
+        {
+          applyMode,
+          // Automatic sales carry no code.
+          code: applyMode === "code" ? stringField(form, "code") : undefined,
+          name: stringField(form, "name"),
+          description: stringField(form, "description") || undefined,
+          status: stringField(form, "status"),
+          percentOffBps:
+            discountType === "percent" && percentOff
+              ? Math.round(Number(percentOff) * 100)
+              : undefined,
+          amountOffMinor:
+            discountType === "amount" && amountOff
+              ? Math.round(Number(amountOff) * 100)
+              : undefined,
+          amountOffCurrency: discountType === "amount" ? amountOffCurrency || undefined : undefined,
+          durationType,
+          durationCount:
+            durationType === "repeating" && durationCount ? Number(durationCount) : undefined,
+          durationUnit: durationType === "repeating" && durationUnit ? durationUnit : undefined,
+          startsAt: startsAt || undefined,
+          endsAt: endsAt || undefined,
+          appliesProductType: appliesProductType || undefined,
+          maxRedemptions: maxRedemptions ? Number(maxRedemptions) : undefined,
+          // Per-user limits are a coupon concept; automatic sales apply to everyone.
+          maxRedemptionsPerUser:
+            applyMode === "code" && maxRedemptionsPerUser
+              ? Number(maxRedemptionsPerUser)
+              : undefined,
+          metadata,
+          providerBindings: provider
+            ? [
+                {
+                  provider,
+                  status: "sync_pending",
+                },
+              ]
+            : [],
+        },
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
       formEl.reset();
-      await refreshPromotions();
+      if (!operation.current()) return;
+      const data = await loadPromotions(operation.signal);
+      if (operation.current()) setPromotions(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handlePromotionStatus(promotionId: string, status: BillingPromotionStatus) {
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
-      await mutateEnvelope(`/api/admin/billing/promotions/${promotionId}`, { status }, "PATCH");
-      await refreshPromotions();
+      await mutateEnvelope(
+        `/api/admin/billing/promotions/${promotionId}`,
+        { status },
+        "PATCH",
+        operation.signal
+      );
+      if (!operation.current()) return;
+      const data = await loadPromotions(operation.signal);
+      if (operation.current()) setPromotions(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handleUpdatePromotion(promotionId: string, payload: Record<string, unknown>) {
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
-      await mutateEnvelope(`/api/admin/billing/promotions/${promotionId}`, payload, "PATCH");
+      await mutateEnvelope(
+        `/api/admin/billing/promotions/${promotionId}`,
+        payload,
+        "PATCH",
+        operation.signal
+      );
+      if (!operation.current()) return;
       setEditing(null);
-      await refreshPromotions();
+      if (!operation.current()) return;
+      const data = await loadPromotions(operation.signal);
+      if (operation.current()) setPromotions(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function handleSyncPromotionBinding(bindingId: string) {
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
-      await mutateEnvelope(`/api/admin/billing/promotion-provider-bindings/${bindingId}/sync`, {});
-      await refreshPromotions();
+      await mutateEnvelope(
+        `/api/admin/billing/promotion-provider-bindings/${bindingId}/sync`,
+        {},
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
+      const data = await loadPromotions(operation.signal);
+      if (operation.current()) setPromotions(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
@@ -248,7 +289,9 @@ export function BillingPromotionsPanel({
           key={editing.id}
           promotion={editing}
           loading={loading}
-          onClose={() => setEditing(null)}
+          onClose={() => {
+            if (!loading) setEditing(null);
+          }}
           onSubmit={handleUpdatePromotion}
         />
       ) : null}
@@ -438,10 +481,7 @@ function PromotionsView({
         },
       },
     ],
-    // onPromotionStatus / onEdit / onSyncBinding are render-stable closures used
-    // only in onClick; the column defs only need to rebuild when loading toggles.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loading]
+    [loading, onPromotionStatus, onEdit, onSyncBinding]
   );
 
   return (
@@ -543,7 +583,7 @@ function CreatePromotionForm({
         </div>
         <IconTicket className="size-4 text-slate-400" />
       </div>
-      <form onSubmit={onSubmit} className="mt-4 grid gap-3">
+      <form inert={loading} onSubmit={onSubmit} className="mt-4 grid gap-3">
         <FormLabel
           label="生效方式"
           help="优惠码=用户输入券码后生效；自动促销=无需券码，命中商品对所有人自动按促销价（前台显示划线原价 + 折后价），用于限时活动。"
@@ -789,6 +829,7 @@ function PromotionEditDialog({
       }
     >
       <form
+        inert={loading}
         onSubmit={(event) => {
           event.preventDefault();
           onSubmit(promotion.id, buildPayload());

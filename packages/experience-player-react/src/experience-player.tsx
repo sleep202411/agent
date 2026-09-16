@@ -437,8 +437,14 @@ function ActiveExperienceRuntimePlayer({
 
   useEffect(() => {
     const abortController = new AbortController();
-    void loadTheme(manifest, abortController.signal)
-      .then(setTheme)
+    void Promise.resolve()
+      .then(() => {
+        abortController.signal.throwIfAborted();
+        return loadTheme(manifest, abortController.signal);
+      })
+      .then((loadedTheme) => {
+        if (!abortController.signal.aborted) setTheme(loadedTheme);
+      })
       .catch((error: unknown) => {
         if (!abortController.signal.aborted) setRuntimeError(runtimeErrorMessage(error));
       });

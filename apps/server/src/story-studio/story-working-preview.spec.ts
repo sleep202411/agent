@@ -72,18 +72,17 @@ function scopedService(
       callback(tx),
     ),
   };
+  const project = {
+    id: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    frameProfile: 'landscape_16_9',
+    defaultLocale: 'zh-CN',
+    title: 'Branching Film Test',
+    summary: 'A branching interactive film.',
+    coverAssetId: cover?.coverAssetId ?? null,
+  };
   const permissions = {
-    requireProject: jest.fn().mockResolvedValue({
-      project: {
-        id: PROJECT_ID,
-        workspaceId: WORKSPACE_ID,
-        frameProfile: 'landscape_16_9',
-        defaultLocale: 'zh-CN',
-        title: 'Branching Film Test',
-        summary: 'A branching interactive film.',
-        coverAssetId: cover?.coverAssetId ?? null,
-      },
-    }),
+    requireProject: jest.fn().mockResolvedValue({ project }),
   };
   const assetUrls = {
     resolveVariant: jest.fn(
@@ -92,6 +91,7 @@ function scopedService(
   };
   return {
     contentHash,
+    project,
     prisma,
     tx,
     assetUrls,
@@ -179,6 +179,37 @@ function previewSequences(draft: Draft) {
 }
 
 describe('StoryWorkingPreviewService', () => {
+  it('gives chapter and whole-story previews distinct stable build identities', async () => {
+    const { service } = scopedService(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
+    const whole = await service.getWorkingPreview(USER as never, PROJECT_ID);
+    const chapter = await service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      uuidAt(9),
+    );
+    const repeated = await service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      uuidAt(9),
+    );
+    expect(chapter.runtime).not.toBeNull();
+    expect(chapter.runtime?.buildId).not.toBe(whole.runtime?.buildId);
+    expect(repeated.runtime?.buildId).toBe(chapter.runtime?.buildId);
+  });
+
+  it('replaces the preview identity after project presentation metadata changes', async () => {
+    const { service, project } = scopedService(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
+    const first = await service.getWorkingPreview(USER as never, PROJECT_ID);
+    project.title = 'Updated title';
+    const second = await service.getWorkingPreview(USER as never, PROJECT_ID);
+    expect(second.runtime?.metadata).not.toEqual(first.runtime?.metadata);
+    expect(second.runtime?.buildId).not.toBe(first.runtime?.buildId);
+  });
+
   it.each([1, 2])(
     'preserves %i untouched options and plays an unfilmed scene as text for four seconds',
     async (optionCount) => {
@@ -438,16 +469,8 @@ describe('StoryWorkingPreviewService', () => {
       schemaVersion: 2,
       channel: 'preview',
       gameId: PROJECT_ID,
-      buildId: `preview:${canonicalJsonHash({
-        projectId: PROJECT_ID,
-        draftContentHash: contentHash,
-        videoSnapshotHash: preview.videoSnapshotHash,
-      })}`,
-      contentVersion: `preview:${canonicalJsonHash({
-        projectId: PROJECT_ID,
-        draftContentHash: contentHash,
-        videoSnapshotHash: preview.videoSnapshotHash,
-      })}`,
+      buildId: expect.stringMatching(/^preview:[a-f0-9]{64}$/) as unknown,
+      contentVersion: preview.runtime?.buildId,
       graph: { entrySceneId: draft.graph.entryNodeId },
     });
     expect(preview.diagnostics).toEqual([]);

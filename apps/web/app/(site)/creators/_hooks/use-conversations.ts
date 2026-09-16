@@ -34,6 +34,7 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { orderListQueries } from "./use-orders";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import type {
   ConversationCardDTO,
@@ -126,9 +127,11 @@ export interface OpenConversationBody {
   contextType: "service";
   contextId: string;
   firstMessage?: string;
+  firstMessageClientKey?: string;
 }
 
 export interface SendProposalBody {
+  clientKey?: string;
   note?: string;
   packageTier: ServiceTier;
   price: number;
@@ -441,17 +444,25 @@ export function useDeclineProposal(conversationId: string) {
 
 export function useMarkRead(conversationId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation<
     { lastReadMessageId: string },
     ConversationApiError,
-    { lastReadMessageId: string }
+    { lastReadMessageId: string },
+    { userId: string | null; conversationId: string }
   >({
     mutationFn: (body) => api.post(`/conversations/${conversationId}/read`, { body }),
-    onSuccess: () => {
-      // Invalidate inbox row (unreadCount) + detail; messages list
-      // doesn't change on read.
-      qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
-      qc.invalidateQueries({ queryKey: conversationKeys.detail(conversationId) });
+    onMutate: () => ({ userId: user?.id ?? null, conversationId }),
+    onSuccess: (_result, _variables, origin) => {
+      if (!origin?.userId) return;
+      qc.invalidateQueries({
+        queryKey: conversationKeys.inbox(),
+        predicate: (query) => query.queryKey[3] === origin.userId,
+      });
+      qc.invalidateQueries({
+        queryKey: conversationKeys.detail(origin.conversationId, origin.userId),
+      });
+      qc.invalidateQueries(orderListQueries(origin.userId));
     },
   });
 }

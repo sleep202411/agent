@@ -15,7 +15,7 @@
 // expect NUMBERS — parse for display, send Number() on submit. minor = cents.
 // Rates: the wire unit is bps (万分比); the form edits percent (bps / 100).
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   IconDeviceFloppy,
   IconEdit,
@@ -40,6 +40,8 @@ import {
   stringField,
   toErrorMessage,
 } from "../billing/shared";
+import { integerInput, commissionBpsInput, parseRewardItems } from "./referral-inputs";
+import { useAdminOperation } from "../use-admin-operation";
 import { CommissionRateForm, CommissionRatesTable, bpsPercentLabel } from "./commission-rates";
 import type {
   CommissionRateRow,
@@ -121,133 +123,136 @@ export function ReferralsPanel({
   const [rateDialog, setRateDialog] = useState<
     { mode: "create" } | { mode: "edit"; rate: CommissionRateRow } | null
   >(null);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const pending = useRef<ReturnType<typeof begin>>(null);
   const [error, setError] = useState<string | null>(initialError ?? null);
 
-  async function refreshConfig() {
-    setLoading(true);
+  type Operation = NonNullable<ReturnType<typeof begin>>;
+  async function runOperation(
+    work: (operation: Operation) => Promise<void>,
+    kind: "read" | "write" = "write"
+  ) {
+    const operation = begin(kind);
+    if (!operation) return;
+    pending.current = operation;
     setError(null);
     try {
-      setConfig(await requestEnvelope<ReferralConfig | null>("/api/admin/referrals/program"));
+      await work(operation);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      if (pending.current === operation) pending.current = null;
+      operation.finish();
     }
   }
-
+  function closeDialog(close: () => void) {
+    pending.current?.cancel();
+    pending.current?.finish();
+    pending.current = null;
+    close();
+  }
+  async function reloadConfig(operation: Operation) {
+    const data = await requestEnvelope<ReferralConfig | null>(
+      "/api/admin/referrals/program",
+      operation.signal
+    );
+    if (operation.current()) setConfig(data);
+  }
+  async function refreshConfig() {
+    await runOperation(reloadConfig, "read");
+  }
   async function handleSaveProgram(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
+    const form = new FormData(event.currentTarget);
+    await runOperation(async (operation) => {
       const data = await mutateEnvelope<ReferralConfig>(
         "/api/admin/referrals/program",
-        programPayload(new FormData(event.currentTarget)),
-        "PATCH"
+        programPayload(form),
+        "PATCH",
+        operation.signal
       );
+      if (!operation.current()) return;
       setConfig(data);
       setEditProgramOpen(false);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    });
   }
-
   async function handleCreateMilestone(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setError(null);
     const formElement = event.currentTarget;
-    try {
+    const form = new FormData(formElement);
+    await runOperation(async (operation) => {
       await mutateEnvelope(
         "/api/admin/referrals/milestones",
-        milestonePayload(new FormData(formElement))
+        milestonePayload(form),
+        "POST",
+        operation.signal
       );
+      if (!operation.current()) return;
       formElement.reset();
       setCreateOpen(false);
-      await refreshConfig();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      await reloadConfig(operation);
+    });
   }
-
   async function handleUpdateMilestone(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingMilestone) return;
-    setLoading(true);
-    setError(null);
-    try {
+    const form = new FormData(event.currentTarget);
+    await runOperation(async (operation) => {
       await mutateEnvelope(
-        `/api/admin/referrals/milestones/${editingMilestone.id}`,
-        milestonePayload(new FormData(event.currentTarget)),
-        "PATCH"
+        `/api/admin/referrals/milestones/${encodeURIComponent(editingMilestone.id)}`,
+        milestonePayload(form),
+        "PATCH",
+        operation.signal
       );
+      if (!operation.current()) return;
       setEditingMilestone(null);
-      await refreshConfig();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      await reloadConfig(operation);
+    });
   }
-
   async function handleArchiveMilestone(milestone: ReferralMilestoneRow) {
-    setLoading(true);
-    setError(null);
-    try {
-      await mutateEnvelope(`/api/admin/referrals/milestones/${milestone.id}/archive`, {});
+    await runOperation(async (operation) => {
+      await mutateEnvelope(
+        `/api/admin/referrals/milestones/${encodeURIComponent(milestone.id)}/archive`,
+        {},
+        "POST",
+        operation.signal
+      );
+      if (!operation.current()) return;
       setEditingMilestone(null);
-      await refreshConfig();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+      await reloadConfig(operation);
+    });
   }
-
   async function handleSaveRate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setError(null);
     const form = new FormData(event.currentTarget);
-    try {
+    await runOperation(async (operation) => {
       const data = await mutateEnvelope<CommissionRateRow[]>(
         "/api/admin/referrals/commission-rates",
         {
           userId: stringField(form, "userId"),
-          commissionBps: Math.round(Number(stringField(form, "ratePercent") || 0) * 100),
+          commissionBps: commissionBpsInput(stringField(form, "ratePercent")),
           note: stringField(form, "note") || null,
-        }
+        },
+        "POST",
+        operation.signal
       );
+      if (!operation.current()) return;
       setRates(data);
       setRateDialog(null);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    });
   }
-
   async function handleRemoveRate(userId: string) {
-    setLoading(true);
-    setError(null);
-    try {
+    await runOperation(async (operation) => {
       const data = await mutateEnvelope<CommissionRateRow[]>(
         `/api/admin/referrals/commission-rates/${encodeURIComponent(userId)}`,
         {},
-        "DELETE"
+        "DELETE",
+        operation.signal
       );
+      if (!operation.current()) return;
       setRates(data);
       setRateDialog(null);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+    });
   }
 
   const milestones = useMemo(
@@ -321,7 +326,9 @@ export function ReferralsPanel({
         <MilestonesTable
           milestones={milestones}
           loading={loading}
-          onEditMilestone={setEditingMilestone}
+          onEditMilestone={(milestone) => {
+            if (!loading) setEditingMilestone(milestone);
+          }}
         />
       </section>
 
@@ -349,7 +356,9 @@ export function ReferralsPanel({
         <CommissionRatesTable
           rates={rates}
           loading={loading}
-          onEditRate={(rate) => setRateDialog({ mode: "edit", rate })}
+          onEditRate={(rate) => {
+            if (!loading) setRateDialog({ mode: "edit", rate });
+          }}
         />
       </section>
 
@@ -357,7 +366,7 @@ export function ReferralsPanel({
         open={editProgramOpen}
         title="编辑奖励配置"
         description="程序基础设置 + 默认返佣比例 + 被邀请人福利；保存后立即生效，只影响之后的邀请与订单。"
-        onClose={() => setEditProgramOpen(false)}
+        onClose={() => closeDialog(() => setEditProgramOpen(false))}
       >
         {config ? (
           <ProgramForm config={config} loading={loading} onSubmit={handleSaveProgram} />
@@ -368,7 +377,7 @@ export function ReferralsPanel({
         open={Boolean(rateDialog)}
         title={rateDialog?.mode === "edit" ? "编辑返佣比例" : "新增返佣用户"}
         description="比例按订单实付金额计算；修改只影响之后的订单，已计的返佣保留原比例快照。"
-        onClose={() => setRateDialog(null)}
+        onClose={() => closeDialog(() => setRateDialog(null))}
       >
         {rateDialog ? (
           <CommissionRateForm
@@ -389,7 +398,7 @@ export function ReferralsPanel({
         open={createOpen}
         title="新建阶梯奖励"
         description="设置注册人数门槛与达标后发放的奖励包（可含多项）。"
-        onClose={() => setCreateOpen(false)}
+        onClose={() => closeDialog(() => setCreateOpen(false))}
       >
         <MilestoneForm
           mode="create"
@@ -403,10 +412,11 @@ export function ReferralsPanel({
         open={Boolean(editingMilestone)}
         title="编辑阶梯奖励"
         description="编辑只影响之后达标的奖励发放；历史已发放奖励保留原始审计记录。"
-        onClose={() => setEditingMilestone(null)}
+        onClose={() => closeDialog(() => setEditingMilestone(null))}
       >
         {editingMilestone ? (
           <MilestoneForm
+            key={editingMilestone.id}
             mode="update"
             loading={loading}
             milestone={editingMilestone}
@@ -903,11 +913,29 @@ function programPayload(form: FormData): Record<string, unknown> {
   return {
     enabled: form.get("enabled") === "on",
     currency: currency || undefined,
-    holdDays: Number(stringField(form, "holdDays") || 0),
-    rewardPerReferralMinor: Number(stringField(form, "rewardPerReferralMinor") || 0),
-    maxRewardedReferees: Number(stringField(form, "maxRewardedReferees") || 0),
-    commissionBps: Math.round(Number(stringField(form, "commissionRatePercent") || 0) * 100),
-    refereeMaxAccountAgeHours: Number(stringField(form, "refereeMaxAccountAgeHours") || 0),
+    holdDays: integerInput(stringField(form, "holdDays"), "holdDays", 0, 0, 365),
+    rewardPerReferralMinor: integerInput(
+      stringField(form, "rewardPerReferralMinor"),
+      "rewardPerReferralMinor",
+      0,
+      0,
+      Number.MAX_SAFE_INTEGER
+    ),
+    maxRewardedReferees: integerInput(
+      stringField(form, "maxRewardedReferees"),
+      "maxRewardedReferees",
+      0,
+      0,
+      Number.MAX_SAFE_INTEGER
+    ),
+    commissionBps: commissionBpsInput(stringField(form, "commissionRatePercent")),
+    refereeMaxAccountAgeHours: integerInput(
+      stringField(form, "refereeMaxAccountAgeHours"),
+      "refereeMaxAccountAgeHours",
+      0,
+      0,
+      8760
+    ),
     inviteeBenefitTitle: stringField(form, "inviteeBenefitTitle") || null,
     inviteeBenefitDetail: stringField(form, "inviteeBenefitDetail") || null,
     // Invitee welcome-perk bundle (社区/算力积分, 会员, 现金). Empty = no perk.
@@ -917,29 +945,22 @@ function programPayload(form: FormData): Record<string, unknown> {
 
 function milestonePayload(form: FormData): Record<string, unknown> {
   return {
-    inviteeThreshold: Number(stringField(form, "inviteeThreshold") || 1),
+    inviteeThreshold: integerInput(
+      stringField(form, "inviteeThreshold"),
+      "inviteeThreshold",
+      1,
+      1,
+      Number.MAX_SAFE_INTEGER
+    ),
     rewardItems: parseRewardItems(form, "rewardItems"),
     title: stringField(form, "title"),
     detail: stringField(form, "detail") || undefined,
-    rank: Number(stringField(form, "rank") || 0),
+    rank: integerInput(
+      stringField(form, "rank"),
+      "rank",
+      0,
+      Number.MIN_SAFE_INTEGER,
+      Number.MAX_SAFE_INTEGER
+    ),
   };
-}
-
-function parseRewardItems(
-  form: FormData,
-  field: string
-): { kind: RewardItemKind; amountMinor: number; days: number }[] {
-  const raw = stringField(form, field);
-  if (!raw) return [];
-  let parsed: RewardItem[];
-  try {
-    parsed = JSON.parse(raw) as RewardItem[];
-  } catch {
-    return [];
-  }
-  return parsed.map((it) => ({
-    kind: it.kind,
-    amountMinor: isMembershipPayout(it.kind) ? 0 : Number(it.amountMinor || 0),
-    days: isMembershipPayout(it.kind) ? Number(it.days || 0) : 0,
-  }));
 }

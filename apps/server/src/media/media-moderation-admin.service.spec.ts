@@ -54,6 +54,7 @@ describe('MediaModerationAdminService', () => {
     const actionUpdateMany = jest.fn().mockResolvedValue({ count: 0 });
     const assetUpdate = jest.fn().mockResolvedValue(updatedAsset());
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       mediaAsset: { update: assetUpdate },
       mediaModerationCase: {
         create: jest.fn().mockResolvedValue({ id: 'case-1' }),
@@ -91,7 +92,9 @@ describe('MediaModerationAdminService', () => {
         }),
       },
       $transaction: jest.fn((cb: (inner: typeof tx) => unknown) =>
-        Promise.resolve(cb(tx)),
+        Promise.resolve(
+          cb({ ...tx, mediaAsset: { ...tx.mediaAsset, ...prisma.mediaAsset } }),
+        ),
       ),
     };
     const service = new MediaModerationAdminService(prisma as never);
@@ -196,6 +199,7 @@ describe('MediaModerationAdminService', () => {
     const createMany = jest.fn().mockResolvedValue({ count: 1 });
     const placementUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
       mediaAsset: {
         update: jest.fn().mockResolvedValue(
           updatedAsset({
@@ -230,7 +234,9 @@ describe('MediaModerationAdminService', () => {
         }),
       },
       $transaction: jest.fn((cb: (inner: typeof tx) => unknown) =>
-        Promise.resolve(cb(tx)),
+        Promise.resolve(
+          cb({ ...tx, mediaAsset: { ...tx.mediaAsset, ...prisma.mediaAsset } }),
+        ),
       ),
     };
     const service = new MediaModerationAdminService(prisma as never);
@@ -301,6 +307,7 @@ describe('MediaModerationAdminService', () => {
     }) {
       const createMany = jest.fn().mockResolvedValue({ count: 1 });
       const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([]),
         mediaAsset: { update: jest.fn().mockResolvedValue(updatedAsset()) },
         mediaModerationCase: {
           create: jest.fn().mockResolvedValue({ id: 'case-hls' }),
@@ -328,7 +335,12 @@ describe('MediaModerationAdminService', () => {
           }),
         },
         $transaction: jest.fn((cb: (inner: typeof tx) => unknown) =>
-          Promise.resolve(cb(tx)),
+          Promise.resolve(
+            cb({
+              ...tx,
+              mediaAsset: { ...tx.mediaAsset, ...prisma.mediaAsset },
+            }),
+          ),
         ),
       };
       return {

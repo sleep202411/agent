@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { BytePlusSpeechConfigService } from './byteplus-speech-config.service';
 import {
+  BytePlusSpeechProviderError,
   bytePlusSpeechError,
   mapBytePlusSpeechBodyError,
   mapBytePlusSpeechHttpError,
@@ -83,62 +84,79 @@ export class BytePlusSpeechClient {
     request: BytePlusAudioCreationRequest,
     requestId: string = randomUUID(),
   ): Promise<BytePlusAudioCreationResult> {
-    const response = await this.request('/tts/create', request, {
-      'X-Api-Request-Id': requestId,
-    });
-    const raw = await response.text();
-    const body = parseJson<BytePlusAudioCreationResponse>(raw);
-    if (!response.ok) throw mapBytePlusSpeechHttpError(response.status, raw);
-    if (typeof body.code === 'number' && body.code !== 0) {
-      throw mapBytePlusSpeechBodyError(
-        body.code,
-        body.message ?? 'Unknown BytePlus Seed Audio error.',
-        body,
-      );
-    }
-    if (!body.audio) {
-      throw bytePlusSpeechError(
-        'UNKNOWN',
-        'BytePlus Seed Audio completed without audio bytes.',
-        'BytePlus Seed Audio returned no playable audio.',
-        body,
-      );
-    }
-    return {
-      body,
-      status: response.status,
-      headers: responseHeaders(response.headers),
-      requestId: response.headers.get('x-tt-logid') ?? requestId,
-    };
+    return this.request(
+      '/tts/create',
+      request,
+      {
+        'X-Api-Request-Id': requestId,
+      },
+      async (response) => {
+        const raw = await response.text();
+        const body = parseJson<BytePlusAudioCreationResponse>(raw);
+        if (!response.ok)
+          throw mapBytePlusSpeechHttpError(response.status, raw);
+        if (typeof body.code === 'number' && body.code !== 0) {
+          throw mapBytePlusSpeechBodyError(
+            body.code,
+            body.message ?? 'Unknown BytePlus Seed Audio error.',
+            body,
+          );
+        }
+        if (!body.audio) {
+          throw bytePlusSpeechError(
+            'UNKNOWN',
+            'BytePlus Seed Audio completed without audio bytes.',
+            'BytePlus Seed Audio returned no playable audio.',
+            body,
+          );
+        }
+        return {
+          body,
+          status: response.status,
+          headers: responseHeaders(response.headers),
+          requestId: response.headers.get('x-tt-logid') ?? requestId,
+        };
+      },
+    );
   }
 
   async synthesizeTts(
     request: BytePlusTtsRequest,
     requestId: string = randomUUID(),
   ): Promise<BytePlusTtsResult> {
-    const response = await this.request('/tts/unidirectional', request, {
-      'X-Api-Resource-Id': 'seed-tts-2.0',
-      'X-Api-App-Key': 'aGjiRDfUWi',
-      'X-Api-Request-Id': requestId,
-      Connection: 'keep-alive',
-    });
-    if (!response.ok) {
-      throw mapBytePlusSpeechHttpError(response.status, await response.text());
-    }
-    const audio = await readTtsAudioStream(response);
-    return {
-      audio,
-      status: response.status,
-      headers: responseHeaders(response.headers),
-      requestId: response.headers.get('x-tt-logid') ?? requestId,
-    };
+    return this.request(
+      '/tts/unidirectional',
+      request,
+      {
+        'X-Api-Resource-Id': 'seed-tts-2.0',
+        'X-Api-App-Key': 'aGjiRDfUWi',
+        'X-Api-Request-Id': requestId,
+        Connection: 'keep-alive',
+      },
+      async (response) => {
+        if (!response.ok) {
+          throw mapBytePlusSpeechHttpError(
+            response.status,
+            await response.text(),
+          );
+        }
+        const audio = await readTtsAudioStream(response);
+        return {
+          audio,
+          status: response.status,
+          headers: responseHeaders(response.headers),
+          requestId: response.headers.get('x-tt-logid') ?? requestId,
+        };
+      },
+    );
   }
 
-  private async request(
+  private async request<T>(
     path: string,
     body: unknown,
     headers: Record<string, string>,
-  ): Promise<Response> {
+    consume: (response: Response) => Promise<T>,
+  ): Promise<T> {
     const config = this.configService.config;
     if (!config.enabled || !config.apiKey) {
       throw bytePlusSpeechError(
@@ -153,7 +171,7 @@ export class BytePlusSpeechClient {
       config.requestTimeoutMs,
     );
     try {
-      return await fetch(`${config.apiBaseUrl}${path}`, {
+      const response = await fetch(`${config.apiBaseUrl}${path}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -163,14 +181,22 @@ export class BytePlusSpeechClient {
         body: JSON.stringify(body),
         signal: controller.signal,
       });
+      controller.signal.throwIfAborted();
+      const result = await consume(response);
+      controller.signal.throwIfAborted();
+      return result;
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (
+        controller.signal.aborted ||
+        (error instanceof Error && error.name === 'AbortError')
+      ) {
         throw bytePlusSpeechError(
           'PROVIDER_TIMEOUT',
           `BytePlus Seed Speech timed out after ${config.requestTimeoutMs} ms.`,
           'Audio generation timed out. Please try again.',
         );
       }
+      if (error instanceof BytePlusSpeechProviderError) throw error;
       throw bytePlusSpeechError(
         'UNKNOWN',
         `BytePlus Seed Speech request failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -222,28 +248,37 @@ export async function readTtsAudioStream(response: Response): Promise<Buffer> {
     chunks.push(chunk);
   };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    carry += decoder.decode(value, { stream: !done });
-    const lines = carry.split(/\r?\n/);
-    carry = lines.pop() ?? '';
-    for (const line of lines) consume(line);
-    if (done) break;
+  let drained = false;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      carry += decoder.decode(value, { stream: !done });
+      const lines = carry.split(/\r?\n/);
+      carry = lines.pop() ?? '';
+      for (const line of lines) consume(line);
+      if (done) {
+        drained = true;
+        break;
+      }
+    }
+    if (carry.trim()) consume(carry);
+    if (!completed) {
+      throw bytePlusSpeechError(
+        'UNKNOWN',
+        'BytePlus TTS stream ended without its completion frame.',
+      );
+    }
+    if (chunks.length === 0) {
+      throw bytePlusSpeechError(
+        'UNKNOWN',
+        'BytePlus TTS stream completed without audio bytes.',
+      );
+    }
+    return Buffer.concat(chunks);
+  } finally {
+    if (!drained) void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
-  if (carry.trim()) consume(carry);
-  if (!completed) {
-    throw bytePlusSpeechError(
-      'UNKNOWN',
-      'BytePlus TTS stream ended without its completion frame.',
-    );
-  }
-  if (chunks.length === 0) {
-    throw bytePlusSpeechError(
-      'UNKNOWN',
-      'BytePlus TTS stream completed without audio bytes.',
-    );
-  }
-  return Buffer.concat(chunks);
 }
 
 function parseJson<T>(raw: string): T {

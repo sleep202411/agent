@@ -2,9 +2,12 @@
 
 import { useAuth } from "@/app/_components/auth-provider";
 import { useQuery } from "@tanstack/react-query";
-import { listAllProjectCrewAssets } from "@/lib/collab/project-crew-assets-api";
 import {
-  useEffect,
+  getProjectCrewAssetContext,
+  listAllProjectCrewAssets,
+} from "@/lib/collab/project-crew-assets-api";
+import {
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -58,7 +61,7 @@ export interface StoryCandidateAssetPickerDialogProps {
   onRetry?: () => void;
   isSelectable?: (candidate: StoryCandidateAsset) => boolean;
   unavailableReason?: (candidate: StoryCandidateAsset) => string | undefined;
-  onSelect: (candidate: StoryCandidateAsset) => Promise<void>;
+  onSelect: (candidate: StoryCandidateAsset, signal?: AbortSignal) => Promise<void>;
   onClearSelection?: () => Promise<void>;
   uploadAccept?: string;
   onUpload?: (
@@ -77,31 +80,45 @@ export interface StoryCandidateAssetPickerDialogProps {
  */
 export function StoryCandidateAssetPickerDialog(props: StoryCandidateAssetPickerDialogProps) {
   const { user } = useAuth();
+  const sessionKey = JSON.stringify([
+    props.projectId,
+    user?.id,
+    props.open,
+    props.canSelect,
+    [...props.allowedKinds].sort(),
+  ]);
   return props.projectId ? (
     <CrewCandidateDialog
-      key={`${props.projectId}:${user?.id}`}
+      key={sessionKey}
       {...props}
       projectId={props.projectId}
       userId={user ? String(user.id) : ""}
     />
   ) : (
-    <CandidateDialog {...props} />
+    <CandidateDialog key={sessionKey} {...props} />
   );
 }
 function CrewCandidateDialog(
   props: StoryCandidateAssetPickerDialogProps & { projectId: string; userId: string }
 ) {
   const { projectId, open, items: suppliedItems } = props;
-  const crew = useQuery({
-    queryKey: ["project-crew-assets", `story:${projectId}`, "picker", props.userId],
-    queryFn: ({ signal }) => listAllProjectCrewAssets(`story:${projectId}`, signal),
+  const context = useQuery({
+    queryKey: ["project-crew-assets", `story:${projectId}`, "context", props.userId],
+    queryFn: ({ signal }) => getProjectCrewAssetContext(`story:${projectId}`, signal),
     enabled: open && Boolean(projectId && props.userId),
+    retry: false,
+  });
+  const crewId = context.data?.crew?.id;
+  const crew = useQuery({
+    queryKey: ["project-crew-assets", `story:${projectId}`, "picker", props.userId, crewId],
+    queryFn: ({ signal }) => listAllProjectCrewAssets(`story:${projectId}`, signal),
+    enabled: open && Boolean(projectId && props.userId && crewId) && !context.isError,
     retry: false,
   });
   const items = useMemo(() => {
     const result = [...suppliedItems];
     const ids = new Set(result.map((item) => item.asset.id));
-    for (const node of crew.data ?? []) {
+    for (const node of context.isError ? [] : (crew.data ?? [])) {
       if (!node.media || ids.has(node.media.id)) continue;
       ids.add(node.media.id);
       result.push({
@@ -117,26 +134,30 @@ function CrewCandidateDialog(
       });
     }
     return result;
-  }, [suppliedItems, crew.data]);
+  }, [suppliedItems, crew.data, context.isError]);
   return (
     <CandidateDialog
+      key={`${crewId}:${context.isError}`}
       {...props}
       items={items}
-      loading={props.loading || crew.isLoading}
-      error={props.error ?? (crew.error instanceof Error ? crew.error.message : null)}
+      loading={props.loading || context.isLoading || crew.isLoading}
+      error={props.error ?? context.error?.message ?? crew.error?.message ?? null}
       onRetry={() => {
         props.onRetry?.();
-        void crew.refetch();
+        if (context.isError) void context.refetch();
+        else if (crewId) void crew.refetch();
       }}
-      onSelect={async (candidate) => {
+      onSelect={async (candidate, signal) => {
+        signal?.throwIfAborted();
         // Register the selected shared asset through the existing authorized import
         // path before binding it to a film/game production slot.
         if (!suppliedItems.some((item) => item.asset.id === candidate.asset.id)) {
-          const imported = await addStoryCandidateAsset(projectId, candidate.asset.id);
-          await props.onSelect(imported);
+          const imported = await addStoryCandidateAsset(projectId, candidate.asset.id, signal);
+          signal?.throwIfAborted();
+          await props.onSelect(imported, signal);
           return;
         }
-        await props.onSelect(candidate);
+        await props.onSelect(candidate, signal);
       }}
     />
   );
@@ -163,7 +184,8 @@ function CandidateDialog({
 }: StoryCandidateAssetPickerDialogProps) {
   const t = useTranslations("storyStudio.canvas.candidatePicker");
   const inputRef = useRef<HTMLInputElement>(null);
-  const uploadAbortRef = useRef<AbortController | null>(null);
+  const activeRef = useRef(false);
+  const operationAbortRef = useRef<AbortController | null>(null);
   const pendingFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dragDepthRef = useRef(0);
   const normalizedKinds = useMemo(
@@ -202,15 +224,14 @@ function CandidateDialog({
   const operationPending = pendingAssetId !== null || uploadState !== null;
   const operationError = selectionError ?? uploadError;
 
-  useEffect(
-    () => () => {
-      uploadAbortRef.current?.abort();
-      if (pendingFeedbackTimerRef.current !== null) {
-        clearTimeout(pendingFeedbackTimerRef.current);
-      }
-    },
-    []
-  );
+  useLayoutEffect(() => {
+    activeRef.current = true;
+    return () => {
+      activeRef.current = false;
+      operationAbortRef.current?.abort();
+      if (pendingFeedbackTimerRef.current !== null) clearTimeout(pendingFeedbackTimerRef.current);
+    };
+  }, []);
 
   const beginCandidatePending = (assetId: string) => {
     if (pendingFeedbackTimerRef.current !== null) {
@@ -234,7 +255,7 @@ function CandidateDialog({
   };
 
   const requestOpenChange = (nextOpen: boolean) => {
-    if (operationPending) return;
+    if (!activeRef.current || operationAbortRef.current || operationPending) return;
     if (!nextOpen) {
       setSelectionError(null);
       setUploadError(null);
@@ -246,10 +267,20 @@ function CandidateDialog({
 
   const applyCandidateAction = async (candidate: StoryCandidateAsset) => {
     const current = candidate.asset.id === currentAssetId;
-    const action = current ? onClearSelection : () => onSelect(candidate);
-    if (!canSelect || operationPending || !action || (!current && !isSelectable(candidate))) {
+    const controller = new AbortController();
+    const action = current ? onClearSelection : () => onSelect(candidate, controller.signal);
+    if (
+      !activeRef.current ||
+      !open ||
+      !canSelect ||
+      operationAbortRef.current ||
+      operationPending ||
+      !action ||
+      (!current && !isSelectable(candidate))
+    ) {
       return;
     }
+    operationAbortRef.current = controller;
     beginCandidatePending(candidate.asset.id);
     setSelectionError(null);
     let succeeded = false;
@@ -257,25 +288,36 @@ function CandidateDialog({
       await action();
       succeeded = true;
     } catch (candidateError) {
+      if (controller.signal.aborted) return;
       setSelectionError(
         storyApiErrorMessage(candidateError, t(current ? "clearError" : "selectError"))
       );
     } finally {
-      finishCandidatePending();
-      if (succeeded) onOpenChange(false);
+      if (!controller.signal.aborted && operationAbortRef.current === controller) {
+        operationAbortRef.current = null;
+        finishCandidatePending();
+        if (succeeded) onOpenChange(false);
+      }
     }
   };
 
   const uploadFile = async (file: File) => {
-    if (!onUpload || !canSelect || operationPending) return;
+    if (
+      !activeRef.current ||
+      !open ||
+      !onUpload ||
+      !canSelect ||
+      operationAbortRef.current ||
+      operationPending
+    )
+      return;
     if (!fileMatchesAccept(file, acceptedFileTypes)) {
       setUploadError(t("upload.unsupported"));
       return;
     }
 
     const controller = new AbortController();
-    uploadAbortRef.current?.abort();
-    uploadAbortRef.current = controller;
+    operationAbortRef.current = controller;
     setSelectionError(null);
     setUploadError(null);
     setUploadState({ stage: "uploading", progress: 0 });
@@ -283,7 +325,7 @@ function CandidateDialog({
       await onUpload(
         file,
         (state) => {
-          if (uploadAbortRef.current !== controller) return;
+          if (controller.signal.aborted || operationAbortRef.current !== controller) return;
           setUploadState(
             state.stage === "uploading"
               ? {
@@ -295,27 +337,45 @@ function CandidateDialog({
         },
         controller.signal
       );
-      onOpenChange(false);
+      if (!controller.signal.aborted) onOpenChange(false);
     } catch (error) {
       if (!controller.signal.aborted) {
         setUploadError(storyApiErrorMessage(error, t("upload.error")));
       }
     } finally {
-      if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
-      setUploadState(null);
+      if (!controller.signal.aborted && operationAbortRef.current === controller) {
+        operationAbortRef.current = null;
+        setUploadState(null);
+      }
     }
   };
 
   const handleDragEnter = (event: ReactDragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (!onUpload || !canSelect || operationPending) return;
+    if (
+      !activeRef.current ||
+      !open ||
+      !onUpload ||
+      !canSelect ||
+      operationAbortRef.current ||
+      operationPending
+    )
+      return;
     dragDepthRef.current += 1;
     setDragActive(true);
   };
 
   const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (!onUpload || !canSelect || operationPending) return;
+    if (
+      !activeRef.current ||
+      !open ||
+      !onUpload ||
+      !canSelect ||
+      operationAbortRef.current ||
+      operationPending
+    )
+      return;
     event.dataTransfer.dropEffect = "copy";
   };
 
@@ -328,7 +388,15 @@ function CandidateDialog({
 
   const handleDrop = (event: ReactDragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (!onUpload || !canSelect || operationPending) return;
+    if (
+      !activeRef.current ||
+      !open ||
+      !onUpload ||
+      !canSelect ||
+      operationAbortRef.current ||
+      operationPending
+    )
+      return;
     dragDepthRef.current = 0;
     setDragActive(false);
     const file = event.dataTransfer.files[0];

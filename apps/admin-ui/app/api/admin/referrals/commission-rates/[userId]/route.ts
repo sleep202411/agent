@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUnavailableResponse,
   adminUrlForRequest,
@@ -14,7 +15,8 @@ export async function DELETE(
 ) {
   try {
     const { userId } = await params;
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(request, `/referrals/commission-rates/${encodeURIComponent(userId)}`),
       {
         method: "DELETE",
@@ -22,7 +24,7 @@ export async function DELETE(
         cache: "no-store",
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

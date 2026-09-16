@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -64,6 +65,11 @@ import {
   matchesCanvasJob,
   needsJobRecovery,
 } from "./canvas-job-recovery";
+import {
+  applyReferenceDurationPatches,
+  hasKnownDuration,
+  type ReferenceDurationPatch,
+} from "./reference-duration-patches";
 import { probeMediaDurationSeconds } from "./probe-media-duration";
 import {
   compatibleProjectSkillInstallations,
@@ -395,8 +401,35 @@ export function CanvasGenerationProvider({
   );
 
   const [realtimeConnected, setRealtimeConnected] = useState(false);
-  const reconciling = useRef(false);
-  const submittingNodes = useRef(new Set<string>());
+  const reconciling = useRef<AbortController | null>(null);
+  const cancellingNodes = useRef(new Map<string, AbortController>());
+  const submittingNodes = useRef(new Map<string, AbortController>());
+  const submissionScope = JSON.stringify([
+    userId,
+    generationProjectId,
+    generationStoryProjectId,
+    generationDocumentId,
+    sourceSurface,
+    canGenerate,
+    projectSkillsReady,
+  ]);
+  const activeSubmissionScope = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    activeSubmissionScope.current = submissionScope;
+    const runs = submittingNodes.current;
+    const cancellations = cancellingNodes.current;
+    return () => {
+      activeSubmissionScope.current = null;
+      runs.forEach((run) => run.abort());
+      runs.clear();
+      cancellations.forEach((run) => run.abort());
+      cancellations.clear();
+      reconciling.current?.abort();
+      reconciling.current = null;
+      setPreflightByNode({});
+      setRechargePrompt(null);
+    };
+  }, [submissionScope]);
 
   /**
    * Apply one job update to the card whose `generation.jobId` matches. Shared by
@@ -555,8 +588,14 @@ export function CanvasGenerationProvider({
    * Mirrors the studio feed's reconcile.
    */
   const reconcile = useCallback(async () => {
-    if (reconciling.current || document.visibilityState === "hidden") return;
-    reconciling.current = true;
+    if (
+      activeSubmissionScope.current !== submissionScope ||
+      reconciling.current ||
+      document.visibilityState === "hidden"
+    )
+      return;
+    const run = new AbortController();
+    reconciling.current = run;
     const scope = {
       projectId: generationProjectId,
       storyProjectId: generationStoryProjectId,
@@ -565,7 +604,7 @@ export function CanvasGenerationProvider({
     };
     const readJobs = (filter: Parameters<typeof listFizzAiJobs>[0]) =>
       queryClient.fetchQuery({
-        queryKey: ["canvas-jobs", scope, filter],
+        queryKey: ["canvas-jobs", userId, scope, filter],
         queryFn: () => listFizzAiJobs({ ...scope, ...filter }),
         staleTime: 0,
         retry: false,
@@ -587,6 +626,7 @@ export function CanvasGenerationProvider({
       // socket is only a latency optimisation, never the source of truth.
       for (let offset = 0; offset < ids.length; offset += 100) {
         const { jobs } = await readJobs({ ids: ids.slice(offset, offset + 100), limit: 100 });
+        if (run.signal.aborted) return;
         jobs.forEach(applyJobUpdate);
       }
       for (const node of active) {
@@ -597,6 +637,7 @@ export function CanvasGenerationProvider({
           idempotencyKey: generation.submissionKey,
           limit: 1,
         });
+        if (run.signal.aborted) return;
         const job = jobs.find((candidate) => matchesCanvasJob(node, candidate));
         if (job) applyJobUpdate(job);
         else if (generation.status === "submitting" || generation.status === "uncertain") {
@@ -617,6 +658,7 @@ export function CanvasGenerationProvider({
         }
       }
     } catch (error) {
+      if (run.signal.aborted) return;
       // Cached jobs stay visible. A disconnected request must not strand an
       // unacknowledged card behind a spinner without a retry action.
       for (const node of getNodes()) {
@@ -634,9 +676,11 @@ export function CanvasGenerationProvider({
         }
       }
     } finally {
-      reconciling.current = false;
+      if (reconciling.current === run) reconciling.current = null;
     }
   }, [
+    submissionScope,
+    userId,
     getNodes,
     applyJobUpdate,
     generationProjectId,
@@ -800,7 +844,13 @@ export function CanvasGenerationProvider({
   }, [reconcile]);
 
   const sendSubmission = useCallback(
-    async (nodeId: string, input: FizzAiSubmitJobInput, previous?: GenerationState) => {
+    async (
+      nodeId: string,
+      input: FizzAiSubmitJobInput,
+      signal: AbortSignal,
+      previous?: GenerationState
+    ) => {
+      if (signal.aborted) return;
       const receipt: GenerationState = {
         status: "submitting",
         submissionKey: input.idempotencyKey,
@@ -810,6 +860,7 @@ export function CanvasGenerationProvider({
       patch(nodeId, receipt);
       try {
         const response = await submitFizzAiJob(input);
+        if (signal.aborted) return;
         patchNodeData(nodeId, (node) => {
           const current = (node.data as GenNodeData).generation;
           if (!acceptsSubmissionResponse(current, input.idempotencyKey) || current?.jobId)
@@ -830,9 +881,11 @@ export function CanvasGenerationProvider({
         });
         // A replay may already be completed; hydrate its outputs as well.
         const job = await getFizzAiJob(response.request_id).catch(() => null);
+        if (signal.aborted) return;
         if (job) applyJobUpdate(job);
         void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
       } catch (error) {
+        if (signal.aborted) return;
         const current = getNode(nodeId)?.data.generation as GenerationState | undefined;
         if (!acceptsSubmissionResponse(current, input.idempotencyKey) || current?.jobId) return;
         const insufficient = insufficientComputePointDetails(error);
@@ -860,8 +913,10 @@ export function CanvasGenerationProvider({
 
   const submit = useCallback(
     async (nodeId: string) => {
-      if (submittingNodes.current.has(nodeId)) return;
-      submittingNodes.current.add(nodeId);
+      if (activeSubmissionScope.current !== submissionScope || submittingNodes.current.has(nodeId))
+        return;
+      const run = new AbortController();
+      submittingNodes.current.set(nodeId, run);
       try {
         if (!canGenerate || !projectSkillsReady) {
           if (effectiveDisabledReason) toast.error(effectiveDisabledReason);
@@ -878,7 +933,7 @@ export function CanvasGenerationProvider({
             toast.error(t("submissionOtherUser"));
             return;
           }
-          await sendSubmission(nodeId, data.generation.submission);
+          await sendSubmission(nodeId, data.generation.submission, run.signal);
           return;
         }
         if (needsJobRecovery(data.generation)) return;
@@ -915,59 +970,43 @@ export function CanvasGenerationProvider({
         // Backfill missing video/audio durations (wired refs without metadata).
         // Persist onto the card so re-submit and server payload stay consistent.
         let references = data.references;
-        const durationPatches: Array<{
-          field: string;
-          id: string;
-          durationSeconds: number;
-        }> = [];
+        const durationPatches: ReferenceDurationPatch[] = [];
         for (const field of referenceFieldsForMode(model, mode)) {
           if (field.kind !== "video" && field.kind !== "audio") continue;
           for (const row of references?.[field.field] ?? []) {
-            if (typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)) {
+            if (hasKnownDuration(row.durationSeconds)) {
               continue;
             }
             if (!row.url || row.uploading) continue;
-            const probed = await probeMediaDurationSeconds(row.url, field.kind);
+            const probed = await probeMediaDurationSeconds(row.url, field.kind, run.signal);
+            if (run.signal.aborted) return;
             if (probed != null) {
               durationPatches.push({
+                ...row,
                 field: field.field,
-                id: row.id,
-                durationSeconds: probed,
+                measuredSeconds: probed,
               });
             }
           }
         }
+        if (run.signal.aborted) return;
+        // A deleted card must not be resurrected from the preflight snapshot.
+        if (!getNode(nodeId)) return;
         if (durationPatches.length > 0) {
-          // Merge by ref id only — never replace the whole references map with a
-          // snapshot taken before probe await (user/collaborator may have edited).
-          patchNodeData(nodeId, (node) => {
-            const live = (node.data as GenNodeData).references ?? {};
-            const next: NonNullable<GenNodeData["references"]> = { ...live };
-            for (const patch of durationPatches) {
-              const list = next[patch.field];
-              if (!list?.length) continue;
-              next[patch.field] = list.map((row) =>
-                row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
-              );
-            }
-            return { references: next };
-          });
-          const latest = getNode(nodeId);
-          references =
-            latest && (latest.data as GenNodeData).references
-              ? (latest.data as GenNodeData).references
-              : references;
-          // Also fold patches into the local submit snapshot when live read fails.
-          if (references) {
-            const merged: NonNullable<GenNodeData["references"]> = { ...references };
-            for (const patch of durationPatches) {
-              merged[patch.field] = (merged[patch.field] ?? []).map((row) =>
-                row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
-              );
-            }
-            references = merged;
-          }
+          patchNodeData(nodeId, (node) => ({
+            references: applyReferenceDurationPatches(
+              (node.data as GenNodeData).references,
+              durationPatches
+            ),
+          }));
         }
+        const latest = getNode(nodeId);
+        if (!latest) return;
+        // Keep removed fields removed, and preserve metadata supplied during the wait.
+        references = applyReferenceDurationPatches(
+          (latest.data as GenNodeData).references,
+          durationPatches
+        );
 
         const referenceInput = buildReferenceInputForMode(model, mode, references);
         const referenceBindings = buildPromptReferenceBindingsForMode(model, mode, references);
@@ -1052,19 +1091,23 @@ export function CanvasGenerationProvider({
             modelId: model.id,
             schemaVersion: model.schemaVersion,
           },
+          run.signal,
           data.generation
         );
       } catch (error) {
+        if (run.signal.aborted) return;
         toast.error(
           error instanceof ReferenceInputError
             ? t(error.messageKey)
             : normalizeFizzAiError(error, t("generationFailed"))
         );
       } finally {
-        submittingNodes.current.delete(nodeId);
+        if (submittingNodes.current.get(nodeId) === run) submittingNodes.current.delete(nodeId);
+        run.abort();
       }
     },
     [
+      submissionScope,
       getNode,
       catalog,
       wallet,
@@ -1087,17 +1130,28 @@ export function CanvasGenerationProvider({
 
   const cancel = useCallback(
     async (nodeId: string) => {
+      if (
+        activeSubmissionScope.current !== submissionScope ||
+        !canGenerate ||
+        cancellingNodes.current.has(nodeId)
+      )
+        return;
       const node = getNode(nodeId);
       if (!node) return;
       const generation = (node.data as GenNodeData).generation;
       if (!generation?.jobId) return;
+      const run = new AbortController();
+      cancellingNodes.current.set(nodeId, run);
       try {
-        applyJobUpdate(await cancelFizzAiJob(generation.jobId));
+        const job = await cancelFizzAiJob(generation.jobId);
+        if (!run.signal.aborted) applyJobUpdate(job);
       } catch (error) {
-        toast.error(normalizeFizzAiError(error, t("generationFailed")));
+        if (!run.signal.aborted) toast.error(normalizeFizzAiError(error, t("generationFailed")));
+      } finally {
+        if (cancellingNodes.current.get(nodeId) === run) cancellingNodes.current.delete(nodeId);
       }
     },
-    [getNode, applyJobUpdate, t]
+    [submissionScope, canGenerate, getNode, applyJobUpdate, t]
   );
 
   const preflightIssues = useCallback(

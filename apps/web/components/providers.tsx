@@ -14,6 +14,7 @@ import { StoreProvider } from "@/src/store/provider";
 import { useEntityEventsSession } from "@/src/lib/entity-events/use-entity-events-session";
 import { ConversationsProvider } from "@/src/lib/conversations/provider";
 import { AuthInterceptor } from "@/components/layout/auth-interceptor";
+import { TaskAccountBoundary } from "@/components/workspace/task-account-boundary";
 import { AuthDialogProvider } from "@/components/auth/auth-dialog-provider";
 
 /**
@@ -21,11 +22,9 @@ import { AuthDialogProvider } from "@/components/auth/auth-dialog-provider";
  * per-user entity-events WS; touch actions fire from this one session
  * regardless of how many projects/tabs the user has open.
  *
- * Open the WS unconditionally; the gateway closes unauthenticated
- * sockets with a fatal code (1008) and our client won't reconnect
- * on that. (Historical note: an earlier version gated this on a
- * Redux `auth.user` slice that's been removed in favor of RQ —
- * unconditional open + server-side reject is simpler anyway.)
+ * The hook follows the current React Query account: anonymous views do
+ * not open a socket, and login/account replacement starts a new session.
+ * Server-side authentication and fatal-close handling remain authoritative.
  */
 function EntityEventsSession({ children }: { children: React.ReactNode }) {
   useEntityEventsSession({ enabled: true });
@@ -76,6 +75,7 @@ export function Providers({
                 dialog in place instead of navigating to /login. */}
             <AuthDialogProvider>
               <AuthInterceptor />
+              <TaskAccountBoundary />
               <EntityEventsSession>
                 <ConversationsProvider>{children}</ConversationsProvider>
               </EntityEventsSession>

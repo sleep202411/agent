@@ -3,15 +3,15 @@
  * patches the "Attachment ref not found or expired" production bug.
  *
  * Strategy:
- *   - Real libsql in-memory artifact store (`MASTRA_DB_URL` set before
- *     module import, mirroring artifact-store.test.ts).
+ *   - Real dedicated loopback PostgreSQL artifact store, shared sequentially
+ *     with artifact-store.test.ts.
  *   - Mocked Redis client so we can control hit / miss / payload shape
  *     without standing up a Redis instance.
  */
 
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
-process.env.MASTRA_DB_URL = "file::memory:?cache=shared";
+import { configureArtifactTestDatabase } from "./postgres-test-fixture";
 
 const mockRedisGet = vi.fn();
 vi.mock("./redis-client", () => ({
@@ -26,12 +26,15 @@ import {
 } from "./artifact-store";
 import { resolveAttachmentRefs, resolveAttachmentText } from "./attachment-resolve";
 
+let fixtureReady = false;
 beforeAll(async () => {
+  configureArtifactTestDatabase();
   await _resetForTests();
+  fixtureReady = true;
 });
 
 afterEach(async () => {
-  await _resetForTests();
+  if (fixtureReady) await _resetForTests();
   mockRedisGet.mockReset();
 });
 

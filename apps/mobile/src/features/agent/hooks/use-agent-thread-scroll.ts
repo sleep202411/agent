@@ -155,7 +155,6 @@ export function useAgentThreadScroll(resetKey?: string) {
       clearMax();
     };
     // Reset only when the thread identity changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey]);
 
   const scrollToLatest = useCallback(

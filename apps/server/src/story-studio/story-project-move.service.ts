@@ -184,26 +184,26 @@ export class StoryProjectMoveService {
 
   private async assertIdle(tx: Prisma.TransactionClient, projectId: string) {
     const scope = { storyProjectId: projectId };
-    const blockers = await Promise.all([
-      tx.aiJob.count({
+    const blockers = [
+      await tx.aiJob.count({
         where: {
           ...scope,
           status: { in: ['created', 'in_queue', 'in_progress'] },
         },
       }),
-      tx.storyAgentRun.count({
+      await tx.storyAgentRun.count({
         where: {
           ...scope,
           status: { notIn: ['succeeded', 'failed', 'cancelled', 'stale'] },
         },
       }),
-      tx.agentOsRun.count({
+      await tx.agentOsRun.count({
         where: {
           projectId,
           status: { notIn: ['completed', 'failed', 'cancelled'] },
         },
       }),
-      tx.storyGenerationBatch.count({
+      await tx.storyGenerationBatch.count({
         where: {
           ...scope,
           status: {
@@ -217,28 +217,30 @@ export class StoryProjectMoveService {
           },
         },
       }),
-      tx.storyBuild.count({
+      await tx.storyBuild.count({
         where: {
           ...scope,
           status: { in: ['queued', 'validating', 'compiling'] },
         },
       }),
-      tx.worldModelWorld.count({ where: { ...scope, status: 'generating' } }),
-      tx.worldModelSession.count({
+      await tx.worldModelWorld.count({
+        where: { ...scope, status: 'generating' },
+      }),
+      await tx.worldModelSession.count({
         where: { ...scope, status: 'active', expiresAt: { gt: new Date() } },
       }),
-      tx.worldModelTravel.count({
+      await tx.worldModelTravel.count({
         where: { ...scope, status: { in: ['init', 'pending', 'running'] } },
       }),
       // A completed provider job may still be materializing canonical media.
-      tx.storyProductionGeneration.count({
+      await tx.storyProductionGeneration.count({
         where: {
           ...scope,
           materializedAt: null,
           aiJob: { status: 'completed' },
         },
       }),
-    ]);
+    ];
     if (blockers.some(Boolean)) {
       throw new ConflictException({
         code: 'STORY_PROJECT_BUSY',

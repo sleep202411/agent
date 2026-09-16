@@ -259,6 +259,7 @@ export const SuggestionMenu = ({
           },
 
           onKeyDown: (props: SuggestionKeyDownProps) => {
+            if (props.event.isComposing) return false;
             if (props.event.key === "Escape") {
               closePopup();
               return true;
@@ -301,9 +302,9 @@ export const SuggestionMenu = ({
   );
 
   const { selectedIndex } = useMenuNavigation({
-    editor: editor,
+    editor: show ? editor : null,
     query: internalQuery,
-    items: internalItems,
+    items: show ? internalItems : [],
     onSelect,
   });
 

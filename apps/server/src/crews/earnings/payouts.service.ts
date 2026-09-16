@@ -1,5 +1,5 @@
 import { formatLedgerAmount } from './ledger-currency';
-import { lockMemberPayouts } from './ledger-lock';
+import { lockMemberPayouts, lockLedgerReceipt } from './ledger-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -224,12 +224,26 @@ export class CrewPayoutsService {
 
     const idempotencyKey = `crew-payout:${crewId}:${userId}:${input.idempotencyKey}`;
     const payout = await this.prisma.$transaction(async (tx) => {
+      await lockLedgerReceipt(tx, idempotencyKey);
       await lockMemberPayouts(tx, crewId, member.userId);
       const existing = await tx.crewPayout.findUnique({
         where: { idempotencyKey },
         include: payoutInclude,
       });
-      if (existing) return existing;
+      if (existing) {
+        if (
+          existing.crewMemberId !== member.id ||
+          existing.userId !== member.userId ||
+          existing.currency !== input.currency ||
+          existing.amountMinor !== requestedAmountMinor ||
+          existing.withholdingAmountMinor !== withholding ||
+          existing.note !== (input.note || null)
+        )
+          throw new ConflictException(
+            'Payout retry key was already used for different terms.',
+          );
+        return existing;
+      }
 
       const earnings = await tx.crewEarningEntry.findMany({
         where: {

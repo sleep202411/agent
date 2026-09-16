@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUnavailableResponse,
   adminUrlForRequest,
@@ -14,14 +15,15 @@ export async function GET(
 ) {
   try {
     const { planId } = await params;
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(request, `/billing/membership-plans/${planId}/benefits`),
       {
         headers: adminForwardHeaders(request),
         cache: "no-store",
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }
@@ -33,7 +35,8 @@ export async function PUT(
 ) {
   try {
     const { planId } = await params;
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(request, `/billing/membership-plans/${planId}/benefits`),
       {
         method: "PUT",
@@ -42,7 +45,7 @@ export async function PUT(
         cache: "no-store",
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

@@ -1,44 +1,68 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  defaultScheduler,
+  notifyManager,
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { CrewSaveActions } from "./crew-save-actions";
-import { CanvasMediaToolbarActions } from "./media-actions-context";
+import {
+  CanvasMediaToolbarActions,
+  useCanvasMediaActions,
+  type CanvasMediaAction,
+} from "./media-actions-context";
 import { api } from "@/lib/api";
+import { getProjectCrewAssetContext } from "@/lib/collab/project-crew-assets-api";
 import { toast } from "sonner";
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/lib/api", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("@/lib/collab/project-crew-assets-api", () => ({
-  getProjectCrewAssetContext: async () => ({ crew: { id: "crew" }, canSaveFromCanvas: true }),
+  getProjectCrewAssetContext: vi.fn(async () => ({
+    crew: { id: "crew" },
+    canSaveFromCanvas: true,
+  })),
 }));
 const media = { nodeId: "node", mediaAssetId: "media", kind: "image" as const, url: "/asset.png" };
 const host = document.createElement("div");
 let root: ReturnType<typeof createRoot>;
 let client: QueryClient;
+let actions: readonly CanvasMediaAction[] = [];
+function Capture() {
+  const current = useCanvasMediaActions(media);
+  useLayoutEffect(() => {
+    actions = current;
+  }, [current]);
+  return null;
+}
+function view(canEdit = true, kind: "image" | "video" | "audio" = "image") {
+  return (
+    <QueryClientProvider client={client}>
+      <CrewSaveActions projectId="project" documentId="document" userId="owner" canEdit={canEdit}>
+        <Capture />
+        <CanvasMediaToolbarActions media={{ ...media, kind }} />
+      </CrewSaveActions>
+    </QueryClientProvider>
+  );
+}
 afterEach(async () => {
   await act(async () => root.unmount());
   client.clear();
+  notifyManager.setScheduler(defaultScheduler);
   host.remove();
   vi.clearAllMocks();
 });
 async function mount(kind: "image" | "video" | "audio" = "image") {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  notifyManager.setScheduler(queueMicrotask);
   document.body.append(host);
   root = createRoot(host);
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
-    root.render(
-      <QueryClientProvider client={client}>
-        <CrewSaveActions projectId="project" documentId="document" userId="owner" canEdit>
-          <CanvasMediaToolbarActions media={{ ...media, kind }} />
-        </CrewSaveActions>
-      </QueryClientProvider>
-    );
-  });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    root.render(view(true, kind));
   });
 }
 it.each(["image", "video"] as const)(
@@ -89,4 +113,69 @@ it("aborts on unmount and suppresses delayed messages", async () => {
   expect(signal?.aborted).toBe(true);
   await act(async () => resolve({ folderName: "Old project" }));
   expect(toast.success).not.toHaveBeenCalled();
+});
+
+it("rejects retained callbacks and abandons results after editing permission is lost", async () => {
+  let resolve!: (value: unknown) => void;
+  vi.mocked(api.post).mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await mount();
+  const retained = actions[0].onSelect;
+  await act(async () => retained());
+  const signal = vi.mocked(api.post).mock.calls[0][1]?.signal;
+  await act(async () => root.render(view(false)));
+  expect(signal?.aborted).toBe(true);
+  expect(host.querySelector("button")).toBeNull();
+  await act(async () => retained());
+  expect(api.post).toHaveBeenCalledTimes(1);
+  await act(async () => resolve({ folderName: "Abandoned" }));
+  expect(toast.success).not.toHaveBeenCalled();
+});
+it("keeps a replacement save pending when an abandoned request finishes", async () => {
+  let rejectOld!: (error: Error) => void;
+  let resolveNew!: (value: unknown) => void;
+  vi.mocked(api.post)
+    .mockImplementationOnce(
+      () =>
+        new Promise((_done, fail) => {
+          rejectOld = fail;
+        })
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolveNew = done;
+        })
+    );
+  await mount();
+  await act(async () => actions[0].onSelect());
+  await act(async () => root.render(view(false)));
+  await act(async () => root.render(view(true)));
+  await act(async () => actions[0].onSelect());
+  expect(actions[0].pending).toBe(true);
+  await act(async () => rejectOld(new Error("Old request")));
+  expect(actions[0].pending).toBe(true);
+  expect(toast.error).not.toHaveBeenCalled();
+  await act(async () => actions[0].onSelect());
+  expect(api.post).toHaveBeenCalledTimes(2);
+  await act(async () => resolveNew({ folderName: "Current" }));
+  expect(actions[0].pending).toBe(false);
+  expect(toast.success).toHaveBeenCalledOnce();
+});
+
+it("cancels an abandoned context read", async () => {
+  let signal: AbortSignal | undefined;
+  vi.mocked(getProjectCrewAssetContext).mockImplementationOnce((_projectId, captured) => {
+    signal = captured;
+    return new Promise(() => {});
+  });
+  await mount();
+  expect(signal).toBeDefined();
+  expect(signal?.aborted).toBe(false);
+  await act(async () => root.render(null));
+  expect(signal?.aborted).toBe(true);
 });

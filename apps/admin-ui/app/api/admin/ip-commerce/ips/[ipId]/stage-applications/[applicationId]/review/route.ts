@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUnavailableResponse,
   adminUrlForRequest,
@@ -14,7 +15,8 @@ export async function POST(
 ) {
   try {
     const { ipId, applicationId } = await context.params;
-    const upstream = await fetch(
+    const upstream = await adminFetch(
+      request,
       adminUrlForRequest(
         request,
         `/ip-commerce/ips/${encodeURIComponent(ipId)}/stage-applications/${encodeURIComponent(applicationId)}/review`
@@ -27,7 +29,7 @@ export async function POST(
         signal: request.signal,
       }
     );
-    return relayAdminResponse(upstream);
+    return await relayAdminResponse(upstream, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

@@ -53,6 +53,7 @@ const BindingsSchema = z
  * every new UI surface should set it.
  */
 export const SubmitOrderSchema = z.object({
+  expectedServiceVersion: z.number().int().min(0).optional(),
   serviceId: z.string().trim().min(1).max(64),
   packageTier: z.enum(SERVICE_TIERS),
   answers: z.array(AnswerSchema).max(20).default([]),

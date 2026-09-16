@@ -1,8 +1,9 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
 import { CanvasVideo } from "@/components/media/canvas-video";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconCheck,
@@ -86,6 +87,17 @@ export function AssetSelectDialog({
   const { assets, filtered, filter, setFilter, isLoading } = useProjectAssets(projectId);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const uploadRun = useRef<AbortController | null>(null);
+  const { user } = useAuth();
+  const userId = user?.id == null ? null : String(user.id);
+  useLayoutEffect(
+    () => () => {
+      uploadRun.current?.abort();
+      uploadRun.current = null;
+      setUploading(false);
+    },
+    [open, projectId, workspaceId, canEdit, userId]
+  );
   const [query, setQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const acceptedKindSet = useMemo(() => new Set(acceptedKinds), [acceptedKinds]);
@@ -103,15 +115,19 @@ export function AssetSelectDialog({
     );
   });
   const closeDialog = useCallback(() => {
-    if (uploading) return;
+    uploadRun.current?.abort();
+    uploadRun.current = null;
+    setUploading(false);
     setQuery("");
     setSelectedIds([]);
     onClose();
-  }, [onClose, uploading]);
+  }, [onClose]);
 
   const uploadFiles = useCallback(
     async (list: FileList | null) => {
-      if (!list?.length || !canEdit || uploading) return;
+      if (!list?.length || !open || !canEdit || uploadRun.current) return;
+      const run = new AbortController();
+      uploadRun.current = run;
       const files = Array.from(list);
       if (fileInputRef.current) fileInputRef.current.value = "";
 
@@ -119,21 +135,27 @@ export function AssetSelectDialog({
       let uploadedAny = false;
       try {
         for (const file of files) {
+          if (run.signal.aborted) return;
           const kind = canvasUploadMediaKind(file, acceptedKindSet);
           if (!kind) {
             toast.error(t("assetDialog.unsupportedType"));
             continue;
           }
+          const fileRun = new AbortController();
+          const abortFile = () => fileRun.abort();
+          run.signal.addEventListener("abort", abortFile, { once: true });
           try {
             const [uploaded, durationSeconds] = await Promise.all([
               uploadFileViaSignedUrl(file, {
                 kind: UPLOAD_KIND[kind],
+                signal: fileRun.signal,
                 ...(workspaceId ? { workspaceId } : {}),
               }),
               kind === "video" || kind === "audio"
-                ? probeMediaDurationSeconds(file, kind)
+                ? probeMediaDurationSeconds(file, kind, fileRun.signal)
                 : Promise.resolve(null),
             ]);
+            if (run.signal.aborted) return;
             addAssets([
               {
                 id: uploaded.mediaAssetId,
@@ -150,19 +172,25 @@ export function AssetSelectDialog({
             ]);
             uploadedAny = true;
           } catch (error) {
-            if (isUploadAbort(error)) return;
+            if (run.signal.aborted || isUploadAbort(error)) return;
             // Surface the upstream message so the user can act on it (quota,
             // type policy, storage, …) — never replace with a generic string
             // when the server already said why.
             toast.error(error instanceof Error ? error.message : t("assetDialog.uploadFailed"));
+          } finally {
+            run.signal.removeEventListener("abort", abortFile);
+            fileRun.abort();
           }
         }
-        if (uploadedAny) setFilter("uploaded");
+        if (!run.signal.aborted && uploadedAny) setFilter("uploaded");
       } finally {
-        setUploading(false);
+        if (uploadRun.current === run) {
+          uploadRun.current = null;
+          setUploading(false);
+        }
       }
     },
-    [acceptedKindSet, addAssets, canEdit, setFilter, t, uploading, workspaceId]
+    [acceptedKindSet, addAssets, canEdit, open, setFilter, t, workspaceId]
   );
 
   const chooseAsset = (assetId: string) => {
@@ -210,7 +238,6 @@ export function AssetSelectDialog({
           <button
             type="button"
             onClick={closeDialog}
-            disabled={uploading}
             aria-label={t("assetDialog.close")}
             className="flex size-8 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
           >

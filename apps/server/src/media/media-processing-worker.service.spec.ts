@@ -139,7 +139,6 @@ describe('MediaProcessingWorkerService', () => {
           .mockResolvedValueOnce([{ id: row.id }])
           .mockResolvedValueOnce([row]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-        update: jest.fn().mockResolvedValue(row),
       },
       mediaAsset: {
         findFirst: jest.fn().mockResolvedValue(asset),
@@ -168,7 +167,7 @@ describe('MediaProcessingWorkerService', () => {
     );
     await service.drainOnce();
     expect(posters.generate).toHaveBeenCalledWith(row.assetId);
-    expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+    expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: 'completed',
@@ -186,7 +185,7 @@ describe('MediaProcessingWorkerService', () => {
       new Error('Storage temporarily unavailable'),
     );
     await service.drainOnce();
-    expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+    expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: 'failed',
@@ -220,9 +219,14 @@ describe('MediaProcessingWorkerService', () => {
         }),
       }),
     );
-    expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+    expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: row.id },
+        where: {
+          id: row.id,
+          status: MediaProcessingJobStatus.processing,
+          lockedBy: row.lockedBy,
+          lockedAt: row.lockedAt,
+        },
         data: expect.objectContaining({
           status: MediaProcessingJobStatus.completed,
           output: {
@@ -242,9 +246,14 @@ describe('MediaProcessingWorkerService', () => {
 
     await service.drainOnce();
 
-    expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+    expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: row.id },
+        where: {
+          id: row.id,
+          status: MediaProcessingJobStatus.processing,
+          lockedBy: row.lockedBy,
+          lockedAt: row.lockedAt,
+        },
         data: expect.objectContaining({
           status: MediaProcessingJobStatus.dead,
           deadAt: expect.any(Date),
@@ -286,7 +295,7 @@ describe('MediaProcessingWorkerService', () => {
         'fizzdragon-ai-outputs',
         'media/cn/episode-video/34/x.mp4',
       );
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.pending,
@@ -298,7 +307,7 @@ describe('MediaProcessingWorkerService', () => {
           }),
         }),
       );
-      expect(prisma.mediaProcessingJob.update).not.toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).not.toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.completed,
@@ -319,7 +328,7 @@ describe('MediaProcessingWorkerService', () => {
 
       expect(imm.getTaskStatus).toHaveBeenCalledWith('imm-task-1');
       expect(imm.submitHlsTask).not.toHaveBeenCalled();
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.pending,
@@ -360,7 +369,7 @@ describe('MediaProcessingWorkerService', () => {
           }),
         }),
       );
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.completed,
@@ -416,7 +425,7 @@ describe('MediaProcessingWorkerService', () => {
       expect(createManyArg.data.every((row) => row.role === 'replica')).toBe(
         true,
       );
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.completed,
@@ -459,7 +468,7 @@ describe('MediaProcessingWorkerService', () => {
         }),
       );
       expect(tx.mediaObjectPlacement.updateMany).toHaveBeenCalled();
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.completed,
@@ -483,7 +492,7 @@ describe('MediaProcessingWorkerService', () => {
 
       await service.drainOnce();
 
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.dead,
@@ -503,7 +512,7 @@ describe('MediaProcessingWorkerService', () => {
       await service.drainOnce();
 
       expect(imm.submitHlsTask).not.toHaveBeenCalled();
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.dead,
@@ -523,7 +532,7 @@ describe('MediaProcessingWorkerService', () => {
 
       await service.drainOnce();
 
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.pending,
@@ -543,7 +552,7 @@ describe('MediaProcessingWorkerService', () => {
 
       await service.drainOnce();
 
-      expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect(prisma.mediaProcessingJob.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             status: MediaProcessingJobStatus.dead,

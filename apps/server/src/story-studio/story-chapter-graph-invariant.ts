@@ -508,14 +508,12 @@ async function writeStoryChapterGraphState(
     },
   });
   if (claimed.count !== 1) return null;
-  await Promise.all(
-    input.chapters.map((chapter) =>
-      tx.storyChapter.update({
-        where: { id: chapter.id },
-        data: { nodeIds: chapter.nodeIds, entryNodeId: chapter.entryNodeId },
-      }),
-    ),
-  );
+  for (const chapter of input.chapters) {
+    await tx.storyChapter.update({
+      where: { id: chapter.id },
+      data: { nodeIds: chapter.nodeIds, entryNodeId: chapter.entryNodeId },
+    });
+  }
   return { contentHash };
 }
 

@@ -39,7 +39,10 @@ interface NegotiateResponse {
   message?: string;
 }
 
-async function negotiate(options: AssetsRealtimeOptions): Promise<NegotiateData> {
+async function negotiate(
+  options: AssetsRealtimeOptions,
+  signal: AbortSignal
+): Promise<NegotiateData> {
   const headers: Record<string, string> = {};
   if (options.workspaceId) headers["X-Fizz-Workspace-Id"] = options.workspaceId;
   if (options.storyProjectId) headers["X-Fizz-Story-Project-Id"] = options.storyProjectId;
@@ -47,6 +50,7 @@ async function negotiate(options: AssetsRealtimeOptions): Promise<NegotiateData>
     credentials: "include",
     headers,
     method: "POST",
+    signal,
   });
   if (!res.ok) throw new Error(`negotiate http ${res.status}`);
   const body = (await res.json()) as NegotiateResponse;
@@ -77,6 +81,7 @@ export function openAssetsRealtime(
   handlers: AssetsRealtimeHandlers,
   options: AssetsRealtimeOptions = {}
 ): AssetsRealtimeClient {
+  const controller = new AbortController();
   let ws: WebSocket | null = null;
   let stopped = false;
   let attempt = 0;
@@ -112,7 +117,7 @@ export function openAssetsRealtime(
     // a synchronized reconnect (and negotiate) herd.
     const delay = Math.random() * ceiling;
     reconnectTimer = setTimeout(() => {
-      void negotiate(options)
+      void negotiate(options, controller.signal)
         .then((access) => {
           if (!stopped) connect(access);
         })
@@ -128,9 +133,12 @@ export function openAssetsRealtime(
       scheduleReconnect();
       return;
     }
+    const socket = ws;
     ws.onopen = () => {
+      if (stopped || ws !== socket) return;
       attempt = 0;
       if (!stopped) handlers.onConnected?.();
+      if (stopped || ws !== socket) return;
       pingTimer = setInterval(() => {
         if (ws?.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ event: "ping" }));
@@ -138,6 +146,7 @@ export function openAssetsRealtime(
       }, PING_INTERVAL_MS);
     };
     ws.onmessage = (ev) => {
+      if (stopped || ws !== socket) return;
       let parsed: unknown;
       try {
         parsed = JSON.parse(typeof ev.data === "string" ? ev.data : "");
@@ -151,6 +160,8 @@ export function openAssetsRealtime(
       if (typeof event.kind === "string") handlers.onEvent?.(event);
     };
     ws.onclose = () => {
+      if (ws !== socket) return;
+      ws = null;
       stopPing();
       if (stopped) return;
       handlers.onDisconnected?.("disconnected");
@@ -165,7 +176,7 @@ export function openAssetsRealtime(
   // transient negotiate failure at mount must not kill the client for good —
   // that would leave the consumer on its HTTP fallback poll for the rest of
   // the tab's life even though the realtime plane is healthy.
-  void negotiate(options)
+  void negotiate(options, controller.signal)
     .then((access) => {
       if (!stopped) connect(access);
     })
@@ -177,7 +188,9 @@ export function openAssetsRealtime(
 
   return {
     close() {
+      if (stopped) return;
       stopped = true;
+      controller.abort();
       stopPing();
       if (reconnectTimer) clearTimeout(reconnectTimer);
       try {

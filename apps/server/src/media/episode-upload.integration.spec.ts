@@ -1,12 +1,19 @@
 /** Opt-in: local PostgreSQL + MinIO only. Never writes to remote storage/DB. */
-import { CreateBucketCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CreateBucketCommand,
+  DeleteBucketCommand,
+  ListObjectsV2Command,
+  DeleteObjectsCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { episodeUploadTestDatabase } from './episode-upload-test-database';
 import { EPISODE_UPLOAD_PART_BYTES } from '@repo/shared';
-import { PrismaService } from '../infra/db/db.module';
+import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { S3CompatibleStorageService } from '../infra/storage/s3-storage.service';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
@@ -18,7 +25,9 @@ const integration =
   process.env.EPISODE_UPLOAD_INTEGRATION === '1' ? describe : describe.skip;
 
 integration('episode upload against local PostgreSQL and MinIO', () => {
-  let prisma: PrismaService;
+  let prisma: ReturnType<typeof buildPrisma>;
+  let client: S3Client | undefined;
+  let bucketCreated = false;
   let storage: S3CompatibleStorageService;
   let makeService: () => EpisodeUploadService;
   const sessionIds: string[] = [];
@@ -27,16 +36,7 @@ integration('episode upload against local PostgreSQL and MinIO', () => {
   const environment = { ...process.env };
 
   beforeAll(async () => {
-    const database = new URL(process.env.DATABASE_URL!);
-    if (
-      !['localhost', '127.0.0.1'].includes(database.hostname) ||
-      database.port !== '5433' ||
-      !database.pathname.startsWith('/fizzdragon_')
-    ) {
-      throw new Error(
-        'Integration requires a local fizzdragon_* test database on port 5433',
-      );
-    }
+    const databaseUrl = episodeUploadTestDatabase(process.env);
     Object.assign(process.env, {
       S3_ENDPOINT: 'http://127.0.0.1:19000',
       S3_REGION: 'us-east-1',
@@ -46,7 +46,7 @@ integration('episode upload against local PostgreSQL and MinIO', () => {
       S3_FORCE_PATH_STYLE: 'true',
       MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: `http://127.0.0.1:19000/${bucket}`,
     });
-    const client = new S3Client({
+    client = new S3Client({
       endpoint: process.env.S3_ENDPOINT,
       region: 'us-east-1',
       forcePathStyle: true,
@@ -56,8 +56,8 @@ integration('episode upload against local PostgreSQL and MinIO', () => {
       },
     });
     await client.send(new CreateBucketCommand({ Bucket: bucket }));
-    client.destroy();
-    prisma = new PrismaService();
+    bucketCreated = true;
+    prisma = buildPrisma(databaseUrl);
     storage = new S3CompatibleStorageService();
     const access = new MediaStorageAccessService(
       undefined as never,
@@ -66,46 +66,86 @@ integration('episode upload against local PostgreSQL and MinIO', () => {
     );
     const registry = { forProvider: () => storage };
     const uploads = new MediaUploadService(
-      prisma,
+      prisma as PrismaService,
       storage,
       new MediaAssetUrlResolverService(),
       {} as never,
       { enqueueAutomaticChecks: () => Promise.resolve(undefined) } as never,
       {} as never,
       {} as never,
-      new MediaAssetFactsService(prisma, access),
+      new MediaAssetFactsService(prisma as PrismaService, access),
       registry as never,
       {} as never,
     );
     makeService = () =>
-      new EpisodeUploadService(prisma, uploads, registry as never);
+      new EpisodeUploadService(
+        prisma as PrismaService,
+        uploads,
+        registry as never,
+      );
   });
 
   afterAll(async () => {
-    if (prisma) {
-      const sessions = await prisma.episodeUpload.findMany({
-        where: { id: { in: sessionIds } },
-      });
-      for (const session of sessions) {
-        if (session.bucket && session.uploadId) {
-          const ref = {
-            ...session,
-            bucket: session.bucket,
-            uploadId: session.uploadId,
-          };
-          await storage.abortMultipartUpload(ref);
-          await storage.deleteObject(ref);
+    const errors: unknown[] = [];
+    try {
+      if (prisma) {
+        const sessions = await prisma.episodeUpload.findMany({
+          where: { id: { in: sessionIds } },
+        });
+        for (const session of sessions) {
+          if (session.bucket && session.uploadId)
+            await storage.abortMultipartUpload({
+              ...session,
+              bucket: session.bucket,
+              uploadId: session.uploadId,
+            });
         }
+        await prisma.mediaAsset.deleteMany({
+          where: { createdByUserId: userId },
+        });
+        await prisma.episodeUpload.deleteMany({
+          where: { id: { in: sessionIds } },
+        });
       }
-      await prisma.mediaAsset.deleteMany({
-        where: { createdByUserId: userId },
-      });
-      await prisma.episodeUpload.deleteMany({
-        where: { id: { in: sessionIds } },
-      });
-      await prisma.$disconnect();
+    } catch (error) {
+      errors.push(error);
     }
-    process.env = environment;
+    try {
+      if (client && bucketCreated) {
+        // The random bucket belongs exclusively to this fixture.
+        while (true) {
+          const page = await client.send(
+            new ListObjectsV2Command({ Bucket: bucket }),
+          );
+          const objects =
+            page.Contents?.flatMap((object) =>
+              object.Key ? [{ Key: object.Key }] : [],
+            ) ?? [];
+          if (objects.length === 0) break;
+          const deleted = await client.send(
+            new DeleteObjectsCommand({
+              Bucket: bucket,
+              Delete: { Objects: objects },
+            }),
+          );
+          if (deleted.Errors?.length)
+            throw new Error('Fixture object cleanup failed');
+        }
+        await client.send(new DeleteBucketCommand({ Bucket: bucket }));
+      }
+    } catch (error) {
+      errors.push(error);
+    }
+    client?.destroy();
+    try {
+      await prisma?.$disconnect();
+    } catch (error) {
+      errors.push(error);
+    } finally {
+      process.env = environment;
+    }
+    if (errors.length)
+      throw new AggregateError(errors, 'Upload fixture cleanup failed');
   });
 
   it('resumes after service restart, preserves every byte and creates exactly one playable asset', async () => {

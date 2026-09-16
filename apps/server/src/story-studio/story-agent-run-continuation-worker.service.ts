@@ -66,6 +66,7 @@ export class StoryAgentRunContinuationWorkerService
   private readonly workerId = `story-continuation:${hostname().slice(0, 48)}:${process.pid}:${randomUUID()}`;
   private timer: NodeJS.Timeout | null = null;
   private draining = false;
+  private stopping = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -73,6 +74,7 @@ export class StoryAgentRunContinuationWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopping || this.timer) return;
     if (!this.enabled) {
       this.logger.log('Story Agent continuation worker is disabled');
       return;
@@ -91,15 +93,17 @@ export class StoryAgentRunContinuationWorkerService
   }
 
   onModuleDestroy(): void {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (!this.enabled || this.draining) return;
+    if (!this.enabled || this.stopping || this.draining) return;
     this.draining = true;
     try {
       const claimed = await this.claim(Math.max(1, Math.trunc(batch)));
+      if (this.stopping) return;
       await Promise.all(claimed.map((candidate) => this.deliver(candidate)));
     } catch (error) {
       this.logger.warn(
@@ -187,9 +191,12 @@ export class StoryAgentRunContinuationWorkerService
   }
 
   private async deliver(candidate: ClaimedContinuation): Promise<void> {
+    if (this.stopping) return;
     try {
       const dispatch = await this.prisma.$transaction((tx) =>
-        this.deliverInTransaction(tx, candidate.id),
+        this.stopping
+          ? Promise.resolve(null)
+          : this.deliverInTransaction(tx, candidate.id),
       );
       if (dispatch) await this.journal.publishCommitted(dispatch);
     } catch (error) {

@@ -9,7 +9,8 @@ import { api } from "@/src/lib/api";
  *
  * Returns the ids the caller needs to navigate to the project workspace.
  */
-export const quickCreateWorldProduct = (name: string) =>
+export const quickCreateWorldProduct = (name: string, signal?: AbortSignal) =>
   api.post<{ worldId: string; projectId: string }>("/api/user/world/create/quick/worldproduct", {
+    signal,
     data: { name },
   });

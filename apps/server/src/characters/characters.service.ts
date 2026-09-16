@@ -1,3 +1,4 @@
+import { requireNonReceiptAsset } from '../media/media-receipt-policy';
 /**
  * Character library (角色库) domain service.
  *
@@ -7,8 +8,8 @@
  *  - a project sees only its CAST (演员表): CharacterProjectCast rows are pure
  *    visibility, created by the explicit act of casting; they never cross
  *    workspaces;
- *  - v1 = `virtual` only. `real_person` on ANY write path → 501
- *    REAL_PERSON_NOT_AVAILABLE (the ACR enrollment track is not built yet).
+ *  - real-person enrollment is feature-, region- and consent-gated;
+ *    withdrawal remains available when new enrollment is disabled.
  *
  * Media: CharacterMedia joins onto confirmed MediaAssets (storage source of
  * truth). Attaching writes an idempotent MediaAssetUsage row
@@ -19,6 +20,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Logger,
   Injectable,
   NotFoundException,
   NotImplementedException,
@@ -123,6 +125,7 @@ function isUniqueViolation(err: unknown): boolean {
 
 @Injectable()
 export class CharactersService {
+  private readonly logger = new Logger(CharactersService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: WorkspacePermissionService,
@@ -177,6 +180,44 @@ export class CharactersService {
 
     try {
       const character = await this.prisma.$transaction(async (tx) => {
+        // Preserve the project-first ordering used by cast and grant writes.
+        if (input.castProjectId) {
+          await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${input.castProjectId}::uuid FOR UPDATE`;
+        }
+        await tx.$queryRaw`SELECT id FROM workspaces WHERE id = ${input.workspaceId}::uuid FOR UPDATE`;
+        const recheck = async () => {
+          await this.permissions.requireWorkspaceRole(
+            user.userId,
+            input.workspaceId,
+            WorkspaceMemberRole.editor,
+            tx,
+          );
+          if (realPerson) {
+            await this.enrollment.requireDefaultWorkspace(
+              user,
+              input.workspaceId,
+              tx,
+            );
+          }
+          if (input.castProjectId) {
+            const project = await tx.platformProject.findFirst({
+              where: {
+                id: input.castProjectId,
+                workspaceId: input.workspaceId,
+                status: PlatformProjectStatus.active,
+                deletedAt: null,
+              },
+              select: { id: true },
+            });
+            if (!project)
+              throw new BadRequestException({
+                code: 'CHARACTER_WORKSPACE_MISMATCH',
+                message:
+                  'The cast target project does not belong to this workspace.',
+              });
+          }
+        };
+        await recheck();
         const created = await tx.studioCharacter.create({
           data: {
             workspaceId: input.workspaceId,
@@ -207,6 +248,7 @@ export class CharactersService {
             },
           });
         }
+        await recheck();
         return created;
       });
       return this.toDetail({ ...character, media: [] });
@@ -261,18 +303,6 @@ export class CharactersService {
     );
     this.requireRealPersonWritable(character, user);
 
-    if (input.coverAssetId !== undefined && input.coverAssetId !== null) {
-      const owned = character.media.some(
-        (m) => m.mediaAssetId === input.coverAssetId,
-      );
-      if (!owned) {
-        throw new BadRequestException({
-          code: 'CHARACTER_COVER_INVALID',
-          message: "Cover must be one of the character's attached media.",
-        });
-      }
-    }
-
     const data: Prisma.StudioCharacterUncheckedUpdateInput = {};
     if (input.name !== undefined) data.name = input.name;
     if (input.description !== undefined) {
@@ -283,12 +313,33 @@ export class CharactersService {
     }
 
     try {
-      const updated = await this.prisma.studioCharacter.update({
-        where: { id: characterId },
-        data,
-        include: ACTIVE_MEDIA_INCLUDE,
+      return await this.prisma.$transaction(async (tx) => {
+        const character = await this.requireWritableInTx(tx, user, characterId);
+        if (input.coverAssetId !== undefined && input.coverAssetId !== null) {
+          const owned = character.media.some(
+            (m) => m.mediaAssetId === input.coverAssetId,
+          );
+          if (!owned) {
+            throw new BadRequestException({
+              code: 'CHARACTER_COVER_INVALID',
+              message: "Cover must be one of the character's attached media.",
+            });
+          }
+        }
+
+        const updated = await tx.studioCharacter.update({
+          where: { id: characterId },
+          data,
+          include: ACTIVE_MEDIA_INCLUDE,
+        });
+        await this.permissions.requireWorkspaceRole(
+          user.userId,
+          character.workspaceId,
+          WorkspaceMemberRole.editor,
+          tx,
+        );
+        return this.toDetail(updated);
       });
-      return this.toDetail(updated);
     } catch (err) {
       if (isUniqueViolation(err)) {
         throw new ConflictException({
@@ -302,28 +353,7 @@ export class CharactersService {
 
   async remove(user: AuthUser, characterId: string): Promise<void> {
     const character = await this.requireVisibleCharacter(characterId);
-    // Workspace admins may delete anything; the creator may delete their own
-    // character with plain editor rights (attribution grants cleanup, not
-    // ownership).
-    try {
-      await this.permissions.requireWorkspaceRole(
-        user.userId,
-        character.workspaceId,
-        WorkspaceMemberRole.admin,
-      );
-    } catch (err) {
-      if (
-        !(err instanceof ForbiddenException) ||
-        character.createdByUserId !== user.userId
-      ) {
-        throw err;
-      }
-      await this.permissions.requireWorkspaceRole(
-        user.userId,
-        character.workspaceId,
-        WorkspaceMemberRole.editor,
-      );
-    }
+    await this.requireRemovalAuthority(user, character);
 
     // real_person DELETE means REVOKE (design §5.1) — consent withdrawal, not
     // tidy-up — UNLESS the row is already a revoked tombstone, in which case
@@ -345,7 +375,11 @@ export class CharactersService {
       return;
     }
 
-    await this.prisma.$transaction(async (tx) => {
+    const teardown = await this.prisma.$transaction(async (tx) => {
+      await this.acquireCharacterLock(tx, characterId);
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+      const current = await this.requireVisibleCharacter(characterId, tx);
+      await this.requireRemovalAuthority(user, current, tx);
       await tx.studioCharacter.update({
         where: { id: characterId },
         data: {
@@ -353,7 +387,7 @@ export class CharactersService {
           // Keep a revoked tombstone's terminal status on the ledger; a
           // plain virtual delete disables the row.
           status:
-            character.status === CharacterStatus.revoked
+            current.status === CharacterStatus.revoked
               ? CharacterStatus.revoked
               : CharacterStatus.disabled,
         },
@@ -364,7 +398,7 @@ export class CharactersService {
       await tx.mediaAssetUsage.updateMany({
         where: {
           idempotencyKey: {
-            in: character.media.map((m) =>
+            in: current.media.map((m) =>
               usageIdempotencyKey(characterId, m.mediaAssetId),
             ),
           },
@@ -372,7 +406,43 @@ export class CharactersService {
         },
         data: { deletedAt: new Date() },
       });
+      const groups = await tx.aiProviderAssetGroup.findMany({
+        where: {
+          characterId,
+          status: { not: AiProviderAssetGroupStatus.deleted },
+        },
+        include: {
+          externalAssets: {
+            where: { status: { not: AiProviderExternalAssetStatus.deleted } },
+            select: { externalAssetId: true },
+          },
+        },
+      });
+      await tx.aiProviderAssetGroup.updateMany({
+        where: {
+          characterId,
+          status: { not: AiProviderAssetGroupStatus.deleted },
+        },
+        data: { status: AiProviderAssetGroupStatus.disabled },
+      });
+      await tx.aiProviderExternalAsset.updateMany({
+        where: {
+          providerAssetGroupId: { in: groups.map((group) => group.id) },
+          status: { not: AiProviderExternalAssetStatus.deleted },
+        },
+        data: { status: AiProviderExternalAssetStatus.disabled },
+      });
+      await this.requireRemovalAuthority(user, current, tx);
+      return {
+        externalAssetIds: groups
+          .flatMap((group) =>
+            group.externalAssets.map((asset) => asset.externalAssetId),
+          )
+          .filter((id): id is string => Boolean(id)),
+        externalGroupIds: groups.map((group) => group.externalGroupId),
+      };
     });
+    await this.requestProviderTeardown(teardown);
   }
 
   // ─── Character media ────────────────────────────────────
@@ -390,42 +460,11 @@ export class CharactersService {
     );
     this.requireRealPersonWritable(character, user);
 
-    const asset = await this.prisma.mediaAsset.findFirst({
-      where: { id: input.mediaAssetId, deletedAt: null },
-    });
-    if (!asset) {
-      throw new NotFoundException({
-        code: 'MEDIA_ASSET_NOT_FOUND',
-        message: 'Media asset not found.',
-      });
-    }
-    if (asset.status !== MediaAssetStatus.ready) {
-      throw new BadRequestException({
-        code: 'MEDIA_ASSET_NOT_READY',
-        message: 'Media asset is not ready.',
-      });
-    }
-    if (asset.moderationStatus === MediaAssetModerationStatus.blocked) {
-      throw new BadRequestException({
-        code: 'MEDIA_ASSET_BLOCKED',
-        message: 'Media asset was blocked by moderation.',
-      });
-    }
-    // Anti-leak: you can only enroll media you uploaded yourself — attaching
-    // is what makes an asset reachable by every workspace/cast member.
-    if (asset.createdByUserId !== user.userId) {
-      throw new ForbiddenException({
-        code: 'MEDIA_ASSET_NOT_OWNED',
-        message: 'You can only attach media you uploaded yourself.',
-      });
-    }
-    const mediaKind = MEDIA_KIND_BY_ASSET_KIND[asset.kind];
-    if (!mediaKind) {
-      throw new BadRequestException({
-        code: 'CHARACTER_MEDIA_KIND_INVALID',
-        message: 'Character media must be an image, video, or audio asset.',
-      });
-    }
+    const { mediaKind } = await this.requireAttachableAsset(
+      user,
+      input.mediaAssetId,
+      character.workspaceId,
+    );
 
     // Provider-mirror group resolution (§2.2 eager registration):
     //  - real_person: the verified LivenessFace group MUST already exist
@@ -461,7 +500,36 @@ export class CharactersService {
     let mirrorRowId: string | null = null;
     try {
       await this.prisma.$transaction(async (tx) => {
-        await this.acquireCharacterLock(tx, characterId);
+        const character = await this.requireWritableInTx(tx, user, characterId);
+        await tx.$queryRaw`SELECT id FROM media_assets WHERE id = ${input.mediaAssetId}::uuid FOR UPDATE`;
+        const { asset, mediaKind } = await this.requireAttachableAsset(
+          user,
+          input.mediaAssetId,
+          character.workspaceId,
+          tx,
+        );
+        let currentMirrorGroupId =
+          character.kind === CharacterKind.real_person || mediaKind === 'image'
+            ? mirrorGroupId
+            : null;
+        if (currentMirrorGroupId) {
+          await tx.$queryRaw`SELECT id FROM ai_provider_asset_groups WHERE id = ${currentMirrorGroupId}::uuid FOR SHARE`;
+          const group = await tx.aiProviderAssetGroup.findFirst({
+            where: {
+              id: currentMirrorGroupId,
+              characterId,
+              status: AiProviderAssetGroupStatus.active,
+            },
+          });
+          if (!group) {
+            if (character.kind === CharacterKind.real_person)
+              throw new ConflictException({
+                code: 'ENROLLMENT_REQUIRED',
+                message: 'Complete identity verification before adding media.',
+              });
+            currentMirrorGroupId = null;
+          }
+        }
         const kindCount = await tx.characterMedia.count({
           where: {
             characterId,
@@ -488,10 +556,10 @@ export class CharactersService {
             status: CharacterMediaStatus.active,
           },
         });
-        if (mirrorGroupId) {
+        if (currentMirrorGroupId) {
           const mirror = await this.sync.createPendingMirror(tx, {
             characterMediaId: mediaRow.id,
-            providerAssetGroupId: mirrorGroupId,
+            providerAssetGroupId: currentMirrorGroupId,
           });
           mirrorRowId = mirror.id;
         }
@@ -502,6 +570,12 @@ export class CharactersService {
           });
         }
         await this.recordAttachUsage(tx, character, asset, user.userId);
+        await this.permissions.requireWorkspaceRole(
+          user.userId,
+          character.workspaceId,
+          WorkspaceMemberRole.editor,
+          tx,
+        );
       });
       // Eager registration AFTER commit (the queue job re-reads the row).
       if (mirrorRowId) await this.sync.enqueueRegister(mirrorRowId);
@@ -533,7 +607,7 @@ export class CharactersService {
 
     const orphanedExternalAssetIds: string[] = [];
     await this.prisma.$transaction(async (tx) => {
-      await this.acquireCharacterLock(tx, characterId);
+      const character = await this.requireWritableInTx(tx, user, characterId);
       // Fresh reads under the lock — the pre-transaction snapshot may be
       // stale against a concurrent attach/remove/reorder on this character.
       const row = await tx.characterMedia.findFirst({
@@ -563,7 +637,10 @@ export class CharactersService {
           .filter((id): id is string => Boolean(id)),
       );
       await tx.aiProviderExternalAsset.updateMany({
-        where: { characterMediaId: row.id },
+        where: {
+          characterMediaId: row.id,
+          status: { not: AiProviderExternalAssetStatus.deleted },
+        },
         data: { status: AiProviderExternalAssetStatus.disabled },
       });
       await tx.characterMedia.delete({ where: { id: row.id } });
@@ -594,9 +671,15 @@ export class CharactersService {
           data: { coverAssetId: nextCover?.mediaAssetId ?? null },
         });
       }
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        character.workspaceId,
+        WorkspaceMemberRole.editor,
+        tx,
+      );
     });
     if (orphanedExternalAssetIds.length > 0) {
-      await this.sync.enqueueCriticalTeardown({
+      await this.requestProviderTeardown({
         externalAssetIds: orphanedExternalAssetIds,
         externalGroupIds: [],
       });
@@ -618,29 +701,35 @@ export class CharactersService {
     );
     this.requireRealPersonWritable(character, user);
 
-    const currentIds = new Set(character.media.map((m) => m.id));
-    const orderedIds = new Set(input.order);
-    const exactCover =
-      input.order.length === character.media.length &&
-      orderedIds.size === input.order.length &&
-      character.media.every((m) => orderedIds.has(m.id));
-    if (!exactCover) {
-      throw new BadRequestException({
-        code: 'CHARACTER_MEDIA_ORDER_INVALID',
-        message: `Order must list each of the character's ${currentIds.size} media ids exactly once.`,
-      });
-    }
+    return this.prisma.$transaction(async (tx) => {
+      const character = await this.requireWritableInTx(tx, user, characterId);
+      const currentIds = new Set(character.media.map((m) => m.id));
+      const orderedIds = new Set(input.order);
+      const exactCover =
+        input.order.length === character.media.length &&
+        orderedIds.size === input.order.length &&
+        character.media.every((m) => orderedIds.has(m.id));
+      if (!exactCover) {
+        throw new BadRequestException({
+          code: 'CHARACTER_MEDIA_ORDER_INVALID',
+          message: `Order must list each of the character's ${currentIds.size} media ids exactly once.`,
+        });
+      }
 
-    await this.prisma.$transaction(async (tx) => {
-      await this.acquireCharacterLock(tx, characterId);
       for (const [index, id] of input.order.entries()) {
         await tx.characterMedia.update({
           where: { id },
           data: { sortOrder: index },
         });
       }
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        character.workspaceId,
+        WorkspaceMemberRole.editor,
+        tx,
+      );
+      return this.toDetail(await this.requireUsableCharacter(characterId, tx));
     });
-    return this.toDetail(await this.requireUsableCharacter(characterId));
   }
 
   // ─── Cast (project 演员表) ──────────────────────────────
@@ -696,48 +785,51 @@ export class CharactersService {
     projectId: string,
     characterId: string,
   ): Promise<CastEntryDto> {
-    const project = await this.permissions.requireProjectRole(
-      user.userId,
-      projectId,
-      ProjectMemberRole.editor,
-    );
-    // Casting pulls from the workspace library, so it additionally requires
-    // workspace membership — a project-only member cannot enumerate (or
-    // cast from) a library they do not belong to.
-    await this.permissions.requireWorkspaceRole(
-      user.userId,
-      project.workspaceId,
-      WorkspaceMemberRole.viewer,
-    );
-
-    const character = await this.requireUsableCharacter(characterId);
-    if (character.workspaceId !== project.workspaceId) {
-      throw new BadRequestException({
-        code: 'CHARACTER_WORKSPACE_MISMATCH',
-        message: 'Characters can only be cast within their home workspace.',
-      });
-    }
-
-    const existing = await this.prisma.characterProjectCast.findFirst({
-      where: { projectId, characterId },
-    });
-    if (existing) return this.toCastEntry({ ...existing, character });
-
-    try {
-      const created = await this.prisma.characterProjectCast.create({
-        data: { projectId, characterId, addedByUserId: user.userId },
-      });
-      return this.toCastEntry({ ...created, character });
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        // Concurrent cast — idempotent by contract, return the winner.
-        const winner = await this.prisma.characterProjectCast.findFirst({
-          where: { projectId, characterId },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      await this.acquireCharacterLock(tx, characterId);
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+      const project = await this.permissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.editor,
+        tx,
+      );
+      // Project-only access still does not grant access to the workspace library.
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        project.workspaceId,
+        WorkspaceMemberRole.viewer,
+        tx,
+      );
+      const character = await this.requireUsableCharacter(characterId, tx);
+      if (character.workspaceId !== project.workspaceId)
+        throw new BadRequestException({
+          code: 'CHARACTER_WORKSPACE_MISMATCH',
+          message: 'Characters can only be cast within their home workspace.',
         });
-        if (winner) return this.toCastEntry({ ...winner, character });
-      }
-      throw err;
-    }
+      const existing = await tx.characterProjectCast.findFirst({
+        where: { projectId, characterId },
+      });
+      const row =
+        existing ??
+        (await tx.characterProjectCast.create({
+          data: { projectId, characterId, addedByUserId: user.userId },
+        }));
+      await this.permissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.editor,
+        tx,
+      );
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        project.workspaceId,
+        WorkspaceMemberRole.viewer,
+        tx,
+      );
+      return this.toCastEntry({ ...row, character });
+    });
   }
 
   async uncastCharacter(
@@ -745,14 +837,26 @@ export class CharactersService {
     projectId: string,
     characterId: string,
   ): Promise<void> {
-    await this.permissions.requireProjectRole(
-      user.userId,
-      projectId,
-      ProjectMemberRole.editor,
-    );
-    // Idempotent: uncasting an already-absent character is a no-op.
-    await this.prisma.characterProjectCast.deleteMany({
-      where: { projectId, characterId },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      await this.acquireCharacterLock(tx, characterId);
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+      await this.permissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.editor,
+        tx,
+      );
+      // Idempotent even when the character is no longer usable or already absent.
+      await tx.characterProjectCast.deleteMany({
+        where: { projectId, characterId },
+      });
+      await this.permissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.editor,
+        tx,
+      );
     });
   }
 
@@ -773,11 +877,131 @@ export class CharactersService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`character:${characterId}`})::bigint)`;
   }
 
+  private async requireAttachableAsset(
+    user: AuthUser,
+    mediaAssetId: string,
+    workspaceId: string,
+    client: Prisma.TransactionClient = this.prisma,
+  ) {
+    const asset = await client.mediaAsset.findFirst({
+      where: { id: mediaAssetId, deletedAt: null },
+    });
+    if (!asset) {
+      throw new NotFoundException({
+        code: 'MEDIA_ASSET_NOT_FOUND',
+        message: 'Media asset not found.',
+      });
+    }
+    if (asset.status !== MediaAssetStatus.ready) {
+      throw new BadRequestException({
+        code: 'MEDIA_ASSET_NOT_READY',
+        message: 'Media asset is not ready.',
+      });
+    }
+    if (asset.moderationStatus === MediaAssetModerationStatus.blocked) {
+      throw new BadRequestException({
+        code: 'MEDIA_ASSET_BLOCKED',
+        message: 'Media asset was blocked by moderation.',
+      });
+    }
+    requireNonReceiptAsset(asset.metadata);
+    if (asset.workspaceId !== workspaceId) {
+      throw new ForbiddenException({
+        code: 'CHARACTER_ASSET_WORKSPACE_MISMATCH',
+        message: 'Character media must belong to the character workspace.',
+      });
+    }
+    // Anti-leak: you can only enroll media you uploaded yourself — attaching
+    // is what makes an asset reachable by every workspace/cast member.
+    if (asset.createdByUserId !== user.userId) {
+      throw new ForbiddenException({
+        code: 'MEDIA_ASSET_NOT_OWNED',
+        message: 'You can only attach media you uploaded yourself.',
+      });
+    }
+    const mediaKind = MEDIA_KIND_BY_ASSET_KIND[asset.kind];
+    if (!mediaKind) {
+      throw new BadRequestException({
+        code: 'CHARACTER_MEDIA_KIND_INVALID',
+        message: 'Character media must be an image, video, or audio asset.',
+      });
+    }
+
+    return { asset, mediaKind };
+  }
+
+  private async requireWritableInTx(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    characterId: string,
+  ): Promise<CharacterWithMedia> {
+    await this.acquireCharacterLock(tx, characterId);
+    await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+    const character = await this.requireUsableCharacter(characterId, tx);
+    await this.permissions.requireWorkspaceRole(
+      user.userId,
+      character.workspaceId,
+      WorkspaceMemberRole.editor,
+      tx,
+    );
+    this.requireRealPersonWritable(character, user);
+    return character;
+  }
+
+  private async requestProviderTeardown(teardown: {
+    externalAssetIds: string[];
+    externalGroupIds: string[];
+  }): Promise<void> {
+    if (!teardown.externalAssetIds.length && !teardown.externalGroupIds.length)
+      return;
+    try {
+      await this.sync.enqueueCriticalTeardown(teardown);
+    } catch {
+      // Disabled rows remain durable reconciliation candidates. The library
+      // mutation has committed; a queue outage must not report it as rejected.
+      this.logger.warn(
+        'Character provider cleanup deferred to reconciliation.',
+      );
+    }
+  }
+
+  private async requireRemovalAuthority(
+    user: AuthUser,
+    character: CharacterWithMedia,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    // Workspace admins may delete anything; the creator may delete their own
+    // character with plain editor rights (attribution grants cleanup, not
+    // ownership).
+    try {
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        character.workspaceId,
+        WorkspaceMemberRole.admin,
+        client,
+      );
+    } catch (err) {
+      if (
+        !(err instanceof ForbiddenException) ||
+        character.createdByUserId !== user.userId
+      ) {
+        throw err;
+      }
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        character.workspaceId,
+        WorkspaceMemberRole.editor,
+        client,
+      );
+    }
+  }
+
   /** Readable row (revoked tombstone included) — for get()/remove(). */
   private async requireVisibleCharacter(
     characterId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<CharacterWithMedia> {
-    const character = await this.prisma.studioCharacter.findFirst({
+    const character = await client.studioCharacter.findFirst({
       where: { id: characterId, ...VISIBLE_CHARACTER_WHERE },
       include: ACTIVE_MEDIA_INCLUDE,
     });
@@ -793,8 +1017,9 @@ export class CharactersService {
   /** Mutable row (revoked excluded) — for every edit/media/cast path. */
   private async requireUsableCharacter(
     characterId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<CharacterWithMedia> {
-    const character = await this.prisma.studioCharacter.findFirst({
+    const character = await client.studioCharacter.findFirst({
       where: { id: characterId, ...USABLE_CHARACTER_WHERE },
       include: ACTIVE_MEDIA_INCLUDE,
     });

@@ -23,7 +23,7 @@ export class AdminAuditService {
             },
           },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: query.pageSize,
       }),

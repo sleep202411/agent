@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { encodeUserId } from "@repo/shared";
 import {
   IconCheck,
@@ -40,14 +41,20 @@ type AdminApiPayload<T> = {
   data?: T;
 };
 
-async function mutateApplication(url: string, body: { adminRemark?: string }): Promise<void> {
+async function mutateApplication(
+  url: string,
+  body: { adminRemark?: string },
+  signal: AbortSignal
+): Promise<void> {
   const response = await fetch(adminUiApiPath(url), {
     method: "POST",
+    signal,
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   const payload = (await response.json().catch(() => null)) as AdminApiPayload<null> | null;
+  signal.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(payload?.msg ?? payload?.message ?? `请求失败：${response.status}`);
   }
@@ -175,7 +182,8 @@ export function UserLevelApplicationsPanel({
   const [levelFilter, setLevelFilter] = useState("all");
   const [userIdInput, setUserIdInput] = useState("");
   const [activeUserId, setActiveUserId] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const decisionOperation = useRef<ReturnType<typeof begin>>(null);
   const [error, setError] = useState<string | null>(initialError);
 
   const [reviewTarget, setReviewTarget] = useState<AdminUserLevelApplication | null>(null);
@@ -187,60 +195,54 @@ export function UserLevelApplicationsPanel({
   const levelOptions = useMemo(() => [...levels].sort((a, b) => a.id - b.id), [levels]);
   const pendingCountHint = statusFilter === "0" ? total : null;
 
-  async function loadList(
-    opts: {
-      page?: number;
-      status?: string;
-      levelId?: string;
-      userId?: string;
-    } = {}
-  ) {
-    const targetPage = opts.page ?? page;
+  type ListOptions = { page?: number; status?: string; levelId?: string; userId?: string };
+  type Operation = NonNullable<ReturnType<typeof begin>>;
+  async function readList(operation: Operation, opts: ListOptions = {}) {
+    const params = new URLSearchParams({
+      page: String(opts.page ?? page),
+      pageSize: String(pageSize),
+    });
     const status = opts.status ?? statusFilter;
     const levelId = opts.levelId ?? levelFilter;
     const userId = (opts.userId ?? activeUserId).trim();
-
-    setLoading(true);
+    if (status !== "all") params.set("status", status);
+    if (levelId !== "all") params.set("levelId", levelId);
+    if (userId) {
+      if (!/^\d+$/.test(userId) || !Number.isSafeInteger(Number(userId)) || Number(userId) <= 0)
+        throw new Error("User ID must be a positive safe integer.");
+      params.set("userId", String(Number(userId)));
+    }
+    const data = await requestEnvelope<AdminUserLevelApplicationListResult>(
+      `/api/admin/user-level-applications?${params.toString()}`,
+      operation.signal
+    );
+    if (!operation.current()) return;
+    setItems(data.items);
+    setTotal(data.total);
+    setPage(data.page);
+  }
+  async function loadList(opts: ListOptions = {}) {
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      const params = new URLSearchParams({
-        page: String(targetPage),
-        pageSize: String(pageSize),
-      });
-      if (status !== "all") params.set("status", status);
-      if (levelId !== "all") params.set("levelId", levelId);
-      if (userId) {
-        const numeric = Number(userId);
-        if (!Number.isInteger(numeric) || numeric <= 0) {
-          setItems([]);
-          setTotal(0);
-          setPage(1);
-          setError("用户 ID 须为正整数（Java 原始 userId）。");
-          return;
-        }
-        params.set("userId", String(numeric));
-      }
-
-      const data = await requestEnvelope<AdminUserLevelApplicationListResult>(
-        `/api/admin/user-level-applications?${params.toString()}`
-      );
-      setItems(data.items);
-      setTotal(data.total);
-      setPage(data.page);
+      await readList(operation, opts);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   function runSearch() {
+    if (decisionOperation.current) return;
     const next = userIdInput.trim();
     setActiveUserId(next);
     void loadList({ page: 1, userId: next });
   }
 
   function openReview(row: AdminUserLevelApplication) {
+    if (decisionOperation.current) return;
     setReviewTarget(row);
     setAdminRemark(row.adminRemark ?? "");
     setFormError(null);
@@ -248,29 +250,44 @@ export function UserLevelApplicationsPanel({
   }
 
   function closeReview() {
-    if (acting) return;
+    if (decisionOperation.current) return;
     setReviewTarget(null);
     setAdminRemark("");
     setFormError(null);
   }
 
   async function runDecision(decision: "approve" | "reject") {
-    if (!reviewTarget) return;
+    if (!reviewTarget || reviewTarget.status !== 0) return;
+    const operation = begin();
+    if (!operation) return;
+    decisionOperation.current = operation;
     setActing(decision);
     setFormError(null);
+    setError(null);
+    let accepted = false;
     try {
       const remark = adminRemark.trim();
       await mutateApplication(
         `/api/admin/user-level-applications/${reviewTarget.id}/${decision}`,
-        remark ? { adminRemark: remark } : {}
+        remark ? { adminRemark: remark } : {},
+        operation.signal
       );
+      if (!operation.current()) return;
+      accepted = true;
       setReviewTarget(null);
       setAdminRemark("");
-      await loadList({ page: 1 });
+      await readList(operation, { page: 1 });
     } catch (err) {
-      setFormError(toErrorMessage(err));
+      if (operation.current()) {
+        if (accepted) setError(toErrorMessage(err));
+        else setFormError(toErrorMessage(err));
+      }
     } finally {
-      setActing(null);
+      if (decisionOperation.current === operation) {
+        decisionOperation.current = null;
+        if (operation.current()) setActing(null);
+      }
+      operation.finish();
     }
   }
 
@@ -287,6 +304,7 @@ export function UserLevelApplicationsPanel({
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 p-4">
           <div className="min-w-[220px] max-w-md flex-1">
             <TextInput
+              disabled={Boolean(acting)}
               value={userIdInput}
               placeholder="用户 ID（可选）"
               onChange={(event) => setUserIdInput(event.target.value)}
@@ -296,6 +314,7 @@ export function UserLevelApplicationsPanel({
             />
           </div>
           <select
+            disabled={Boolean(acting)}
             value={statusFilter}
             aria-label="状态"
             title="状态"
@@ -313,6 +332,7 @@ export function UserLevelApplicationsPanel({
             ))}
           </select>
           <select
+            disabled={Boolean(acting)}
             value={levelFilter}
             aria-label="等级"
             title="等级"
@@ -416,6 +436,7 @@ export function UserLevelApplicationsPanel({
                         type="button"
                         size="xs"
                         variant={row.status === 0 ? "default" : "outline"}
+                        disabled={Boolean(acting)}
                         onClick={() => openReview(row)}
                       >
                         {row.status === 0 ? "审批" : "查看"}

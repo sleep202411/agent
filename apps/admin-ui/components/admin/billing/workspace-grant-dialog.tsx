@@ -4,6 +4,7 @@
 // The workspace id is explicit; retries reuse the same grant intent key.
 
 import { useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconCircleCheckFilled } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +27,15 @@ interface CreditResponse {
   availableBalance?: string;
 }
 
-export function WorkspaceGrantDialog({
+export function WorkspaceGrantDialog(props: {
+  workspace: AdminWorkspaceRow;
+  onClose: () => void;
+  onGranted: (workspaceId: string, availableBalance: string) => void;
+}) {
+  return <WorkspaceGrantDialogContent key={props.workspace.id} {...props} />;
+}
+
+function WorkspaceGrantDialogContent({
   workspace,
   onClose,
   onGranted,
@@ -37,7 +46,7 @@ export function WorkspaceGrantDialog({
 }) {
   const [score, setScore] = useState("");
   const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const { busy: submitting, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ delta: number; newBalance: string | null } | null>(null);
   // Minted once for this grant intent and reused across retries, so a lost
@@ -51,7 +60,8 @@ export function WorkspaceGrantDialog({
 
   async function submit() {
     if (!scoreValid || !note.trim() || submitting) return;
-    setSubmitting(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     try {
       const data = await mutateEnvelope<CreditResponse>(
@@ -62,15 +72,18 @@ export function WorkspaceGrantDialog({
           amount: score.trim(),
           reason: note.trim(),
           idempotencyKey,
-        }
+        },
+        "POST",
+        operation.signal
       );
+      if (!operation.current()) return;
       const newBalance = data?.account?.availableBalance ?? data?.availableBalance ?? null;
       setResult({ delta: parsedScore, newBalance });
       if (newBalance != null) onGranted(workspace.id, newBalance);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setSubmitting(false);
+      operation.finish();
     }
   }
 
@@ -152,7 +165,7 @@ export function WorkspaceGrantDialog({
           </div>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div inert={submitting} className="space-y-4">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px] text-slate-700">
             <span>
               工作区 <span className="font-medium text-slate-950">{workspace.name}</span>

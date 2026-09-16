@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+import { useStoryOperationScope } from "../_lib/use-story-operation-scope";
 import {
   IconArrowUp,
   IconLoader2,
@@ -65,7 +67,27 @@ type GenerationTarget =
       latestGeneration: StoryLatestGeneration | null;
     };
 
-export function StoryProductionGenerationControl({
+export function StoryProductionGenerationControl(
+  props: React.ComponentProps<typeof StoryProductionGenerationControlContent>
+) {
+  const { user } = useAuth();
+  return (
+    <StoryProductionGenerationControlContent
+      key={JSON.stringify([
+        props.scope.projectId,
+        props.scope.chapterId,
+        props.target.kind,
+        props.target.sequenceId,
+        props.target.id,
+        props.purpose ?? "primary",
+        user?.id,
+      ])}
+      {...props}
+    />
+  );
+}
+
+function StoryProductionGenerationControlContent({
   scope,
   target,
   label,
@@ -115,6 +137,32 @@ export function StoryProductionGenerationControl({
   /** Missing inputs disable the action without removing it from the workbench. */
   generationDisabledReason?: string;
 }) {
+  const { user } = useAuth();
+  const ownerId = user?.id ?? null;
+  const viewIsCurrent = useStoryOperationScope(
+    JSON.stringify([
+      scope.projectId,
+      scope.chapterId,
+      target.kind,
+      target.sequenceId,
+      target.id,
+      purpose,
+      ownerId,
+    ])
+  );
+  const isCurrent = useStoryOperationScope(
+    JSON.stringify([
+      scope.projectId,
+      scope.chapterId,
+      target.kind,
+      target.sequenceId,
+      target.id,
+      purpose,
+      ownerId,
+      allowGeneration,
+      target.status,
+    ])
+  );
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
   const [submittedGenerations, setSubmittedGenerations] = useState<StoryProductionGeneration[]>([]);
@@ -142,11 +190,11 @@ export function StoryProductionGenerationControl({
       : [];
   const generationQueries = useQueries({
     queries: generationSeeds.map((seed) => ({
-      queryKey: generationQueryKey(scope, target, seed.id),
-      enabled: allowConcurrent ? isGenerationRunning(seed) : true,
+      queryKey: generationQueryKey(scope, target, seed.id, ownerId),
+      enabled: ownerId != null && (allowConcurrent ? isGenerationRunning(seed) : true),
       queryFn: async ({ signal }: { signal: AbortSignal }) => {
         const value = await getGeneration(scope, target, seed.id, signal);
-        if (allowConcurrent) rememberGenerationState(value);
+        if (allowConcurrent && viewIsCurrent()) rememberGenerationState(value);
         return value;
       },
       refetchInterval: (query: { state: { data?: StoryProductionGeneration } }) =>
@@ -156,7 +204,7 @@ export function StoryProductionGenerationControl({
     })),
   });
   const generations = generationSeeds.map((seed, index) => {
-    const key = generationQueryKey(scope, target, seed.id);
+    const key = generationQueryKey(scope, target, seed.id, ownerId);
     return queryGeneration(key, queryClient, generationQueries[index]?.data) ?? seed;
   });
   const generation = newestGeneration(generations);
@@ -186,7 +234,7 @@ export function StoryProductionGenerationControl({
 
   const rememberGeneration = (value: StoryProductionGeneration) => {
     rememberGenerationState(value);
-    queryClient.setQueryData(generationQueryKey(scope, target, value.id), value);
+    queryClient.setQueryData(generationQueryKey(scope, target, value.id, ownerId), value);
   };
 
   const generationDefaults = useStoryProductionGenerationDefaults(scope.projectId, outputKind);
@@ -197,12 +245,15 @@ export function StoryProductionGenerationControl({
     retry: false,
     mutationFn: async ({
       idempotencyKey,
+      isCurrent: admittedIsCurrent,
     }: {
       idempotencyKey: string;
       requestedOutputCount: number;
+      isCurrent: () => boolean;
     }) => {
-      const submit = (version: number) =>
-        createGeneration(
+      const submit = (version: number) => {
+        if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
+        return createGeneration(
           scope,
           { ...target, version },
           effectiveSelection,
@@ -210,13 +261,20 @@ export function StoryProductionGenerationControl({
           purpose,
           idempotencyKey
         );
+      };
+      if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
       return submitGeneration ? submitGeneration(submit) : submit(target.version);
     },
-    onMutate: ({ idempotencyKey, requestedOutputCount }) => {
+    onMutate: ({ idempotencyKey, requestedOutputCount, isCurrent }) => {
       setPendingSubmissions((current) => [...current, { idempotencyKey, requestedOutputCount }]);
+      return { isCurrent };
     },
-    onSuccess: rememberGeneration,
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("requestError"))),
+    onSuccess: (value, _variables, context) => {
+      if (context?.isCurrent()) rememberGeneration(value);
+    },
+    onError: (error, _variables, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, t("requestError")));
+    },
     onSettled: (_data, _error, { idempotencyKey }) => {
       setPendingSubmissions((current) =>
         current.filter((submission) => submission.idempotencyKey !== idempotencyKey)
@@ -226,32 +284,50 @@ export function StoryProductionGenerationControl({
 
   const cancelMutation = useMutation({
     retry: false,
-    mutationFn: () => {
+    mutationFn: (admittedIsCurrent: () => boolean) => {
+      if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
       if (!generation) throw new Error("A Story generation is required before cancelling.");
       return cancelGeneration(scope, target, generation.id);
     },
-    onSuccess: rememberGeneration,
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("cancelError"))),
+    onMutate: (admittedIsCurrent) => ({ isCurrent: admittedIsCurrent }),
+    onSuccess: (value, _variables, context) => {
+      if (context?.isCurrent()) rememberGeneration(value);
+    },
+    onError: (error, _variables, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, t("cancelError")));
+    },
   });
 
   const retryMutation = useMutation({
     retry: false,
-    mutationFn: () => {
+    mutationFn: (admittedIsCurrent: () => boolean) => {
+      if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
       if (!generation) throw new Error("A Story generation is required before retrying.");
       return retryGeneration(scope, target, generation.id);
     },
-    onSuccess: rememberGeneration,
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("requestError"))),
+    onMutate: (admittedIsCurrent) => ({ isCurrent: admittedIsCurrent }),
+    onSuccess: (value, _variables, context) => {
+      if (context?.isCurrent()) rememberGeneration(value);
+    },
+    onError: (error, _variables, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, t("requestError")));
+    },
   });
 
   const attachmentRetryMutation = useMutation({
     retry: false,
-    mutationFn: () => {
+    mutationFn: (admittedIsCurrent: () => boolean) => {
+      if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
       if (!generation) throw new Error("A Story generation is required before reattaching.");
       return retryGenerationMaterialization(scope, target, generation);
     },
-    onSuccess: rememberGeneration,
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("attachmentRetryError"))),
+    onMutate: (admittedIsCurrent) => ({ isCurrent: admittedIsCurrent }),
+    onSuccess: (value, _variables, context) => {
+      if (context?.isCurrent()) rememberGeneration(value);
+    },
+    onError: (error, _variables, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, t("attachmentRetryError")));
+    },
   });
 
   const invalidatedGenerationIds = useRef(new Set<string>());
@@ -296,7 +372,7 @@ export function StoryProductionGenerationControl({
     attachmentRetryMutation.isPending;
   const generationEnabled = allowGeneration && target.status !== "archived";
   const runCommandOnce = async (command: () => Promise<StoryProductionGeneration>) => {
-    if (commandInFlight.current) return;
+    if (!isCurrent() || !generationEnabled || commandInFlight.current) return;
     commandInFlight.current = true;
     try {
       await command();
@@ -316,7 +392,9 @@ export function StoryProductionGenerationControl({
       loading={!allowConcurrent && layout === "stage" && createMutation.isPending}
       disabled={Boolean(generationDisabledReason) || (!allowConcurrent && actionPending)}
       onClick={() => {
+        if (!isCurrent() || !generationEnabled || generationDisabledReason) return;
         const request = {
+          isCurrent,
           idempotencyKey: createStoryProductionIdempotencyKey("story-generate"),
           requestedOutputCount: requestedOutputCountFromSettings(effectiveOptions),
         };
@@ -343,7 +421,7 @@ export function StoryProductionGenerationControl({
       size="sm"
       loading={cancelMutation.isPending}
       disabled={actionPending}
-      onClick={() => void runCommandOnce(() => cancelMutation.mutateAsync())}
+      onClick={() => void runCommandOnce(() => cancelMutation.mutateAsync(isCurrent))}
     >
       <IconX />
       {t("cancel")}
@@ -353,7 +431,7 @@ export function StoryProductionGenerationControl({
       size="sm"
       loading={attachmentRetryMutation.isPending}
       disabled={actionPending}
-      onClick={() => void runCommandOnce(() => attachmentRetryMutation.mutateAsync())}
+      onClick={() => void runCommandOnce(() => attachmentRetryMutation.mutateAsync(isCurrent))}
     >
       <IconRefresh />
       {t("retryAttachment")}
@@ -363,7 +441,7 @@ export function StoryProductionGenerationControl({
       size="sm"
       loading={retryMutation.isPending}
       disabled={actionPending}
-      onClick={() => void runCommandOnce(() => retryMutation.mutateAsync())}
+      onClick={() => void runCommandOnce(() => retryMutation.mutateAsync(isCurrent))}
     >
       <IconRefresh />
       {t("retry")}
@@ -507,16 +585,20 @@ function MediaPreview({
 function generationQueryKey(
   scope: GenerationScope,
   target: GenerationTarget,
-  generationId: string | null
+  generationId: string | null,
+  ownerId: string | number | null
 ) {
-  return storyProductionKeys.generation(
-    scope.projectId,
-    scope.chapterId,
-    target.kind,
-    target.sequenceId,
-    target.id,
-    generationId
-  );
+  return [
+    ...storyProductionKeys.generation(
+      scope.projectId,
+      scope.chapterId,
+      target.kind,
+      target.sequenceId,
+      target.id,
+      generationId
+    ),
+    ownerId,
+  ] as const;
 }
 
 function queryGeneration(

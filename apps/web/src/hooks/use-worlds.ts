@@ -1,3 +1,4 @@
+import { useCurrentUser } from "./use-user";
 import { useQuery, useQueries } from "@tanstack/react-query";
 import { backendApi, type Paginated } from "@/src/lib/api";
 
@@ -40,14 +41,16 @@ const WORLD_LIST_URLS: Record<WorldListType, string> = {
   created: "/api/user/world/query/myworld",
 };
 
-async function fetchWorldList(type: WorldListType) {
+async function fetchWorldList(type: WorldListType, signal: AbortSignal) {
   return backendApi.post<Paginated<V1World>>(WORLD_LIST_URLS[type], {
+    signal,
     data: { page: 1, pageSize: 100 },
   });
 }
 
-async function fetchWorldProducts(worldId: string) {
+async function fetchWorldProducts(worldId: string, signal: AbortSignal) {
   return backendApi.post<Paginated<V1WorldProduct>>("/api/user/world/list/worldproduct", {
+    signal,
     data: { page: 1, pageSize: 100, worldId },
   });
 }
@@ -63,17 +66,21 @@ async function fetchWorldProducts(worldId: string) {
  * 3. 组合为 WorldGroup[]，过滤掉无项目的空世界
  */
 export function useWorldsWithProducts(type: WorldListType = "own") {
+  const { user } = useCurrentUser();
+  const viewer = user?.id ?? null;
   const worldsQuery = useQuery({
-    queryKey: worldKeys.list(type),
-    queryFn: () => fetchWorldList(type),
+    queryKey: [...worldKeys.list(type), viewer],
+    enabled: !!viewer,
+    queryFn: ({ signal }) => fetchWorldList(type, signal),
   });
 
   const worlds = worldsQuery.data?.list ?? [];
 
   const productQueries = useQueries({
     queries: worlds.map((world) => ({
-      queryKey: worldKeys.products(world.id),
-      queryFn: () => fetchWorldProducts(world.id),
+      queryKey: [...worldKeys.products(world.id), viewer],
+      enabled: !!viewer,
+      queryFn: ({ signal }: { signal: AbortSignal }) => fetchWorldProducts(world.id, signal),
     })),
   });
 
@@ -96,6 +103,12 @@ export function useWorldsWithProducts(type: WorldListType = "own") {
     totalProducts: groups.reduce((sum, g) => sum + g.products.length, 0),
     isLoading: worldsQuery.isLoading || isProductsLoading,
     isError: worldsQuery.isError || productQueries.some((q) => q.isError),
-    error: worldsQuery.error,
+    error: worldsQuery.error ?? productQueries.find((q) => q.error)?.error,
+    retry: async () => {
+      await Promise.all([
+        worldsQuery.refetch(),
+        ...productQueries.filter((q) => q.isError).map((q) => q.refetch()),
+      ]);
+    },
   };
 }

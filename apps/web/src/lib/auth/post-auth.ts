@@ -99,6 +99,9 @@ export function resolveRedirectTarget(redirect: string | null | undefined): stri
   if (!redirect) return null;
   const trimmed = redirect.trim();
   if (!trimmed) return null;
+  // Browsers normalize backslashes as path separators and strip control
+  // characters, which can turn an apparent local path into a network URL.
+  if (/[\\\u0000-\u001f\u007f]/.test(trimmed)) return null;
   if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
     return trimmed;
   }

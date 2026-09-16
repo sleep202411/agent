@@ -1,3 +1,4 @@
+import { ensureWalletAccount } from './wallet-account-admission';
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
 import {
@@ -77,6 +78,7 @@ export class WalletLedgerService {
   async ensureDefaultAccounts(
     ownerType: WalletOwnerType,
     ownerId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<WalletAccount[]> {
     const specs =
       ownerType === WalletOwnerType.workspace
@@ -85,23 +87,11 @@ export class WalletLedgerService {
     const accounts: WalletAccount[] = [];
     for (const accountSpec of specs) {
       accounts.push(
-        await this.prisma.walletAccount.upsert({
-          where: {
-            ownerType_ownerId_currency_balanceKind: {
-              ownerType,
-              ownerId,
-              currency: accountSpec.currency,
-              balanceKind: accountSpec.balanceKind,
-            },
-          },
-          create: {
-            ownerType,
-            ownerId,
-            currency: accountSpec.currency,
-            balanceKind: accountSpec.balanceKind,
-            status: WalletAccountStatus.active,
-          },
-          update: {},
+        await ensureWalletAccount(client, {
+          ownerType,
+          ownerId,
+          currency: accountSpec.currency,
+          balanceKind: accountSpec.balanceKind,
         }),
       );
     }
@@ -134,11 +124,46 @@ export class WalletLedgerService {
   ): Promise<PostedWalletEntry> {
     assertPositiveLedgerAmount(input.amount);
 
+    // Match callers that already hold the account lock; then serialize one intent
+    // even when competing callers accidentally supply different accounts.
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${input.accountId}`})::bigint)
+    `;
+
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:intent:${input.idempotencyKey}`})::bigint)`;
+
     const existing = await tx.walletTransaction.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
       include: { entries: true },
     });
     if (existing?.entries[0]) {
+      const entry = existing.entries[0];
+      if (
+        existing.entries.length !== 1 ||
+        entry.accountId !== input.accountId ||
+        entry.entryType !== input.entryType ||
+        entry.amount !== input.amount ||
+        entry.availableDelta !== input.availableDelta ||
+        entry.heldDelta !== input.heldDelta ||
+        existing.sourceType !== input.sourceType ||
+        existing.sourceId !== (input.sourceId ?? null)
+      ) {
+        throw new ConflictException({
+          code: 'WALLET_ENTRY_INTENT_CONFLICT',
+          msg: 'This wallet entry intent was already used for a different request.',
+        });
+      }
+      if (input.creditGrant) {
+        const grant = await tx.walletCreditGrant.findFirst({
+          where: { accountId: input.accountId, transactionId: existing.id },
+        });
+        if (!grant || grant.grantType !== input.creditGrant.grantType) {
+          throw new ConflictException({
+            code: 'WALLET_ENTRY_INTENT_CONFLICT',
+            msg: 'This wallet entry intent was already used for different grant terms.',
+          });
+        }
+      }
       const account = await tx.walletAccount.findUniqueOrThrow({
         where: { id: existing.entries[0].accountId },
       });
@@ -149,10 +174,6 @@ export class WalletLedgerService {
         deduped: true,
       };
     }
-
-    await tx.$executeRaw`
-      SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${input.accountId}`})::bigint)
-    `;
 
     const account = await tx.walletAccount.findUniqueOrThrow({
       where: { id: input.accountId },

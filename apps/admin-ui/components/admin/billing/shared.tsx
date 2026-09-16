@@ -181,12 +181,14 @@ export function Select({
   onChange,
   title,
   children,
+  disabled,
 }: {
   name?: string;
   value?: string;
   defaultValue?: string;
   onChange?: (value: string) => void;
   title?: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   const options = optionsFromChildren(children);
@@ -211,7 +213,7 @@ export function Select({
         };
 
   return (
-    <ShadSelect {...rootProps}>
+    <ShadSelect {...rootProps} disabled={disabled}>
       {name ? <input type="hidden" name={name} value={currentValue} /> : null}
       <SelectTrigger
         title={title}
@@ -592,9 +594,10 @@ export function RefundQuotePanel({ quote }: { quote: BillingRefundQuoteData | nu
 // API envelope helpers
 // ---------------------------------------------------------------------------
 
-export async function requestEnvelope<T>(url: string): Promise<T> {
-  const response = await fetch(adminUiApiPath(url), { cache: "no-store" });
+export async function requestEnvelope<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(adminUiApiPath(url), { cache: "no-store", signal });
   const payload = (await response.json().catch(() => null)) as AdminApiPayload<T> | null;
+  signal?.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(adminApiErrorMessage(payload, response.status));
   }
@@ -604,14 +607,17 @@ export async function requestEnvelope<T>(url: string): Promise<T> {
 export async function mutateEnvelope<T = unknown>(
   url: string,
   body: Record<string, unknown>,
-  method = "POST"
+  method = "POST",
+  signal?: AbortSignal
 ): Promise<T> {
   const response = await fetch(adminUiApiPath(url), {
     method,
+    signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   const payload = (await response.json().catch(() => null)) as AdminApiPayload<T> | null;
+  signal?.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(adminApiErrorMessage(payload, response.status));
   }

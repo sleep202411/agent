@@ -1,5 +1,7 @@
 import {
   resolveMediaPlaybackUrl,
+  resolveMediaPublicVariantUrl,
+  MediaAssetUrlResolverService,
   type GatedMediaAsset,
   type ResolvableMediaAssetVariant,
 } from './media-asset-url-resolver.service';
@@ -102,4 +104,63 @@ describe('resolveMediaPlaybackUrl', () => {
       ).url,
     ).toBeNull();
   });
+  it('plays a ready rendition even when the original placement is unavailable', () => {
+    const source = asset({
+      bucket: null,
+      objectKey: null,
+      variants: [hlsVariant()],
+    });
+    expect(resolveMediaPlaybackUrl(source)).toEqual({
+      url: HLS,
+      contentType: 'application/vnd.apple.mpegurl',
+    });
+    expect(resolveMediaPublicVariantUrl(source, 'hls')).toBe(HLS);
+  });
+
+  it.each(['pending', 'processing', 'failed', 'blocked', 'deleted'])(
+    'rejects a named %s rendition',
+    (status) => {
+      const source = asset({ variants: [hlsVariant({ status })] });
+      expect(resolveMediaPublicVariantUrl(source, 'hls')).toBeNull();
+    },
+  );
+
+  it('does not bypass an explicitly blocked original variant through the legacy URL', () => {
+    const source = asset({
+      variants: [hlsVariant({ variantKey: 'original', status: 'blocked' })],
+    });
+    expect(resolveMediaPublicVariantUrl(source, 'original')).toBeNull();
+  });
+
+  it('preserves legacy originals without variant records or status fields', () => {
+    expect(resolveMediaPublicVariantUrl(asset(), 'original')).toBe(MP4);
+    expect(
+      new MediaAssetUrlResolverService().resolveVariant(
+        asset({ variants: [hlsVariant({ status: undefined })] }),
+        'hls',
+      ),
+    ).toBe(HLS);
+  });
+
+  it.each([
+    { status: 'processing' },
+    { status: 'deleted' },
+    { moderationStatus: 'blocked' },
+    { deletedAt: new Date() },
+  ])(
+    'keeps the asset eligibility gate when only a rendition is available: %o',
+    (gate) => {
+      const source = asset({
+        ...gate,
+        bucket: null,
+        objectKey: null,
+        variants: [hlsVariant()],
+      });
+      expect(resolveMediaPlaybackUrl(source)).toEqual({
+        url: null,
+        contentType: null,
+      });
+      expect(resolveMediaPublicVariantUrl(source, 'hls')).toBeNull();
+    },
+  );
 });

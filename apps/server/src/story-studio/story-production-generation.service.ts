@@ -306,6 +306,7 @@ export class StoryProductionGenerationService
   private timer: NodeJS.Timeout | null = null;
   private unregisterObserver: (() => void) | null = null;
   private draining = false;
+  private stopping = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -318,6 +319,7 @@ export class StoryProductionGenerationService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopping || this.unregisterObserver) return;
     this.unregisterObserver = this.completionObservers.register(this);
     if (
       process.env.STORY_PRODUCTION_GENERATION_RECONCILER_ENABLED === 'false'
@@ -338,6 +340,7 @@ export class StoryProductionGenerationService
   }
 
   onModuleDestroy(): void {
+    this.stopping = true;
     this.unregisterObserver?.();
     this.unregisterObserver = null;
     if (this.timer) clearInterval(this.timer);
@@ -981,17 +984,19 @@ export class StoryProductionGenerationService
   }
 
   async onAiGenerationCompleted(job: AiJob): Promise<void> {
-    if (job.sourceSurface !== STORY_STUDIO_WORKBENCH_SURFACE) return;
+    if (this.stopping || job.sourceSurface !== STORY_STUDIO_WORKBENCH_SURFACE)
+      return;
     await this.reconcileCompletedGeneration(job.id, true, true);
   }
 
   async drainOnce(batch = DEFAULT_RECONCILE_BATCH_SIZE): Promise<void> {
-    if (this.draining) return;
+    if (this.stopping || this.draining) return;
     this.draining = true;
     try {
       const ids = await this.claimCompletedGenerations(
         Math.max(1, Math.trunc(batch)),
       );
+      if (this.stopping) return;
       await Promise.all(
         ids.map((id) =>
           this.reconcileCompletedGeneration(id, false, true, true),
@@ -1832,6 +1837,7 @@ export class StoryProductionGenerationService
     logFailure = false,
     reconcileLeaseAlreadyClaimed = false,
   ): Promise<void> {
+    if (this.stopping) return;
     const generation = await this.prisma.storyProductionGeneration.findFirst({
       where: idMayBeJobId
         ? { OR: [{ id: generationOrJobId }, { aiJobId: generationOrJobId }] }
@@ -1845,6 +1851,7 @@ export class StoryProductionGenerationService
       },
     });
     if (
+      this.stopping ||
       !generation ||
       generation.materializedAt ||
       generation.aiJob.status !== AiJobStatus.completed
@@ -1858,6 +1865,7 @@ export class StoryProductionGenerationService
       return;
     }
 
+    if (this.stopping) return;
     try {
       await this.materializeGeneration(generation.id);
     } catch (error) {

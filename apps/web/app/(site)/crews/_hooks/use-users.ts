@@ -61,11 +61,14 @@ export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
       user?.id ?? null,
     ] as const,
     enabled,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       if (!detected) throw new Error("Unreachable: query disabled");
       const params = new URLSearchParams({ [detected.kind]: detected.value });
       if (checkCrewId) params.set("checkCrewId", checkCrewId);
-      return crewApi.get<LookupUserDTO>(`/users/lookup?${params.toString()}`);
+      return crewApi.get<LookupUserDTO>(`/users/lookup?${params.toString()}`, {
+        signal,
+        cache: "no-store",
+      });
     },
     retry: false,
     staleTime: 5 * 60 * 1000,
@@ -123,11 +126,14 @@ export function useUserDisplays(userIds: readonly string[]): Map<string, LookupU
   const q = useQuery({
     queryKey: ["users", "displays", sorted, user?.id ?? null] as const,
     enabled: sorted.length > 0 && Boolean(user),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const pages = await Promise.all(
         chunkUserDisplayIds(sorted).map((chunk) => {
           const params = new URLSearchParams({ ids: chunk.join(",") });
-          return crewApi.get<ByIdsResponse>(`/users/by-ids?${params.toString()}`);
+          return crewApi.get<ByIdsResponse>(`/users/by-ids?${params.toString()}`, {
+            signal,
+            cache: "no-store",
+          });
         })
       );
       return pages.flatMap((page) => page.users ?? []);

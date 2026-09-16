@@ -1,6 +1,7 @@
 import { StoryAccessModule } from '../story-studio/story-access.module';
 import { StoryCrewAssetsController } from './assets/story-crew-assets.controller';
 import { CrewStudioWorkspaceService } from './production/studio-workspace.service';
+import { CrewStudioWorkspaceController } from './production/studio-workspace.controller';
 import { CrewAccountabilityController } from './accountability/accountability.controller';
 import { CrewAccountabilityService } from './accountability/accountability.service';
 import {
@@ -94,6 +95,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewStudioWorkspaceController,
     StoryCrewAssetsController,
     CrewAccountabilityController,
     CrewTrustAppealController,

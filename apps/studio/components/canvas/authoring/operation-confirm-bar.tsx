@@ -181,7 +181,7 @@ export function useSpawnComposedOperation() {
   return useCallback(
     (op: OperationDef, sourceNodeId: string, sourceUrl: string) => {
       const model = op.findModel(catalog);
-      if (!model) {
+      if (!model || !model.enabled) {
         toast.error(t("noModelForOp", { op: t(op.labelKey) }));
         return;
       }
@@ -359,7 +359,7 @@ export function OperationConfirmBar({
   const lock = model ? fizzAiModelLock(model) : null;
 
   const onRun = () => {
-    if (!model) {
+    if (!model || !model.enabled) {
       toast.error(t("noModelForOp", { op: t(op.labelKey) }));
       return;
     }

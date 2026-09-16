@@ -3,7 +3,8 @@
 // Cross-workspace compute consumption: who spent how much from which
 // workspace pot. Backed by GET /billing/usage/member-compute.
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -62,7 +63,8 @@ export function BillingComputeMemberUsagePanel({
   const [userQuery, setUserQuery] = useState("");
   const [data, setData] = useState<AdminComputeMemberUsageData>(initialData ?? emptyUsage);
   const [previousInitialData, setPreviousInitialData] = useState(initialData);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const filters = useRef({ days, workspaceKind });
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
@@ -70,9 +72,13 @@ export function BillingComputeMemberUsagePanel({
     days?: number;
     workspaceKind?: AdminComputeMemberUsageData["workspaceKind"];
   }) {
-    const nextDays = next?.days ?? days;
-    const nextKind = next?.workspaceKind ?? workspaceKind;
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
+    const nextDays = next?.days ?? filters.current.days;
+    const nextKind = next?.workspaceKind ?? filters.current.workspaceKind;
+    filters.current = { days: nextDays, workspaceKind: nextKind };
+    setDays(nextDays);
+    setWorkspaceKind(nextKind);
     setError(null);
     try {
       const params = new URLSearchParams({
@@ -100,22 +106,32 @@ export function BillingComputeMemberUsagePanel({
         }
       }
       const nextData = await requestEnvelope<AdminComputeMemberUsageData>(
-        `/api/admin/billing/usage/member-compute?${params.toString()}`
+        `/api/admin/billing/usage/member-compute?${params.toString()}`,
+        operation.signal
       );
+      if (!operation.current()) return;
       setData(nextData);
       setExpanded(new Set());
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
-  // Reconcile a new server snapshot before children render, preserving local
-  // filters and refresh results when the incoming snapshot has not changed.
+  // Accept new server snapshots only for the currently selected query.
+  // Unchanged props must not replace an explicit client refresh result.
   if (initialData !== previousInitialData) {
     setPreviousInitialData(initialData);
-    if (initialData) setData(initialData);
+    if (
+      initialData &&
+      initialData.rangeDays === days &&
+      initialData.workspaceKind === workspaceKind &&
+      initialData.workspaceId === (workspaceFilter.trim() || null) &&
+      !userQuery.trim()
+    ) {
+      setData(initialData);
+    }
   }
 
   function toggle(userId: string) {
@@ -166,7 +182,6 @@ export function BillingComputeMemberUsagePanel({
                   key={tab.key}
                   type="button"
                   onClick={() => {
-                    setWorkspaceKind(tab.key);
                     void refresh({ workspaceKind: tab.key });
                   }}
                   className={
@@ -189,7 +204,6 @@ export function BillingComputeMemberUsagePanel({
                   key={option}
                   type="button"
                   onClick={() => {
-                    setDays(option);
                     void refresh({ days: option });
                   }}
                   className={

@@ -156,9 +156,52 @@ function makeService() {
       count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn().mockResolvedValue([]),
     },
-    walletAccount: { upsert: jest.fn().mockResolvedValue({ id: 'acct-1' }) },
+    walletAccount: {
+      createMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findUniqueOrThrow: jest
+        .fn()
+        .mockResolvedValue({ id: 'acct-1', ownerId: 'ws-1' }),
+    },
+    walletTransaction: { findUnique: jest.fn().mockResolvedValue(null) },
     $transaction: jest.fn((fn: (t: typeof tx) => unknown) => fn(tx)),
   };
+  Object.assign(tx, {
+    billingOrder: prisma.billingOrder,
+    referralCommissionRate: prisma.referralCommissionRate,
+    referralAttribution: {
+      ...tx.referralAttribution,
+      findUnique: prisma.referralAttribution.findUnique,
+    },
+    walletAccount: prisma.walletAccount,
+    walletTransaction: prisma.walletTransaction,
+    $executeRaw: jest.fn().mockResolvedValue(0),
+    referralProgram: prisma.referralProgram,
+    referralMilestoneConfig: prisma.referralMilestoneConfig,
+    $queryRaw: jest
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve([{ allowed: true, now: new Date() }]),
+      ),
+    referralReward: {
+      ...tx.referralReward,
+      create: prisma.referralReward.create,
+      findFirst: prisma.referralReward.findFirst,
+      findUnique: prisma.referralReward.findUnique,
+      updateMany: prisma.referralReward.updateMany,
+    },
+    referralRewardItem: {
+      ...tx.referralRewardItem,
+      ...prisma.referralRewardItem,
+    },
+  });
+  Object.assign(tx.referralReward, {
+    findUnique: prisma.referralReward.findUnique,
+    updateMany: prisma.referralReward.updateMany,
+  });
+  Object.assign(tx, {
+    referralProgram: prisma.referralProgram,
+    referralMilestoneConfig: prisma.referralMilestoneConfig,
+  });
   const legacy = {
     queryOne: jest.fn(),
     query: jest.fn().mockResolvedValue([]),
@@ -167,7 +210,13 @@ function makeService() {
     grantComplimentary: jest.fn().mockResolvedValue({}),
     assertPlanGrantable: jest.fn().mockResolvedValue(undefined),
   };
-  const walletLedger = { postEntry: jest.fn().mockResolvedValue({}) };
+  const postEntry = jest
+    .fn<Promise<unknown>, [unknown]>()
+    .mockResolvedValue({});
+  const walletLedger = {
+    postEntry,
+    postEntryTx: (_tx: unknown, input: unknown) => postEntry(input),
+  };
   const workspaces = {
     ensureDefaultWorkspace: jest.fn().mockResolvedValue({ id: 'ws-1' }),
   };
@@ -238,6 +287,16 @@ type CommissionOrder = {
 };
 
 function accrueCommission(service: ReferralsService, order: CommissionOrder) {
+  const db = (
+    service as unknown as {
+      prisma: { billingOrder: { findUnique: jest.Mock } };
+    }
+  ).prisma;
+  db.billingOrder.findUnique.mockResolvedValue({
+    ...order,
+    status: 'paid',
+    orderType: 'subscription_checkout',
+  });
   return (
     service as unknown as {
       accrueCommissionForOrder(o: CommissionOrder): Promise<void>;
@@ -519,7 +578,7 @@ describe('claimReward', () => {
     );
   });
 
-  it('flips accrued→paid_out FIRST, then grants the bundle to the withdrawable wallet', async () => {
+  it('records paid_out after the bundle and its markers inside the transaction', async () => {
     const { service, prisma, walletLedger } = makeService();
     prisma.referralReward.findUnique.mockResolvedValue(rewardRow());
     prisma.referralReward.updateMany.mockResolvedValue({ count: 1 });
@@ -533,10 +592,10 @@ describe('claimReward', () => {
         where: { id: 'rw-1', status: 'accrued' },
       }),
     );
-    // CAS committed before the wallet credit went out.
+    // The status write follows the credit inside the same transaction.
     expect(
       prisma.referralReward.updateMany.mock.invocationCallOrder[0],
-    ).toBeLessThan(walletLedger.postEntry.mock.invocationCallOrder[0]);
+    ).toBeGreaterThan(walletLedger.postEntry.mock.invocationCallOrder[0]);
     const entry = firstCallArg<Record<string, unknown>>(walletLedger.postEntry);
     expect(entry.availableDelta).toBe(300n);
     expect(entry.idempotencyKey).toBe(
@@ -547,11 +606,14 @@ describe('claimReward', () => {
     );
   });
 
-  it('returns paid_out without granting when a concurrent claim won the CAS', async () => {
+  it('returns paid_out without granting when the locked reward is already complete', async () => {
     const { service, prisma, walletLedger } = makeService();
-    prisma.referralReward.findUnique
-      .mockResolvedValueOnce(rewardRow())
-      .mockResolvedValueOnce({ status: 'paid_out' });
+    prisma.referralReward.findUnique.mockResolvedValue(
+      rewardRow({ status: 'paid_out' }),
+    );
+    prisma.referralRewardItem.findMany.mockResolvedValue([
+      cashItem({ grantedAt: new Date() }),
+    ]);
     prisma.referralReward.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(service.claimReward(REFERRER, 'rw-1')).resolves.toEqual({
@@ -560,11 +622,11 @@ describe('claimReward', () => {
     expect(walletLedger.postEntry).not.toHaveBeenCalled();
   });
 
-  it('refuses (and never grants) when a refund reversal won the CAS', async () => {
+  it('refuses and never grants when the locked reward is reversed', async () => {
     const { service, prisma, walletLedger } = makeService();
-    prisma.referralReward.findUnique
-      .mockResolvedValueOnce(rewardRow())
-      .mockResolvedValueOnce({ status: 'reversed' });
+    prisma.referralReward.findUnique.mockResolvedValue(
+      rewardRow({ status: 'reversed' }),
+    );
     prisma.referralReward.updateMany.mockResolvedValue({ count: 0 });
 
     await expect(service.claimReward(REFERRER, 'rw-1')).rejects.toThrow(
@@ -640,10 +702,11 @@ describe('claimReward', () => {
         planKey: COMMUNITY_MEMBERSHIP_PLAN_KEY,
         durationDays: 7,
       }),
+      expect.any(Object),
     );
   });
 
-  it('releases the paid_out flip when the payout throws, so the holder can retry', async () => {
+  it('does not write paid_out when a bundle payout throws', async () => {
     const { service, prisma, entitlements } = makeService();
     prisma.referralReward.findUnique.mockResolvedValue(
       rewardRow({ payoutType: 'membership_community' }),
@@ -660,10 +723,7 @@ describe('claimReward', () => {
 
     await expect(service.claimReward(REFERRER, 'rw-1')).rejects.toThrow('boom');
 
-    expect(prisma.referralReward.updateMany).toHaveBeenLastCalledWith({
-      where: { id: 'rw-1', status: 'paid_out' },
-      data: { status: 'accrued', paidOutAt: null },
-    });
+    expect(prisma.referralReward.updateMany).not.toHaveBeenCalled();
   });
 
   // A membership payout is only as good as its plan row. Saving a tier that
@@ -905,7 +965,7 @@ describe('qualifyRefereePurchase', () => {
   });
 
   it('requires at least one paid order', async () => {
-    const { service, prisma } = makeService();
+    const { service, prisma, tx } = makeService();
     prisma.referralAttribution.findUnique.mockResolvedValue(
       attributionRow({ status: 'pending' }),
     );
@@ -914,7 +974,7 @@ describe('qualifyRefereePurchase', () => {
 
     await service.qualifyRefereePurchase(REFEREE);
 
-    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.referralAttribution.updateMany).not.toHaveBeenCalled();
   });
 
   it('no longer accrues milestones (moved to the registration-based path)', async () => {

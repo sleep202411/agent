@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import {
   IconAlertTriangle,
   IconCheck,
@@ -42,6 +44,7 @@ const LABEL_CLASS = "@max-[1000px]:sr-only";
 
 /** Project publication status is read directly from Java by projectId. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const queryClient = useQueryClient();
@@ -52,9 +55,10 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
 
   const workbenchQuery = useQuery({
     queryKey: activeChapterId
-      ? storyChapterWorkbenchQueryKey(projectId, activeChapterId)
-      : ["story-studio", "script-workbench", projectId],
-    queryFn: () => getStoryWorkbench(projectId, activeChapterId ?? undefined),
+      ? storyChapterWorkbenchQueryKey(projectId, activeChapterId, user?.id ?? null)
+      : ["story-studio", "script-workbench", projectId, user?.id ?? null],
+    queryFn: ({ signal }) => getStoryWorkbench(projectId, activeChapterId ?? undefined, signal),
+    enabled: Boolean(projectId && user),
     retry: false,
   });
   const workbench = workbenchQuery.data ?? null;

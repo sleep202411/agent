@@ -6,6 +6,7 @@ import {
   type StoryAgentRunDto,
 } from "../api/story-agent-runs-api";
 import { isAgentOsId } from "../lib/ids";
+import { useStoryRequestScope } from "./use-story-request-scope";
 
 const POLL_MS = 1_500;
 
@@ -21,7 +22,7 @@ export function useStoryAuthoringRun(
   const [run, setRun] = useState<StoryAgentRunDto | null>(null);
   const projectOk = isAgentOsId(projectId);
   const chapterOk = isAgentOsId(chapterId);
-  const identity = `${projectId}:${chapterId}`;
+  const identity = useStoryRequestScope(`${projectId}:${chapterId}`);
   const [previousIdentity, setPreviousIdentity] = useState(identity);
   if (previousIdentity !== identity) {
     setPreviousIdentity(identity);
@@ -29,16 +30,17 @@ export function useStoryAuthoringRun(
   }
 
   useEffect(() => {
-    if (!projectOk || !chapterOk) {
+    if (!identity.enabled || !projectOk || !chapterOk) {
       return;
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const tick = async () => {
       try {
-        const next = await getActiveStoryAgentRun(projectId, chapterId);
+        const next = await getActiveStoryAgentRun(projectId, chapterId, controller.signal);
         if (cancelled) return;
         setRun(next);
         const keepGoing = agentBusy || next?.status === "authoring" || next?.status === "applying";
@@ -51,9 +53,10 @@ export function useStoryAuthoringRun(
     void tick();
     return () => {
       cancelled = true;
+      controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [agentBusy, chapterId, chapterOk, projectId, projectOk]);
+  }, [agentBusy, chapterId, chapterOk, projectId, projectOk, identity]);
 
   return run;
 }
@@ -66,7 +69,7 @@ export function useStoryAgentRunById(
   const [run, setRun] = useState<StoryAgentRunDto | null>(null);
   const projectOk = isAgentOsId(projectId);
   const runOk = isAgentOsId(runId);
-  const identity = `${projectId}:${runId}`;
+  const identity = useStoryRequestScope(`${projectId}:${runId}`);
   const [previousIdentity, setPreviousIdentity] = useState(identity);
   if (previousIdentity !== identity) {
     setPreviousIdentity(identity);
@@ -74,11 +77,12 @@ export function useStoryAgentRunById(
   }
 
   useEffect(() => {
-    if (!projectOk || !runOk || !runId) {
+    if (!identity.enabled || !projectOk || !runOk || !runId) {
       return;
     }
     let cancelled = false;
-    void getStoryAgentRun(projectId, runId)
+    const controller = new AbortController();
+    void getStoryAgentRun(projectId, runId, controller.signal)
       .then((next) => {
         if (!cancelled) setRun(next);
       })
@@ -87,8 +91,9 @@ export function useStoryAgentRunById(
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [projectId, projectOk, runId, runOk]);
+  }, [projectId, projectOk, runId, runOk, identity]);
 
   return run;
 }

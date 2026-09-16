@@ -30,6 +30,7 @@ export function useMyCrewEarnings(currency: CrewLedgerCurrency) {
     queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewEarningPageDTO>("/me/crew-earnings", {
         signal,
+        cache: "no-store",
         query: { currency, cursor: pageParam, limit: 50 },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
@@ -41,8 +42,11 @@ export function useCrewEarningDetail(earningId: string | null) {
   return useQuery({
     queryKey: [...crewKeys.earning(earningId ?? ""), user?.id ?? null],
     enabled: Boolean(earningId) && Boolean(user),
-    queryFn: () =>
-      crewApi.get<CrewEarningDetailDTO>(`/crew-earnings/${encodeURIComponent(earningId!)}`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewEarningDetailDTO>(`/crew-earnings/${encodeURIComponent(earningId!)}`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
@@ -67,8 +71,10 @@ export function useCrewEarnings(
     ],
     enabled: enabled && Boolean(crewId) && Boolean(user),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewEarningPageDTO>(`/crews/${encodeURIComponent(crewId)}/earnings`, {
+        signal,
+        cache: "no-store",
         query: {
           currency: input.currency,
           scope: input.scope,

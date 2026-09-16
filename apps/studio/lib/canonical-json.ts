@@ -13,7 +13,7 @@ function canonicalizeJson(value: unknown, path = "$"): CanonicalJson {
     return Object.is(value, -0) ? 0 : value;
   }
   if (Array.isArray(value)) {
-    return value.map((item, index) => canonicalizeJson(item, `${path}[${index}]`));
+    return Array.from(value, (item, index) => canonicalizeJson(item, `${path}[${index}]`));
   }
   if (typeof value === "object") {
     const prototype = Reflect.getPrototypeOf(value);
@@ -24,7 +24,12 @@ function canonicalizeJson(value: unknown, path = "$"): CanonicalJson {
     const result: Record<string, CanonicalJson> = {};
     for (const key of Object.keys(source).sort()) {
       if (source[key] === undefined) throw new TypeError(`Undefined value at ${path}.${key}.`);
-      result[key] = canonicalizeJson(source[key], `${path}.${key}`);
+      Object.defineProperty(result, key, {
+        value: canonicalizeJson(source[key], `${path}.${key}`),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     return result;
   }

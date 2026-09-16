@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconBuilding, IconLink } from "@tabler/icons-react";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -22,6 +22,7 @@ type Workspace = { id: string; name: string };
 export function CrewStudioWorkspacePicker(props: {
   crewId: string;
   value: Workspace | null;
+  legacyProject?: Workspace | null;
   disabled: boolean;
 }) {
   const { user } = useCurrentUser();
@@ -37,21 +38,31 @@ function WorkspacePickerSession({
   crewId,
   userId,
   value,
+  legacyProject,
   disabled,
 }: {
   crewId: string;
   userId: string;
   value: Workspace | null;
+  legacyProject?: Workspace | null;
   disabled: boolean;
 }) {
   const t = useTranslations("crewWorkspaceLink");
   const locale = useLocale();
+  const legacy = value ? null : legacyProject;
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
-  useEffect(() => () => request.current?.abort(), []);
+  const active = useRef(false);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      request.current?.abort();
+    };
+  }, []);
   const options = useQuery({
     queryKey: ["crew-studio-workspaces", crewId, userId],
     queryFn: ({ signal }) =>
@@ -62,7 +73,7 @@ function WorkspacePickerSession({
     retry: false,
   });
   async function select(workspaceId: string | null) {
-    if (request.current || disabled) return;
+    if (!active.current || !userId || request.current || disabled) return;
     const controller = new AbortController();
     request.current = controller;
     setSaving(true);
@@ -76,6 +87,7 @@ function WorkspacePickerSession({
       await client.invalidateQueries({
         queryKey: [...crewKeys.productionOverview(crewId), userId],
       });
+      if (controller.signal.aborted) return;
       await client.invalidateQueries({ queryKey: ["crew-studio-workspaces", crewId, userId] });
       if (!controller.signal.aborted) setOpen(false);
     } catch (err) {
@@ -104,11 +116,15 @@ function WorkspacePickerSession({
             icon={<IconLink className="size-3.5" />}
             className="max-w-48 text-xs"
           >
-            <span className="truncate">{value?.name ?? t("link")}</span>
+            <span className="truncate">
+              {value?.name ?? (legacy ? t("legacyProject", { name: legacy.name }) : t("link"))}
+            </span>
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-[min(360px,calc(100vw-2rem))] p-3">
-          <p className="mb-3 text-xs text-muted-foreground">{t("description")}</p>
+          <p className="mb-3 text-xs text-muted-foreground">
+            {legacy ? t("legacyDescription", { name: legacy.name }) : t("description")}
+          </p>
           {error || options.isError ? (
             <div role="alert" className="mb-2 text-xs text-destructive">
               {error ?? options.error?.message}
@@ -137,9 +153,9 @@ function WorkspacePickerSession({
                   <span className="truncate">{workspace.name}</span>
                 </CommandItem>
               ))}
-              {value ? (
+              {value || legacy ? (
                 <CommandItem disabled={saving} onSelect={() => void select(null)}>
-                  {t("unlink")}
+                  {legacy ? t("unlinkProject") : t("unlink")}
                 </CommandItem>
               ) : null}
             </CommandList>

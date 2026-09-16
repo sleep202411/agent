@@ -9,9 +9,9 @@ export async function getStoredString(
   key: string,
   options?: SecureStore.SecureStoreOptions
 ): Promise<string | null> {
-  if (canUseWebStorage()) {
+  if (Platform.OS === "web") {
     try {
-      return window.localStorage.getItem(key);
+      return typeof window === "undefined" ? null : (window.localStorage?.getItem(key) ?? null);
     } catch {
       return null;
     }

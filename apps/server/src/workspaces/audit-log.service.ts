@@ -19,8 +19,11 @@ export interface PlatformAuditInput {
 export class PlatformAuditLogService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async record(input: PlatformAuditInput): Promise<void> {
-    await this.prisma.platformAuditLog.create({
+  async record(
+    input: PlatformAuditInput,
+    client: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    await client.platformAuditLog.create({
       data: {
         workspaceId: input.workspaceId ?? null,
         projectId: input.projectId ?? null,
