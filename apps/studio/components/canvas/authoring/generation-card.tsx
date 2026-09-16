@@ -674,6 +674,10 @@ function GenerationCard({
         },
         referenceImageCount: uploadedReferenceCount || undefined,
         referenceVideoSeconds: referenceVideoSeconds || undefined,
+        // Seedance 2.5 edit keeps the source video's duration — the auto
+        // quote follows the combined reference-video length (mirrors the
+        // server hold).
+        outputDurationFollowsReferenceVideos: settings.omniReferenceTaskType === "edit",
       })?.sellPoints ?? null
     );
   }, [model, settings, refFields, references, data.prompt]);

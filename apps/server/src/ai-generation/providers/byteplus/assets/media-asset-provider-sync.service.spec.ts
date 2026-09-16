@@ -134,8 +134,11 @@ describe('MediaAssetProviderSyncService manual media checks', () => {
       op: 'register',
       mirrorId: MIRROR_ID,
     });
+    // BullMQ rejects custom job ids containing ':' (Redis key separator) at
+    // add time — a violation 500s the user-facing readiness request.
+    expect(registerCall[2].jobId).not.toContain(':');
     expect(registerCall[2].jobId).toMatch(
-      new RegExp(`^register:${MIRROR_ID}:manual:`),
+      new RegExp(`^register-${MIRROR_ID}-manual-`),
     );
   });
 
@@ -202,7 +205,8 @@ describe('MediaAssetProviderSyncService manual media checks', () => {
     const pollCall = fixture.add.mock.calls[0] as QueueAddCall;
     expect(pollCall[0]).toBe('poll');
     expect(pollCall[1]).toEqual({ op: 'poll', mirrorId: MIRROR_ID });
-    expect(pollCall[2].jobId).toMatch(new RegExp(`^poll:${MIRROR_ID}:manual:`));
+    expect(pollCall[2].jobId).not.toContain(':');
+    expect(pollCall[2].jobId).toMatch(new RegExp(`^poll-${MIRROR_ID}-manual-`));
   });
 
   it.each([

@@ -321,7 +321,9 @@ export class CharacterProviderSyncService
     await this.queue().add(
       'register',
       { op: 'register', externalAssetRowId },
-      { jobId: `register:${externalAssetRowId}:${Date.now()}`, priority },
+      // Colons are forbidden in custom job ids (BullMQ Redis key separator);
+      // the legacy 3-segment form is a deprecated compatibility window only.
+      { jobId: `register-${externalAssetRowId}-${Date.now()}`, priority },
     );
   }
 
@@ -500,7 +502,7 @@ export class CharacterProviderSyncService
       { op: 'poll', externalAssetRowId },
       {
         delay: POLL_DELAY_MS,
-        jobId: `poll:${externalAssetRowId}:${Date.now()}`,
+        jobId: `poll-${externalAssetRowId}-${Date.now()}`,
       },
     );
   }
