@@ -41,8 +41,32 @@ export function useAwarenessPeers(
       const next: PeerPresence[] = [];
       awareness.getStates().forEach((state, clientId) => {
         if (clientId === localClientId) return;
-        const presence = state as { user?: PeerUser; cursor?: PeerPresence["cursor"] };
-        next.push({ clientId, user: presence.user, cursor: presence.cursor ?? null });
+        const presence = state as { user?: unknown; cursor?: unknown };
+        let user: PeerUser | undefined;
+        if (presence.user && typeof presence.user === "object" && !Array.isArray(presence.user)) {
+          const raw = presence.user as Record<string, unknown>;
+          user = {};
+          for (const field of ["id", "name", "color", "avatarUrl"] as const) {
+            if (typeof raw[field] === "string") user[field] = raw[field];
+          }
+        }
+        let cursor: PeerPresence["cursor"] = null;
+        if (
+          presence.cursor &&
+          typeof presence.cursor === "object" &&
+          !Array.isArray(presence.cursor)
+        ) {
+          const raw = presence.cursor as Record<string, unknown>;
+          if (
+            typeof raw.x === "number" &&
+            Number.isFinite(raw.x) &&
+            typeof raw.y === "number" &&
+            Number.isFinite(raw.y)
+          ) {
+            cursor = { x: raw.x, y: raw.y };
+          }
+        }
+        next.push({ clientId, user, cursor });
       });
       setSnapshot({ awareness, localClientId, peers: next });
     };

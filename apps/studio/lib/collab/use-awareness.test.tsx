@@ -54,3 +54,36 @@ it.each(["replace", "disconnect", "local identity"])(
       expect(observations.at(-1)?.some((p) => p.clientId === 42)).toBe(false);
   }
 );
+
+it("omits malformed identity fields and cursor coordinates while preserving valid fields", async () => {
+  const awareness = makeAwareness();
+  awareness.getStates().set(42, {
+    user: { id: "peer", name: { text: "Peer" }, color: 12, avatarUrl: [] },
+    cursor: { x: "12", y: 3 },
+  });
+  await act(async () => root.render(<Probe awareness={awareness} localId={awareness.clientID} />));
+  expect(observations.at(-1)?.[0]).toEqual({ clientId: 42, user: { id: "peer" }, cursor: null });
+  await act(async () => {
+    awareness.getStates().set(42, {
+      user: { id: "peer", name: "Peer", color: "blue", avatarUrl: "/avatar.png" },
+      cursor: { x: -12, y: 0 },
+    });
+    awareness.emit("change", [{ added: [], updated: [42], removed: [] }, "remote"]);
+  });
+  expect(observations.at(-1)?.[0]).toEqual({
+    clientId: 42,
+    user: { id: "peer", name: "Peer", color: "blue", avatarUrl: "/avatar.png" },
+    cursor: { x: -12, y: 0 },
+  });
+});
+it.each([{ x: Infinity, y: 1 }, { x: 1, y: NaN }, [1, 2]])(
+  "rejects invalid cursor %j",
+  async (cursor) => {
+    const awareness = makeAwareness();
+    awareness.getStates().set(42, { user: [], cursor });
+    await act(async () =>
+      root.render(<Probe awareness={awareness} localId={awareness.clientID} />)
+    );
+    expect(observations.at(-1)?.[0]).toEqual({ clientId: 42, user: undefined, cursor: null });
+  }
+);
