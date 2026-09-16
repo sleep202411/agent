@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useLayoutEffect, useRef } from "react";
+import { useEffect, useState, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   IconCopy,
@@ -111,12 +111,9 @@ function MediaPreviewSession({
     };
   }, [onOpenChange, open]);
 
-  const resolvedName = useMemo(() => {
-    if (name?.trim()) return name.trim();
-    if (type === "image") return t("imagePreview");
-    if (type === "video") return t("videoPreview");
-    return t("audioPreview");
-  }, [name, type]);
+  const resolvedName =
+    name?.trim() ||
+    t(type === "image" ? "imagePreview" : type === "video" ? "videoPreview" : "audioPreview");
 
   const handleCopyLink = async () => {
     if (!active.current) return;

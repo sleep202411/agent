@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MediaPreviewModal } from "./media-preview-modal";
 const feedback = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
 vi.mock("sonner", () => ({ toast: feedback }));
-vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+const language = vi.hoisted(() => ({ prefix: "" }));
+vi.mock("@/src/i18n/i18n", () => ({
+  useTranslations: () => {
+    const prefix = language.prefix;
+    return (key: string) => prefix + key;
+  },
+}));
 vi.mock("./audio-player", () => ({ AudioPlayer: () => null }));
 vi.mock("./mention-prompt-display", () => ({ MentionPromptDisplay: () => null }));
 vi.mock("@/components/ui/button", () => ({
@@ -22,6 +28,7 @@ describe("media preview download", () => {
     open = vi.fn();
   beforeEach(async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    language.prefix = "";
     feedback.success.mockReset();
     feedback.error.mockReset();
     create.mockReset().mockReturnValue("blob:test");
@@ -265,5 +272,23 @@ describe("media preview download", () => {
     await act(async () => reject(new Error("abandoned")));
     expect(command).not.toHaveBeenCalled();
     expect(feedback.success).not.toHaveBeenCalled();
+  });
+  it("refreshes the fallback media name when the language changes", async () => {
+    const render = () =>
+      root.render(<MediaPreviewModal open onOpenChange={() => {}} type="image" src="same" />);
+    await act(async () => render());
+    expect(document.querySelector("img")?.alt).toBe("imagePreview");
+    language.prefix = "translated:";
+    await act(async () => render());
+    expect(document.querySelector("img")?.alt).toBe("translated:imagePreview");
+  });
+  it("preserves an explicit media name across language changes", async () => {
+    language.prefix = "translated:";
+    await act(async () =>
+      root.render(
+        <MediaPreviewModal open onOpenChange={() => {}} type="image" src="same" name=" My file " />
+      )
+    );
+    expect(document.querySelector("img")?.alt).toBe("My file");
   });
 });
