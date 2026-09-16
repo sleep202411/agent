@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 2da4e5d473ca5ef73d6a9102c3a7b10758e048c9
+    tag: 7954bed58017989f7caeaa486be8e42583b30d00
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 535f65d5e84094add907bb29468443cbd1446c27
+    tag: 7954bed58017989f7caeaa486be8e42583b30d00
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -347,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 535f65d5e84094add907bb29468443cbd1446c27
+    tag: 3fd872f61a4a47df6ffef864203fbedfba51cdb1
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -394,7 +394,7 @@ server:
   # Graceful drain window: the preStop sleep deregisters the pod from the Service,
   # then the WS gateway closes sockets so clients reconnect to a healthy pod.
   terminationGracePeriodSeconds: 45
-  migrateOnStart: false
+  migrateOnStart: true
   migrationJob:
     enabled: false
     revision: ""
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 2da4e5d473ca5ef73d6a9102c3a7b10758e048c9
+    tag: 7954bed58017989f7caeaa486be8e42583b30d00
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -431,6 +431,13 @@ server:
     # Never default this in code: an omitted value must fail the server at boot
     # instead of silently resolving .com/.cn data against another region.
     LEGACY_OSS_BASE_URL: https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com
+    # Mobile H5 generation defaults. Region-owned deploy facts — both ids must
+    # exist (active + bound + provider credential present) in THIS region's
+    # catalog or the server refuses to boot (StoryMobileModelDefaultsService).
+    # No code fallback by design: a default pointing at a canonical the region
+    # never catalogued must fail the rollout, not the user's quote.
+    AGENT_OS_MOBILE_IMAGE_MODEL: wan-image-2.7
+    AGENT_OS_MOBILE_VIDEO_MODEL: minimax-h3
     # Region-owned banner bucket that holds crew logos (relative keys). The admin
     # DTOs resolve crew.logo to an absolute URL with this base.
     BANNER_BASE_URL: https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com

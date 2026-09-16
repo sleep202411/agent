@@ -574,6 +574,10 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.generation.cancelBatch",
     z.object({ batchId: z.string().uuid() })
   );
+  const storyResumeGenerationBatch = bindStoryTool(
+    "story.generation.resumeBatch",
+    z.object({ batchId: z.string().uuid() })
+  );
   const storyApplyPatch = tool(
     async (raw, config) => {
       const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -704,6 +708,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.generation.confirmBatch": storyConfirmGenerationBatch,
     "story.generation.getBatch": storyGetGenerationBatch,
     "story.generation.cancelBatch": storyCancelGenerationBatch,
+    "story.generation.resumeBatch": storyResumeGenerationBatch,
   } as const;
 
   const allowed = new Set(toolIds);

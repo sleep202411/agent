@@ -7,6 +7,15 @@ import {
 } from '@prisma/client';
 import { StoryGenerationBatchService } from './story-generation-batch.service';
 
+// Jest does not load .env: the mobile defaults are REQUIRED envs with no
+// code fallback, so pin them for every test in this suite (and restore).
+const MOBILE_IMAGE_MODEL =
+  process.env.AGENT_OS_MOBILE_IMAGE_MODEL ?? 'wan-image-2.7';
+const MOBILE_VIDEO_MODEL =
+  process.env.AGENT_OS_MOBILE_VIDEO_MODEL ?? 'minimax-h3';
+process.env.AGENT_OS_MOBILE_IMAGE_MODEL = MOBILE_IMAGE_MODEL;
+process.env.AGENT_OS_MOBILE_VIDEO_MODEL = MOBILE_VIDEO_MODEL;
+
 const actor = { userId: 'actor-1' } as never;
 const scope = {
   workspaceId: 'workspace-1',

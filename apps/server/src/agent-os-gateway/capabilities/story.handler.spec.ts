@@ -132,6 +132,7 @@ describe('StoryAgentCapabilityHandler', () => {
     expect(handler.supports('story.generation.quoteAssets')).toBe(true);
     expect(handler.supports('story.generation.quoteStoryboard')).toBe(true);
     expect(handler.supports('story.generation.confirmBatch')).toBe(true);
+    expect(handler.supports('story.generation.resumeBatch')).toBe(true);
     expect(handler.supports('characters.upsert')).toBe(false);
     expect(handler.supports('canvas.applyPatch')).toBe(false);
   });
@@ -487,6 +488,56 @@ describe('StoryAgentCapabilityHandler', () => {
       },
     });
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('resumes a paused batch through the guarded resume path after the creator asks to continue', async () => {
+    const requireWrite = jest.fn().mockResolvedValue({
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+    });
+    const resume = jest
+      .fn()
+      .mockResolvedValue({ id: '88888888-8888-4888-8888-888888888888' });
+    const scoped = new StoryAgentCapabilityHandler(
+      {} as never,
+      {} as never,
+      { requireWrite } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { resume } as never,
+    );
+
+    await expect(
+      scoped.execute({
+        toolId: 'story.generation.resumeBatch',
+        runId: '22222222-2222-4222-8222-222222222222',
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        turnId: '44444444-4444-4444-8444-444444444444',
+        toolCallId: 'resume-generation-batch-1',
+        actorId: 'creator-1',
+        projectId: '55555555-5555-4555-8555-555555555555',
+        skillResolutionId: '66666666-6666-4666-8666-666666666666',
+        skillVersionIds: [],
+        workbenchContext: {
+          chapterId: '77777777-7777-4777-8777-777777777777',
+        },
+        idempotencyKey: 'resume-generation-batch-key-1',
+        arguments: {
+          batchId: '88888888-8888-4888-8888-888888888888',
+        },
+      }),
+    ).resolves.toEqual({ id: '88888888-8888-4888-8888-888888888888' });
+    expect(requireWrite).toHaveBeenCalledWith(
+      'creator-1',
+      '55555555-5555-4555-8555-555555555555',
+    );
+    expect(resume).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '55555555-5555-4555-8555-555555555555',
+      '77777777-7777-4777-8777-777777777777',
+      '88888888-8888-4888-8888-888888888888',
+    );
   });
 
   it('quotes only the requested asset kind without forwarding absent model fields', async () => {

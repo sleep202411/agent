@@ -976,4 +976,13 @@ export const STORY_AGENT_OS_TOOLS = [
     inputSchema: StoryGetGenerationBatchInputSchema,
     outputSchema: StoryGenerationBatchOutputSchema,
   },
+  {
+    id: "story.generation.resumeBatch",
+    description:
+      "Resume a blocked or failed Story generation batch from its first unfinished item, reusing the original confirmed per-item quotes. Call this when the creator explicitly asks to continue or retry a paused batch — typically after recharging compute points. The creator's own request in the conversation is the authorization; per-item points are re-reserved by the billing authority at dispatch and the batch re-blocks safely if the balance is still short. Never call it unprompted, and never use it to bypass the confirm approval of a fresh quote.",
+    kind: "command",
+    risk: "sensitive",
+    inputSchema: StoryGetGenerationBatchInputSchema,
+    outputSchema: StoryGenerationBatchOutputSchema,
+  },
 ] as const satisfies readonly ToolDefinition[];

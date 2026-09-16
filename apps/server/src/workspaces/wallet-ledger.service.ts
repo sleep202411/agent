@@ -16,6 +16,7 @@ import {
   type WalletTransaction,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { enqueueStoryBatchesResumableIfFunded } from '../story-studio/story-generation-batch-resumable-realtime';
 import { enqueueWalletChanged } from './wallet-realtime';
 
 // compute_point is workspace-owned (the workspace you work in is the pot);
@@ -254,6 +255,15 @@ export class WalletLedgerService {
     // Realtime: reflect the new compute balance without polling (atomic in this
     // tx — the event and the balance write commit together). No-op non-compute.
     await enqueueWalletChanged(tx, updated, input.actorUserId);
+
+    // Notify-only companion: when this CREDIT funds a workspace consumable
+    // pot, tell the workspace which blocked Story batches became resumable.
+    // Never resumes anything — the creator decides.
+    await enqueueStoryBatchesResumableIfFunded(
+      tx,
+      updated,
+      input.availableDelta,
+    );
 
     return { transaction, entry, account: updated, deduped: false };
   }

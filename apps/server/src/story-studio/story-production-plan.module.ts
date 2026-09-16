@@ -9,6 +9,7 @@ import { StoryProductionPlanService } from './story-production-plan.service';
 import { StoryGenerationBatchController } from './story-generation-batch.controller';
 import { StoryGenerationBatchDispatcherService } from './story-generation-batch-dispatcher.service';
 import { StoryGenerationBatchService } from './story-generation-batch.service';
+import { StoryMobileModelDefaultsService } from './story-mobile-model-defaults.service';
 import { StoryBillingController } from './story-billing.controller';
 
 @Module({
@@ -24,6 +25,7 @@ import { StoryBillingController } from './story-billing.controller';
     StoryProductionGenerationService,
     StoryGenerationBatchService,
     StoryGenerationBatchDispatcherService,
+    StoryMobileModelDefaultsService,
   ],
   exports: [
     StoryProductionPlanService,
