@@ -24,7 +24,12 @@ function canonicalizeJson(value: unknown, path = "$"): CanonicalJson {
     const result: Record<string, CanonicalJson> = {};
     for (const key of Object.keys(source).sort()) {
       if (source[key] === undefined) throw new TypeError(`Undefined value at ${path}.${key}.`);
-      result[key] = canonicalizeJson(source[key], `${path}.${key}`);
+      Object.defineProperty(result, key, {
+        value: canonicalizeJson(source[key], `${path}.${key}`),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     return result;
   }

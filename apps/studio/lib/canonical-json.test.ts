@@ -14,3 +14,10 @@ describe("canonicalJsonString", () => {
     expect(() => canonicalJsonString({ value: Number.NaN })).toThrow("Non-finite number");
   });
 });
+
+it("preserves parsed JSON keys named __proto__ at every depth", () => {
+  const input = JSON.parse('{"z":0,"nested":{"__proto__":{"value":1}},"__proto__":"literal"}');
+  expect(canonicalJsonString(input)).toBe(
+    '{"__proto__":"literal","nested":{"__proto__":{"value":1}},"z":0}'
+  );
+});

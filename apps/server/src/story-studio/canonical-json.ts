@@ -53,7 +53,12 @@ export function canonicalizeJson(value: unknown, path = '$'): CanonicalJson {
       if (item === undefined) {
         throw new TypeError(`Undefined value at ${path}.${key}.`);
       }
-      result[key] = canonicalizeJson(item, `${path}.${key}`);
+      Object.defineProperty(result, key, {
+        value: canonicalizeJson(item, `${path}.${key}`),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
     }
     return result;
   }
