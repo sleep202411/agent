@@ -36,3 +36,11 @@ describe("canvas node geometry", () => {
 function node(type: string, data: Record<string, unknown> = {}): Node {
   return { id: type, type, position: { x: 0, y: 0 }, data };
 }
+
+it.each(["constructor", "__proto__", "toString"])(
+  "uses fallback geometry for unknown type %s",
+  (type) => {
+    expect(canvasNodeGeometry(node(type))).toEqual(canvasNodeGeometry(node("unknown")));
+    expect(canvasNodeLayoutSize(node(type))).toEqual({ width: 320, height: 240 });
+  }
+);

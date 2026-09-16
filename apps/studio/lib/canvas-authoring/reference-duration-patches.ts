@@ -18,7 +18,12 @@ export function applyReferenceDurationPatches<T extends Reference>(
   if (!references) return references;
   const next = { ...references };
   for (const patch of patches) {
-    if (!hasKnownDuration(patch.measuredSeconds) || !next[patch.field]) continue;
+    if (
+      !hasKnownDuration(patch.measuredSeconds) ||
+      !Object.hasOwn(next, patch.field) ||
+      !next[patch.field]
+    )
+      continue;
     next[patch.field] = next[patch.field]!.map((row) =>
       row.id === patch.id &&
       row.url === patch.url &&

@@ -42,3 +42,16 @@ it("repairs invalid durations but never accepts invalid measurements", () => {
     ).toBe(12);
   }
 });
+
+it.each(["constructor", "__proto__", "toString"])(
+  "ignores an absent reference field named %s",
+  (field) => {
+    const refs = { video: [source] };
+    expect(applyReferenceDurationPatches(refs, [{ ...patch, field }])).toEqual(refs);
+  }
+);
+it("still updates an explicitly stored prototype-named field", () => {
+  const refs = Object.fromEntries([["__proto__", [source]]]);
+  const next = applyReferenceDurationPatches(refs, [{ ...patch, field: "__proto__" }]);
+  expect(next?.["__proto__"]?.[0]?.durationSeconds).toBe(12);
+});
