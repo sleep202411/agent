@@ -507,6 +507,7 @@ function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
 
   return (
     <>
+      <CrewVisitReadMarker crewId={crew.id} />
       <CrewWorkbenchShell
         activeChatChannel="community"
         activeTab={activeTab}
