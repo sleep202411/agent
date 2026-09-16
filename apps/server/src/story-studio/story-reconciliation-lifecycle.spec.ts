@@ -182,7 +182,7 @@ describe('Story reconciliation shutdown', () => {
 });
 
 describe('Story batch continuation shutdown', () => {
-  it.each(['admission', 'publication'] as const)(
+  it.each(['candidate', 'admission', 'publication'] as const)(
     'stops queued work during %s',
     async (phase) => {
       const entered = gate<void>();
@@ -201,14 +201,23 @@ describe('Story batch continuation shutdown', () => {
         await release.promise;
       });
       const worker = new StoryGenerationBatchContinuationWorkerService(
-        { $transaction: transaction } as never,
+        {
+          $transaction: transaction,
+          $queryRaw: jest.fn(async () => {
+            if (phase === 'candidate') {
+              entered.resolve();
+              await release.promise;
+            }
+            return [{ id: 'batch' }];
+          }),
+        } as never,
         { publishCommitted: publish } as never,
       );
       const internal = worker as unknown as {
-        deliverNextInTransaction: () => Promise<unknown>;
+        deliverCandidateInTransaction: () => Promise<unknown>;
       };
       const deliver = jest
-        .spyOn(internal, 'deliverNextInTransaction')
+        .spyOn(internal, 'deliverCandidateInTransaction')
         .mockResolvedValue({ events: [] });
       const drain = worker.drainOnce();
       await entered.promise;
@@ -217,9 +226,9 @@ describe('Story batch continuation shutdown', () => {
       await drain;
       worker.onApplicationBootstrap();
       await worker.drainOnce();
-      expect(transaction).toHaveBeenCalledTimes(1);
-      expect(deliver).toHaveBeenCalledTimes(phase === 'admission' ? 0 : 1);
-      expect(publish).toHaveBeenCalledTimes(phase === 'admission' ? 0 : 1);
+      expect(transaction).toHaveBeenCalledTimes(phase === 'candidate' ? 0 : 1);
+      expect(deliver).toHaveBeenCalledTimes(phase === 'publication' ? 1 : 0);
+      expect(publish).toHaveBeenCalledTimes(phase === 'publication' ? 1 : 0);
     },
   );
 });
