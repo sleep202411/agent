@@ -137,21 +137,28 @@ export function MediaPreviewModal({
     }
 
     setDownloading(true);
+    let blobUrl: string | undefined;
+    let linkElement: HTMLAnchorElement | undefined;
     try {
       const response = await fetch(src);
+      if (!response.ok) throw new Error(`Download failed (${response.status})`);
       const blob = await response.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const linkElement = document.createElement("a");
+      blobUrl = URL.createObjectURL(blob);
+      linkElement = document.createElement("a");
       linkElement.href = blobUrl;
       linkElement.download = resolvedName;
       document.body.appendChild(linkElement);
       linkElement.click();
-      document.body.removeChild(linkElement);
-      URL.revokeObjectURL(blobUrl);
     } catch (error) {
       console.error("[MediaPreviewModal] 下载失败:", error);
       window.open(src, "_blank", "noopener,noreferrer");
     } finally {
+      linkElement?.remove();
+      if (blobUrl) {
+        const allocatedUrl = blobUrl;
+        // Allow the browser to begin consuming the download before revoking.
+        setTimeout(() => URL.revokeObjectURL(allocatedUrl), 1000);
+      }
       setDownloading(false);
     }
   };
