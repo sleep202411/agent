@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useAdminOperation } from "../use-admin-operation";
 import { mutateEnvelope, requestEnvelope, toErrorMessage } from "../billing/shared";
 
@@ -18,9 +18,15 @@ export function useModerationQueue<T extends { id: string; moderationStatus: str
   const writing = useRef(false);
   const read = useRef<ReturnType<typeof begin>>(null);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
-  const queryKey = JSON.stringify([query, status]);
+  const queryKey = JSON.stringify([endpoint, query, status]);
+  const currentKey = useRef(queryKey);
+  const refreshLatest = useRef<(() => Promise<void>) | null>(null);
+  useLayoutEffect(() => {
+    currentKey.current = queryKey;
+  }, [queryKey]);
   const load = useCallback(
     async (cursor: string | null = null) => {
+      if (currentKey.current !== queryKey) return;
       const operation = begin("read");
       if (!operation) return;
       read.current = operation;
@@ -51,6 +57,12 @@ export function useModerationQueue<T extends { id: string; moderationStatus: str
     },
     [begin, endpoint, query, queryKey, status]
   );
+  useLayoutEffect(() => {
+    refreshLatest.current = load;
+    return () => {
+      refreshLatest.current = null;
+    };
+  }, [load]);
   useEffect(() => {
     let active = true;
     void Promise.resolve().then(() => {
@@ -64,6 +76,7 @@ export function useModerationQueue<T extends { id: string; moderationStatus: str
     };
   }, [load]);
   const moderate = async (item: T, nextStatus: "ok" | "taken_down", reason?: string) => {
+    if (currentKey.current !== queryKey) return false;
     if (nextStatus === "taken_down" && !reason?.trim()) return false;
     const operation = begin("write");
     if (!operation) return false;
@@ -77,7 +90,7 @@ export function useModerationQueue<T extends { id: string; moderationStatus: str
         "POST",
         operation.signal
       );
-      if (!operation.current()) return false;
+      if (!operation.current() || currentKey.current !== queryKey) return false;
       setItems((previous) =>
         previous.flatMap((row) =>
           row.id !== updated.id
@@ -89,14 +102,16 @@ export function useModerationQueue<T extends { id: string; moderationStatus: str
       );
       return true;
     } catch (err) {
-      if (operation.current()) setError(toErrorMessage(err));
+      if (operation.current() && currentKey.current === queryKey) setError(toErrorMessage(err));
       return false;
     } finally {
+      const refreshReplacement = operation.current() && currentKey.current !== queryKey;
       if (operation.current()) {
         writing.current = false;
         setActing(false);
       }
       operation.finish();
+      if (refreshReplacement) void refreshLatest.current?.();
     }
   };
   return {
