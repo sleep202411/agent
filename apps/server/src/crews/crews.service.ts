@@ -926,7 +926,7 @@ export class CrewsService {
     });
   }
 
-  /** Founded + joined crews for the current user — drives /profile?tab=crews. */
+  /** Production memberships and separate fan subscriptions for the current user. */
   async myCrews(userId: string) {
     const memberships = await this.prisma.crewMember.findMany({
       where: {
@@ -964,7 +964,40 @@ export class CrewsService {
       if (m.ownership) founded.push(dto);
       else joined.push(dto);
     }
-    return { founded, joined };
+    // A community subscription is discoverable here, but is not a production
+    // membership. Keep it separate so clients cannot infer team permissions.
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: {
+        userId,
+        leftAt: null,
+        conversation: { contextType: 'crew', crewChannel: 'community' },
+      },
+      select: { conversation: { select: { contextId: true } } },
+      orderBy: [{ joinedAt: 'desc' }, { conversationId: 'asc' }],
+    });
+    const excluded = new Set([
+      ...crews.map((crew) => crew.id),
+      ...(await this.blockedCrewIds(userId)),
+    ]);
+    const communityIds = [
+      ...new Set(participants.map((p) => p.conversation.contextId)),
+    ].filter((id) => !excluded.has(id));
+    const communityRows = communityIds.length
+      ? await this.prisma.crew.findMany({
+          where: {
+            id: { in: communityIds },
+            deletedAt: null,
+            moderationStatus: 'ok',
+          },
+          include: CREW_OWNER_INCLUDE,
+        })
+      : [];
+    const communityById = new Map(communityRows.map((crew) => [crew.id, crew]));
+    const community = communityIds.flatMap((id) => {
+      const crew = communityById.get(id);
+      return crew ? [toCrewDTO(crew)] : [];
+    });
+    return { founded, joined, community };
   }
 
   /**

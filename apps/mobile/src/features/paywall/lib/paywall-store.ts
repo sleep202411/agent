@@ -12,9 +12,10 @@ export type PaywallCategory =
 
 export const PAYWALL_CATEGORIES: PaywallCategory[] = [
   "community_points",
-  "compute_points",
-  "compute_membership",
-  "community_membership",
+  // Hidden until these IAPs exist in App Store Connect (2.1(b) review).
+  // "compute_points",
+  // "compute_membership",
+  // "community_membership",
 ];
 
 export function isPaywallCategory(value: string | undefined): value is PaywallCategory {
@@ -26,7 +27,9 @@ export function openPaywall(input: {
   communityReturnUrl?: string;
 }): void {
   const go = () => {
-    const params = new URLSearchParams({ category: input.category });
+    const params = new URLSearchParams({
+      category: isPaywallCategory(input.category) ? input.category : "community_points",
+    });
     const returnPath = communityWebPath(input.communityReturnUrl);
     if (returnPath !== "/") params.set("returnPath", returnPath);
     router.push(toHref(`/pay?${params.toString()}`));

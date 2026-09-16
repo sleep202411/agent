@@ -16,6 +16,7 @@ interface ListResult {
 interface MyCrewsResult {
   founded: CrewDTO[];
   joined: CrewDTO[];
+  community?: CrewDTO[];
 }
 
 interface CreatorCrewsResult {

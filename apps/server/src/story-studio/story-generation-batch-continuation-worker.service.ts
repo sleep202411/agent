@@ -113,7 +113,7 @@ export class StoryGenerationBatchContinuationWorkerService
       for (let index = 0; index < Math.max(1, Math.trunc(limit)); index += 1) {
         if (this.stopping) break;
         const candidateId = await this.pickNextCandidateId();
-        if (!candidateId) break;
+        if (!candidateId || this.stopping) break;
 
         let dispatch: AgentOsJournalDispatch | null;
         try {
@@ -128,7 +128,6 @@ export class StoryGenerationBatchContinuationWorkerService
         }
 
         if (!dispatch) break;
-
         this.clearBackoff(candidateId);
         await this.journal.publishCommitted(dispatch);
       }

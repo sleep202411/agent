@@ -101,6 +101,36 @@ suite('Unread Crew markers against local PostgreSQL', () => {
     ]);
   });
 
+  it('marks only the visited Crew for its recipient and retains later arrivals', async () => {
+    const crewId = `visit-${randomUUID()}`;
+    const selected = Array.from({ length: 125 }, () => row({ crewId }));
+    const otherCrew = row({ crewId: `${crewId}-other` });
+    const otherUser = row({ crewId }, stranger);
+    const system = row({ crewId }, owner, 'system.notice');
+    const later = {
+      ...row({ crewId }),
+      createdAt: new Date(Date.now() + 60_000),
+    };
+    await db.notification.createMany({
+      data: [...selected, otherCrew, otherUser, system, later],
+    });
+    expect(await service.markCrewRead(owner, crewId)).toBe(125);
+    expect(await service.markCrewRead(owner, crewId)).toBe(0);
+    expect(
+      await db.notification.count({
+        where: { id: { in: selected.map((r) => r.id) }, readAt: { not: null } },
+      }),
+    ).toBe(125);
+    expect(
+      await db.notification.count({
+        where: {
+          id: { in: [otherCrew.id, otherUser.id, system.id, later.id] },
+          readAt: null,
+        },
+      }),
+    ).toBe(4);
+  });
+
   it('ignores missing, empty and non-string identifiers', async () => {
     await db.notification.createMany({
       data: [
