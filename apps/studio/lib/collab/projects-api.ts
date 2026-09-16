@@ -220,10 +220,12 @@ export async function deleteProject(projectId: string): Promise<void> {
 /** Resolves a project-wide document for non-section-managed modes. */
 export async function ensureModeDocument(
   projectId: string,
-  type: string
+  type: string,
+  signal?: AbortSignal
 ): Promise<ModeDocumentRef> {
   const data = await api.post<{ document: ModeDocumentRef }>(
-    `/aurora/projects/${projectId}/documents/${type}/ensure`
+    `/aurora/projects/${projectId}/documents/${type}/ensure`,
+    { signal }
   );
   return data.document;
 }
