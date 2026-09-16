@@ -75,7 +75,15 @@ import {
 } from "@/app/(site)/crews/[id]/workspace/_lib/workspace-tabs";
 import { Button } from "@/components/ui/button";
 
-export function CrewWorkspace({ id, embedded = false }: { id: string; embedded?: boolean }) {
+export function CrewWorkspace({
+  id,
+  embedded = false,
+  communityOnly = false,
+}: {
+  id: string;
+  embedded?: boolean;
+  communityOnly?: boolean;
+}) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const tCrew = useTranslations("crew");
@@ -88,7 +96,7 @@ export function CrewWorkspace({ id, embedded = false }: { id: string; embedded?:
   const router = useRouter();
   const reviewApplicationId = searchParams.get("application");
   const agreementId = searchParams.get("agreement");
-  const requestedCommunityChannel = searchParams.get("channel") === "community";
+  const requestedCommunityChannel = communityOnly || searchParams.get("channel") === "community";
 
   // Every URL edit on this page is a `replace`: the query string carries
   // view state (tab, consumed deeplinks), and pushing it would make the
@@ -281,7 +289,7 @@ export function CrewWorkspace({ id, embedded = false }: { id: string; embedded?:
 
   if (membershipDenied) {
     if (requestedCommunityChannel) {
-      return <CommunityWorkspace crew={crewDetail} />;
+      return <CommunityWorkspace crew={crewDetail} embedded={embedded} />;
     }
     return (
       <WorkspaceState
@@ -485,7 +493,7 @@ const COMMUNITY_WORKSPACE_TABS = [
  * This restricted shell exposes exactly two surfaces: the public community channel
  * and basic crew information. Internal team navigation is never mounted.
  */
-function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
+function CommunityWorkspace({ crew, embedded = false }: { crew: CrewDTO; embedded?: boolean }) {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -505,13 +513,14 @@ function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
   return (
     <>
       <CrewWorkbenchShell
+        embedded={embedded}
         activeChatChannel="community"
         activeTab={activeTab}
         tabs={COMMUNITY_WORKSPACE_TABS}
         crewId={crew.id}
         crewLogo={crew.logo}
         crewName={crew.name}
-        currentCrewHref={`${pathname}?tab=chat&channel=community`}
+        currentCrewHref={`${pathname}?${new URLSearchParams({ ...Object.fromEntries(searchParams), tab: "chat", channel: "community", ...(embedded ? { crew: crew.id, view: "mine" } : {}) }).toString()}`}
         isOwner={false}
         onSelectChatChannel={() => selectTab("chat")}
         onSelectTab={selectTab}

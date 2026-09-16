@@ -13,7 +13,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 
-type RailCrew = Pick<CrewDTO, "id" | "logo" | "name">;
+type RailCrew = Pick<CrewDTO, "id" | "logo" | "name"> & { communityOnly?: boolean };
 
 export function shouldShowCrewSwitcherRail({
   crewCount,
@@ -45,7 +45,11 @@ export function CrewSwitcherRail({
   const myCrews = useMyCrews();
   const crews = useMemo(
     () =>
-      mergeCrewMemberships(myCrews.data?.founded ?? [], myCrews.data?.joined ?? [], currentCrew),
+      mergeCrewMemberships(
+        (myCrews.data?.community ?? []).map((crew) => ({ ...crew, communityOnly: true })),
+        [...(myCrews.data?.founded ?? []), ...(myCrews.data?.joined ?? [])],
+        currentCrew
+      ),
     [currentCrew, myCrews.data]
   );
 
@@ -168,9 +172,12 @@ export function CrewSwitcherRailView({
                     active && currentCrewHref
                       ? currentCrewHref
                       : localizePath(
-                          embedded
+                          (embedded
                             ? `/crews?view=mine&crew=${encodeURIComponent(crew.id)}`
-                            : `/crews/${encodeURIComponent(crew.id)}/workspace`,
+                            : `/crews/${encodeURIComponent(crew.id)}/workspace`) +
+                            (crew.communityOnly
+                              ? `${embedded ? "&" : "?"}tab=chat&channel=community`
+                              : ""),
                           locale
                         )
                   }
