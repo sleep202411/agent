@@ -1909,6 +1909,7 @@ function severityForAiFailure(code: AiJobError['code']): AlertSeverity {
     case 'PROVIDER_429':
     case 'PROVIDER_5XX':
     case 'PROVIDER_TIMEOUT':
+    case 'PROVIDER_REFERENCE_DOWNLOAD':
     case 'MEDIA_STORAGE_UNAVAILABLE':
     case 'UNKNOWN':
       return 'error';
