@@ -39,6 +39,7 @@ import {
 } from "@/app/(studio)/art-studio/projects/_components/storyboard-batch-voice-dialog";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 import { env } from "@/src/env";
+import { downloadBatch, batchAssetName } from "./storyboard-download";
 
 const BATCH_INTERVAL = 10_000;
 const IMAGE_DEFAULT_PRESET_KEYS = ["description", "shot_size", "perspective", "style_planting"];
@@ -330,22 +331,6 @@ function getRowImageUrl(row: ShotRow) {
   return ossUrl(file?.url || file?.path);
 }
 
-async function downloadBlob(url: string, fileName: string) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-  const blob = await response.blob();
-  const downloadUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = downloadUrl;
-  anchor.download = fileName;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(downloadUrl);
-}
-
 function sleep(ms: number, timerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>) {
   return new Promise<void>((resolve) => {
     timerRef.current = setTimeout(() => {
@@ -452,7 +437,7 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
           if (!path) return null;
           return {
             url: ossUrl(path),
-            name: `shot_${rowIndex + 1}_final.${String(path).split(".").pop() || (type === "image" ? "png" : "mp4")}`,
+            name: batchAssetName(path, rowIndex, type),
           };
         })
         .filter((item): item is { url: string; name: string } => Boolean(item?.url));
@@ -468,12 +453,9 @@ export function StoryboardColumnHeader({ column, icon }: { column: ShotColumn; i
           : t("startExportVideos", { count: finalAssets.length })
       );
 
-      for (const asset of finalAssets) {
-        try {
-          await downloadBlob(asset.url, asset.name);
-        } catch (error) {
-          console.error("[StoryboardColumnHeader] 下载素材失败:", asset.url, error);
-        }
+      if (!(await downloadBatch(finalAssets))) {
+        toast.error(type === "image" ? t("exportImagesFailed") : t("exportVideosFailed"));
+        return;
       }
 
       toast.success(type === "image" ? t("finalizedImagesExported") : t("finalizedVideosExported"));
