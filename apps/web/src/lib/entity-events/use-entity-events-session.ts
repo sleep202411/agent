@@ -36,6 +36,7 @@ export function useEntityEventsSession(opts: { enabled: boolean }) {
   useEffect(() => {
     if (!opts.enabled || !viewerId) return;
     let closed = false;
+    const controller = new AbortController();
     const client = openEntityEventsClient({
       onOpen: () => console.log("[entity-events] WS connected"),
       onEntityChanged: (event: EntityEvent) => {
@@ -50,7 +51,11 @@ export function useEntityEventsSession(opts: { enabled: boolean }) {
             // source of truth.
             const targetProjectId = event.projectId ?? store.getState().project.currentProjectId;
             if (targetProjectId) {
-              void refreshProjectDetail(dispatch, targetProjectId);
+              void refreshProjectDetail(dispatch, targetProjectId, {
+                isCurrent: () =>
+                  !closed && store.getState().project.currentProjectId === targetProjectId,
+                signal: controller.signal,
+              });
             }
             break;
           }
@@ -88,6 +93,7 @@ export function useEntityEventsSession(opts: { enabled: boolean }) {
     });
     return () => {
       closed = true;
+      controller.abort();
       client.close();
     };
   }, [dispatch, store, opts.enabled, viewerId]);

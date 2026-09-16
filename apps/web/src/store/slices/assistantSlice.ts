@@ -368,19 +368,40 @@ async function uploadAttachmentFile(
 
 // ─── Async: refresh project detail ──────────────────────
 
-export async function refreshProjectDetail(dispatch: AppDispatch, projectId: string) {
+const projectDetailRefreshes = new WeakMap<AppDispatch, Map<string, object>>();
+
+export async function refreshProjectDetail(
+  dispatch: AppDispatch,
+  projectId: string,
+  options: { isCurrent: () => boolean; signal?: AbortSignal }
+) {
+  if (!options.isCurrent() || options.signal?.aborted) return;
+  let requests = projectDetailRefreshes.get(dispatch);
+  if (!requests) {
+    requests = new Map();
+    projectDetailRefreshes.set(dispatch, requests);
+  }
+  const request = {};
+  requests.set(projectId, request);
+  const current = () =>
+    requests.get(projectId) === request && !options.signal?.aborted && options.isCurrent();
   try {
-    const detail = await backendApi.post<ProjectDetail>(`/api/user/project/detail/${projectId}`);
-    dispatch(setProjectDetail(detail));
+    const detail = await backendApi.post<ProjectDetail>(`/api/user/project/detail/${projectId}`, {
+      signal: options.signal,
+    });
+    if (current()) dispatch(setProjectDetail(detail));
   } catch (error) {
-    console.error("[assistantSlice] 刷新项目详情失败:", error);
+    if (current()) console.error("[assistantSlice] 刷新项目详情失败:", error);
+  } finally {
+    if (requests.get(projectId) === request) requests.delete(projectId);
   }
 }
 
 async function applyWorkspaceMutationEffects(
   dispatch: AppDispatch,
   projectId: string,
-  message: AssistantMessage | null
+  message: AssistantMessage | null,
+  getState: () => RootState
 ) {
   if (!message) return;
 
@@ -396,7 +417,9 @@ async function applyWorkspaceMutationEffects(
     switch (output.action) {
       case "project.updated":
         dispatch(touchProjectList());
-        await refreshProjectDetail(dispatch, projectId);
+        await refreshProjectDetail(dispatch, projectId, {
+          isCurrent: () => getState().project.currentProjectId === projectId,
+        });
         break;
       case "world.updated":
         dispatch(touchWorld());
@@ -455,7 +478,7 @@ export const finalizeTurnOnIdle = createAsyncThunk<
   const lastAssistant =
     [...conversation.messages].reverse().find((m) => m.role === "assistant") ?? null;
   dispatch(finalizeAssistantMessage({ projectId, message: null }));
-  await applyWorkspaceMutationEffects(dispatch, projectId, lastAssistant);
+  await applyWorkspaceMutationEffects(dispatch, projectId, lastAssistant, getState);
 });
 
 function buildWorkspaceContext(state: RootState, projectId: string): AssistantWorkspaceSelection {
