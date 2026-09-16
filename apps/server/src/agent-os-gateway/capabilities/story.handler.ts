@@ -106,6 +106,7 @@ const STORY_TOOL_IDS = new Set([
   'story.generation.confirmBatch',
   'story.generation.getBatch',
   'story.generation.cancelBatch',
+  'story.generation.resumeBatch',
 ]);
 
 const MOBILE_H5_DEFAULT_DURATION = 'short_5_15' as const;
@@ -602,6 +603,19 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         const args = StoryGetGenerationBatchInputSchema.parse(input.arguments);
         await this.projects.requireWrite(input.actorId, input.projectId);
         return this.generationBatches.cancel(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+        );
+      }
+      case 'story.generation.resumeBatch': {
+        // The creator's explicit chat request (e.g. "继续" after recharging)
+        // is the authorization; resume() re-checks project permission, batch
+        // ownership, and the per-item billing balance before queuing.
+        const args = StoryGetGenerationBatchInputSchema.parse(input.arguments);
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        return this.generationBatches.resume(
           { userId: input.actorId },
           input.projectId,
           chapterId,
