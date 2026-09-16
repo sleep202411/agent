@@ -4,7 +4,7 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
-import { IconX } from "@tabler/icons-react";
+import { IconChevronDown, IconX } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -63,6 +63,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
+  const [detailsOpen, setDetailsOpen] = useState(true);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -232,49 +233,71 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
             </button>
           </p>
         )}
-        {item && Boolean(item.episodes?.length) && (
-          <div className="shrink-0 space-y-2 px-4 py-2">
-            <p className="text-xs text-white/60">{t("episodeSelector")}</p>
-            <NativeSelect
-              aria-label={t("episodeSelector")}
-              value={episode?.id ?? ""}
-              onChange={(episodeId) => {
-                navigationVersion.current += 1;
-                setAdvancing(false);
-                setNextError(null);
-                setIsPlaying(false);
-                setEpisodeChoice(episodeId ? { ipId: item.id, episodeId } : null);
-              }}
+        {item && (
+          <div className="shrink-0 lg:max-h-[45%] lg:overflow-y-auto" data-lenis-prevent>
+            <button
+              type="button"
+              aria-expanded={detailsOpen}
+              aria-controls="tv-channel-details"
+              onClick={() => setDetailsOpen((open) => !open)}
+              className="flex min-h-11 w-full items-center justify-between gap-3 border-t border-white/10 px-4 text-sm text-white/70 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-white"
             >
-              <NativeSelectOption value="">{t("preview")}</NativeSelectOption>
-              {item.episodes?.map((entry) => (
-                <NativeSelectOption key={entry.id} value={entry.id}>
-                  {entry.number}. {entry.title}
-                  {entry.locked
-                    ? ` · ${t("lockedEpisode")}`
-                    : !entry.video
-                      ? ` · ${t("videoUnavailable")}`
-                      : ""}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-            {episode && !episode.video && (
-              <p role="status" className="text-sm text-white/60">
-                {episode.locked ? t("episodeAccess") : t("videoUnavailable")}{" "}
-                <Link
-                  className="underline"
-                  href={localizePath(ipRoomPath(item.roomNumber), locale)}
-                >
-                  {t("viewDetail")}
-                </Link>
-              </p>
-            )}
-            {episode && Boolean(episode.video) && episode.number >= 1 && episode.number <= 3 && (
-              <EpisodeFeedback ipId={item.id} episodeId={episode.id} />
-            )}
+              <span>{t(detailsOpen ? "hideDetails" : "showDetails")}</span>
+              <IconChevronDown
+                aria-hidden
+                className={`size-4 ${detailsOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            <div id="tv-channel-details" hidden={!detailsOpen}>
+              {item && Boolean(item.episodes?.length) && (
+                <div className="shrink-0 space-y-2 px-4 py-2">
+                  <p className="text-xs text-white/60">{t("episodeSelector")}</p>
+                  <NativeSelect
+                    aria-label={t("episodeSelector")}
+                    value={episode?.id ?? ""}
+                    onChange={(episodeId) => {
+                      navigationVersion.current += 1;
+                      setAdvancing(false);
+                      setNextError(null);
+                      setIsPlaying(false);
+                      setEpisodeChoice(episodeId ? { ipId: item.id, episodeId } : null);
+                    }}
+                  >
+                    <NativeSelectOption value="">{t("preview")}</NativeSelectOption>
+                    {item.episodes?.map((entry) => (
+                      <NativeSelectOption key={entry.id} value={entry.id}>
+                        {entry.number}. {entry.title}
+                        {entry.locked
+                          ? ` · ${t("lockedEpisode")}`
+                          : !entry.video
+                            ? ` · ${t("videoUnavailable")}`
+                            : ""}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                  {episode && !episode.video && (
+                    <p role="status" className="text-sm text-white/60">
+                      {episode.locked ? t("episodeAccess") : t("videoUnavailable")}{" "}
+                      <Link
+                        className="underline"
+                        href={localizePath(ipRoomPath(item.roomNumber), locale)}
+                      >
+                        {t("viewDetail")}
+                      </Link>
+                    </p>
+                  )}
+                  {episode &&
+                    Boolean(episode.video) &&
+                    episode.number >= 1 &&
+                    episode.number <= 3 && (
+                      <EpisodeFeedback ipId={item.id} episodeId={episode.id} />
+                    )}
+                </div>
+              )}
+              {item && <TvInfoBar item={item} />}
+            </div>
           </div>
         )}
-        {item && <TvInfoBar item={item} />}
 
         {!embedded && (
           <div className="absolute right-4 top-4 z-20 flex items-center gap-2 sm:right-6">

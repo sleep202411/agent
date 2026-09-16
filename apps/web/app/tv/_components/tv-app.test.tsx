@@ -173,6 +173,23 @@ describe("TV IP list", () => {
     });
   }
 
+  it("collapses and restores channel details without replacing the player", async () => {
+    await render();
+    await waitForText("First IP");
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-controls="tv-channel-details"]'
+    );
+    expect(toggle).not.toBeNull();
+    const details = container.querySelector<HTMLElement>("#tv-channel-details")!;
+    expect(details.hidden).toBe(false);
+    await act(async () => toggle!.click());
+    expect(details.hidden).toBe(true);
+    expect(toggle!.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => toggle!.click());
+    expect(details.hidden).toBe(false);
+    expect(details.textContent).toContain("First IP");
+  });
+
   it("cancels catalog and discovery reads when the viewer changes", async () => {
     harness.list.mockImplementation(() => new Promise(() => {}));
     harness.discovery.mockImplementation(() => new Promise(() => {}));

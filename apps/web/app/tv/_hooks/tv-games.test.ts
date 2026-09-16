@@ -57,3 +57,18 @@ it("retains catalog artwork and rejects unsafe image URLs", () => {
     parseTvGames("text-game", [{ ...row, posterUrl: "javascript:alert(1)" }])[0]?.coverUrl
   ).toBeUndefined();
 });
+
+it("retains published films with historical offline timestamps or absent artwork", () => {
+  const rows = parseTvGames("interactive-film", [
+    {
+      ...film,
+      gameId: "jinling",
+      title: "Jinling",
+      status: "published",
+      offlineAt: "2026-08-25T18:12:24+08:00",
+      coverUrl: null,
+    },
+    { ...film, gameId: "offline", status: "offline" },
+  ]);
+  expect(rows.map((row) => row.id)).toEqual(["interactive-film:jinling"]);
+});
