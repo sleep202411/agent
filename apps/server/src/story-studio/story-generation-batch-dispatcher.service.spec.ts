@@ -288,6 +288,96 @@ describe('Story generation batch fair dispatcher', () => {
       },
     });
   });
+
+  it('requeues an item on a transient reference-download failure instead of failing the batch', async () => {
+    const itemUpdateMany = jest
+      .fn<Promise<{ count: number }>, [unknown]>()
+      .mockResolvedValue({ count: 1 });
+    const batchUpdateMany = jest
+      .fn<Promise<{ count: number }>, [unknown]>()
+      .mockResolvedValue({ count: 1 });
+    const service = new StoryGenerationBatchDispatcherService(
+      {
+        $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+          callback({
+            storyGenerationBatchItem: { updateMany: itemUpdateMany },
+            storyGenerationBatch: { updateMany: batchUpdateMany },
+          }),
+        ),
+      } as never,
+      {} as never,
+    ) as unknown as {
+      fail(
+        item: unknown,
+        code: string,
+        message: string,
+        details?: Record<string, string | number | boolean>,
+      ): Promise<void>;
+    };
+
+    await service.fail(
+      {
+        id: 'item-1',
+        batchId: 'batch-1',
+        dispatchAttempts: 2,
+        batch: { dispatchMode: 'sequential' },
+      },
+      'PROVIDER_REFERENCE_DOWNLOAD',
+      'Failed to download image from [https://media.fizzspace.cn/a.png]: ',
+    );
+
+    const update = itemUpdateMany.mock.calls[0]?.[0] as {
+      data?: Record<string, unknown>;
+    };
+    expect(update?.data).toMatchObject({
+      status: StoryGenerationBatchItemStatus.ready,
+      leaseOwner: null,
+      error: { code: 'PROVIDER_REFERENCE_DOWNLOAD', retryable: true },
+    });
+    expect(update?.data?.nextDispatchAt).toEqual(expect.any(Date));
+    // The batch itself is untouched — no failure-stop propagation.
+    expect(batchUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it('fails the item terminally once the retry budget is exhausted', async () => {
+    const itemUpdateMany = jest
+      .fn<Promise<{ count: number }>, [unknown]>()
+      .mockResolvedValue({ count: 1 });
+    const batchUpdateMany = jest
+      .fn<Promise<{ count: number }>, [unknown]>()
+      .mockResolvedValue({ count: 1 });
+    const service = new StoryGenerationBatchDispatcherService(
+      {
+        $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+          callback({
+            storyGenerationBatchItem: { updateMany: itemUpdateMany },
+            storyGenerationBatch: { updateMany: batchUpdateMany },
+          }),
+        ),
+      } as never,
+      {} as never,
+    ) as unknown as {
+      fail(item: unknown, code: string, message: string): Promise<void>;
+    };
+
+    await service.fail(
+      {
+        id: 'item-1',
+        batchId: 'batch-1',
+        dispatchAttempts: 3,
+        batch: { dispatchMode: 'sequential' },
+      },
+      'PROVIDER_REFERENCE_DOWNLOAD',
+      'Failed to download image from [https://media.fizzspace.cn/a.png]: ',
+    );
+
+    const update = itemUpdateMany.mock.calls[0]?.[0] as {
+      data?: Record<string, unknown>;
+    };
+    expect(update?.data).toMatchObject({
+      status: StoryGenerationBatchItemStatus.failed,
+    });
+  });
 });
 
 function sqlText(value: unknown): string {

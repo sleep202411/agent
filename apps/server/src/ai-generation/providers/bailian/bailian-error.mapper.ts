@@ -25,6 +25,7 @@ export function bailianError(
       'PROVIDER_429',
       'PROVIDER_5XX',
       'PROVIDER_TIMEOUT',
+      'PROVIDER_REFERENCE_DOWNLOAD',
       'UNKNOWN',
     ].includes(code),
     createdAt: new Date().toISOString(),
@@ -65,6 +66,18 @@ export function mapBailianHttpError(
       'PROVIDER_CONTENT_FILTER',
       `${message} (content policy)`,
       CONTENT_POLICY_USER_MESSAGE,
+      raw,
+    );
+  }
+  // Bailian fetches URL references with its own downloaders; a transient
+  // fetch hiccup surfaces as HTTP 400 InvalidParameter "Failed to download
+  // image from [...]". That is a network flake, not a bad input — retryable,
+  // and the batch dispatcher re-queues the item instead of failing the run.
+  if (/failed to download (image|video|file|media)/i.test(raw)) {
+    return bailianError(
+      'PROVIDER_REFERENCE_DOWNLOAD',
+      message,
+      'The provider could not fetch the reference media. Retrying.',
       raw,
     );
   }

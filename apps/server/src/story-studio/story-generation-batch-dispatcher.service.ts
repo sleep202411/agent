@@ -19,6 +19,16 @@ import { StoryProductionGenerationService } from './story-production-generation.
 const DEFAULT_INTERVAL_MS = 1_000;
 const DEFAULT_ACTORS_PER_SWEEP = 25;
 const LEASE_MS = 60_000;
+/** Per-attempt backoff for transient item requeues (attempt N waits N×this). */
+const ITEM_RETRY_BACKOFF_MS = 15_000;
+
+function itemMaxAttempts(): number {
+  const raw = Number.parseInt(
+    process.env.STORY_GENERATION_ITEM_MAX_ATTEMPTS ?? '',
+    10,
+  );
+  return Number.isFinite(raw) && raw >= 1 ? raw : 3;
+}
 const QUEUE_BACKOFF_MS = 2_000;
 
 /**
@@ -286,6 +296,43 @@ export class StoryGenerationBatchDispatcherService
   ): Promise<void> {
     const failedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
+      // Transient provider-side reference fetch failures self-heal: requeue
+      // the item with a short backoff instead of failing the sequential
+      // batch (one flake once failed all 47 items of a Story storyboard).
+      // Budget spans resumes — dispatch_attempts never resets, so the total
+      // attempt count stays bounded.
+      if (
+        code === 'PROVIDER_REFERENCE_DOWNLOAD' &&
+        item.dispatchAttempts < itemMaxAttempts()
+      ) {
+        const requeued = await tx.storyGenerationBatchItem.updateMany({
+          where: {
+            id: item.id,
+            status: StoryGenerationBatchItemStatus.dispatching,
+            leaseOwner: this.workerId,
+          },
+          data: {
+            status: StoryGenerationBatchItemStatus.ready,
+            nextDispatchAt: new Date(
+              Date.now() + item.dispatchAttempts * ITEM_RETRY_BACKOFF_MS,
+            ),
+            leaseOwner: null,
+            leaseExpiresAt: null,
+            error: {
+              code,
+              message,
+              retryable: true,
+              ...details,
+            },
+          },
+        });
+        if (requeued.count === 1) {
+          this.logger.warn(
+            `Batch item ${item.id} reference fetch failed (attempt ${item.dispatchAttempts}); requeued with backoff.`,
+          );
+          return;
+        }
+      }
       if (
         item.batch.dispatchMode === 'sequential' &&
         (code === 'INSUFFICIENT_COMPUTE_POINTS' ||
