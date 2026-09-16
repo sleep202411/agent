@@ -28,6 +28,7 @@ export default defineConfig({
       "app/**/*.test.{ts,tsx}",
       "components/**/*.test.{ts,tsx}",
       "src/**/*.test.{ts,tsx}",
+      "hooks/**/*.test.{ts,tsx}",
       // Root-level app infra (the Next.js locale/studio-routing proxy).
       "proxy.test.ts",
     ],
