@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   audio: false,
+  probe: vi.fn(),
   audioAdd: vi.fn(),
   audioClose: vi.fn(),
   dispose: vi.fn(),
@@ -20,7 +21,7 @@ vi.mock("mediabunny", () => ({
   },
   Input: class {
     getPrimaryVideoTrack() {
-      return Promise.resolve({});
+      return fixture.probe();
     }
     getPrimaryAudioTrack() {
       return Promise.resolve(fixture.audio ? {} : null);
@@ -62,6 +63,7 @@ import { exportTimelineToMp4 } from "./timeline-export-mediabunny";
 beforeEach(() => {
   vi.resetAllMocks();
   fixture.audio = false;
+  fixture.probe.mockResolvedValue({});
   vi.stubGlobal("VideoEncoder", class {});
   vi.stubGlobal("AudioEncoder", class {});
   fixture.start.mockResolvedValue(undefined);
@@ -137,4 +139,32 @@ it("continues releasing inputs and preserves the original setup failure", async 
   await expect(exportTimelineToMp4([...shots, { ...shots[0]!, id: "two" }])).rejects.toBe(failure);
   expect(fixture.dispose).toHaveBeenCalledTimes(2);
   expect(fixture.cancel).toHaveBeenCalledTimes(1);
+});
+
+it("does not open inputs for an already cancelled export", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await expect(exportTimelineToMp4(shots, { signal: controller.signal })).rejects.toMatchObject({
+    name: "AbortError",
+  });
+  expect(fixture.probe).not.toHaveBeenCalled();
+  expect(fixture.start).not.toHaveBeenCalled();
+});
+it("disposes an input immediately when a pending probe is abandoned", async () => {
+  let finish!: (value: object) => void;
+  fixture.probe.mockImplementation(
+    () =>
+      new Promise<object>((resolve) => {
+        finish = resolve;
+      })
+  );
+  const controller = new AbortController();
+  const exported = exportTimelineToMp4(shots, { signal: controller.signal });
+  const rejected = expect(exported).rejects.toMatchObject({ name: "AbortError" });
+  controller.abort();
+  const released = fixture.dispose.mock.calls.length;
+  finish({});
+  await rejected;
+  expect(released).toBe(1);
+  expect(fixture.start).not.toHaveBeenCalled();
 });

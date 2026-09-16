@@ -145,6 +145,7 @@ export async function exportTimelineToMp4(
     );
   }
 
+  options.signal?.throwIfAborted();
   const eligible = shots.filter((shot) => Boolean(shot.videoUrl));
   if (eligible.length === 0) {
     throw new TimelineExportError("Timeline has no shots with a video URL to export.");
@@ -167,21 +168,29 @@ export async function exportTimelineToMp4(
       console.warn("[timeline-export] input cleanup failed:", error);
     }
   };
+  const onAbort = () => {
+    for (const input of inputs) releaseInput(input);
+  };
+  options.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     await Promise.all(
       eligible.map(async (shot) => {
         let input: Input | null = null;
         try {
+          options.signal?.throwIfAborted();
           input = new Input({ source: new UrlSource(shot.videoUrl!), formats: ALL_FORMATS });
           inputs.add(input);
           const videoTrack = await input.getPrimaryVideoTrack();
+          options.signal?.throwIfAborted();
           if (!videoTrack) {
             console.warn(`[timeline-export] shot ${shot.id}: no primary video track, skipping`);
             releaseInput(input);
             return;
           }
           const audioTrack = await input.getPrimaryAudioTrack();
+          options.signal?.throwIfAborted();
           const sourceDuration = await input.computeDuration([videoTrack]);
+          options.signal?.throwIfAborted();
           const requested = shot.duration && shot.duration > 0 ? shot.duration : sourceDuration;
           // Clip request down to source length — we can't synthesise
           // extra frames yet. Going the other way (request shorter
@@ -197,6 +206,7 @@ export async function exportTimelineToMp4(
       })
     );
 
+    options.signal?.throwIfAborted();
     // Probe results may be out of order due to concurrent fetches —
     // restore the user's original shot ordering before encoding.
     probed.sort(
@@ -366,6 +376,7 @@ export async function exportTimelineToMp4(
 
     return new Blob([buffer], { type: "video/mp4" });
   } finally {
+    options.signal?.removeEventListener("abort", onAbort);
     for (const input of inputs) releaseInput(input);
     if (pendingOutput) {
       try {
