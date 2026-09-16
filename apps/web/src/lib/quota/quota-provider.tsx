@@ -60,15 +60,17 @@ export function useQuotaContext(): QuotaState {
 export interface QuotaProviderProps {
   /** Pass false when user is logged out — provider becomes a no-op. */
   enabled?: boolean;
+  /** Current account identity; replacing it abandons the previous quota session. */
+  viewerId?: string | number | null;
   children: ReactNode;
 }
 
-export function QuotaProvider({ enabled = true, children }: QuotaProviderProps) {
+export function QuotaProvider({ enabled = true, viewerId, children }: QuotaProviderProps) {
   const [peek, setPeek] = useState<QuotaPeekWire | null>(null);
   const [loading, setLoading] = useState<boolean>(enabled);
   const [reconnectAttempts, setReconnectAttempts] = useState<number>(0);
   const [terminated, setTerminated] = useState<{ reason: string; code: number } | null>(null);
-  const scope = useMemo(() => ({ enabled }), [enabled]);
+  const scope = useMemo(() => ({ enabled, viewerId }), [enabled, viewerId]);
   const [stateScope, setStateScope] = useState(scope);
   if (stateScope !== scope) {
     setStateScope(scope);

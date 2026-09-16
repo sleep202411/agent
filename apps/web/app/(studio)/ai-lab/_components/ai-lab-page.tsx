@@ -420,7 +420,7 @@ export function AiLabPage() {
   );
 
   return (
-    <QuotaProvider enabled={Boolean(user)}>
+    <QuotaProvider enabled={Boolean(user)} viewerId={user?.id}>
       <UpgradeDialogHost />
       <MembershipUpgradeDialog open={upgradeOpen} onOpenChange={setUpgradeOpen} />
       <div className="min-h-[calc(100dvh-56px)] bg-black text-zinc-50">

@@ -44,10 +44,10 @@ afterEach(() => {
   act(() => root.unmount());
   vi.unstubAllGlobals();
 });
-async function render(enabled: boolean) {
+async function render(enabled: boolean, viewerId?: string) {
   await act(async () =>
     root.render(
-      <QuotaProvider enabled={enabled}>
+      <QuotaProvider enabled={enabled} {...{ viewerId }}>
         <Probe />
       </QuotaProvider>
     )
@@ -59,6 +59,38 @@ it("does not restore quota after disabling the provider", async () => {
   await act(async () => reads[0]!.resolve(response("old")));
   expect(latest.peek).toBeNull();
   expect(reads[0]!.signal?.aborted).toBe(true);
+});
+it("replaces reads and rejects retained actions when the enabled viewer changes", async () => {
+  await render(true, "first");
+  const retained = latest.refresh;
+  await render(true, "second");
+  expect(reads[0]!.signal?.aborted).toBe(true);
+  expect(reads).toHaveLength(2);
+  await act(async () => retained());
+  expect(reads).toHaveLength(2);
+  await act(async () => reads[0]!.resolve(response("first")));
+  expect(latest.peek).toBeNull();
+  await act(async () => reads[1]!.resolve(response("second")));
+  expect(latest.peek?.tier).toBe("second");
+});
+it("ignores old subscription events after enabled viewer replacement", async () => {
+  await render(true, "first");
+  const old = mock.handlers[0]!;
+  await render(true, "second");
+  act(() => {
+    old.onTerminate?.("expired", 4001);
+    old.onReconnected?.();
+  });
+  expect(latest.terminated).toBeNull();
+  expect(latest.reconnectAttempts).toBe(0);
+  expect(reads).toHaveLength(2);
+});
+it("keeps the current read and subscription for the same viewer", async () => {
+  await render(true, "same");
+  await render(true, "same");
+  expect(reads).toHaveLength(1);
+  expect(mock.handlers).toHaveLength(1);
+  expect(reads[0]!.signal?.aborted).toBe(false);
 });
 it("preserves the newer refresh when old responses finish later", async () => {
   await render(true);
