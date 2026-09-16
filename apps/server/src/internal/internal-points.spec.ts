@@ -54,7 +54,11 @@ describe('Java points bridge compatibility contract', () => {
     const prisma = {
       pointsMigration: {
         findUnique: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockResolvedValue({}),
+        create: jest.fn().mockResolvedValue({
+          userId: 'java-user',
+          migratedBalance: 50,
+          workspaceId: 'workspace-1',
+        }),
       },
       walletAccount: {
         createMany: jest.fn().mockResolvedValue({ count: 1 }),
