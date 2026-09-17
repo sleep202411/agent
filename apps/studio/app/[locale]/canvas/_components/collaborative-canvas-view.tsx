@@ -1,9 +1,10 @@
 "use client";
 
+import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { CrewSaveActions } from "@/components/canvas/authoring/crew-save-actions";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { ReactFlowProvider } from "@xyflow/react";
+import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/app/_components/auth-provider";
@@ -54,6 +55,16 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
       graph.toggleGroup,
     ]
   );
+  const actorFocus = useProjectUIStore((s) => s.actorFocus);
+  const clearActorFocus = useProjectUIStore((s) => s.clearActorFocus);
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    if (!actorFocus || actorFocus.documentId !== documentId) return;
+    const node = graph.nodes.find((n) => n.id === actorFocus.nodeId);
+    if (!node?.measured?.width || !node.measured.height) return;
+    void fitView({ nodes: [{ id: node.id }], padding: 0.6, maxZoom: 1, duration: 320 });
+    clearActorFocus(node.id);
+  }, [actorFocus, documentId, graph.nodes, fitView, clearActorFocus]);
   const lastCursorAt = useRef(0);
   const applyPreset = useApplyPreset(graph);
   const workflowPresets = useMemo(() => createWorkflowPresets(tCanvasControls), [tCanvasControls]);

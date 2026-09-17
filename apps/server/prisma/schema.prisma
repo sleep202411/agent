@@ -892,6 +892,8 @@ enum IpUserBlockTargetType {
 }
 
 model Workspace {
+  actorUnlocks     AiActorUnlock[]
+  actorUses        AiActorUse[]
   id               String          @id @default(uuid(7)) @db.Uuid
   /// Stable destination for this user's account credits and initial selection.
   defaultForUserId String?         @unique @map("default_for_user_id") @db.VarChar(64)
@@ -987,6 +989,7 @@ model WorkspaceInvite {
 }
 
 model PlatformProject {
+  actorUses AiActorUse[]
   crewAssetFolders CrewAssetNode[] @relation("CrewCanvasAssetFolder")
   id           String                @id @default(uuid(7)) @db.Uuid
   workspaceId  String                @map("workspace_id") @db.Uuid
@@ -7562,6 +7565,7 @@ enum EpisodeUploadStatus {
 }
 
 model MediaAsset {
+  aiActors           AiActor[]
   id                 String                     @id @default(uuid(7)) @db.Uuid
   kind               MediaAssetKind
   storageProvider    MediaStorageProvider       @map("storage_provider")
@@ -10256,4 +10260,49 @@ model IpGameAssociationRevision {
   @@unique([gameId, requestId])
   @@index([ipId, gameId, version(sort: Desc)], map: "ip_game_association_ip")
   @@map("ip_game_association_revisions")
+}
+
+/// Curated fictional performers. Unlock is free and workspace-scoped.
+model AiActor {
+  id           String          @id @default(uuid(7)) @db.Uuid
+  name         String          @db.VarChar(64)
+  photoAssetId String          @map("photo_asset_id") @db.Uuid
+  active       Boolean         @default(false)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  photo        MediaAsset      @relation(fields: [photoAssetId], references: [id], onDelete: Restrict)
+  unlocks      AiActorUnlock[]
+  uses         AiActorUse[]
+
+  @@index([active, createdAt, id])
+  @@map("ai_actors")
+}
+
+model AiActorUnlock {
+  actorId     String    @map("actor_id") @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  userId      String    @map("user_id") @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor       AiActor   @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@id([actorId, workspaceId])
+  @@map("ai_actor_unlocks")
+}
+
+/// A reference issued for a Canvas insertion; not a generation or credit charge.
+model AiActorUse {
+  id           String          @id @db.Uuid
+  actorId      String          @map("actor_id") @db.Uuid
+  workspaceId  String          @map("workspace_id") @db.Uuid
+  projectId    String          @map("project_id") @db.Uuid
+  userId       String          @map("user_id") @db.VarChar(64)
+  photoAssetId String          @map("photo_asset_id") @db.Uuid
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor        AiActor         @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  project      PlatformProject @relation(fields: [projectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+
+  @@index([actorId, createdAt, id])
+  @@map("ai_actor_uses")
 }

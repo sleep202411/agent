@@ -1879,7 +1879,8 @@
       "skills": "Skills",
       "skillsComingSoon": "Skills · Coming soon",
       "activity": "Activity",
-      "members": "Members"
+      "members": "Members",
+      "aiActors": "AI Actors"
     },
     "skills": {
       "title": "Skills",
@@ -4204,5 +4205,23 @@
     "reference": "Reference",
     "edit": "Edit Video",
     "extend": "Extend Video"
+  },
+  "aiActors": {
+    "title": "AI Actors",
+    "intro": "Distinct faces, ready for your next story. Unlock free for this workspace.",
+    "close": "Close actors",
+    "loading": "Loading actors…",
+    "retry": "Retry",
+    "failed": "Could not use this actor. Please try again.",
+    "invalidResponse": "The actor response did not match this request.",
+    "added": "{name} added to Canvas. Connect the image to a generation card to use it as a reference.",
+    "use": "Use actor",
+    "unlock": "Unlock · Free",
+    "working": "Working…",
+    "empty": "No actors available yet.",
+    "readOnly": "Editing access is required to unlock or use an actor.",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {page}"
   }
 }

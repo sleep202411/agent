@@ -64,6 +64,7 @@ export default function ProjectLayout({
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const actorsOpen = useProjectUIStore((s) => s.actorsOpen);
   const crewAssetsOpen = useProjectUIStore((s) => s.crewAssetsOpen);
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
@@ -98,6 +99,7 @@ export default function ProjectLayout({
     (nodesOpen && nodesEnabled) ||
     assetsOpen ||
     crewAssetsOpen ||
+    (actorsOpen && activeMode === "canvas") ||
     historyOpen ||
     sectionsOpen ||
     skillsOpen ||

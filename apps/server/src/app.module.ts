@@ -1,3 +1,4 @@
+import { AiActorsModule } from './ai-actors/ai-actors.module';
 import { Module } from '@nestjs/common';
 import { TasksModule } from './tasks/tasks.module';
 import { APP_GUARD } from '@nestjs/core';
@@ -94,6 +95,7 @@ const agentOsGatewayEnabled = (() => {
     CharactersModule,
     StoryStudioModule,
     MediaModule,
+    AiActorsModule,
     CrewsModule,
     CreatorServicesModule,
     ReferralsModule,
