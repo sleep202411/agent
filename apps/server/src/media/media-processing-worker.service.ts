@@ -51,7 +51,7 @@ export class MediaProcessingWorkerService
 {
   private readonly logger = new Logger(MediaProcessingWorkerService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
   private stopped = false;
 
   constructor(
@@ -74,15 +74,23 @@ export class MediaProcessingWorkerService
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.draining;
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (this.stopped || this.draining) return;
-    this.draining = true;
+    if (this.stopped) return;
+    if (this.draining) return this.draining;
+    this.draining = this.drain(batch).finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(batch: number): Promise<void> {
     try {
       const rows = await this.claim(batch);
       for (const row of rows) {
@@ -91,8 +99,6 @@ export class MediaProcessingWorkerService
       }
     } catch (err) {
       this.logger.warn(`media processing drain failed: ${errorText(err)}`);
-    } finally {
-      this.draining = false;
     }
   }
 

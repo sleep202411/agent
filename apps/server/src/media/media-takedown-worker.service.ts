@@ -56,7 +56,7 @@ export class MediaTakedownWorkerService
 {
   private readonly logger = new Logger(MediaTakedownWorkerService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
   private stopped = false;
 
   constructor(
@@ -78,15 +78,23 @@ export class MediaTakedownWorkerService
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.draining;
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (this.stopped || this.draining) return;
-    this.draining = true;
+    if (this.stopped) return;
+    if (this.draining) return this.draining;
+    this.draining = this.drain(batch).finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(batch: number): Promise<void> {
     try {
       for (
         let processed = 0;
@@ -99,8 +107,6 @@ export class MediaTakedownWorkerService
       }
     } catch (err) {
       this.logger.warn(`Takedown drain failed: ${errorText(err)}`);
-    } finally {
-      this.draining = false;
     }
   }
 
