@@ -83,3 +83,19 @@ it("keeps the publishing user identity without guessing it from a title or image
     ).toBeUndefined();
   }
 });
+
+it("retains authoritative text-adventure publisher identity and the original title", () => {
+  const row = {
+    gameId: "tg_1234567890123456",
+    name: "Original title",
+    posterUrl: null,
+    synopsis: null,
+    status: "published",
+    creatorId: "9007199254740993",
+  };
+  const game = parseTvGames("text-game", [row])[0];
+  expect(game?.creatorId).toBe("9007199254740993");
+  expect(game?.title).toBe("Original title");
+  expect(parseTvGames("text-game", [{ ...row, creatorId: null }])[0]?.creatorId).toBeUndefined();
+  expect(() => parseTvGames("text-game", [{ ...row, creatorId: 9007199254740992 }])).toThrow();
+});

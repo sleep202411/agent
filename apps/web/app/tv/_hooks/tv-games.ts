@@ -19,6 +19,7 @@ export function parseTvGames(kind: TvGameKind, data: unknown): TvGame[] {
       .map((row) => ({
         id: `${kind}:${row.gameId}`,
         title: row.name?.trim() || row.gameId,
+        creatorId: row.creatorId ?? undefined,
         coverUrl: publicCover(row.posterUrl),
         href: `/play/${kind}/${encodeURIComponent(row.gameId)}`,
       }));
