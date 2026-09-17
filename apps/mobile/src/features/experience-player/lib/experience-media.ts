@@ -157,7 +157,7 @@ async function signPlayableUrl(absolute: string, signal?: AbortSignal): Promise<
 /**
  * How long a freshly signed URL stays reusable. Read from the signature itself
  * where the provider exposes it — Azure blob SAS (`se`), OSS / classic S3
- * (`Expires`), SigV4 (`X-Amz-Date` + `X-Amz-Expires`) — minus a safety margin.
+ * (`Expires`), OSS V4 (`x-oss-date` + `x-oss-expires`) and SigV4 (`X-Amz-Date` + `X-Amz-Expires`) — minus a safety margin.
  */
 function signatureReusableUntilMs(url: string): number {
   const expiresAtMs = signatureExpiresAtMs(url);
@@ -179,7 +179,16 @@ function signatureExpiresAtMs(url: string): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
 
-  const epochSeconds = params.get("Expires") ?? params.get("x-oss-expires");
+  // OSS V4 expires is a lifetime measured from x-oss-date, not Unix time.
+  if (params.has("x-oss-expires")) {
+    const signedAt = parseAmzDate(params.get("x-oss-date"));
+    const lifetimeSeconds = Number(params.get("x-oss-expires"));
+    if (signedAt === null || !Number.isFinite(lifetimeSeconds) || lifetimeSeconds <= 0) return 0;
+    const expiresAt = signedAt + lifetimeSeconds * 1_000;
+    return Number.isFinite(expiresAt) ? expiresAt : 0;
+  }
+
+  const epochSeconds = params.get("Expires");
   if (epochSeconds) {
     const parsed = Number(epochSeconds);
     if (Number.isFinite(parsed) && parsed > 0) return parsed * 1_000;
