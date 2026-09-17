@@ -147,9 +147,9 @@ integration('IP episode feedback (local PostgreSQL)', () => {
       humanIpLikes: '1',
       episodes: [{ episodeId, episodeNo: 1, likes: '1', dislikes: '1' }],
     });
-    await prisma.ipEpisodeLocalization.updateMany({
-      where: { episodeId },
-      data: { archivedAt: new Date() },
+    await prisma.ipEpisode.update({
+      where: { id: episodeId },
+      data: { status: 'draft' },
     });
     expect(
       (await readIpProductionEvidence(prisma as PrismaService, ipId)).episodes,
@@ -161,6 +161,23 @@ integration('IP episode feedback (local PostgreSQL)', () => {
     await expect(
       readIpProductionEvidence(prisma as PrismaService, ipId),
     ).rejects.toThrow('IP not found');
+  });
+
+  it('accepts published fallback episodes without translation records', async () => {
+    await prisma.ipEpisodeLocalization.deleteMany({ where: { episodeId } });
+    expect(await service.vote(ipId, episodeId, viewer, 1)).toEqual({
+      likes: 1,
+      dislikes: 0,
+      mine: 1,
+    });
+    expect(await service.vote(ipId, episodeId, viewer, -1)).toEqual({
+      likes: 0,
+      dislikes: 1,
+      mine: -1,
+    });
+    expect(
+      (await readIpProductionEvidence(prisma as PrismaService, ipId)).episodes,
+    ).toEqual([{ episodeId, episodeNo: 1, likes: '0', dislikes: '1' }]);
   });
 
   it('records repeated votes once, changes preference and clears only the caller vote', async () => {

@@ -1,5 +1,5 @@
 "use client";
-import { IconDeviceGamepad, IconSearch } from "@tabler/icons-react";
+import { IconDeviceGamepad, IconSearch, IconArrowsMaximize } from "@tabler/icons-react";
 import { Fragment, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import Link from "next/link";
@@ -9,6 +9,8 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { parseTvGames, type TvGameKind } from "../_hooks/tv-games";
+
+import { useGameUserNames } from "../_hooks/use-game-user-names";
 
 import { GameIpLink } from "./game-ip-link";
 
@@ -38,6 +40,7 @@ function GameCatalog({ account }: { account: string }) {
     })),
   });
   const games = queries.flatMap((query) => query.data ?? []);
+  const userNames = useGameUserNames(games, account);
   const filtered = games.filter((game) =>
     game.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())
   );
@@ -106,8 +109,18 @@ function GameCatalog({ account }: { account: string }) {
                   className="flex min-h-16 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-white/80 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white aria-pressed:bg-white/[0.08] aria-pressed:text-white"
                 >
                   <GameCover key={`${entry.id}:${entry.coverUrl ?? ""}`} url={entry.coverUrl} />
-                  <span className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium leading-5">
-                    {entry.title}
+                  <span className="min-w-0 flex-1">
+                    <span className="line-clamp-2 break-words text-sm font-medium leading-5">
+                      {entry.title}
+                    </span>
+                    {entry.creatorId && userNames[entry.creatorId] && (
+                      <span
+                        className="mt-1 block truncate text-xs font-normal text-white/50"
+                        title={userNames[entry.creatorId]}
+                      >
+                        {userNames[entry.creatorId]}
+                      </span>
+                    )}
                   </span>
                 </button>
               </Fragment>
@@ -131,10 +144,12 @@ function GameCatalog({ account }: { account: string }) {
                 <div className="flex items-center justify-between gap-3">
                   <h2 className="min-w-0 break-words text-lg font-semibold">{game.title}</h2>
                   <Link
-                    className="flex min-h-11 shrink-0 items-center text-sm underline"
+                    className="inline-flex size-11 shrink-0 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                    aria-label={t("open")}
+                    title={t("open")}
                     href={localizePath(game.href, locale)}
                   >
-                    {t("open")}
+                    <IconArrowsMaximize aria-hidden className="size-5" />
                   </Link>
                 </div>
                 <GameIpLink gameKey={game.id} />

@@ -84,7 +84,6 @@ function FeedbackPanel({
   }
   return (
     <section className="my-3 space-y-1.5 text-xs" aria-label={t("title")}>
-      <p className="text-xs text-muted-foreground">{t("title")}</p>
       {!data && !error && <p role="status">{t("loading")}</p>}
       <div className="flex items-center gap-1.5">
         {([1, -1] as const).map((value) => (

@@ -5,8 +5,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { TvGames } from "./tv-games";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ get: vi.fn(), user: { id: "a" } }));
-vi.mock("@/src/lib/api", () => ({ api: { get: (...args: unknown[]) => state.get(...args) } }));
+const state = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), user: { id: "a" } }));
+vi.mock("@/src/lib/api", () => ({
+  api: {
+    get: (...args: unknown[]) => state.get(...args),
+    post: (...args: unknown[]) => state.post(...args),
+  },
+}));
 vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: state.user }) }));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
@@ -19,6 +24,7 @@ afterEach(async () => {
   if (root) await act(async () => root.unmount());
   host?.remove();
   state.get.mockReset();
+  state.post.mockReset();
   state.user = { id: "a" };
 });
 async function mount() {
@@ -129,4 +135,60 @@ it("shows interactive films before text adventures and opens the film route", as
     "/en-US/play/interactive-film/film-one"
   );
   expect(host.querySelector("aside")).not.toBeNull();
+});
+
+it("shows the publishing user's display name and an accessible full-player icon", async () => {
+  state.get.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.endsWith("/games")
+        ? [
+            {
+              gameId: "game-one",
+              title: "Original title",
+              creatorId: 13425,
+              currentVersion: "v1",
+              updatedAt: "2026-07-16T16:17:58+08:00",
+            },
+          ]
+        : []
+    )
+  );
+  state.post.mockResolvedValue({ info: { id: 13425, nickName: "Asitaka" } });
+  await mount();
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  const button = host.querySelector<HTMLButtonElement>('button[aria-label="Original title"]')!;
+  expect(button.textContent).toContain("Asitaka");
+  expect(state.post).toHaveBeenCalledWith(
+    "/user/other/user/info",
+    expect.objectContaining({ params: { UserId: "13425" }, raw: true })
+  );
+  await act(async () => button.click());
+  const link = host.querySelector('a[aria-label="open"]')!;
+  expect(link.querySelector("svg")).not.toBeNull();
+  expect(link.textContent).toBe("");
+  expect(link.getAttribute("href")).toBe("/en-US/play/interactive-film/game-one");
+});
+it("does not substitute the viewer or a numeric ID when the publisher lookup fails", async () => {
+  state.get.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.endsWith("/games")
+        ? [
+            {
+              gameId: "game-one",
+              title: "Original title",
+              creatorId: 13425,
+              currentVersion: "v1",
+              updatedAt: "2026-07-16T16:17:58+08:00",
+            },
+          ]
+        : []
+    )
+  );
+  state.post.mockRejectedValue(new Error("Unavailable"));
+  await mount();
+  expect(host.querySelector('button[aria-label="Original title"]')?.textContent).toBe(
+    "Original title"
+  );
 });

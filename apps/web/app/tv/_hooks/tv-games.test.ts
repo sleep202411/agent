@@ -72,3 +72,14 @@ it("retains published films with historical offline timestamps or absent artwork
   ]);
   expect(rows.map((row) => row.id)).toEqual(["interactive-film:jinling"]);
 });
+
+it("keeps the publishing user identity without guessing it from a title or image", () => {
+  expect(parseTvGames("interactive-film", [{ ...film, creatorId: 13425 }])[0]?.creatorId).toBe(
+    "13425"
+  );
+  for (const creatorId of [null, "", -1, 1.5, {}, "../users", Number.MAX_SAFE_INTEGER + 1]) {
+    expect(
+      parseTvGames("interactive-film", [{ ...film, creatorId }])[0]?.creatorId
+    ).toBeUndefined();
+  }
+});
