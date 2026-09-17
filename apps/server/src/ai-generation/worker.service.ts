@@ -1830,6 +1830,7 @@ export class AiGenerationWorkerService
       signal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
       throw new Error(`provider URL fetch failed: HTTP ${res.status}`);
     }
     const ab = await res.arrayBuffer();
@@ -1865,6 +1866,7 @@ export class AiGenerationWorkerService
       signal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS),
     });
     if (!res.ok || !res.body) {
+      await res.body?.cancel().catch(() => undefined);
       throw new Error(`provider URL fetch failed: HTTP ${res.status}`);
     }
     const hash = createHash('sha256');
