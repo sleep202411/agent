@@ -147,3 +147,35 @@ describe("utf8BoundedString", () => {
     expect(() => utf8BoundedString(0)).toThrow(/positive integer/);
   });
 });
+
+it.each([
+  [z.iso.time(), `12:34:56.${"1".repeat(400)}`],
+  [z.iso.datetime(), `2026-09-17T12:34:56.${"1".repeat(400)}Z`],
+  [z.iso.duration(), `P${"1".repeat(400)}D`],
+] as const)("does not assign a finite ceiling to variable-length ISO values", (schema, value) => {
+  expect(schema.safeParse(value).success).toBe(true);
+  expect(measureMaxSerializedBytes(schema).unbounded).not.toHaveLength(0);
+  expect(() => assertMaxSerializedBytes(schema, 300, "ISO field")).toThrow(/no size ceiling/);
+});
+
+it.each([-1, 0, 3, 400])("measures explicit ISO precision %s conservatively", (precision) => {
+  const time =
+    precision === -1 ? "12:34" : precision === 0 ? "12:34:56" : `12:34:56.${"1".repeat(precision)}`;
+  for (const [schema, value] of [
+    [z.iso.time({ precision }), time],
+    [z.iso.datetime({ precision }), `2026-09-17T${time}Z`],
+    [z.iso.datetime({ precision, offset: true }), `2026-09-17T${time}+08:00`],
+  ] as const) {
+    expect(schema.safeParse(value).success).toBe(true);
+    const report = measureMaxSerializedBytes(schema);
+    expect(report.unbounded).toEqual([]);
+    expect(report.bytes).toBeGreaterThanOrEqual(encoder.encode(JSON.stringify(value)).length);
+  }
+});
+
+it.each([z.iso.time(), z.iso.datetime(), z.iso.duration()])(
+  "honors an explicit max for variable ISO formats",
+  (schema) => {
+    expect(measureMaxSerializedBytes(schema.max(100))).toEqual({ bytes: 402, unbounded: [] });
+  }
+);
