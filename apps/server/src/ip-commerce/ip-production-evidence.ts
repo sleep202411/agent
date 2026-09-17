@@ -44,9 +44,7 @@ export async function readIpProductionEvidence(
         'likes', (SELECT count(*)::text FROM ip_episode_feedback f WHERE f.episode_id=e.id AND f.value=1),
         'dislikes', (SELECT count(*)::text FROM ip_episode_feedback f WHERE f.episode_id=e.id AND f.value=-1)
       ) ORDER BY e.episode_no) FROM ip_episodes e WHERE e.ip_id=ip.id
-        AND e.episode_no BETWEEN 1 AND 3 AND e.status='published' AND e.deleted_at IS NULL
-        AND EXISTS(SELECT 1 FROM ip_episode_localizations loc WHERE loc.episode_id=e.id
-          AND loc.status='published' AND loc.archived_at IS NULL)), '[]'::jsonb) AS episodes
+        AND e.episode_no BETWEEN 1 AND 3 AND e.status='published' AND e.deleted_at IS NULL), '[]'::jsonb) AS episodes
     FROM ips ip WHERE ip.id=${ipId}::uuid AND ip.deleted_at IS NULL`;
   if (!evidence) throw new NotFoundException('IP not found.');
   return evidence;

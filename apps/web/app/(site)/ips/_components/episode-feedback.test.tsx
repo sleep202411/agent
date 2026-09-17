@@ -64,3 +64,19 @@ it("asks a guest to sign in without writing", async () => {
   expect(state.open).toHaveBeenCalled();
   expect(api.put).not.toHaveBeenCalled();
 });
+
+it("supports like, dislike and clearing a vote without a visible testing heading", async () => {
+  await render();
+  const buttons = host.querySelectorAll("button");
+  for (const [index, value, result] of [
+    [0, 1, { likes: 3, dislikes: 1, mine: 1 }],
+    [1, -1, { likes: 2, dislikes: 2, mine: -1 }],
+    [1, null, { likes: 2, dislikes: 1, mine: null }],
+  ] as const) {
+    vi.mocked(api.put).mockResolvedValueOnce(result);
+    await act(async () => buttons[index].click());
+    expect(vi.mocked(api.put).mock.lastCall?.[1]?.data).toEqual({ value });
+    expect(buttons[index].getAttribute("aria-pressed")).toBe(String(value !== null));
+  }
+  expect(host.textContent).not.toContain("title");
+});

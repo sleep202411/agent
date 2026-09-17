@@ -38,12 +38,10 @@ export class IpEpisodeFeedbackService {
         deletedAt: null,
         status: 'published',
         episodeNo: { gte: 1, lte: 3 },
-        localizations: { some: { archivedAt: null, status: 'published' } },
       },
       select: { id: true },
     });
-    if (!episode)
-      throw new NotFoundException('Published testing episode not found.');
+    if (!episode) throw new NotFoundException('Published episode not found.');
   }
   private async summary(
     db: Prisma.TransactionClient,

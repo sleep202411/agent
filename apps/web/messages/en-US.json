@@ -9843,7 +9843,7 @@
     "choose": "Choose a published game to play."
   },
   "episodeFeedback": {
-    "title": "First-three-episode feedback",
+    "title": "Episode feedback",
     "like": "Like",
     "dislike": "Dislike",
     "loading": "Loading feedback…",

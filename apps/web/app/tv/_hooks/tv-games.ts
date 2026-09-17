@@ -2,7 +2,13 @@ import { ExperienceGameSummarySchema } from "@repo/shared/experience-runtime";
 import { TextGameSummaryListSchema } from "@repo/shared/text-game";
 
 export type TvGameKind = "text-game" | "interactive-film";
-export type TvGame = { id: string; title: string; href: string; coverUrl?: string };
+export type TvGame = {
+  id: string;
+  title: string;
+  href: string;
+  coverUrl?: string;
+  creatorId?: string;
+};
 
 /** These public player catalogs own publication; game identities are never IP identities. */
 export function parseTvGames(kind: TvGameKind, data: unknown): TvGame[] {
@@ -35,6 +41,7 @@ export function parseTvGames(kind: TvGameKind, data: unknown): TvGame[] {
     games.push({
       id: `${kind}:${parsed.data.gameId}`,
       title: parsed.data.title,
+      creatorId: publicCreatorId(row.creatorId),
       coverUrl: publicCover(parsed.data.coverUrl),
       href: `/play/${kind}/${encodeURIComponent(parsed.data.gameId)}`,
     });
@@ -52,4 +59,11 @@ function publicCover(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function publicCreatorId(value: unknown): string | undefined {
+  if (typeof value === "number" && (!Number.isSafeInteger(value) || value <= 0)) return undefined;
+  if (typeof value !== "number" && typeof value !== "string") return undefined;
+  const id = String(value);
+  return /^[1-9]\d*$/.test(id) ? id : undefined;
 }

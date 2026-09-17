@@ -1,5 +1,4 @@
 "use client";
-import { IpProductionStage } from "@/app/(site)/ips/_components/ip-production-stage";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -268,7 +267,6 @@ export function TvIpList({
                       </span>
                     )}
                     {item.genre && <span className="truncate">{item.genre}</span>}
-                    <IpProductionStage ipId={item.id} compact showLabel />
                   </span>
                 </span>
                 {active && item.trailer && (
