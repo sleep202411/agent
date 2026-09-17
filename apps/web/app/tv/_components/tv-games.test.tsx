@@ -192,3 +192,30 @@ it("does not substitute the viewer or a numeric ID when the publisher lookup fai
     "Original title"
   );
 });
+
+it("resolves text-adventure publisher names through the same public profile lookup", async () => {
+  state.get.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.endsWith("/games")
+        ? []
+        : [
+            {
+              gameId: "tg_1234567890123456",
+              name: "Original text adventure",
+              creatorId: "13425",
+              posterUrl: null,
+              synopsis: null,
+              status: "published",
+            },
+          ]
+    )
+  );
+  state.post.mockResolvedValue({ info: { id: 13425, nickName: "Asitaka" } });
+  await mount();
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 50));
+  });
+  const button = host.querySelector('button[aria-label="Original text adventure"]')!;
+  expect(button.textContent).toContain("Asitaka");
+  expect(state.post).toHaveBeenCalledTimes(1);
+});
