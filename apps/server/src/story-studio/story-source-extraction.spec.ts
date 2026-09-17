@@ -460,7 +460,7 @@ describe('faithful source extraction', () => {
       ...input.scenes[1],
       nodeId: 'orphan',
       start: 2,
-      exit: { kind: 'auto', nextNodeId: 'orphan' },
+      exit: { kind: 'auto', nextNodeId: 'ending' },
     });
     expect(
       validateSourceExtraction(input, source, indexStorySource(source)).join(
@@ -1450,7 +1450,7 @@ describe('unresolved chapter hand-off guard', () => {
     start,
     exit,
   });
-  const planWith = (source: string): StorySourceExtraction => ({
+  const planWith = (): StorySourceExtraction => ({
     title: '标题',
     logline: '一句话梗概。',
     synopsis: '概要。',
@@ -1481,7 +1481,7 @@ describe('unresolved chapter hand-off guard', () => {
     const source =
       '若梦初醒，叙事展开。\n要知後事如何，且聽下回分解。\n第二回 新章开始';
     const issues = validateSourceExtraction(
-      planWith(source),
+      planWith(),
       source,
       indexStorySource(source),
     );
@@ -1492,11 +1492,46 @@ describe('unresolved chapter hand-off guard', () => {
     const source =
       '若梦初醒，选择追问 → 进入下一章\n要知後事如何，且聽下回分解。\n第二回 新章开始';
     expect(
-      validateSourceExtraction(
-        planWith(source),
-        source,
-        indexStorySource(source),
-      ),
+      validateSourceExtraction(planWith(), source, indexStorySource(source)),
     ).toEqual([]);
+  });
+});
+
+describe('self-route guard', () => {
+  type Scene = StorySourceExtraction['scenes'][number];
+  const scene = (
+    nodeId: string,
+    start: number,
+    exit: Scene['exit'],
+  ): Scene => ({
+    nodeId,
+    name: nodeId,
+    heading: nodeId,
+    beat: nodeId,
+    start,
+    exit,
+  });
+
+  it('rejects an auto exit routing a scene into itself', () => {
+    const source = '开场\n后续';
+    const issues = validateSourceExtraction(
+      {
+        title: '标题',
+        logline: '一句话梗概。',
+        synopsis: '概要。',
+        characters: [],
+        entrySceneId: 'source_0',
+        scenes: [
+          scene('source_0', 0, { kind: 'auto', nextNodeId: 'source_0' }),
+        ],
+        context: [],
+        unsupportedRules: [],
+      },
+      source,
+      indexStorySource(source),
+    );
+    expect(issues.join('\n')).toContain(
+      'source_0: a scene cannot route into itself',
+    );
   });
 });

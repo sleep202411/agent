@@ -1192,6 +1192,12 @@ export function validateSourceExtraction(
     for (const target of targets)
       if (!ids.has(target))
         issues.push(`${scene.nodeId}: missing target ${target}.`);
+    // A route back into its own scene replays forever; downstream plot
+    // projection refuses such graphs, so reject them at extraction time.
+    if (targets.includes(scene.nodeId))
+      issues.push(
+        `${scene.nodeId}: a scene cannot route into itself. Continue to the next segment (or auto null at the actual end).`,
+      );
     if (exit.kind === 'choice') {
       const alternatives = new Set(exit.choices.map((c) => c.nextNodeId));
       for (const outcomeId of alternatives) {
