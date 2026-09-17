@@ -3155,6 +3155,8 @@
     "noShots": "暂无镜头",
     "exportMp4": "导出 MP4",
     "exportSuccess": "导出完成",
+    "exportPartial": "已保存部分导出",
+    "exportPartialDesc": "部分视频或音频未能导出，请在分享前检查导出文件。",
     "exportFailed": "导出失败",
     "exportUnsupported": "当前浏览器不支持",
     "exportUnsupportedDesc": "MP4 导出依赖 WebCodecs，请使用最新版 Chrome 或 Edge。",

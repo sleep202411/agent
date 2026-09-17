@@ -3155,6 +3155,8 @@
     "noShots": "No shots",
     "exportMp4": "Export MP4",
     "exportSuccess": "Export complete",
+    "exportPartial": "Partial export saved",
+    "exportPartialDesc": "Some video or audio could not be included. Review the exported file before sharing.",
     "exportFailed": "Export failed",
     "exportUnsupported": "Browser not supported",
     "exportUnsupportedDesc": "MP4 export needs WebCodecs. Use the latest Chrome or Edge.",

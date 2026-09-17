@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => ({
   audio: false,
+  frames: 1,
+  timestamp: vi.fn(),
   probe: vi.fn(),
   audioAdd: vi.fn(),
   audioClose: vi.fn(),
@@ -54,8 +56,15 @@ vi.mock("mediabunny", () => ({
     }
   },
   VideoSampleSink: class {
+    constructor(private track: { label?: string }) {}
     async *samples() {
-      yield { timestamp: 0, setTimestamp: vi.fn(), close: fixture.close };
+      for (let n = 0; n < fixture.frames; n++)
+        yield {
+          timestamp: n / 10,
+          label: this.track.label,
+          setTimestamp: fixture.timestamp,
+          close: fixture.close,
+        };
     }
   },
 }));
@@ -63,6 +72,7 @@ import { exportTimelineToMp4, triggerBlobDownload } from "./timeline-export-medi
 beforeEach(() => {
   vi.resetAllMocks();
   fixture.audio = false;
+  fixture.frames = 1;
   fixture.probe.mockResolvedValue({});
   vi.stubGlobal("VideoEncoder", class {});
   vi.stubGlobal("AudioEncoder", class {});
@@ -215,4 +225,150 @@ it("defers successful timeline URL revocation and preserves the filename", async
   expect(revoke).not.toHaveBeenCalled();
   await vi.runAllTimersAsync();
   expect(revoke).toHaveBeenCalledOnce();
+});
+
+it("reports omitted and unopenable shots in original timeline order", async () => {
+  fixture.probe.mockRejectedValueOnce(new Error("private URL error"));
+  const report = vi.fn();
+  await exportTimelineToMp4(
+    [
+      { id: "same", videoUrl: "https://media.invalid/bad" },
+      { id: "still" },
+      { id: "same", videoUrl: "https://media.invalid/good" },
+    ],
+    { onReport: report }
+  );
+  expect(report).toHaveBeenCalledOnce();
+  expect(report).toHaveBeenCalledWith({
+    requestedShots: 3,
+    completedShots: 1,
+    partial: true,
+    issues: [
+      { index: 0, shotId: "same", reason: "probe_failed" },
+      { index: 1, shotId: "still", reason: "missing_video" },
+    ],
+  });
+});
+it("reports a missing video track without discarding another valid shot", async () => {
+  fixture.probe.mockResolvedValueOnce(null);
+  const report = vi.fn();
+  await exportTimelineToMp4([...shots, { ...shots[0]!, id: "two" }], { onReport: report });
+  expect(report.mock.calls[0]![0]).toMatchObject({
+    completedShots: 1,
+    partial: true,
+    issues: [{ index: 0, shotId: "one", reason: "no_video_track" }],
+  });
+});
+it("reports encoding failures even when another shot allows finalization", async () => {
+  fixture.add.mockRejectedValueOnce(new Error("encoding failed"));
+  const report = vi.fn();
+  await exportTimelineToMp4([...shots, { ...shots[0]!, id: "two" }], { onReport: report });
+  expect(report.mock.calls[0]![0]).toMatchObject({
+    completedShots: 1,
+    partial: true,
+    issues: [{ index: 0, shotId: "one", reason: "encoding_failed" }],
+  });
+});
+it("reports complete output only after finalization and isolates observer failure", async () => {
+  const report = vi.fn(() => {
+    expect(fixture.finalize).toHaveBeenCalledOnce();
+    throw Error("observer");
+  });
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  await expect(exportTimelineToMp4(shots, { onReport: report })).resolves.toBeInstanceOf(Blob);
+  expect(report).toHaveBeenCalledWith({
+    requestedShots: 1,
+    completedShots: 1,
+    partial: false,
+    issues: [],
+  });
+});
+it("does not issue a completion report for failed finalization", async () => {
+  fixture.finalize.mockRejectedValue(new Error("mux failure"));
+  const report = vi.fn();
+  await expect(exportTimelineToMp4(shots, { onReport: report })).rejects.toThrow("mux failure");
+  expect(report).not.toHaveBeenCalled();
+});
+it("identifies unprocessed shots in finalized cancellation output", async () => {
+  const signal = new AbortController();
+  const report = vi.fn();
+  await exportTimelineToMp4([...shots, { ...shots[0]!, id: "two" }], {
+    signal: signal.signal,
+    onProgress: () => signal.abort(),
+    onReport: report,
+  });
+  expect(report).toHaveBeenCalledWith({
+    requestedShots: 2,
+    completedShots: 1,
+    partial: true,
+    issues: [{ index: 1, shotId: "two", reason: "cancelled" }],
+  });
+});
+
+it("retains frames accepted before a later encoder failure and reserves their timeline slot", async () => {
+  fixture.frames = 2;
+  fixture.add
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error("second frame failed"));
+  const report = vi.fn();
+  await exportTimelineToMp4([...shots, { ...shots[0]!, id: "two" }], { onReport: report });
+  expect(fixture.timestamp.mock.calls.map((c) => c[0])).toEqual([0, 0.1, 1, 1.1]);
+  expect(report.mock.calls[0]![0]).toMatchObject({ completedShots: 1, partial: true });
+});
+it("salvages a single partially encoded shot without calling it complete", async () => {
+  fixture.frames = 2;
+  fixture.add
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(new Error("second frame failed"));
+  const report = vi.fn();
+  await expect(exportTimelineToMp4(shots, { onReport: report })).resolves.toBeInstanceOf(Blob);
+  expect(report).toHaveBeenCalledWith({
+    requestedShots: 1,
+    completedShots: 0,
+    partial: true,
+    issues: [{ index: 0, shotId: "one", reason: "encoding_failed" }],
+  });
+});
+it("reports a zero-frame source when other shots produce usable output", async () => {
+  const report = vi.fn();
+  fixture.frames = 0;
+  await exportTimelineToMp4([...shots, { ...shots[0]!, id: "two" }], {
+    onProgress: () => {
+      fixture.frames = 1;
+    },
+    onReport: report,
+  });
+  expect(report.mock.calls[0]![0]).toMatchObject({
+    completedShots: 1,
+    partial: true,
+    issues: [{ index: 0, shotId: "one", reason: "no_frames" }],
+  });
+});
+
+it("preserves input order for repeated IDs after concurrent probes finish out of order", async () => {
+  let finish!: (value: object) => void;
+  fixture.probe
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    )
+    .mockResolvedValueOnce({ label: "second" });
+  const pending = exportTimelineToMp4([shots[0]!, shots[0]!]);
+  await vi.waitFor(() => expect(fixture.probe).toHaveBeenCalledTimes(2));
+  finish({ label: "first" });
+  await pending;
+  expect(fixture.add.mock.calls.map((c) => c[0].label)).toEqual(["first", "second"]);
+});
+it("marks audio failure as partial even when video frames were accepted", async () => {
+  fixture.audio = true;
+  fixture.audioAdd.mockRejectedValueOnce(new Error("audio codec"));
+  const report = vi.fn();
+  await expect(exportTimelineToMp4(shots, { onReport: report })).resolves.toBeInstanceOf(Blob);
+  expect(report.mock.calls[0]![0]).toMatchObject({
+    completedShots: 0,
+    partial: true,
+    issues: [{ index: 0, shotId: "one", reason: "encoding_failed" }],
+  });
 });

@@ -128,3 +128,33 @@ it("keeps an active failure retryable", async () => {
   expect(triggerBlobDownload).toHaveBeenCalledTimes(1);
   vi.mocked(console.error).mockRestore();
 });
+
+it("downloads partial output with a warning instead of claiming complete success", async () => {
+  vi.mocked(exportTimelineToMp4).mockImplementation(async (_, options) => {
+    options?.onReport?.({
+      requestedShots: 2,
+      completedShots: 1,
+      partial: true,
+      issues: [{ index: 1, shotId: "two", reason: "probe_failed" }],
+    });
+    return new Blob(["partial video"]);
+  });
+  await render();
+  await act(async () => latest.handleExportMp4());
+  expect(triggerBlobDownload).toHaveBeenCalledOnce();
+  expect(toast.warning).toHaveBeenCalledWith("exportPartial", {
+    description: "exportPartialDesc",
+    duration: 10000,
+  });
+  expect(toast.success).not.toHaveBeenCalled();
+});
+it("preserves the success message for complete output", async () => {
+  vi.mocked(exportTimelineToMp4).mockImplementation(async (_, options) => {
+    options?.onReport?.({ requestedShots: 1, completedShots: 1, partial: false, issues: [] });
+    return new Blob(["video"]);
+  });
+  await render();
+  await act(async () => latest.handleExportMp4());
+  expect(toast.success).toHaveBeenCalledWith("exportSuccess");
+  expect(toast.warning).not.toHaveBeenCalled();
+});

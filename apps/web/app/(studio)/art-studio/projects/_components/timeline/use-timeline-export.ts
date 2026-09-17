@@ -70,6 +70,7 @@ export function useTimelineExport(
       owner.current === owned && owned.operation === operation && !operation.signal.aborted;
     setProgress({ scope, ratio: 0 });
     try {
+      let partial = false;
       const blob = await exportTimelineToMp4(
         shots.map((shot) => ({
           id: shot.id,
@@ -78,6 +79,9 @@ export function useTimelineExport(
         })),
         {
           signal: operation.signal,
+          onReport: (report) => {
+            partial = report.partial;
+          },
           onProgress: (ratio) => {
             if (current()) setProgress({ scope, ratio });
           },
@@ -86,7 +90,14 @@ export function useTimelineExport(
       if (!current()) return;
       const filename = `timeline-${Date.now()}.mp4`;
       triggerBlobDownload(blob, filename);
-      toast.success(tt("exportSuccess"));
+      if (partial) {
+        toast.warning(tt("exportPartial"), {
+          description: tt("exportPartialDesc"),
+          duration: 10_000,
+        });
+      } else {
+        toast.success(tt("exportSuccess"));
+      }
     } catch (error) {
       if (!current()) return;
       console.error("[TimelineView] export failed:", error);
