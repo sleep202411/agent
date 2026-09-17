@@ -189,20 +189,21 @@ describe("invite entry for existing members", () => {
   });
 });
 
-it("accepts a workspace admin grant and invalidates the existing member roster", async () => {
-  const workspaceTarget: AcceptedInvite = {
+it("shows current workspace membership instead of accepting an admin invitation", async () => {
+  const existing: AcceptedInvite = {
     scope: "workspace",
     workspaceId: "workspace",
     targetName: "Team",
   };
-  state.preview.mockResolvedValue({ ...preview(null), scope: "workspace", role: "admin" });
-  state.accept.mockResolvedValue(workspaceTarget);
-  const rosterKey = ["share-members", "workspace", "workspace", "member"];
-  client.setQueryDefaults(rosterKey, { gcTime: Infinity });
-  client.setQueryData(rosterKey, [{ role: "editor" }]);
+  state.preview.mockResolvedValue({
+    ...preview(existing),
+    scope: "workspace",
+    role: "admin",
+    currentRole: "editor",
+  });
   await render();
-  await click("acceptInvitation");
-  expect(state.accept).toHaveBeenCalledTimes(1);
-  expect(client.getQueryState(rosterKey)?.isInvalidated).toBe(true);
-  expect(state.replace).toHaveBeenCalledWith("/canvas?ws=workspace");
+  expect(container.textContent).toContain("alreadyWorkspaceMember: Team");
+  expect(container.textContent).not.toContain("acceptInvitation");
+  await click("enterWorkspace");
+  expect(state.accept).not.toHaveBeenCalled();
 });

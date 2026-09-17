@@ -33,6 +33,7 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
 function InviteAcceptView({ token }: { token: string }) {
   const t = useTranslations("invite");
   const tc = useTranslations("common");
+  const tw = useTranslations("workspace");
   const router = useRouter();
   const queryClient = useQueryClient();
   const { setActiveWorkspaceId } = useWorkspace();
@@ -92,9 +93,6 @@ function InviteAcceptView({ token }: { token: string }) {
     navigating.current = true;
     setJoining(true);
     void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
-    void queryClient.invalidateQueries({
-      queryKey: ["share-members", "workspace", result.workspaceId],
-    });
     void queryClient.invalidateQueries({ queryKey: ["home-recent-projects"] });
     setActiveWorkspaceId(result.workspaceId);
     if (result.scope === "workspace") {
@@ -168,7 +166,14 @@ function InviteAcceptView({ token }: { token: string }) {
         <Shell
           icon={<IconUsers className="size-6" />}
           title={t("alreadyJoinedTitle")}
-          body={t("alreadyJoinedBody", { name: existingAccess.targetName })}
+          body={
+            existingAccess.scope === "workspace" && preview.currentRole
+              ? t("alreadyWorkspaceMember", {
+                  name: existingAccess.targetName,
+                  role: tw(`roles.${preview.currentRole}`),
+                })
+              : t("alreadyJoinedBody", { name: existingAccess.targetName })
+          }
         >
           <Button className="w-full" disabled={joining} onClick={() => enterTarget(existingAccess)}>
             {joining ? <IconLoader2 className="size-4 animate-spin" /> : null}
