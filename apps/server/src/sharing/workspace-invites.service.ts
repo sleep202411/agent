@@ -6,7 +6,8 @@
  * expires (multi-use, the Figma/Notion "anyone with the link" model — distinct
  * from the targeted add-by-account path in WorkspaceMembersService).
  *
- * Accept is idempotent per user: joining twice is a no-op (the partial-unique
+ * Accept grants at least the invitation role: weaker existing roles are upgraded;
+ * accepting again is a no-op (the partial-unique
  * active-membership index + an existence check guard the race). Expiry is lazy
  * (no sweeper) — a pending link past `expiresAt` reads as expired and is
  * persisted as such on the next touch. A personal workspace takes links too; the
@@ -28,10 +29,8 @@ import {
 import type { AuthUser } from '../auth';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import { PrismaService } from '../infra/db/db.module';
-import {
-  PlatformAuditLogService,
-  WorkspacePermissionService,
-} from '../workspaces';
+import { PlatformAuditLogService } from '../workspaces/audit-log.service';
+import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type { CreateInviteInput, AssignableRole } from './dto';
 import { generateInviteToken } from './invite-token';
 import {
@@ -55,6 +54,14 @@ const ROLE_MAP: Record<AssignableRole, WorkspaceMemberRole> = {
   admin: WorkspaceMemberRole.admin,
   editor: WorkspaceMemberRole.editor,
   viewer: WorkspaceMemberRole.viewer,
+};
+
+const ROLE_RANK: Record<WorkspaceMemberRole, number> = {
+  owner: 100,
+  admin: 80,
+  billing: 60,
+  editor: 50,
+  viewer: 10,
 };
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -178,7 +185,9 @@ export class WorkspaceInvitesService {
           await this.permissions.requireWorkspaceRole(
             user.userId,
             invite.workspaceId,
-            WorkspaceMemberRole.viewer,
+            effectiveInviteStatus(invite) === WorkspaceInviteStatus.pending
+              ? invite.role
+              : WorkspaceMemberRole.viewer,
           );
           return {
             scope: 'workspace' as const,
@@ -218,6 +227,7 @@ export class WorkspaceInvitesService {
     await this.assertUsable(current);
 
     let created = false;
+    let upgraded = false;
     try {
       await this.prisma.$transaction(async (tx) => {
         if (workspaceRoleConsumesCreatorSeat(current.role)) {
@@ -240,16 +250,23 @@ export class WorkspaceInvitesService {
           });
         }
 
+        await tx.$queryRaw`SELECT id FROM workspace_members WHERE workspace_id = ${invite.workspaceId}::uuid AND user_id = ${user.userId} AND removed_at IS NULL FOR UPDATE`;
         const active = await tx.workspaceMember.findFirst({
           where: {
             workspaceId: invite.workspaceId,
             userId: user.userId,
             removedAt: null,
           },
-          select: { id: true, accessScope: true },
+          select: { id: true, accessScope: true, role: true, status: true },
         });
         if (active?.accessScope === WorkspaceMemberAccessScope.workspace) {
-          return;
+          if (active.status !== WorkspaceMemberStatus.active) {
+            throw new ForbiddenException(
+              'Ask an admin to restore your membership.',
+            );
+          }
+          // A weaker link must never downgrade an existing owner/admin/member.
+          if (ROLE_RANK[active.role] >= ROLE_RANK[current.role]) return;
         }
 
         // A previously-removed member must not silently rejoin via an open link
@@ -290,7 +307,10 @@ export class WorkspaceInvitesService {
         const m = active
           ? await tx.workspaceMember.update({
               where: { id: active.id },
-              data: memberData,
+              data:
+                active.accessScope === WorkspaceMemberAccessScope.workspace
+                  ? { role: current.role }
+                  : memberData,
             })
           : await tx.workspaceMember.create({
               data: {
@@ -307,7 +327,10 @@ export class WorkspaceInvitesService {
         // Realtime: same as add-by-account — teammates see the new member live.
         await enqueueTeamMemberChanged(tx, {
           workspaceId: invite.workspaceId,
-          action: 'added',
+          action:
+            active?.accessScope === WorkspaceMemberAccessScope.workspace
+              ? 'role_changed'
+              : 'added',
           member: {
             id: m.id,
             userId: m.userId,
@@ -316,7 +339,8 @@ export class WorkspaceInvitesService {
           },
           actorUserId: user.userId,
         });
-        created = true;
+        upgraded = active?.accessScope === WorkspaceMemberAccessScope.workspace;
+        created = !active;
       });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
@@ -326,7 +350,7 @@ export class WorkspaceInvitesService {
         await this.permissions.requireWorkspaceRole(
           user.userId,
           invite.workspaceId,
-          WorkspaceMemberRole.viewer,
+          current.role,
         );
         return true;
       });
@@ -341,7 +365,7 @@ export class WorkspaceInvitesService {
       action: 'workspace.invite.accepted',
       entityType: 'workspace_invite',
       entityId: invite.id,
-      after: { userId: user.userId, role: current.role, created },
+      after: { userId: user.userId, role: current.role, created, upgraded },
     });
 
     return {

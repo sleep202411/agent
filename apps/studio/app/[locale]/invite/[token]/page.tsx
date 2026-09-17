@@ -92,6 +92,9 @@ function InviteAcceptView({ token }: { token: string }) {
     navigating.current = true;
     setJoining(true);
     void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
+    void queryClient.invalidateQueries({
+      queryKey: ["share-members", "workspace", result.workspaceId],
+    });
     void queryClient.invalidateQueries({ queryKey: ["home-recent-projects"] });
     setActiveWorkspaceId(result.workspaceId);
     if (result.scope === "workspace") {

@@ -188,3 +188,21 @@ describe("invite entry for existing members", () => {
     expect(state.replace).toHaveBeenCalledTimes(1);
   });
 });
+
+it("accepts a workspace admin grant and invalidates the existing member roster", async () => {
+  const workspaceTarget: AcceptedInvite = {
+    scope: "workspace",
+    workspaceId: "workspace",
+    targetName: "Team",
+  };
+  state.preview.mockResolvedValue({ ...preview(null), scope: "workspace", role: "admin" });
+  state.accept.mockResolvedValue(workspaceTarget);
+  const rosterKey = ["share-members", "workspace", "workspace", "member"];
+  client.setQueryDefaults(rosterKey, { gcTime: Infinity });
+  client.setQueryData(rosterKey, [{ role: "editor" }]);
+  await render();
+  await click("acceptInvitation");
+  expect(state.accept).toHaveBeenCalledTimes(1);
+  expect(client.getQueryState(rosterKey)?.isInvalidated).toBe(true);
+  expect(state.replace).toHaveBeenCalledWith("/canvas?ws=workspace");
+});
