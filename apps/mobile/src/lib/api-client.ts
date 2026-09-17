@@ -157,7 +157,8 @@ function isAbortError(error: unknown) {
 
 function isSuccessEnvelope(body: Record<string, unknown>) {
   return (
-    body.success === true || body.code === 200 || body.code === "200" || body.code === "SUCCESS"
+    (!("success" in body) || body.success === true) &&
+    (!("code" in body) || body.code === 200 || body.code === "200" || body.code === "SUCCESS")
   );
 }
 
