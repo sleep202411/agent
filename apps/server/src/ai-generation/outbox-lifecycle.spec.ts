@@ -73,3 +73,87 @@ it.each(['candidate', 'claim', 'payload'])(
     }
   },
 );
+
+it.each([
+  ['scheduled', false],
+  ['immediate', false],
+  ['scheduled', true],
+  ['immediate', true],
+] as const)(
+  'waits for active %s publication and acknowledgement during shutdown (failure=%s)',
+  async (mode, failure) => {
+    const entered = deferred(),
+      release = deferred();
+    const query = jest
+      .fn()
+      .mockResolvedValue([{ id: 'row', lockedAt: new Date() }]);
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const publish = jest.fn(async () => {
+      entered.resolve();
+      await release.promise;
+      if (failure) throw new Error('provider failure');
+    });
+    const service = new AiGenerationOutboxService(
+      {
+        $queryRaw: query,
+        aiEventOutbox: {
+          findMany: jest.fn().mockResolvedValue([{ id: 'row' }]),
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'row',
+            userId: 'user',
+            attempt: 0,
+            payload: { type: 'fixture' },
+          }),
+          updateMany,
+          deleteMany: jest.fn(),
+        },
+      } as never,
+      { publishAssetEvent: publish } as never,
+    );
+    const work =
+      mode === 'scheduled'
+        ? service['drainOnce']()
+        : service['tryDispatch']('row');
+    await entered.promise;
+    let ended = false;
+    const shutdown = Promise.resolve(service.onModuleDestroy()).then(() => {
+      ended = true;
+    });
+    await Promise.resolve();
+    const early = ended;
+    release.resolve();
+    await Promise.all([work, shutdown]);
+    expect(early).toBe(false);
+    expect(updateMany).toHaveBeenCalledTimes(1);
+    await service['tryDispatch']('later');
+    await service['drainOnce']();
+    expect(query).toHaveBeenCalledTimes(1);
+  },
+);
+
+it('waits for every immediate dispatch when publications overlap', async () => {
+  const first = deferred(),
+    second = deferred();
+  const service = new AiGenerationOutboxService({} as never, {} as never);
+  const dispatch = jest
+    .spyOn(
+      service as unknown as { dispatchOne(id: string): Promise<void> },
+      'dispatchOne',
+    )
+    .mockReturnValueOnce(first.promise)
+    .mockReturnValueOnce(second.promise);
+  const one = service['tryDispatch']('one');
+  const two = service['tryDispatch']('two');
+  let stopped = false;
+  const shutdown = service.onModuleDestroy().then(() => {
+    stopped = true;
+  });
+  first.resolve();
+  await one;
+  const early = stopped;
+  second.resolve();
+  await Promise.all([two, shutdown]);
+  expect(early).toBe(false);
+  await service['tryDispatch']('three');
+  expect(dispatch).toHaveBeenCalledTimes(2);
+});

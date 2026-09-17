@@ -61,7 +61,8 @@ export class AiGenerationOutboxService
 {
   private readonly logger = new Logger(AiGenerationOutboxService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private readonly immediateDispatches = new Set<Promise<void>>();
   private stopped = false;
 
   constructor(
@@ -97,17 +98,24 @@ export class AiGenerationOutboxService
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     this.stopped = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
+    await Promise.allSettled([this.draining, ...this.immediateDispatches]);
   }
 
   private async drainOnce(): Promise<void> {
     if (this.stopped || this.draining) return;
-    this.draining = true;
+    this.draining = this.drain().finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(): Promise<void> {
     try {
       const now = new Date();
       const candidates = await this.prisma.aiEventOutbox.findMany({
@@ -139,17 +147,20 @@ export class AiGenerationOutboxService
       if (!this.stopped) await this.gc();
     } catch (err) {
       this.logger.warn(`outbox drain failed: ${errorText(err)}`);
-    } finally {
-      this.draining = false;
     }
   }
 
   /** Immediate publication uses the same ready-row claim as the retry worker. */
   private async tryDispatch(rowId: string): Promise<void> {
+    if (this.stopped) return;
+    const dispatch = this.dispatchOne(rowId);
+    this.immediateDispatches.add(dispatch);
     try {
-      await this.dispatchOne(rowId);
+      await dispatch;
     } catch {
       // A durable row remains recoverable after a database interruption.
+    } finally {
+      this.immediateDispatches.delete(dispatch);
     }
   }
 
