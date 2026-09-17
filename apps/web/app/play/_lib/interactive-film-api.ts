@@ -98,7 +98,7 @@ export async function listPublishedInteractiveFilms(
 
 function sanitizeGameSummary(entry: Record<string, unknown>): Record<string, unknown> {
   // Schema is `.strict()` — only forward keys the player catalogue contract
-  // accepts. Java DTOs carry extras (status, offlineAt, …).
+  // accepts. Java DTOs carry extras (status, offlineAt, creatorId, …).
   const next: Record<string, unknown> = {
     gameId: entry.gameId,
     title: entry.title,
@@ -117,6 +117,21 @@ function sanitizeGameSummary(entry: Record<string, unknown>): Record<string, unk
   return next;
 }
 
+/** Detail schema is `.strict()` — keep only known keys so Java extras don't fail parse. */
+function sanitizeGameDetail(entry: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = {
+    gameId: entry.gameId,
+    title: entry.title,
+    currentVersion: entry.currentVersion,
+    manifestUrl: entry.manifestUrl,
+  };
+  const cover = entry.coverUrl;
+  if (typeof cover === "string" && /^https?:\/\/\S+$/i.test(cover.trim())) {
+    next.coverUrl = cover;
+  }
+  return next;
+}
+
 /** Metadata lookup used independently by page metadata and full playback loading. */
 export async function getPublishedInteractiveFilm(
   gameId: string,
@@ -126,7 +141,13 @@ export async function getPublishedInteractiveFilm(
     `${javaBaseUrl(options.javaStudioUrl)}${INTERACTIVE_FILM_API_PATH}/games/${encodeURIComponent(gameId)}`,
     options.fetcher ?? fetch
   );
-  const parsed = ExperienceGameDetailResponseSchema.safeParse(data);
+  // Detail schema is `.strict()` — pick only known keys so Java extras
+  // (creatorId, …) do not fail the playable-story integrity gate.
+  const cleaned =
+    data && typeof data === "object" && !Array.isArray(data)
+      ? sanitizeGameDetail(data as Record<string, unknown>)
+      : data;
+  const parsed = ExperienceGameDetailResponseSchema.safeParse(cleaned);
   if (!parsed.success) {
     throw new InteractiveFilmLoadError(
       "JAVA_RESPONSE_INVALID",

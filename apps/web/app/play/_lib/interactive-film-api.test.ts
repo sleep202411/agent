@@ -272,6 +272,36 @@ test("loads and identity-checks Java metadata plus its immutable CDN manifest", 
   assert.equal(result.manifest.buildId, "build-one");
 });
 
+test("tolerates Java publisher identity extras on playable-story detail", async () => {
+  const manifest = manifestFixture();
+  const fetcher = async (input: string | URL) => {
+    const url = String(input);
+    if (url === `${JAVA_URL}/api/player/interactive-film/games/game-one`) {
+      return Response.json({
+        code: 200,
+        msg: "成功",
+        data: {
+          gameId: "game-one",
+          creatorId: "2259",
+          title: "Game one",
+          currentVersion: "version-1",
+          manifestUrl: MANIFEST_URL,
+        },
+      });
+    }
+    assert.equal(url, MANIFEST_URL);
+    return Response.json(manifest);
+  };
+
+  const result = await loadPublishedInteractiveFilm("game-one", {
+    fetcher,
+    javaStudioUrl: JAVA_URL,
+  });
+  assert.equal(result.game.gameId, "game-one");
+  assert.equal(result.game.currentVersion, "version-1");
+  assert.equal(Object.prototype.hasOwnProperty.call(result.game, "creatorId"), false);
+});
+
 test("rejects a non-cinematic release at the interactive-film boundary", async () => {
   const manifest = unsupportedProfileManifestFixture();
   const fetcher = async (input: string | URL) => {
