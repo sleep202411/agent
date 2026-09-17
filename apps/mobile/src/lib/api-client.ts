@@ -352,7 +352,11 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   }
 
   if (raw) return envelope as T;
-  return (envelope.data ?? envelope.info ?? envelope.path ?? envelope) as T;
+  // An explicit null is a valid empty lookup, not permission to use another field.
+  for (const key of ["data", "info", "path"] as const) {
+    if (Object.prototype.hasOwnProperty.call(envelope, key)) return envelope[key] as T;
+  }
+  return envelope as T;
 }
 
 export const api = {

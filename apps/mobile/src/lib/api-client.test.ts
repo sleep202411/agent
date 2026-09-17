@@ -167,3 +167,26 @@ it("recognizes current credentials despite token header name casing changes", as
   expect(unauthorized).toHaveBeenCalledOnce();
   await vi.advanceTimersByTimeAsync(500);
 });
+
+it("preserves no active authoring run through the actual API lookup", async () => {
+  const { getActiveStoryAgentRun } = await import("@/features/agent/api/story-agent-runs-api");
+  fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: 200, data: null })));
+  await expect(getActiveStoryAgentRun("project-1", null)).resolves.toBeNull();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { data: null, info: { id: "fallback" } },
+  { info: null, path: "fallback" },
+  { path: null },
+])("preserves the explicit primary payload: %j", async (payload) => {
+  fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: 200, ...payload })));
+  await expect(api.get("/user/test")).resolves.toBeNull();
+});
+
+it.each([false, 0, "", [], { id: "valid" }])("preserves non-null data: %j", async (data) => {
+  const body = { code: 200, data };
+  fetchMock.mockImplementation(async () => new Response(JSON.stringify(body)));
+  await expect(api.get("/user/test")).resolves.toEqual(data);
+  await expect(api.get("/user/test", { raw: true })).resolves.toEqual(body);
+});
