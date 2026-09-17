@@ -71,7 +71,8 @@ export class CrewAgreementArchiveWorker
     DEFAULT_BATCH_SIZE,
   );
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -80,6 +81,7 @@ export class CrewAgreementArchiveWorker
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopped) return;
     if (!this.provider.isEnabled()) {
       this.logger.log('Crew agreement archive worker disabled');
       return;
@@ -92,17 +94,27 @@ export class CrewAgreementArchiveWorker
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.draining;
   }
 
   /** Public for deterministic operational checks and focused tests. */
   async drainOnce(): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
+    if (this.stopped) return;
+    if (this.draining) return this.draining;
+    this.draining = this.drain().finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(): Promise<void> {
     try {
       for (let archived = 0; archived < this.batchSize; archived += 1) {
+        if (this.stopped) return;
         // Downloading and storing one agreement must not age queued leases.
         const [job] = await this.claim(1);
         if (!job) break;
@@ -112,8 +124,6 @@ export class CrewAgreementArchiveWorker
       this.logger.error(
         `crew agreement archive drain failed: ${errorMessage(error)}`,
       );
-    } finally {
-      this.draining = false;
     }
   }
 
