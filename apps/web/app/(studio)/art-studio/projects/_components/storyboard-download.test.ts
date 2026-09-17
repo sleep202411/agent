@@ -1,5 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { downloadBlob, downloadBatch, batchAssetName } from "./storyboard-download";
+import {
+  downloadBlob,
+  downloadBatch,
+  downloadBatchWithReport,
+  batchAssetName,
+} from "./storyboard-download";
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
@@ -113,4 +118,89 @@ it("stops after cancellation during response-body reading", async () => {
   await result;
   expect(create).not.toHaveBeenCalled();
   expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("cancels unsuccessful response bodies while preserving the HTTP error", async () => {
+  const cancel = vi.fn().mockRejectedValue(new Error("cancel failed"));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 403, body: { cancel } }));
+  await expect(downloadBlob("https://cdn.test/file?signature=private", "shot.png")).rejects.toThrow(
+    "HTTP 403"
+  );
+  expect(cancel).toHaveBeenCalledOnce();
+});
+
+it("reports per-file initiation and failure in original order without retaining URLs", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = () => "blob:batch";
+      static revokeObjectURL = vi.fn();
+    }
+  );
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(new Response("ok"))
+    .mockResolvedValueOnce(new Response("denied", { status: 403 }))
+    .mockResolvedValueOnce(new Response("ok"));
+  vi.stubGlobal("fetch", fetcher);
+  const report = await downloadBatchWithReport([
+    { url: "https://cdn.test/a?signature=private", name: "same.png" },
+    { url: "https://cdn.test/b", name: "same.png" },
+    { url: "https://cdn.test/c", name: "last.png" },
+  ]);
+  expect(report).toEqual({
+    initiated: 2,
+    failed: 1,
+    items: [
+      { index: 0, name: "same.png", status: "initiated" },
+      { index: 1, name: "same.png", status: "failed" },
+      { index: 2, name: "last.png", status: "initiated" },
+    ],
+  });
+  expect(JSON.stringify(report)).not.toContain("https:");
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  await vi.runAllTimersAsync();
+});
+
+it("snapshots batch identities before the first asynchronous request", async () => {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  let finish!: (response: Response) => void;
+  const fetcher = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<Response>((r) => {
+          finish = r;
+        })
+    )
+    .mockResolvedValueOnce(new Response("denied", { status: 403 }));
+  vi.stubGlobal("fetch", fetcher);
+  const assets = [
+    { url: "first", name: "first.png" },
+    { url: "second", name: "second.png" },
+  ];
+  const pending = downloadBatchWithReport(assets);
+  assets[1]!.url = "replacement";
+  assets[1]!.name = "changed.png";
+  assets.push({ url: "extra", name: "extra.png" });
+  finish(new Response("denied", { status: 403 }));
+  const report = await pending;
+  expect(report.items.map((x) => x.name)).toEqual(["first.png", "second.png"]);
+  expect(fetcher.mock.calls.map((x) => x[0])).toEqual(["first", "second"]);
+});
+
+it("rejects cancelled empty reports and returns a zero-count normal empty report", async () => {
+  await expect(downloadBatchWithReport([])).resolves.toEqual({
+    items: [],
+    initiated: 0,
+    failed: 0,
+  });
+  const controller = new AbortController();
+  controller.abort();
+  await expect(downloadBatchWithReport([], controller.signal)).rejects.toMatchObject({
+    name: "AbortError",
+  });
 });
