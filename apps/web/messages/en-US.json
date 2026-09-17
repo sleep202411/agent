@@ -6385,6 +6385,7 @@
     "interactiveSave": "Save",
     "interactiveSaveSuccess": "Saved successfully",
     "interactiveSaveFailed": "Failed to save",
+    "interactiveSaveUnavailable": "This editor cannot save yet. Your changes are only in this tab and will be lost if you leave or reload.",
     "interactiveStart": "Start",
     "interactiveEnding": "Ending",
     "interactiveEpisodeTitle": "Enter segment title...",

@@ -8,7 +8,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,css,md}\"",
     "check-types": "turbo run check-types",
     "test": "turbo run test",
-    "prepare": "husky"
+    "prepare": "husky",
+    "test:orchestration": "node scripts/verify-test-orchestration.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx,json,css,md}": [

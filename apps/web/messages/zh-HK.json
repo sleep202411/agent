@@ -6385,6 +6385,7 @@
     "interactiveSave": "儲存",
     "interactiveSaveSuccess": "儲存成功",
     "interactiveSaveFailed": "儲存失敗",
+    "interactiveSaveUnavailable": "此編輯器暫不支援儲存。修改僅保留在目前分頁，離開或重新整理後將遺失。",
     "interactiveStart": "開始",
     "interactiveEnding": "結局",
     "interactiveEpisodeTitle": "輸入片段標題...",

@@ -6385,6 +6385,7 @@
     "interactiveSave": "保存",
     "interactiveSaveSuccess": "保存成功",
     "interactiveSaveFailed": "保存失败",
+    "interactiveSaveUnavailable": "此编辑器暂不支持保存。修改仅保留在当前标签页，离开或刷新后将丢失。",
     "interactiveStart": "开始",
     "interactiveEnding": "结局",
     "interactiveEpisodeTitle": "输入片段标题...",
