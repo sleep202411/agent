@@ -163,7 +163,7 @@ export function CanvasNodeToolbar({
       ) : null}
       {canEdit && withVisibleToolbarLabels(children)}
       {canEdit && (
-        <ToolbarButton label={tc("duplicate")} onClick={onDuplicate}>
+        <ToolbarButton label={tc("duplicate")} onClick={onDuplicate} showLabel>
           <IconCopy className="size-4" stroke={1.8} />
         </ToolbarButton>
       )}

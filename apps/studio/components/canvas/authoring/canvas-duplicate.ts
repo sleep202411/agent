@@ -43,7 +43,7 @@ export type CopyableNode = {
   data?: unknown;
 };
 
-export function toNodeShape(node: CopyableNode): CanvasNodeShape {
+function toNodeShape(node: CopyableNode): CanvasNodeShape {
   return {
     id: node.id,
     type: node.type ?? "note",
