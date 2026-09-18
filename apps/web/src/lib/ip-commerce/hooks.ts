@@ -494,6 +494,10 @@ export function useUpdateIpCommerceIpAssets() {
     mutationFn: (input: UpdateIpAssetsInput) => updateIpCommerceIpAssets(input),
     onSuccess: async (_result, input) => {
       await Promise.all([
+        // Viewing surfaces cache the same cover/trailer outside the IP query tree.
+        qc.invalidateQueries({ queryKey: ["tv", "ips"] }),
+        qc.invalidateQueries({ queryKey: ["tv", "selected-ip", input.ipId] }),
+        qc.invalidateQueries({ queryKey: ["ip-commerce", "discovery"] }),
         qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpsRoot }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "ips"] }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId] }),
