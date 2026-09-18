@@ -370,6 +370,8 @@ module.exports = ({ config }) => {
           enablePay: appRegion === "cn",
         },
       ],
+      // CN iOS StoreKit: react-native-iap autolinks via Nitro (no app.plugin.js in v16).
+      // Global IAP stays on RevenueCat.
       // Re-applies the Android RELEASE signingConfig on every prebuild (the Expo
       // template otherwise signs release with the debug key → store rejection).
       "./plugins/withAndroidReleaseSigning",

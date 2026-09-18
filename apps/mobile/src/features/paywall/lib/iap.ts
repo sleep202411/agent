@@ -1,22 +1,15 @@
 import { NativeModules, Platform } from "react-native";
 
 import { getAuthSnapshot } from "@/auth";
+import { isChinaRegion } from "@/config";
 
 import { currentCheckoutChannel } from "./checkout-channel";
 import { assertPaymentReady, mustUseMockPayments, revenueCatApiKey } from "./paywall-config";
 import type { PaywallProduct } from "./catalog";
+import { PurchaseCancelledError, type PurchaseResult } from "./purchase-types";
+import { purchaseStoreKitProduct, restoreStoreKitPurchases } from "./storekit-iap";
 
-export class PurchaseCancelledError extends Error {
-  constructor() {
-    super("Purchase cancelled");
-    this.name = "PurchaseCancelledError";
-  }
-}
-
-export type PurchaseResult = {
-  mocked: boolean;
-  productId: string;
-};
+export { PurchaseCancelledError, type PurchaseResult };
 
 type PurchasesSdk = typeof import("react-native-purchases");
 
@@ -76,6 +69,10 @@ export async function purchaseIapProduct(product: PaywallProduct): Promise<Purch
     return { mocked: true, productId: product.storeProductId };
   }
 
+  if (isChinaRegion) {
+    return purchaseStoreKitProduct(product);
+  }
+
   const apiKey = revenueCatApiKey(channel);
   const sdk = await ensurePurchasesConfigured(apiKey);
   try {
@@ -95,6 +92,11 @@ export async function restoreIapPurchases(): Promise<{ mocked: boolean }> {
   if (mustUseMockPayments(channel) || Platform.OS === "web") {
     await sleep(500);
     return { mocked: true };
+  }
+
+  if (isChinaRegion) {
+    await restoreStoreKitPurchases();
+    return { mocked: false };
   }
 
   const apiKey = revenueCatApiKey(channel);

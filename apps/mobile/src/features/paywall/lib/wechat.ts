@@ -8,7 +8,7 @@ import {
 } from "./paywall-config";
 import { currentCheckoutChannel } from "./checkout-channel";
 import type { PaywallProduct } from "./catalog";
-import type { PurchaseResult } from "./iap";
+import type { PurchaseResult } from "./purchase-types";
 
 type ExpoWechat = typeof import("expo-wechat").default;
 
