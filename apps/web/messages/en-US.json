@@ -1857,6 +1857,7 @@
     }
   },
   "crew": {
+    "navigationLabel": "Crew navigation",
     "creationRequirements": {
       "title": "Crew Creation Requirements",
       "eligibility": "Only users who hold the FizzDragon AI Producer certification can create Crews and lead platform creators in collaboratively completing projects.",
@@ -6134,6 +6135,10 @@
     "creditsRechargeDesc": "Select a credits package to top up",
     "communityRechargeTitle": "Top Up Community Points",
     "communityRechargeDesc": "Select a package or enter a custom amount to top up community points",
+    "communityPointsUsage": "Community points unlock paid IP content and support the creators you love. Points are delivered instantly after payment; unused points can be refunded via customer support.",
+    "communityPackageName": "Community points × {amount}",
+    "payMethodLabel": "Payment method",
+    "amountDueLabel": "Amount due",
     "communityMembershipTitle": "Community Membership",
     "communityMembershipDesc": "Watch member-free works for free and get member discounts on paid works.",
     "communityMembershipBenefitFreeViewing": "Watch member-free works for free",
@@ -9739,7 +9744,7 @@
   "crewPersonalIncome": {
     "title": "My income",
     "back": "Crew hall",
-    "description": "Your recorded earnings across Crews, separately for each currency.",
+    "description": "Your recorded earnings across Crews.",
     "loading": "Loading…",
     "signInRequired": "Sign in to view your income.",
     "signIn": "Sign in",
