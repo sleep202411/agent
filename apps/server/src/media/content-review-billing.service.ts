@@ -35,7 +35,7 @@ export class ContentReviewBillingService {
     userId: string,
     workspaceId: string | undefined,
     durationSeconds: number,
-    chargeId = randomUUID(),
+    chargeId: string = randomUUID(),
   ): Promise<{ id: string; credits: number }> {
     const workspace = requireWorkspaceId(workspaceId);
     await this.workspacePermissions.requireWorkspaceRole(
