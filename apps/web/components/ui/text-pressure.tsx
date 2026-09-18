@@ -3,7 +3,8 @@
 // Ported from React Bits — TextPressure (TypeScript + Tailwind variant).
 // Original: https://codepen.io/JuanFuentes/full/rgXKGQ
 // Variable font: Roboto Flex, loaded via the Google Fonts @import below.
-// Fits measured glyph bounds as font loading and variation axes change.
+// (Only local adaptations vs the upstream source: "use client", a named export
+// for the footer import, and `FC` instead of `React.FC`.)
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FC } from "react";
 
@@ -36,6 +37,16 @@ const getAttr = (distance: number, maxDist: number, minVal: number, maxVal: numb
   return Math.max(minVal, val + minVal);
 };
 
+const debounce = <Args extends unknown[]>(func: (...args: Args) => void, delay: number) => {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  return (...args: Args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func(...args);
+    }, delay);
+  };
+};
+
 export const TextPressure: FC<TextPressureProps> = ({
   text = "Compressa",
   fontFamily = "Roboto Flex",
@@ -61,6 +72,8 @@ export const TextPressure: FC<TextPressureProps> = ({
   const cursorRef = useRef({ x: 0, y: 0 });
 
   const [fontSize, setFontSize] = useState(minFontSize);
+  const [scaleY, setScaleY] = useState(1);
+  const [lineHeight, setLineHeight] = useState(1);
 
   const chars = text.split("");
 
@@ -95,15 +108,32 @@ export const TextPressure: FC<TextPressureProps> = ({
   const setSize = useCallback(() => {
     if (!containerRef.current || !titleRef.current) return;
 
-    const containerW = containerRef.current.clientWidth;
-    setFontSize(Math.max(containerW / (Math.max(chars.length, 1) / 2), minFontSize));
-  }, [chars.length, minFontSize]);
+    const { width: containerW, height: containerH } = containerRef.current.getBoundingClientRect();
+
+    let newFontSize = containerW / (chars.length / 2);
+    newFontSize = Math.max(newFontSize, minFontSize);
+
+    setFontSize(newFontSize);
+    setScaleY(1);
+    setLineHeight(1);
+
+    requestAnimationFrame(() => {
+      if (!titleRef.current) return;
+      const textRect = titleRef.current.getBoundingClientRect();
+
+      if (scale && textRect.height > 0) {
+        const yRatio = containerH / textRect.height;
+        setScaleY(yRatio);
+        setLineHeight(yRatio);
+      }
+    });
+  }, [chars.length, minFontSize, scale]);
 
   useEffect(() => {
-    setSize();
-    const observer = new ResizeObserver(setSize);
-    if (containerRef.current) observer.observe(containerRef.current);
-    return () => observer.disconnect();
+    const debouncedSetSize = debounce(setSize, 100);
+    debouncedSetSize();
+    window.addEventListener("resize", debouncedSetSize);
+    return () => window.removeEventListener("resize", debouncedSetSize);
   }, [setSize]);
 
   useEffect(() => {
@@ -141,20 +171,6 @@ export const TextPressure: FC<TextPressureProps> = ({
             span.style.opacity = alphaVal;
           }
         });
-
-        // Measure after applying variable-font axes. offset dimensions are
-        // untransformed, so fitting does not feed the previous scale back in.
-        // This also adapts when the web font loads or falls back, without
-        // waiting for a window resize. Reserve one CSS pixel for integer
-        // offset-size rounding at fractional font sizes.
-        const container = containerRef.current;
-        const title = titleRef.current;
-        if (container && title.offsetWidth > 0 && title.offsetHeight > 0) {
-          const x = Math.min(1, Math.max(0, container.clientWidth - 1) / title.offsetWidth);
-          const y = scale ? Math.max(0, container.clientHeight - 1) / title.offsetHeight : x;
-          const transform = `scale(${x}, ${y})`;
-          if (title.style.transform !== transform) title.style.transform = transform;
-        }
       }
 
       rafId = requestAnimationFrame(animate);
@@ -162,7 +178,7 @@ export const TextPressure: FC<TextPressureProps> = ({
 
     animate();
     return () => cancelAnimationFrame(rafId);
-  }, [width, weight, italic, alpha, scale]);
+  }, [width, weight, italic, alpha]);
 
   const styleElement = useMemo(() => {
     return (
@@ -195,12 +211,11 @@ export const TextPressure: FC<TextPressureProps> = ({
           flex ? "flex justify-between" : ""
         } ${stroke ? "stroke" : ""} text-center uppercase`}
         style={{
-          fontFamily: `"${fontFamily}", sans-serif`,
+          fontFamily,
           fontSize,
-          lineHeight: 1,
-          width: "max-content",
-          minWidth: "100%",
-          transformOrigin: "left top",
+          lineHeight,
+          transform: `scale(1, ${scaleY})`,
+          transformOrigin: "center top",
           margin: 0,
           fontWeight: 100,
           color: stroke ? undefined : textColor,
