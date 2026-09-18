@@ -7,7 +7,7 @@ export type BillingInterval = "month" | "year" | "one_time";
 export type PaywallProduct = {
   id: string;
   category: PaywallCategory;
-  /** Store / RevenueCat product identifier (placeholder until dashboard SKUs land). */
+  /** App Store / Play / RevenueCat product identifier. */
   storeProductId: string;
   displayPrice: string;
   /** Whole points granted; null for memberships. */
@@ -129,7 +129,7 @@ export function isMembershipCategory(category: PaywallCategory): boolean {
   return category === "community_membership" || category === "compute_membership";
 }
 
-/** Mock catalog until Nest/RevenueCat product ids are wired. */
+/** Products shown on the paywall. Hidden IAP categories stay in BY_CATEGORY. */
 export function productsForCategory(category: PaywallCategory): PaywallProduct[] {
   return BY_CATEGORY[category];
 }

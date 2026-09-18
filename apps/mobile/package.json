@@ -42,8 +42,10 @@
     "react-native": "0.86.0",
     "react-native-confirmation-code-field": "^9.0.0",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-iap": "^16.6.1",
     "react-native-keyboard-controller": "1.21.9",
     "react-native-markdown-display": "^7.0.2",
+    "react-native-nitro-modules": "^0.37.1",
     "react-native-purchases": "^10.9.0",
     "react-native-qrcode-svg": "^6.3.21",
     "react-native-reanimated": "4.5.0",
@@ -60,11 +62,11 @@
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~57.0.0",
     "eslint-config-expo": "~57.0.0",
+    "jsdom": "^28.1.0",
     "prettier-plugin-tailwindcss": "^0.5.14",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.3",
-    "vitest": "^4.1.4",
-    "jsdom": "^28.1.0"
+    "vitest": "^4.1.4"
   },
   "scripts": {
     "expo": "node ./scripts/expo-workspace.js",
