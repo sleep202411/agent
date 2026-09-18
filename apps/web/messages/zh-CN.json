@@ -1857,6 +1857,7 @@
     }
   },
   "crew": {
+    "navigationLabel": "剧组导航",
     "creationRequirements": {
       "title": "剧组创建要求",
       "eligibility": "只有持有「AI制片人」认证的用户才能创建剧组，并带领平台创作者协作完成项目。",
@@ -9739,7 +9740,7 @@
   "crewPersonalIncome": {
     "title": "我的收入",
     "back": "剧组大厅",
-    "description": "查看跨剧组的本人收入记录，各币种分别显示。",
+    "description": "查看你在各剧组的收入记录。",
     "loading": "加载中…",
     "signInRequired": "登录后查看本人收入。",
     "signIn": "登录",
