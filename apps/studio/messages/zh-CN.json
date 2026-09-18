@@ -1065,7 +1065,9 @@
     "uploadIconComingSoon": "上传你自己的图标（即将推出）",
     "presetIconLabel": "{name} 图标",
     "teamCreated": "空间“{name}”已创建",
-    "createWorkspaceFailed": "无法创建空间"
+    "createWorkspaceFailed": "无法创建空间",
+    "contactOwnerRole": "请联系工作区所有者修改角色。",
+    "changeMemberRole": "修改 {name} 的角色"
   },
   "billing": {
     "dialogLabel": "选择你的 FizzStudio 方案",
@@ -2401,7 +2403,8 @@
     "joinTitle": "加入 {name}",
     "joinBody": "您已受邀以 {role} 身份协作此{scope}。",
     "acceptInvitation": "接受邀请",
-    "joinedStory": "已加入该影游"
+    "joinedStory": "已加入该影游",
+    "alreadyWorkspaceMember": "您已经是 {name} 的成员，当前角色是 {role}。如需修改角色，请联系工作区所有者。"
   },
   "modes": {
     "text_to_image": "文生图",

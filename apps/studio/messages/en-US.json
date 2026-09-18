@@ -1065,7 +1065,9 @@
     "uploadIconComingSoon": "Upload your own icon (coming soon)",
     "presetIconLabel": "{name} icon",
     "teamCreated": "Workspace \"{name}\" created",
-    "createWorkspaceFailed": "Couldn't create the workspace"
+    "createWorkspaceFailed": "Couldn't create the workspace",
+    "contactOwnerRole": "Contact the workspace owner to change roles.",
+    "changeMemberRole": "Change role for {name}"
   },
   "billing": {
     "dialogLabel": "Choose your FizzStudio plan",
@@ -2401,7 +2403,8 @@
     "joinTitle": "Join {name}",
     "joinBody": "You've been invited to collaborate on this {scope} as {role}.",
     "acceptInvitation": "Accept invitation",
-    "joinedStory": "Joined the story"
+    "joinedStory": "Joined the story",
+    "alreadyWorkspaceMember": "You are already a member of {name}. Your role is {role}. To change your role, contact the workspace owner."
   },
   "modes": {
     "text_to_image": "Text to Image",
