@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { IconBrandDiscord, IconBrandWechat, IconBrandWhatsapp } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
-import { TextPressure } from "@/components/ui/text-pressure";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -99,7 +98,7 @@ export function SiteFooter() {
 
   return (
     <footer className="mt-20 border-t border-border">
-      <div className="mx-auto max-w-screen-2xl px-6 pt-12">
+      <div className="mx-auto max-w-screen-2xl px-6 py-12">
         <div className="flex flex-col gap-10 lg:flex-row">
           <div className="flex shrink-0 flex-col lg:w-64 items-start">
             <img src="/logo.png" alt="FizzDragon" className="h-8 w-auto" />
@@ -178,15 +177,6 @@ export function SiteFooter() {
               </div>
             ))}
           </div>
-        </div>
-
-        <div aria-hidden className="mt-16 h-[clamp(80px,18vw,260px)] select-none">
-          <TextPressure
-            text="FizzDragon"
-            textColor="hsl(var(--foreground))"
-            minFontSize={48}
-            scale
-          />
         </div>
 
         {isCnSite ? (
