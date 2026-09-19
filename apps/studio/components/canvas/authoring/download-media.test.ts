@@ -60,3 +60,18 @@ it("opens the original source after an HTTP failure without allocating a blob", 
   expect(URL.createObjectURL).not.toHaveBeenCalled();
   expect(window.open).toHaveBeenCalledWith("https://media.invalid/sound", "_blank");
 });
+
+it.each([false, true])(
+  "cancels failed download streams and retains fallback (cleanup rejects: %s)",
+  async (rejectCleanup) => {
+    const cancel = vi.fn(() =>
+      rejectCleanup ? Promise.reject(new Error("cleanup failed")) : undefined
+    );
+    const stream = new ReadableStream({ cancel });
+    vi.mocked(fetch).mockResolvedValue(new Response(stream, { status: 503 }));
+    await downloadCanvasMedia("https://media.invalid/sound", "Voice", "audio");
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(window.open).toHaveBeenCalledWith("https://media.invalid/sound", "_blank");
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  }
+);
