@@ -20,16 +20,32 @@ import type {
   MultipartUploadRef,
   StoredUploadPart,
 } from '../infra/storage/storage.types';
+import type { UploadKind } from './dto';
 import { MediaUploadService } from './media-upload.service';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const OPERATION_LEASE_MS = 5 * 60 * 1000;
+
+export type MultipartUploadKind =
+  | 'episode_source_video'
+  | 'content_review_video';
 
 export interface StartEpisodeUpload {
   id: string;
   fileName: string;
   contentType: string;
   sizeBytes: number;
+  kind?: MultipartUploadKind;
+}
+
+const MULTIPART_KIND_BY_SEGMENT: Record<string, MultipartUploadKind> = {
+  'episode-source-video': 'episode_source_video',
+  'content-review-video': 'content_review_video',
+};
+
+function kindFromStorageKey(storageKey: string): UploadKind {
+  const segment = storageKey.split('/')[2];
+  return MULTIPART_KIND_BY_SEGMENT[segment ?? ''] ?? 'episode_source_video';
 }
 
 /** Only metadata lives here. Parts and bytes go directly to object storage. */
@@ -63,7 +79,7 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
       userId,
       {
         ...input,
-        kind: 'episode_source_video',
+        kind: input.kind ?? 'episode_source_video',
       },
       workspaceId,
     );
@@ -221,7 +237,7 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
       const result = await this.uploads.confirmUpload(
         userId,
         {
-          kind: 'episode_source_video',
+          kind: kindFromStorageKey(session.storageKey),
           storageKey: session.storageKey,
           contentType: session.contentType,
         },
