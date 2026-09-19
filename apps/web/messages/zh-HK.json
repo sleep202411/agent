@@ -1857,6 +1857,7 @@
     }
   },
   "crew": {
+    "navigationLabel": "劇組導覽",
     "creationRequirements": {
       "title": "劇組建立要求",
       "eligibility": "只有持有「AI製片人」認證的用戶才能建立劇組，並帶領平台創作者協作完成項目。",
@@ -6114,7 +6115,7 @@
     "credits": "積分充值",
     "wechatPay": "微信支付",
     "payNow": "立即支付",
-    "noPackages": "No top-up packages available yet.",
+    "noPackages": "暫無可用的儲值套餐，請稍後再試。",
     "scanToPay": "請使用微信掃描二維碼完成支付",
     "paymentSuccess": "支付成功",
     "paymentProcessing": "支付處理中，正在更新餘額…",
@@ -6134,6 +6135,10 @@
     "creditsRechargeDesc": "選擇積分套餐進行充值",
     "communityRechargeTitle": "社區積分充值",
     "communityRechargeDesc": "選擇套餐或輸入自訂金額，為社區積分充值",
+    "communityPointsUsage": "社區積分可用於解鎖付費 IP 內容、支持喜歡的創作者。支付成功後積分實時到賬，未消耗積分可聯絡客服退款。",
+    "communityPackageName": "社區積分 × {amount}",
+    "payMethodLabel": "付款方式",
+    "amountDueLabel": "應付金額",
     "communityMembershipTitle": "社區會員",
     "communityMembershipDesc": "會員免費觀看會員作品，購買付費作品享會員折扣。",
     "communityMembershipBenefitFreeViewing": "會員免費觀看會員作品",
@@ -6385,7 +6390,6 @@
     "interactiveSave": "儲存",
     "interactiveSaveSuccess": "儲存成功",
     "interactiveSaveFailed": "儲存失敗",
-    "interactiveSaveUnavailable": "此編輯器暫不支援儲存。修改僅保留在目前分頁，離開或重新整理後將遺失。",
     "interactiveStart": "開始",
     "interactiveEnding": "結局",
     "interactiveEpisodeTitle": "輸入片段標題...",
@@ -9740,7 +9744,7 @@
   "crewPersonalIncome": {
     "title": "我的收入",
     "back": "劇組大廳",
-    "description": "查看跨劇組的本人收入記錄，各幣種分別顯示。",
+    "description": "查看你在各劇組的收入記錄。",
     "loading": "載入中…",
     "signInRequired": "登入後查看本人收入。",
     "signIn": "登入",

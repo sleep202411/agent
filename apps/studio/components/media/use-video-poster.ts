@@ -62,6 +62,9 @@ export function useVideoPoster(
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data?.status === "pending") return 3_000;
+      // A failed fetch (e.g. a flaky route to the storage endpoint) must not
+      // pin "preview unavailable" until remount — retry on a slow cadence.
+      if (query.state.status === "error") return 30_000;
       return data?.status === "ready" && data.expiresAt
         ? Math.max(1_000, Date.parse(data.expiresAt) - Date.now() - 30_000)
         : false;

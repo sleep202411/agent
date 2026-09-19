@@ -6,7 +6,7 @@ describe('bounded readiness probes', () => {
 
   it('accepts healthy dependencies and clears completed operations', async () => {
     const runner = new ReadinessProbeRunner();
-    const probe = jest.fn(async () => true);
+    const probe = jest.fn(() => Promise.resolve(true));
     await expect(runner.check('db', probe)).resolves.toBe(true);
     await jest.advanceTimersByTimeAsync(0);
     await expect(runner.check('db', probe)).resolves.toBe(true);
@@ -39,7 +39,9 @@ describe('bounded readiness probes', () => {
     resolve(true);
     await jest.advanceTimersByTimeAsync(0);
     await expect(first).resolves.toBe(false);
-    await expect(runner.check('db', async () => true)).resolves.toBe(true);
+    await expect(runner.check('db', () => Promise.resolve(true))).resolves.toBe(
+      true,
+    );
   });
 
   it('handles late rejection and permits recovery', async () => {
@@ -56,13 +58,17 @@ describe('bounded readiness probes', () => {
     reject(new Error('private connection detail'));
     await jest.advanceTimersByTimeAsync(0);
     await expect(first).resolves.toBe(false);
-    await expect(runner.check('db', async () => true)).resolves.toBe(true);
+    await expect(runner.check('db', () => Promise.resolve(true))).resolves.toBe(
+      true,
+    );
   });
 
   it('isolates dependency names and synchronous failures', async () => {
     const runner = new ReadinessProbeRunner();
     const stuck = runner.check('db', () => new Promise<boolean>(() => {}));
-    await expect(runner.check('redis', async () => true)).resolves.toBe(true);
+    await expect(
+      runner.check('redis', () => Promise.resolve(true)),
+    ).resolves.toBe(true);
     await expect(
       runner.check('storage', () => {
         throw new Error('secret');

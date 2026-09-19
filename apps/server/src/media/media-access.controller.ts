@@ -17,6 +17,10 @@ import { MediaAccessService } from './media-access.service';
 export class MediaAccessController {
   constructor(private readonly svc: MediaAccessService) {}
 
+  /** JSON read endpoints answer with the `{ code, data }` envelope every
+   *  aurora api client parses — a bare body reads as "request failed". The
+   *  302 `/content` route is consumed by URL, never parsed, so it stays a
+   *  plain redirect. */
   @Public()
   @Get(':assetId/poster')
   @Header('Cache-Control', 'private, no-store')
@@ -26,8 +30,15 @@ export class MediaAccessController {
     params: MediaAssetAccessParamsDto,
     @Query(new ZodValidationPipe(MediaAssetAccessQuerySchema))
     query: MediaAssetAccessQueryDto,
-  ): Promise<MediaVideoPosterResponseDto> {
-    return this.svc.issueVideoPosterUrl(user?.userId, params.assetId, query);
+  ): Promise<{ code: 200; data: MediaVideoPosterResponseDto }> {
+    return {
+      code: 200,
+      data: await this.svc.issueVideoPosterUrl(
+        user?.userId,
+        params.assetId,
+        query,
+      ),
+    };
   }
 
   @Public()
@@ -38,8 +49,15 @@ export class MediaAccessController {
     params: MediaAssetAccessParamsDto,
     @Query(new ZodValidationPipe(MediaAssetAccessQuerySchema))
     query: MediaAssetAccessQueryDto,
-  ): Promise<MediaAssetAccessResponseDto> {
-    return this.svc.issueBrowserAccessUrl(user?.userId, params.assetId, query);
+  ): Promise<{ code: 200; data: MediaAssetAccessResponseDto }> {
+    return {
+      code: 200,
+      data: await this.svc.issueBrowserAccessUrl(
+        user?.userId,
+        params.assetId,
+        query,
+      ),
+    };
   }
 
   @Public()

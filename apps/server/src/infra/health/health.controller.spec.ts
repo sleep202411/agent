@@ -6,12 +6,12 @@ import type { Response } from 'express';
 jest.mock('../../auth', () => ({ Public: () => () => {} }));
 jest.mock('../db/db.module', () => ({ PrismaService: class {} }));
 jest.mock('../redis/redis.module', () => ({ REDIS: Symbol('redis') }));
-function fixture(ping: () => Promise<string> = async () => 'PONG') {
+function fixture(ping: () => Promise<string> = () => Promise.resolve('PONG')) {
   const storage = {
     providerId: 'fixture',
-    isHealthy: jest.fn(async () => true),
+    isHealthy: jest.fn(() => Promise.resolve(true)),
   };
-  const db = { $queryRaw: jest.fn(async () => []) };
+  const db = { $queryRaw: jest.fn(() => Promise.resolve([])) };
   const redis = { ping: jest.fn(ping) };
   const status = jest.fn();
   const controller = new HealthController(

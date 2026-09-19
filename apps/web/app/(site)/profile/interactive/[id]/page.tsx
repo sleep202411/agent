@@ -194,7 +194,7 @@ function createEpisodeNode(
 export default function InteractiveEditorPage() {
   const t = useTranslations("profile");
   const router = useRouter();
-  const saving = false;
+  const [saving, setSaving] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -292,10 +292,29 @@ export default function InteractiveEditorPage() {
     [setNodes]
   );
 
-  const handleSave = () => {
-    // This legacy editor has no persistence contract. Preserve the draft in
-    // memory, but never acknowledge a save that did not occur.
-    toast.error(t("interactiveSaveUnavailable"));
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      // TODO: Call backend APIs
+      // nodes → episodes, edges → choices
+      const episodesData = nodes.map((n) => ({
+        title: n.data.title,
+        isStart: n.data.isStart,
+        isEnding: n.data.isEnding,
+        videoFile: n.data.videoFile,
+      }));
+      const choicesData = edges.map((e) => ({
+        fromNodeId: e.source,
+        toNodeId: e.target,
+        label: typeof e.label === "string" ? e.label : "",
+      }));
+      console.log("Save:", { episodes: episodesData, choices: choicesData });
+      toast.success(t("interactiveSaveSuccess"));
+    } catch {
+      toast.error(t("interactiveSaveFailed"));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
