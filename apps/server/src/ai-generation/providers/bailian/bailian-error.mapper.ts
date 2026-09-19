@@ -109,3 +109,43 @@ export function mapBailianUnknownError(err: unknown): AiJobError {
     createdAt: new Date().toISOString(),
   };
 }
+
+/**
+ * Classifies an async task-status failure (poll body, not HTTP). A provider
+ * `InvalidParameter` verdict on the submitted inputs is deterministic —
+ * retrying resubmits the same rejected payload — except the transient
+ * reference-download flake already recognized by {@link mapBailianHttpError}.
+ * Unknown failure codes stay retryable.
+ */
+export function mapBailianTaskError(
+  endpointId: string,
+  status: unknown,
+): BailianProviderError {
+  const message = `Alibaba Model Studio job failed for ${endpointId}: ${JSON.stringify(status).slice(0, 500)}`;
+  const output =
+    status && typeof status === 'object' && !Array.isArray(status)
+      ? ((status as Record<string, unknown>).output as
+          | Record<string, unknown>
+          | undefined)
+      : undefined;
+  const code = typeof output?.code === 'string' ? output.code : '';
+  const detail = typeof output?.message === 'string' ? output.message : '';
+
+  if (code === 'InvalidParameter') {
+    if (/failed to download (image|video|file|media)/i.test(detail)) {
+      return bailianError(
+        'PROVIDER_REFERENCE_DOWNLOAD',
+        message,
+        'The provider could not fetch the reference media. Retrying.',
+        status,
+      );
+    }
+    return bailianError(
+      'VALIDATION_ERROR',
+      message,
+      'The generation request was rejected. Please check the inputs.',
+      status,
+    );
+  }
+  return bailianError('UNKNOWN', message, undefined, status);
+}
