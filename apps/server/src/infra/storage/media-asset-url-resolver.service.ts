@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { HLS_VARIANT_KEY } from './media-asset-placement';
+import { HLS_VARIANT_KEY, ORIGINAL_VARIANT_KEY } from './media-asset-placement';
 
 export interface ResolvableMediaAsset {
   storageProvider: string;
@@ -43,6 +43,10 @@ export interface GatedMediaAsset {
 }
 
 export interface ResolvableMediaObjectPlacement {
+  /** Owning variant, null for legacy asset-level placements. Variant-scoped
+   * rows are only reachable through `resolveVariant` — never through the
+   * asset-level `resolve`. */
+  variantId?: string | null;
   storageProvider: string;
   bucket: string | null;
   region: string | null;
@@ -67,7 +71,16 @@ export class MediaAssetUrlResolverService {
   resolve(asset: ResolvableMediaAsset): string {
     assertAssetCanResolveUrl(asset);
 
-    const placement = pickPlacement(asset.placements);
+    // Asset-level means "the ORIGINAL bytes' URL". Derived variants (video
+    // poster, HLS) register their own `primary` placements under the same
+    // asset; picking from the flat list lets a jpg poster or an m3u8 playlist
+    // shadow the original mp4 — they are only reachable via resolveVariant /
+    // playback resolution. Prefer the original variant's current placement,
+    // then legacy asset-level (variant-less) placements, then the asset's own
+    // storage identity.
+    const placement =
+      pickPlacement(readyOriginalVariant(asset)?.placements) ??
+      pickPlacement(assetLevelPlacements(asset.placements));
     if (placement) return this.resolvePlacement(placement);
 
     if (asset.storageProvider === 'external_url') {
@@ -334,6 +347,25 @@ function pickPlacement(
     )
     .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
   return active[0] ?? null;
+}
+
+function readyOriginalVariant(
+  asset: ResolvableMediaAsset,
+): ResolvableMediaAssetVariant | null {
+  const variant = asset.variants?.find(
+    (candidate) => candidate.variantKey === ORIGINAL_VARIANT_KEY,
+  );
+  if (!variant || variant.deletedAt) return null;
+  return variant.status == null || variant.status === 'ready' ? variant : null;
+}
+
+function assetLevelPlacements(
+  placements: ResolvableMediaObjectPlacement[] | undefined,
+): ResolvableMediaObjectPlacement[] {
+  // Callers that hand-build placements without `variantId` keep the legacy
+  // behavior; Prisma-loaded rows carry it and variant-scoped rows are
+  // reserved for resolveVariant.
+  return (placements ?? []).filter((placement) => placement.variantId == null);
 }
 
 function cleanBaseUrl(value: string | null | undefined): string | null {

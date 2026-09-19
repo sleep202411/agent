@@ -23,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiRequestError } from "@/lib/api";
@@ -95,11 +96,7 @@ function MembersManagerView({
   const roleLabel = (r: string) =>
     t(
       `roles.${r}` as
-        | "roles.admin"
-        | "roles.editor"
-        | "roles.viewer"
-        | "roles.producer"
-        | "roles.reviewer"
+        "roles.admin" | "roles.editor" | "roles.viewer" | "roles.producer" | "roles.reviewer"
     );
   const queryClient = useQueryClient();
   const membersKey = ["share-members", scope.kind, scope.id, viewerId] as const;
@@ -280,6 +277,9 @@ function MembersManagerView({
       ),
   };
 
+  const canChangeRoles =
+    scope.kind !== "workspace" ? canManage : Boolean(members?.some((m) => m.isSelf && m.isOwner));
+
   const filtered = useMemo(() => {
     if (!members) return members;
     const q = search.trim().toLowerCase();
@@ -374,6 +374,46 @@ function MembersManagerView({
                     : roleLabel(member.role)}
                 </span>
               </div>
+              {scope.kind === "workspace" &&
+                !member.isOwner &&
+                member.accessScope !== "project_only" && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          tabIndex={!canChangeRoles ? 0 : undefined}
+                          aria-label={!canChangeRoles ? t("contactOwnerRole") : undefined}
+                        >
+                          <select
+                            aria-label={t("changeMemberRole", {
+                              name: member.nickname ?? member.userId,
+                            })}
+                            value={member.role}
+                            disabled={!canChangeRoles || pending}
+                            onChange={(event) => {
+                              if (canChangeRoles)
+                                roleMut.mutate({
+                                  memberId: member.memberId,
+                                  nextRole: event.target.value as AssignableShareRole,
+                                });
+                            }}
+                            className="h-8 rounded-md bg-input/30 px-2 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {!roleOptions.includes(member.role as AssignableShareRole) && (
+                              <option value={member.role}>{roleLabel(member.role)}</option>
+                            )}
+                            {roleOptions.map((r) => (
+                              <option key={r} value={r}>
+                                {roleLabel(r)}
+                              </option>
+                            ))}
+                          </select>
+                        </span>
+                      </TooltipTrigger>
+                      {!canChangeRoles && <TooltipContent>{t("contactOwnerRole")}</TooltipContent>}
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               {canManage &&
               !member.isOwner &&
               !member.isSelf &&
@@ -387,16 +427,19 @@ function MembersManagerView({
                     <IconDotsVertical className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {roleOptions.map((r) => (
-                      <DropdownMenuItem
-                        key={r}
-                        onSelect={() => roleMut.mutate({ memberId: member.memberId, nextRole: r })}
-                      >
-                        <IconCheck className={`size-4 ${member.role === r ? "" : "opacity-0"}`} />
-                        {roleLabel(r)}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
+                    {scope.kind !== "workspace" &&
+                      roleOptions.map((r) => (
+                        <DropdownMenuItem
+                          key={r}
+                          onSelect={() =>
+                            roleMut.mutate({ memberId: member.memberId, nextRole: r })
+                          }
+                        >
+                          <IconCheck className={`size-4 ${member.role === r ? "" : "opacity-0"}`} />
+                          {roleLabel(r)}
+                        </DropdownMenuItem>
+                      ))}
+                    {scope.kind !== "workspace" && <DropdownMenuSeparator />}
                     <DropdownMenuItem
                       variant="destructive"
                       onSelect={() => removeMut.mutate(member.memberId)}
