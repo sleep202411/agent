@@ -2,8 +2,8 @@
  * Workspace member management for team collaboration — list / add-by-account
  * / change-role / remove.
  *
- * Authorization reuses WorkspacePermissionService (admin to mutate, viewer to
- * list). Adding resolves an email/phone to a Java user id server-side
+ * Authorization reuses WorkspacePermissionService (owner to change roles,
+ * admin to add/remove, viewer to list). Adding resolves an email/phone to a Java user id server-side
  * (UsersService) then inserts an active WorkspaceMember — which, via the
  * documents access fallback (workspace role → all projects), immediately lets
  * that user co-edit every project in the workspace. Every state change pushes
@@ -211,7 +211,7 @@ export class WorkspaceMembersService {
     await this.permissions.requireWorkspaceRole(
       actor.userId,
       workspaceId,
-      WorkspaceMemberRole.admin,
+      WorkspaceMemberRole.owner,
     );
     const member = await this.prisma.workspaceMember.findFirst({
       where: { id: memberId, workspaceId, removedAt: null },

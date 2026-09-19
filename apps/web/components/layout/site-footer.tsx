@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { IconBrandDiscord, IconBrandWechat, IconBrandWhatsapp } from "@tabler/icons-react";
 import type { Icon } from "@tabler/icons-react";
-import { TextPressure } from "@/components/ui/text-pressure";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
@@ -178,15 +177,6 @@ export function SiteFooter() {
               </div>
             ))}
           </div>
-        </div>
-
-        <div aria-hidden className="mt-16 h-[clamp(80px,18vw,260px)] select-none">
-          <TextPressure
-            text="FizzDragon"
-            textColor="hsl(var(--foreground))"
-            minFontSize={48}
-            scale
-          />
         </div>
 
         {isCnSite ? (
