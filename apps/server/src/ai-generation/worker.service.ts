@@ -1,3 +1,4 @@
+import { PollDispatchError } from './poll-dispatch-error';
 /**
  * AiGenerationWorkerService — provider-agnostic worker.
  *
@@ -299,6 +300,17 @@ export class AiGenerationWorkerService
       ),
     );
     for (const w of this.workers) {
+      w.on('completed', (message) => {
+        void this.scheduleAcceptedPoll(message.data.jobId).catch(
+          (error: unknown) => {
+            // The database receipt remains the durable recovery intent; the
+            // periodic reconciler repairs lost completion notifications.
+            this.logger.error(
+              `Poll scheduling awaits recovery: ${String(error)}`,
+            );
+          },
+        );
+      });
       w.on('failed', (job, err) => {
         // BullMQ-level failures (unhandled throws from processor).
         // Normal provider failures are caught inside runJob and
@@ -377,6 +389,19 @@ export class AiGenerationWorkerService
       return;
     }
 
+    // BullMQ owns redelivery of this message. An acknowledged async job
+    // must resume observation, never call startGeneration again.
+    const redelivered =
+      queueJob.attemptsMade > 0 || queueJob.stalledCounter > 0;
+    if (
+      redelivered &&
+      op !== 'poll' &&
+      dbJob.status === 'in_progress' &&
+      dbJob.providerJobId
+    ) {
+      await this.scheduleAcceptedPoll(jobId);
+      return;
+    }
     if (op === 'poll') {
       const promise = this.pollJob(dbJob).finally(() => {
         this.inflight.delete(`${jobId}:poll`);
@@ -386,6 +411,19 @@ export class AiGenerationWorkerService
       return;
     }
 
+    if (redelivered && dbJob.status === 'in_progress') {
+      if (!(await this.store.recordUnknownAcceptance(jobId))) {
+        // A concurrent acceptance/terminal update won; do not overwrite it.
+        await this.scheduleAcceptedPoll(jobId);
+        return;
+      }
+
+      // No durable provider receipt: accepting this message as completed would
+      // conceal unfinished work. Resubmitting could duplicate a paid call.
+      throw new Error(
+        `Generation ${jobId} needs reconciliation after worker interruption: provider acceptance is unknown`,
+      );
+    }
     if (dbJob.status !== 'in_queue') {
       // Already terminal or being processed elsewhere — defensive
       // skip so a queue replay can't restart a completed job.
@@ -563,6 +601,27 @@ export class AiGenerationWorkerService
     );
   }
 
+  private async scheduleAcceptedPoll(jobId: string): Promise<void> {
+    const job = await this.store.findById(jobId);
+    if (!job || job.status !== 'in_progress' || !job.providerJobId) return;
+    await this.queueService.enqueue(
+      job.queueName,
+      job.id,
+      job.routingSnapshot?.policy.runtime.pollIntervalMs ??
+        ASYNC_PROVIDER_POLL_DELAY_MS,
+      this.queuePriorityFor(job),
+      'poll',
+    );
+  }
+
+  private async dispatchPoll(enqueue: () => Promise<void>): Promise<void> {
+    try {
+      await enqueue();
+    } catch (error) {
+      throw new PollDispatchError(error);
+    }
+  }
+
   private async pollJob(job: AiJob): Promise<void> {
     if (job.status !== 'in_progress') {
       this.logger.warn(
@@ -689,14 +748,16 @@ export class AiGenerationWorkerService
             : job.logs,
         });
         if (updated) this.emit(updated);
-        await this.queueService.enqueue(
-          job.queueName,
-          job.id,
-          updated?.routingSnapshot?.policy.runtime.pollIntervalMs ??
-            job.routingSnapshot?.policy.runtime.pollIntervalMs ??
-            ASYNC_PROVIDER_POLL_DELAY_MS,
-          this.queuePriorityFor(updated ?? job),
-          'poll',
+        await this.dispatchPoll(() =>
+          this.queueService.enqueue(
+            job.queueName,
+            job.id,
+            updated?.routingSnapshot?.policy.runtime.pollIntervalMs ??
+              job.routingSnapshot?.policy.runtime.pollIntervalMs ??
+              ASYNC_PROVIDER_POLL_DELAY_MS,
+            this.queuePriorityFor(updated ?? job),
+            'poll',
+          ),
         );
         return;
       }
@@ -819,6 +880,7 @@ export class AiGenerationWorkerService
       await this.providerCapacity.release(latestJob);
       await this.handleFailure(latestJob, result.error);
     } catch (err) {
+      if (err instanceof PollDispatchError) throw err;
       const payload = adapter.mapError(err);
       await this.handlePollTransportFailure(job, payload);
     }
@@ -861,12 +923,14 @@ export class AiGenerationWorkerService
       ],
     });
     if (updated) this.emit(updated);
-    await this.queueService.enqueue(
-      job.queueName,
-      job.id,
-      delayMs,
-      this.queuePriorityFor(updated ?? job),
-      'poll',
+    await this.dispatchPoll(() =>
+      this.queueService.enqueue(
+        job.queueName,
+        job.id,
+        delayMs,
+        this.queuePriorityFor(updated ?? job),
+        'poll',
+      ),
     );
   }
 
@@ -1229,17 +1293,20 @@ export class AiGenerationWorkerService
         ],
       });
       if (queued) this.emit(queued);
-      await this.queueService.enqueue(
-        job.queueName,
-        job.id,
-        result.initialPollDelayMs ?? ASYNC_PROVIDER_POLL_DELAY_MS,
-        this.queuePriorityFor(job),
-        'poll',
+      await this.dispatchPoll(() =>
+        this.queueService.enqueue(
+          job.queueName,
+          job.id,
+          result.initialPollDelayMs ?? ASYNC_PROVIDER_POLL_DELAY_MS,
+          this.queuePriorityFor(job),
+          'poll',
+        ),
       );
       this.logger.log(
         `job ${job.id} queued provider poll for ${result.providerJobId}`,
       );
     } catch (err) {
+      if (err instanceof PollDispatchError) throw err;
       const payload = adapter.mapError(err);
       await this.providerCapacity.recordFailure(job, payload);
       await this.providerCapacity.release(job);
