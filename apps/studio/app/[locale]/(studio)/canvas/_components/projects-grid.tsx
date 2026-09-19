@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { Link } from "@/i18n/navigation";
@@ -60,7 +60,9 @@ export function CanvasProjectsGrid() {
   const ts = useTranslations("project.sections");
   const router = useRouter();
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const requestedWorkspaceId = useSearchParams().get("ws");
+  const searchParams = useSearchParams();
+  const requestedWorkspaceId = searchParams.get("ws");
+  const initialDescription = searchParams.get("prompt")?.trim() || undefined;
   const workspaceId = activeWorkspace?.id ?? null;
   const [projects, setProjects] = useState<ProjectRef[] | null>(null);
   const [renaming, setRenaming] = useState<ProjectRef | null>(null);
@@ -69,9 +71,20 @@ export function CanvasProjectsGrid() {
   const creatingRef = useRef(false);
   const [creating, setCreating] = useState(false);
 
+  const refreshScope = useRef({ workspaceId, active: true });
+  useLayoutEffect(() => {
+    const scope = { workspaceId, active: true };
+    refreshScope.current = scope;
+    return () => {
+      scope.active = false;
+    };
+  }, [workspaceId]);
+
   const refresh = useCallback(async () => {
-    if (!workspaceId) return;
-    setProjects(await listProjects(workspaceId));
+    const scope = refreshScope.current;
+    if (!workspaceId || !scope.active || scope.workspaceId !== workspaceId) return;
+    const rows = await listProjects(workspaceId);
+    if (refreshScope.current === scope && scope.active) setProjects(rows);
   }, [workspaceId]);
 
   // Re-scope when the active workspace changes (switch teams → switch grid).
@@ -119,6 +132,7 @@ export function CanvasProjectsGrid() {
       const project = await createProject(workspaceId, {
         name: t("untitledCanvas"),
         initialSectionTitle: ts("defaultTitle"),
+        ...(initialDescription ? { description: initialDescription } : {}),
       });
       router.push(`/project/${project.id}`);
     } catch {
@@ -126,7 +140,7 @@ export function CanvasProjectsGrid() {
       setCreating(false);
       toast.error(t("createCanvasFailed"));
     }
-  }, [router, workspaceId, t, ts]);
+  }, [router, workspaceId, initialDescription, t, ts]);
 
   const confirmDelete = useCallback(async () => {
     if (deleting) {

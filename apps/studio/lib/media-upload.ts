@@ -113,9 +113,10 @@ async function postJson<T extends object>(
   }
   const hasEnvelopeStatus = "code" in json || "success" in json;
   const successfulEnvelope =
-    json.success === true ||
-    json.code === "SUCCESS" ||
-    (typeof json.code === "number" && json.code >= 200 && json.code < 300);
+    (!("success" in json) || json.success === true) &&
+    (!("code" in json) ||
+      json.code === "SUCCESS" ||
+      (typeof json.code === "number" && json.code >= 200 && json.code < 300));
   if (hasEnvelopeStatus && !successfulEnvelope) {
     throw new Error(errorMessageFromJson(json) || `${label} failed`);
   }
