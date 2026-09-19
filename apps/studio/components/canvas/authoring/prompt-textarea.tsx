@@ -677,6 +677,10 @@ function PromptMentionMenuPortal({
       onPick={(item) => {
         if (!state.suggestion.editor.view.composing) state.suggestion.command(item);
       }}
+      // A modal dialog (the expanded composer, shot drawers) sets
+      // `pointer-events: none` on <body>; a body-level portal inherits it and
+      // becomes visible-but-dead to the mouse. Re-enable explicitly.
+      className="pointer-events-auto"
       style={{
         position: "fixed",
         top,
