@@ -11,19 +11,12 @@
  * navigates to the new crew's workspace.
  */
 
-import Link from "next/link";
 import { isCrewCursorError } from "./_hooks/api";
+import { CrewSectionNavigation } from "./_components/crew-section-navigation";
 import { CrewWorkspace } from "./_components/crew-workspace";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  IconBriefcase,
-  IconEye,
-  IconLoader2,
-  IconListCheck,
-  IconPlus,
-  IconUsers,
-} from "@tabler/icons-react";
+import { IconBriefcase, IconEye, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -134,40 +127,7 @@ export default function CrewsPage() {
 
       <div className="mx-auto max-w-[1800px] px-4 pb-24 pt-8 sm:px-6">
         <div className="min-w-0">
-          {/* Tabs — crews vs positions. URL state via `?view=positions`
-              so refreshes / shared links keep the same surface. */}
-          <div className="sticky top-[80px] z-30 mb-6 flex flex-wrap items-center gap-1 border-b border-border bg-background py-1 md:top-[88px] lg:top-[96px]">
-            <PlazaTab
-              label={tCrew("myCrewsTitle")}
-              icon={IconUsers}
-              active={view === "mine"}
-              onClick={() => setView("mine")}
-            />
-            <Link
-              href={localizePath("/crews/tasks", locale)}
-              className="inline-flex min-h-11 items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
-            >
-              <IconListCheck className="size-4" />
-              {tCrew("myTasksTab")}
-            </Link>
-            <Link
-              href={localizePath("/crews/income", locale)}
-              className="inline-flex min-h-11 items-center px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
-            >
-              {tCrew("myIncomeTab")}
-            </Link>
-            <PlazaTab
-              label={tCrew("allCrewsTitle")}
-              icon={IconUsers}
-              active={view === "crews"}
-              onClick={() => setView("crews")}
-            />
-            <PlazaTab
-              label={tCrew("allPositionsTab")}
-              icon={IconBriefcase}
-              active={view === "positions"}
-              onClick={() => setView("positions")}
-            />
+          <CrewSectionNavigation active={view} onViewChange={setView}>
             <div className="ml-auto shrink-0 pb-2">
               <Button
                 type="button"
@@ -184,7 +144,7 @@ export default function CrewsPage() {
                 {tCrew("createStudio")}
               </Button>
             </div>
-          </div>
+          </CrewSectionNavigation>
 
           {view === "mine" ? (
             <section aria-label={tCrew("myCrewsTitle")}>
@@ -294,38 +254,6 @@ export default function CrewsPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-// ─── Tab pill ────────────────────────────────────────
-
-function PlazaTab({
-  label,
-  icon: Icon,
-  active,
-  onClick,
-}: {
-  label: string;
-  icon: typeof IconUsers;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "relative inline-flex min-h-11 items-center gap-2 px-3 py-2 text-xs font-medium transition-colors",
-        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      <Icon className="size-4" />
-      {label}
-      {active ? (
-        <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />
-      ) : null}
-    </button>
   );
 }
 

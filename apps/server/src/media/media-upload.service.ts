@@ -89,7 +89,10 @@ import type {
   CreateUploadUrlResponseDto,
 } from './dto';
 import type { UploadKind } from './dto';
-import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
+import {
+  CONTENT_REVIEW_VIDEO_MAX_BYTES,
+  EPISODE_SOURCE_MAX_BYTES,
+} from '@repo/shared';
 import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
 import { WorkspacePermissionService } from '../workspaces';
 import { StoryPermissionService } from '../story-studio/story-permission.service';
@@ -136,6 +139,7 @@ const UPLOAD_KIND_LABEL = {
   agent_attachment_image: 'Image attachment',
   agent_attachment_document: 'Document attachment',
   ai_reference_video: 'Reference video',
+  content_review_video: 'Content review video',
   ai_reference_audio: 'Reference audio',
   story_music_audio: 'Story music',
   crew_asset_file: 'Crew asset file',
@@ -151,7 +155,14 @@ function mediaFileTooLargeError(uploadKind: UploadKind, maxBytes: number) {
 /** Video upload kinds that generic confirm must not transcode. Reference
  *  videos are generation-only inputs; story clips are enqueued later by the
  *  story domain after checksum/ffprobe verification and workspace claim. */
-const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>(['ai_reference_video']);
+const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>([
+  'ai_reference_video',
+  'content_review_video',
+]);
+
+function requiresMultipartUpload(kind: UploadKind): boolean {
+  return kind === 'episode_source_video' || kind === 'content_review_video';
+}
 
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -295,6 +306,15 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     assetKind: MediaAssetKind.video,
     ttlSeconds: 900,
     keySegment: 'ai-reference-video',
+  },
+  // Finished-cut review masters, not generation inputs. Capped at Aliyun
+  // Green's default 500 MB until the account quota is raised.
+  content_review_video: {
+    contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
+    maxBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES,
+    assetKind: MediaAssetKind.video,
+    ttlSeconds: 3600,
+    keySegment: 'content-review-video',
   },
   ai_reference_audio: {
     contentTypes: REFERENCE_AUDIO_CONTENT_TYPES,
@@ -447,9 +467,11 @@ export class MediaUploadService {
     input: CreateUploadUrlInputDto,
     workspaceId?: string,
   ): Promise<CreateUploadUrlResponseDto> {
-    if (input.kind === 'episode_source_video') {
+    if (requiresMultipartUpload(input.kind)) {
       throw new BadRequestException(
-        'Episode source videos require multipart upload',
+        input.kind === 'content_review_video'
+          ? 'Content review videos require multipart upload'
+          : 'Episode source videos require multipart upload',
       );
     }
     const { storage, storageKey, policy } = await this.prepareUpload(
@@ -572,7 +594,7 @@ export class MediaUploadService {
     const policy = UPLOAD_KIND_POLICY[input.kind];
     let storage = this.storageForUpload(input.kind);
     let sourceLocation: StorageObjectRef | undefined;
-    if (input.kind === 'episode_source_video') {
+    if (requiresMultipartUpload(input.kind)) {
       const session = await this.prisma.episodeUpload.findUnique({
         where: { storageKey: input.storageKey },
       });
@@ -583,7 +605,7 @@ export class MediaUploadService {
         !['uploaded', 'completed'].includes(session.status) ||
         !session.bucket
       ) {
-        throw new BadRequestException('Episode upload has not been completed');
+        throw new BadRequestException('Upload has not been completed');
       }
       const pinned = this.storageRegistry.forProvider(session.provider);
       if (!pinned)
@@ -1155,7 +1177,8 @@ export class MediaUploadService {
       if (
         crewId !== undefined ||
         kind === 'crew_asset_file' ||
-        kind === 'episode_source_video'
+        kind === 'episode_source_video' ||
+        kind === 'content_review_video'
       ) {
         throw new BadRequestException({
           code: 'MEDIA_SCOPE_CONFLICT',

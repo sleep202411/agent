@@ -15,6 +15,7 @@ import {
   IconLayoutSidebarLeftExpand,
   IconPhoto,
   IconSettings,
+  IconShieldCheck,
   IconVideo,
   IconWriting,
 } from "@tabler/icons-react";
@@ -329,6 +330,7 @@ export function StudioSidebar() {
     { label: t("nav.image"), href: "/images", icon: IconPhoto },
     { label: t("nav.video"), href: "/video", icon: IconVideo },
     { label: t("nav.audio"), href: "/audio", icon: IconAudioWaveform, disabled: true },
+    { label: t("nav.contentReview"), href: "/content-review", icon: IconShieldCheck },
   ];
   const settingsItem: SidebarItem = {
     label: t("nav.settings"),

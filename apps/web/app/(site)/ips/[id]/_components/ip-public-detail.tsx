@@ -1,5 +1,7 @@
 "use client";
 
+import { IpEngagementActions } from "./ip-engagement-actions";
+
 import { EpisodeFeedback } from "../../_components/episode-feedback";
 import { IpProductionStage } from "../../_components/ip-production-stage";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
@@ -503,8 +505,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   ))}
                 </div>
 
-                <p className="text-xs text-muted-foreground">{originT("likeNotice")}</p>
-                <div className="flex flex-wrap items-center gap-2">
+                <IpEngagementActions notice={originT("likeNotice")}>
                   <ActionButton
                     onClick={() => void shareIp(ipRoomPath(detailIp.roomNumber), locale, t)}
                     icon={IconShare3}
@@ -543,7 +544,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   >
                     {t("actions.report")}
                   </ActionButton>
-                </div>
+                </IpEngagementActions>
               </div>
 
               <PurchasePanel

@@ -238,7 +238,8 @@ describe('H3 Max reference pricing at admission', () => {
         { assetId: 'video-1', referenceBillingFacts: { durationSeconds: 5 } },
       ],
     });
-    expect(result.snapshot.policy.quota.cost).toBe(135);
+    // 45 = 9 pts/s × 5s output (2026-09-17 −30% rate) + 75 reference tokens.
+    expect(result.snapshot.policy.quota.cost).toBe(120);
   });
   it('ignores keyframes in the reference-token meter', async () => {
     const result = await quote({
@@ -246,7 +247,7 @@ describe('H3 Max reference pricing at admission', () => {
       startFrame: image,
       endFrame: image,
     });
-    expect(result.snapshot.policy.quota.cost).toBe(60);
+    expect(result.snapshot.policy.quota.cost).toBe(45);
   });
   it('rejects unverified media instead of quoting below the provider cost', async () => {
     await expect(

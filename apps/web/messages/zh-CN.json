@@ -1857,6 +1857,7 @@
     }
   },
   "crew": {
+    "navigationLabel": "剧组导航",
     "creationRequirements": {
       "title": "剧组创建要求",
       "eligibility": "只有持有「AI制片人」认证的用户才能创建剧组，并带领平台创作者协作完成项目。",
@@ -6114,7 +6115,7 @@
     "credits": "积分充值",
     "wechatPay": "微信支付",
     "payNow": "立即支付",
-    "noPackages": "No top-up packages available yet.",
+    "noPackages": "暂无可用的充值套餐，请稍后再试。",
     "scanToPay": "请使用微信扫描二维码完成支付",
     "paymentSuccess": "支付成功",
     "paymentProcessing": "支付处理中，正在更新余额…",
@@ -6134,6 +6135,10 @@
     "creditsRechargeDesc": "选择积分套餐进行充值",
     "communityRechargeTitle": "社区积分充值",
     "communityRechargeDesc": "选择套餐或输入自定义金额，为社区积分充值",
+    "communityPointsUsage": "社区积分可用于解锁付费 IP 内容、支持喜欢的创作者。支付成功后积分实时到账，未消耗积分可联系客服退款。",
+    "communityPackageName": "社区积分 × {amount}",
+    "payMethodLabel": "支付方式",
+    "amountDueLabel": "应付金额",
     "communityMembershipTitle": "社区会员",
     "communityMembershipDesc": "会员免费观看会员作品，购买付费作品享会员折扣。",
     "communityMembershipBenefitFreeViewing": "会员免费观看会员作品",
@@ -9739,7 +9744,7 @@
   "crewPersonalIncome": {
     "title": "我的收入",
     "back": "剧组大厅",
-    "description": "查看跨剧组的本人收入记录，各币种分别显示。",
+    "description": "查看你在各剧组的收入记录。",
     "loading": "加载中…",
     "signInRequired": "登录后查看本人收入。",
     "signIn": "登录",
