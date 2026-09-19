@@ -424,6 +424,11 @@ server:
       provider: aks-com
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
+    # V8 heap in a 1Gi cgroup sits around ~476Mi and OOMs the API+WS+outbox
+    # process under collab load (P2028 follows: Prisma maxWait cannot start a
+    # transaction while GC is thrashing). 1536 leaves ~500Mi of the 2Gi limit
+    # for native buffers / Y.Doc / pg. Do not raise replicaCount to "fix" heap.
+    NODE_OPTIONS: "--max-old-space-size=1536"
     # Required public web origin for invitation links (CN overrides explicitly).
     NEXT_PUBLIC_SITE_REGION: global
     REFERRAL_INVITE_BASE_URL: https://fizzdragon.com
@@ -528,8 +533,8 @@ server:
     LEGACY_MYSQL_PORT: "3306"
     LEGACY_MYSQL_DATABASE: fizzdragon_client
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: 1000m, memory: 1Gi }
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { cpu: 1500m, memory: 2Gi }
   nodeSelector:
     pool: worker
   tolerations:
