@@ -659,9 +659,10 @@ export const SEEDREAM_5_PRO_PARAMETER_POLICY = {
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
+// v4 2026-09-17: global −30% (curated ladder — margins comfortably above 2×).
 export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'gpt-image-2-points-v3-2026-09-11',
+  version: 'gpt-image-2-points-v4-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -671,12 +672,12 @@ export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K', '4K'],
   qualityOptions: ['low', 'medium', 'high'],
   matrix: {
-    '1K': { low: 10, medium: 30, high: 60 },
-    '2K': { low: 15, medium: 45, high: 90 },
-    '4K': { low: 22.5, medium: 70, high: 140 },
+    '1K': { low: 7, medium: 21, high: 42 },
+    '2K': { low: 10.5, medium: 31.5, high: 63 },
+    '4K': { low: 15.75, medium: 49, high: 98 },
   },
-  referenceImageSurchargePoints: 10.5,
-  extraReferenceImagePoints: 3.5,
+  referenceImageSurchargePoints: 7,
+  extraReferenceImagePoints: 2.5,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,
@@ -686,28 +687,32 @@ export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
  * Curated selling prices, not a fixed upstream cost quote. Flare and Sunburst
  * share fal's token rates. Keep the launch prices independent of subsequent
  * Image 2 discounts; xhigh/max are priced at 2x/4x high.
+ * v2 2026-09-17: global −30%; the xhigh=2×high / max=4×high curated ladder is
+ * re-derived from the cut `high` tier so the structure survives the cut.
  */
 export const GPT_IMAGE_25_PRODUCT_PRICING: AiProductPricingPolicy = {
   ...GPT_IMAGE_2_PRODUCT_PRICING,
-  version: 'gpt-image-2.5-points-v1-2026-09-11',
+  version: 'gpt-image-2.5-points-v2-2026-09-17',
   defaultQuality: 'high',
   maxOutputCount: 10,
   qualityOptions: ['low', 'medium', 'high', 'xhigh', 'max'],
   matrix: {
-    '1K': { low: 14, medium: 42, high: 84, xhigh: 168, max: 336 },
-    '2K': { low: 21, medium: 63, high: 126, xhigh: 252, max: 504 },
-    '4K': { low: 31.5, medium: 98, high: 196, xhigh: 392, max: 784 },
+    '1K': { low: 10, medium: 29, high: 59, xhigh: 118, max: 236 },
+    '2K': { low: 15, medium: 44, high: 88, xhigh: 176, max: 352 },
+    '4K': { low: 22, medium: 69, high: 137, xhigh: 274, max: 548 },
   },
 };
 
+// v2 2026-09-17: global −30% (7 pts ≈ 1.8× the $0.039/image Google cost).
+// Note: Google deprecates 2.5 Flash Image on the Gemini API 2026-10-02.
 export const NANO_BANANA_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'fixed_per_output',
-  version: 'nano-banana-points-v1-2026-06-08',
+  version: 'nano-banana-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
-  pointsPerOutput: 10,
+  pointsPerOutput: 7,
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -715,9 +720,11 @@ export const NANO_BANANA_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v3 2026-09-17: global −30% (Google 3.1 flash image: $0.045/$0.067/$0.101/
+// $0.151 per 512/1K/2K/4K → cut keeps ≈2.2×).
 export const NANO_BANANA_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'nano-banana-2-points-v2-2026-08-13',
+  version: 'nano-banana-2-points-v3-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -727,10 +734,10 @@ export const NANO_BANANA_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['512', '1K', '2K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
-    '512': { standard: 14 },
-    '1K': { standard: 20 },
-    '2K': { standard: 30 },
-    '4K': { standard: 50 },
+    '512': { standard: 10 },
+    '1K': { standard: 14 },
+    '2K': { standard: 21 },
+    '4K': { standard: 35 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -739,14 +746,15 @@ export const NANO_BANANA_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30% (7 pts ≈ 2.1× the $0.0336/image Google cost).
 export const NANO_BANANA_2_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'fixed_per_output',
-  version: 'nano-banana-2-lite-points-v1-2026-08-13',
+  version: 'nano-banana-2-lite-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
-  pointsPerOutput: 10,
+  pointsPerOutput: 7,
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -754,9 +762,11 @@ export const NANO_BANANA_2_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v3 2026-09-17: global −30% (Google 3 pro image: $0.134/1K-2K, $0.24/4K →
+// cut keeps ≈2.6×).
 export const NANO_BANANA_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'nano-banana-pro-points-v2-2026-08-13',
+  version: 'nano-banana-pro-points-v3-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -766,9 +776,9 @@ export const NANO_BANANA_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
-    '1K': { standard: 50 },
-    '2K': { standard: 50 },
-    '4K': { standard: 90 },
+    '1K': { standard: 35 },
+    '2K': { standard: 35 },
+    '4K': { standard: 63 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -777,14 +787,16 @@ export const NANO_BANANA_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%. ⚠️ Agnes per-image cost is not published —
+// verify against an Agnes invoice before shipping if this lane matters.
 export const QUICK_IMAGE_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'fixed_per_output',
-  version: 'quick-image-points-v1-2026-06-18',
+  version: 'quick-image-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
-  pointsPerOutput: 6,
+  pointsPerOutput: 4,
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -792,9 +804,10 @@ export const QUICK_IMAGE_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const WAN_IMAGE_27_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'wan-image-2-7-pro-points-v1-2026-06-09',
+  version: 'wan-image-2-7-pro-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -804,9 +817,9 @@ export const WAN_IMAGE_27_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
-    '1K': { standard: 25 },
-    '2K': { standard: 45 },
-    '4K': { standard: 90 },
+    '1K': { standard: 18 },
+    '2K': { standard: 32 },
+    '4K': { standard: 63 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -815,9 +828,10 @@ export const WAN_IMAGE_27_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const WAN_IMAGE_27_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'wan-image-2-7-points-v1-2026-06-09',
+  version: 'wan-image-2-7-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -827,8 +841,8 @@ export const WAN_IMAGE_27_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K'],
   qualityOptions: ['standard'],
   matrix: {
-    '1K': { standard: 12 },
-    '2K': { standard: 20 },
+    '1K': { standard: 8 },
+    '2K': { standard: 14 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -837,14 +851,15 @@ export const WAN_IMAGE_27_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const QWEN_IMAGE_20_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'fixed_per_output',
-  version: 'qwen-image-2-0-pro-points-v1-2026-06-09',
+  version: 'qwen-image-2-0-pro-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 6,
-  pointsPerOutput: 35,
+  pointsPerOutput: 25,
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -852,14 +867,15 @@ export const QWEN_IMAGE_20_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const QWEN_IMAGE_20_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'fixed_per_output',
-  version: 'qwen-image-2-0-points-v1-2026-06-09',
+  version: 'qwen-image-2-0-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 6,
-  pointsPerOutput: 20,
+  pointsPerOutput: 14,
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -867,9 +883,10 @@ export const QWEN_IMAGE_20_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const FLUX_2_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'flux-2-pro-points-v1-2026-06-09',
+  version: 'flux-2-pro-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -879,19 +896,20 @@ export const FLUX_2_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K'],
   qualityOptions: ['standard'],
   matrix: {
-    '1K': { standard: 30 },
-    '2K': { standard: 70 },
+    '1K': { standard: 21 },
+    '2K': { standard: 49 },
   },
-  referenceImageSurchargePoints: 10,
-  extraReferenceImagePoints: 5,
+  referenceImageSurchargePoints: 7,
+  extraReferenceImagePoints: 3.5,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const HUNYUAN_WORLD_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'hunyuan-world-points-v1-2026-06-11',
+  version: 'hunyuan-world-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -900,7 +918,7 @@ export const HUNYUAN_WORLD_PRODUCT_PRICING: AiProductPricingPolicy = {
   defaultQuality: 'standard',
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
-  matrix: { '1K': { standard: 40 } },
+  matrix: { '1K': { standard: 28 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -908,9 +926,10 @@ export const HUNYUAN_WORLD_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const TOPAZ_UPSCALE_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'topaz-upscale-points-v1-2026-06-16',
+  version: 'topaz-upscale-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -919,7 +938,7 @@ export const TOPAZ_UPSCALE_PRODUCT_PRICING: AiProductPricingPolicy = {
   defaultQuality: 'standard',
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
-  matrix: { '1K': { standard: 15 } },
+  matrix: { '1K': { standard: 10.5 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -927,9 +946,10 @@ export const TOPAZ_UPSCALE_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const BRIA_RMBG_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'bria-rmbg-points-v1-2026-06-16',
+  version: 'bria-rmbg-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -938,7 +958,7 @@ export const BRIA_RMBG_PRODUCT_PRICING: AiProductPricingPolicy = {
   defaultQuality: 'standard',
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
-  matrix: { '1K': { standard: 10 } },
+  matrix: { '1K': { standard: 7 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -946,9 +966,10 @@ export const BRIA_RMBG_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const ICLIGHT_RELIGHT_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'iclight-relight-points-v1-2026-06-16',
+  version: 'iclight-relight-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -957,7 +978,7 @@ export const ICLIGHT_RELIGHT_PRODUCT_PRICING: AiProductPricingPolicy = {
   defaultQuality: 'standard',
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
-  matrix: { '1K': { standard: 20 } },
+  matrix: { '1K': { standard: 14 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -965,9 +986,10 @@ export const ICLIGHT_RELIGHT_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const QWEN_MULTI_ANGLE_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'qwen-multi-angle-points-v1-2026-06-16',
+  version: 'qwen-multi-angle-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -976,7 +998,7 @@ export const QWEN_MULTI_ANGLE_PRODUCT_PRICING: AiProductPricingPolicy = {
   defaultQuality: 'standard',
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
-  matrix: { '1K': { standard: 18 } },
+  matrix: { '1K': { standard: 13 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -984,9 +1006,10 @@ export const QWEN_MULTI_ANGLE_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const BRIA_EXPAND_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'bria-expand-points-v1-2026-06-16',
+  version: 'bria-expand-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -995,7 +1018,7 @@ export const BRIA_EXPAND_PRODUCT_PRICING: AiProductPricingPolicy = {
   defaultQuality: 'standard',
   resolutionOptions: ['1K'],
   qualityOptions: ['standard'],
-  matrix: { '1K': { standard: 15 } },
+  matrix: { '1K': { standard: 10.5 } },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
   maskSurchargePoints: 0,
@@ -1003,9 +1026,10 @@ export const BRIA_EXPAND_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%.
 export const FLUX_2_FLEX_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'flux-2-flex-points-v1-2026-06-09',
+  version: 'flux-2-flex-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1015,11 +1039,11 @@ export const FLUX_2_FLEX_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K'],
   qualityOptions: ['standard'],
   matrix: {
-    '1K': { standard: 50 },
-    '2K': { standard: 120 },
+    '1K': { standard: 35 },
+    '2K': { standard: 84 },
   },
-  referenceImageSurchargePoints: 15,
-  extraReferenceImagePoints: 5,
+  referenceImageSurchargePoints: 10.5,
+  extraReferenceImagePoints: 3.5,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,
@@ -1027,9 +1051,10 @@ export const FLUX_2_FLEX_PRODUCT_PRICING: AiProductPricingPolicy = {
 
 // Premium flux tier. Cost basis: fal $0.07 first MP + $0.03/extra MP
 // (1K≈1MP=$0.07, 2K≈4MP=$0.16). Points keep the ~10x flux margin.
+// v2 2026-09-17: global −30% (cut keeps ≈7× the fal cost basis).
 export const FLUX_2_MAX_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'flux-2-max-points-v1-2026-06-09',
+  version: 'flux-2-max-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1039,11 +1064,11 @@ export const FLUX_2_MAX_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K'],
   qualityOptions: ['standard'],
   matrix: {
-    '1K': { standard: 70 },
-    '2K': { standard: 160 },
+    '1K': { standard: 49 },
+    '2K': { standard: 112 },
   },
-  referenceImageSurchargePoints: 15,
-  extraReferenceImagePoints: 5,
+  referenceImageSurchargePoints: 10.5,
+  extraReferenceImagePoints: 3.5,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,
@@ -1051,9 +1076,10 @@ export const FLUX_2_MAX_PRODUCT_PRICING: AiProductPricingPolicy = {
 
 // Budget open-weight flux tier. Cost basis: $0.012/MP flat on both fal +
 // replicate (1K≈$0.012, 2K≈4MP=$0.048). Up to 4 images/request on fal.
+// v2 2026-09-17: global −30% (cut keeps ≈4.7×/5.8× the per-MP cost).
 export const FLUX_2_DEV_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'flux-2-dev-points-v1-2026-06-09',
+  version: 'flux-2-dev-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1063,11 +1089,11 @@ export const FLUX_2_DEV_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K'],
   qualityOptions: ['standard'],
   matrix: {
-    '1K': { standard: 12 },
-    '2K': { standard: 40 },
+    '1K': { standard: 8 },
+    '2K': { standard: 28 },
   },
-  referenceImageSurchargePoints: 5,
-  extraReferenceImagePoints: 3,
+  referenceImageSurchargePoints: 3.5,
+  extraReferenceImagePoints: 2,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,
@@ -1077,7 +1103,8 @@ export const SEEDREAM_45_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
   // v2 2026-07-08: re-based on official BytePlus per-piece cost ($0.040/piece,
   // flat across resolution) at a floored designed price (not raw ×margin).
-  version: 'seedream-4-5-points-v2-2026-07-08',
+  // v3 2026-09-17: global −30% (8 = 2.0× the $0.04/piece cost).
+  version: 'seedream-4-5-points-v3-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1087,8 +1114,8 @@ export const SEEDREAM_45_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['2K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
-    '2K': { standard: 12 },
-    '4K': { standard: 12 },
+    '2K': { standard: 8 },
+    '4K': { standard: 8 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -1101,7 +1128,8 @@ export const SEEDREAM_5_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
   // v2 2026-07-08: re-based on official BytePlus per-piece cost ($0.035/piece,
   // flat across resolution) at a floored designed price (10 = ~2.9× cost).
-  version: 'seedream-5-lite-points-v2-2026-07-08',
+  // v3 2026-09-17: global −30% (7 = 2.0× cost).
+  version: 'seedream-5-lite-points-v3-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1111,9 +1139,9 @@ export const SEEDREAM_5_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['2K', '3K', '4K'],
   qualityOptions: ['standard'],
   matrix: {
-    '2K': { standard: 10 },
-    '3K': { standard: 10 },
-    '4K': { standard: 10 },
+    '2K': { standard: 7 },
+    '3K': { standard: 7 },
+    '4K': { standard: 7 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -1122,12 +1150,15 @@ export const SEEDREAM_5_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
-// Seedream 5.0 Pro — flagship. Official BytePlus $0.045/piece (output ≤2.36MP,
-// single tier). Designed/floored pro price 15 — top of the seedream ladder
-// (lite 10, 4.5 12, pro 15); capped, not raw ×margin.
+// Seedream 5.0 Pro — flagship. Official BytePlus cost (read 2026-09-17):
+// $0.045/piece ≤2.61MP (1K) and $0.09/piece above (2K). Designed/floored pro
+// price 15 — top of the seedream ladder (lite 10, 4.5 12, pro 15); capped,
+// not raw ×margin.
+// v2 2026-09-17: global −30% (10.5 flat = 2.3× the 1K cost, 1.17× the 2K
+// cost — above the 1.10× floor at both tiers).
 export const SEEDREAM_5_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'seedream-5-pro-points-v1-2026-07-08',
+  version: 'seedream-5-pro-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1136,10 +1167,10 @@ export const SEEDREAM_5_PRO_PRODUCT_PRICING: AiProductPricingPolicy = {
   defaultQuality: 'standard',
   resolutionOptions: ['1K', '2K'],
   qualityOptions: ['standard'],
-  // Flat per-piece pricing (official bills $0.045/image regardless of size).
+  // Flat per-piece pricing (official bills per piece; see cost tiers above).
   matrix: {
-    '1K': { standard: 15 },
-    '2K': { standard: 15 },
+    '1K': { standard: 10.5 },
+    '2K': { standard: 10.5 },
   },
   referenceImageSurchargePoints: 0,
   extraReferenceImagePoints: 0,
@@ -1398,18 +1429,20 @@ export const GEMINI_OMNI_FLASH_PARAMETER_POLICY = {
   negativePrompt: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
-// Public list price: $0.40/s with audio and $0.20/s video-only at both
-// resolutions. At 1 point ≈ $0.01, the rates keep a ~1.5× product margin.
+// Public list price: $0.40/s with audio (720p/1080p) and $0.60/s at 4k;
+// video-only is $0.20/s and $0.30/s (Google, 2026-09-16). The 2026-09-17
+// global −30% reprice floors every tier at ≥1.10× cost, so the standard tier
+// lands at 44/66 (1.10×) rather than the raw ×0.7 (42/63 = 1.05×).
 export const VEO_3_1_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'veo-3-1-points-v2-2026-08-13',
+  version: 'veo-3-1-points-v3-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '1080p',
-  pointsPerSecond: { '720p': 60, '1080p': 60, '4k': 90 },
-  videoOnlyPointsPerSecond: { '720p': 30, '1080p': 30, '4k': 60 },
+  pointsPerSecond: { '720p': 44, '1080p': 44, '4k': 66 },
+  videoOnlyPointsPerSecond: { '720p': 22, '1080p': 22, '4k': 42 },
   minSeconds: 4,
   maxSeconds: 8,
   defaultSeconds: 8,
@@ -1422,17 +1455,18 @@ export const VEO_3_1_PRODUCT_PRICING: AiProductPricingPolicy = {
 };
 
 // Public list price: $0.10/s at 720p and $0.12/s at 1080p with audio;
-// video-only is $0.08/s and $0.10/s respectively.
+// video-only is $0.08/s and $0.10/s respectively (Google, 2026-09-16).
+// −30% 2026-09-17: 720p floors at 11 (1.10× cost) instead of the raw 11.2.
 export const VEO_3_1_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'veo-3-1-fast-points-v2-2026-08-13',
+  version: 'veo-3-1-fast-points-v3-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '1080p',
-  pointsPerSecond: { '720p': 16, '1080p': 20 },
-  videoOnlyPointsPerSecond: { '720p': 12, '1080p': 15 },
+  pointsPerSecond: { '720p': 11, '1080p': 14 },
+  videoOnlyPointsPerSecond: { '720p': 8, '1080p': 10.5 },
   minSeconds: 4,
   maxSeconds: 8,
   defaultSeconds: 8,
@@ -1444,16 +1478,19 @@ export const VEO_3_1_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// List price $0.05/s (720p) and $0.08/s (1080p) with audio (Google,
+// 2026-09-16). −30% 2026-09-17: 1080p floors at 9 (1.13×) — the raw ×0.7
+// (8.4→8) would sit exactly at cost.
 export const VEO_3_1_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'veo-3-1-lite-points-v1-2026-08-13',
+  version: 'veo-3-1-lite-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '720p': 8, '1080p': 12 },
-  videoOnlyPointsPerSecond: { '720p': 5, '1080p': 8 },
+  pointsPerSecond: { '720p': 6, '1080p': 9 },
+  videoOnlyPointsPerSecond: { '720p': 4, '1080p': 6 },
   minSeconds: 4,
   maxSeconds: 8,
   defaultSeconds: 8,
@@ -1465,15 +1502,18 @@ export const VEO_3_1_LITE_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// Omni Flash video output ≈$0.10/s (5,792 tokens/s × $17.50/M output video
+// tokens, Google 2026-09-16). −30% 2026-09-17: floors at 12 (1.19×) — the raw
+// ×0.7 (11.2→11) would be 1.09×.
 export const GEMINI_OMNI_FLASH_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'gemini-omni-flash-preview-points-v1-2026-08-13',
+  version: 'gemini-omni-flash-preview-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '720p': 16 },
+  pointsPerSecond: { '720p': 12 },
   minSeconds: 3,
   maxSeconds: 10,
   defaultSeconds: 8,
@@ -1491,19 +1531,20 @@ export const GEMINI_OMNI_FLASH_PRODUCT_PRICING: AiProductPricingPolicy = {
 // raw ×margin: 720p 25 (~1.65×), 480p 12 (floored ≥ double digit).
 // v5 2026-07-12: 4k enabled — upstream replaced the launch-era 2K ceiling with
 // native 4K (June 2026); official enum is 480p/720p/1080p/4k.
+// v6 2026-09-17: global −30% with a ≥1.10× cost floor (BytePlus pricing page,
+// read 2026-09-17: 480p $0.07/s, 720p $0.15/s, 1080p $0.37/s, 4k $0.78/s —
+// the 4k figure corrects the old "$1.36/s" note, which over-counted tokens:
+// 4K 16:9 is 194,400 tokens/s × $4.0/M = $0.778/s). 1080p floors at 41 (1.11×);
+// raw ×0.7 (31.5) would have inverted against the $0.37/s cost.
 export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-0-points-v5-2026-07-12',
+  version: 'seedance-2-0-points-v6-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  // 1080p ≈ 2.25× 720p pixels (~$0.34/s official); designed/capped at 45 (not
-  // the raw ~56) to keep the ladder controlled. 4k = exactly 4× 1080p pixels
-  // (194,400 tokens/s ≈ $1.36/s list, ~$0.82/s on resource packs); priced at
-  // 4× the 1080p point = 180/s (~1.3× list margin, same cap-down as 1080p).
-  pointsPerSecond: { '480p': 12, '720p': 25, '1080p': 45, '4k': 180 },
+  pointsPerSecond: { '480p': 8, '720p': 18, '1080p': 41, '4k': 126 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1520,9 +1561,15 @@ export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
 // (combined input-video seconds + output seconds) at ≈$0.062/$0.139 per
 // second. Product points keep the established ~1.65× Seedance ladder while
 // charging the correct meter for reference-video jobs.
+// v3 2026-09-17: global −30% with a ≥1.10× cost floor. Costs verified against
+// the BytePlus pricing page (read 2026-09-17): no-video 480p $0.103/s, 720p
+// $0.231/s, 1080p $0.569/s list ($0.41/s launch promo ended 2026-09-17);
+// with-video meter ≈$0.062/$0.139/$0.34 per combined second. All tiers clear
+// the floor on the raw ×0.7 — including 1080p (90 = 1.58× list cost), so the
+// 2026-09-05 1080p promo-window headroom now covers the cut.
 export const SEEDANCE_2_5_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-5-points-v2-2026-09-05',
+  version: 'seedance-2-5-points-v3-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -1532,8 +1579,8 @@ export const SEEDANCE_2_5_PRODUCT_PRICING: AiProductPricingPolicy = {
   // ends 2026-09-17; list ≈$0.57/s) vs 720p $0.121-0.139/s — priced at the
   // same design margin as the 720p tier (128 ≈ 38 × 3.4×). Note: 1080p
   // output is 10-bit H.265/HEVC (doc 1520757 playback-compat warning).
-  pointsPerSecond: { '480p': 18, '720p': 38, '1080p': 128 },
-  referenceVideoPointsPerSecond: { '480p': 11, '720p': 23, '1080p': 78 },
+  pointsPerSecond: { '480p': 13, '720p': 27, '1080p': 90 },
+  referenceVideoPointsPerSecond: { '480p': 8, '720p': 16, '1080p': 55 },
   minSeconds: 4,
   maxSeconds: 30,
   defaultSeconds: 5,
@@ -1547,15 +1594,16 @@ export const SEEDANCE_2_5_PRODUCT_PRICING: AiProductPricingPolicy = {
 
 // v3 2026-07-08: official BytePlus cost 720p ≈ $0.121/s, 480p ≈ $0.054/s.
 // Designed/floored: 720p 20 (~1.65×), 480p 10.
+// v4 2026-09-17: global −30% (7/14 = 1.17×/1.17× the $0.06/$0.12/s cost).
 export const SEEDANCE_2_0_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-0-fast-points-v3-2026-07-08',
+  version: 'seedance-2-0-fast-points-v4-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '480p': 10, '720p': 20 },
+  pointsPerSecond: { '480p': 7, '720p': 14 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1570,15 +1618,17 @@ export const SEEDANCE_2_0_FAST_PRODUCT_PRICING: AiProductPricingPolicy = {
 // Seedance 2.0 mini — official budget tier (~50% cheaper than 2.0). Cost 720p
 // ≈ $0.076/s ($0.0035/K exclude-video), 480p ≈ $0.034/s. Designed/floored:
 // 720p 12, 480p 8. 480p/720p only (no 1080p/4k upstream).
+// v2 2026-09-17: global −30% with a ≥1.10× cost floor — 720p floors at 9
+// (1.18×) because the raw ×0.7 (8.4→8) would be 1.05× the $0.076/s cost.
 export const SEEDANCE_2_0_MINI_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-0-mini-points-v1-2026-07-08',
+  version: 'seedance-2-0-mini-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '480p': 8, '720p': 12 },
+  pointsPerSecond: { '480p': 6, '720p': 9 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1651,16 +1701,18 @@ export const MINIMAX_H3_PARAMETER_POLICY = {
   seed: { enabled: false },
 } as const satisfies Prisma.InputJsonObject;
 
+// v3 2026-09-17: global −30% with a ≥1.10× cost floor — 768P floors at 9
+// (1.13×) because the raw ×0.7 (8.4→8) would sit exactly at the $0.08/s cost.
 export const MINIMAX_H3_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'minimax-h3-points-v2-2026-08-07',
+  version: 'minimax-h3-points-v3-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '2K',
   // Keys match official resolution enum (and UI).
-  pointsPerSecond: { '768P': 12, '2K': 25 },
+  pointsPerSecond: { '768P': 9, '2K': 18 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1672,15 +1724,17 @@ export const MINIMAX_H3_PRODUCT_PRICING: AiProductPricingPolicy = {
   roundTo: 1,
 };
 
+// v2 2026-09-17: global −30%. ⚠️ Agnes per-second cost is not published —
+// verify against an Agnes invoice before shipping if this lane matters.
 export const QUICK_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'quick-video-points-v1-2026-06-18',
+  version: 'quick-video-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '480p',
-  pointsPerSecond: { '480p': 6, '720p': 8 },
+  pointsPerSecond: { '480p': 4, '720p': 6 },
   minSeconds: 4,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1723,15 +1777,16 @@ export const KLING_MOTION_PARAMETER_POLICY = {
 // Kling v1 standard i2v — per-second points. ESTIMATE anchored on fal's Kling
 // standard tier (~$0.06/s) at a 2.0× margin → ~12 pts/s; no resolution param,
 // so a single nominal key. DB-editable via the catalog ops flow.
+// v2 2026-09-17: global −30% → 8 pts/s (~1.33× the estimated cost).
 export const KLING_MOTION_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'kling-v1-motion-points-v1-2026-06-16',
+  version: 'kling-v1-motion-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '720p': 12 },
+  pointsPerSecond: { '720p': 8 },
   minSeconds: 5,
   maxSeconds: 10,
   defaultSeconds: 5,
@@ -1766,15 +1821,16 @@ export const WAN_2_7_VIDEO_PARAMETER_POLICY = {
 // (ap-southeast-1) wan2.6 video tier as the wan2.7 proxy (720P $0.10/s, 1080P
 // $0.15/s) at a 2.0× margin → ceil(USD/s × 100 × 2.0). Pending finance sign-off
 // against Alibaba's published wan2.7 rate; DB-editable via the catalog ops flow.
+// v2 2026-09-17: global −30% → 14/21 pts/s (1.4× the estimated cost anchor).
 export const WAN_2_7_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'wan-2-7-video-points-v1-2026-06-16',
+  version: 'wan-2-7-video-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720P',
-  pointsPerSecond: { '720P': 20, '1080P': 30 },
+  pointsPerSecond: { '720P': 14, '1080P': 21 },
   minSeconds: 2,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1835,15 +1891,16 @@ export const WAN_3_0_VIDEO_PARAMETER_POLICY = {
 // 480P/720P/1080P. Product points keep the catalog's 2× gross-margin policy
 // (1 compute point ≈ US$0.01). Provider-cost accounting remains the exact list
 // price and is stored separately on the binding snapshot.
+// v2 2026-09-17: global −30% → 7/14/28 pts/s (1.4× the international list).
 export const WAN_3_0_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'wan-3-0-video-points-v1-2026-08-13',
+  version: 'wan-3-0-video-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720P',
-  pointsPerSecond: { '480P': 10, '720P': 20, '1080P': 40 },
+  pointsPerSecond: { '480P': 7, '720P': 14, '1080P': 28 },
   minSeconds: 2,
   maxSeconds: 30,
   defaultSeconds: 5,
@@ -1893,15 +1950,16 @@ export const HAPPYHORSE_VIDEO_PARAMETER_POLICY = {
 // premium #1-ranked model with native audio; no published per-second rate broken
 // out yet, so anchored on the same INTERNATIONAL tier as Wan 2.7 (720P 20/s,
 // 1080P 30/s) pending finance sign-off. DB-editable via the catalog ops flow.
+// v2 2026-09-17: global −30% → 14/21 pts/s (1.4× the estimated anchor).
 export const HAPPYHORSE_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'happyhorse-1-0-video-points-v1-2026-06-16',
+  version: 'happyhorse-1-0-video-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720P',
-  pointsPerSecond: { '720P': 20, '1080P': 30 },
+  pointsPerSecond: { '720P': 14, '1080P': 21 },
   minSeconds: 2,
   maxSeconds: 15,
   defaultSeconds: 5,
@@ -1949,15 +2007,16 @@ export const HAPPYHORSE_1_1_VIDEO_PARAMETER_POLICY = {
 // as 1.0 / Wan 2.7 (720P 20/s, 1080P 30/s = ~2× a standard video tier, i.e. it
 // draws 2× from the free allowance) pending finance sign-off. DB-editable via the
 // catalog ops flow.
+// v2 2026-09-17: global −30% → 14/21 pts/s (1.4× the estimated anchor).
 export const HAPPYHORSE_1_1_VIDEO_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'happyhorse-1-1-video-points-v1-2026-07-01',
+  version: 'happyhorse-1-1-video-points-v2-2026-09-17',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720P',
-  pointsPerSecond: { '720P': 20, '1080P': 30 },
+  pointsPerSecond: { '720P': 14, '1080P': 21 },
   minSeconds: 2,
   maxSeconds: 15,
   defaultSeconds: 5,

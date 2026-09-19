@@ -462,7 +462,9 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
       minimumPoints: 1,
       roundTo: 1,
       // fal list rate (not the temporary launch discount): $0.08/s at 768P.
-      // Product rate = $0.12/s; reference tokens are billed separately at cost.
+      // 2026-09-17 global −30% with a ≥1.10× cost floor: product rate $0.09/s
+      // (floored — raw ×0.7 would sit exactly at cost); reference tokens are
+      // still billed separately at cost.
       // https://fal.ai/models/minimax/h3-max/reference-to-video (2026-09-12)
       referenceTokenPricing: {
         includedTokens: 4096,
@@ -471,9 +473,9 @@ export const VIDEO_MODELS: VideoModelSeed[] = [
         videoTokensPerSecond: { '768P': 7460 },
         audioTokensPerSecond: 80,
       },
-      version: 'minimax-h3-max-points-v1',
+      version: 'minimax-h3-max-points-v2-2026-09-17',
       defaultResolution: '768P',
-      pointsPerSecond: { '768P': 12 },
+      pointsPerSecond: { '768P': 9 },
       minSeconds: 5,
     },
     group: 'video',

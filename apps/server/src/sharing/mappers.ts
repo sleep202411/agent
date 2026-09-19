@@ -118,6 +118,7 @@ export type InviteTargetDTO =
 
 export interface InvitePreviewDTO {
   /** Present only when the caller already has current access to this target. */
+  currentRole?: string;
   existingAccess: InviteTargetDTO | null;
   scope: ShareScope;
   targetName: string;
