@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../infra/db/db.module';
+import { ORIGINAL_VARIANT_KEY } from '../infra/storage/media-asset-placement';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { ReferencePreparationError } from './provider-adapter';
 
@@ -30,7 +31,16 @@ export class AiReferenceUrlPreparerService {
 
     const assets = await this.prisma.mediaAsset.findMany({
       where: { id: { in: assetIds } },
-      include: { placements: true },
+      include: {
+        placements: true,
+        // Providers must receive the asset's ORIGINAL bytes. Loading only the
+        // original variant keeps derived variants (video poster, HLS) out of
+        // the resolver's candidate set entirely.
+        variants: {
+          where: { variantKey: ORIGINAL_VARIANT_KEY, deletedAt: null },
+          include: { placements: true },
+        },
+      },
     });
     const byId = new Map(assets.map((asset) => [asset.id, asset]));
 

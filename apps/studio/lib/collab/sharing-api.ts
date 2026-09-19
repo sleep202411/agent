@@ -236,6 +236,7 @@ export interface ShareInvite {
 }
 
 export interface InvitePreview {
+  currentRole?: string;
   existingAccess: AcceptedInvite | null;
   scope: "workspace" | "project" | "story-project";
   targetName: string;

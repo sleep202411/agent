@@ -3,10 +3,17 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Page from "./page";
 import { CrewApiError } from "../_hooks/api";
-vi.mock("./payout-history", () => ({ PayoutHistory: () => null }));
+vi.mock("./payout-history", () => ({
+  PayoutHistory: ({ currency }: { currency: string }) => {
+    state.payoutCurrency = currency;
+    return null;
+  },
+}));
 const state = vi.hoisted(() => ({
   user: { id: "alice" } as { id: string } | null,
   currency: "",
+  payoutCurrency: "",
+  locale: "en-US",
   feed: {} as Record<string, unknown>,
 }));
 vi.mock("@/src/hooks/use-user", () => ({
@@ -16,7 +23,7 @@ vi.mock("@/components/auth/auth-dialog-provider", () => ({
   useAuthDialog: () => ({ open: vi.fn() }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
-  useLocale: () => "en-US",
+  useLocale: () => state.locale,
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("@/src/lib/region/cell", () => ({ CURRENT_CELL: "com" }));
@@ -26,18 +33,12 @@ vi.mock("../_hooks/use-earnings", () => ({
     return state.feed;
   },
 }));
-vi.mock("@/components/ui/native-select", () => ({
-  NativeSelect: ({ onChange, ...props }: { onChange: (value: string) => void }) => (
-    // eslint-disable-next-line no-restricted-syntax -- Test adapter for the production NativeSelect component.
-    <select {...props} onChange={(event) => onChange(event.target.value)} />
-  ),
-  NativeSelectOption: (props: object) => <option {...props} />,
-}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   state.user = { id: "alice" };
+  state.locale = "en-US";
   state.feed = {
     data: {
       pages: [
@@ -110,15 +111,23 @@ it("hides cached private financial records on logout", () => {
   expect(container.textContent).not.toContain("900.00");
   expect(container.textContent).toContain("signInRequired");
 });
-it("switches currencies without converting the amounts", () => {
-  render();
-  act(() => {
-    const select = container.querySelector("select")!;
-    select.value = "CNY";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(state.currency).toBe("CNY");
-});
+it.each(["en-US", "zh-CN", "zh-HK"])(
+  "keeps site currency fixed in %s without a picker",
+  (locale) => {
+    state.locale = locale;
+    render();
+    expect(container.querySelector('select, [role="combobox"]')).toBeNull();
+    expect(state.currency).toBe("USD");
+    expect(state.payoutCurrency).toBe("USD");
+    expect(container.textContent).toContain("USD");
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((node) => node.textContent === "refresh")!
+        .click()
+    );
+    expect(state.feed.refetch).toHaveBeenCalledTimes(1);
+  }
+);
 
 it.each([true, false])("recovers a next-page earnings failure (invalid cursor: %s)", (invalid) => {
   state.feed.isError = true;
@@ -134,3 +143,22 @@ it.each([true, false])("recovers a next-page earnings failure (invalid cursor: %
   expect(state.feed.refetch).toHaveBeenCalledTimes(invalid ? 1 : 0);
   expect(state.feed.fetchNextPage).toHaveBeenCalledTimes(invalid ? 0 : 1);
 });
+
+it.each(["alice", null])(
+  "keeps all Crew destinations available on Income for user %s",
+  (userId) => {
+    state.user = userId ? { id: userId } : null;
+    render();
+    const nav = container.querySelector('nav[aria-label="navigationLabel"]')!;
+    expect(nav).not.toBeNull();
+    expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
+      "/en-US/crews?view=mine",
+      "/en-US/crews/tasks",
+      "/en-US/crews/income",
+      "/en-US/crews?view=crews",
+      "/en-US/crews?view=positions",
+    ]);
+    expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("myIncomeTab");
+  }
+);
