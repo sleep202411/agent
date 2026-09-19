@@ -72,6 +72,11 @@ const nextConfig: NextConfig = {
   // gzip + AFD over HTTP/2 double-compresses → net::ERR_HTTP2_PROTOCOL_ERROR
   // (CSS/JS chunks stall, blank page). Required before putting studio behind FD.
   compress: false,
+  // Next.js `next dev` rewrite proxyTimeout defaults to 30s. AI content
+  // review polls Aliyun Green for up to ~4 minutes on `/api/user/video/moderation/ai/exportExcel`.
+  experimental: {
+    proxyTimeout: 31 * 60 * 1000,
+  },
   async rewrites() {
     return [
       {

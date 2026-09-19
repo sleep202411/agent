@@ -48,6 +48,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Build cache contract
+        run: npm run test:build-cache
+
       - name: Generate database client
         run: npm run db:generate -w server
 

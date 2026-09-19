@@ -85,7 +85,7 @@ it('retains successful buffer and disk output with exact hashing', async () => {
   const bytes = Buffer.from('provider output bytes');
   jest
     .spyOn(global, 'fetch')
-    .mockImplementation(async () => new Response(bytes));
+    .mockImplementation(() => Promise.resolve(new Response(bytes)));
   const instance = worker();
   expect(
     await instance.fetchProviderBytes('https://provider.test/output'),
