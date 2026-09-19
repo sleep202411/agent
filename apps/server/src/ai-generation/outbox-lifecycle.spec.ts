@@ -55,9 +55,10 @@ it.each(['candidate', 'claim', 'payload'])(
     );
     const work = service['drainOnce']();
     await entered.promise;
-    service.onModuleDestroy();
+    const shutdown = service.onModuleDestroy();
     release.resolve();
     await work;
+    await shutdown;
     await service['tryDispatch']('row');
     await service['drainOnce']();
     expect(publish).not.toHaveBeenCalled();
