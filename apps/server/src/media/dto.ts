@@ -33,6 +33,7 @@ export const UploadKindSchema = z.enum([
   'agent_attachment_image',
   'agent_attachment_document',
   'ai_reference_video',
+  'content_review_video',
   'ai_reference_audio',
   'story_music_audio',
   'crew_asset_file',

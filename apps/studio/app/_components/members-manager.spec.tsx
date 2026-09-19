@@ -43,7 +43,7 @@ describe("MembersManager project access", () => {
     api.success.mockReset();
     api.error.mockReset();
     api.list.mockReset();
-    api.realtime.mockReset();
+    api.realtime.mockReset().mockReturnValue({ subscribe: () => ({ close: vi.fn() }) });
     api.add.mockReset();
     api.invites.mockReset().mockResolvedValue([]);
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -60,14 +60,11 @@ describe("MembersManager project access", () => {
     act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
-  const render = async (canManage = false) => {
+  const render = async (canManage = false, kind: "project" | "workspace" = "project") => {
     await act(async () =>
       root.render(
         <QueryClientProvider client={client}>
-          <MembersManager
-            scope={{ kind: "project", id: "canvas", name: "Canvas" }}
-            canManage={canManage}
-          />
+          <MembersManager scope={{ kind, id: "canvas", name: "Canvas" }} canManage={canManage} />
         </QueryClientProvider>
       )
     );
@@ -296,5 +293,45 @@ describe("MembersManager project access", () => {
     await act(async () => resolve({ inviteId: "old", token: "private-old-token" }));
     expect(container.textContent).not.toContain("private-old-token");
     expect(api.success).not.toHaveBeenCalled();
+  });
+  it.each(["editor", "admin"])(
+    "shows disabled role controls with owner guidance for a workspace %s",
+    async (role) => {
+      api.list.mockResolvedValue([
+        { memberId: "self", userId: "a", nickname: "Me", role, isSelf: true, isOwner: false },
+        {
+          memberId: "other",
+          userId: "b",
+          nickname: "Other",
+          role: "editor",
+          isSelf: false,
+          isOwner: false,
+        },
+      ]);
+      await render(role === "admin", "workspace");
+      const controls = [
+        ...container.querySelectorAll<HTMLSelectElement>('select[aria-label="changeMemberRole"]'),
+      ];
+      expect(controls).toHaveLength(2);
+      expect(controls.every((control) => control.disabled)).toBe(true);
+      expect(container.querySelectorAll('[aria-label="contactOwnerRole"]')).toHaveLength(2);
+    }
+  );
+  it("enables member role controls only for the workspace owner", async () => {
+    api.list.mockResolvedValue([
+      { memberId: "self", userId: "a", nickname: "Me", role: "owner", isSelf: true, isOwner: true },
+      {
+        memberId: "other",
+        userId: "b",
+        nickname: "Other",
+        role: "editor",
+        isSelf: false,
+        isOwner: false,
+      },
+    ]);
+    await render(true, "workspace");
+    expect(
+      container.querySelector<HTMLSelectElement>('select[aria-label="changeMemberRole"]')?.disabled
+    ).toBe(false);
   });
 });
