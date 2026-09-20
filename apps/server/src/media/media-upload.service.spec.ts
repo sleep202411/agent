@@ -232,7 +232,7 @@ function serviceFixture() {
 }
 
 describe('MediaUploadService workspace-scoped generic uploads', () => {
-  it('allows 35 GiB for episode sources and 500 MB for content-review videos', async () => {
+  it('allows 35 GiB for episode sources and 2 GB for content-review videos', async () => {
     const { service } = serviceFixture();
     const source = {
       kind: 'episode_source_video' as const,

@@ -18,8 +18,8 @@ describe("content review upload guards", () => {
     expect(isVideoFileAllowed(new File(["x"], "e.png", { type: "image/png" }))).toBe(false);
   });
 
-  it("uses the 500 MB upload cap", () => {
-    expect(MAX_REVIEW_VIDEO_BYTES).toBe(500 * 1024 ** 2);
+  it("uses the 2 GB upload cap", () => {
+    expect(MAX_REVIEW_VIDEO_BYTES).toBe(2 * 1024 ** 3);
   });
 
   it("bills 10 credits per minute, rounded up, minimum one minute", () => {
