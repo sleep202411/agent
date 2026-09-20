@@ -14,10 +14,12 @@ import {
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   IconAdjustmentsHorizontal,
+  IconArrowsMaximize,
   IconAspectRatio,
   IconBolt,
   IconCamera,
   IconChevronDown,
+  IconDownload,
   IconExternalLink,
   IconLanguage,
   IconLoader2,
@@ -30,8 +32,10 @@ import {
   IconSparkles,
   IconStackPush,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
+import { downloadMediaFile, inferDownloadFilename } from "@/src/lib/media-download";
 import type { MediaItem, Shot } from "../../_data/storyboard-schema";
 import {
   MIN_CANVAS_ZOOM,
@@ -63,6 +67,7 @@ export interface ShotNodeData {
   composerState?: ShotComposerState;
   onComposerStateChange?: ShotComposerStateUpdater;
   onSubmitGeneration?: (shot: Shot, request: ShotGenerationRequest) => Promise<void>;
+  onOpenPreview?: (mediaId: string) => void;
   viewportZoom: number;
   [key: string]: unknown;
 }
@@ -1345,6 +1350,8 @@ function ShotNodeImpl({ data, selected }: NodeProps) {
           ? mediaError || t("sbGenerationFailed")
           : t("sbNoFrame");
 
+  const mediaUrl = media?.item.url;
+
   return (
     <div
       className={cn(
@@ -1403,6 +1410,40 @@ function ShotNodeImpl({ data, selected }: NodeProps) {
           )}
         />
       </Handle>
+
+      {mediaUrl ? (
+        <div className="nodrag nopan absolute right-2 top-2 z-20 flex items-center gap-1 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover:opacity-100">
+          <button
+            type="button"
+            onClick={() => d.onOpenPreview?.(media.item.id)}
+            aria-label={t("sbNodePreview")}
+            title={t("sbNodePreview")}
+            className="grid size-7 place-items-center rounded-lg bg-black/52 text-white backdrop-blur-md transition-colors hover:bg-black/72"
+          >
+            <IconArrowsMaximize className="size-3.5" stroke={1.8} />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void (async () => {
+                const saved = await downloadMediaFile(mediaUrl, {
+                  filename: inferDownloadFilename(
+                    mediaUrl,
+                    media.item.mimeType,
+                    `shot-${d.index + 1}`
+                  ),
+                });
+                if (!saved) toast.error(t("sbDownloadFailed"));
+              })();
+            }}
+            aria-label={t("sbNodeDownload")}
+            title={t("sbNodeDownload")}
+            className="grid size-7 place-items-center rounded-lg bg-black/52 text-white backdrop-blur-md transition-colors hover:bg-black/72"
+          >
+            <IconDownload className="size-3.5" stroke={1.8} />
+          </button>
+        </div>
+      ) : null}
 
       {media?.kind === "image" && media.item.url ? (
         // eslint-disable-next-line @next/next/no-img-element
