@@ -487,3 +487,31 @@ describe("recovery and cancellation ownership", () => {
     expect(cancelFizzAiJob).toHaveBeenCalledTimes(1);
   });
 });
+
+it("shows failed reads for an accepted job and clears after automatic recovery without submission", async () => {
+  vi.useFakeTimers();
+  mocks.connected = true;
+  nodes[0].data.generation = { status: "generating", jobId: "job-1" };
+  vi.mocked(listFizzAiJobs).mockRejectedValue(new Error("network unavailable"));
+  await mount();
+  expect(actions.statusUnavailable("job-1")).toBe(true);
+  expect(actions.statusUnavailable("other-job")).toBe(false);
+  expect(state()).toMatchObject({ status: "generating", jobId: "job-1" });
+  vi.mocked(listFizzAiJobs).mockResolvedValue({ jobs: [job], nextCursor: null });
+  await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  expect(actions.statusUnavailable("job-1")).toBe(false);
+  expect(state().status).toBe("done");
+  expect(submitFizzAiJob).not.toHaveBeenCalled();
+});
+
+it("does not leak failed-read feedback into another document", async () => {
+  nodes[0].data.generation = { status: "generating", jobId: "job-1" };
+  vi.mocked(listFizzAiJobs).mockRejectedValue(new Error("offline"));
+  await mount();
+  expect(actions.statusUnavailable("job-1")).toBe(true);
+  mocks.documentId = "another-document";
+  nodes = [];
+  await mount();
+  expect(actions.statusUnavailable("job-1")).toBe(false);
+  expect(submitFizzAiJob).not.toHaveBeenCalled();
+});

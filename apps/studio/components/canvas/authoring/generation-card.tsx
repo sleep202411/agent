@@ -341,6 +341,7 @@ function GenerationCard({
     disabledReason: generationDisabledReason,
     preflightIssues,
     clearPreflightIssues,
+    statusUnavailable,
   } = useGeneration();
   const validationIssues = preflightIssues(id);
   const spawnComposedOp = useSpawnComposedOperation();
@@ -1031,8 +1032,10 @@ function GenerationCard({
           ) : busy ? (
             <>
               <IconLoader2 className="size-7 animate-spin text-white/50" stroke={1.8} />
-              <p className="text-sm text-white/55">
-                {generation?.status === "submitting" ? (
+              <p role="status" className="px-4 text-center text-sm text-white/55">
+                {statusUnavailable(generation?.jobId) ? (
+                  t("statusReadUnavailable")
+                ) : generation?.status === "submitting" ? (
                   t("statusSubmitting")
                 ) : generation?.status === "queued" ? (
                   generation.queuePosition != null ? (
