@@ -13,6 +13,11 @@ const state = vi.hoisted(() => ({
   nextPage: vi.fn(),
   patch: vi.fn(),
   owner: false,
+  canReview: false,
+  canSubmitAssigned: true,
+  canComment: true,
+  canWork: true,
+  status: "open" as "open" | "submitted",
   custom: false,
   customValue: "custom-original",
   limit: null as number | null,
@@ -65,7 +70,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-position-label", () => ({
 }));
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./delete-task-button", () => ({ DeleteTaskButton: () => null }));
-vi.mock("./task-review-form", () => ({ TaskReviewForm: () => null }));
+vi.mock("./task-review-form", () => ({ TaskReviewForm: () => <div data-testid="task-review-form" /> }));
 vi.mock("sonner", () => ({ toast: { success: state.success, error: state.error } }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 state.discard.mockResolvedValue(undefined);
@@ -81,7 +86,7 @@ async function render(id = "task", account = "alice") {
           {
             id,
             crewId: "crew",
-            status: "open",
+            status: state.status,
             workflowState: { systemKey: "open", name: "Open" },
             title: state.title,
             description: "",
@@ -99,7 +104,10 @@ async function render(id = "task", account = "alice") {
         members={[]}
         displays={new Map()}
         isOwner={state.owner}
-        canWork={true}
+        canReview={state.canReview}
+        canWork={state.canWork}
+        canSubmitAssigned={state.canSubmitAssigned}
+        canComment={state.canComment}
         onSubmit={vi.fn()}
         onReviewed={vi.fn()}
       />
@@ -150,6 +158,11 @@ afterEach(async () => {
   state.pageError = false;
   state.fetching = false;
   state.owner = false;
+  state.canReview = false;
+  state.canSubmitAssigned = true;
+  state.canComment = true;
+  state.canWork = true;
+  state.status = "open";
   state.custom = false;
   state.customValue = "custom-original";
   state.limit = null;
@@ -553,3 +566,85 @@ vi.mock("@/app/(site)/crews/_components/accountability/task-commitments", () => 
   TaskCommitments: () => null,
 }));
 vi.mock("./task-delivery-template", () => ({ TaskDeliveryTemplatePanel: () => null }));
+
+
+it.each([
+  [false, true, "submitted", true],
+  [true, false, "submitted", false],
+  [true, true, "submitted", true],
+  [false, false, "submitted", false],
+  [false, true, "open", false],
+] as const)("review visibility with manage=%s review=%s status=%s", async (manage, review, status, visible) => {
+  state.owner = manage;
+  state.canReview = review;
+  state.status = status;
+  await render();
+  expect(!!container.querySelector('[data-testid="task-review-form"]')).toBe(visible);
+});
+
+it("removes the review form when review permission is revoked in the same session", async () => {
+  state.owner = true;
+  state.canReview = true;
+  state.status = "submitted";
+  await render();
+  expect(container.querySelector('[data-testid="task-review-form"]')).not.toBeNull();
+  state.canReview = false;
+  await render();
+  expect(container.querySelector('[data-testid="task-review-form"]')).toBeNull();
+});
+
+
+it.each([
+  [true, true, "open", true],
+  [true, false, "open", false],
+  [false, true, "open", false],
+  [true, true, "submitted", false],
+] as const)("submission visibility with work=%s submit=%s status=%s", async (work, submit, status, visible) => {
+  state.canWork = work;
+  state.canSubmitAssigned = submit;
+  state.status = status;
+  await render();
+  const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.trim() === "submit");
+  expect(!!button).toBe(visible);
+});
+
+it("removes submission when permission is revoked without changing task access", async () => {
+  await render();
+  const hasSubmit = () => Array.from(container.querySelectorAll("button")).some((item) => item.textContent?.trim() === "submit");
+  expect(hasSubmit()).toBe(true);
+  state.canSubmitAssigned = false;
+  await render();
+  expect(hasSubmit()).toBe(false);
+  expect(field()).not.toBeNull();
+});
+
+
+it.each([
+  [false, false, "alice", false],
+  [true, false, "bob", false],
+  [false, true, "alice", true],
+  [true, true, "bob", true],
+  [false, true, "bob", false],
+] as const)("comment controls with manage=%s comment=%s viewer=%s", async (manage, allowed, viewer, canEdit) => {
+  comment();
+  state.owner = manage;
+  state.canComment = allowed;
+  await render("task", viewer);
+  expect(!!field()).toBe(allowed);
+  expect(row().textContent).toContain("original");
+  expect(!!row().querySelector('[aria-label="editComment"]')).toBe(canEdit);
+  expect(!!row().querySelector('[aria-label="deleteComment"]')).toBe(canEdit);
+});
+
+it("removes open comment editors and composer when permission is revoked", async () => {
+  comment();
+  await render();
+  await edit();
+  expect(row().querySelector("textarea")).not.toBeNull();
+  state.canComment = false;
+  await render();
+  expect(field()).toBeNull();
+  expect(row().querySelector("textarea")).toBeNull();
+  expect(row().textContent).toContain("original");
+  expect(state.update).not.toHaveBeenCalled();
+});
