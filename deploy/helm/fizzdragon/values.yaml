@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 8d4ea56f5777d13e3395fc954ae3fbb126c68273
+    tag: f9dfe993ea88d2b9e1d7d7196932507f312f96a7
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: b4e9ad8efb9aa0e6ac4fa1a198dae1e1c9265728
+    tag: 7b72451b4556c68c594ccbedff5d059942097e08
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: f3f5f9c912e8ff7c8f01a997d90e4ddb30ddae8c
+    tag: 53fac778fe5532bd347c17390019bf3588727313
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -424,6 +424,11 @@ server:
       provider: aks-com
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
+    # V8 heap in a 1Gi cgroup sits around ~476Mi and OOMs the API+WS+outbox
+    # process under collab load (P2028 follows: Prisma maxWait cannot start a
+    # transaction while GC is thrashing). 1536 leaves ~500Mi of the 2Gi limit
+    # for native buffers / Y.Doc / pg. Do not raise replicaCount to "fix" heap.
+    NODE_OPTIONS: "--max-old-space-size=1536"
     # Required public web origin for invitation links (CN overrides explicitly).
     NEXT_PUBLIC_SITE_REGION: global
     REFERRAL_INVITE_BASE_URL: https://fizzdragon.com
@@ -528,8 +533,8 @@ server:
     LEGACY_MYSQL_PORT: "3306"
     LEGACY_MYSQL_DATABASE: fizzdragon_client
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: 1000m, memory: 1Gi }
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { cpu: 1500m, memory: 2Gi }
   nodeSelector:
     pool: worker
   tolerations:
