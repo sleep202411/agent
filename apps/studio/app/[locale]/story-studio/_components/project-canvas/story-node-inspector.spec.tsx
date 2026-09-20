@@ -68,7 +68,7 @@ describe("StoryNodeInspector film authoring", () => {
             nodeId: "world:one",
             worldId: null,
             maxExperienceSeconds: 60,
-            exit: { kind: "auto", nextNodeId: null },
+            exit: { kind: "auto", routes: [{ target: null }] },
           },
         ],
       },
@@ -106,7 +106,10 @@ function clip(nodeId: string, clipKey: string, nextNodeId: string | null) {
     nodeId,
     clipKey,
     interactions: [],
-    exit: { kind: "auto" as const, nextNodeId },
+    exit: {
+      kind: "auto" as const,
+      routes: [{ target: nextNodeId ? { kind: "node" as const, nodeId: nextNodeId } : null }],
+    },
   };
 }
 
@@ -121,6 +124,9 @@ function inspectorProps(
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
     onEditInteractions: vi.fn(),
+    locale: "en-US",
+    onSetOnEnterEffects: vi.fn(),
+    onSetAutoRoutes: vi.fn(),
   };
 }
 

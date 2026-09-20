@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { ExperiencePlayer, type ExperiencePlayerCopy } from "@repo/experience-player-react";
+import {
+  ExperiencePlayer,
+  type ExperiencePlayerCopy,
+  type ExperiencePlayerProps,
+} from "@repo/experience-player-react";
 import { useTranslations } from "next-intl";
 import type { StoryFrameProfile } from "@/lib/story-projects-api";
 import { WorldModelExperienceRenderer } from "./world-model-experience-renderer";
@@ -12,11 +16,13 @@ export function ExperienceRuntimePlayer({
   locale,
   frameProfile,
   coverUrl,
+  onStateChange,
 }: {
   runtime: Record<string, unknown>;
   locale: string;
   frameProfile?: StoryFrameProfile;
   coverUrl?: string | null;
+  onStateChange?: ExperiencePlayerProps["onStateChange"];
 }) {
   const t = useTranslations("experiencePlayer");
   const { access, dialog } = useStoryPreviewAccess(locale);
@@ -66,6 +72,7 @@ export function ExperienceRuntimePlayer({
         }
         copy={copy}
         renderWorldModel={(props) => <WorldModelExperienceRenderer {...props} />}
+        onStateChange={onStateChange}
       />
       {dialog}
     </>

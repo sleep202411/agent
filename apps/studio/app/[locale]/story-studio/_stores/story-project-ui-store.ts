@@ -4,13 +4,15 @@ import {
   CLOSED_STORY_CANVAS_INSPECTOR,
   type StoryCanvasInspectorTarget,
 } from "../_components/project-canvas/story-canvas-inspector-target";
+import type { StoryBibleWriterPatch } from "@/lib/story-projects-api";
 import type { SavedDraftSnapshotRunner } from "../_components/project-canvas/use-story-publication";
 
 /**
  * The rail-toggled panel docked in the side-panel slot: the catalog
  * (chapter/scene list), the world (story bible), or the chapter manager. One
  * dock, one tenant; null is closed. Every tenant renders inside
- * StoryProjectSidePanelShell — the shell alone owns the dock's width.
+ * StoryProjectSidePanelShell — the shell alone owns the dock's width. Stats
+ * is a dialog (see `statsOpen`), not a dock tenant.
  */
 export type StorySidePanel = "catalog" | "world" | "chapters" | null;
 
@@ -76,6 +78,9 @@ interface StoryProjectUIState {
   /** Share dialog (mounted by the project layout) open. */
   shareOpen: boolean;
   setShareOpen: (open: boolean) => void;
+  /** Stats registry dialog (variables + endings) open. */
+  statsOpen: boolean;
+  setStatsOpen: (open: boolean) => void;
   /**
    * Canvas → header-actions bridge. While the canvas is mounted it publishes
    * its live draft head and registers its save barrier so the layout header's
@@ -91,10 +96,8 @@ interface StoryProjectUIState {
    * routes bible edits through it so the mounted canvas stays the draft's
    * only writer; when null (any other step), the dock saves the draft itself.
    */
-  foundationWriter: ((field: "logline" | "synopsis", value: string) => void) | null;
-  setFoundationWriter: (
-    writer: ((field: "logline" | "synopsis", value: string) => void) | null
-  ) => void;
+  foundationWriter: ((patch: StoryBibleWriterPatch) => void) | null;
+  setFoundationWriter: (writer: ((patch: StoryBibleWriterPatch) => void) | null) => void;
 }
 
 export const useStoryProjectUiStore = create<StoryProjectUIState>()(
@@ -140,6 +143,8 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
         ),
       shareOpen: false,
       setShareOpen: (open) => set({ shareOpen: open }, false, "setShareOpen"),
+      statsOpen: false,
+      setStatsOpen: (open) => set({ statsOpen: open }, false, "setStatsOpen"),
       liveDraft: null,
       setLiveDraft: (signals) => set({ liveDraft: signals }, false, "setLiveDraft"),
       draftBarrier: null,

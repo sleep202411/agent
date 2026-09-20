@@ -1,15 +1,37 @@
 import type {
   InteractiveStoryDraftContent,
+  StoryBibleEnding,
+  StoryBibleStateVariable,
+  StoryBibleWriterPatch,
   StoryClipGraphNode,
   StoryDecisionGraphNode,
   StoryGraphChoice,
   StoryGraphNode,
   StoryWorldGraphNode,
 } from "@/lib/story-projects-api";
+import {
+  MAX_STORY_EXIT_ROUTES,
+  MAX_STORY_STATE_EFFECTS,
+  MAX_STORY_STATE_NOTE_LENGTH,
+  MAX_STORY_STATE_VARIABLES,
+  StoryStateKeySchema,
+  replaceAutoFallbackTarget,
+  storyAutoExit,
+  storyAutoFallbackNodeId,
+  storyConditionTypeError,
+  storyEffectTypeError,
+  storyNodeTarget,
+  storyRouteEndingId,
+  storyRouteNodeId,
+  type StoryCondition,
+  type StoryExitRoute,
+  type StoryRouteTarget,
+  type StoryStateEffect,
+} from "@repo/shared/story-stats";
 
 type ClipGraphNode = StoryClipGraphNode;
 type FlowGraphNode = (StoryClipGraphNode | StoryWorldGraphNode) & {
-  exit: { kind: "auto"; nextNodeId: string | null };
+  exit: Extract<StoryClipGraphNode["exit"], { kind: "auto" }>;
 };
 type ChoiceClipNode = (ClipGraphNode | StoryDecisionGraphNode) & {
   exit: Extract<ClipGraphNode["exit"], { kind: "choice" }>;
@@ -34,7 +56,18 @@ export type StoryDraftMutationErrorCode =
   | "TARGET_NODE_NOT_FOUND"
   | "SOURCE_EXIT_KIND_MISMATCH"
   | "CHOICE_LIMIT_REACHED"
-  | "BRANCH_NOT_FOUND";
+  | "BRANCH_NOT_FOUND"
+  | "DUPLICATE_STATE_KEY"
+  | "INVALID_STATE_KEY"
+  | "STATE_VARIABLE_LIMIT"
+  | "STATE_VARIABLE_NOT_FOUND"
+  | "DUPLICATE_ENDING_ID"
+  | "ENDING_NOT_FOUND"
+  | "EFFECT_LIMIT"
+  | "ROUTE_LIMIT"
+  | "INVALID_EFFECT"
+  | "INVALID_CONDITION"
+  | "INVALID_ROUTES";
 
 export class StoryDraftMutationError extends Error {
   constructor(
@@ -87,7 +120,7 @@ export function createClipNode(
     clipKey,
     ...(options.name?.trim() ? { name: options.name.trim() } : {}),
     interactions: [],
-    exit: { kind: "auto", nextNodeId: null },
+    exit: storyAutoExit(null),
   };
   return { content: appendGraphNode(content, created), created };
 }
@@ -109,7 +142,7 @@ export function createWorldNode(
     worldId: options.worldId ?? null,
     ...(options.name ? { name: options.name } : {}),
     maxExperienceSeconds: options.maxExperienceSeconds ?? 60,
-    exit: { kind: "auto", nextNodeId: null },
+    exit: storyAutoExit(null),
   };
   return { content: appendGraphNode(content, created), created };
 }
@@ -141,7 +174,7 @@ export function createDecisionNode(
       choices: (options.labels ?? ["Option 1", "Option 2"]).map((label, index) => ({
         choiceId: `option:${index + 1}`,
         label: { [assertLocale(locale)]: label },
-        nextNodeId: null,
+        target: null,
       })),
     },
   };
@@ -160,7 +193,7 @@ export function materializeStoryDecisionNodes(
     const nodeId = allocateStableId(ids, `decision:${node.nodeId}`.slice(0, MAX_STABLE_ID_LENGTH));
     ids.push(nodeId);
     return [
-      { ...node, exit: { kind: "auto", nextNodeId: nodeId } },
+      { ...node, exit: storyAutoExit(nodeId) },
       { kind: "decision", nodeId, exit: node.exit },
     ];
   });
@@ -236,7 +269,7 @@ export function convertExitToAuto(
     ? content
     : replaceGraphNode(content, sourceNodeId, {
         ...source,
-        exit: { kind: "auto", nextNodeId: null },
+        exit: storyAutoExit(null),
       });
 }
 
@@ -283,7 +316,7 @@ export function addChoiceOption(
   const created: StoryGraphChoice = {
     choiceId,
     label: { [assertLocale(locale)]: options.label ?? "" },
-    nextNodeId: targetNodeId,
+    target: storyNodeTarget(targetNodeId),
   };
   return {
     content: replaceChoiceExit(content, source, {
@@ -353,12 +386,14 @@ export function connectChoiceTarget(
   requireTargetNode(content, targetNodeId);
   const source = requireChoiceClip(content, sourceNodeId);
   const choice = requireChoice(source, choiceId);
-  return choice.nextNodeId === targetNodeId
+  return storyRouteNodeId(choice.target) === targetNodeId
     ? content
     : replaceChoiceExit(content, source, {
         ...source.exit,
         choices: source.exit.choices.map((candidate) =>
-          candidate.choiceId === choiceId ? { ...candidate, nextNodeId: targetNodeId } : candidate
+          candidate.choiceId === choiceId
+            ? { ...candidate, target: storyNodeTarget(targetNodeId) }
+            : candidate
         ),
       });
 }
@@ -373,7 +408,7 @@ export function disconnectChoiceTarget(
   return replaceChoiceExit(content, source, {
     ...source.exit,
     choices: source.exit.choices.map((choice) =>
-      choice.choiceId === choiceId ? { ...choice, nextNodeId: null } : choice
+      choice.choiceId === choiceId ? { ...choice, target: null } : choice
     ),
   });
 }
@@ -390,11 +425,14 @@ export function connectSceneContinuation(
   if (source.exit.kind !== "auto") {
     throw error("SOURCE_EXIT_KIND_MISMATCH", `Node ${sourceNodeId} is not automatic.`);
   }
-  return source.exit.nextNodeId === targetNodeId
+  return storyAutoFallbackNodeId(source.exit) === targetNodeId
     ? content
     : replaceGraphNode(content, sourceNodeId, {
         ...source,
-        exit: { kind: "auto", nextNodeId: targetNodeId },
+        exit: {
+          kind: "auto",
+          routes: replaceAutoFallbackTarget(source.exit.routes, storyNodeTarget(targetNodeId)),
+        },
       });
 }
 
@@ -404,16 +442,42 @@ export function disconnectSceneContinuation(
   targetNodeId?: string
 ): InteractiveStoryDraftContent {
   const source = requireFlowNode(content, sourceNodeId);
-  if (
-    source.exit.kind !== "auto" ||
-    source.exit.nextNodeId === null ||
-    (targetNodeId !== undefined && source.exit.nextNodeId !== targetNodeId)
-  ) {
+  if (source.exit.kind !== "auto") {
+    throw error("BRANCH_NOT_FOUND", `Node ${sourceNodeId} has no matching continuation.`);
+  }
+  if (targetNodeId === undefined) {
+    if (storyAutoFallbackNodeId(source.exit) === null) {
+      throw error("BRANCH_NOT_FOUND", `Node ${sourceNodeId} has no matching continuation.`);
+    }
+    return replaceGraphNode(content, sourceNodeId, {
+      ...source,
+      exit: { kind: "auto", routes: replaceAutoFallbackTarget(source.exit.routes, null) },
+    });
+  }
+  if (storyAutoFallbackNodeId(source.exit) === targetNodeId) {
+    return replaceGraphNode(content, sourceNodeId, {
+      ...source,
+      exit: { kind: "auto", routes: replaceAutoFallbackTarget(source.exit.routes, null) },
+    });
+  }
+  return disconnectConditionalContinuation(content, sourceNodeId, targetNodeId);
+}
+
+export function disconnectConditionalContinuation(
+  content: InteractiveStoryDraftContent,
+  sourceNodeId: string,
+  targetNodeId: string
+): InteractiveStoryDraftContent {
+  const source = requireFlowNode(content, sourceNodeId);
+  const routes = source.exit.routes.filter(
+    (route) => !(route.when && storyRouteNodeId(route.target) === targetNodeId)
+  );
+  if (routes.length === source.exit.routes.length) {
     throw error("BRANCH_NOT_FOUND", `Node ${sourceNodeId} has no matching continuation.`);
   }
   return replaceGraphNode(content, sourceNodeId, {
     ...source,
-    exit: { kind: "auto", nextNodeId: null },
+    exit: { kind: "auto", routes: assertAutoRoutes(routes) },
   });
 }
 
@@ -464,6 +528,158 @@ export function disconnectStoryBranch(
   return disconnectChoiceTarget(content, selector.sourceNodeId, selector.choiceId);
 }
 
+export function applyStoryBiblePatch(
+  content: InteractiveStoryDraftContent,
+  patch: StoryBibleWriterPatch
+): InteractiveStoryDraftContent {
+  let next = content;
+  if (patch.logline !== undefined || patch.synopsis !== undefined) {
+    next = {
+      ...next,
+      storyBible: {
+        ...next.storyBible,
+        ...(patch.logline !== undefined ? { logline: patch.logline } : {}),
+        ...(patch.synopsis !== undefined ? { synopsis: patch.synopsis } : {}),
+      },
+    };
+  }
+  if (patch.stateVariables) {
+    const nextKeys = new Set(patch.stateVariables.map((variable) => variable.key));
+    for (const previous of bibleVariables(next)) {
+      if (!nextKeys.has(previous.key)) next = removeStoryStateVariable(next, previous.key);
+    }
+    for (const variable of patch.stateVariables) {
+      next = putStoryStateVariable(next, variable);
+    }
+  }
+  if (patch.endings) {
+    const nextIds = new Set(patch.endings.map((ending) => ending.endingId));
+    for (const previous of bibleEndings(next)) {
+      if (!nextIds.has(previous.endingId)) next = removeStoryEnding(next, previous.endingId);
+    }
+    for (const ending of patch.endings) {
+      next = putStoryEnding(next, ending);
+    }
+  }
+  return next;
+}
+
+export function putStoryStateVariable(
+  content: InteractiveStoryDraftContent,
+  variable: StoryBibleStateVariable
+): InteractiveStoryDraftContent {
+  const key = assertStateKey(variable.key);
+  const current = bibleVariables(content);
+  const existingIndex = current.findIndex((candidate) => candidate.key === key);
+  if (existingIndex < 0 && current.length >= MAX_STORY_STATE_VARIABLES) {
+    throw error("STATE_VARIABLE_LIMIT", `At most ${MAX_STORY_STATE_VARIABLES} state variables.`);
+  }
+  const nextVariable = normalizeStateVariable({ ...variable, key });
+  const stateVariables =
+    existingIndex < 0
+      ? [...current, nextVariable]
+      : current.map((candidate, index) => (index === existingIndex ? nextVariable : candidate));
+  return replaceBible(content, { stateVariables });
+}
+
+export function removeStoryStateVariable(
+  content: InteractiveStoryDraftContent,
+  key: string
+): InteractiveStoryDraftContent {
+  const current = bibleVariables(content);
+  if (!current.some((variable) => variable.key === key)) {
+    throw error("STATE_VARIABLE_NOT_FOUND", `Unknown state variable ${key}.`);
+  }
+  const stateVariables = current.filter((variable) => variable.key !== key);
+  return stripStateKeyFromContent(replaceBible(content, { stateVariables }), key);
+}
+
+export function putStoryEnding(
+  content: InteractiveStoryDraftContent,
+  ending: StoryBibleEnding
+): InteractiveStoryDraftContent {
+  const endingId = assertStableId(ending.endingId);
+  const current = bibleEndings(content);
+  const existingIndex = current.findIndex((candidate) => candidate.endingId === endingId);
+  const nextEnding: StoryBibleEnding = {
+    endingId,
+    title: ending.title,
+    kind: ending.kind,
+  };
+  const endings =
+    existingIndex < 0
+      ? [...current, nextEnding]
+      : current.map((candidate, index) => (index === existingIndex ? nextEnding : candidate));
+  return replaceBible(content, { endings });
+}
+
+export function removeStoryEnding(
+  content: InteractiveStoryDraftContent,
+  endingId: string
+): InteractiveStoryDraftContent {
+  const current = bibleEndings(content);
+  if (!current.some((ending) => ending.endingId === endingId)) {
+    throw error("ENDING_NOT_FOUND", `Unknown ending ${endingId}.`);
+  }
+  const endings = current.filter((ending) => ending.endingId !== endingId);
+  return stripEndingFromContent(replaceBible(content, { endings }), endingId);
+}
+
+export function setNodeOnEnterEffects(
+  content: InteractiveStoryDraftContent,
+  nodeId: string,
+  effects: StoryStateEffect[] | null
+): InteractiveStoryDraftContent {
+  const node = requireGraphNode(content, nodeId);
+  return replaceGraphNode(
+    content,
+    nodeId,
+    withOptionalField(node, "onEnterEffects", assertEffects(content, effects))
+  );
+}
+
+export function setAutoRoutes(
+  content: InteractiveStoryDraftContent,
+  sourceNodeId: string,
+  routes: StoryExitRoute[]
+): InteractiveStoryDraftContent {
+  const source = requireFlowNode(content, sourceNodeId);
+  return replaceGraphNode(content, sourceNodeId, {
+    ...source,
+    exit: { kind: "auto", routes: assertAutoRoutes(routes, variableLookup(content)) },
+  });
+}
+
+export function updateChoiceStats(
+  content: InteractiveStoryDraftContent,
+  sourceNodeId: string,
+  choiceId: string,
+  patch: {
+    effects?: StoryStateEffect[] | null;
+    visibleWhen?: StoryCondition | null;
+    target?: StoryRouteTarget | null;
+  }
+): InteractiveStoryDraftContent {
+  const source = requireChoiceClip(content, sourceNodeId);
+  const choice = requireChoice(source, choiceId);
+  if (patch.target?.kind === "node") requireTargetNode(content, patch.target.nodeId);
+  if (patch.target?.kind === "ending") requireEnding(content, patch.target.endingId);
+  let next: StoryGraphChoice = { ...choice };
+  if (patch.target !== undefined) next = { ...next, target: patch.target };
+  if (patch.effects !== undefined) {
+    next = withOptionalField(next, "effects", assertEffects(content, patch.effects));
+  }
+  if (patch.visibleWhen !== undefined) {
+    next = withOptionalField(next, "visibleWhen", assertCondition(content, patch.visibleWhen));
+  }
+  return replaceChoiceExit(content, source, {
+    ...source.exit,
+    choices: source.exit.choices.map((candidate) =>
+      candidate.choiceId === choiceId ? next : candidate
+    ),
+  });
+}
+
 function appendGraphNode(
   content: InteractiveStoryDraftContent,
   node: StoryGraphNode
@@ -477,11 +693,27 @@ function appendGraphNode(
   };
 }
 
+function routesWithoutDeletedNode(
+  routes: FlowGraphNode["exit"]["routes"],
+  deletedNodeId: string
+): FlowGraphNode["exit"]["routes"] {
+  const next = routes.flatMap((route) => {
+    if (storyRouteNodeId(route.target) !== deletedNodeId) return [route];
+    return route.when ? [] : [{ target: null }];
+  });
+  const conditionals = next.filter((route) => route.when);
+  const fallback = next.find((route) => !route.when) ?? { target: null };
+  return [...conditionals, fallback];
+}
+
 function removeNodeReferences(node: StoryGraphNode, deletedNodeId: string): StoryGraphNode {
   if (node.kind === "world") {
     return {
       ...node,
-      exit: node.exit.nextNodeId === deletedNodeId ? { kind: "auto", nextNodeId: null } : node.exit,
+      exit: {
+        kind: "auto",
+        routes: routesWithoutDeletedNode(node.exit.routes, deletedNodeId),
+      },
     };
   }
   const interactions = (node.kind === "clip" ? node.interactions : []).map((interaction) => ({
@@ -493,7 +725,10 @@ function removeNodeReferences(node: StoryGraphNode, deletedNodeId: string): Stor
     return {
       ...node,
       interactions,
-      exit: node.exit.nextNodeId === deletedNodeId ? { kind: "auto", nextNodeId: null } : node.exit,
+      exit: {
+        kind: "auto",
+        routes: routesWithoutDeletedNode(node.exit.routes, deletedNodeId),
+      },
     };
   }
   return {
@@ -502,7 +737,7 @@ function removeNodeReferences(node: StoryGraphNode, deletedNodeId: string): Stor
     exit: {
       ...node.exit,
       choices: node.exit.choices.map((choice) =>
-        choice.nextNodeId === deletedNodeId ? { ...choice, nextNodeId: null } : choice
+        storyRouteNodeId(choice.target) === deletedNodeId ? { ...choice, target: null } : choice
       ),
     },
   };
@@ -521,20 +756,16 @@ function removeDeletedInteractionTargets(
   outcomes: StoryClipGraphNode["interactions"][number]["outcomes"],
   deletedNodeId: string
 ): StoryClipGraphNode["interactions"][number]["outcomes"] {
-  const success =
-    outcomes.success.kind === "goto" && outcomes.success.nodeId === deletedNodeId
-      ? ({ kind: "continue" } as const)
-      : outcomes.success;
+  const targetsDeleted = (
+    action: StoryClipGraphNode["interactions"][number]["outcomes"]["success"]
+  ) => action.kind === "goto" && storyRouteNodeId(action.target) === deletedNodeId;
+  const success = targetsDeleted(outcomes.success)
+    ? ({ kind: "continue" } as const)
+    : outcomes.success;
   return {
     success,
-    ...(outcomes.failure &&
-    !(outcomes.failure.kind === "goto" && outcomes.failure.nodeId === deletedNodeId)
-      ? { failure: outcomes.failure }
-      : {}),
-    ...(outcomes.timeout &&
-    !(outcomes.timeout.kind === "goto" && outcomes.timeout.nodeId === deletedNodeId)
-      ? { timeout: outcomes.timeout }
-      : {}),
+    ...(outcomes.failure && !targetsDeleted(outcomes.failure) ? { failure: outcomes.failure } : {}),
+    ...(outcomes.timeout && !targetsDeleted(outcomes.timeout) ? { timeout: outcomes.timeout } : {}),
   };
 }
 
@@ -677,6 +908,295 @@ function allocateClipKey(existing: string[], preferred: string): string {
     const candidate = `${base.slice(0, MAX_CLIP_KEY_LENGTH - tail.length)}${tail}`;
     if (!values.has(candidate)) return candidate;
   }
+}
+
+function bibleVariables(content: InteractiveStoryDraftContent): StoryBibleStateVariable[] {
+  return content.storyBible.stateVariables ?? [];
+}
+
+function bibleEndings(content: InteractiveStoryDraftContent): StoryBibleEnding[] {
+  return content.storyBible.endings ?? [];
+}
+
+function replaceBible(
+  content: InteractiveStoryDraftContent,
+  patch: Partial<Pick<InteractiveStoryDraftContent["storyBible"], "stateVariables" | "endings">>
+): InteractiveStoryDraftContent {
+  return { ...content, storyBible: { ...content.storyBible, ...patch } };
+}
+
+function variableLookup(content: InteractiveStoryDraftContent) {
+  return new Map(bibleVariables(content).map((variable) => [variable.key, variable]));
+}
+
+function normalizeStateVariable(variable: StoryBibleStateVariable): StoryBibleStateVariable {
+  const valueType = variable.valueType;
+  const initialValue =
+    typeof variable.initialValue === valueType
+      ? variable.initialValue
+      : valueType === "boolean"
+        ? false
+        : 0;
+  if (valueType === "boolean") {
+    return {
+      key: variable.key,
+      name: variable.name,
+      valueType,
+      initialValue,
+      ...(variable.note?.trim()
+        ? { note: variable.note.trim().slice(0, MAX_STORY_STATE_NOTE_LENGTH) }
+        : {}),
+    };
+  }
+  const minimum = variable.minimum;
+  const maximum = variable.maximum;
+  if (typeof minimum === "number" && typeof maximum === "number" && minimum > maximum) {
+    throw error("INVALID_STATE_KEY", "maximum must be greater than or equal to minimum.");
+  }
+  return {
+    key: variable.key,
+    name: variable.name,
+    valueType,
+    initialValue,
+    ...(typeof minimum === "number" ? { minimum } : {}),
+    ...(typeof maximum === "number" ? { maximum } : {}),
+    ...(variable.note?.trim()
+      ? { note: variable.note.trim().slice(0, MAX_STORY_STATE_NOTE_LENGTH) }
+      : {}),
+  };
+}
+
+function assertStateKey(value: string): string {
+  const parsed = StoryStateKeySchema.safeParse(value);
+  if (!parsed.success) throw error("INVALID_STATE_KEY", `Invalid state key ${value}.`);
+  return parsed.data;
+}
+
+function assertEffects(
+  content: InteractiveStoryDraftContent,
+  effects: StoryStateEffect[] | null | undefined
+): StoryStateEffect[] | undefined {
+  if (!effects || effects.length === 0) return undefined;
+  if (effects.length > MAX_STORY_STATE_EFFECTS) {
+    throw error("EFFECT_LIMIT", `At most ${MAX_STORY_STATE_EFFECTS} effects.`);
+  }
+  const variables = variableLookup(content);
+  for (const effect of effects) {
+    const issue = storyEffectTypeError(effect, variables);
+    if (issue) throw error("INVALID_EFFECT", issue);
+  }
+  return effects;
+}
+
+function assertCondition(
+  content: InteractiveStoryDraftContent,
+  condition: StoryCondition | null | undefined
+): StoryCondition | undefined {
+  if (!condition) return undefined;
+  const issue = storyConditionTypeError(condition, variableLookup(content));
+  if (issue) throw error("INVALID_CONDITION", issue);
+  return condition;
+}
+
+function assertAutoRoutes(
+  routes: StoryExitRoute[],
+  variables?: ReturnType<typeof variableLookup>
+): StoryExitRoute[] {
+  if (routes.length < 1 || routes.length > MAX_STORY_EXIT_ROUTES) {
+    throw error("ROUTE_LIMIT", `Auto routes must contain 1–${MAX_STORY_EXIT_ROUTES} entries.`);
+  }
+  const fallbackIndex = routes.findIndex((route) => route.when === undefined);
+  if (
+    fallbackIndex !== routes.length - 1 ||
+    routes.some((route, index) => index !== fallbackIndex && !route.when)
+  ) {
+    throw error(
+      "INVALID_ROUTES",
+      "Conditional auto routes must precede a single unconditional fallback."
+    );
+  }
+  if (variables) {
+    for (const route of routes) {
+      if (!route.when) continue;
+      const issue = storyConditionTypeError(route.when, variables);
+      if (issue) throw error("INVALID_CONDITION", issue);
+    }
+  }
+  return routes;
+}
+
+function requireGraphNode(content: InteractiveStoryDraftContent, nodeId: string): StoryGraphNode {
+  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+  if (!node) throw error("NODE_NOT_FOUND", `Unknown graph node ${nodeId}.`);
+  return node;
+}
+
+function requireEnding(content: InteractiveStoryDraftContent, endingId: string): void {
+  if (!bibleEndings(content).some((ending) => ending.endingId === endingId)) {
+    throw error("ENDING_NOT_FOUND", `Unknown ending ${endingId}.`);
+  }
+}
+
+function withOptionalField<T extends object, K extends string, V>(
+  object: T,
+  key: K,
+  value: V | undefined
+): T {
+  if (value === undefined) {
+    const next = { ...object } as T & Record<string, unknown>;
+    delete next[key];
+    return next;
+  }
+  return { ...object, [key]: value } as T;
+}
+
+function stripStateKeyFromContent(
+  content: InteractiveStoryDraftContent,
+  key: string
+): InteractiveStoryDraftContent {
+  return {
+    ...content,
+    graph: {
+      ...content.graph,
+      nodes: content.graph.nodes.map((node) => stripStateKeyFromNode(node, key)),
+    },
+  };
+}
+
+function isAutoFlowNode(node: StoryGraphNode): node is FlowGraphNode {
+  return node.kind === "world" || (node.kind === "clip" && node.exit.kind === "auto");
+}
+
+function isChoiceNode(node: StoryGraphNode): node is ChoiceClipNode {
+  return node.exit.kind === "choice";
+}
+
+function stripStateKeyFromNode(node: StoryGraphNode, key: string): StoryGraphNode {
+  const withoutEffects = withOptionalField(
+    node,
+    "onEnterEffects",
+    stripEffects(node.onEnterEffects, key)
+  );
+  if (withoutEffects.kind === "clip") {
+    const withInteractions: StoryClipGraphNode = {
+      ...withoutEffects,
+      interactions: withoutEffects.interactions.map((interaction) => ({
+        ...interaction,
+        outcomes: {
+          success: stripActionEffects(interaction.outcomes.success, key),
+          ...(interaction.outcomes.failure
+            ? { failure: stripActionEffects(interaction.outcomes.failure, key) }
+            : {}),
+          ...(interaction.outcomes.timeout
+            ? { timeout: stripActionEffects(interaction.outcomes.timeout, key) }
+            : {}),
+        },
+      })),
+    };
+    if (isAutoFlowNode(withInteractions)) return withStrippedAutoRoutes(withInteractions, key);
+    if (isChoiceNode(withInteractions)) return withStrippedChoiceStats(withInteractions, key);
+    return withInteractions;
+  }
+  if (isAutoFlowNode(withoutEffects)) return withStrippedAutoRoutes(withoutEffects, key);
+  if (isChoiceNode(withoutEffects)) return withStrippedChoiceStats(withoutEffects, key);
+  return withoutEffects;
+}
+
+function stripEndingFromContent(
+  content: InteractiveStoryDraftContent,
+  endingId: string
+): InteractiveStoryDraftContent {
+  return {
+    ...content,
+    graph: {
+      ...content.graph,
+      nodes: content.graph.nodes.map((node) => stripEndingFromNode(node, endingId)),
+    },
+  };
+}
+
+function stripEndingFromNode(node: StoryGraphNode, endingId: string): StoryGraphNode {
+  if (isAutoFlowNode(node)) {
+    return {
+      ...node,
+      exit: {
+        kind: "auto",
+        routes: node.exit.routes.map((route) =>
+          storyRouteEndingId(route.target) === endingId ? { ...route, target: null } : route
+        ),
+      },
+    };
+  }
+  if (isChoiceNode(node)) {
+    return {
+      ...node,
+      exit: {
+        ...node.exit,
+        choices: node.exit.choices.map((choice) =>
+          storyRouteEndingId(choice.target) === endingId ? { ...choice, target: null } : choice
+        ),
+      },
+    };
+  }
+  return node;
+}
+
+function withStrippedAutoRoutes<T extends FlowGraphNode>(node: T, key: string): T {
+  const routes = node.exit.routes.flatMap((route) => {
+    if (!route.when) return [route];
+    const when = stripConditionKey(route.when, key);
+    return when ? [{ ...route, when }] : [];
+  });
+  return {
+    ...node,
+    exit: { kind: "auto", routes: assertAutoRoutes(routes.length ? routes : [{ target: null }]) },
+  };
+}
+
+function withStrippedChoiceStats<T extends ChoiceClipNode>(node: T, key: string): T {
+  return {
+    ...node,
+    exit: {
+      ...node.exit,
+      choices: node.exit.choices.map((choice) =>
+        withOptionalField(
+          withOptionalField(choice, "effects", stripEffects(choice.effects, key)),
+          "visibleWhen",
+          choice.visibleWhen ? stripConditionKey(choice.visibleWhen, key) : undefined
+        )
+      ),
+    },
+  };
+}
+
+function stripEffects(
+  effects: StoryStateEffect[] | undefined,
+  key: string
+): StoryStateEffect[] | undefined {
+  if (!effects?.length) return undefined;
+  const next = effects.filter((effect) => effect.key !== key);
+  return next.length ? next : undefined;
+}
+
+function stripActionEffects<T extends { effects?: StoryStateEffect[] }>(action: T, key: string): T {
+  return withOptionalField(action, "effects", stripEffects(action.effects, key));
+}
+
+function stripConditionKey(condition: StoryCondition, key: string): StoryCondition | undefined {
+  if (condition.kind === "compare") {
+    return condition.variableKey === key ? undefined : condition;
+  }
+  if (condition.kind === "not") {
+    const inner = stripConditionKey(condition.condition, key);
+    return inner ? { kind: "not", condition: inner } : undefined;
+  }
+  const next = condition.conditions.flatMap((child) => {
+    const stripped = stripConditionKey(child, key);
+    return stripped ? [stripped] : [];
+  });
+  if (next.length === 0) return undefined;
+  if (next.length === 1) return next[0];
+  return { kind: condition.kind, conditions: next };
 }
 
 function error(code: StoryDraftMutationErrorCode, message: string): StoryDraftMutationError {

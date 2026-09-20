@@ -10,9 +10,20 @@ import type {
   StoryGraphNode,
 } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
+import {
+  storyAutoFallbackNodeId,
+  type StoryExitRoute,
+  type StoryStateEffect,
+  storyRouteNodeId,
+} from "@repo/shared/story-stats";
 import { StoryNodeStoryboardPanel } from "./story-node-storyboard-panel";
 import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import { StorySourceReviewNotes } from "../story-source-review-notes";
+import {
+  StoryAutoRoutesEditor,
+  StoryEffectsEditor,
+  storyGraphNodePickerItems,
+} from "./story-stats-editors";
 
 type StoryChapterTarget = {
   id: string;
@@ -36,6 +47,9 @@ interface StoryNodeInspectorProps {
   onDeleteSelected: () => void;
   onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
   onEditInteractions: (nodeId: string) => void;
+  locale: string;
+  onSetOnEnterEffects: (nodeId: string, effects: StoryStateEffect[] | null) => void;
+  onSetAutoRoutes: (nodeId: string, routes: StoryExitRoute[]) => void;
 }
 export function StoryNodeInspector({
   projectId,
@@ -48,6 +62,9 @@ export function StoryNodeInspector({
   onDeleteSelected,
   onUpdateClipMeta,
   onEditInteractions,
+  locale,
+  onSetOnEnterEffects,
+  onSetAutoRoutes,
 }: StoryNodeInspectorProps) {
   const t = useTranslations("storyStudio.canvas");
   const canvasData = selectedNode?.data;
@@ -89,6 +106,10 @@ export function StoryNodeInspector({
           chapterTargets={chapterTargets}
           onConnectChapter={onConnectChapter}
           onEditInteractions={onEditInteractions}
+          content={content}
+          locale={locale}
+          onSetOnEnterEffects={onSetOnEnterEffects}
+          onSetAutoRoutes={onSetAutoRoutes}
         />
       </div>
 
@@ -116,6 +137,10 @@ function GraphNodeEditor({
   chapterTargets,
   onConnectChapter,
   onEditInteractions,
+  content,
+  locale,
+  onSetOnEnterEffects,
+  onSetAutoRoutes,
 }: {
   projectId: string;
   node: StoryClipGraphNode;
@@ -124,8 +149,24 @@ function GraphNodeEditor({
   chapterTargets: StoryChapterTarget[];
   onConnectChapter: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
   onEditInteractions: NonNullable<StoryNodeInspectorProps["onEditInteractions"]>;
+  content: InteractiveStoryDraftContent;
+  locale: string;
+  onSetOnEnterEffects: StoryNodeInspectorProps["onSetOnEnterEffects"];
+  onSetAutoRoutes: StoryNodeInspectorProps["onSetAutoRoutes"];
 }) {
   const t = useTranslations("storyStudio.canvas");
+  const tStats = useTranslations("storyStudio.canvas.stats");
+  const variables = content.storyBible.stateVariables ?? [];
+  const endings = content.storyBible.endings ?? [];
+  const nodeTitles = new Map(
+    content.graph.nodes.map((candidate, index) => [
+      candidate.nodeId,
+      (candidate.kind === "decision"
+        ? candidate.nodeId
+        : candidate.name?.trim() ||
+          (candidate.kind === "clip" ? candidate.clipKey : candidate.nodeId)) || `${index + 1}`,
+    ])
+  );
   return (
     <>
       <label className="mt-6 block" htmlFor="story-clip-name">
@@ -180,6 +221,39 @@ function GraphNodeEditor({
         <IconArrowRight className="size-4 shrink-0 text-white/22 transition group-hover:translate-x-0.5 group-hover:text-white/48" />
       </button>
 
+      {variables.length > 0 || (node.onEnterEffects?.length ?? 0) > 0 ? (
+        <section className="mt-6 rounded-[18px] bg-white/[0.04] p-3">
+          <h3 className="text-xs font-semibold text-white/78">{tStats("onEnterTitle")}</h3>
+          <p className="mt-0.5 text-xs leading-4 text-white/48">{tStats("onEnterHint")}</p>
+          <div className="mt-3">
+            <StoryEffectsEditor
+              effects={node.onEnterEffects ?? []}
+              variables={variables}
+              locale={locale}
+              canEdit={canEdit}
+              onChange={(effects) => onSetOnEnterEffects(node.nodeId, effects)}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {node.exit.kind === "auto" ? (
+        <section className="mt-6 rounded-[18px] bg-white/[0.04] p-3">
+          <h3 className="text-xs font-semibold text-white/78">{tStats("routesTitle")}</h3>
+          <div className="mt-3">
+            <StoryAutoRoutesEditor
+              routes={node.exit.routes}
+              variables={variables}
+              endings={endings}
+              nodes={storyGraphNodePickerItems(content.graph.nodes, node.nodeId, nodeTitles)}
+              locale={locale}
+              canEdit={canEdit}
+              onChange={(routes) => onSetAutoRoutes(node.nodeId, routes)}
+            />
+          </div>
+        </section>
+      ) : null}
+
       <ChapterDestinationEditor
         node={node}
         targets={chapterTargets}
@@ -214,10 +288,10 @@ function ChapterDestinationEditor({
   }
   const linkedTargets = new Set(
     node.exit.kind === "auto"
-      ? node.exit.nextNodeId
-        ? [node.exit.nextNodeId]
+      ? storyAutoFallbackNodeId(node.exit)
+        ? [storyAutoFallbackNodeId(node.exit)]
         : []
-      : node.exit.choices.map((choice) => choice.nextNodeId)
+      : node.exit.choices.map((choice) => storyRouteNodeId(choice.target))
   );
   const choiceLimitReached = node.exit.kind === "choice" && node.exit.choices.length >= 6;
 

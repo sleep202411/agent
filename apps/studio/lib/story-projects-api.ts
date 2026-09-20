@@ -1,5 +1,13 @@
 import { api, ApiRequestError } from "@/lib/api";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS, type StoryVisualStyleSkillSlug } from "@repo/shared";
+import type {
+  StoryCondition,
+  StoryEndingKind,
+  StoryExitRoute,
+  StoryRouteTarget,
+  StoryStateEffect,
+  StoryStateValueType,
+} from "@repo/shared/story-stats";
 import {
   StoryPlotImportError,
   type StoryPlotImport,
@@ -131,16 +139,41 @@ export function storyBillingBalanceQueryKey(projectId: string) {
   return ["story-studio", "billing-balance", projectId] as const;
 }
 
+export interface StoryBibleStateVariable {
+  key: string;
+  name: Record<string, string>;
+  valueType: StoryStateValueType;
+  initialValue: number | boolean;
+  minimum?: number;
+  maximum?: number;
+  note?: string;
+}
+
+export interface StoryBibleEnding {
+  endingId: string;
+  title: Record<string, string>;
+  kind: StoryEndingKind;
+}
+
+export type StoryBibleWriterPatch = Partial<{
+  logline: string;
+  synopsis: string;
+  stateVariables: StoryBibleStateVariable[];
+  endings: StoryBibleEnding[];
+}>;
+
 export interface StoryGraphChoice {
   choiceId: string;
   label: Record<string, string>;
-  nextNodeId: string | null;
+  effects?: StoryStateEffect[];
+  visibleWhen?: StoryCondition;
+  target: StoryRouteTarget | null;
 }
 
 export type StoryInteractionAction =
-  | { kind: "continue" }
-  | { kind: "seek"; timeMs: number }
-  | { kind: "goto"; nodeId: string };
+  | { kind: "continue"; effects?: StoryStateEffect[] }
+  | { kind: "seek"; timeMs: number; effects?: StoryStateEffect[] }
+  | { kind: "goto"; target: StoryRouteTarget; effects?: StoryStateEffect[] };
 
 export type StoryInteractionTrigger =
   | { kind: "tap" }
@@ -197,7 +230,8 @@ export interface StoryClipGraphNode {
   name?: string;
   description?: string;
   interactions: StoryHotspotInteraction[];
-  exit: { kind: "auto"; nextNodeId: string | null } | StoryChoiceExit;
+  onEnterEffects?: StoryStateEffect[];
+  exit: { kind: "auto"; routes: StoryExitRoute[] } | StoryChoiceExit;
 }
 
 export interface StoryWorldGraphNode {
@@ -209,12 +243,14 @@ export interface StoryWorldGraphNode {
   name?: string;
   entryInstruction?: string;
   maxExperienceSeconds: 60 | 90 | 120;
-  exit: { kind: "auto"; nextNodeId: string | null };
+  onEnterEffects?: StoryStateEffect[];
+  exit: { kind: "auto"; routes: StoryExitRoute[] };
 }
 
 export interface StoryDecisionGraphNode {
   kind: "decision";
   nodeId: string;
+  onEnterEffects?: StoryStateEffect[];
   exit: StoryChoiceExit;
 }
 
@@ -233,6 +269,8 @@ export interface InteractiveStoryDraftContent {
       /** Voice-clone sample (音色), hard-capped at 5 seconds. */
       voice: { mediaAssetId: string; url: string; durationMs: number } | null;
     }>;
+    stateVariables?: StoryBibleStateVariable[];
+    endings?: StoryBibleEnding[];
   };
   graph: { entryNodeId: string | null; nodes: StoryGraphNode[] };
   productionNotes: string[];
