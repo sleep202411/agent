@@ -8,7 +8,10 @@ import {
   WorkspaceMemberRole,
 } from '@prisma/client';
 import { crewAssetStorageProviderForCell } from '../infra/storage/crew-asset-storage-policy';
-import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
+import {
+  CONTENT_REVIEW_VIDEO_MAX_BYTES,
+  EPISODE_SOURCE_MAX_BYTES,
+} from '@repo/shared';
 import { MediaUploadService } from './media-upload.service';
 
 const USER_ID = 'user-1';
@@ -229,7 +232,7 @@ function serviceFixture() {
 }
 
 describe('MediaUploadService workspace-scoped generic uploads', () => {
-  it('allows 35 GiB only for episode sources and rejects one byte over', async () => {
+  it('allows 35 GiB for episode sources and 500 MB for content-review videos', async () => {
     const { service } = serviceFixture();
     const source = {
       kind: 'episode_source_video' as const,
@@ -251,6 +254,28 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     await expect(service.createUploadUrl(USER_ID, source)).rejects.toThrow(
       'Episode source videos require multipart upload',
     );
+    await expect(
+      service.createUploadUrl(USER_ID, {
+        ...source,
+        kind: 'content_review_video',
+      }),
+    ).rejects.toThrow('Content review videos require multipart upload');
+    await expect(
+      service.prepareUpload(USER_ID, {
+        ...source,
+        kind: 'content_review_video',
+        sizeBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES,
+      }),
+    ).resolves.toMatchObject({
+      policy: { maxBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES },
+    });
+    await expect(
+      service.prepareUpload(USER_ID, {
+        ...source,
+        kind: 'content_review_video',
+        sizeBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES + 1,
+      }),
+    ).rejects.toThrow();
     await expect(
       service.prepareUpload(USER_ID, {
         ...source,

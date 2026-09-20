@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type MouseEventHandler } from "react";
-import { IconLoader2, IconPhotoOff, IconPlayerPlay } from "@tabler/icons-react";
+import { IconLoader2, IconPlayerPlay, IconVideoOff } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { cn } from "@/lib/utils";
@@ -181,7 +181,7 @@ export function CanvasVideo({
         ) : (
           <span className="pointer-events-none absolute inset-0 flex items-end justify-start p-3 text-white/40">
             {posterFailed ? (
-              <IconPhotoOff aria-label={t("media.previewUnavailable")} className="size-4" />
+              <IconVideoOff aria-label={t("media.previewUnavailable")} className="size-4" />
             ) : (
               <IconLoader2
                 aria-label={t("media.preparingPreview")}
