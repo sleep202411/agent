@@ -217,13 +217,27 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
 
   // Live 积分 cost for the current model + settings. Seedance prices per
   // second: the string `duration` enum ('auto' quotes the ceiling) and the
-  // legacy numeric `durationSeconds` both flow into the estimator.
+  // legacy numeric `durationSeconds` both flow into the estimator. Reference
+  // videos switch the meter (Seedance 2.5 charges input + output seconds at
+  // the reference rate), so ready reference uploads must feed the estimate —
+  // only items that would actually be submitted count.
   const cost = useMemo(() => {
     if (!selectedModel) return null;
     const duration = typeof settings.duration === "string" ? settings.duration : undefined;
     const durationSeconds =
       typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined;
     const resolution = typeof settings.resolution === "string" ? settings.resolution : undefined;
+    const readyVideos = (slotItems.referenceVideos ?? []).filter(
+      (item) => Boolean(item.url) && !item.error
+    );
+    const referenceVideoSeconds = readyVideos.reduce(
+      (seconds, item) =>
+        seconds +
+        (typeof item.durationSeconds === "number" && Number.isFinite(item.durationSeconds)
+          ? item.durationSeconds
+          : 0),
+      0
+    );
     return (
       estimateModelSellPoints(selectedModel, {
         duration,
@@ -232,13 +246,22 @@ function VideoStudioSurface({ workspaceId }: { workspaceId: string }) {
         generateAudio:
           typeof settings.generateAudio === "boolean" ? settings.generateAudio : undefined,
         numOutputs: 1,
+        referenceImageCount:
+          (slotItems.referenceImages ?? []).filter((item) => Boolean(item.url) && !item.error)
+            .length || undefined,
+        referenceVideoSeconds: referenceVideoSeconds > 0 ? referenceVideoSeconds : undefined,
+        // Seedance 2.5 edit keeps the source video's duration — the auto quote
+        // follows the combined reference-video length (mirrors the server hold).
+        outputDurationFollowsReferenceVideos: settings.omniReferenceTaskType === "edit",
       })?.sellPoints ?? cheapestSellPoints(selectedModel)
     );
   }, [
     selectedModel,
+    slotItems,
     settings.duration,
     settings.durationSeconds,
     settings.generateAudio,
+    settings.omniReferenceTaskType,
     settings.resolution,
   ]);
 

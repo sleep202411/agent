@@ -212,6 +212,39 @@ describe('episode multipart uploads', () => {
     expect(f.uploads.confirmUpload).toHaveBeenCalledTimes(1);
   });
 
+  it('starts and confirms content-review videos on the multipart kind', async () => {
+    const f = fixture();
+    const storageKey =
+      'media/cn/content-review-video/owner/workspace-1/2026/09/18/id.mp4';
+    f.patch({ storageKey });
+    f.uploads.prepareUpload.mockResolvedValue({
+      workspaceId: null,
+      storage: f.storage,
+      storageKey,
+    });
+    await f.service.start('owner', {
+      id: f.row().id,
+      fileName: 'episode.mp4',
+      contentType: 'video/mp4',
+      sizeBytes: 18,
+      kind: 'content_review_video',
+    });
+    expect(f.uploads.prepareUpload).toHaveBeenCalledWith(
+      'owner',
+      expect.objectContaining({ kind: 'content_review_video' }),
+      undefined,
+    );
+    await f.service.complete('owner', f.row().id);
+    expect(f.uploads.confirmUpload).toHaveBeenCalledWith(
+      'owner',
+      expect.objectContaining({
+        kind: 'content_review_video',
+        storageKey,
+      }),
+      undefined,
+    );
+  });
+
   it('resumes from a fresh dialog after merge succeeded before session state was saved', async () => {
     const f = fixture();
     f.storage.listUploadParts.mockRejectedValue(new Error('NoSuchUpload'));

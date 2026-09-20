@@ -251,6 +251,8 @@ describe('GPT Image product pricing', () => {
   it('discounts Image 2 base rates independently while retaining reference charges and final rounding', () => {
     const policy = GPT_IMAGE_2_PRODUCT_PRICING;
     if (policy.mode !== 'parameter_matrix') throw new Error('Expected matrix');
+    // Pre-discount launch rates; Image 2 = 0.5× those, then the 2026-09-17
+    // global −30% reprice → 0.5 × 0.7 = 0.35× (surcharges cut the same 30%).
     const oldRates = {
       '1K': [20, 60, 120],
       '2K': [30, 90, 180],
@@ -259,7 +261,7 @@ describe('GPT Image product pricing', () => {
     for (const [resolution, rates] of Object.entries(oldRates)) {
       ['low', 'medium', 'high'].forEach((quality, index) => {
         expect(policy.matrix[resolution][quality]).toBeCloseTo(
-          rates[index] * 0.5,
+          rates[index] * 0.35,
         );
         for (const count of [0, 1, 16]) {
           const quote = estimateProductModelPoints({
@@ -269,7 +271,7 @@ describe('GPT Image product pricing', () => {
             referenceImageCount: count,
           });
           const total =
-            rates[index] * 0.5 + (count > 0 ? 10.5 + (count - 1) * 3.5 : 0);
+            rates[index] * 0.35 + (count > 0 ? 7 + (count - 1) * 2.5 : 0);
           expect(quote.sellPoints).toBe(Math.ceil(total));
         }
       });
@@ -298,11 +300,11 @@ describe('GPT Image product pricing', () => {
         model.cost,
       );
       expect(policy.matrix['1K']).toEqual({
-        low: 14,
-        medium: 42,
-        high: 84,
-        xhigh: 168,
-        max: 336,
+        low: 10,
+        medium: 29,
+        high: 59,
+        xhigh: 118,
+        max: 236,
       });
     },
   );

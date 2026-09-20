@@ -28,10 +28,8 @@ import {
 import type { AuthUser } from '../auth';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import { PrismaService } from '../infra/db/db.module';
-import {
-  PlatformAuditLogService,
-  WorkspacePermissionService,
-} from '../workspaces';
+import { PlatformAuditLogService } from '../workspaces/audit-log.service';
+import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type { CreateInviteInput, AssignableRole } from './dto';
 import { generateInviteToken } from './invite-token';
 import {
@@ -173,13 +171,15 @@ export class WorkspaceInvitesService {
       where: { id: invite.workspaceId, deletedAt: null },
       select: { name: true },
     });
+    let currentRole: WorkspaceMemberRole | undefined;
     const existingAccess = workspace
       ? await existingInviteAccess(async () => {
-          await this.permissions.requireWorkspaceRole(
+          const member = await this.permissions.requireWorkspaceRole(
             user.userId,
             invite.workspaceId,
             WorkspaceMemberRole.viewer,
           );
+          currentRole = member.role;
           return {
             scope: 'workspace' as const,
             workspaceId: invite.workspaceId,
@@ -189,6 +189,7 @@ export class WorkspaceInvitesService {
       : null;
     return {
       existingAccess,
+      currentRole,
       scope: 'workspace',
       targetName: workspace?.name ?? 'a team',
       role: invite.role,

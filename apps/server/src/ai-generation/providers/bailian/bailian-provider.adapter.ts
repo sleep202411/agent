@@ -15,6 +15,7 @@ import { BailianConfigService } from './bailian-config.service';
 import {
   bailianError,
   isBailianAsyncUnsupportedError,
+  mapBailianTaskError,
   mapBailianUnknownError,
 } from './bailian-error.mapper';
 import { mapBailianProviderRequest } from './bailian-request.mapper';
@@ -437,14 +438,7 @@ export class BailianProviderAdapter implements ProviderAdapter {
     runtime: BailianModelRuntimeConfig,
     status: BailianTaskStatusResponse,
   ): AiJobError {
-    return {
-      code: 'UNKNOWN',
-      message: `Alibaba Model Studio job failed for ${runtime.endpointId}: ${JSON.stringify(status).slice(0, 500)}`,
-      userMessage: 'Generation failed. Please try again.',
-      raw: status,
-      retryable: true,
-      createdAt: new Date().toISOString(),
-    };
+    return mapBailianTaskError(runtime.endpointId, status).payload;
   }
 }
 

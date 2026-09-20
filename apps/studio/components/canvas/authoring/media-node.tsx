@@ -131,7 +131,10 @@ function MediaAssetNodeComponent({
               event.stopPropagation();
               setViewerOpen(true);
             }}
-            className="nodrag nowheel block aspect-video w-full rounded-xl select-none"
+            // No container-level `nodrag`: the media surface must move the
+            // node (same as image nodes). Interactive children — the play
+            // button and the active <video> — opt out on their own.
+            className="nowheel block aspect-video w-full rounded-xl select-none"
           />
         ) : (
           <div

@@ -181,6 +181,10 @@ export interface CreateBillingCheckoutInput {
   backUrl: string;
   promotionCode?: string;
   workspaceId?: string;
+  /** Explicit provider override — pass the one the price listing reported, so
+   *  checkout uses the same channel the packages were listed for (and WeChat
+   *  扫码 works even when the server runtime default differs). */
+  provider?: "wechat_pay" | "airwallex" | "alipay";
   attribution?: BillingAttribution;
 }
 
