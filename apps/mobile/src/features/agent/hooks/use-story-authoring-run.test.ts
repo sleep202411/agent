@@ -35,7 +35,8 @@ function deferred() {
 afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
-  vi.clearAllMocks();
+  vi.useRealTimers();
+  vi.resetAllMocks();
   api.token = "alice-token";
   api.status = "authenticated";
 });
@@ -124,4 +125,111 @@ it("does not request authoring or approval evidence while signed out", async () 
   await act(async () => root!.render(createElement(Probe)));
   expect(api.active).not.toHaveBeenCalled();
   expect(api.byId).not.toHaveBeenCalled();
+});
+
+it.each(["initial", "applying"])(
+  "recovers a failed %s read when the agent is idle",
+  async (stage) => {
+    vi.useFakeTimers();
+    if (stage === "applying") api.active.mockResolvedValueOnce({ id: first, status: "applying" });
+    api.active
+      .mockRejectedValueOnce(new Error("Offline"))
+      .mockResolvedValue({ id: first, status: "completed" });
+    let observed: unknown;
+    function Probe() {
+      observed = useStoryAuthoringRun(project, first, false);
+      return null;
+    }
+    root = createRoot(document.createElement("div"));
+    await act(async () => root!.render(createElement(Probe)));
+    if (stage === "applying")
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(observed).toMatchObject({ status: "completed" });
+    const calls = api.active.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(api.active).toHaveBeenCalledTimes(calls);
+  }
+);
+
+it("recovers an approval-specific lookup without replaying an approval", async () => {
+  vi.useFakeTimers();
+  api.byId.mockRejectedValueOnce(new Error("Offline")).mockResolvedValue({ id: first });
+  let observed: unknown;
+  function Probe() {
+    observed = useStoryAgentRunById(project, first);
+    return null;
+  }
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Probe)));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(5000);
+  });
+  expect(observed).toMatchObject({ id: first });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10000);
+  });
+  expect(api.byId).toHaveBeenCalledTimes(2);
+});
+
+it.each(["active", "byId"] as const)("cleans up a scheduled %s retry on logout", async (kind) => {
+  vi.useFakeTimers();
+  api.active.mockRejectedValue(new Error("Offline"));
+  api.byId.mockRejectedValue(new Error("Offline"));
+  function Probe() {
+    useStoryAuthoringRun(project, first, false);
+    useStoryAgentRunById(project, first);
+    return null;
+  }
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Probe)));
+  api.status = "anonymous";
+  await act(async () => root!.render(createElement(Probe)));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10000);
+  });
+  expect(api[kind]).toHaveBeenCalledTimes(1);
+});
+
+it("stops retrying after an idle lookup recovers to a legitimate empty result", async () => {
+  vi.useFakeTimers();
+  api.active.mockRejectedValueOnce(new Error("Offline")).mockResolvedValue(null);
+  let observed: unknown;
+  function Probe() {
+    observed = useStoryAuthoringRun(project, first, false);
+    return null;
+  }
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Probe)));
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(observed).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+  expect(api.active).toHaveBeenCalledTimes(2);
+});
+
+it.each(["active", "byId"] as const)("cancels a scheduled %s retry when its scope changes", async (kind) => {
+  vi.useFakeTimers();
+  api[kind].mockRejectedValueOnce(new Error("Offline")).mockResolvedValue({ id: second, status: "completed" });
+  let observed: unknown;
+  function Probe({ scope }: { scope: string }) {
+    const active = useStoryAuthoringRun(project, scope, false);
+    const byId = useStoryAgentRunById(project, scope);
+    observed = kind === "active" ? active : byId;
+    return null;
+  }
+  api[kind === "active" ? "byId" : "active"].mockResolvedValue(null);
+  root = createRoot(document.createElement("div"));
+  await act(async () => root!.render(createElement(Probe, { scope: first })));
+  const signal = api[kind].mock.calls[0]![2] as AbortSignal;
+  await act(async () => root!.render(createElement(Probe, { scope: second })));
+  expect(signal.aborted).toBe(true);
+  await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+  expect(observed).toMatchObject({ id: second });
+  expect(api[kind]).toHaveBeenCalledTimes(2);
 });

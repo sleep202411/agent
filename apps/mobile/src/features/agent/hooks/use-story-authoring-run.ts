@@ -9,6 +9,7 @@ import { isAgentOsId } from "../lib/ids";
 import { useStoryRequestScope } from "./use-story-request-scope";
 
 const POLL_MS = 1_500;
+const READ_RETRY_MS = 5_000;
 
 /**
  * Polls the chapter's Story authoring-run head while Agent OS is in flight or
@@ -46,7 +47,8 @@ export function useStoryAuthoringRun(
         const keepGoing = agentBusy || next?.status === "authoring" || next?.status === "applying";
         if (keepGoing) timer = setTimeout(() => void tick(), POLL_MS);
       } catch {
-        if (!cancelled && agentBusy) timer = setTimeout(() => void tick(), POLL_MS);
+        // An idle agent does not establish that the authoring read succeeded.
+        if (!cancelled) timer = setTimeout(() => void tick(), READ_RETRY_MS);
       }
     };
 
@@ -82,16 +84,21 @@ export function useStoryAgentRunById(
     }
     let cancelled = false;
     const controller = new AbortController();
-    void getStoryAgentRun(projectId, runId, controller.signal)
-      .then((next) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      try {
+        const next = await getStoryAgentRun(projectId, runId, controller.signal);
         if (!cancelled) setRun(next);
-      })
-      .catch(() => {
-        if (!cancelled) setRun(null);
-      });
+      } catch {
+        // Retry only the read, never the approval or generation it describes.
+        if (!cancelled) timer = setTimeout(() => void load(), READ_RETRY_MS);
+      }
+    };
+    void load();
     return () => {
       cancelled = true;
       controller.abort();
+      if (timer) clearTimeout(timer);
     };
   }, [projectId, projectOk, runId, runOk, identity]);
 
