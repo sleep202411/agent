@@ -1924,6 +1924,7 @@
     "aiAssistant": "AI 助手",
     "sidebar": {
       "navigation": "项目导航",
+      "overview": "概览",
       "chapters": "章节",
       "nodes": "节点",
       "nodesModeUnavailable": "说明模式下无法使用节点",
@@ -1934,6 +1935,29 @@
       "skillsComingSoon": "技能 · 即将推出",
       "activity": "动态",
       "members": "成员"
+    },
+    "overview": {
+      "title": "项目概览",
+      "loadFailed": "项目信息加载失败。",
+      "coverTitle": "封面",
+      "coverAlt": "项目封面图",
+      "coverEmpty": "暂无封面",
+      "changeCover": "更换封面",
+      "removeCover": "移除",
+      "coverHint": "未设置封面时，将自动使用画布中的最新图片。",
+      "coverNotImage": "请选择图片文件。",
+      "coverUpdated": "封面已更新",
+      "coverUpdateFailed": "封面更新失败。",
+      "coverRemoved": "封面已移除",
+      "detailsTitle": "信息",
+      "detailsName": "名称",
+      "nameSaved": "名称已保存",
+      "nameSaveFailed": "名称保存失败。",
+      "descriptionTitle": "描述",
+      "descriptionPlaceholder": "这个项目是关于什么的？",
+      "descriptionEmpty": "暂无描述。",
+      "descriptionSaved": "描述已保存",
+      "descriptionSaveFailed": "描述保存失败。"
     },
     "skills": {
       "title": "技能",

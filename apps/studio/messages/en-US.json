@@ -1924,6 +1924,7 @@
     "aiAssistant": "AI assistant",
     "sidebar": {
       "navigation": "Project navigation",
+      "overview": "Overview",
       "chapters": "Chapters",
       "nodes": "Nodes",
       "nodesModeUnavailable": "Nodes aren't available in Brief mode",
@@ -1934,6 +1935,29 @@
       "skillsComingSoon": "Skills · Coming soon",
       "activity": "Activity",
       "members": "Members"
+    },
+    "overview": {
+      "title": "Project overview",
+      "loadFailed": "Could not load project details.",
+      "coverTitle": "Cover",
+      "coverAlt": "Project cover image",
+      "coverEmpty": "No cover yet",
+      "changeCover": "Change cover",
+      "removeCover": "Remove",
+      "coverHint": "Without an explicit cover, the latest canvas image is used automatically.",
+      "coverNotImage": "Please choose an image file.",
+      "coverUpdated": "Cover updated",
+      "coverUpdateFailed": "Could not update the cover.",
+      "coverRemoved": "Cover removed",
+      "detailsTitle": "Details",
+      "detailsName": "Name",
+      "nameSaved": "Name saved",
+      "nameSaveFailed": "Could not save the name.",
+      "descriptionTitle": "Description",
+      "descriptionPlaceholder": "What is this project about?",
+      "descriptionEmpty": "No description yet.",
+      "descriptionSaved": "Description saved",
+      "descriptionSaveFailed": "Could not save the description."
     },
     "skills": {
       "title": "Skills",
