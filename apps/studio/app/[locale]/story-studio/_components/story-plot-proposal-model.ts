@@ -1,6 +1,7 @@
 import type { Edge, Node } from "@xyflow/react";
 import type { StoryPlotProposal } from "@repo/shared/story-agent";
-import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent, StoryGraphNode } from "@/lib/story-projects-api";
+import { storyAutoExit, storyNodeTarget } from "@repo/shared/story-stats";
 import {
   buildStoryCanvasModel,
   type StoryCanvasNodeData,
@@ -51,7 +52,29 @@ export function buildStoryPlotPreviewModel(
     },
     graph: {
       entryNodeId: proposal.screenplay.entrySceneId,
-      nodes: review.scenes,
+      nodes: review.scenes.map(
+        (scene): StoryGraphNode => ({
+          kind: "clip",
+          nodeId: scene.nodeId,
+          clipKey: scene.clipKey,
+          ...(scene.name ? { name: scene.name } : {}),
+          ...(scene.description ? { description: scene.description } : {}),
+          interactions: [],
+          exit:
+            scene.exit.kind === "auto"
+              ? storyAutoExit(scene.exit.nextNodeId)
+              : {
+                  kind: "choice",
+                  decisionId: scene.exit.decisionId,
+                  prompt: scene.exit.prompt,
+                  choices: scene.exit.choices.map((choice) => ({
+                    choiceId: choice.choiceId,
+                    label: choice.label,
+                    target: storyNodeTarget(choice.nextNodeId),
+                  })),
+                },
+        })
+      ),
     },
     productionNotes: review.productionNotes,
   };

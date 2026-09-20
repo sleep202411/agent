@@ -3,6 +3,7 @@ import type { StoryCanvasEdge, StoryCanvasNode } from "./story-project-canvas-mo
 import {
   convertExitToAuto,
   deleteGraphNode,
+  disconnectConditionalContinuation,
   disconnectStoryBranch,
   materializeStoryDecisionNodes,
   disconnectSceneContinuation,
@@ -53,6 +54,9 @@ function deleteStandaloneEdges(
       return disconnectSceneContinuation(detached, edge.data.sourceNodeId);
     }
     if (edge.data.kind === "continuation") {
+      if (edge.data.conditional) {
+        return disconnectConditionalContinuation(next, edge.source, edge.target);
+      }
       return disconnectStoryBranch(next, {
         kind: "continuation",
         sourceNodeId: edge.source,

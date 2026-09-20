@@ -30,6 +30,7 @@ import {
   type StoryProductionPlan,
   type StoryStoryboardPlan,
 } from '@repo/shared/story-production';
+import { storyAutoFallbackNodeId } from '@repo/shared/story-stats';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import {
@@ -2255,7 +2256,7 @@ export class StoryProductionPlanService {
           sequence.plotNodeId,
         );
       const nextNodeId =
-        node.exit.kind === 'auto' ? node.exit.nextNodeId : null;
+        node.exit.kind === 'auto' ? storyAutoFallbackNodeId(node.exit) : null;
       const nextNode = nextNodeId
         ? draft.graph.nodes.find((candidate) => candidate.nodeId === nextNodeId)
         : undefined;

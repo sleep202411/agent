@@ -16,7 +16,13 @@ import {
 import type { InteractiveStoryDraftContent } from "./story-projects-api";
 
 const empty = (): InteractiveStoryDraftContent => ({
-  storyBible: { logline: "Existing logline", synopsis: "", characters: [] },
+  storyBible: {
+    logline: "Existing logline",
+    synopsis: "",
+    characters: [],
+    stateVariables: [],
+    endings: [],
+  },
   graph: { entryNodeId: null, nodes: [] },
   productionNotes: ["Keep this"],
 });
@@ -100,18 +106,26 @@ describe("plot JSON import", () => {
     expect(saved.graph.entryNodeId).toBe(saved.graph.nodes[0]!.nodeId);
     expect(saved.graph.nodes[0]).toMatchObject({
       description: example().nodes[0]!.description,
-      exit: { nextNodeId: saved.graph.nodes[1]!.nodeId },
+      exit: { routes: [{ target: { kind: "node", nodeId: saved.graph.nodes[1]!.nodeId } }] },
     });
     expect(saved.graph.nodes[1]).toMatchObject({
       exit: {
         prompt: { "zh-CN": "走哪条路？" },
         choices: [
-          { label: { "zh-CN": "左" }, nextNodeId: saved.graph.nodes[2]!.nodeId },
-          { label: { "zh-CN": "右" }, nextNodeId: saved.graph.nodes[2]!.nodeId },
+          {
+            label: { "zh-CN": "左" },
+            target: { kind: "node", nodeId: saved.graph.nodes[2]!.nodeId },
+          },
+          {
+            label: { "zh-CN": "右" },
+            target: { kind: "node", nodeId: saved.graph.nodes[2]!.nodeId },
+          },
         ],
       },
     });
-    expect(saved.graph.nodes[2]).toMatchObject({ exit: { kind: "auto", nextNodeId: null } });
+    expect(saved.graph.nodes[2]).toMatchObject({
+      exit: { kind: "auto", routes: [{ target: null }] },
+    });
     const model = buildStoryCanvasModel(result.content, "zh-CN");
     expect(model.nodes).toHaveLength(3);
     expect(model.edges).toHaveLength(3);

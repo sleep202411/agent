@@ -215,7 +215,7 @@ async function repairProject(storyProjectId: string): Promise<void> {
         clipKey,
         ...(sequence.title?.trim() ? { name: sequence.title.trim() } : {}),
         interactions: [],
-        exit: { kind: 'auto', nextNodeId: null },
+        exit: { kind: 'auto', routes: [{ target: null }] },
       });
       graphIds.add(sequence.plotNodeId);
       clipKeys.add(clipKey);

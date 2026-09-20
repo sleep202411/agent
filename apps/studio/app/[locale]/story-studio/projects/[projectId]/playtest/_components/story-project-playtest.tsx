@@ -3,8 +3,10 @@
 import { IconAlertTriangle, IconArrowLeft, IconLoader2, IconRefresh } from "@tabler/icons-react";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experience-runtime-player";
+import { StoryPlaytestStateHud } from "./story-playtest-state-hud";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 import {
@@ -30,6 +32,8 @@ export function StoryProjectPlaytest({
 }) {
   const t = useTranslations("storyStudio.canvas.workingPreview");
   const locale = useLocale();
+  const [sessionValues, setSessionValues] = useState<Record<string, unknown>>({});
+  const [completedEndingIds, setCompletedEndingIds] = useState<string[]>([]);
   const runtimeQuery = useQuery<LoadedPlaytestRuntime>({
     queryKey: [
       "story-studio",
@@ -101,6 +105,9 @@ export function StoryProjectPlaytest({
   }
 
   const parsedRuntime = ExperienceRuntimeManifestSchema.safeParse(runtime);
+  const stateKeys = parsedRuntime.success
+    ? parsedRuntime.data.stateDefinitions.map((definition) => definition.key)
+    : [];
   const runtimeTitle = parsedRuntime.success
     ? localizedText(
         parsedRuntime.data.metadata.title,
@@ -117,6 +124,10 @@ export function StoryProjectPlaytest({
           runtime={runtime}
           locale={locale}
           coverUrl={loadedRuntime.kind === "draft" ? loadedRuntime.preview.coverUrl : undefined}
+          onStateChange={(state) => {
+            setSessionValues(state.values.session);
+            setCompletedEndingIds(state.completedEndingIds);
+          }}
         />
       </div>
 
@@ -136,6 +147,13 @@ export function StoryProjectPlaytest({
         </div>
 
         <div className="pointer-events-auto flex items-start gap-2">
+          {stateKeys.length > 0 ? (
+            <StoryPlaytestStateHud
+              values={sessionValues}
+              keys={stateKeys}
+              completedEndingIds={completedEndingIds}
+            />
+          ) : null}
           <Button
             type="button"
             size="icon"

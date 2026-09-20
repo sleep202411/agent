@@ -18,7 +18,7 @@ function draft(): InteractiveStoryDraftContent {
           nodeId: "opening",
           clipKey: "OPENING",
           interactions: [],
-          exit: { kind: "auto", nextNodeId: "decision" },
+          exit: { kind: "auto", routes: [{ target: { kind: "node", nodeId: "decision" } }] },
         },
         {
           kind: "decision",
@@ -28,8 +28,12 @@ function draft(): InteractiveStoryDraftContent {
             decisionId: "gate",
             prompt: { "en-US": "Enter?" },
             choices: [
-              { choiceId: "enter", label: { "en-US": "Enter" }, nextNodeId: "opening" },
-              { choiceId: "leave", label: { "en-US": "Leave" }, nextNodeId: null },
+              {
+                choiceId: "enter",
+                label: { "en-US": "Enter" },
+                target: { kind: "node", nodeId: "opening" },
+              },
+              { choiceId: "leave", label: { "en-US": "Leave" }, target: null },
             ],
           },
         },
@@ -64,14 +68,14 @@ describe("community point settings", () => {
     const decision = priced.graph.nodes[1]!;
     if (decision.exit.kind !== "choice") throw new Error("Expected decision");
     expect(decision.exit.choices[0]).not.toHaveProperty("communityPointPrice");
-    decision.exit.choices[1]!.nextNodeId = "opening";
+    decision.exit.choices[1]!.target = { kind: "node", nodeId: "opening" };
     expect(choices(priced).map((choice) => choice.communityPointPrice)).toEqual([30, 30]);
     const free = updateStoryCommunityPointPrice(priced, "opening", 0);
     expect(choices(free).map((choice) => choice.communityPointPrice)).toEqual([
       undefined,
       undefined,
     ]);
-    decision.exit.choices[0]!.nextNodeId = null;
+    decision.exit.choices[0]!.target = null;
     expect(choices(priced)[0]!.communityPointPrice).toBeUndefined();
   });
   it("rejects prices on a decision node", () => {

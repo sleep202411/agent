@@ -60,7 +60,7 @@ function lockableDraft(): InteractiveStoryDraftContent {
           nodeId: 'node.opening',
           clipKey: 'S00',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     },
@@ -81,7 +81,7 @@ function multiChapterDraft(): InteractiveStoryDraftContent {
           nodeId: 'node.chapter-two',
           clipKey: 'S10',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     },
@@ -1175,7 +1175,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       nodeId: 'node.second',
       clipKey: 'S01',
       interactions: [],
-      exit: { kind: 'auto', nextNodeId: null },
+      exit: { kind: 'auto', routes: [{ target: null }] },
     });
     const savedChapter = chapterRow({
       nodeIds: ['node.opening', 'node.second'],
