@@ -9,6 +9,36 @@ import {
 
 const encoder = new TextEncoder();
 
+it.each([NaN, Infinity])("rejects an invalid byte budget: %s", (budget) => {
+  expect(() => assertMaxSerializedBytes(z.string().max(100), budget, "Frame")).toThrow(/budget/i);
+});
+it.each([NaN, Infinity, -1, 0])("rejects invalid measurement cost: %s", (bytesPerCharacter) => {
+  expect(() => measureMaxSerializedBytes(z.string().max(100), { bytesPerCharacter })).toThrow(
+    /bytesPerCharacter/
+  );
+});
+
+it.each([-1, -Infinity, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+  "rejects unusable byte budgets: %s",
+  (budget) => {
+    expect(() => assertMaxSerializedBytes(z.never(), budget, "Frame")).toThrow(/byte budget/);
+  }
+);
+it("permits a zero budget only for a zero-size schema", () => {
+  expect(() => assertMaxSerializedBytes(z.never(), 0, "Empty")).not.toThrow();
+  expect(() => assertMaxSerializedBytes(z.null(), 0, "Nonempty")).toThrow(/over the 0-byte budget/);
+});
+it("retains positive custom measurement costs and exact budget boundaries", () => {
+  const schema = z.string().max(10);
+  expect(measureMaxSerializedBytes(schema, { bytesPerCharacter: 1.5 }).bytes).toBe(17);
+  expect(() =>
+    assertMaxSerializedBytes(schema, 17, "Exact", { bytesPerCharacter: 1.5 })
+  ).not.toThrow();
+  expect(() => assertMaxSerializedBytes(schema, 16, "Small", { bytesPerCharacter: 1.5 })).toThrow(
+    /over the 16-byte budget/
+  );
+});
+
 describe("utf8ByteLength", () => {
   it.each([
     ["ascii", "hello"],
@@ -146,34 +176,4 @@ describe("utf8BoundedString", () => {
   it("rejects a non-positive bound at construction", () => {
     expect(() => utf8BoundedString(0)).toThrow(/positive integer/);
   });
-});
-
-it.each([NaN, Infinity])("rejects an invalid byte budget: %s", (budget) => {
-  expect(() => assertMaxSerializedBytes(z.string().max(100), budget, "Frame")).toThrow(/budget/i);
-});
-it.each([NaN, Infinity, -1, 0])("rejects invalid measurement cost: %s", (bytesPerCharacter) => {
-  expect(() => measureMaxSerializedBytes(z.string().max(100), { bytesPerCharacter })).toThrow(
-    /bytesPerCharacter/
-  );
-});
-
-it.each([-1, -Infinity, 1.5, Number.MAX_SAFE_INTEGER + 1])(
-  "rejects unusable byte budgets: %s",
-  (budget) => {
-    expect(() => assertMaxSerializedBytes(z.never(), budget, "Frame")).toThrow(/byte budget/);
-  }
-);
-it("permits a zero budget only for a zero-size schema", () => {
-  expect(() => assertMaxSerializedBytes(z.never(), 0, "Empty")).not.toThrow();
-  expect(() => assertMaxSerializedBytes(z.null(), 0, "Nonempty")).toThrow(/over the 0-byte budget/);
-});
-it("retains positive custom measurement costs and exact budget boundaries", () => {
-  const schema = z.string().max(10);
-  expect(measureMaxSerializedBytes(schema, { bytesPerCharacter: 1.5 }).bytes).toBe(17);
-  expect(() =>
-    assertMaxSerializedBytes(schema, 17, "Exact", { bytesPerCharacter: 1.5 })
-  ).not.toThrow();
-  expect(() => assertMaxSerializedBytes(schema, 16, "Small", { bytesPerCharacter: 1.5 })).toThrow(
-    /over the 16-byte budget/
-  );
 });
