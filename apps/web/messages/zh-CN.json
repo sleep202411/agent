@@ -6425,7 +6425,8 @@
     "certApproved": "已通过",
     "certSubmitSuccess": "认证提交成功",
     "certSubmitFailed": "认证提交失败",
-    "unknownRole": "未知角色"
+    "unknownRole": "未知角色",
+    "interactiveSaveUnavailable": "此编辑器暂不支持保存。修改仅保留在当前标签页，离开或刷新后将丢失。"
   },
   "footer": {
     "tagline": "AI 动画与 IP 共创平台",
