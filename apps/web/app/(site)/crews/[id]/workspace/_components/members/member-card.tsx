@@ -171,8 +171,10 @@ function MemberCardSession({
           className={cn("shrink-0 ring-1 ring-white/[0.09]", isCrewOwner && "ring-primary/25")}
         />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-foreground">{displayName}</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="w-full min-w-0 text-sm font-semibold text-foreground [overflow-wrap:anywhere]">
+              {displayName}
+            </span>
             {isCrewOwner ? (
               <span className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                 <IconCrown className="size-2.5" />
