@@ -72,7 +72,7 @@ export function ContentReviewPlayer({
     setPlaying(false);
     setCurrent(selected.seconds);
     onTime?.(selected.seconds);
-  }, [selected?.id, selected?.seconds]);
+  }, [onTime, selected?.id, selected?.seconds]);
 
   const togglePlay = () => {
     const video = videoRef.current;

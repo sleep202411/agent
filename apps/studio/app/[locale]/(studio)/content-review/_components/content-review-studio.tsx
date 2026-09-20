@@ -75,7 +75,6 @@ export function ContentReviewStudio() {
   const [commentBusy, setCommentBusy] = useState(false);
 
   const busy = phase !== "idle";
-  openedRecordIdRef.current = openedRecordId;
   const canComment = Boolean(result || openedRecordId) && !busy;
   const findings = useMemo(
     () =>
