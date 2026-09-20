@@ -101,6 +101,9 @@ interface TaskIssueDetailProps {
   task: CrewTaskDTO;
   members: CrewMemberDTO[];
   isOwner: boolean;
+  canReview: boolean;
+  canSubmitAssigned: boolean;
+  canComment: boolean;
   canWork: boolean;
   viewerUserId?: string;
   displays: ReturnType<typeof useUserDisplays>;
@@ -113,6 +116,9 @@ export function TaskIssueDetail({
   task,
   members,
   isOwner,
+  canReview,
+  canSubmitAssigned,
+  canComment,
   canWork,
   viewerUserId,
   displays,
@@ -148,7 +154,7 @@ export function TaskIssueDetail({
   };
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
-  const canShowSubmit = canWork && ACTIVE_STATUSES.includes(task.status);
+  const canShowSubmit = canWork && canSubmitAssigned && ACTIVE_STATUSES.includes(task.status);
   const unresolvedBlockers = task.blockedBy.filter((blocker) => !blocker.resolved);
   const canSubmit = canShowSubmit && unresolvedBlockers.length === 0;
   const timelineItems = useMemo(
@@ -450,6 +456,7 @@ export function TaskIssueDetail({
                       task={task}
                       viewerUserId={viewerUserId}
                       isOwner={isOwner}
+                      canComment={canComment}
                       displays={displays}
                     />
                   ) : (
@@ -459,17 +466,17 @@ export function TaskIssueDetail({
               </div>
             ) : null}
 
-            {isOwner && task.status === "submitted" ? (
+            {canReview && task.status === "submitted" ? (
               <TaskReviewForm task={task} onReviewed={onReviewed} />
             ) : null}
 
-            <CommentComposer
+            {canComment && <CommentComposer
               key={task.id}
               task={task}
               members={members}
               viewerUserId={viewerUserId}
               displays={displays}
-            />
+            />}
           </div>
         </main>
 
@@ -721,12 +728,14 @@ export function TaskIssueDetail({
 }
 
 function CommentItem({
+  canComment,
   item,
   task,
   viewerUserId,
   isOwner,
   displays,
 }: {
+  canComment: boolean;
   item: CrewTaskTimelineItemDTO;
   task: CrewTaskDTO;
   viewerUserId?: string;
@@ -753,7 +762,7 @@ function CommentItem({
   const authorName = item.actorUserId
     ? displayNameOf(item.actorUserId, displays)
     : t("systemAssistant");
-  const canManage = item.actorUserId === viewerUserId || isOwner;
+  const canManage = canComment && (item.actorUserId === viewerUserId || isOwner);
 
   const startEditing = () => {
     if (pending.current || !canManage || item.deletedAt) return;
@@ -866,7 +875,7 @@ function CommentItem({
         <div className="px-4 py-3.5">
           {item.deletedAt ? (
             <p className="text-[12px] italic text-[#616772]">{t("deletedComment")}</p>
-          ) : editing ? (
+          ) : editing && canManage ? (
             <div>
               <Textarea
                 disabled={saving}

@@ -154,6 +154,8 @@ async function render(deeplinkTaskId?: string | null, reuse = false) {
         canEditCrewInfo={false}
         members={[]}
         isOwner={false}
+        canReview={false}
+        canSubmitAssigned={false} canComment={false}
       />
     )
   );

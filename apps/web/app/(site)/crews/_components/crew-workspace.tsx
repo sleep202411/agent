@@ -436,6 +436,9 @@ export function CrewWorkspace({
                 crewVersion={crewDetail.version}
                 members={members}
                 isOwner={viewer.can("tasks.manage")}
+                canReview={viewer.can("tasks.review")}
+                canSubmitAssigned={viewer.can("tasks.submit_assigned")}
+                canComment={viewer.can("tasks.comment")}
                 canEditCrewInfo={viewer.can("crew.settings.manage")}
                 viewerUserId={viewer.effectiveUserId}
                 deeplinkTaskId={deeplinkTaskId}
