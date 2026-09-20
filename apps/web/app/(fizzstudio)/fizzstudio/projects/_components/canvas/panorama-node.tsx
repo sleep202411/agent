@@ -8,6 +8,7 @@ import {
   IconAdjustmentsHorizontal,
   IconCamera,
   IconChevronDown,
+  IconDownload,
   IconExternalLink,
   IconGridDots,
   IconLoader2,
@@ -19,8 +20,10 @@ import {
 } from "@tabler/icons-react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
+import { downloadMediaFile, inferDownloadFilename } from "@/src/lib/media-download";
 import type { CanvasAssetNode, MediaItem } from "../../_data/storyboard-schema";
 import {
   MIN_CANVAS_ZOOM,
@@ -49,6 +52,7 @@ export interface PanoramaNodeData {
   inspectorSelected: boolean;
   node: CanvasAssetNode;
   onNodeChange?: (nodeId: string, patch: Partial<Omit<CanvasAssetNode, "id" | "kind">>) => void;
+  onOpenPreview?: (mediaId: string) => void;
   onSubmitGeneration?: (node: CanvasAssetNode, request: PanoramaGenerationRequest) => Promise<void>;
   referenceLabel?: string;
   referenceMedia?: MediaItem;
@@ -1054,7 +1058,8 @@ function PanoramaNodeImpl({ data, selected }: NodeProps) {
   const sourceHandleHighlighted = active || d.sourceHandleActive;
   const targetHandleHighlighted = active || d.targetHandleActive;
   const title = d.node.title || t("sbPanoramaTitle");
-  const previewUrl = media?.url ?? d.referenceMedia?.url ?? MOCK_PANORAMA_IMAGE_URL;
+  const mediaUrl = media?.url;
+  const previewUrl = mediaUrl ?? d.referenceMedia?.url ?? MOCK_PANORAMA_IMAGE_URL;
   const dimensionLabel =
     media?.url || previewUrl === MOCK_PANORAMA_IMAGE_URL ? "2048 x 1024" : "1024 x 1024";
   const status = d.node.status ?? "idle";
@@ -1150,14 +1155,38 @@ function PanoramaNodeImpl({ data, selected }: NodeProps) {
         </div>
         <div className="pointer-events-none absolute inset-0 rounded-[inherit] ring-1 ring-inset ring-white/[0.06]" />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_70%_at_50%_0%,rgba(255,255,255,0.16),transparent_56%)] opacity-70" />
-        <button
-          type="button"
-          className="nodrag nopan absolute right-3 top-3 z-20 flex size-10 items-center justify-center rounded-lg border border-white/[0.08] bg-black/45 text-white/76 shadow-xl shadow-black/35 backdrop-blur-md transition-colors hover:bg-black/58 hover:text-white"
-          aria-label={t("sbPanoramaOpenViewer")}
-          title={t("sbPanoramaOpenViewer")}
-        >
-          <IconExternalLink className="size-5" />
-        </button>
+        <div className="nodrag nopan absolute right-3 top-3 z-20 flex items-center gap-2">
+          {mediaUrl ? (
+            <button
+              type="button"
+              onClick={() => {
+                void (async () => {
+                  const saved = await downloadMediaFile(mediaUrl, {
+                    filename: inferDownloadFilename(mediaUrl, media?.mimeType, title),
+                  });
+                  if (!saved) toast.error(t("sbDownloadFailed"));
+                })();
+              }}
+              className="flex size-10 items-center justify-center rounded-lg border border-white/[0.08] bg-black/45 text-white/76 shadow-xl shadow-black/35 backdrop-blur-md transition-colors hover:bg-black/58 hover:text-white"
+              aria-label={t("sbNodeDownload")}
+              title={t("sbNodeDownload")}
+            >
+              <IconDownload className="size-5" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              if (media?.id) d.onOpenPreview?.(media.id);
+            }}
+            disabled={!media?.id}
+            className="flex size-10 items-center justify-center rounded-lg border border-white/[0.08] bg-black/45 text-white/76 shadow-xl shadow-black/35 backdrop-blur-md transition-colors hover:bg-black/58 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+            aria-label={t("sbPanoramaOpenViewer")}
+            title={t("sbPanoramaOpenViewer")}
+          >
+            <IconExternalLink className="size-5" />
+          </button>
+        </div>
         <PanoramaHud pose={pose} />
         {status === "queued" || status === "generating" ? (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/18 backdrop-blur-[1px]">
