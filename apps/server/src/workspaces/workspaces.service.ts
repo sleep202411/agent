@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -443,6 +444,26 @@ export class WorkspacesService {
         ProjectMemberRole.editor,
         tx,
       );
+      // A cover must be a ready image asset inside the project's own
+      // workspace — binding a foreign/broken asset would 404 the thumbnail.
+      if (input.coverAssetId != null) {
+        const coverAsset = await tx.mediaAsset.findFirst({
+          where: {
+            id: input.coverAssetId,
+            workspaceId: before.workspaceId,
+            kind: 'image',
+            status: 'ready',
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (!coverAsset) {
+          throw new BadRequestException({
+            code: 'PROJECT_COVER_ASSET_INVALID',
+            msg: 'Cover asset must be a ready image in this workspace.',
+          });
+        }
+      }
       const result = await tx.platformProject.updateMany({
         where: {
           id: projectId,
@@ -462,6 +483,8 @@ export class WorkspacesService {
               : (input.visibility as ProjectVisibility),
           description:
             input.description === undefined ? undefined : input.description,
+          coverAssetId:
+            input.coverAssetId === undefined ? undefined : input.coverAssetId,
           updatedById: user.userId,
           version: { increment: 1 },
         },
