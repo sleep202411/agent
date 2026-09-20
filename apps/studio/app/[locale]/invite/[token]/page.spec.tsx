@@ -188,3 +188,22 @@ describe("invite entry for existing members", () => {
     expect(state.replace).toHaveBeenCalledTimes(1);
   });
 });
+
+it("shows current workspace membership instead of accepting an admin invitation", async () => {
+  const existing: AcceptedInvite = {
+    scope: "workspace",
+    workspaceId: "workspace",
+    targetName: "Team",
+  };
+  state.preview.mockResolvedValue({
+    ...preview(existing),
+    scope: "workspace",
+    role: "admin",
+    currentRole: "editor",
+  });
+  await render();
+  expect(container.textContent).toContain("alreadyWorkspaceMember: Team");
+  expect(container.textContent).not.toContain("acceptInvitation");
+  await click("enterWorkspace");
+  expect(state.accept).not.toHaveBeenCalled();
+});

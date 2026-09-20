@@ -10,10 +10,11 @@ import {
 } from "react";
 import { useTranslations } from "next-intl";
 import { NodeToolbar, Position, useReactFlow } from "@xyflow/react";
-import { IconBoxOff, IconMessage, IconMessagePlus, IconTrash } from "@tabler/icons-react";
+import { IconBoxOff, IconCopy, IconMessage, IconMessagePlus, IconTrash } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { useCanvasNodeGroupingAction } from "@/components/canvas/groups/canvas-grouping";
+import { collectCanvasSelection, placeCanvasClone } from "./canvas-duplicate";
 import { useComments } from "./comments-context";
 
 /** Floating panel surface for the dock and node toolbars — sits clearly above
@@ -121,7 +122,8 @@ export function CanvasNodeToolbar({
   const tc = useTranslations("common");
   const tg = useTranslations("canvas.groups");
   const { deleteElements } = useReactFlow();
-  const { canEdit, nodes } = useCanvasGraphContext();
+  const { canEdit, nodes, getNodes, getEdges, addNodesAndEdges, selectNodes } =
+    useCanvasGraphContext();
   const { enabled: commentsEnabled, toggle, commentCount } = useComments();
   const groupingAction = useCanvasNodeGroupingAction(nodeId);
   const soleSelected = nodes.filter((n) => n.selected).length === 1;
@@ -130,6 +132,18 @@ export function CanvasNodeToolbar({
   const onDelete = useCallback(() => {
     void deleteElements({ nodes: [{ id: nodeId }] });
   }, [deleteElements, nodeId]);
+
+  // "Create a copy" — the node plus its wired references, one batched write
+  // (single undo step), landing selected so the toolbar follows the copy.
+  const onDuplicate = useCallback(() => {
+    placeCanvasClone(
+      collectCanvasSelection(
+        getNodes().filter((node) => node.id === nodeId),
+        getEdges()
+      ),
+      { getNodes, addNodesAndEdges, selectNodes }
+    );
+  }, [addNodesAndEdges, getEdges, getNodes, nodeId, selectNodes]);
 
   return (
     <NodeToolbar
@@ -148,6 +162,11 @@ export function CanvasNodeToolbar({
         </ToolbarButton>
       ) : null}
       {canEdit && withVisibleToolbarLabels(children)}
+      {canEdit && (
+        <ToolbarButton label={tc("duplicate")} onClick={onDuplicate} showLabel>
+          <IconCopy className="size-4" stroke={1.8} />
+        </ToolbarButton>
+      )}
       {canEdit && (
         <ToolbarButton label={tc("delete")} variant="danger" onClick={onDelete}>
           <IconTrash className="size-4" stroke={1.8} />

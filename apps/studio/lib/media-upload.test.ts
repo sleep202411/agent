@@ -140,6 +140,33 @@ describe("uploadFileViaSignedUrl", () => {
       })
     ).rejects.toThrow("returned no original media variant");
   });
+  it.each([
+    [1, { code: 403, success: true }],
+    [2, { code: 403, success: true }],
+    [1, { code: 200, success: false }],
+    [2, { code: 200, success: false }],
+  ] as const)("rejects contradictory status fields at stage %s (%j)", async (stage, status) => {
+    const base = mockUploadPipeline({});
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>(async (...args) => {
+        const response = await base(...args);
+        if (++calls !== stage) return response;
+        const body = await response.json();
+        return {
+          ...response,
+          json: async () => ({ ...body, ...status, message: "Upload permission denied" }),
+        } as Response;
+      })
+    );
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png"), { kind: "canvas_input_image" })
+    ).rejects.toThrow("Upload permission denied");
+    expect(base).toHaveBeenCalledTimes(stage);
+    expect(FakeXMLHttpRequest.instances).toHaveLength(stage - 1);
+  });
+
   it.each([1, 2])("rejects a failed application envelope at upload stage %s", async (stage) => {
     const base = mockUploadPipeline({});
     let calls = 0;
@@ -193,7 +220,7 @@ describe("uploadFileViaSignedUrl", () => {
     expect(FakeXMLHttpRequest.instances).toHaveLength(stage - 1);
   });
 
-  it.each(["plain", "success", "SUCCESS"])(
+  it.each(["plain", "success", "SUCCESS", "both"])(
     "retains supported %s upload responses",
     async (format) => {
       const base = mockUploadPipeline({});
@@ -209,7 +236,9 @@ describe("uploadFileViaSignedUrl", () => {
                 ? body.data
                 : format === "success"
                   ? { success: true, data: body.data }
-                  : { code: "SUCCESS", data: body.data },
+                  : format === "both"
+                    ? { code: 200, success: true, data: body.data }
+                    : { code: "SUCCESS", data: body.data },
           } as Response;
         })
       );
