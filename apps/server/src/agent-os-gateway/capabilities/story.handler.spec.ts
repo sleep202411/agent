@@ -8,6 +8,7 @@ import {
   STORY_VISUAL_STYLE_SKILL_SLUGS,
   storyVisualStyleSkillBySlug,
 } from '@repo/shared';
+import { storyAutoExit } from '@repo/shared/story-stats';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
@@ -27,10 +28,9 @@ import {
 
 function node(
   nodeId: string,
-  exit: InteractiveStoryDraftContent['graph']['nodes'][number]['exit'] = {
-    kind: 'auto',
-    nextNodeId: null,
-  },
+  exit: InteractiveStoryDraftContent['graph']['nodes'][number]['exit'] = storyAutoExit(
+    null,
+  ),
 ): Extract<
   InteractiveStoryDraftContent['graph']['nodes'][number],
   { kind: 'clip' }
@@ -1418,12 +1418,12 @@ describe('StoryAgentCapabilityHandler', () => {
         {
           choiceId: 'choice.left',
           label: { 'en-US': 'Left' },
-          nextNodeId: 'scene.left',
+          target: { kind: 'node', nodeId: 'scene.left' },
         },
         {
           choiceId: 'choice.right',
           label: { 'en-US': 'Right' },
-          nextNodeId: 'scene.right',
+          target: { kind: 'node', nodeId: 'scene.right' },
         },
       ],
     });
@@ -1454,12 +1454,18 @@ describe('StoryAgentCapabilityHandler', () => {
           {
             choiceId: 'choice.shared',
             label: { 'en-US': 'Shared' },
-            nextNodeId: 'shared',
+            target: { kind: 'node', nodeId: 'shared' },
           },
         ],
       }),
-      node('root', { kind: 'auto', nextNodeId: 'child' }),
-      node('child', { kind: 'auto', nextNodeId: 'shared' }),
+      node('root', {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'child' } }],
+      }),
+      node('child', {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'shared' } }],
+      }),
       node('shared'),
     ]);
     const result = executeStoryPatch({
@@ -1563,13 +1569,21 @@ describe('StoryAgentCapabilityHandler', () => {
         rect: { x: 0.2, y: 0.2, width: 0.4, height: 0.4 },
         startMs: 0,
         endMs: 1_000,
-        outcomes: { success: { kind: 'goto', nodeId: 'shared' } },
+        outcomes: {
+          success: { kind: 'goto', target: { kind: 'node', nodeId: 'shared' } },
+        },
       },
     ];
     const current = draft([
       outside,
-      node('root', { kind: 'auto', nextNodeId: 'shared' }),
-      node('shared', { kind: 'auto', nextNodeId: 'tail' }),
+      node('root', {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'shared' } }],
+      }),
+      node('shared', {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'tail' } }],
+      }),
       node('tail'),
     ]);
     const result = executeStoryPatch({

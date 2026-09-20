@@ -1,4 +1,31 @@
 import { z } from 'zod';
+import {
+  MAX_STORY_CONDITION_DEPTH,
+  MAX_STORY_CONDITION_LEAVES,
+  MAX_STORY_EXIT_ROUTES,
+  MAX_STORY_STATE_NOTE_LENGTH,
+  MAX_STORY_STATE_VARIABLES,
+  StoryAutoRoutesSchema,
+  StoryConditionSchema,
+  StoryEndingKindSchema,
+  StoryRouteTargetSchema,
+  StoryStateEffectSchema,
+  StoryStateEffectsSchema,
+  StoryStateKeySchema,
+  StoryStateValueTypeSchema,
+  measureStoryCondition,
+  migrateStoryDraftStats,
+  storyAutoExit,
+  storyConditionTypeError,
+  storyConditionUsesOnlyKeys,
+  storyEffectTypeError,
+  storyRouteEndingId,
+  type StoryCondition,
+  type StoryExitRoute,
+  type StoryRouteTarget,
+  type StoryStateEffect,
+  type StoryStateVariableLookup,
+} from '@repo/shared/story-stats';
 import { storyPlaybackCopy } from './story-playback-copy';
 
 /**
@@ -129,26 +156,113 @@ const StoryCommunityPointPriceSchema = z
   .max(2_147_483_647)
   .optional();
 
+export const StoryStateVariableSchema = z
+  .object({
+    key: StoryStateKeySchema,
+    name: DraftLocalizedTextSchema,
+    valueType: StoryStateValueTypeSchema,
+    initialValue: z.union([z.number().finite(), z.boolean()]),
+    minimum: z.number().finite().optional(),
+    maximum: z.number().finite().optional(),
+    note: z.string().max(MAX_STORY_STATE_NOTE_LENGTH).optional(),
+  })
+  .strict()
+  .superRefine((variable, context) => {
+    if (typeof variable.initialValue !== variable.valueType) {
+      context.addIssue({
+        code: 'custom',
+        path: ['initialValue'],
+        message: `Initial value must match ${variable.valueType}.`,
+      });
+    }
+    if (
+      variable.valueType === 'boolean' &&
+      (variable.minimum !== undefined || variable.maximum !== undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['minimum'],
+        message: 'Boolean variables cannot declare numeric bounds.',
+      });
+    }
+    if (
+      variable.minimum !== undefined &&
+      variable.maximum !== undefined &&
+      variable.minimum > variable.maximum
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['maximum'],
+        message: 'maximum must be greater than or equal to minimum.',
+      });
+    }
+    if (
+      variable.valueType !== 'number' ||
+      typeof variable.initialValue !== 'number'
+    ) {
+      return;
+    }
+    if (
+      variable.minimum !== undefined &&
+      variable.initialValue < variable.minimum
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['initialValue'],
+        message: `Initial value must be at least ${variable.minimum}.`,
+      });
+    }
+    if (
+      variable.maximum !== undefined &&
+      variable.initialValue > variable.maximum
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['initialValue'],
+        message: `Initial value must be at most ${variable.maximum}.`,
+      });
+    }
+  });
+export type StoryStateVariable = z.infer<typeof StoryStateVariableSchema>;
+
+export const StoryEndingSchema = z
+  .object({
+    endingId: StoryStableIdSchema,
+    title: DraftLocalizedTextSchema,
+    kind: StoryEndingKindSchema,
+  })
+  .strict();
+export type StoryEnding = z.infer<typeof StoryEndingSchema>;
+
 export const StoryGraphChoiceSchema = z
   .object({
     choiceId: StoryStableIdSchema,
     label: DraftLocalizedTextSchema,
-    nextNodeId: StoryStableIdSchema.nullable(),
+    effects: StoryStateEffectsSchema.optional(),
+    visibleWhen: StoryConditionSchema.optional(),
+    target: StoryRouteTargetSchema.nullable(),
   })
   .strict();
 
 export const StoryInteractionActionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('continue') }).strict(),
+  z
+    .object({
+      kind: z.literal('continue'),
+      effects: StoryStateEffectsSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('seek'),
       timeMs: z.number().int().nonnegative(),
+      effects: StoryStateEffectsSchema.optional(),
     })
     .strict(),
   z
     .object({
       kind: z.literal('goto'),
-      nodeId: StoryStableIdSchema,
+      target: StoryRouteTargetSchema,
+      effects: StoryStateEffectsSchema.optional(),
     })
     .strict(),
 ]);
@@ -251,7 +365,7 @@ export type StoryHotspotInteraction = z.infer<
 const StoryClipAutoExitSchema = z
   .object({
     kind: z.literal('auto'),
-    nextNodeId: StoryStableIdSchema.nullable(),
+    routes: StoryAutoRoutesSchema,
   })
   .strict();
 
@@ -277,6 +391,7 @@ const StoryClipGraphNodeSchema = z
     name: z.string().trim().max(120).optional(),
     description: z.string().max(4_000).optional(),
     interactions: z.array(StoryHotspotInteractionSchema).max(100).default([]),
+    onEnterEffects: StoryStateEffectsSchema.optional(),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
@@ -303,6 +418,7 @@ const StoryWorldGraphNodeSchema = z
       z.literal(90),
       z.literal(120),
     ]),
+    onEnterEffects: StoryStateEffectsSchema.optional(),
     exit: StoryClipAutoExitSchema,
   })
   .strict();
@@ -313,6 +429,7 @@ const StoryDecisionGraphNodeSchema = z
     nodeId: StoryStableIdSchema,
     // Normalized playback snapshots may bypass an unfinished decision. The
     // draft write DTO requires choice here so the editor always retains copy.
+    onEnterEffects: StoryStateEffectsSchema.optional(),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
       StoryChoiceExitSchema,
@@ -358,6 +475,11 @@ const InteractiveStoryDraftContentBaseSchema = z
           logline: z.string().max(1_000),
           synopsis: z.string().max(20_000),
           characters: z.array(StoryCharacterSchema).max(100),
+          stateVariables: z
+            .array(StoryStateVariableSchema)
+            .max(MAX_STORY_STATE_VARIABLES)
+            .optional(),
+          endings: z.array(StoryEndingSchema).max(64).optional(),
         })
         .strict(),
     ),
@@ -378,6 +500,20 @@ const RefinedInteractiveStoryDraftContentSchema =
       'id',
       context,
     );
+    addDuplicateStableIdentifierIssues(
+      draft.storyBible.stateVariables ?? [],
+      (variable) => variable.key,
+      ['storyBible', 'stateVariables'],
+      'key',
+      context,
+    );
+    addDuplicateStableIdentifierIssues(
+      draft.storyBible.endings ?? [],
+      (ending) => ending.endingId,
+      ['storyBible', 'endings'],
+      'endingId',
+      context,
+    );
   });
 
 /**
@@ -386,7 +522,8 @@ const RefinedInteractiveStoryDraftContentSchema =
  * all authoring, agent and runtime code sees the canonical outcomes model.
  */
 export const InteractiveStoryDraftContentSchema = z.preprocess(
-  migrateLegacyStoryInteractionActions,
+  (value) =>
+    migrateStoryDraftStats(migrateLegacyStoryInteractionActions(value)),
   RefinedInteractiveStoryDraftContentSchema,
 );
 export type InteractiveStoryDraftContent = z.infer<
@@ -494,6 +631,14 @@ function runtimeLocalizedCopies(
   draft: InteractiveStoryDraftContent,
 ): RuntimeLocalizedCopy[] {
   return [
+    ...(draft.storyBible.stateVariables ?? []).map((variable, index) => ({
+      value: variable.name,
+      path: ['storyBible', 'stateVariables', index, 'name'],
+    })),
+    ...(draft.storyBible.endings ?? []).map((ending, index) => ({
+      value: ending.title,
+      path: ['storyBible', 'endings', index, 'title'],
+    })),
     ...draft.graph.nodes.flatMap((node, nodeIndex) => {
       if (node.exit.kind !== 'choice') return [];
       return [
@@ -515,7 +660,9 @@ function runtimeLocalizedCopies(
         })),
       ];
     }),
-  ];
+  ].filter((copy) =>
+    Object.values(copy.value).some((text) => Boolean(text.trim())),
+  );
 }
 
 export const EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT: InteractiveStoryDraftContent =
@@ -524,6 +671,8 @@ export const EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT: InteractiveStoryDraftContent
       logline: '',
       synopsis: '',
       characters: [],
+      stateVariables: [],
+      endings: [],
     },
     graph: { entryNodeId: null, nodes: [] },
     productionNotes: [],
@@ -590,9 +739,9 @@ function findDecisionSemanticConflict(
     }
   }
 
-  // nextNodeId intentionally is not part of the canonical decision. The same
+  // Routing targets are not part of the canonical decision. The same
   // decision can be presented after alternate predecessor clips whose visual
-  // branches continue through different graph nodes.
+  // branches continue through different graph nodes or endings.
   return null;
 }
 
@@ -752,55 +901,244 @@ function validateInteractiveStoryGameplayReadiness(
     });
   }
 
-  draft.graph.nodes.forEach((node, nodeIndex) => {
-    const exitPath: PropertyKey[] = ['graph', 'nodes', nodeIndex, 'exit'];
-    if (node.kind === 'world') {
-      if (node.exit.nextNodeId !== null && !nodeIds.has(node.exit.nextNodeId)) {
+  const endingIds = unique(
+    draft.storyBible.endings ?? [],
+    (ending) => ending.endingId,
+    ['storyBible', 'endings'],
+    'endingId',
+  );
+  unique(
+    draft.storyBible.stateVariables ?? [],
+    (variable) => variable.key,
+    ['storyBible', 'stateVariables'],
+    'key',
+  );
+  const variables: StoryStateVariableLookup = new Map(
+    (draft.storyBible.stateVariables ?? []).map((variable) => [
+      variable.key,
+      { valueType: variable.valueType },
+    ]),
+  );
+  (draft.storyBible.stateVariables ?? []).forEach((variable, index) => {
+    requireLocalizedText(variable.name, [
+      'storyBible',
+      'stateVariables',
+      index,
+      'name',
+    ]);
+  });
+  (draft.storyBible.endings ?? []).forEach((ending, index) => {
+    requireLocalizedText(ending.title, [
+      'storyBible',
+      'endings',
+      index,
+      'title',
+    ]);
+  });
+
+  const requireTarget = (
+    target: StoryRouteTarget | null,
+    path: PropertyKey[],
+    options: { allowNull: boolean },
+  ) => {
+    if (target === null) {
+      if (!options.allowNull) {
         context.addIssue({
           code: 'custom',
-          path: [...exitPath, 'nextNodeId'],
-          message: `Unknown target node ${node.exit.nextNodeId}.`,
+          path,
+          message: 'Unknown target node null.',
         });
       }
       return;
     }
-    if (node.exit.kind === 'auto') {
-      if (node.exit.nextNodeId !== null && !nodeIds.has(node.exit.nextNodeId)) {
-        context.addIssue({
-          code: 'custom',
-          path: [...exitPath, 'nextNodeId'],
-          message: `Unknown target node ${node.exit.nextNodeId}.`,
-        });
-      }
-    }
-    if (node.exit.kind === 'choice') {
-      requireLocalizedText(node.exit.prompt, [...exitPath, 'prompt']);
-      if (node.exit.choices.length < minimumChoices) {
-        context.addIssue({
-          code: 'custom',
-          path: [...exitPath, 'choices'],
-          message: `A choice exit needs at least ${minimumChoices} choices.`,
-        });
-      }
-      unique(
-        node.exit.choices,
-        (choice) => choice.choiceId,
-        [...exitPath, 'choices'],
-        'choiceId',
-      );
-      node.exit.choices.forEach((choice, choiceIndex) => {
-        const choicePath = [...exitPath, 'choices', choiceIndex];
-        requireLocalizedText(choice.label, [...choicePath, 'label']);
-        if (choice.nextNodeId === null || !nodeIds.has(choice.nextNodeId)) {
-          context.addIssue({
-            code: 'custom',
-            path: [...choicePath, 'nextNodeId'],
-            message: `Unknown target node ${choice.nextNodeId}.`,
-          });
-        }
+    if (target.kind === 'node' && !nodeIds.has(target.nodeId)) {
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: `Unknown target node ${target.nodeId}.`,
       });
     }
+    if (target.kind === 'ending' && !endingIds.has(target.endingId)) {
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: `Unknown ending ${target.endingId}.`,
+      });
+    }
+  };
+  const requireEffects = (
+    effects: readonly StoryStateEffect[] | undefined,
+    path: PropertyKey[],
+  ) => {
+    effects?.forEach((effect, index) => {
+      const error = storyEffectTypeError(effect, variables);
+      if (!error) return;
+      context.addIssue({
+        code: 'custom',
+        path: [...path, index],
+        message: error,
+      });
+    });
+  };
+  const requireCondition = (
+    condition: StoryCondition | undefined,
+    path: PropertyKey[],
+  ) => {
+    if (!condition) return;
+    const bounds = measureStoryCondition(condition);
+    if (bounds.depth > MAX_STORY_CONDITION_DEPTH) {
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: `Condition depth must be at most ${MAX_STORY_CONDITION_DEPTH}.`,
+      });
+    }
+    if (bounds.leaves > MAX_STORY_CONDITION_LEAVES) {
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: `Condition may contain at most ${MAX_STORY_CONDITION_LEAVES} comparisons.`,
+      });
+    }
+    const error = storyConditionTypeError(condition, variables);
+    if (error) {
+      context.addIssue({ code: 'custom', path, message: error });
+    }
+  };
+  const requireRoutes = (
+    routes: readonly StoryExitRoute[],
+    path: PropertyKey[],
+  ) => {
+    if (routes.length > MAX_STORY_EXIT_ROUTES) {
+      context.addIssue({
+        code: 'custom',
+        path,
+        message: `An auto exit may declare at most ${MAX_STORY_EXIT_ROUTES} routes.`,
+      });
+    }
+    const fallbackIndexes = routes.flatMap((route, index) =>
+      route.when ? [] : [index],
+    );
+    if (
+      fallbackIndexes.length !== 1 ||
+      fallbackIndexes[0] !== routes.length - 1
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path,
+        message:
+          'An auto exit needs exactly one unconditional fallback route, and it must be last.',
+      });
+    }
+    routes.forEach((route, index) => {
+      requireCondition(route.when, [...path, index, 'when']);
+      requireTarget(route.target, [...path, index, 'target'], {
+        allowNull: true,
+      });
+    });
+  };
+
+  draft.graph.nodes.forEach((node, nodeIndex) => {
+    const nodePath: PropertyKey[] = ['graph', 'nodes', nodeIndex];
+    const exitPath: PropertyKey[] = [...nodePath, 'exit'];
+    requireEffects(node.onEnterEffects, [...nodePath, 'onEnterEffects']);
+    if (node.kind === 'clip') {
+      node.interactions.forEach((interaction, interactionIndex) => {
+        const outcomesPath = [
+          ...nodePath,
+          'interactions',
+          interactionIndex,
+          'outcomes',
+        ];
+        Object.entries(interaction.outcomes).forEach(([outcome, action]) => {
+          if (!action) return;
+          requireEffects(action.effects, [...outcomesPath, outcome, 'effects']);
+          if (action.kind === 'goto') {
+            requireTarget(action.target, [...outcomesPath, outcome, 'target'], {
+              allowNull: false,
+            });
+          }
+        });
+      });
+    }
+    if (node.kind === 'world' || node.exit.kind === 'auto') {
+      if (node.exit.kind === 'auto')
+        requireRoutes(node.exit.routes, [...exitPath, 'routes']);
+      return;
+    }
+    requireLocalizedText(node.exit.prompt, [...exitPath, 'prompt']);
+    if (node.exit.choices.length < minimumChoices) {
+      context.addIssue({
+        code: 'custom',
+        path: [...exitPath, 'choices'],
+        message: `A choice exit needs at least ${minimumChoices} choices.`,
+      });
+    }
+    unique(
+      node.exit.choices,
+      (choice) => choice.choiceId,
+      [...exitPath, 'choices'],
+      'choiceId',
+    );
+    node.exit.choices.forEach((choice, choiceIndex) => {
+      const choicePath = [...exitPath, 'choices', choiceIndex];
+      requireLocalizedText(choice.label, [...choicePath, 'label']);
+      requireEffects(choice.effects, [...choicePath, 'effects']);
+      requireCondition(choice.visibleWhen, [...choicePath, 'visibleWhen']);
+      requireTarget(choice.target, [...choicePath, 'target'], {
+        allowNull: false,
+      });
+    });
   });
+}
+
+export type InteractiveStoryStatsLint = {
+  code: 'ORPHAN_ENDING' | 'ALL_CHOICES_CONDITIONAL';
+  path: PropertyKey[];
+  message: string;
+};
+
+export function lintInteractiveStoryStats(
+  draft: InteractiveStoryDraftContent,
+): InteractiveStoryStatsLint[] {
+  const referencedEndings = new Set<string>();
+  const noteEnding = (target: StoryRouteTarget | null | undefined) => {
+    const endingId = storyRouteEndingId(target);
+    if (endingId) referencedEndings.add(endingId);
+  };
+  draft.graph.nodes.forEach((node) => {
+    if (node.exit.kind === 'auto') {
+      node.exit.routes.forEach((route) => noteEnding(route.target));
+    } else {
+      node.exit.choices.forEach((choice) => noteEnding(choice.target));
+    }
+    if (node.kind !== 'clip') return;
+    node.interactions.forEach((interaction) => {
+      Object.values(interaction.outcomes).forEach((action) => {
+        if (action?.kind === 'goto') noteEnding(action.target);
+      });
+    });
+  });
+  const issues: InteractiveStoryStatsLint[] = [];
+  (draft.storyBible.endings ?? []).forEach((ending, index) => {
+    if (referencedEndings.has(ending.endingId)) return;
+    issues.push({
+      code: 'ORPHAN_ENDING',
+      path: ['storyBible', 'endings', index, 'endingId'],
+      message: `Ending ${ending.endingId} is never routed to.`,
+    });
+  });
+  draft.graph.nodes.forEach((node, nodeIndex) => {
+    if (node.exit.kind !== 'choice' || node.exit.choices.length === 0) return;
+    if (!node.exit.choices.every((choice) => choice.visibleWhen)) return;
+    issues.push({
+      code: 'ALL_CHOICES_CONDITIONAL',
+      path: ['graph', 'nodes', nodeIndex, 'exit', 'choices'],
+      message:
+        'Every choice is gated by visibleWhen; playtest the branch so a hidden decision cannot stall.',
+    });
+  });
+  return issues;
 }
 
 /**
@@ -823,6 +1161,45 @@ function normalizeInteractiveFilmRuntimeDraft(
 
   const draft = parsed.data;
   const nodeIds = new Set(draft.graph.nodes.map((node) => node.nodeId));
+  const endingIds = new Set(
+    (draft.storyBible.endings ?? []).map((ending) => ending.endingId),
+  );
+  const variableKeys = new Set(
+    (draft.storyBible.stateVariables ?? []).map((variable) => variable.key),
+  );
+  const isConnectedTarget = (target: StoryRouteTarget | null): boolean => {
+    if (!target) return false;
+    if (target.kind === 'node') return nodeIds.has(target.nodeId);
+    return endingIds.has(target.endingId);
+  };
+  const keepEffects = (effects?: StoryStateEffect[]) => {
+    const kept = effects?.filter((effect) => variableKeys.has(effect.key));
+    return kept && kept.length > 0 ? kept : undefined;
+  };
+  const keepCondition = (condition?: StoryCondition) =>
+    condition && storyConditionUsesOnlyKeys(condition, variableKeys)
+      ? condition
+      : undefined;
+  const normalizeRoutes = (
+    routes: readonly StoryExitRoute[],
+  ): StoryExitRoute[] => {
+    const kept = routes.flatMap((route) => {
+      const when = keepCondition(route.when);
+      if (route.when && !when) return [];
+      if (route.when && !isConnectedTarget(route.target)) return [];
+      return [
+        {
+          ...(when ? { when } : {}),
+          target: isConnectedTarget(route.target) ? route.target : null,
+        },
+      ];
+    });
+    const conditionals = kept.filter((route) => route.when);
+    const fallback = [...kept].reverse().find((route) => !route.when) ?? {
+      target: null,
+    };
+    return [...conditionals, { target: fallback.target }];
+  };
   // A missing translation is not a gameplay failure. The player already uses
   // same-language, project-default, then first-available copy fallback. Keep
   // that one runtime rule here as well so a perfectly playable branch is not
@@ -868,8 +1245,15 @@ function normalizeInteractiveFilmRuntimeDraft(
         required: boolean,
       ): StoryInteractionAction | undefined => {
         if (!action) return required ? { kind: 'continue' } : undefined;
-        if (action.kind !== 'goto' || nodeIds.has(action.nodeId)) return action;
-        return required ? { kind: 'continue' } : undefined;
+        const effects = keepEffects(action.effects);
+        const next =
+          effects === action.effects ? action : { ...action, effects };
+        if (action.kind !== 'goto' || isConnectedTarget(action.target)) {
+          return next;
+        }
+        return required
+          ? { kind: 'continue', ...(effects ? { effects } : {}) }
+          : undefined;
       };
       const label = Object.fromEntries(
         Object.entries(interaction.label).flatMap(([locale, copy]) => {
@@ -902,19 +1286,53 @@ function normalizeInteractiveFilmRuntimeDraft(
   };
 
   const normalizedNodes = draft.graph.nodes.map((node) => {
-    const normalizedNode =
-      node.kind === 'clip'
-        ? { ...node, interactions: normalizeInteractions(node.interactions) }
-        : node;
-    if (normalizedNode.exit.kind === 'auto') {
-      return normalizedNode.exit.nextNodeId === null ||
-        nodeIds.has(normalizedNode.exit.nextNodeId)
-        ? normalizedNode
-        : {
-            ...normalizedNode,
-            exit: { kind: 'auto' as const, nextNodeId: null },
-          };
+    const onEnterEffects = keepEffects(node.onEnterEffects);
+    const normalizedNode = {
+      ...node,
+      ...(onEnterEffects ? { onEnterEffects } : {}),
+      ...(node.kind === 'clip'
+        ? { interactions: normalizeInteractions(node.interactions) }
+        : {}),
+    };
+    if (!onEnterEffects) {
+      delete (normalizedNode as { onEnterEffects?: StoryStateEffect[] })
+        .onEnterEffects;
     }
+    if (normalizedNode.exit.kind === 'auto') {
+      return {
+        ...normalizedNode,
+        exit: {
+          kind: 'auto' as const,
+          routes: normalizeRoutes(normalizedNode.exit.routes),
+        },
+      };
+    }
+
+    const normalizeChoice = (
+      choice: (typeof normalizedNode.exit.choices)[number],
+      index: number,
+      options: { fillLabel?: boolean; previewTarget?: StoryRouteTarget } = {},
+    ) => {
+      const effects = keepEffects(choice.effects);
+      const visibleWhen = keepCondition(choice.visibleWhen);
+      const next = {
+        ...choice,
+        label: options.fillLabel
+          ? previewLocalizedCopy(
+              choice.label,
+              `${previewCopy.option} ${index + 1}`,
+            )
+          : choice.label,
+        target: isConnectedTarget(choice.target)
+          ? choice.target
+          : (options.previewTarget ?? null),
+      };
+      if (effects) next.effects = effects;
+      else delete next.effects;
+      if (visibleWhen) next.visibleWhen = visibleWhen;
+      else delete next.visibleWhen;
+      return next;
+    };
 
     if (
       normalizedNode.kind !== 'world' &&
@@ -930,46 +1348,53 @@ function normalizeInteractiveFilmRuntimeDraft(
             previewCopy.prompt,
           ),
           choices: normalizedNode.exit.choices.map((choice, index) => {
-            const connected =
-              choice.nextNodeId !== null && nodeIds.has(choice.nextNodeId);
+            const connected = isConnectedTarget(choice.target);
             if (!connected) needsPreviewTerminal = true;
-            return {
-              ...choice,
-              label: previewLocalizedCopy(
-                choice.label,
-                `${previewCopy.option} ${index + 1}`,
-              ),
-              nextNodeId: connected ? choice.nextNodeId : previewTerminalId,
-            };
+            return normalizeChoice(choice, index, {
+              fillLabel: true,
+              previewTarget: connected
+                ? undefined
+                : { kind: 'node', nodeId: previewTerminalId },
+            });
           }),
         },
       };
     }
 
-    const connectedChoices = normalizedNode.exit.choices.filter(
-      (choice) => choice.nextNodeId !== null && nodeIds.has(choice.nextNodeId),
+    const connectedChoices = normalizedNode.exit.choices.filter((choice) =>
+      isConnectedTarget(choice.target),
     );
     const branchIsComplete =
       hasCopy(normalizedNode.exit.prompt) &&
       connectedChoices.length >= 2 &&
       connectedChoices.length === normalizedNode.exit.choices.length &&
       connectedChoices.every((choice) => hasCopy(choice.label));
-    if (branchIsComplete) return normalizedNode;
+    if (branchIsComplete) {
+      return {
+        ...normalizedNode,
+        exit: {
+          ...normalizedNode.exit,
+          choices: normalizedNode.exit.choices.map((choice, index) =>
+            normalizeChoice(choice, index),
+          ),
+        },
+      };
+    }
 
     return {
       ...normalizedNode,
       exit: {
         kind: 'auto' as const,
-        nextNodeId: connectedChoices[0]?.nextNodeId ?? null,
+        routes: [{ target: connectedChoices[0]?.target ?? null }],
       },
     };
-  });
+  }) as InteractiveStoryDraftContent['graph']['nodes'];
 
   if (needsPreviewTerminal) {
     normalizedNodes.push({
       kind: 'decision',
       nodeId: previewTerminalId,
-      exit: { kind: 'auto', nextNodeId: null },
+      exit: storyAutoExit(null),
     });
   }
 
@@ -1010,7 +1435,7 @@ function normalizeInteractiveFilmRuntimeDraft(
         draft.graph.entryNodeId && nodeIds.has(draft.graph.entryNodeId)
           ? draft.graph.entryNodeId
           : (draft.graph.nodes[0]?.nodeId ?? null),
-      nodes: runtimeNodes,
+      nodes: runtimeNodes as InteractiveStoryDraftContent['graph']['nodes'],
     },
   } satisfies InteractiveStoryDraftContent;
 }

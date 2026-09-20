@@ -22,7 +22,16 @@ function draft(
         nodeId,
         clipKey: `S${index}`,
         interactions: [],
-        exit: { kind: 'auto' as const, nextNodeId: ids[index + 1] ?? null },
+        exit: {
+          kind: 'auto' as const,
+          routes: [
+            {
+              target: ids[index + 1]
+                ? { kind: 'node' as const, nodeId: ids[index + 1]! }
+                : null,
+            },
+          ],
+        },
       })),
     },
     productionNotes: [],
@@ -70,7 +79,7 @@ describe('story chapter graph invariant', () => {
     const secondExit = content.graph.nodes[1].exit;
     if (secondExit.kind !== 'auto')
       throw new Error('Expected an automatic exit.');
-    secondExit.nextNodeId = null;
+    secondExit.routes = [{ target: null }];
     const repaired = reconcileStoryChapterGraphPartition({
       content,
       chapters: [
@@ -113,7 +122,7 @@ describe('story chapter graph invariant', () => {
     const firstExit = content.graph.nodes[0].exit;
     if (firstExit.kind !== 'auto')
       throw new Error('Expected an automatic exit.');
-    firstExit.nextNodeId = null;
+    firstExit.routes = [{ target: null }];
     const chapters = [
       { id: 'one', nodeIds: ['a'], entryNodeId: 'a' },
       { id: 'two', nodeIds: ['b'], entryNodeId: 'b' },

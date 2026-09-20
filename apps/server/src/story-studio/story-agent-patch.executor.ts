@@ -6,6 +6,11 @@ import {
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
 import { z } from 'zod';
+import {
+  migrateStoryNodeStats,
+  storyExitNodeIds,
+  storyRouteNodeId,
+} from '@repo/shared/story-stats';
 import { InteractiveStoryDraftContentSchema } from './interactive-film.schema';
 import type { InteractiveStoryDraftContent } from './interactive-film.schema';
 
@@ -83,7 +88,18 @@ export function executeStoryPatch(input: {
     }
     throw error;
   }
-  const draft = structuredClone(input.draft);
+  const incomingDraft = InteractiveStoryDraftContentSchema.safeParse(
+    input.draft,
+  );
+  if (!incomingDraft.success) {
+    const issue = incomingDraft.error.issues[0];
+    throw new StoryPatchExecutionError({
+      code: 'STORY_PATCH_INVALID_RESULT',
+      message: issue?.message ?? 'The Story patch received an invalid draft.',
+      path: issue?.path ?? [],
+    });
+  }
+  const draft = structuredClone(incomingDraft.data);
   const layout = structuredClone(input.layout);
   const beforeDraft = JSON.stringify(input.draft);
   const beforeLayout = JSON.stringify(input.layout);
@@ -187,7 +203,9 @@ function applyOperation(input: {
       return;
     }
     case 'story_graph.put_node': {
-      const incoming = operation.payload.node as StoryGraphNode;
+      const incoming = migrateStoryNodeStats(
+        operation.payload.node,
+      ) as StoryGraphNode;
       const existing = draft.graph.nodes.find(
         (value) => value.nodeId === incoming.nodeId,
       );
@@ -304,26 +322,54 @@ function removeGraphNode(
   affectedNodeIds.add(nodeId);
   if (draft.graph.entryNodeId === nodeId) draft.graph.entryNodeId = null;
 
-  draft.graph.nodes = draft.graph.nodes.map((node) => {
-    if (node.kind === 'world') {
-      if (node.exit.nextNodeId !== nodeId) return node;
+  draft.graph.nodes = draft.graph.nodes.map(
+    (node): InteractiveStoryDraftContent['graph']['nodes'][number] => {
+      if (node.exit.kind === 'auto') {
+        if (!storyExitNodeIds(node.exit).includes(nodeId)) return node;
+        affectedNodeIds.add(node.nodeId);
+        const routes = node.exit.routes.flatMap((route) => {
+          if (storyRouteNodeId(route.target) !== nodeId) return [route];
+          return route.when ? [] : [{ target: null }];
+        });
+        const conditionals = routes.filter((route) => route.when);
+        const fallback = routes.find((route) => !route.when) ?? {
+          target: null,
+        };
+        return {
+          ...node,
+          exit: { kind: 'auto' as const, routes: [...conditionals, fallback] },
+        };
+      }
+      if (
+        !node.exit.choices.some(
+          (choice) => storyRouteNodeId(choice.target) === nodeId,
+        )
+      ) {
+        return node;
+      }
+      const choices = node.exit.choices.map((choice) =>
+        storyRouteNodeId(choice.target) === nodeId
+          ? { ...choice, target: null }
+          : choice,
+      );
       affectedNodeIds.add(node.nodeId);
-      return { ...node, exit: { kind: 'auto' as const, nextNodeId: null } };
-    }
-    if (node.exit.kind === 'auto') {
-      if (node.exit.nextNodeId !== nodeId) return node;
-      affectedNodeIds.add(node.nodeId);
-      return { ...node, exit: { kind: 'auto', nextNodeId: null } };
-    }
-    if (!node.exit.choices.some((choice) => choice.nextNodeId === nodeId)) {
-      return node;
-    }
-    const choices = node.exit.choices.map((choice) =>
-      choice.nextNodeId === nodeId ? { ...choice, nextNodeId: null } : choice,
-    );
-    affectedNodeIds.add(node.nodeId);
-    return { ...node, exit: { ...node.exit, choices } };
-  });
+      const choiceExit: Extract<
+        InteractiveStoryDraftContent['graph']['nodes'][number]['exit'],
+        { kind: 'choice' }
+      > = {
+        kind: 'choice',
+        decisionId: node.exit.decisionId,
+        prompt: node.exit.prompt,
+        choices,
+      };
+      if (node.kind === 'decision') {
+        return { ...node, exit: choiceExit };
+      }
+      // World nodes only ever carry auto exits and returned above.
+      if (node.kind !== 'clip') return node;
+      return { ...node, exit: choiceExit };
+    },
+  );
 }
 
 function assertAgentDraftIntegrity(draft: InteractiveStoryDraftContent): void {
@@ -373,12 +419,7 @@ function uniqueIdentitySet(
 }
 
 function graphNodeTargets(node: StoryGraphNode): string[] {
-  if (node.exit.kind === 'auto') {
-    return node.exit.nextNodeId ? [node.exit.nextNodeId] : [];
-  }
-  return node.exit.choices.flatMap((choice) =>
-    choice.nextNodeId ? [choice.nextNodeId] : [],
-  );
+  return storyExitNodeIds(node.exit);
 }
 
 function removeOrphanedCanvasPositions(

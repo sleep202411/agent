@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { storyExitNodeIds } from '@repo/shared/story-stats';
 import { Prisma } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
 import {
@@ -638,14 +639,7 @@ function graphAdjacency(
     content.graph.nodes.map((node) => [node.nodeId, new Set<string>()]),
   );
   for (const node of content.graph.nodes) {
-    const targets =
-      node.exit.kind === 'choice'
-        ? node.exit.choices.flatMap((choice) =>
-            choice.nextNodeId ? [choice.nextNodeId] : [],
-          )
-        : node.exit.nextNodeId
-          ? [node.exit.nextNodeId]
-          : [];
+    const targets = storyExitNodeIds(node.exit);
     for (const target of targets) {
       if (!graphIds.has(target)) continue;
       adjacency.get(node.nodeId)!.add(target);

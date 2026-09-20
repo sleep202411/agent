@@ -38,12 +38,12 @@ function draft(): InteractiveStoryDraftContent {
               {
                 choiceId: 'left',
                 label: { 'en-US': 'Left' },
-                nextNodeId: 'left',
+                target: { kind: 'node', nodeId: 'left' },
               },
               {
                 choiceId: 'right',
                 label: { 'en-US': 'Right' },
-                nextNodeId: 'right',
+                target: { kind: 'node', nodeId: 'right' },
               },
             ],
           },
@@ -53,14 +53,14 @@ function draft(): InteractiveStoryDraftContent {
           nodeId: 'left',
           clipKey: 'LEFT',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
         {
           kind: 'clip',
           nodeId: 'right',
           clipKey: 'RIGHT',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     },
@@ -152,7 +152,10 @@ describe('compileStoryBuild', () => {
     const opening = content.graph.nodes[0];
     const exit = opening.exit;
     if (exit.kind !== 'choice') throw new Error('Expected choice fixture');
-    opening.exit = { kind: 'auto', nextNodeId: 'decision:routes' };
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: 'decision:routes' } }],
+    };
     content.graph.nodes.push({
       kind: 'decision',
       nodeId: 'decision:routes',
@@ -215,7 +218,7 @@ describe('compileStoryBuild', () => {
         { kind: 'scene.goto', sceneId: 'right' },
       ]);
     }
-    exit.choices[0].nextNodeId = null;
+    exit.choices[0].target = null;
     const saved = InteractiveStoryDraftContentSchema.parse(content);
     expect(
       saved.graph.nodes.find((node) => node.nodeId === 'decision:routes')?.exit,
@@ -381,8 +384,14 @@ describe('compileStoryBuild', () => {
     if (!opening || opening.kind !== 'clip' || !left || left.kind !== 'clip') {
       throw new Error('Loop fixture clips are missing.');
     }
-    opening.exit = { kind: 'auto', nextNodeId: left.nodeId };
-    left.exit = { kind: 'auto', nextNodeId: opening.nodeId };
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: left.nodeId } }],
+    };
+    left.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: opening.nodeId } }],
+    };
     content.graph.nodes = [opening, left];
 
     const preview = compileStoryBuild(
@@ -435,7 +444,10 @@ describe('compileStoryBuild', () => {
       nodeId: 'orphan',
       clipKey: 'ORPHAN',
       interactions: [],
-      exit: { kind: 'auto', nextNodeId: 'orphan' },
+      exit: {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'orphan' } }],
+      },
     });
     const result = compileStoryBuild(input({ draft: content }));
     expect(result.runtime).not.toBeNull();
@@ -455,7 +467,10 @@ describe('compileStoryBuild', () => {
     const opening = content.graph.nodes[0];
     if (!opening || opening.kind !== 'clip')
       throw new Error('Opening clip fixture is missing.');
-    opening.exit = { kind: 'auto', nextNodeId: 'world' };
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: 'world' } }],
+    };
     content.graph.nodes = [
       opening,
       {
@@ -465,7 +480,10 @@ describe('compileStoryBuild', () => {
         name: 'Rain world',
         entryInstruction: 'Continue through the gate.',
         maxExperienceSeconds: 90,
-        exit: { kind: 'auto', nextNodeId: 'left' },
+        exit: {
+          kind: 'auto',
+          routes: [{ target: { kind: 'node', nodeId: 'left' } }],
+        },
       },
       content.graph.nodes[1],
     ];
@@ -514,7 +532,10 @@ describe('compileStoryBuild', () => {
     const opening = content.graph.nodes[0];
     if (!opening || opening.kind !== 'clip')
       throw new Error('Opening clip fixture is missing.');
-    opening.exit = { kind: 'auto', nextNodeId: 'world' };
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: 'world' } }],
+    };
     content.graph.nodes = [
       opening,
       {
@@ -522,7 +543,7 @@ describe('compileStoryBuild', () => {
         nodeId: 'world',
         worldId: WORLD_ID,
         maxExperienceSeconds: 60,
-        exit: { kind: 'auto', nextNodeId: null },
+        exit: { kind: 'auto', routes: [{ target: null }] },
       },
     ];
 
@@ -556,8 +577,11 @@ describe('Community Points compilation', () => {
     const opening = content.graph.nodes[0];
     const exit = opening.exit;
     if (exit.kind !== 'choice') throw new Error('Expected choice fixture');
-    exit.choices[1].nextNodeId = exit.choices[0].nextNodeId;
-    opening.exit = { kind: 'auto', nextNodeId: 'decision:routes' };
+    exit.choices[1].target = exit.choices[0].target;
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: 'decision:routes' } }],
+    };
     content.graph.nodes.push({
       kind: 'decision',
       nodeId: 'decision:routes',

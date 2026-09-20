@@ -53,7 +53,7 @@ integration('Story Community Points atomic purchase (local PostgreSQL)', () => {
               {
                 choiceId: 'c1',
                 label: { 'en-US': 'Continue' },
-                nextNodeId: 'paid',
+                target: { kind: 'node', nodeId: 'paid' },
               },
             ],
           },
@@ -62,13 +62,16 @@ integration('Story Community Points atomic purchase (local PostgreSQL)', () => {
           nodeId: 'paid',
           presentation: { kind: 'video', sequence: [], fit: 'cover' },
           communityPointPrice: 20,
-          exit: { kind: 'auto', nextNodeId: 'end' },
+          exit: {
+            kind: 'auto',
+            routes: [{ target: { kind: 'node', nodeId: 'end' } }],
+          },
         },
         {
           nodeId: 'end',
           presentation: { kind: 'video', sequence: [], fit: 'cover' },
           communityPointPrice: 30,
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     }),

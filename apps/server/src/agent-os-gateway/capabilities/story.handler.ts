@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import {
   ConflictException,
   Injectable,
@@ -38,6 +39,13 @@ import {
   StoryPatchOperationsSchema,
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
+import {
+  migrateStoryInteraction,
+  migrateStoryNodeStats,
+  storyAutoFallbackNodeId,
+  storyExitNodeIds,
+  storyRouteNodeId,
+} from '@repo/shared/story-stats';
 import {
   storyVisualStyleSkillBySlug,
   type StoryVisualStyleSkillSlug,
@@ -114,6 +122,12 @@ const MOBILE_H5_DEFAULT_VISUAL_STYLE = 'cinematic-realism' as const;
 
 type StoryNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type StoryClipNode = Extract<StoryNode, { kind: 'clip' }>;
+// The wire protocol still speaks the pre-stats node shape (nextNodeId /
+// goto.nodeId); migrateStoryNodeStats adapts inbound payloads at the executor.
+type StoryAgentPutNode = Extract<
+  z.infer<typeof StoryPatchOperationsSchema>[number],
+  { kind: 'story_graph.put_node' }
+>['payload']['node'];
 type StoryOperationDraft = {
   kind: StoryPatchOperation['kind'];
   payload: unknown;
@@ -1665,18 +1679,23 @@ export function buildPutInteractionOperations(
     (interaction) =>
       interaction.interactionId === args.interaction.interactionId,
   );
+  // The protocol interaction still uses pre-stats actions; migrate it into
+  // the draft shape before merging into the node.
+  const interaction = migrateStoryInteraction(
+    args.interaction,
+  ) as (typeof node.interactions)[number];
   const interactions = [...node.interactions];
   if (existingIndex >= 0) {
-    interactions[existingIndex] = args.interaction;
+    interactions[existingIndex] = interaction;
   } else {
-    interactions.push(args.interaction);
+    interactions.push(interaction);
   }
   return finalizeOperations([
     {
       kind: 'story_graph.put_node',
       payload: {
         intent: 'replace',
-        node: { ...node, interactions },
+        node: toAgentClipNode({ ...node, interactions }),
       },
     },
   ]);
@@ -1703,7 +1722,7 @@ export function buildRemoveInteractionOperations(
       kind: 'story_graph.put_node',
       payload: {
         intent: 'replace',
-        node: { ...node, interactions },
+        node: toAgentClipNode({ ...node, interactions }),
       },
     },
   ]);
@@ -1726,23 +1745,18 @@ function descendantsOf(
 }
 
 function targetsOf(node: StoryNode): string[] {
-  const exitTargets =
-    node.exit.kind === 'auto'
-      ? node.exit.nextNodeId
-        ? [node.exit.nextNodeId]
-        : []
-      : node.exit.choices.flatMap((choice) =>
-          choice.nextNodeId ? [choice.nextNodeId] : [],
-        );
+  node = migrateStoryNodeStats(node) as StoryNode;
   const interactionTargets =
     node.kind === 'clip'
       ? node.interactions.flatMap((interaction) =>
-          Object.values(interaction.outcomes).flatMap((action) =>
-            action?.kind === 'goto' ? [action.nodeId] : [],
-          ),
+          Object.values(interaction.outcomes).flatMap((action) => {
+            if (action?.kind !== 'goto') return [];
+            const nodeId = storyRouteNodeId(action.target);
+            return nodeId ? [nodeId] : [];
+          }),
         )
       : [];
-  return [...exitTargets, ...interactionTargets];
+  return [...storyExitNodeIds(node.exit), ...interactionTargets];
 }
 
 function requireNode(
@@ -1778,12 +1792,80 @@ function missingNode(nodeId: string): UnprocessableEntityException {
 }
 
 function requireOpenAutoExit(node: StoryNode): void {
-  if (node.exit.kind === 'auto' && node.exit.nextNodeId === null) return;
+  const migrated = migrateStoryNodeStats(node) as StoryNode;
+  if (
+    migrated.exit.kind === 'auto' &&
+    storyAutoFallbackNodeId(migrated.exit) === null
+  )
+    return;
   throw new UnprocessableEntityException({
     code: 'STORY_SCENE_EXIT_OCCUPIED',
     message: `Scene ${node.nodeId} already has an outgoing path. Choose an open ending or refactor the graph explicitly.`,
     nodeId: node.nodeId,
   });
+}
+
+function toAgentClipNode(
+  node: Extract<StoryNode, { kind: 'clip' }>,
+): StoryAgentPutNode {
+  const toAgentAction = (action: {
+    kind: string;
+    target?:
+      | { kind: 'node'; nodeId: string }
+      | { kind: 'ending'; endingId: string }
+      | null;
+    nodeId?: string;
+    timeMs?: number;
+    effects?: unknown;
+  }) => {
+    if (action.kind === 'goto') {
+      const nodeId =
+        storyRouteNodeId(action.target ?? null) ??
+        (typeof action.nodeId === 'string' ? action.nodeId : null);
+      return nodeId
+        ? { kind: 'goto' as const, nodeId }
+        : { kind: 'continue' as const };
+    }
+    if (action.kind === 'seek') {
+      return { kind: 'seek' as const, timeMs: action.timeMs ?? 0 };
+    }
+    return { kind: 'continue' as const };
+  };
+  return {
+    kind: 'clip',
+    nodeId: node.nodeId,
+    clipKey: node.clipKey,
+    ...(node.name ? { name: node.name } : {}),
+    ...(node.description ? { description: node.description } : {}),
+    interactions: node.interactions.map((interaction) => ({
+      ...interaction,
+      outcomes: {
+        success: toAgentAction(interaction.outcomes.success),
+        ...(interaction.outcomes.failure
+          ? { failure: toAgentAction(interaction.outcomes.failure) }
+          : {}),
+        ...(interaction.outcomes.timeout
+          ? { timeout: toAgentAction(interaction.outcomes.timeout) }
+          : {}),
+      },
+    })),
+    exit:
+      node.exit.kind === 'auto'
+        ? {
+            kind: 'auto' as const,
+            nextNodeId: storyAutoFallbackNodeId(node.exit),
+          }
+        : {
+            kind: 'choice' as const,
+            decisionId: node.exit.decisionId,
+            prompt: node.exit.prompt,
+            choices: node.exit.choices.map((choice) => ({
+              choiceId: choice.choiceId,
+              label: choice.label,
+              nextNodeId: storyRouteNodeId(choice.target),
+            })),
+          },
+  };
 }
 
 function storyContinuationLocale(

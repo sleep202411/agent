@@ -27,7 +27,7 @@ function draft(): InteractiveStoryDraftContent {
           nodeId: 'opening',
           clipKey: 'OPENING',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     },
@@ -150,14 +150,18 @@ describe('executeStoryPatch', () => {
       nodeId: 'inside',
       clipKey: 'INSIDE',
       interactions: [],
-      exit: { kind: 'auto', nextNodeId: null },
+      exit: { kind: 'auto', routes: [{ target: null }] },
     });
     current.graph.nodes[0].exit = {
       kind: 'choice',
       decisionId: 'gate',
       prompt: { 'en-US': 'Enter?' },
       choices: [
-        { choiceId: 'yes', label: { 'en-US': 'Yes' }, nextNodeId: 'inside' },
+        {
+          choiceId: 'yes',
+          label: { 'en-US': 'Yes' },
+          target: { kind: 'node', nodeId: 'inside' },
+        },
       ],
     };
     const result = executeStoryPatch({
@@ -181,9 +185,7 @@ describe('executeStoryPatch', () => {
       kind: 'choice',
       decisionId: 'gate',
       prompt: { 'en-US': 'Enter?' },
-      choices: [
-        { choiceId: 'yes', label: { 'en-US': 'Yes' }, nextNodeId: null },
-      ],
+      choices: [{ choiceId: 'yes', label: { 'en-US': 'Yes' }, target: null }],
     });
     expect(result.layout.nodePositions).not.toHaveProperty('inside');
   });

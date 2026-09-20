@@ -10,7 +10,7 @@ import {
 } from './interactive-film.schema';
 
 function filmDraft(): InteractiveStoryDraftContent {
-  return {
+  return InteractiveStoryDraftContentSchema.parse({
     storyBible: {
       logline: 'A sealed gate opens once.',
       synopsis: 'A visitor chooses whether to cross the gate.',
@@ -32,12 +32,12 @@ function filmDraft(): InteractiveStoryDraftContent {
               {
                 choiceId: 'cross',
                 label: { 'en-US': 'Cross' },
-                nextNodeId: 'inside',
+                target: { kind: 'node', nodeId: 'inside' },
               },
               {
                 choiceId: 'leave',
                 label: { 'en-US': 'Leave' },
-                nextNodeId: 'outside',
+                target: { kind: 'node', nodeId: 'outside' },
               },
             ],
           },
@@ -59,7 +59,7 @@ function filmDraft(): InteractiveStoryDraftContent {
       ],
     },
     productionNotes: [],
-  };
+  });
 }
 
 describe('interactive film draft contract', () => {
@@ -144,12 +144,12 @@ describe('interactive film draft contract', () => {
     const dangling = structuredClone(filmDraft());
     const first = dangling.graph.nodes[0];
     if (first?.exit.kind === 'choice')
-      first.exit.choices[0].nextNodeId = 'missing';
+      first.exit.choices[0].target = { kind: 'node', nodeId: 'missing' };
     const normalized =
       createLockableInteractiveStoryDraftContentSchema('en-US').parse(dangling);
     expect(normalized.graph.nodes[0]?.exit).toEqual({
       kind: 'auto',
-      nextNodeId: 'outside',
+      routes: [{ target: { kind: 'node', nodeId: 'outside' } }],
     });
 
     const unfinished = structuredClone(filmDraft());
@@ -162,7 +162,10 @@ describe('interactive film draft contract', () => {
       createPlayableInteractiveStoryDraftContentSchema('en-US').parse(
         unfinished,
       ).graph.nodes[0]?.exit,
-    ).toEqual({ kind: 'auto', nextNodeId: 'inside' });
+    ).toEqual({
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: 'inside' } }],
+    });
   });
 
   it('keeps playable choices when another locale can supply the runtime copy', () => {
@@ -192,12 +195,12 @@ describe('interactive film draft contract', () => {
         {
           choiceId: 'cross',
           label: { 'en-US': 'Stay' },
-          nextNodeId: 'inside',
+          target: { kind: 'node', nodeId: 'inside' },
         },
         {
           choiceId: 'leave',
           label: { 'en-US': 'Go' },
-          nextNodeId: 'opening',
+          target: { kind: 'node', nodeId: 'opening' },
         },
       ],
     };
@@ -223,7 +226,7 @@ describe('interactive film draft contract', () => {
       nodeId: 'inside',
       clipKey: 'OTHER',
       interactions: [],
-      exit: { kind: 'auto', nextNodeId: null },
+      exit: { kind: 'auto', routes: [{ target: null }] },
     });
     expect(
       createLockableInteractiveStoryDraftContentSchema('en-US').safeParse(
@@ -273,7 +276,7 @@ describe('interactive film draft contract', () => {
         startMs: 500,
         endMs: 1_500,
         outcomes: {
-          success: { kind: 'goto', nodeId: 'inside' },
+          success: { kind: 'goto', target: { kind: 'node', nodeId: 'inside' } },
           timeout: { kind: 'seek', timeMs: 500 },
         },
       },
@@ -288,7 +291,7 @@ describe('interactive film draft contract', () => {
     if (invalidClip.kind !== 'clip') throw new Error('Expected clip fixture.');
     invalidClip.interactions[2].outcomes.success = {
       kind: 'goto',
-      nodeId: 'missing',
+      target: { kind: 'node', nodeId: 'missing' },
     };
     const normalized =
       createPlayableInteractiveStoryDraftContentSchema('en-US').parse(invalid);
@@ -459,5 +462,112 @@ describe('editable decision contract', () => {
         content,
       ).success,
     ).toBe(true);
+  });
+});
+
+describe('interactive film stats contract', () => {
+  it('migrates nextNodeId drafts and compiles number thresholds', () => {
+    const parsed = InteractiveStoryDraftContentSchema.parse({
+      ...filmDraft(),
+      storyBible: {
+        ...filmDraft().storyBible,
+        stateVariables: [
+          {
+            key: 'favorability.lin',
+            name: { 'en-US': 'Lin' },
+            valueType: 'number',
+            initialValue: 0,
+            minimum: 0,
+            maximum: 100,
+          },
+        ],
+        endings: [
+          {
+            endingId: 'ending.together',
+            title: { 'en-US': 'Together' },
+            kind: 'success',
+          },
+        ],
+      },
+    });
+    const opening = parsed.graph.nodes[0];
+    if (opening?.exit.kind !== 'choice') throw new Error('Expected choice');
+    opening.exit.choices[0].effects = [
+      { kind: 'add', key: 'favorability.lin', amount: 20 },
+    ];
+    opening.exit.choices[0].target = {
+      kind: 'ending',
+      endingId: 'ending.together',
+    };
+    opening.exit.choices[1].visibleWhen = {
+      kind: 'compare',
+      variableKey: 'favorability.lin',
+      operator: 'at-least',
+      value: 10,
+    };
+    expect(
+      createLockableInteractiveStoryDraftContentSchema('en-US').safeParse(
+        parsed,
+      ).success,
+    ).toBe(true);
+  });
+
+  it('rejects boolean ordering and routes without a trailing fallback', () => {
+    const draft = filmDraft();
+    draft.storyBible.stateVariables = [
+      {
+        key: 'met.lin',
+        name: { 'en-US': 'Met Lin' },
+        valueType: 'boolean',
+        initialValue: false,
+      },
+    ];
+    const inside = draft.graph.nodes[1];
+    if (inside?.exit.kind !== 'auto') throw new Error('Expected auto');
+    inside.exit.routes = [
+      {
+        when: {
+          kind: 'compare',
+          variableKey: 'met.lin',
+          operator: 'at-least',
+          value: 1,
+        },
+        target: { kind: 'node', nodeId: 'opening' },
+      },
+      { target: null },
+    ];
+    expect(
+      createLockableInteractiveStoryDraftContentSchema('en-US').safeParse(draft)
+        .success,
+    ).toBe(false);
+    inside.exit.routes = [
+      {
+        when: {
+          kind: 'compare',
+          variableKey: 'met.lin',
+          operator: 'equals',
+          value: true,
+        },
+        target: { kind: 'node', nodeId: 'opening' },
+      },
+    ];
+    const normalized =
+      createLockableInteractiveStoryDraftContentSchema('en-US').parse(draft);
+    const normalizedInside = normalized.graph.nodes[1];
+    expect(normalizedInside?.exit).toEqual({
+      kind: 'auto',
+      routes: [
+        {
+          when: {
+            kind: 'compare',
+            variableKey: 'met.lin',
+            operator: 'equals',
+            value: true,
+          },
+          target: { kind: 'node', nodeId: 'opening' },
+        },
+        { target: null },
+      ],
+    });
   });
 });
