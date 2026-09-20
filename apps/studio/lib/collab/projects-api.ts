@@ -37,8 +37,12 @@ export interface ProjectRef {
   name: string;
   status: "active" | "archived";
   visibility: "private" | "workspace" | "public";
+  /** Free-form project description (shown/edited in the overview panel). */
+  description?: string | null;
   /** The caller's effective role (present on getProject; gates the UI). */
   role?: ProjectRole;
+  /** Explicit cover asset id; null means the thumbnail is auto-derived. */
+  coverAssetId?: string | null;
   /** Explicit cover image, else the earliest image in the canvas asset library. */
   thumbnailUrl?: string | null;
   updatedAt: string;
@@ -208,6 +212,21 @@ export async function archiveProjectSection(
 export async function renameProject(projectId: string, name: string): Promise<ProjectRef> {
   const data = await api.patch<{ project: ProjectRef }>(`/aurora/projects/${projectId}`, {
     data: { name },
+  });
+  return data.project;
+}
+
+/**
+ * Edit project metadata. `name` matches the header's inline rename; `null`
+ * for coverAssetId/description clears them (the thumbnail falls back to the
+ * auto-derived canvas-first-image). Omitted fields are left untouched.
+ */
+export async function updateProject(
+  projectId: string,
+  input: { name?: string; coverAssetId?: string | null; description?: string | null }
+): Promise<ProjectRef> {
+  const data = await api.patch<{ project: ProjectRef }>(`/aurora/projects/${projectId}`, {
+    data: input,
   });
   return data.project;
 }

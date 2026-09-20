@@ -64,6 +64,10 @@ import {
 } from "../../../../_lib/generation-api";
 import { useStoryboard, type SaveState } from "../../_hooks/use-storyboard";
 import {
+  StudioResultLightbox,
+  type StudioResultLightboxItem,
+} from "../../../_components/studio-result-lightbox";
+import {
   getCanvas,
   localId,
   type CanvasGenerationStatus,
@@ -814,6 +818,7 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
   const [alignmentGuide, setAlignmentGuide] = useState<AlignmentGuide | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [previewMediaId, setPreviewMediaId] = useState<string | null>(null);
   const dragEndRef = useRef<{ at: number; nodeId: string } | null>(null);
   const aiCatalogRef = useRef<FizzAiCatalog | null>(null);
   const generationPollInFlightRef = useRef(false);
@@ -834,6 +839,55 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
     },
     [setCell]
   );
+
+  const openMediaPreview = useCallback((mediaId: string) => {
+    setPreviewMediaId(mediaId);
+  }, []);
+
+  /** Every playable media on the board in document order — drives the shared
+   *  result lightbox so canvas previews navigate across shots and panoramas. */
+  const lightboxItems = useMemo<StudioResultLightboxItem[]>(() => {
+    const items: StudioResultLightboxItem[] = [];
+    for (const shot of shots) {
+      const prompt = shot.cells[columnIds.description]?.text?.trim() || undefined;
+      for (const columnId of [columnIds.video, columnIds.image]) {
+        const kind: StudioResultLightboxItem["kind"] =
+          columnId === columnIds.video ? "video" : "image";
+        for (const item of shot.cells[columnId]?.media ?? []) {
+          if (!item.url) continue;
+          items.push({
+            id: item.id,
+            kind,
+            url: item.url,
+            prompt,
+            width: item.width ?? null,
+            height: item.height ?? null,
+            durationSeconds: item.durationSeconds ?? null,
+          });
+        }
+      }
+    }
+    for (const node of assetNodes) {
+      const prompt = node.prompt?.trim() || undefined;
+      const createdAt = node.generation?.completedAt ?? node.generation?.submittedAt;
+      for (const item of node.media ?? []) {
+        if (!item.url) continue;
+        items.push({
+          id: item.id,
+          kind: "image",
+          url: item.url,
+          prompt,
+          createdAt,
+          modelLabel: node.settings?.model,
+          width: item.width ?? null,
+          height: item.height ?? null,
+        });
+      }
+    }
+    return items;
+  }, [assetNodes, columnIds.description, columnIds.image, columnIds.video, shots]);
+  const previewActive =
+    previewMediaId != null && lightboxItems.some((item) => item.id === previewMediaId);
 
   const loadAiCatalog = useCallback(async () => {
     if (aiCatalogRef.current) return aiCatalogRef.current;
@@ -1094,6 +1148,7 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
       inspectorSelected: selectedNodeId === shot.id,
       onComposerStateChange: updateComposerState,
       onSubmitGeneration: submitShotGeneration,
+      onOpenPreview: openMediaPreview,
       relation: getNodeRelation(shot.id, selectedNodeId, canvas.edges),
       viewportZoom: zoom,
       sourceHandleActive: Boolean(
@@ -1119,6 +1174,7 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
       columnIds,
       composerStates,
       draggingNodeId,
+      openMediaPreview,
       selectedNodeId,
       submitShotGeneration,
       updateComposerState,
@@ -1143,6 +1199,7 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
         composerVisible: selectedNodeId === node.id && draggingNodeId === null,
         inspectorSelected: selectedNodeId === node.id,
         onNodeChange: updateAssetNode,
+        onOpenPreview: openMediaPreview,
         onSubmitGeneration: submitPanoramaGeneration,
         referenceLabel: sourceShot
           ? t("sbComposerImageRef").replace("{index}", String(shots.indexOf(sourceShot) + 1))
@@ -1173,6 +1230,7 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
       canvasBounds,
       columnIds.image,
       draggingNodeId,
+      openMediaPreview,
       selectedNodeId,
       shots,
       submitPanoramaGeneration,
@@ -1844,6 +1902,15 @@ function CanvasInner({ doc }: { doc: FizzDocument }) {
         onDelete={onDeleteShot}
         onUpdateCell={updateCell}
       />
+
+      {previewActive && previewMediaId ? (
+        <StudioResultLightbox
+          items={lightboxItems}
+          activeId={previewMediaId}
+          onClose={() => setPreviewMediaId(null)}
+          onSelect={setPreviewMediaId}
+        />
+      ) : null}
     </div>
   );
 }
