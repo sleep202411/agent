@@ -76,6 +76,7 @@ import {
 import { useOperationLabel } from "@/lib/canvas-authoring/use-labels";
 import { ValidationAlertDialog } from "./validation-alert-dialog";
 import { ProjectSkillDetailDialog } from "@/components/project-skills/project-skill-detail-dialog";
+import { GenerationEstimate } from "./generation-estimate";
 import { downloadCanvasMedia } from "./download-media";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
@@ -292,24 +293,6 @@ function AudioPreview({ src, title }: { src: string; title: string }) {
   );
 }
 
-/** Live ETA countdown (whole seconds) while a job runs. */
-function useCountdown(seconds: number | undefined, active: boolean): number | null {
-  const [remaining, setRemaining] = useState<number | null>(null);
-  useEffect(() => {
-    if (!active || seconds == null) return;
-    const end = Date.now() + seconds * 1000;
-    const tick = () => setRemaining(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
-    const first = window.setTimeout(tick, 0);
-    const timer = window.setInterval(tick, 1000);
-    return () => {
-      window.clearTimeout(first);
-      window.clearInterval(timer);
-    };
-  }, [seconds, active]);
-  if (!active || seconds == null) return null;
-  return remaining;
-}
-
 /** Mode-specific prompt hints — generic prompt placeholder gives no guidance
  *  for ops where the prompt has a particular job (e.g. relight = the lighting).
  *  Maps a mode to the translation key for its placeholder. */
@@ -424,7 +407,6 @@ function GenerationCard({
     generation?.status === "submitting" ||
     generation?.status === "queued" ||
     generation?.status === "generating";
-  const eta = useCountdown(generation?.etaSeconds, generation?.status === "generating");
 
   const model = useMemo(
     () => catalog?.models.find((m) => m.id === data.modelId),
@@ -1050,15 +1032,17 @@ function GenerationCard({
             <>
               <IconLoader2 className="size-7 animate-spin text-white/50" stroke={1.8} />
               <p className="text-sm text-white/55">
-                {generation?.status === "submitting"
-                  ? t("statusSubmitting")
-                  : generation?.status === "queued"
-                    ? generation.queuePosition != null
-                      ? t("statusQueuedPosition", { position: generation.queuePosition })
-                      : t("statusQueued")
-                    : eta != null
-                      ? t("statusGeneratingEta", { eta })
-                      : t("statusGenerating")}
+                {generation?.status === "submitting" ? (
+                  t("statusSubmitting")
+                ) : generation?.status === "queued" ? (
+                  generation.queuePosition != null ? (
+                    t("statusQueuedPosition", { position: generation.queuePosition })
+                  ) : (
+                    t("statusQueued")
+                  )
+                ) : (
+                  <GenerationEstimate seconds={generation?.etaSeconds} />
+                )}
               </p>
             </>
           ) : generation?.status === "failed" || generation?.status === "uncertain" ? (

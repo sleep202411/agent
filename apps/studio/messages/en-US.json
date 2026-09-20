@@ -1585,7 +1585,7 @@
     "statusQueued": "Queued…",
     "statusQueuedPosition": "Queued · #{position}",
     "statusGenerating": "Generating…",
-    "statusGeneratingEta": "Generating · ~{eta}s",
+    "statusGeneratingEstimate": "Generating · estimated total ~{seconds}s (not time remaining)",
     "opUpscale": "Upscale",
     "opRemoveBg": "Remove BG",
     "opRelight": "Relight",
