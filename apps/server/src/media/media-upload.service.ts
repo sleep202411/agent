@@ -307,8 +307,8 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     ttlSeconds: 900,
     keySegment: 'ai-reference-video',
   },
-  // Finished-cut review masters, not generation inputs. Capped at Aliyun
-  // Green's default 500 MB until the account quota is raised.
+  // Finished-cut review masters, not generation inputs. Capped at the
+  // Aliyun Green videoDetection quota for this account (2 GB).
   content_review_video: {
     contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
     maxBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES,

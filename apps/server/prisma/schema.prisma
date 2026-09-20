@@ -934,6 +934,7 @@ model Workspace {
   subscriptions             BillingSubscription[]
   crew                      Crew?                      @relation("CrewWorkspace")
   studioCrew                Crew?                      @relation("CrewStudioWorkspace")
+  contentReviewRecords      ContentReviewRecord[]
 
   @@index([ownerUserId, deletedAt], map: "workspaces_owner_idx")
   @@index([status, updatedAt(sort: Desc)], map: "workspaces_status_recent_idx")
@@ -7632,6 +7633,7 @@ model MediaAsset {
   moderationActions            MediaModerationAction[]
   processingJobs               MediaProcessingJob[]
   crewAssetNodes               CrewAssetNode[]
+  contentReviewRecords         ContentReviewRecord[]
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
   @@index([workspaceId, source, createdAt(sort: Desc)], map: "media_assets_workspace_source_recent_idx")
@@ -7644,6 +7646,33 @@ model MediaAsset {
   /// kind-led index above can't serve it.
   @@index([status, createdAt], map: "media_assets_status_created_idx")
   @@map("media_assets")
+}
+
+/// Workspace-shared AI content-review result. The video itself is the
+/// `content_review_video` MediaAsset; this row is the durable overview,
+/// timestamped findings, and charge receipt every workspace member can open.
+model ContentReviewRecord {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  workspaceId     String    @map("workspace_id") @db.Uuid
+  mediaAssetId    String    @map("media_asset_id") @db.Uuid
+  chargeId        String    @unique @map("charge_id") @db.Uuid
+  fileName        String    @map("file_name") @db.VarChar(256)
+  exportFileName  String    @map("export_file_name") @db.VarChar(256)
+  durationSeconds Int       @map("duration_seconds")
+  creditsCharged  Int       @map("credits_charged")
+  findingCount    Int       @map("finding_count")
+  overview        Json      @db.JsonB
+  details         Json      @db.JsonB
+  comments        Json      @default("[]") @db.JsonB
+  createdByUserId String    @map("created_by_user_id") @db.VarChar(64)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, createdAt(sort: Desc)], map: "content_review_records_workspace_recent_idx")
+  @@map("content_review_records")
 }
 
 model MediaAssetVariant {
