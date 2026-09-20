@@ -29,6 +29,7 @@ describe('BoldSignAgreementProvider webhook verification', () => {
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     for (const key of ENV_KEYS) {
       const value = original.get(key);
       if (value === undefined) delete process.env[key];
@@ -242,6 +243,75 @@ describe('BoldSignAgreementProvider webhook verification', () => {
       ),
     ).rejects.toThrow(/insecure/);
     fetchMock.mockRestore();
+  });
+
+  it.each([null, '5', '2000000'])(
+    'cancels oversized PDF downloads with declared length %s',
+    async (length) => {
+      process.env.BOLDSIGN_ARCHIVE_MAX_BYTES = '1048576';
+      let reads = 0;
+      const cancel = jest.fn();
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            reads++;
+            if (reads <= 3) controller.enqueue(Buffer.alloc(600_000, 65));
+            else controller.close();
+          },
+          cancel,
+        },
+        { highWaterMark: 0 },
+      );
+      const headers = new Headers({ 'content-type': 'application/pdf' });
+      if (length !== null) headers.set('content-length', length);
+      jest
+        .spyOn(global, 'fetch')
+        .mockResolvedValue(new Response(body, { headers }));
+      await expect(
+        new BoldSignAgreementProvider().downloadSignedDocument('document-1'),
+      ).rejects.toThrow(/archive limit/);
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(reads).toBe(length === '2000000' ? 0 : 2);
+    },
+  );
+
+  it('accepts a split PDF exactly at the byte limit', async () => {
+    process.env.BOLDSIGN_ARCHIVE_MAX_BYTES = '1048576';
+    const expected = Buffer.alloc(1048576, 32);
+    expected.write('%PDF-1.7');
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(expected.subarray(0, 3));
+        controller.enqueue(expected.subarray(3));
+        controller.close();
+      },
+    });
+    jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        new Response(body, { headers: { 'content-type': 'application/pdf' } }),
+      );
+    const artifact = await new BoldSignAgreementProvider().downloadAuditTrail(
+      'document-1',
+    );
+    expect(artifact.bytes).toEqual(expected);
+  });
+
+  it('retains the size error when cancellation fails', async () => {
+    process.env.BOLDSIGN_ARCHIVE_MAX_BYTES = '1048576';
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(1048577));
+      },
+      cancel() {
+        throw new Error('cleanup failed');
+      },
+    });
+    jest.spyOn(global, 'fetch').mockResolvedValue(new Response(body));
+    await expect(
+      new BoldSignAgreementProvider().downloadAuditTrail('document-1'),
+    ).rejects.toThrow(/archive limit/);
+    expect(body.locked).toBe(false);
   });
 
   it('downloads and validates the signed PDF artifact', async () => {
