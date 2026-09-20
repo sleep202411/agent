@@ -16,6 +16,34 @@ beforeEach(() => {
   fetchMock.mockReset();
 });
 afterEach(() => vi.unstubAllGlobals());
+it.each(["resolve", "reject", "throw", "absent"])(
+  "releases a failed probe while preserving its HTTP error (cleanup: %s)",
+  async (mode) => {
+    const cancel = vi.fn(() => {
+      if (mode === "throw") throw new Error("cleanup threw");
+      return mode === "reject" ? Promise.reject(new Error("cleanup rejected")) : Promise.resolve();
+    });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      body: mode === "absent" ? null : { cancel },
+    });
+    await expect(resolvePlayableMediaUrl(uri())).rejects.toThrow("Media unavailable (503)");
+    expect(cancel).toHaveBeenCalledTimes(mode === "absent" ? 0 : 1);
+  }
+);
+
+it("can retry resolution after a failed probe without caching the failure", async () => {
+  const cancel = vi.fn().mockResolvedValue(undefined);
+  fetchMock
+    .mockResolvedValueOnce({ ok: false, status: 503, body: { cancel } })
+    .mockResolvedValueOnce(response("https://cdn.invalid/recovered.mp4"));
+  const address = uri();
+  await expect(resolvePlayableMediaUrl(address)).rejects.toThrow("Media unavailable (503)");
+  await expect(resolvePlayableMediaUrl(address)).resolves.toBe("https://cdn.invalid/recovered.mp4");
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
 it("rejects cancelled callers before using direct or cached URLs", async () => {
   const controller = new AbortController();
   controller.abort();
@@ -70,32 +98,4 @@ it("aborts the last owner and preserves replacement work from delayed cleanup", 
   await expect(second).resolves.toBe("https://cdn.invalid/new.mp4");
   await expect(joined).resolves.toBe("https://cdn.invalid/new.mp4");
   await expect(resolvePlayableMediaUrl(address)).resolves.toBe("https://cdn.invalid/new.mp4");
-});
-
-it.each(["resolve", "reject", "throw", "absent"])(
-  "releases a failed probe while preserving its HTTP error (cleanup: %s)",
-  async (mode) => {
-    const cancel = vi.fn(() => {
-      if (mode === "throw") throw new Error("cleanup threw");
-      return mode === "reject" ? Promise.reject(new Error("cleanup rejected")) : Promise.resolve();
-    });
-    fetchMock.mockResolvedValue({
-      ok: false,
-      status: 503,
-      body: mode === "absent" ? null : { cancel },
-    });
-    await expect(resolvePlayableMediaUrl(uri())).rejects.toThrow("Media unavailable (503)");
-    expect(cancel).toHaveBeenCalledTimes(mode === "absent" ? 0 : 1);
-  }
-);
-
-it("can retry resolution after a failed probe without caching the failure", async () => {
-  const cancel = vi.fn().mockResolvedValue(undefined);
-  fetchMock
-    .mockResolvedValueOnce({ ok: false, status: 503, body: { cancel } })
-    .mockResolvedValueOnce(response("https://cdn.invalid/recovered.mp4"));
-  const address = uri();
-  await expect(resolvePlayableMediaUrl(address)).rejects.toThrow("Media unavailable (503)");
-  await expect(resolvePlayableMediaUrl(address)).resolves.toBe("https://cdn.invalid/recovered.mp4");
-  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
