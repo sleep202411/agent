@@ -1,3 +1,5 @@
+import { storyAutoExit, storyNodeTarget } from '@repo/shared/story-stats';
+
 export const MAX_PLOT_IMPORT_BYTES = 2 * 1024 * 1024;
 export const MAX_PLOT_IMPORT_NODES = 500;
 export const MAX_PLOT_IMPORT_CHAPTER_NODES = 500;
@@ -83,7 +85,7 @@ type ImportedClipNode = {
   name: string;
   description: string;
   interactions: [];
-  exit: { kind: 'auto'; nextNodeId: string | null };
+  exit: ReturnType<typeof storyAutoExit>;
 };
 
 type ImportedDecisionNode = {
@@ -96,7 +98,7 @@ type ImportedDecisionNode = {
     choices: Array<{
       choiceId: string;
       label: Record<string, string>;
-      nextNodeId: string;
+      target: NonNullable<ReturnType<typeof storyNodeTarget>>;
     }>;
   };
 };
@@ -476,13 +478,9 @@ export function applyStoryPlotImport<
         name: node.title,
         description: node.description,
         interactions: [],
-        exit: {
-          kind: 'auto',
-          nextNodeId:
-            node.next === null
-              ? null
-              : importedPlotNodeId(namespace, node.next),
-        },
+        exit: storyAutoExit(
+          node.next === null ? null : importedPlotNodeId(namespace, node.next),
+        ),
       };
     }
     return {
@@ -495,7 +493,7 @@ export function applyStoryPlotImport<
         choices: node.choices.map((choice, i) => ({
           choiceId: `option:${i + 1}`,
           label: { [locale]: choice.label },
-          nextNodeId: importedPlotNodeId(namespace, choice.next),
+          target: storyNodeTarget(importedPlotNodeId(namespace, choice.next))!,
         })),
       },
     };

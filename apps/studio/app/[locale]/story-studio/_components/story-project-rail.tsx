@@ -3,6 +3,7 @@
 import { useTransition, type ComponentType } from "react";
 import {
   IconBook2,
+  IconChartBar,
   IconClipboardList,
   IconLanguage,
   IconListTree,
@@ -77,6 +78,12 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           label={t("sidebar.world")}
           active={sidePanel === "world"}
           onClick={() => togglePanel("world")}
+        />
+        <RailButton
+          icon={IconChartBar}
+          label={t("sidebar.stats")}
+          active={sidePanel === "stats"}
+          onClick={() => togglePanel("stats")}
         />
         <RailButton
           icon={IconListTree}

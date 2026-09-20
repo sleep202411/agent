@@ -17,6 +17,7 @@ import {
   type StoryGraphNode,
 } from "@/lib/story-projects-api";
 import { createClipNode } from "./project-canvas/story-project-canvas-mutations";
+import { storyAutoFallbackNodeId, storyRouteNodeId } from "@repo/shared/story-stats";
 import {
   storyChapterWorkbenchQueryKey,
   useStoryChapterWorkbench,
@@ -75,8 +76,8 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     for (const node of nodes) {
       if (node.kind !== "clip") continue;
       const nextNode =
-        node.exit.kind === "auto" && node.exit.nextNodeId
-          ? byId.get(node.exit.nextNodeId)
+        node.exit.kind === "auto" && storyAutoFallbackNodeId(node.exit)
+          ? byId.get(storyAutoFallbackNodeId(node.exit)!)
           : undefined;
       const exit =
         node.exit.kind === "choice"
@@ -90,7 +91,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
         choices: exit.choices.map((choice) => ({
           id: choice.choiceId,
           label: localizedText(choice.label, locale, choice.choiceId),
-          target: titleOf(choice.nextNodeId),
+          target: titleOf(storyRouteNodeId(choice.target)),
         })),
       });
     }

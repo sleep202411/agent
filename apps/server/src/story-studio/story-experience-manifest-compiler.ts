@@ -29,6 +29,14 @@ import {
   type ExperienceRuntimeManifest,
   type ExperienceScene,
 } from '@repo/shared/experience-runtime';
+import {
+  compileStoryCondition,
+  compileStoryEffects,
+  storyRouteNodeId,
+  type StoryExitRoute,
+  type StoryRouteTarget,
+  type StoryStateEffect,
+} from '@repo/shared/story-stats';
 import { STORY_PREVIEW_SCENE_DURATION_MS } from './story-playback-copy';
 
 export const STORY_CORE_THEME_CONFIG_ASSET_ID =
@@ -182,9 +190,19 @@ export function compileStoryExperienceManifest(
       ),
     ),
   );
-  const hasTerminalScene = input.release.nodes.some(
-    (node) => node.exit.kind === 'auto' && node.exit.nextNodeId === null,
+  const hasNaturalComplete = input.release.nodes.some(
+    (node) =>
+      node.exit.kind === 'auto' &&
+      node.exit.routes.some((route) => route.target === null),
   );
+  const hasNamedEnding =
+    (input.release.endings ?? []).length > 0 ||
+    input.release.nodes.some((node) =>
+      node.exit.kind === 'choice'
+        ? node.exit.choices.some((choice) => choice.target.kind === 'ending')
+        : node.exit.routes.some((route) => route.target?.kind === 'ending'),
+    );
+  const hasTerminalScene = hasNaturalComplete || hasNamedEnding;
 
   if (diagnostics.length > 0) return { manifest: null, diagnostics };
 
@@ -241,7 +259,12 @@ export function compileStoryExperienceManifest(
       defaultLocale: input.release.defaultLocale,
       locales: input.release.locales,
     },
-    stateDefinitions: [],
+    stateDefinitions: (input.release.stateVariables ?? []).map((variable) => ({
+      key: variable.key,
+      valueType: variable.valueType,
+      scope: 'session' as const,
+      initialValue: variable.initialValue,
+    })),
     inputActions: input.release.nodes.flatMap((node) =>
       node.interactions.map((interaction) => ({
         actionId: interactionInputActionId(
@@ -266,15 +289,26 @@ export function compileStoryExperienceManifest(
     // Closed films use one technical completion marker. Retry loops and other
     // deliberately open-ended films declare no synthetic ending; their exit is
     // owned by a later interaction or the player chrome.
-    endings: hasTerminalScene
-      ? [
-          {
-            endingId: STORY_EXPERIENCE_COMPLETION_ID,
-            title: localizeScalar(input.metadata.title, input.release.locales),
-            kind: 'custom' as const,
-          },
-        ]
-      : [],
+    endings: [
+      ...(input.release.endings ?? []).map((ending) => ({
+        endingId: ending.endingId,
+        title: ending.title,
+        kind: ending.kind,
+      })),
+      ...(hasNaturalComplete ||
+      (hasTerminalScene && (input.release.endings ?? []).length === 0)
+        ? [
+            {
+              endingId: STORY_EXPERIENCE_COMPLETION_ID,
+              title: localizeScalar(
+                input.metadata.title,
+                input.release.locales,
+              ),
+              kind: 'custom' as const,
+            },
+          ]
+        : []),
+    ],
     graph: {
       entrySceneId: input.release.entryNodeId,
       nodes: graphNodes,
@@ -423,6 +457,67 @@ function coreThemeConfigAsset(): ExperienceRuntimeAsset {
   };
 }
 
+function compileNavigationActions(
+  target: StoryRouteTarget | null,
+): ExperienceRuntimeAction[] {
+  if (!target) {
+    return [
+      {
+        kind: 'ending.complete',
+        endingId: STORY_EXPERIENCE_COMPLETION_ID,
+      },
+    ];
+  }
+  if (target.kind === 'ending') {
+    return [
+      { kind: 'progress.unlock-ending', endingId: target.endingId },
+      { kind: 'ending.complete', endingId: target.endingId },
+    ];
+  }
+  return [{ kind: 'scene.goto', sceneId: target.nodeId }];
+}
+
+function compileAutoEventRoutes(
+  nodeId: string,
+  routes: readonly StoryExitRoute[],
+  context: NodeCompilationContext,
+  prefixActions: ExperienceRuntimeAction[] = [],
+): ExperienceEventBinding['routes'] {
+  return routes.map((route, index) => {
+    const targetNodeId = storyRouteNodeId(route.target);
+    return {
+      routeId: `route:${nodeId}:auto:${index}`,
+      ...(targetNodeId ? choiceDestinationAccess(targetNodeId, context) : {}),
+      ...(route.when ? { when: compileStoryCondition(route.when) } : {}),
+      actions: [...prefixActions, ...compileNavigationActions(route.target)],
+    };
+  });
+}
+
+function attachOnEnterEffects(
+  eventBindings: ExperienceEventBinding[],
+  nodeId: string,
+  effects: readonly StoryStateEffect[] | undefined,
+): void {
+  const actions = compileStoryEffects(effects ?? []);
+  if (actions.length === 0) return;
+  const enter = eventBindings.find(
+    (binding) => binding.on.type === 'scene.entered',
+  );
+  if (enter) {
+    enter.routes = enter.routes.map((route) => ({
+      ...route,
+      actions: [...actions, ...route.actions],
+    }));
+    return;
+  }
+  eventBindings.push({
+    bindingId: `binding:${nodeId}:enter`,
+    on: { type: 'scene.entered' },
+    routes: [{ routeId: `route:${nodeId}:enter`, actions }],
+  });
+}
+
 function compileGraphNode(
   node: InteractiveFilmRuntimeNode,
   context: NodeCompilationContext,
@@ -445,21 +540,10 @@ function compileGraphNode(
       eventBindings.push({
         bindingId: `binding:${node.nodeId}:enter`,
         on: { type: 'scene.entered' },
-        routes: [
-          {
-            routeId: `route:${node.nodeId}:auto`,
-            actions: node.exit.nextNodeId
-              ? [{ kind: 'scene.goto', sceneId: node.exit.nextNodeId }]
-              : [
-                  {
-                    kind: 'ending.complete',
-                    endingId: STORY_EXPERIENCE_COMPLETION_ID,
-                  },
-                ],
-          },
-        ],
+        routes: compileAutoEventRoutes(node.nodeId, node.exit.routes, context),
       });
     }
+    attachOnEnterEffects(eventBindings, node.nodeId, node.onEnterEffects);
     return {
       kind: 'scene',
       sceneId: node.nodeId,
@@ -520,21 +604,10 @@ function compileGraphNode(
       eventBindings.push({
         bindingId: `binding:${node.nodeId}:clock-ended`,
         on: { type: 'scene.clock-ended', sourceId: node.nodeId },
-        routes: [
-          {
-            routeId: `route:${node.nodeId}:auto`,
-            actions: node.exit.nextNodeId
-              ? [{ kind: 'scene.goto', sceneId: node.exit.nextNodeId }]
-              : [
-                  {
-                    kind: 'ending.complete',
-                    endingId: STORY_EXPERIENCE_COMPLETION_ID,
-                  },
-                ],
-          },
-        ],
+        routes: compileAutoEventRoutes(node.nodeId, node.exit.routes, context),
       });
     }
+    attachOnEnterEffects(eventBindings, node.nodeId, node.onEnterEffects);
     return {
       kind: 'scene',
       sceneId: node.nodeId,
@@ -597,6 +670,12 @@ function compileGraphNode(
           routes: [
             {
               routeId: `route:${node.nodeId}:interaction:${interaction.interactionId}:${outcome}`,
+              ...(action.kind === 'goto' && storyRouteNodeId(action.target)
+                ? choiceDestinationAccess(
+                    storyRouteNodeId(action.target)!,
+                    context,
+                  )
+                : {}),
               actions: compileInteractionAction(action, primaryInstanceId),
             },
           ],
@@ -606,26 +685,12 @@ function compileGraphNode(
   });
 
   if (node.exit.kind === 'auto') {
-    const actions: ExperienceRuntimeAction[] =
-      node.exit.nextNodeId === null
-        ? [
-            {
-              kind: 'ending.complete',
-              endingId: STORY_EXPERIENCE_COMPLETION_ID,
-            },
-          ]
-        : [{ kind: 'scene.goto', sceneId: node.exit.nextNodeId }];
     eventBindings.push(
       rendererOutcomeBinding(
         node.nodeId,
         primaryInstanceId,
         primaryOutcomeType,
-        [
-          {
-            routeId: `route:${node.nodeId}:auto`,
-            actions,
-          },
-        ],
+        compileAutoEventRoutes(node.nodeId, node.exit.routes, context),
       ),
     );
   } else {
@@ -638,6 +703,7 @@ function compileGraphNode(
       context,
     );
   }
+  attachOnEnterEffects(eventBindings, node.nodeId, node.onEnterEffects);
 
   return {
     kind: 'scene',
@@ -663,10 +729,15 @@ function compileWorldGraphNode(
   const rendererId = EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID;
   const instanceId = `renderer:${node.nodeId}:world`;
   context.usedRendererIds.add(rendererId);
-  const actions: ExperienceRuntimeAction[] =
-    node.exit.nextNodeId === null
-      ? [{ kind: 'ending.complete', endingId: STORY_EXPERIENCE_COMPLETION_ID }]
-      : [{ kind: 'scene.goto', sceneId: node.exit.nextNodeId }];
+  const eventBindings: ExperienceEventBinding[] = [
+    rendererOutcomeBinding(
+      node.nodeId,
+      instanceId,
+      'world-completed',
+      compileAutoEventRoutes(node.nodeId, node.exit.routes, context),
+    ),
+  ];
+  attachOnEnterEffects(eventBindings, node.nodeId, node.onEnterEffects);
   return {
     kind: 'scene',
     sceneId: node.nodeId,
@@ -691,11 +762,7 @@ function compileWorldGraphNode(
     anchors: [],
     gestures: [],
     timeline: { cues: [] },
-    eventBindings: [
-      rendererOutcomeBinding(node.nodeId, instanceId, 'world-completed', [
-        { routeId: `route:${node.nodeId}:auto`, actions },
-      ]),
-    ],
+    eventBindings,
   };
 }
 
@@ -773,11 +840,13 @@ function compileInteractionAction(
   action: RuntimeInteractionAction,
   primaryInstanceId: string,
 ): ExperienceRuntimeAction[] {
+  const effects = compileStoryEffects(action.effects ?? []);
   if (action.kind === 'goto') {
-    return [{ kind: 'scene.goto', sceneId: action.nodeId }];
+    return [...effects, ...compileNavigationActions(action.target)];
   }
   if (action.kind === 'seek') {
     return [
+      ...effects,
       {
         kind: 'renderer.command',
         instanceId: primaryInstanceId,
@@ -793,6 +862,7 @@ function compileInteractionAction(
     ];
   }
   return [
+    ...effects,
     {
       kind: 'renderer.command',
       instanceId: primaryInstanceId,
@@ -825,6 +895,9 @@ function compileChoiceExit(
       choices: node.exit.choices.map((choice) => ({
         choiceId: choice.choiceId,
         label: choice.label,
+        ...(choice.visibleWhen
+          ? { visibleWhen: compileStoryCondition(choice.visibleWhen) }
+          : {}),
       })),
       initiallyOpen,
     } satisfies ExperienceCoreChoiceRendererConfig,
@@ -855,12 +928,18 @@ function compileChoiceExit(
       sourceId: choiceInstanceId,
       qualifierId: 'choice-selected',
     },
-    routes: node.exit.choices.map((choice) => ({
-      routeId: `route:${node.nodeId}:choice:${choice.choiceId}`,
-      ...choiceDestinationAccess(choice.nextNodeId, context),
-      when: eventValueEquals('choiceId', choice.choiceId),
-      actions: [{ kind: 'scene.goto' as const, sceneId: choice.nextNodeId }],
-    })),
+    routes: node.exit.choices.map((choice) => {
+      const targetNodeId = storyRouteNodeId(choice.target);
+      return {
+        routeId: `route:${node.nodeId}:choice:${choice.choiceId}`,
+        ...(targetNodeId ? choiceDestinationAccess(targetNodeId, context) : {}),
+        when: eventValueEquals('choiceId', choice.choiceId),
+        actions: [
+          ...compileStoryEffects(choice.effects ?? []),
+          ...compileNavigationActions(choice.target),
+        ],
+      };
+    }),
   });
 }
 

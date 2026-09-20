@@ -28,7 +28,7 @@ describe("story canvas blank-drop connections", () => {
     const result = createConnectedSceneForBlankDrop(content, node(content, "A"), "completion")!;
     expect(result.content.graph.nodes[0]?.exit).toEqual({
       kind: "auto",
-      nextNodeId: result.createdNodeId,
+      routes: [{ target: { kind: "node", nodeId: result.createdNodeId } }],
     });
   });
 
@@ -44,8 +44,12 @@ describe("story canvas blank-drop connections", () => {
     )!;
     expect(result.content.graph.nodes[0]?.exit).toMatchObject({
       choices: [
-        { choiceId: "option:1", label: { "zh-CN": "左边" }, nextNodeId: result.createdNodeId },
-        { choiceId: "option:2", label: { "zh-CN": "右边" }, nextNodeId: null },
+        {
+          choiceId: "option:1",
+          label: { "zh-CN": "左边" },
+          target: { kind: "node", nodeId: result.createdNodeId },
+        },
+        { choiceId: "option:2", label: { "zh-CN": "右边" }, target: null },
       ],
     });
     expect(result.content.graph.nodes).toHaveLength(2);

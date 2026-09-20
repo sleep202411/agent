@@ -71,8 +71,12 @@ describe("independent decisions", () => {
     const decision = result.graph.nodes.find((n) => n.nodeId === "D")!;
     expect(decision.exit).toMatchObject({
       choices: [
-        { choiceId: "option:1", label: { "zh-CN": "相信记忆" }, nextNodeId: null },
-        { choiceId: "option:2", label: { "zh-CN": "继续寻找" }, nextNodeId: "C" },
+        { choiceId: "option:1", label: { "zh-CN": "相信记忆" }, target: null },
+        {
+          choiceId: "option:2",
+          label: { "zh-CN": "继续寻找" },
+          target: { kind: "node", nodeId: "C" },
+        },
       ],
     });
     expect(
@@ -95,7 +99,7 @@ describe("independent decisions", () => {
       edges: model.edges.filter((e) => e.source === "D" || e.target === "D"),
     });
     expect(result.graph.nodes.map((n) => n.nodeId)).toEqual(["A", "B", "C"]);
-    expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
+    expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", routes: [{ target: null }] });
     expect(result.graph.nodes.slice(1)).toEqual(content.graph.nodes.slice(1, 3));
   });
 

@@ -3221,6 +3221,7 @@
       "sidebar": {
         "navigation": "Story project navigation",
         "world": "Overview",
+        "stats": "State",
         "media": "Media",
         "catalog": "Catalog"
       },
@@ -3339,7 +3340,11 @@
         "refresh": "Refresh preview",
         "editStory": "Edit story",
         "unavailableTitle": "The story is not playable yet",
-        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable."
+        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable.",
+        "stateHud": {
+          "title": "Session stats",
+          "endings": "Endings: {ids}"
+        }
       },
       "readOnly": "Read only",
       "addNode": "Add story node",
@@ -3573,40 +3578,16 @@
         "variables": {
           "title": "State variables",
           "empty": "No state variables yet.",
-          "add": "Add variable",
-          "addTypes": {
-            "boolean": "Boolean variable",
-            "number": "Number variable",
-            "string": "Text variable"
-          },
           "typeLabels": {
             "boolean": "Boolean",
-            "number": "Number",
-            "string": "Text"
+            "number": "Number"
           },
-          "key": "Stable variable key",
+          "name": "Display name",
+          "description": "Description",
+          "descriptionPlaceholder": "What does this state represent? For creators only; not shown to players.",
           "type": "Variable type",
           "initialValue": "Initial value",
-          "minimum": "Minimum",
-          "maximum": "Maximum",
-          "allowedValues": "Allowed values",
-          "addAllowedValue": "Add allowed value",
-          "removeAllowedValue": "Remove allowed value {number}: {value}",
-          "emptyValue": "empty value",
-          "allowedValueLabel": "Allowed value {number}",
-          "references": "{count, plural, one {# reference} other {# references}}",
           "delete": "Delete variable",
-          "deleteBlocked": "{count, plural, one {Referenced # time.} other {Referenced # times.}} Remove those references before deleting.",
-          "warnings": {
-            "minimumExceedsMaximum": "Minimum exceeds maximum. The draft can save, but this variable cannot run in a preview.",
-            "initialBelowMinimum": "Initial value is below minimum. The draft can save, but this variable cannot run in a preview.",
-            "initialAboveMaximum": "Initial value is above maximum. The draft can save, but this variable cannot run in a preview.",
-            "initialNotAllowed": "Initial value is not in the allowed-values list. The draft can save, but this variable cannot run in a preview."
-          },
-          "deleteTitle": "Delete this state variable?",
-          "deleteDescription": "“{key}” will be removed from worldbuilding.",
-          "cancel": "Cancel",
-          "confirmDelete": "Delete variable",
           "boolean": {
             "true": "True",
             "false": "False"
@@ -3793,6 +3774,72 @@
           "open": "Edit storyboard",
           "openError": "The storyboard could not be opened."
         }
+      },
+      "stats": {
+        "dockTitle": "State",
+        "dockClose": "Close state panel",
+        "dockDescription": "Define the numbers and flags this film tracks. Set effects, conditions, and endings on the plot tree.",
+        "loading": "Loading state…",
+        "cardHint": "Shown on the card. The key stays stable for effects and conditions.",
+        "variablesHint": "Each entry stores one value. Open it to edit its name, type, and initial value.",
+        "addVariable": "Add state variable",
+        "untitledEnding": "Untitled ending",
+        "deleteEnding": "Delete ending",
+        "deleteEndingHint": "Disconnects every route to this ending.",
+        "createEndingHere": "Create named ending…",
+        "cancel": "Cancel",
+        "endingTitle": "Title",
+        "endingKind": "Kind",
+        "endingKinds": {
+          "success": "Success",
+          "failure": "Failure",
+          "neutral": "Neutral",
+          "hidden": "Hidden",
+          "custom": "Custom"
+        },
+        "noVariables": "Register a variable in State first, then attach it here.",
+        "attachVisibilityEmpty": "Visibility",
+        "effectsTitle": "Effects",
+        "effectsHint": "Variables this option changes, for example favorability +10.",
+        "effectAdd": "Add",
+        "effectSubtract": "Subtract",
+        "effectSet": "Set",
+        "addEffect": "Add effect",
+        "removeEffect": "Remove effect",
+        "visibleWhenTitle": "Visibility",
+        "visibleWhenHint": "Leave empty to always show this option.",
+        "addCondition": "Add condition",
+        "removeCondition": "Remove condition",
+        "complexConditionHint": "This nested condition is shown without editing to preserve every rule. Remove it to build a new condition here.",
+        "combinatorAll": "All",
+        "combinatorAny": "Any",
+        "combinatorNot": "Not",
+        "operators": {
+          "equals": "=",
+          "not-equals": "≠",
+          "greater-than": ">",
+          "at-least": "≥",
+          "less-than": "<",
+          "at-most": "≤"
+        },
+        "onEnterTitle": "On enter",
+        "onEnterHint": "Applied when this scene starts, before the player chooses a next step.",
+        "routesTitle": "Next-step routes",
+        "routesHint": "First matching condition wins. The last row is the unconditional fallback.",
+        "routeIndex": "Route {number}",
+        "fallbackRoute": "Fallback",
+        "addRoute": "Add conditional route",
+        "moveRouteUp": "Move route up",
+        "moveRouteDown": "Move route down",
+        "removeRoute": "Remove route",
+        "target": "Then go to",
+        "choiceTarget": "After this choice",
+        "unconnectedTarget": "Unconnected",
+        "naturalEnd": "End here",
+        "targetNode": "Scene · {title}",
+        "targetEnding": "Ending · {title}",
+        "editChoiceStats": "Edit effects and visibility",
+        "endingArrow": "→ Ending · {title}"
       },
       "conflict": {
         "description": "Someone saved a newer version. Your local draft is preserved; export it before discarding if needed.",

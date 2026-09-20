@@ -260,7 +260,10 @@ function clip(nodeId: string, clipKey: string, nextNodeId: string | null): Story
     nodeId,
     clipKey,
     interactions: [],
-    exit: { kind: "auto", nextNodeId },
+    exit: {
+      kind: "auto",
+      routes: [{ target: nextNodeId ? { kind: "node" as const, nodeId: nextNodeId } : null }],
+    },
   };
 }
 
