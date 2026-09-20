@@ -10,7 +10,10 @@ import {
   IconSparkles,
   IconX,
 } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
+import { downloadMediaFile } from "@/src/lib/media-download";
 
 /**
  * One viewable result inside the shared studio lightbox. The studios map their
@@ -21,11 +24,12 @@ export interface StudioResultLightboxItem {
   id: string;
   kind: "image" | "video";
   url: string;
-  prompt: string;
+  /** Generation prompt. Canvas previews may have none — copy UI hides itself. */
+  prompt?: string;
   /** ISO timestamp rendered as "Created N ago" (completedAt ?? createdAt). */
-  createdAt: string;
-  /** Resolved display name of the generating model. */
-  modelLabel: string;
+  createdAt?: string;
+  /** Resolved display name of the generating model; chip hidden when absent. */
+  modelLabel?: string;
   width?: number | null;
   height?: number | null;
   /** Video only — drives the extra Duration metadata row. */
@@ -114,6 +118,16 @@ export function StudioResultLightbox({
     if (promptCopyResetRef.current) window.clearTimeout(promptCopyResetRef.current);
     promptCopyResetRef.current = window.setTimeout(() => setPromptCopyState("idle"), 1600);
   }, [prompt]);
+
+  const downloadItem = useCallback(async () => {
+    if (!item) return;
+    // Cross-origin OSS URLs make the `download` attribute a no-op, so the
+    // bytes go through a same-origin blob to guarantee a real file save.
+    const saved = await downloadMediaFile(item.url);
+    if (!saved) {
+      toast.error(t("detail.downloadFailed"));
+    }
+  }, [item, t]);
 
   if (!item) return null;
 
@@ -210,12 +224,13 @@ export function StudioResultLightbox({
               <DetailActionButton
                 icon={IconSparkles}
                 label={promptCopyLabel}
-                onClick={copyPrompt}
+                onClick={prompt ? copyPrompt : undefined}
+                disabled={!prompt}
               />
               <DetailActionButton
-                href={item.url}
                 icon={IconDownload}
                 label={t("detail.download")}
+                onClick={downloadItem}
               />
             </div>
           </div>
@@ -223,14 +238,14 @@ export function StudioResultLightbox({
 
         <aside className="flex min-h-0 flex-col rounded-[24px] border border-white/[0.08] bg-[#0d0d0f]/96 p-5 shadow-[0_24px_80px_rgba(0,0,0,.52)] backdrop-blur-xl lg:h-full">
           <div className="flex shrink-0 items-center justify-between gap-3">
-            <a
-              href={item.url}
-              download
+            <button
+              type="button"
+              onClick={() => void downloadItem()}
               className="inline-flex h-10 items-center gap-2 rounded-[14px] border border-white/[0.1] px-3 text-sm font-semibold text-white transition hover:bg-white/[0.07]"
             >
               <IconDownload className="size-4" stroke={1.8} />
               {t("detail.download")}
-            </a>
+            </button>
             <div className="relative flex items-center gap-1.5">
               <button
                 type="button"
@@ -249,38 +264,44 @@ export function StudioResultLightbox({
             </span>
             <p className="text-sm font-semibold text-white/88">{t("detail.byYou")}</p>
           </div>
-          <p className="mt-3 text-sm font-medium text-white/48">
-            {t("detail.created", { time: formatRelativeTime(item.createdAt, t) })}
-          </p>
+          {item.createdAt ? (
+            <p className="mt-3 text-sm font-medium text-white/48">
+              {t("detail.created", { time: formatRelativeTime(item.createdAt, t) })}
+            </p>
+          ) : null}
 
           <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
-            <section className="rounded-[18px] border border-white/[0.08] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="inline-flex items-center gap-2 text-base font-semibold text-white/88">
-                  <IconInfoCircle className="size-4" stroke={1.8} />
-                  {t("detail.prompt")}
-                </h3>
-                <button
-                  type="button"
-                  onClick={copyPrompt}
-                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[11px] bg-white/[0.08] px-3 text-xs font-semibold text-white/86 transition hover:bg-white/[0.13] hover:text-white"
-                >
-                  <IconSparkles className="size-3.5" stroke={1.8} />
-                  {promptCopyLabel}
-                </button>
-              </div>
-              <p className="mt-4 whitespace-pre-wrap text-sm font-medium leading-7 text-white/86">
-                {item.prompt}
-              </p>
-            </section>
+            {prompt ? (
+              <section className="rounded-[18px] border border-white/[0.08] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="inline-flex items-center gap-2 text-base font-semibold text-white/88">
+                    <IconInfoCircle className="size-4" stroke={1.8} />
+                    {t("detail.prompt")}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={copyPrompt}
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[11px] bg-white/[0.08] px-3 text-xs font-semibold text-white/86 transition hover:bg-white/[0.13] hover:text-white"
+                  >
+                    <IconSparkles className="size-3.5" stroke={1.8} />
+                    {promptCopyLabel}
+                  </button>
+                </div>
+                <p className="mt-4 whitespace-pre-wrap text-sm font-medium leading-7 text-white/86">
+                  {prompt}
+                </p>
+              </section>
+            ) : null}
 
-            <div className="mt-4 flex justify-end">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.08] px-3 py-1 text-xs font-semibold text-white/82">
-                <IconSparkles className="size-3.5" stroke={1.8} />
-                {item.modelLabel}
-                <IconInfoCircle className="size-3.5 text-white/52" stroke={1.8} />
-              </span>
-            </div>
+            {item.modelLabel ? (
+              <div className={cn("flex justify-end", prompt ? "mt-4" : null)}>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.08] px-3 py-1 text-xs font-semibold text-white/82">
+                  <IconSparkles className="size-3.5" stroke={1.8} />
+                  {item.modelLabel}
+                  <IconInfoCircle className="size-3.5 text-white/52" stroke={1.8} />
+                </span>
+              </div>
+            ) : null}
 
             <div className="mt-5 rounded-[18px] border border-white/[0.08] p-4">
               <h3 className="text-base font-semibold text-white/88">{t("detail.metadata")}</h3>
@@ -290,7 +311,9 @@ export function StudioResultLightbox({
                 {item.kind === "video" ? (
                   <DetailMetadataRow label={t("detail.duration")} value={durationLabel(item, t)} />
                 ) : null}
-                <DetailMetadataRow label={t("detail.model")} value={item.modelLabel} />
+                {item.modelLabel ? (
+                  <DetailMetadataRow label={t("detail.model")} value={item.modelLabel} />
+                ) : null}
               </div>
             </div>
           </div>
@@ -301,34 +324,22 @@ export function StudioResultLightbox({
 }
 
 function DetailActionButton({
-  href,
   icon: Icon,
   label,
   onClick,
+  disabled,
 }: {
-  href?: string;
   icon: ComponentType<{ className?: string; stroke?: number }>;
   label: string;
   onClick?: () => void;
+  disabled?: boolean;
 }) {
   const className =
-    "inline-flex h-10 shrink-0 items-center gap-2 rounded-[14px] border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition hover:bg-white/[0.1] hover:text-white";
-  const content = (
-    <>
+    "inline-flex h-10 shrink-0 items-center gap-2 rounded-[14px] border border-white/[0.08] bg-white/[0.05] px-3 text-sm font-semibold text-white/86 transition hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-white/[0.05]";
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className={className}>
       <Icon className="size-4" stroke={1.8} />
       <span>{label}</span>
-    </>
-  );
-  if (href) {
-    return (
-      <a href={href} download className={className}>
-        {content}
-      </a>
-    );
-  }
-  return (
-    <button type="button" onClick={onClick} className={className}>
-      {content}
     </button>
   );
 }
