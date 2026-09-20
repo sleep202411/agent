@@ -9,6 +9,7 @@ import { api, ApiRequestError } from "@/lib/api";
 const RESULT_PATH = "/api/user/video/moderation/ai/result";
 const EXPORT_PATH = "/api/user/video/moderation/ai/exportExcel";
 const CHARGE_PATH = "/aurora/content-review/charges";
+const RECORD_PATH = "/aurora/content-review/records";
 const REVIEW_TIMEOUT_MS = 30 * 60_000;
 
 export function isVideoFileAllowed(file: File): boolean {
@@ -55,6 +56,45 @@ export interface ModerationResult {
   details: ModerationDetail[];
   fileName: string;
   creditsCharged?: number | null;
+}
+
+export interface ContentReviewRecordSummary {
+  id: string;
+  mediaAssetId: string;
+  fileName: string;
+  durationSeconds: number;
+  creditsCharged: number;
+  findingCount: number;
+  suggestion: string | null;
+  riskLevel: string | null;
+  createdByUserId: string;
+  createdAt: string;
+}
+
+export interface ContentReviewRecordDetail extends ContentReviewRecordSummary {
+  exportFileName: string;
+  overview: ModerationOverview;
+  details: ModerationDetail[];
+  comments: ContentReviewComment[];
+}
+
+export interface ContentReviewComment {
+  id: string;
+  seconds: number;
+  body: string;
+  createdByUserId: string;
+  createdAt: string;
+}
+
+export interface SaveContentReviewRecordInput {
+  mediaAssetId: string;
+  chargeId: string;
+  fileName: string;
+  exportFileName: string;
+  durationSeconds: number;
+  creditsCharged: number;
+  overview: ModerationOverview;
+  details: ModerationDetail[];
 }
 
 function localeFromPath(): string {
@@ -181,6 +221,77 @@ export async function reviewModeration(
     details: Array.isArray(data.details) ? data.details : [],
     fileName: data.fileName || "video-moderation.xlsx",
     creditsCharged: data.creditsCharged ?? null,
+  };
+}
+
+export async function listContentReviewRecords(
+  signal?: AbortSignal
+): Promise<ContentReviewRecordSummary[]> {
+  const data = await api.get<{ items: ContentReviewRecordSummary[] }>(RECORD_PATH, {
+    signal,
+    requestScope: "workspace",
+  });
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+export async function getContentReviewRecord(
+  id: string,
+  signal?: AbortSignal
+): Promise<ContentReviewRecordDetail> {
+  const data = await api.get<ContentReviewRecordDetail>(`${RECORD_PATH}/${id}`, {
+    signal,
+    requestScope: "workspace",
+  });
+  if (!data?.id || !data.overview) {
+    throw new ApiRequestError("INVALID_RECORD", "Review record is incomplete", 200);
+  }
+  return {
+    ...data,
+    details: Array.isArray(data.details) ? data.details : [],
+    comments: Array.isArray(data.comments) ? data.comments : [],
+    exportFileName: data.exportFileName || data.fileName,
+  };
+}
+
+export async function saveContentReviewRecord(
+  input: SaveContentReviewRecordInput,
+  signal?: AbortSignal
+): Promise<ContentReviewRecordDetail> {
+  const data = await api.post<ContentReviewRecordDetail>(RECORD_PATH, {
+    data: input,
+    signal,
+    requestScope: "workspace",
+  });
+  if (!data?.id) {
+    throw new ApiRequestError("INVALID_RECORD", "Could not save the review record", 200);
+  }
+  return {
+    ...data,
+    details: Array.isArray(data.details) ? data.details : [],
+    comments: Array.isArray(data.comments) ? data.comments : [],
+    exportFileName: data.exportFileName || input.exportFileName,
+  };
+}
+
+export async function addContentReviewComment(
+  recordId: string,
+  input: { seconds: number; body: string },
+  signal?: AbortSignal
+): Promise<ContentReviewComment[]> {
+  const data = await api.post<ContentReviewRecordDetail>(`${RECORD_PATH}/${recordId}/comments`, {
+    data: input,
+    signal,
+    requestScope: "workspace",
+  });
+  return Array.isArray(data?.comments) ? data.comments : [];
+}
+
+export function resultFromReviewRecord(record: ContentReviewRecordDetail): ModerationResult {
+  return {
+    overview: record.overview,
+    details: record.details,
+    fileName: record.exportFileName || record.fileName,
+    creditsCharged: record.creditsCharged,
   };
 }
 

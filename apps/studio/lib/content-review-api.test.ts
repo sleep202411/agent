@@ -3,6 +3,7 @@ import {
   isVideoFileAllowed,
   MAX_REVIEW_VIDEO_BYTES,
   creditsForDurationSeconds,
+  resultFromReviewRecord,
 } from "./content-review-api";
 
 describe("content review upload guards", () => {
@@ -26,5 +27,31 @@ describe("content review upload guards", () => {
     expect(creditsForDurationSeconds(60)).toBe(10);
     expect(creditsForDurationSeconds(61)).toBe(20);
     expect(creditsForDurationSeconds(180)).toBe(30);
+  });
+
+  it("maps a saved record back to a playable result", () => {
+    expect(
+      resultFromReviewRecord({
+        id: "rec",
+        mediaAssetId: "asset",
+        fileName: "clip.mp4",
+        exportFileName: "clip.xlsx",
+        durationSeconds: 12,
+        creditsCharged: 10,
+        findingCount: 1,
+        suggestion: "pass",
+        riskLevel: "none",
+        createdByUserId: "1",
+        createdAt: "2026-09-20T00:00:00.000Z",
+        overview: { aiSuggestion: "pass" },
+        details: [{ label: "ok", timeOffset: "00:00:01" }],
+        comments: [],
+      })
+    ).toEqual({
+      overview: { aiSuggestion: "pass" },
+      details: [{ label: "ok", timeOffset: "00:00:01" }],
+      fileName: "clip.xlsx",
+      creditsCharged: 10,
+    });
   });
 });
