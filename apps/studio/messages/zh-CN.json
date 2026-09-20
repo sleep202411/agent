@@ -1,4 +1,9 @@
 {
+  "canvasDownload": {
+    "failed": "无法开始下载。请重试，或打开源文件手动保存。",
+    "openSource": "打开源文件",
+    "blocked": "无法打开源文件。请允许此站点的弹出窗口，然后重新下载。"
+  },
   "common": {
     "save": "保存",
     "cancel": "取消",

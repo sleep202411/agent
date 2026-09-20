@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { IconDownload, IconMinus, IconPlus, IconRefresh, IconX } from "@tabler/icons-react";
 import { CanvasVideo } from "@/components/media/canvas-video";
 import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
-import { downloadCanvasMedia } from "./download-media";
+import { useCanvasMediaDownload } from "./use-canvas-media-download";
 
 export function CanvasMediaViewer({
   alt,
@@ -25,6 +25,7 @@ export function CanvasMediaViewer({
   title?: string;
   type: "image" | "video" | "audio";
 }) {
+  const downloadCanvasMedia = useCanvasMediaDownload();
   const tc = useTranslations("common");
   const tg = useTranslations("generation");
   const [scale, setScale] = useState(1);
