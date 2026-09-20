@@ -613,9 +613,8 @@ export function CanvasGenerationProvider({
       sourceSurface,
     };
     const readJobs = async (filter: Parameters<typeof listFizzAiJobs>[0]) => {
-      const setFailed = (failed: boolean) => {
+      const setFailed = (failed: boolean, ids = filter.ids ?? []) => {
         if (run.signal.aborted || activeSubmissionScope.current !== submissionScope) return;
-        const ids = filter.ids ?? [];
         setReadFailures((previous) => {
           const next = new Set(previous.scope === submissionScope ? previous.ids : []);
           ids.forEach((id) => (failed ? next.add(id) : next.delete(id)));
@@ -629,7 +628,18 @@ export function CanvasGenerationProvider({
           staleTime: 0,
           retry: false,
         });
-        setFailed(false);
+        const returnedIds = new Set(result.jobs.map((job) => job.id));
+        const requestedIds = filter.ids ?? [];
+        setFailed(
+          false,
+          requestedIds.filter((id) => returnedIds.has(id))
+        );
+        // A successful batch response can still omit an inaccessible/missing
+        // task. Do not present its cached generation state as freshly verified.
+        setFailed(
+          true,
+          requestedIds.filter((id) => !returnedIds.has(id))
+        );
         return result;
       } catch (error) {
         setFailed(true);

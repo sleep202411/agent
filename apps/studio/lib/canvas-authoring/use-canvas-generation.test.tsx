@@ -515,3 +515,18 @@ it("does not leak failed-read feedback into another document", async () => {
   expect(actions.statusUnavailable("job-1")).toBe(false);
   expect(submitFizzAiJob).not.toHaveBeenCalled();
 });
+
+it("keeps missing accepted jobs marked unavailable after a successful empty lookup", async () => {
+  vi.useFakeTimers();
+  mocks.connected = true;
+  nodes[0].data.generation = { status: "generating", jobId: "job-1" };
+  vi.mocked(listFizzAiJobs).mockResolvedValue({ jobs: [], nextCursor: null });
+  await mount();
+  expect(actions.statusUnavailable("job-1")).toBe(true);
+  expect(state()).toMatchObject({ status: "generating", jobId: "job-1" });
+  vi.mocked(listFizzAiJobs).mockResolvedValue({ jobs: [job], nextCursor: null });
+  await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  expect(actions.statusUnavailable("job-1")).toBe(false);
+  expect(state().status).toBe("done");
+  expect(submitFizzAiJob).not.toHaveBeenCalled();
+});
