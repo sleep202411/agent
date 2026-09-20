@@ -6,7 +6,6 @@ import { StoryProjectHeader } from "./story-project-header";
 import { StoryProjectMobileNav } from "./story-project-mobile-nav";
 import { StoryProjectRail } from "./story-project-rail";
 import { StoryProjectShareDialog } from "./story-project-share-dialog";
-import { StoryStatsDialog } from "./story-stats-dialog";
 import { StoryProjectSidePanel } from "./story-project-side-panel";
 import { StoryProjectWorkView } from "./story-project-work-view";
 
@@ -48,7 +47,6 @@ export function StoryProjectShell({
         <StoryProjectAgentPanel projectId={projectId} />
       </section>
       <StoryProjectShareDialog projectId={projectId} />
-      <StoryStatsDialog projectId={projectId} />
       <StoryProjectMobileNav projectId={projectId} />
     </div>
   );

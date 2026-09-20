@@ -9,9 +9,21 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -30,7 +42,6 @@ import {
   MAX_STORY_STATE_EFFECTS,
   MAX_STORY_STATE_VARIABLES,
   STORY_ENDING_KINDS,
-  StoryStateKeySchema,
   type StoryCompareOperator,
   type StoryCondition,
   type StoryEndingKind,
@@ -39,7 +50,11 @@ import {
   type StoryStateEffect,
   type StoryStateValueType,
 } from "@repo/shared/story-stats";
-import { storyEffectKindOption, storyRetargetEffectKind } from "./story-stats-display";
+import {
+  formatStoryConditionChip,
+  storyEffectKindOption,
+  storyRetargetEffectKind,
+} from "./story-stats-display";
 import { cn } from "@/lib/utils";
 
 const COMPARE_OPERATORS: StoryCompareOperator[] = [
@@ -59,31 +74,43 @@ const NUMBER_ONLY_OPERATORS = new Set<StoryCompareOperator>([
 
 export function StoryStateVariablesPanel({
   variables,
-  characters,
   locale,
+  defaultLocale,
   canEdit,
   onChange,
 }: {
   variables: StoryBibleStateVariable[];
-  characters: Array<{ id: string; name: Record<string, string> }>;
   locale: string;
+  defaultLocale: string;
   canEdit: boolean;
   onChange: (variables: StoryBibleStateVariable[]) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.filmFoundation.variables");
   const tStats = useTranslations("storyStudio.canvas.stats");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState<StoryStateValueType>("number");
   const atLimit = variables.length >= MAX_STORY_STATE_VARIABLES;
 
-  const addVariable = (draft: StoryBibleStateVariable) => {
-    if (!canEdit || atLimit) return;
-    if (variables.some((variable) => variable.key === draft.key)) return;
+  const addVariable = () => {
+    const name = newName.trim();
+    if (!canEdit || atLimit || !name) return;
+    const draft: StoryBibleStateVariable = {
+      key: allocateStateKey(variables.map((variable) => variable.key)),
+      name: { [defaultLocale]: name, [locale]: name },
+      valueType: newType,
+      initialValue: newType === "boolean" ? false : 0,
+    };
     onChange([...variables, draft]);
     setOpenKey(draft.key);
+    setIsCreating(false);
+    setNewName("");
+    setNewType("number");
   };
 
   return (
-    <section className="border-b border-white/[0.08] py-5" aria-labelledby="story-stats-variables">
+    <section className="py-5" aria-labelledby="story-stats-variables">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 id="story-stats-variables" className="text-[13px] font-semibold text-white/88">
@@ -127,63 +154,67 @@ export function StoryStateVariablesPanel({
         </ul>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        <PresetButton
-          disabled={!canEdit || atLimit}
-          onClick={() =>
-            addVariable(
-              makeVariable(variables, "gold", locale, tStats("presetResourceName"), "number", 0)
-            )
-          }
+      {isCreating ? (
+        <form
+          className="mt-3 rounded-2xl bg-white/[0.045] p-3.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            addVariable();
+          }}
         >
-          {tStats("presetResource")}
-        </PresetButton>
-        <PresetButton
-          disabled={!canEdit || atLimit}
-          onClick={() =>
-            addVariable(
-              makeVariable(variables, "courage", locale, tStats("presetAttributeName"), "number", 0)
-            )
-          }
-        >
-          {tStats("presetAttribute")}
-        </PresetButton>
-        <PresetButton
-          disabled={!canEdit || atLimit}
-          onClick={() =>
-            addVariable(
-              makeVariable(variables, "met", locale, tStats("presetFlagName"), "boolean", false)
-            )
-          }
-        >
-          {tStats("presetFlag")}
-        </PresetButton>
-        {characters.map((character) => {
-          const name = localizedText(character.name, locale) || character.id;
-          const key = `favorability.${stateSegment(character.id)}`;
-          return (
-            <PresetButton
-              key={character.id}
-              disabled={!canEdit || atLimit || variables.some((variable) => variable.key === key)}
-              onClick={() =>
-                addVariable(
-                  makeVariable(
-                    variables,
-                    key,
-                    locale,
-                    tStats("presetFavorabilityName", { name }),
-                    "number",
-                    0,
-                    { minimum: 0, maximum: 100 }
-                  )
-                )
-              }
+          <div className="grid grid-cols-2 gap-2">
+            <label className="min-w-0 text-xs font-semibold text-white/48">
+              {t("name")}
+              <Input
+                autoFocus
+                value={newName}
+                disabled={!canEdit}
+                maxLength={80}
+                onChange={(event) => setNewName(event.target.value)}
+                className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
+              />
+            </label>
+            <label className="min-w-0 text-xs font-semibold text-white/48">
+              {t("type")}
+              <StatsSelect
+                value={newType}
+                disabled={!canEdit}
+                onChange={(value) => setNewType(value as StoryStateValueType)}
+                options={[
+                  { value: "number", label: t("typeLabels.number") },
+                  { value: "boolean", label: t("typeLabels.boolean") },
+                ]}
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsCreating(false);
+                setNewName("");
+                setNewType("number");
+              }}
+              className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white/55 transition hover:bg-white/[0.06] hover:text-white"
             >
-              {tStats("presetFavorability", { name })}
-            </PresetButton>
-          );
-        })}
-      </div>
+              {tStats("cancel")}
+            </button>
+            <Button type="submit" size="sm" disabled={!canEdit || atLimit || !newName.trim()}>
+              {tStats("addVariable")}
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <Button
+          block
+          disabled={!canEdit || atLimit}
+          onClick={() => setIsCreating(true)}
+          className="mt-3"
+        >
+          <IconPlus className="size-3.5" />
+          {tStats("addVariable")}
+        </Button>
+      )}
     </section>
   );
 }
@@ -217,40 +248,29 @@ function VariableCard({
       : String(variable.initialValue);
   return (
     <article className="overflow-hidden rounded-2xl bg-white/[0.045]">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-3 text-left transition hover:bg-white/[0.04]"
-        >
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[13px] font-semibold text-white/88">{title}</span>
-            <span className="mt-0.5 block truncate font-mono text-xs text-white/38">
-              {variable.key}
-            </span>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full min-w-0 items-center gap-3 px-3.5 py-3 text-left transition hover:bg-white/[0.04]"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold text-white/88">{title}</span>
+          <span className="mt-0.5 block truncate font-mono text-xs text-white/38">
+            {variable.key}
           </span>
-          <span className="shrink-0 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-xs font-semibold tracking-[0.06em] text-white/48 uppercase">
-            {t(`typeLabels.${variable.valueType}`)}
-          </span>
-          <span className="shrink-0 text-xs tabular-nums text-white/55">{initialLabel}</span>
-          <IconChevronDown
-            className={cn(
-              "size-4 shrink-0 text-white/32 transition",
-              open && "rotate-180 text-white/55"
-            )}
-          />
-        </button>
-        <button
-          type="button"
-          disabled={!canEdit}
-          onClick={onRemove}
-          className="mr-2 grid size-8 shrink-0 place-items-center rounded-lg text-white/34 transition hover:bg-white/[0.08] hover:text-[#ff9b9e] disabled:opacity-40"
-          aria-label={t("delete")}
-        >
-          <IconTrash className="size-3.5" />
-        </button>
-      </div>
+        </span>
+        <span className="shrink-0 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-xs font-semibold tracking-[0.06em] text-white/48 uppercase">
+          {t(`typeLabels.${variable.valueType}`)}
+        </span>
+        <span className="shrink-0 text-xs tabular-nums text-white/55">{initialLabel}</span>
+        <IconChevronDown
+          className={cn(
+            "size-4 shrink-0 text-white/32 transition",
+            open && "rotate-180 text-white/55"
+          )}
+        />
+      </button>
       {open ? (
         <div className="border-t border-white/[0.06] px-3.5 pt-3 pb-3.5">
           <p className="mb-3 text-xs text-white/38">{tStats("cardHint")}</p>
@@ -298,245 +318,64 @@ function VariableCard({
                   type="number"
                   value={typeof variable.initialValue === "number" ? variable.initialValue : 0}
                   disabled={!canEdit}
-                  onChange={(event) =>
-                    onChange({ ...variable, initialValue: Number(event.target.value) || 0 })
-                  }
+                  onChange={(event) => {
+                    const value = Number(event.target.value);
+                    if (Number.isFinite(value)) onChange({ ...variable, initialValue: value });
+                  }}
                   className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
                 />
               )}
             </label>
           </div>
-          {variable.valueType === "number" ? (
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <label className="block">
-                <span className="text-xs font-semibold text-white/48">{t("minimum")}</span>
-                <Input
-                  type="number"
-                  value={variable.minimum ?? ""}
-                  disabled={!canEdit}
-                  onChange={(event) =>
-                    onChange({
-                      ...variable,
-                      minimum: event.target.value === "" ? undefined : Number(event.target.value),
-                    })
-                  }
-                  className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-semibold text-white/48">{t("maximum")}</span>
-                <Input
-                  type="number"
-                  value={variable.maximum ?? ""}
-                  disabled={!canEdit}
-                  onChange={(event) =>
-                    onChange({
-                      ...variable,
-                      maximum: event.target.value === "" ? undefined : Number(event.target.value),
-                    })
-                  }
-                  className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
-                />
-              </label>
-            </div>
-          ) : null}
           <label className="mt-2 block">
-            <span className="text-xs font-semibold text-white/48">{t("note")}</span>
-            <Input
+            <span className="text-xs font-semibold text-white/48">{t("description")}</span>
+            <Textarea
               value={variable.note ?? ""}
               disabled={!canEdit}
               maxLength={2_000}
+              rows={2}
+              placeholder={t("descriptionPlaceholder")}
               onChange={(event) =>
                 onChange({
                   ...variable,
                   note: event.target.value.trim() ? event.target.value : undefined,
                 })
               }
-              className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
+              className="mt-1 min-h-16 resize-y rounded-lg bg-white/[0.05] px-2.5 py-2 text-xs"
             />
           </label>
+          <div className="mt-4 flex justify-end border-t border-white/[0.06] pt-3">
+            <button
+              type="button"
+              disabled={!canEdit}
+              onClick={onRemove}
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/42 transition hover:bg-white/[0.06] hover:text-[#ff9b9e] disabled:opacity-40"
+            >
+              <IconTrash className="size-3.5" />
+              {t("delete")}
+            </button>
+          </div>
         </div>
       ) : null}
     </article>
   );
 }
 
-export function StoryEndingsPanel({
-  endings,
-  locale,
-  canEdit,
-  onChange,
-}: {
-  endings: StoryBibleEnding[];
-  locale: string;
-  canEdit: boolean;
-  onChange: (endings: StoryBibleEnding[]) => void;
-}) {
-  const t = useTranslations("storyStudio.canvas.stats");
-  const [openId, setOpenId] = useState<string | null>(null);
-  return (
-    <section className="py-5" aria-labelledby="story-stats-endings">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 id="story-stats-endings" className="text-[13px] font-semibold text-white/88">
-            {t("endingsTitle")}
-          </h3>
-          <p className="mt-1 text-xs leading-4 text-white/48">{t("endingsHint")}</p>
-        </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={!canEdit}
-          onClick={() => {
-            const endingId = allocateEndingId(endings);
-            onChange([
-              ...endings,
-              {
-                endingId,
-                title: { [locale]: t("untitledEnding") },
-                kind: "neutral",
-              },
-            ]);
-            setOpenId(endingId);
-          }}
-          className="h-8 rounded-xl px-3 text-xs"
-        >
-          <IconPlus className="size-3.5" />
-          {t("addEnding")}
-        </Button>
-      </div>
-      {endings.length === 0 ? (
-        <p className="mt-4 rounded-2xl border border-dashed border-white/[0.1] px-4 py-6 text-center text-[12px] text-white/42">
-          {t("endingsEmpty")}
-        </p>
-      ) : (
-        <ul className="mt-4 space-y-2">
-          {endings.map((ending) => {
-            const title = localizedText(ending.title, locale) || ending.endingId;
-            const open = openId === ending.endingId;
-            return (
-              <li key={ending.endingId}>
-                <article className="overflow-hidden rounded-2xl bg-white/[0.045]">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setOpenId((current) =>
-                          current === ending.endingId ? null : ending.endingId
-                        )
-                      }
-                      aria-expanded={open}
-                      className="flex min-w-0 flex-1 items-center gap-3 px-3.5 py-3 text-left transition hover:bg-white/[0.04]"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-semibold text-white/88">
-                          {title}
-                        </span>
-                        <span className="mt-0.5 block truncate font-mono text-xs text-white/38">
-                          {ending.endingId}
-                        </span>
-                      </span>
-                      <span className="shrink-0 rounded-md bg-white/[0.06] px-1.5 py-0.5 text-xs font-semibold tracking-[0.06em] text-white/48 uppercase">
-                        {t(`endingKinds.${ending.kind}`)}
-                      </span>
-                      <IconChevronDown
-                        className={cn(
-                          "size-4 shrink-0 text-white/32 transition",
-                          open && "rotate-180 text-white/55"
-                        )}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      disabled={!canEdit}
-                      onClick={() => {
-                        if (openId === ending.endingId) setOpenId(null);
-                        onChange(
-                          endings.filter((candidate) => candidate.endingId !== ending.endingId)
-                        );
-                      }}
-                      className="mr-2 grid size-8 shrink-0 place-items-center rounded-lg text-white/34 transition hover:bg-white/[0.08] hover:text-[#ff9b9e] disabled:opacity-40"
-                      aria-label={t("deleteEnding")}
-                    >
-                      <IconTrash className="size-3.5" />
-                    </button>
-                  </div>
-                  {open ? (
-                    <div className="grid grid-cols-2 gap-2 border-t border-white/[0.06] px-3.5 pt-3 pb-3.5">
-                      <label className="block">
-                        <span className="text-xs font-semibold text-white/48">
-                          {t("endingTitle")}
-                        </span>
-                        <Input
-                          value={ending.title[locale] ?? ""}
-                          disabled={!canEdit}
-                          maxLength={80}
-                          onChange={(event) =>
-                            onChange(
-                              endings.map((candidate) =>
-                                candidate.endingId === ending.endingId
-                                  ? {
-                                      ...candidate,
-                                      title: { ...candidate.title, [locale]: event.target.value },
-                                    }
-                                  : candidate
-                              )
-                            )
-                          }
-                          className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="text-xs font-semibold text-white/48">
-                          {t("endingKind")}
-                        </span>
-                        <StatsSelect
-                          value={ending.kind}
-                          disabled={!canEdit}
-                          onChange={(kind) =>
-                            onChange(
-                              endings.map((candidate) =>
-                                candidate.endingId === ending.endingId
-                                  ? { ...candidate, kind: kind as StoryEndingKind }
-                                  : candidate
-                              )
-                            )
-                          }
-                          options={STORY_ENDING_KINDS.map((kind) => ({
-                            value: kind,
-                            label: t(`endingKinds.${kind}`),
-                          }))}
-                        />
-                      </label>
-                    </div>
-                  ) : null}
-                </article>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
-
 export function StoryEffectsEditor({
   effects,
   variables,
-  locale,
   canEdit,
   onChange,
   variant = "fields",
 }: {
   effects: StoryStateEffect[];
   variables: StoryBibleStateVariable[];
-  locale: string;
   canEdit: boolean;
   onChange: (effects: StoryStateEffect[]) => void;
   variant?: "fields" | "table";
 }) {
   const t = useTranslations("storyStudio.canvas.stats");
+  const locale = useLocale();
   const table = variant === "table";
   if (variables.length === 0) {
     return (
@@ -583,7 +422,7 @@ export function StoryEffectsEditor({
               />
               <StatsSelect
                 value={storyEffectKindOption(effect)}
-                disabled={!canEdit || variable?.valueType === "boolean"}
+                disabled={!canEdit || (variable?.valueType === "boolean" && effect.kind === "set")}
                 flush={table}
                 onChange={(kind) =>
                   onChange(
@@ -646,19 +485,18 @@ export function StoryEffectsEditor({
 export function StoryConditionEditor({
   condition,
   variables,
-  locale,
   canEdit,
   onChange,
   variant = "fields",
 }: {
   condition: StoryCondition | undefined;
   variables: StoryBibleStateVariable[];
-  locale: string;
   canEdit: boolean;
   onChange: (condition: StoryCondition | undefined) => void;
   variant?: "fields" | "table";
 }) {
   const t = useTranslations("storyStudio.canvas.stats");
+  const locale = useLocale();
   const table = variant === "table";
   const draft = useMemo(() => flattenCondition(condition), [condition]);
   if (variables.length === 0) {
@@ -678,6 +516,31 @@ export function StoryConditionEditor({
         <IconPlus className="size-3.5" />
         {t("addCondition")}
       </button>
+    );
+  }
+  if (!draft) {
+    const names = new Map(
+      variables.map((variable) => [
+        variable.key,
+        localizedText(variable.name, locale) || variable.key,
+      ])
+    );
+    return (
+      <div className={cn("space-y-2 py-2", table && "px-3")}>
+        <p className="text-xs leading-5 text-white/68 break-words">
+          {formatStoryConditionChip(condition, names)}
+        </p>
+        <p className="text-[11px] leading-4 text-white/42">{t("complexConditionHint")}</p>
+        <button
+          type="button"
+          disabled={!canEdit}
+          onClick={() => onChange(undefined)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs text-white/50 transition hover:bg-white/[0.08] hover:text-[#ff9b9e] disabled:opacity-40"
+        >
+          <IconTrash className="size-3.5" />
+          {t("removeCondition")}
+        </button>
+      </div>
     );
   }
   return (
@@ -825,6 +688,13 @@ export function StoryChoiceAttachmentBar({
   canEdit,
   onEffectsChange,
   onVisibleWhenChange,
+  target,
+  nodes,
+  endings,
+  onTargetChange,
+  onCreateEnding,
+  onUpdateEnding,
+  onDeleteEnding,
 }: {
   effects: StoryStateEffect[];
   visibleWhen?: StoryCondition;
@@ -833,11 +703,35 @@ export function StoryChoiceAttachmentBar({
   canEdit: boolean;
   onEffectsChange: (effects: StoryStateEffect[]) => void;
   onVisibleWhenChange?: (condition: StoryCondition | undefined) => void;
+  target?: StoryRouteTarget | null;
+  nodes?: Array<{ nodeId: string; title: string }>;
+  endings?: StoryBibleEnding[];
+  onTargetChange?: (target: StoryRouteTarget | null) => void;
+  onCreateEnding?: () => void;
+  onUpdateEnding?: EndingUpdate;
+  onDeleteEnding?: (endingId: string) => void;
 }) {
   const tStats = useTranslations("storyStudio.canvas.stats");
   return (
     <div className="nodrag nopan nowheel" onPointerDown={(event) => event.stopPropagation()}>
       <div className="mx-2 mb-2 overflow-hidden rounded-xl bg-white/[0.05]">
+        {onTargetChange && onCreateEnding && onUpdateEnding && onDeleteEnding ? (
+          <div className="border-b border-white/[0.055] px-3 py-2">
+            <h4 className="text-xs font-semibold text-white/78">{tStats("choiceTarget")}</h4>
+            <StoryRouteTargetPicker
+              target={target ?? null}
+              nodes={nodes ?? []}
+              endings={endings ?? []}
+              locale={locale}
+              canEdit={canEdit}
+              onChange={onTargetChange}
+              onCreateEnding={onCreateEnding}
+              onUpdateEnding={onUpdateEnding}
+              onDeleteEnding={onDeleteEnding}
+              emptyLabel={tStats("unconnectedTarget")}
+            />
+          </div>
+        ) : null}
         <div className="px-3 pt-2">
           <h4 className="text-xs font-semibold text-white/78">{tStats("effectsTitle")}</h4>
           <p className="mt-0.5 text-[11px] leading-4 text-white/45">{tStats("effectsHint")}</p>
@@ -846,7 +740,6 @@ export function StoryChoiceAttachmentBar({
           variant="table"
           effects={effects}
           variables={variables}
-          locale={locale}
           canEdit={canEdit}
           onChange={onEffectsChange}
         />
@@ -862,7 +755,6 @@ export function StoryChoiceAttachmentBar({
               <StoryConditionEditor
                 condition={visibleWhen}
                 variables={variables}
-                locale={locale}
                 canEdit={canEdit}
                 onChange={onVisibleWhenChange}
                 variant="table"
@@ -883,6 +775,9 @@ export function StoryAutoRoutesEditor({
   locale,
   canEdit,
   onChange,
+  onCreateEnding,
+  onUpdateEnding,
+  onDeleteEnding,
 }: {
   routes: StoryExitRoute[];
   variables: StoryBibleStateVariable[];
@@ -891,6 +786,9 @@ export function StoryAutoRoutesEditor({
   locale: string;
   canEdit: boolean;
   onChange: (routes: StoryExitRoute[]) => void;
+  onCreateEnding: (routeIndex: number) => void;
+  onUpdateEnding: EndingUpdate;
+  onDeleteEnding: (endingId: string) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.stats");
   const conditionals = routes.slice(0, -1);
@@ -940,7 +838,6 @@ export function StoryAutoRoutesEditor({
             <StoryConditionEditor
               condition={route.when}
               variables={variables}
-              locale={locale}
               canEdit={canEdit}
               onChange={(when) => {
                 if (!when) {
@@ -967,6 +864,9 @@ export function StoryAutoRoutesEditor({
                     )
                   )
                 }
+                onCreateEnding={() => onCreateEnding(index)}
+                onUpdateEnding={onUpdateEnding}
+                onDeleteEnding={onDeleteEnding}
               />
             </div>
           </div>
@@ -984,6 +884,9 @@ export function StoryAutoRoutesEditor({
               locale={locale}
               canEdit={canEdit}
               onChange={(target) => onChange([...conditionals, { target }])}
+              onCreateEnding={() => onCreateEnding(conditionals.length)}
+              onUpdateEnding={onUpdateEnding}
+              onDeleteEnding={onDeleteEnding}
             />
           </div>
         </div>
@@ -1017,6 +920,10 @@ export function StoryRouteTargetPicker({
   canEdit,
   onChange,
   allowUnconnected = true,
+  onCreateEnding,
+  onUpdateEnding,
+  onDeleteEnding,
+  emptyLabel,
 }: {
   target: StoryRouteTarget | null;
   nodes: Array<{ nodeId: string; title: string }>;
@@ -1025,29 +932,105 @@ export function StoryRouteTargetPicker({
   canEdit: boolean;
   onChange: (target: StoryRouteTarget | null) => void;
   allowUnconnected?: boolean;
+  onCreateEnding: () => void;
+  onUpdateEnding: EndingUpdate;
+  onDeleteEnding: (endingId: string) => void;
+  emptyLabel?: string;
 }) {
   const t = useTranslations("storyStudio.canvas.stats");
+  const selectedEnding = endings.find(
+    (ending) => target?.kind === "ending" && ending.endingId === target.endingId
+  );
   return (
-    <StatsSelect
-      value={encodeTarget(target)}
-      disabled={!canEdit}
-      onChange={(value) => onChange(decodeTarget(value))}
-      options={[
-        ...(allowUnconnected ? [{ value: "null", label: t("naturalEnd") }] : []),
-        ...nodes.map((node) => ({
-          value: `node:${node.nodeId}`,
-          label: t("targetNode", { title: node.title }),
-        })),
-        ...endings.map((ending) => ({
-          value: `ending:${ending.endingId}`,
-          label: t("targetEnding", {
-            title: localizedText(ending.title, locale) || ending.endingId,
-          }),
-        })),
-      ]}
-    />
+    <div>
+      <StatsSelect
+        value={encodeTarget(target)}
+        disabled={!canEdit}
+        onChange={(value) =>
+          value === "create-ending" ? onCreateEnding() : onChange(decodeTarget(value))
+        }
+        options={[
+          ...(allowUnconnected ? [{ value: "null", label: emptyLabel ?? t("naturalEnd") }] : []),
+          ...nodes.map((node) => ({
+            value: `node:${node.nodeId}`,
+            label: t("targetNode", { title: node.title }),
+          })),
+          ...endings.map((ending) => ({
+            value: `ending:${ending.endingId}`,
+            label: t("targetEnding", {
+              title: localizedText(ending.title, locale) || ending.endingId,
+            }),
+          })),
+          { value: "create-ending", label: t("createEndingHere") },
+        ]}
+      />
+      {selectedEnding ? (
+        <div className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
+          <label className="min-w-0 text-xs text-white/48">
+            {t("endingTitle")}
+            <Input
+              value={selectedEnding.title[locale] ?? ""}
+              disabled={!canEdit}
+              maxLength={80}
+              onChange={(event) =>
+                onUpdateEnding(selectedEnding.endingId, {
+                  title: { ...selectedEnding.title, [locale]: event.target.value },
+                })
+              }
+              className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
+            />
+          </label>
+          <label className="min-w-0 text-xs text-white/48">
+            {t("endingKind")}
+            <StatsSelect
+              value={selectedEnding.kind}
+              disabled={!canEdit}
+              onChange={(kind) =>
+                onUpdateEnding(selectedEnding.endingId, { kind: kind as StoryEndingKind })
+              }
+              options={STORY_ENDING_KINDS.map((kind) => ({
+                value: kind,
+                label: t(`endingKinds.${kind}`),
+              }))}
+            />
+          </label>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                disabled={!canEdit}
+                className="grid size-8 place-items-center rounded-lg text-white/40 hover:bg-white/[0.08] hover:text-[#ff9b9e] disabled:opacity-40"
+                aria-label={t("deleteEnding")}
+              >
+                <IconTrash className="size-3.5" />
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t("deleteEnding")}</AlertDialogTitle>
+                <AlertDialogDescription>{t("deleteEndingHint")}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                <AlertDialogAction
+                  variant="destructive"
+                  onClick={() => onDeleteEnding(selectedEnding.endingId)}
+                >
+                  {t("deleteEnding")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      ) : null}
+    </div>
   );
 }
+
+type EndingUpdate = (
+  endingId: string,
+  patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
+) => void;
 
 export function storyGraphNodePickerItems(
   nodes: readonly StoryGraphNode[],
@@ -1063,6 +1046,26 @@ export function storyGraphNodePickerItems(
         (node.kind === "decision" ? node.nodeId : node.name) ||
         node.nodeId,
     }));
+}
+
+export function storyGraphNodePickerTitles(
+  nodes: readonly StoryGraphNode[],
+  clipLabel: string,
+  decisionLabel: string
+): Map<string, string> {
+  let clipOrdinal = 0;
+  let decisionOrdinal = 0;
+  return new Map(
+    nodes.map((node) => {
+      const fallback =
+        node.kind === "clip"
+          ? `${clipLabel} ${++clipOrdinal}`
+          : node.kind === "decision"
+            ? `${decisionLabel} ${++decisionOrdinal}`
+            : node.nodeId;
+      return [node.nodeId, (node.kind === "decision" ? "" : node.name?.trim()) || fallback];
+    })
+  );
 }
 
 function EffectValueField({
@@ -1198,27 +1201,6 @@ function StatsSelect({
   );
 }
 
-function PresetButton({
-  disabled,
-  onClick,
-  children,
-}: {
-  disabled: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="rounded-lg bg-white/[0.06] px-2.5 py-1.5 text-xs font-semibold text-white/62 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-40"
-    >
-      {children}
-    </button>
-  );
-}
-
 function ToggleChip({
   active,
   disabled,
@@ -1247,48 +1229,12 @@ function ToggleChip({
   );
 }
 
-function makeVariable(
-  existing: StoryBibleStateVariable[],
-  preferredKey: string,
-  locale: string,
-  name: string,
-  valueType: StoryStateValueType,
-  initialValue: number | boolean,
-  bounds?: { minimum?: number; maximum?: number }
-): StoryBibleStateVariable {
-  return {
-    key: allocateStateKey(
-      existing.map((variable) => variable.key),
-      preferredKey
-    ),
-    name: { [locale]: name },
-    valueType,
-    initialValue,
-    ...bounds,
-  };
-}
-
-function allocateStateKey(existing: string[], preferred: string): string {
+function allocateStateKey(existing: string[]): string {
   const values = new Set(existing);
-  const base = StoryStateKeySchema.safeParse(preferred).success ? preferred : "stat";
-  if (!values.has(base)) return base;
-  for (let suffix = 2; ; suffix += 1) {
-    const candidate = `${base}_${suffix}`;
-    if (!values.has(candidate)) return candidate;
-  }
-}
-
-function allocateEndingId(existing: StoryBibleEnding[]): string {
-  const values = new Set(existing.map((ending) => ending.endingId));
   for (let suffix = 1; ; suffix += 1) {
-    const candidate = `ending:${suffix}`;
+    const candidate = `state_${suffix}`;
     if (!values.has(candidate)) return candidate;
   }
-}
-
-function stateSegment(value: string): string {
-  const cleaned = value.replace(/[^A-Za-z0-9_]/g, "_").replace(/^[^A-Za-z_]+/, "id_");
-  return cleaned || "id";
 }
 
 function retypeVariable(
@@ -1365,7 +1311,7 @@ type FlatCondition = {
   compares: Array<Extract<StoryCondition, { kind: "compare" }>>;
 };
 
-function flattenCondition(condition: StoryCondition | undefined): FlatCondition {
+function flattenCondition(condition: StoryCondition | undefined): FlatCondition | null {
   if (!condition) return { combinator: "all", negated: false, compares: [] };
   let current = condition;
   let negated = false;
@@ -1377,16 +1323,15 @@ function flattenCondition(condition: StoryCondition | undefined): FlatCondition 
     return { combinator: "all", negated, compares: [current] };
   }
   if (current.kind === "all" || current.kind === "any") {
-    const compares = current.conditions.flatMap((child) =>
-      child.kind === "compare" ? [child] : []
-    );
+    if (!current.conditions.every((child) => child.kind === "compare")) return null;
+    const compares = current.conditions as FlatCondition["compares"];
     return {
       combinator: current.kind,
       negated,
-      compares: compares.length ? compares : [],
+      compares,
     };
   }
-  return { combinator: "all", negated, compares: [] };
+  return null;
 }
 
 function rebuildCondition(draft: FlatCondition): StoryCondition | undefined {

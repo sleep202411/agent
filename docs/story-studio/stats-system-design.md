@@ -13,6 +13,8 @@
 > - **持久化 = session 级**：单次游玩内有效，刷新重开重置；多章节每章独立。
 > - player 级档案（跨会话/跨设备）明确非本期，见 §10。
 
+> 实现状态（2026-09-20）：draft → release → manifest → 引擎的状态、效果、条件和结局链路已有测试；Studio 状态侧栏与情节树编辑、playtest 调试面板已接入。§11 Phase 3 的正式玩家状态 HUD 尚未实现；§9 所述 plot JSON 数值字段仍是目标设计，当前导入格式只接收节点、分镜和资产。下文的 Phase 3/4 描述按目标能力阅读。
+
 ## 1. 现状：三层链路与休眠状态机
 
 数值要贯穿的三层（行号基于当前 `develop`）：
@@ -67,16 +69,16 @@
 
 ## 3. 核心决策
 
-| #   | 决策                                                                                                  | 理由                                                                                                                                                                                                                                                                                            |
-| --- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | 变量模型 = **扁平注册表**（点分 key，如 `favorability.lin`），放 `storyBible.stateVariables`          | 与运行时状态路径 1:1；好感度等分组只是命名约定 + UI 预设，不做结构化嵌套（YAGNI）。放 bible 与导演流水线第 1 棒产物（`authoring-pipeline-design.md` §2）对齐                                                                                                                                    |
-| D2  | v1 类型 = `number` + `boolean`                                                                        | 覆盖 GAL 标准（好感/资源/属性 + 标记）。string/json 运行时支持但创作端不开（allowedValues 复杂度不配收益）                                                                                                                                                                                      |
-| D3  | 效果挂载点 = choice / hotspot outcome / 节点 onEnter，**不挂路由**                                    | 三处覆盖 GAL 标准叙事；条件路由本身挂效果会让语法交叉爆炸                                                                                                                                                                                                                                       |
-| D4  | 条件 = 变量 vs 字面量比较（不做变量间比较）                                                           | 运行时表达式左右都支持 state，但窄语法收口；阈值比较是 GAL 数值的全部实际用法                                                                                                                                                                                                                   |
-| D5  | **min/max 不发射进运行时 constraints**                                                                | 引擎越界直接抛 `ExperienceRuntimeInvariantError` 中断播放（engine `runtime.ts:586-634` 的 `assertStateValue`，:598-609 数值分支）；增量累积是路径敏感的，静态无法保证不越界（11 次 +10 必破 max 100）。⇒ v1 状态定义**无约束**，越界不可能触发；min/max 是创作端/HUD 展示元数据。钳制语义进 §10 |
-| D6  | 条件路由重构 auto exit 为 `routes[]`（有序首匹配），choice/auto 统一 `target: node \| ending \| null` | 与运行时 binding 规则（`logic.ts:150-166`：单一无条件兜底在最后）1:1；ending 作为一等路由目标是条件结局的最小完整表达。存量 draft 用预处理器迁移（仓库已有两次先例：`interactive-film.schema.ts:100-123`、`:396-442`）                                                                          |
-| D7  | 结局注册表放 `storyBible.endings`，编译进 manifest `endings[]`                                        | 与流水线第 1 棒对齐；`film.complete` 合成规则保留（自然收尾 target=null 的语义不变）                                                                                                                                                                                                            |
-| D8  | 不新增 requiredCapabilities（Phase 3 HUD 除外）                                                       | 状态机是核心语义（semanticRulesVersion 1），老播放器可播带数值的新内容；HUD 渲染器将来按需带能力位                                                                                                                                                                                              |
+| #   | 决策                                                                                                  | 理由                                                                                                                                                                                                                   |
+| --- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | 变量模型 = **扁平注册表**（点分 key，如 `favorability.lin`），放 `storyBible.stateVariables`          | 与运行时状态路径 1:1；好感度等分组只是命名约定 + UI 预设，不做结构化嵌套（YAGNI）。放 bible 与导演流水线第 1 棒产物（`authoring-pipeline-design.md` §2）对齐                                                           |
+| D2  | v1 类型 = `number` + `boolean`                                                                        | 覆盖 GAL 标准（好感/资源/属性 + 标记）。string/json 运行时支持但创作端不开（allowedValues 复杂度不配收益）                                                                                                             |
+| D3  | 效果挂载点 = choice / hotspot outcome / 节点 onEnter，**不挂路由**                                    | 三处覆盖 GAL 标准叙事；条件路由本身挂效果会让语法交叉爆炸                                                                                                                                                              |
+| D4  | 条件 = 变量 vs 字面量比较（不做变量间比较）                                                           | 运行时表达式左右都支持 state，但窄语法收口；阈值比较是 GAL 数值的全部实际用法                                                                                                                                          |
+| D5  | **v1 不提供最小值/最大值**                                                                            | 引擎越界会中断播放，而增量累积是路径敏感的；只存展示边界却不限制实际值会误导创作者。v1 状态定义无约束，边界与钳制语义留待有真实需求时一并设计。                                                                        |
+| D6  | 条件路由重构 auto exit 为 `routes[]`（有序首匹配），choice/auto 统一 `target: node \| ending \| null` | 与运行时 binding 规则（`logic.ts:150-166`：单一无条件兜底在最后）1:1；ending 作为一等路由目标是条件结局的最小完整表达。存量 draft 用预处理器迁移（仓库已有两次先例：`interactive-film.schema.ts:100-123`、`:396-442`） |
+| D7  | 结局注册表放 `storyBible.endings`，编译进 manifest `endings[]`                                        | 与流水线第 1 棒对齐；`film.complete` 合成规则保留（自然收尾 target=null 的语义不变）                                                                                                                                   |
+| D8  | 不新增 requiredCapabilities（Phase 3 HUD 除外）                                                       | 状态机是核心语义（semanticRulesVersion 1），老播放器可播带数值的新内容；HUD 渲染器将来按需带能力位                                                                                                                     |
 
 ## 4. 创作端窄语法（draft schema 扩展）
 
@@ -93,21 +95,16 @@ const StoryStateVariableSchema = z
     // 语法 = ExperienceStatePathSchema（common.ts:19-36：点分标识符、≤240、禁保留段）。
     // 实现直接复用 shared 导出，单一来源。
     key: StoryStateKeySchema,
-    name: DraftLocalizedTextSchema, // 面向玩家的展示名（HUD / 调试面板 / 画布 chip）
+    name: DraftLocalizedTextSchema, // 状态展示名（创作端 / 未来玩家 HUD）
     valueType: z.enum(["number", "boolean"]),
     initialValue: z.union([z.number().finite(), z.boolean()]),
-    // 仅 valueType=number 可用；创作端滑杆 / HUD 条 / playtest 面板的展示元数据。
-    // 编译时【不】进运行时 constraints —— 见 D5。
-    minimum: z.number().finite().optional(),
-    maximum: z.number().finite().optional(),
-    note: z.string().max(2_000).optional(), // 创作者备注，不进播放器
+    note: z.string().max(2_000).optional(), // 变量描述，仅用于创作，不进播放器
   })
   .strict()
-  .superRefine(/* initialValue 类型匹配；min ≤ initial ≤ max */);
+  .superRefine(/* initialValue 类型匹配 */);
 ```
 
-UI 预设（纯前端便利，不进数据模型）：选角色 → 自动创建
-`favorability.<characterId>`；资源（`gold`）/ 属性（`courage`）/ 标记（`met.lin`）。
+当前 UI 通过单一「添加状态变量」入口创建条目，填写名称和类型，自动分配稳定 key；不提供资源、属性、标记预设按钮。
 
 ### 4.2 效果（`StoryStateEffect`，每挂载点 ≤ 6 条，同 key 可重复、按声明序执行）
 
@@ -220,7 +217,7 @@ manifest 编译（`story-experience-manifest-compiler.ts`）：
 **lock 校验**（扩展 `validateInteractiveStoryGameplayReadiness`，
 `interactive-film.schema.ts:683-804`）：
 
-- 变量：key 唯一/合法、数量 ≤ 64、类型与初值/边界匹配（boolean 不允许 ordering
+- 变量：key 唯一/合法、数量 ≤ 64、类型与初值匹配（boolean 不允许 ordering
   操作符）。
 - 引用闭合：effects / conditions / visibleWhen 的 variableKey ∈ 注册表；ending 引用
   ∈ `endings` 注册表；exit route 与 choice 的 node target ∈ 节点集（沿用现有
@@ -252,8 +249,7 @@ manifest 编译（`story-experience-manifest-compiler.ts`）：
 - **作用域**：全部 session。`scene.goto` 只重置 scene 桶（engine :427），数值跨场景
   存活；重开 = 新 seed 全量重置。充值暂停桥的 checkpoint 快照含完整 state，数值随
   之暂停/恢复，无需额外处理。
-- **越界**：状态定义无 constraints ⇒ `assertStateValue` 数值分支永不触发；数值运行
-  超过创作端 max 时 HUD / 调试面板按 max 钳制**显示**（数据保持真实值）。
+- **数值范围**：状态定义无 constraints；v1 数值按效果持续累积，不宣称上限或钳制行为。
 - **多结局**：`ending.complete` 累积 `completedEndingIds`（engine :431-436）；
   `hidden` 类结局靠条件路由可达性控制，天然支持。
 - **兼容**：无新 requiredCapabilities（D8）—— 已发布播放器无需升级即可播放带数值
@@ -261,14 +257,13 @@ manifest 编译（`story-experience-manifest-compiler.ts`）：
 
 ## 8. Studio 创作端（Phase 2）
 
-- storyBible 区新增**数值面板**：变量列表（key / 展示名 / 类型 / 初值 / 边界 / 备注）
-  - 预设入口（好感度选角色、资源、属性、标记）。
+- 状态侧栏管理**变量列表**（key / 展示名 / 类型 / 初值 / 描述），通过单一新增入口填写名称和类型，不生成预设变量。
 - choice inspector：**效果编辑器**（变量下拉 + set/add + 值）与 **visibleWhen 条件
   构建器**（变量 + 操作符 + 阈值；all/any/not 组合，深度受语法上限约束）。
-- auto exit inspector：**有序条件路由列表**（拖拽排序、条件构建、目标选择器
+- auto exit inspector：**有序条件路由列表**（上移/下移排序、条件构建、目标选择器
   node/ending/自然收尾）。
-- 结局面板 + 画布结局节点可视化；条件边标注 chip（如「好感·林 ≥ 80」）。
-- **playtest 调试 HUD**：实时变量值面板（数值变化高亮）。playtest 走同一 manifest
+- 命名结局在情节树的路线终点直接创建与编辑；底层 `storyBible.endings` 仍保存稳定 ID、标题与类型，供编译和复用。条件边标注 chip（如「好感·林 ≥ 80」）。
+- **playtest 调试 HUD**：按技术 key 显示实时变量值（数值变化高亮）。playtest 走同一 manifest
   通道（`story-playtest-source.ts`），零播放器改动即可拿到。
 
 ## 9. Agent 创作与 Plot 导入（Phase 4）
@@ -305,10 +300,10 @@ manifest 编译（`story-experience-manifest-compiler.ts`）：
    - draft schema 扩展 + 存量迁移预处理器 + 中间层镜像 + manifest 编译器发射 + lock
      校验与 lint + 归一化降级。**引擎往返测试**（用 experience-engine 验收编译产物：
      好感累积 → 门槛路由 → 多结局）。不改引擎一行。**这一步拿到全部语义**。
-2. **Phase 2 创作端**：数值面板 / 效果与条件编辑器 / 条件路由编辑器 / 结局面板 /
-   画布标注 / playtest 调试 HUD + i18n 三语。
+2. **Phase 2 创作端**：状态变量侧栏 / 效果与条件编辑器 / 条件路由编辑器 /
+   情节树内命名结局编辑 / 画布标注 / playtest 调试 HUD + i18n 三语。
 3. **Phase 3 播放端**：`core.state-hud` 渲染器（config：entries[] =
-   `{ label( localized ), path, format: 'raw' | 'bar', minimum?, maximum? }`，随状态
+   `{ label( localized ), path, format: 'raw' }`，随状态
    实时更新）+ 数值变化浮层（+2 好感）。带新 requiredCapabilities，按「声明了 HUD
    才发射能力位」保证老内容零影响。
 4. **Phase 4 Agent / 导入**：patch ops + 流水线对齐 + plot 导入字段。

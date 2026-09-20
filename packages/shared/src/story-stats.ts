@@ -375,13 +375,28 @@ export function migrateStoryNodeStats(node: unknown): unknown {
   return next;
 }
 
-/** Drafts stored before stats used nextNodeId / goto.nodeId. */
+function stripLegacyStateBounds(variable: unknown): unknown {
+  if (!isRecord(variable)) return variable;
+  const { minimum: _minimum, maximum: _maximum, ...current } = variable;
+  return current;
+}
+
+/** Migrate stored draft routing and remove display bounds that had no runtime effect. */
 export function migrateStoryDraftStats(value: unknown): unknown {
   if (!isRecord(value) || !isRecord(value.graph) || !Array.isArray(value.graph.nodes)) {
     return value;
   }
+  const storyBible = isRecord(value.storyBible)
+    ? {
+        ...value.storyBible,
+        ...(Array.isArray(value.storyBible.stateVariables)
+          ? { stateVariables: value.storyBible.stateVariables.map(stripLegacyStateBounds) }
+          : {}),
+      }
+    : value.storyBible;
   return {
     ...value,
+    storyBible,
     graph: {
       ...value.graph,
       nodes: value.graph.nodes.map(migrateStoryNodeStats),
@@ -389,8 +404,14 @@ export function migrateStoryDraftStats(value: unknown): unknown {
   };
 }
 
-/** Intermediate releases compiled before stats used nextNodeId / goto.nodeId. */
+/** Migrate stored release routing and remove retired state display bounds. */
 export function migrateStoryReleaseStats(value: unknown): unknown {
   if (!isRecord(value) || !Array.isArray(value.nodes)) return value;
-  return { ...value, nodes: value.nodes.map(migrateStoryNodeStats) };
+  return {
+    ...value,
+    ...(Array.isArray(value.stateVariables)
+      ? { stateVariables: value.stateVariables.map(stripLegacyStateBounds) }
+      : {}),
+    nodes: value.nodes.map(migrateStoryNodeStats),
+  };
 }

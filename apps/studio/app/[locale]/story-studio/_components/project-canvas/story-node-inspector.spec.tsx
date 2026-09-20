@@ -12,6 +12,7 @@ vi.mock("./story-node-storyboard-panel", () => ({
 }));
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
 
@@ -127,6 +128,9 @@ function inspectorProps(
     locale: "en-US",
     onSetOnEnterEffects: vi.fn(),
     onSetAutoRoutes: vi.fn(),
+    onCreateEndingForRoute: vi.fn(),
+    onUpdateEnding: vi.fn(),
+    onDeleteEnding: vi.fn(),
   };
 }
 

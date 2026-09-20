@@ -138,7 +138,8 @@ export function buildStoryCanvasModel(
   locale: string,
   copyOverrides: Partial<StoryCanvasCopy> = DEFAULT_COPY,
   frameProfile: StoryFrameProfile = "landscape_16_9",
-  worlds: WorldModelWorld[] = []
+  worlds: WorldModelWorld[] = [],
+  variableLocale: string = locale
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
   const copy = { ...DEFAULT_COPY, ...copyOverrides };
   const frameAspectRatioOf = (profile: StoryFrameProfile): "16:9" | "9:16" =>
@@ -157,7 +158,7 @@ export function buildStoryCanvasModel(
   const worldsById = new Map(worlds.map((world) => [world.id, world]));
   const variableNames = storyVariableNameMap(
     content.storyBible.stateVariables,
-    locale,
+    variableLocale,
     (text, activeLocale) => localizedDraftText(text, activeLocale)
   );
   const endingTitles = new Map(

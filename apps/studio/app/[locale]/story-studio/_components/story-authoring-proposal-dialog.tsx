@@ -272,7 +272,9 @@ function StructureProposalReview({
                                   {storyLocalizedText(choice.label)}
                                 </span>
                                 <span className="px-1.5 text-white/50">→</span>
-                                {sceneNames.get(choice.nextNodeId) ?? choice.nextNodeId}
+                                {choice.nextNodeId
+                                  ? (sceneNames.get(choice.nextNodeId) ?? choice.nextNodeId)
+                                  : t("proposal.unresolved")}
                               </span>
                             </li>
                           ))}

@@ -47,8 +47,6 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   const setSidePanel = useStoryProjectUiStore((state) => state.setSidePanel);
   const setShareOpen = useStoryProjectUiStore((state) => state.setShareOpen);
   const shareOpen = useStoryProjectUiStore((state) => state.shareOpen);
-  const statsOpen = useStoryProjectUiStore((state) => state.statsOpen);
-  const setStatsOpen = useStoryProjectUiStore((state) => state.setStatsOpen);
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
 
   if (!isProductionStepSegment(segment)) return null;
@@ -56,18 +54,11 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   const chapterQuery = activeChapterId ? `?chapter=${encodeURIComponent(activeChapterId)}` : "";
   const togglePanel = (panel: Exclude<StorySidePanel, null>) => {
     setShareOpen(false);
-    setStatsOpen(false);
     setSidePanel(sidePanel === panel ? null : panel);
   };
   const openShare = () => {
     setSidePanel(null);
-    setStatsOpen(false);
     setShareOpen(!shareOpen);
-  };
-  const openStats = () => {
-    setSidePanel(null);
-    setShareOpen(false);
-    setStatsOpen(!statsOpen);
   };
   const selectLocale = (next: string) => {
     if (!isValidLocale(next) || next === locale) return;
@@ -91,8 +82,8 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
         <RailButton
           icon={IconChartBar}
           label={t("sidebar.stats")}
-          active={statsOpen}
-          onClick={openStats}
+          active={sidePanel === "stats"}
+          onClick={() => togglePanel("stats")}
         />
         <RailButton
           icon={IconListTree}

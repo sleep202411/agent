@@ -9,7 +9,6 @@ import {
   StoryConditionSchema,
   StoryEndingKindSchema,
   StoryRouteTargetSchema,
-  StoryStateEffectSchema,
   StoryStateEffectsSchema,
   StoryStateKeySchema,
   StoryStateValueTypeSchema,
@@ -162,8 +161,6 @@ export const StoryStateVariableSchema = z
     name: DraftLocalizedTextSchema,
     valueType: StoryStateValueTypeSchema,
     initialValue: z.union([z.number().finite(), z.boolean()]),
-    minimum: z.number().finite().optional(),
-    maximum: z.number().finite().optional(),
     note: z.string().max(MAX_STORY_STATE_NOTE_LENGTH).optional(),
   })
   .strict()
@@ -173,53 +170,6 @@ export const StoryStateVariableSchema = z
         code: 'custom',
         path: ['initialValue'],
         message: `Initial value must match ${variable.valueType}.`,
-      });
-    }
-    if (
-      variable.valueType === 'boolean' &&
-      (variable.minimum !== undefined || variable.maximum !== undefined)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['minimum'],
-        message: 'Boolean variables cannot declare numeric bounds.',
-      });
-    }
-    if (
-      variable.minimum !== undefined &&
-      variable.maximum !== undefined &&
-      variable.minimum > variable.maximum
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['maximum'],
-        message: 'maximum must be greater than or equal to minimum.',
-      });
-    }
-    if (
-      variable.valueType !== 'number' ||
-      typeof variable.initialValue !== 'number'
-    ) {
-      return;
-    }
-    if (
-      variable.minimum !== undefined &&
-      variable.initialValue < variable.minimum
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['initialValue'],
-        message: `Initial value must be at least ${variable.minimum}.`,
-      });
-    }
-    if (
-      variable.maximum !== undefined &&
-      variable.initialValue > variable.maximum
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['initialValue'],
-        message: `Initial value must be at most ${variable.maximum}.`,
       });
     }
   });
@@ -1430,12 +1380,35 @@ function normalizeInteractiveFilmRuntimeDraft(
 
   return {
     ...draft,
+    storyBible: {
+      ...draft.storyBible,
+      ...(draft.storyBible.stateVariables
+        ? {
+            stateVariables: draft.storyBible.stateVariables.map((variable) => ({
+              ...variable,
+              name: hasCopy(variable.name)
+                ? previewLocalizedCopy(variable.name, variable.key)
+                : variable.name,
+            })),
+          }
+        : {}),
+      ...(draft.storyBible.endings
+        ? {
+            endings: draft.storyBible.endings.map((ending) => ({
+              ...ending,
+              title: hasCopy(ending.title)
+                ? previewLocalizedCopy(ending.title, ending.endingId)
+                : ending.title,
+            })),
+          }
+        : {}),
+    },
     graph: {
       entryNodeId:
         draft.graph.entryNodeId && nodeIds.has(draft.graph.entryNodeId)
           ? draft.graph.entryNodeId
           : (draft.graph.nodes[0]?.nodeId ?? null),
-      nodes: runtimeNodes as InteractiveStoryDraftContent['graph']['nodes'],
+      nodes: runtimeNodes,
     },
   } satisfies InteractiveStoryDraftContent;
 }

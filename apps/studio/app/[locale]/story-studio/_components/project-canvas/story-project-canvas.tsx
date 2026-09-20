@@ -49,7 +49,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
@@ -106,6 +106,7 @@ import {
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
   type InteractiveStoryDraftContent,
+  type StoryBibleEnding,
   type StoryBibleWriterPatch,
   type StoryCandidateAsset,
   type StoryCanvasPosition,
@@ -165,10 +166,14 @@ import {
   createDecisionNode,
   materializeStoryDecisionNodes,
   connectChoiceTarget,
+  createStoryEndingForAutoRoute,
+  createStoryEndingForChoice,
   createClipNode,
   createWorldNode,
   moveChoiceOption,
+  putStoryEnding,
   removeChoiceOption,
+  removeStoryEnding,
   replaceStoryNodeInteractions,
   setAutoRoutes,
   setNodeOnEnterEffects,
@@ -178,8 +183,12 @@ import {
   updateChoiceExitPrompt,
   updateChoiceOptionLabel,
 } from "./story-project-canvas-mutations";
-import type { StoryCondition, StoryStateEffect } from "@repo/shared/story-stats";
-import { StoryChoiceAttachmentBar } from "./story-stats-editors";
+import type { StoryCondition, StoryRouteTarget, StoryStateEffect } from "@repo/shared/story-stats";
+import {
+  StoryChoiceAttachmentBar,
+  storyGraphNodePickerItems,
+  storyGraphNodePickerTitles,
+} from "./story-stats-editors";
 
 import {
   canConnectStoryCompletion,
@@ -257,6 +266,8 @@ type StoryCanvasChoiceContextValue = {
   moveChoice: (sourceNodeId: string, choiceId: string, direction: "up" | "down") => void;
   removeChoice: (sourceNodeId: string, choiceId: string) => void;
   stateVariables: InteractiveStoryDraftContent["storyBible"]["stateVariables"];
+  endings: StoryBibleEnding[];
+  nodes: Array<{ nodeId: string; title: string }>;
   locale: string;
   patchChoice: (
     sourceNodeId: string,
@@ -264,8 +275,15 @@ type StoryCanvasChoiceContextValue = {
     patch: {
       effects?: StoryStateEffect[] | null;
       visibleWhen?: StoryCondition | null;
+      target?: StoryRouteTarget | null;
     }
   ) => void;
+  createEndingForChoice: (sourceNodeId: string, choiceId: string) => void;
+  updateEnding: (
+    endingId: string,
+    patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
+  ) => void;
+  deleteEnding: (endingId: string) => void;
 };
 type StoryCanvasWorldContextValue = {
   projectId: string;
@@ -362,6 +380,7 @@ function StoryProjectCanvasInner({
   requestedChapterId?: string;
 }) {
   const { user } = useAuth();
+  const interfaceLocale = useLocale();
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
@@ -1123,7 +1142,8 @@ function StoryProjectCanvasInner({
             project?.defaultLocale ?? "en-US",
             projectionCopy,
             project?.frameProfile,
-            STORY_WORLD_EXPERIENCE_AVAILABLE ? (worldsQuery.data ?? []) : []
+            STORY_WORLD_EXPERIENCE_AVAILABLE ? (worldsQuery.data ?? []) : [],
+            interfaceLocale
           )
         : null,
     // Translation values are primitives. Depending on them keeps the model
@@ -1132,6 +1152,7 @@ function StoryProjectCanvasInner({
     [
       content,
       project?.defaultLocale,
+      interfaceLocale,
       project?.frameProfile,
       projectionCopy.clip,
       projectionCopy.decision,
@@ -1161,6 +1182,23 @@ function StoryProjectCanvasInner({
   });
   const canEdit = editPolicy.canEditContent;
   const canMutateCanvasLayout = editPolicy.canEditLayout;
+  const updateEnding = (
+    endingId: string,
+    patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
+  ) => {
+    applyGraphMutation(
+      (current) => {
+        const ending = (current.storyBible.endings ?? []).find(
+          (candidate) => candidate.endingId === endingId
+        );
+        return ending ? putStoryEnding(current, { ...ending, ...patch }) : current;
+      },
+      { mergeKey: `ending:${endingId}:${Object.keys(patch).join(",")}:${authoringLocale}` }
+    );
+  };
+  const deleteEnding = (endingId: string) => {
+    applyGraphMutation((current) => removeStoryEnding(current, endingId));
+  };
   const choiceContext: StoryCanvasChoiceContextValue = {
     setCommunityPointPrice: async (nodeId, price) => {
       if (!mutationBarrier.permits("content")) throw new Error(t("communityPrice.unavailable"));
@@ -1206,12 +1244,37 @@ function StoryProjectCanvasInner({
       applyGraphMutation((current) => removeChoiceOption(current, sourceNodeId, choiceId));
     },
     stateVariables: content?.storyBible.stateVariables ?? [],
+    endings: content?.storyBible.endings ?? [],
+    nodes: content
+      ? storyGraphNodePickerItems(
+          content.graph.nodes,
+          "",
+          storyGraphNodePickerTitles(
+            content.graph.nodes,
+            t("nodeKinds.clip"),
+            t("nodeKinds.decision")
+          )
+        )
+      : [],
     locale: authoringLocale,
     patchChoice: (sourceNodeId, choiceId, patch) => {
       applyGraphMutation((current) => updateChoiceStats(current, sourceNodeId, choiceId, patch), {
         mergeKey: `choice-stats:${sourceNodeId}:${choiceId}`,
       });
     },
+    createEndingForChoice: (sourceNodeId, choiceId) => {
+      applyGraphMutation((current) =>
+        createStoryEndingForChoice(
+          current,
+          sourceNodeId,
+          choiceId,
+          authoringLocale,
+          t("stats.untitledEnding")
+        )
+      );
+    },
+    updateEnding,
+    deleteEnding,
   };
   const candidateAssets = useStoryCandidateAssets({
     projectId,
@@ -2532,6 +2595,19 @@ function StoryProjectCanvasInner({
                   mergeKey: `auto-routes:${nodeId}`,
                 })
               }
+              onCreateEndingForRoute={(nodeId, routeIndex) =>
+                applyGraphMutation((current) =>
+                  createStoryEndingForAutoRoute(
+                    current,
+                    nodeId,
+                    routeIndex,
+                    authoringLocale,
+                    t("stats.untitledEnding")
+                  )
+                )
+              }
+              onUpdateEnding={updateEnding}
+              onDeleteEnding={deleteEnding}
               onDeleteSelected={() => {
                 if (focusedNode) deleteStoryElements({ nodes: [focusedNode], edges: [] });
               }}
@@ -3109,6 +3185,15 @@ function ChoiceOptionRow({
               visibleWhen: visibleWhen ?? null,
             })
           }
+          target={choice.target}
+          nodes={choiceContext.nodes.filter((node) => node.nodeId !== sourceNodeId)}
+          endings={choiceContext.endings}
+          onTargetChange={(target) =>
+            choiceContext.patchChoice(sourceNodeId, choice.choiceId, { target })
+          }
+          onCreateEnding={() => choiceContext.createEndingForChoice(sourceNodeId, choice.choiceId)}
+          onUpdateEnding={choiceContext.updateEnding}
+          onDeleteEnding={choiceContext.deleteEnding}
         />
       ) : null}
     </div>

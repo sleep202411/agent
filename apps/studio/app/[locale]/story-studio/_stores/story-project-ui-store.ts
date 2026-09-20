@@ -11,10 +11,9 @@ import type { SavedDraftSnapshotRunner } from "../_components/project-canvas/use
  * The rail-toggled panel docked in the side-panel slot: the catalog
  * (chapter/scene list), the world (story bible), or the chapter manager. One
  * dock, one tenant; null is closed. Every tenant renders inside
- * StoryProjectSidePanelShell — the shell alone owns the dock's width. Stats
- * is a dialog (see `statsOpen`), not a dock tenant.
+ * StoryProjectSidePanelShell — the shell alone owns the dock's width.
  */
-export type StorySidePanel = "catalog" | "world" | "chapters" | null;
+export type StorySidePanel = "catalog" | "world" | "stats" | "chapters" | null;
 
 /** Live authoring-head signals the canvas publishes while mounted. */
 export interface StoryLiveDraftSignals {
@@ -78,9 +77,6 @@ interface StoryProjectUIState {
   /** Share dialog (mounted by the project layout) open. */
   shareOpen: boolean;
   setShareOpen: (open: boolean) => void;
-  /** Stats registry dialog (variables + endings) open. */
-  statsOpen: boolean;
-  setStatsOpen: (open: boolean) => void;
   /**
    * Canvas → header-actions bridge. While the canvas is mounted it publishes
    * its live draft head and registers its save barrier so the layout header's
@@ -143,8 +139,6 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
         ),
       shareOpen: false,
       setShareOpen: (open) => set({ shareOpen: open }, false, "setShareOpen"),
-      statsOpen: false,
-      setStatsOpen: (open) => set({ statsOpen: open }, false, "setStatsOpen"),
       liveDraft: null,
       setLiveDraft: (signals) => set({ liveDraft: signals }, false, "setLiveDraft"),
       draftBarrier: null,

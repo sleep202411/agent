@@ -6,6 +6,8 @@ import {
   connectSceneContinuation,
   createDecisionNode,
   createClipNode,
+  createStoryEndingForAutoRoute,
+  createStoryEndingForChoice,
   createWorldNode,
   deleteGraphNode,
   moveChoiceOption,
@@ -119,8 +121,6 @@ describe("story canvas mutations", () => {
       name: { "en-US": "Lin" },
       valueType: "number",
       initialValue: 0,
-      minimum: 0,
-      maximum: 100,
     });
     content = putStoryEnding(content, {
       endingId: "ending:true-love",
@@ -177,6 +177,32 @@ describe("story canvas mutations", () => {
     expect(after?.exit.kind === "choice" ? after.exit.choices[0]?.target : "missing").toBeNull();
   });
 
+  it("creates named endings together with their route targets", () => {
+    let content = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" }).content;
+    content = createDecisionNode(content, "en-US", {
+      nodeId: "decision:a",
+      labels: ["Stay"],
+    }).content;
+    content = createStoryEndingForAutoRoute(content, "clip:a", 0, "en-US", "Finale");
+    expect(content.storyBible.endings).toEqual([
+      { endingId: "ending:1", title: { "en-US": "Finale" }, kind: "neutral" },
+    ]);
+    expect(content.graph.nodes[0]?.exit).toEqual({
+      kind: "auto",
+      routes: [{ target: { kind: "ending", endingId: "ending:1" } }],
+    });
+    content = createStoryEndingForChoice(content, "decision:a", "option:1", "en-US", "Other");
+    const decision = content.graph.nodes.find((node) => node.nodeId === "decision:a");
+    expect(decision?.exit.kind === "choice" ? decision.exit.choices[0]?.target : null).toEqual({
+      kind: "ending",
+      endingId: "ending:2",
+    });
+    expect(content.storyBible.endings?.map((ending) => ending.endingId)).toEqual([
+      "ending:1",
+      "ending:2",
+    ]);
+  });
+
   it("applies a bible patch by upserting variables and stripping removed keys", () => {
     let content = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" }).content;
     content = putStoryStateVariable(content, {
@@ -195,6 +221,17 @@ describe("story canvas mutations", () => {
     expect(content.storyBible.logline).toBe("A heist");
     expect(content.storyBible.stateVariables?.map((variable) => variable.key)).toEqual(["courage"]);
     expect(content.graph.nodes[0]?.onEnterEffects).toBeUndefined();
+  });
+
+  it("rejects non-finite initial values before they become unsavable drafts", () => {
+    expect(() =>
+      putStoryStateVariable(draft(), {
+        key: "gold",
+        name: { "en-US": "Gold" },
+        valueType: "number",
+        initialValue: Infinity,
+      })
+    ).toThrow("Initial value must be a finite number.");
   });
 });
 

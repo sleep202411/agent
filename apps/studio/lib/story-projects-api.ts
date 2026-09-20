@@ -144,8 +144,6 @@ export interface StoryBibleStateVariable {
   name: Record<string, string>;
   valueType: StoryStateValueType;
   initialValue: number | boolean;
-  minimum?: number;
-  maximum?: number;
   note?: string;
 }
 

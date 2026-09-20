@@ -8,6 +8,7 @@ import type {
   InteractiveStoryDraftContent,
   StoryClipGraphNode,
   StoryGraphNode,
+  StoryBibleEnding,
 } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
 import {
@@ -23,6 +24,7 @@ import {
   StoryAutoRoutesEditor,
   StoryEffectsEditor,
   storyGraphNodePickerItems,
+  storyGraphNodePickerTitles,
 } from "./story-stats-editors";
 
 type StoryChapterTarget = {
@@ -50,6 +52,12 @@ interface StoryNodeInspectorProps {
   locale: string;
   onSetOnEnterEffects: (nodeId: string, effects: StoryStateEffect[] | null) => void;
   onSetAutoRoutes: (nodeId: string, routes: StoryExitRoute[]) => void;
+  onCreateEndingForRoute: (nodeId: string, routeIndex: number) => void;
+  onUpdateEnding: (
+    endingId: string,
+    patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
+  ) => void;
+  onDeleteEnding: (endingId: string) => void;
 }
 export function StoryNodeInspector({
   projectId,
@@ -65,6 +73,9 @@ export function StoryNodeInspector({
   locale,
   onSetOnEnterEffects,
   onSetAutoRoutes,
+  onCreateEndingForRoute,
+  onUpdateEnding,
+  onDeleteEnding,
 }: StoryNodeInspectorProps) {
   const t = useTranslations("storyStudio.canvas");
   const canvasData = selectedNode?.data;
@@ -110,6 +121,9 @@ export function StoryNodeInspector({
           locale={locale}
           onSetOnEnterEffects={onSetOnEnterEffects}
           onSetAutoRoutes={onSetAutoRoutes}
+          onCreateEndingForRoute={onCreateEndingForRoute}
+          onUpdateEnding={onUpdateEnding}
+          onDeleteEnding={onDeleteEnding}
         />
       </div>
 
@@ -141,6 +155,9 @@ function GraphNodeEditor({
   locale,
   onSetOnEnterEffects,
   onSetAutoRoutes,
+  onCreateEndingForRoute,
+  onUpdateEnding,
+  onDeleteEnding,
 }: {
   projectId: string;
   node: StoryClipGraphNode;
@@ -153,19 +170,18 @@ function GraphNodeEditor({
   locale: string;
   onSetOnEnterEffects: StoryNodeInspectorProps["onSetOnEnterEffects"];
   onSetAutoRoutes: StoryNodeInspectorProps["onSetAutoRoutes"];
+  onCreateEndingForRoute: StoryNodeInspectorProps["onCreateEndingForRoute"];
+  onUpdateEnding: StoryNodeInspectorProps["onUpdateEnding"];
+  onDeleteEnding: StoryNodeInspectorProps["onDeleteEnding"];
 }) {
   const t = useTranslations("storyStudio.canvas");
   const tStats = useTranslations("storyStudio.canvas.stats");
   const variables = content.storyBible.stateVariables ?? [];
   const endings = content.storyBible.endings ?? [];
-  const nodeTitles = new Map(
-    content.graph.nodes.map((candidate, index) => [
-      candidate.nodeId,
-      (candidate.kind === "decision"
-        ? candidate.nodeId
-        : candidate.name?.trim() ||
-          (candidate.kind === "clip" ? candidate.clipKey : candidate.nodeId)) || `${index + 1}`,
-    ])
+  const nodeTitles = storyGraphNodePickerTitles(
+    content.graph.nodes,
+    t("nodeKinds.clip"),
+    t("nodeKinds.decision")
   );
   return (
     <>
@@ -229,7 +245,6 @@ function GraphNodeEditor({
             <StoryEffectsEditor
               effects={node.onEnterEffects ?? []}
               variables={variables}
-              locale={locale}
               canEdit={canEdit}
               onChange={(effects) => onSetOnEnterEffects(node.nodeId, effects)}
             />
@@ -249,6 +264,9 @@ function GraphNodeEditor({
               locale={locale}
               canEdit={canEdit}
               onChange={(routes) => onSetAutoRoutes(node.nodeId, routes)}
+              onCreateEnding={(routeIndex) => onCreateEndingForRoute(node.nodeId, routeIndex)}
+              onUpdateEnding={onUpdateEnding}
+              onDeleteEnding={onDeleteEnding}
             />
           </div>
         </section>

@@ -77,7 +77,7 @@ describe("film-only story canvas projection", () => {
     content.storyBible.stateVariables = [
       {
         key: "favorability.lin",
-        name: { "en-US": "Lin" },
+        name: { "en-US": "Lin", "zh-CN": "小林" },
         valueType: "number",
         initialValue: 0,
       },
@@ -112,6 +112,21 @@ describe("film-only story canvas projection", () => {
         data: { kind: "continuation", conditional: false },
       }),
     ]);
+
+    const localizedModel = buildStoryCanvasModel(
+      content,
+      "en-US",
+      undefined,
+      undefined,
+      undefined,
+      "zh-CN"
+    );
+    expect(localizedModel.edges.find((edge) => edge.source === "clip:b")?.label).toBe("小林 ≥ 80");
+    expect(
+      localizedModel.nodes.find((node) => node.id === storyDecisionCanvasNodeId("clip:a"))?.data
+    ).toMatchObject({
+      summary: "Where next?",
+    });
   });
 });
 

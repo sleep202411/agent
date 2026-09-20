@@ -625,6 +625,57 @@ export function removeStoryEnding(
   return stripEndingFromContent(replaceBible(content, { endings }), endingId);
 }
 
+function nextStoryEndingId(content: InteractiveStoryDraftContent): string {
+  const ids = new Set(bibleEndings(content).map((ending) => ending.endingId));
+  for (let index = 1; ; index += 1) {
+    const id = `ending:${index}`;
+    if (!ids.has(id)) return id;
+  }
+}
+
+/** Add the ending and its route in one draft mutation, so neither can be saved alone. */
+export function createStoryEndingForAutoRoute(
+  content: InteractiveStoryDraftContent,
+  sourceNodeId: string,
+  routeIndex: number,
+  locale: string,
+  title: string
+): InteractiveStoryDraftContent {
+  const source = requireFlowNode(content, sourceNodeId);
+  if (!source.exit.routes[routeIndex]) throw error("INVALID_ROUTES", "Route not found.");
+  const endingId = nextStoryEndingId(content);
+  const withEnding = putStoryEnding(content, {
+    endingId,
+    title: { [locale]: title },
+    kind: "neutral",
+  });
+  return setAutoRoutes(
+    withEnding,
+    sourceNodeId,
+    source.exit.routes.map((route, index) =>
+      index === routeIndex ? { ...route, target: { kind: "ending", endingId } } : route
+    )
+  );
+}
+
+export function createStoryEndingForChoice(
+  content: InteractiveStoryDraftContent,
+  sourceNodeId: string,
+  choiceId: string,
+  locale: string,
+  title: string
+): InteractiveStoryDraftContent {
+  const endingId = nextStoryEndingId(content);
+  const withEnding = putStoryEnding(content, {
+    endingId,
+    title: { [locale]: title },
+    kind: "neutral",
+  });
+  return updateChoiceStats(withEnding, sourceNodeId, choiceId, {
+    target: { kind: "ending", endingId },
+  });
+}
+
 export function setNodeOnEnterEffects(
   content: InteractiveStoryDraftContent,
   nodeId: string,
@@ -937,6 +988,9 @@ function normalizeStateVariable(variable: StoryBibleStateVariable): StoryBibleSt
       : valueType === "boolean"
         ? false
         : 0;
+  if (valueType === "number" && !Number.isFinite(initialValue)) {
+    throw error("INVALID_STATE_KEY", "Initial value must be a finite number.");
+  }
   if (valueType === "boolean") {
     return {
       key: variable.key,
@@ -948,18 +1002,11 @@ function normalizeStateVariable(variable: StoryBibleStateVariable): StoryBibleSt
         : {}),
     };
   }
-  const minimum = variable.minimum;
-  const maximum = variable.maximum;
-  if (typeof minimum === "number" && typeof maximum === "number" && minimum > maximum) {
-    throw error("INVALID_STATE_KEY", "maximum must be greater than or equal to minimum.");
-  }
   return {
     key: variable.key,
     name: variable.name,
     valueType,
     initialValue,
-    ...(typeof minimum === "number" ? { minimum } : {}),
-    ...(typeof maximum === "number" ? { maximum } : {}),
     ...(variable.note?.trim()
       ? { note: variable.note.trim().slice(0, MAX_STORY_STATE_NOTE_LENGTH) }
       : {}),

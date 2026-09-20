@@ -466,6 +466,70 @@ describe('editable decision contract', () => {
 });
 
 describe('interactive film stats contract', () => {
+  it('drops retired variable bounds from a saved draft before validation', () => {
+    const legacy = {
+      ...filmDraft(),
+      storyBible: {
+        ...filmDraft().storyBible,
+        stateVariables: [
+          {
+            key: 'gold',
+            name: { 'en-US': 'Gold' },
+            valueType: 'number',
+            initialValue: 0,
+            minimum: 10,
+            maximum: 5,
+          },
+        ],
+      },
+    };
+    const parsed = InteractiveStoryDraftContentSchema.parse(legacy);
+    expect(parsed.storyBible.stateVariables).toEqual([
+      {
+        key: 'gold',
+        name: { 'en-US': 'Gold' },
+        valueType: 'number',
+        initialValue: 0,
+      },
+    ]);
+    expect(legacy.storyBible.stateVariables[0].minimum).toBe(10);
+  });
+
+  it('fills the project locale for runtime variable and ending copy without changing the draft', () => {
+    const draft = filmDraft();
+    draft.storyBible.stateVariables = [
+      {
+        key: 'courage',
+        name: { 'zh-CN': '勇气' },
+        valueType: 'number',
+        initialValue: 0,
+      },
+    ];
+    draft.storyBible.endings = [
+      {
+        endingId: 'ending.brave',
+        title: { 'zh-CN': '勇者结局' },
+        kind: 'success',
+      },
+    ];
+    const playable =
+      createPlayableInteractiveStoryDraftContentSchema('en-US').parse(draft);
+    expect(playable.storyBible.stateVariables?.[0]?.name).toEqual({
+      'zh-CN': '勇气',
+      'en-US': '勇气',
+    });
+    expect(playable.storyBible.endings?.[0]?.title).toEqual({
+      'zh-CN': '勇者结局',
+      'en-US': '勇者结局',
+    });
+    expect(collectInteractiveStoryRuntimeLocales(playable, 'en-US')).toContain(
+      'en-US',
+    );
+    expect(draft.storyBible.stateVariables?.[0]?.name).toEqual({
+      'zh-CN': '勇气',
+    });
+  });
+
   it('migrates nextNodeId drafts and compiles number thresholds', () => {
     const parsed = InteractiveStoryDraftContentSchema.parse({
       ...filmDraft(),
@@ -477,8 +541,6 @@ describe('interactive film stats contract', () => {
             name: { 'en-US': 'Lin' },
             valueType: 'number',
             initialValue: 0,
-            minimum: 0,
-            maximum: 100,
           },
         ],
         endings: [

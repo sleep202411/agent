@@ -7,6 +7,7 @@ import {
   measureStoryCondition,
   migrateStoryDraftStats,
   migrateStoryExit,
+  migrateStoryReleaseStats,
   storyAutoExit,
   storyConditionTypeError,
   storyEffectTypeError,
@@ -114,5 +115,33 @@ describe("story stats grammar", () => {
       kind: "goto",
       target: { kind: "node", nodeId: "b" },
     });
+  });
+
+  it("removes retired numeric display bounds from stored drafts and releases", () => {
+    const variable = {
+      key: "gold",
+      name: { "en-US": "Gold" },
+      valueType: "number",
+      initialValue: 0,
+      minimum: 10,
+      maximum: 5,
+    };
+    const draft = migrateStoryDraftStats({
+      storyBible: { stateVariables: [variable] },
+      graph: { nodes: [] },
+    }) as { storyBible: { stateVariables: unknown[] } };
+    const release = migrateStoryReleaseStats({
+      stateVariables: [variable],
+      nodes: [],
+    }) as { stateVariables: unknown[] };
+    const expected = {
+      key: "gold",
+      name: { "en-US": "Gold" },
+      valueType: "number",
+      initialValue: 0,
+    };
+    expect(draft.storyBible.stateVariables).toEqual([expected]);
+    expect(release.stateVariables).toEqual([expected]);
+    expect(variable.minimum).toBe(10);
   });
 });

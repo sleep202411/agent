@@ -86,7 +86,14 @@ export function formatStoryConditionChip(
     return `¬(${formatStoryConditionChip(condition.condition, names)})`;
   }
   const joiner = condition.kind === "all" ? " ∧ " : " ∨ ";
-  return condition.conditions.map((child) => formatStoryConditionChip(child, names)).join(joiner);
+  return condition.conditions
+    .map((child) => {
+      const label = formatStoryConditionChip(child, names);
+      return (child.kind === "all" || child.kind === "any") && child.kind !== condition.kind
+        ? `(${label})`
+        : label;
+    })
+    .join(joiner);
 }
 
 export function formatStoryLiteral(value: number | boolean): string {

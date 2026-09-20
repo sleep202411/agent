@@ -962,12 +962,6 @@ function compileIntermediateRelease(
         name: variable.name,
         valueType: variable.valueType,
         initialValue: variable.initialValue,
-        ...(variable.minimum !== undefined
-          ? { minimum: variable.minimum }
-          : {}),
-        ...(variable.maximum !== undefined
-          ? { maximum: variable.maximum }
-          : {}),
       }),
     ),
     endings: (input.draft.storyBible.endings ?? []).map((ending) => ({

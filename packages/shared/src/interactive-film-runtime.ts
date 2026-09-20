@@ -437,8 +437,6 @@ const RuntimeStateVariableSchema = z
     name: localizedText,
     valueType: StoryStateValueTypeSchema,
     initialValue: z.union([z.number().finite(), z.boolean()]),
-    minimum: z.number().finite().optional(),
-    maximum: z.number().finite().optional(),
   })
   .strict();
 

@@ -26,9 +26,6 @@ vi.mock("./story-project-rail", () => ({
 vi.mock("./story-project-share-dialog", () => ({
   StoryProjectShareDialog: () => <div data-testid="share" />,
 }));
-vi.mock("./story-stats-dialog", () => ({
-  StoryStatsDialog: () => <div data-testid="stats" />,
-}));
 vi.mock("./story-project-side-panel", () => ({
   StoryProjectSidePanel: () => <aside data-testid="side-panel" />,
 }));
