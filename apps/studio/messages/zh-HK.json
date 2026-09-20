@@ -1919,6 +1919,7 @@
     "aiAssistant": "AI 助手",
     "sidebar": {
       "navigation": "專案導覽",
+      "overview": "概覽",
       "chapters": "章節",
       "nodes": "節點",
       "nodesModeUnavailable": "說明模式下無法使用節點",
@@ -1929,6 +1930,29 @@
       "skillsComingSoon": "技能 · 即將推出",
       "activity": "動態",
       "members": "成員"
+    },
+    "overview": {
+      "title": "專案概覽",
+      "loadFailed": "專案資訊載入失敗。",
+      "coverTitle": "封面",
+      "coverAlt": "專案封面圖",
+      "coverEmpty": "暫無封面",
+      "changeCover": "更換封面",
+      "removeCover": "移除",
+      "coverHint": "未設定封面時，將自動使用畫布中的最新圖片。",
+      "coverNotImage": "請選擇圖片檔案。",
+      "coverUpdated": "封面已更新",
+      "coverUpdateFailed": "封面更新失敗。",
+      "coverRemoved": "封面已移除",
+      "detailsTitle": "資訊",
+      "detailsName": "名稱",
+      "nameSaved": "名稱已儲存",
+      "nameSaveFailed": "名稱儲存失敗。",
+      "descriptionTitle": "描述",
+      "descriptionPlaceholder": "這個專案是關於什麼的？",
+      "descriptionEmpty": "暫無描述。",
+      "descriptionSaved": "描述已儲存",
+      "descriptionSaveFailed": "描述儲存失敗。"
     },
     "skills": {
       "title": "技能",
