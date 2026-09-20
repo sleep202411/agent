@@ -3109,7 +3109,11 @@
     "maskTypeLabel": "Mask Type",
     "expandRatioLabel": "Expand Ratio",
     "maskFrameLabel": "Mask Frame",
-    "shot": "Shot"
+    "shot": "Shot",
+    "batchDownloadsStarted": "Downloads started for {count} files",
+    "batchDownloadRecoveryTitle": "Some files could not be downloaded",
+    "batchDownloadRecoveryHelp": "Only the files listed below failed. Retry these files without downloading successful items again. If a source is no longer available, return to its shot and select an available file.",
+    "retryFailedDownloads": "Retry failed files"
   },
   "script": {
     "title": "Script",

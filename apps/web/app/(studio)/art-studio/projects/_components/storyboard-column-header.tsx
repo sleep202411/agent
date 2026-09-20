@@ -39,7 +39,7 @@ import {
 } from "@/app/(studio)/art-studio/projects/_components/storyboard-batch-voice-dialog";
 import { Field, FieldLabel, FieldDescription } from "@/components/ui/field";
 import { env } from "@/src/env";
-import { downloadBatch, batchAssetName } from "./storyboard-download";
+import { downloadBatchWithReport, batchAssetName } from "./storyboard-download";
 
 const BATCH_INTERVAL = 10_000;
 const IMAGE_DEFAULT_PRESET_KEYS = ["description", "shot_size", "perspective", "style_planting"];
@@ -400,6 +400,11 @@ function StoryboardColumnHeaderSession({
 
   const batchRun = useRef<BatchRun | null>(null);
   const downloadRequest = useRef<AbortController | null>(null);
+  const [downloadRecovery, setDownloadRecovery] = useState<{
+    type: "image" | "video";
+    assets: { url: string; name: string }[];
+  } | null>(null);
+  const [downloadBusy, setDownloadBusy] = useState(false);
   const mounted = useRef(false);
   const associationRequests = useRef(new Map<string, AbortController>());
   const currentAssociation = (kind: string, controller: AbortController) =>
@@ -523,7 +528,7 @@ function StoryboardColumnHeaderSession({
     }
   };
 
-  const handleBatchExport = async (type: "image" | "video") => {
+  const handleBatchExport = async (type: "image" | "video", retryAssets?: { url: string; name: string }[]) => {
     if (
       !mounted.current ||
       !projectId ||
@@ -533,13 +538,14 @@ function StoryboardColumnHeaderSession({
       return;
     const controller = new AbortController();
     downloadRequest.current = controller;
+    setDownloadBusy(true);
     const current = () =>
       mounted.current &&
       downloadRequest.current === controller &&
       !controller.signal.aborted &&
       store.getState().project.currentProjectId === projectId;
     try {
-      const finalAssets = rows
+      const finalAssets = retryAssets ?? rows
         .map((row, rowIndex) => {
           const cell = row.shotValues?.find((item) => item.shotColumnId === String(column.id));
           const preferredFile = getPreferredFile(cell);
@@ -563,20 +569,23 @@ function StoryboardColumnHeaderSession({
           : t("startExportVideos", { count: finalAssets.length })
       );
 
-      const successful = await downloadBatch(finalAssets, controller.signal);
+      const report = await downloadBatchWithReport(finalAssets, controller.signal);
       if (!current()) return;
-      if (!successful) {
-        toast.error(type === "image" ? t("exportImagesFailed") : t("exportVideosFailed"));
-        return;
-      }
-
-      toast.success(type === "image" ? t("finalizedImagesExported") : t("finalizedVideosExported"));
+      const failed = report.items
+        .filter((item) => item.status === "failed")
+        .map((item) => finalAssets[item.index]!);
+      setDownloadRecovery(failed.length ? { type, assets: failed } : null);
+      if (failed.length) return;
+      toast.success(t("batchDownloadsStarted", { count: report.initiated }));
     } catch (error) {
       if (!current()) return;
       console.error("[StoryboardColumnHeader] 批量导出失败:", error);
       toast.error(type === "image" ? t("exportImagesFailed") : t("exportVideosFailed"));
     } finally {
-      if (downloadRequest.current === controller) downloadRequest.current = null;
+      if (downloadRequest.current === controller) {
+        downloadRequest.current = null;
+        if (mounted.current) setDownloadBusy(false);
+      }
     }
   };
 
@@ -910,6 +919,28 @@ function StoryboardColumnHeaderSession({
           </>
         )}
       </div>
+
+      <Dialog open={downloadRecovery !== null} onOpenChange={(open) => {
+        if (!open && !downloadBusy) setDownloadRecovery(null);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("batchDownloadRecoveryTitle")}</DialogTitle>
+            <DialogDescription>{t("batchDownloadRecoveryHelp")}</DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-60 overflow-y-auto px-6 text-sm" aria-label={t("batchDownloadRecoveryTitle")}>
+            {downloadRecovery?.assets.map((asset, index) => (
+              <li key={index} className="break-all py-1">{asset.name}</li>
+            ))}
+          </ul>
+          <DialogFooter>
+            <Button disabled={downloadBusy} onClick={() => setDownloadRecovery(null)}>{tc("close")}</Button>
+            <Button disabled={downloadBusy} loading={downloadBusy} onClick={() => {
+              if (downloadRecovery) void handleBatchExport(downloadRecovery.type, downloadRecovery.assets);
+            }}>{t("retryFailedDownloads")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={showAutoloadDialog}
