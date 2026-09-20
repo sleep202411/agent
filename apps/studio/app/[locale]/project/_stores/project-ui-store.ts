@@ -24,6 +24,8 @@ interface ProjectUIState {
   nodesOpen: boolean;
   /** Project activity feed panel open. */
   historyOpen: boolean;
+  /** Project overview (metadata + cover) panel open. */
+  overviewOpen: boolean;
   /** Project chapter navigator open. */
   sectionsOpen: boolean;
   /** Project skill catalog panel open. */
@@ -53,6 +55,8 @@ interface ProjectUIState {
   closeNodes: () => void;
   requestNodeInsert: (action: AddNodeAction) => void;
   clearNodeInsertRequest: (id: number) => void;
+  toggleOverview: () => void;
+  closeOverview: () => void;
   toggleSections: () => void;
   closeSections: () => void;
   openSkills: (skillId?: string) => void;
@@ -76,6 +80,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
       nodesOpen: false,
       sectionsOpen: false,
       skillsOpen: false,
+      overviewOpen: false,
       selectedSkillId: null,
       selectedShotId: null,
       selectedSlot: "image",
@@ -90,6 +95,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
+          overviewOpen: false,
           sectionsOpen: false,
           skillsOpen: false,
           selectedSkillId: null,
@@ -102,6 +108,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           assetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
+          overviewOpen: false,
           sectionsOpen: false,
           skillsOpen: false,
           selectedSkillId: null,
@@ -114,6 +121,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           assetsOpen: false,
           crewAssetsOpen: false,
           historyOpen: false,
+          overviewOpen: false,
           sectionsOpen: false,
           skillsOpen: false,
           selectedSkillId: null,
@@ -131,6 +139,19 @@ export const useProjectUIStore = create<ProjectUIState>()(
         }),
       clearNodeInsertRequest: (id) =>
         set((state) => (state.nodeInsertRequest?.id === id ? { nodeInsertRequest: null } : {})),
+      toggleOverview: () =>
+        set((state) => ({
+          overviewOpen: !state.overviewOpen,
+          assetsOpen: false,
+          crewAssetsOpen: false,
+          nodesOpen: false,
+          historyOpen: false,
+          sectionsOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
+          selectedShotId: null,
+        })),
+      closeOverview: () => set({ overviewOpen: false }),
       toggleSections: () =>
         set((state) => ({
           sectionsOpen: !state.sectionsOpen,
@@ -138,6 +159,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
+          overviewOpen: false,
           skillsOpen: false,
           selectedSkillId: null,
           selectedShotId: null,
@@ -151,6 +173,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
+          overviewOpen: false,
           sectionsOpen: false,
           selectedShotId: null,
         }),
@@ -162,6 +185,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
+          overviewOpen: false,
           sectionsOpen: false,
           selectedShotId: null,
         })),
@@ -175,6 +199,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
+          overviewOpen: false,
           sectionsOpen: false,
           skillsOpen: false,
           selectedSkillId: null,
@@ -188,6 +213,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           assetsOpen: false,
           crewAssetsOpen: false,
           nodesOpen: false,
+          overviewOpen: false,
           sectionsOpen: false,
           skillsOpen: false,
           selectedSkillId: null,
