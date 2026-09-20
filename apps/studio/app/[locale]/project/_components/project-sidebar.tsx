@@ -10,6 +10,7 @@ import {
   IconFolder,
   IconMasksTheater,
   IconHistory,
+  IconId,
   IconLibraryPhoto,
   IconPuzzle,
   IconShare3,
@@ -74,7 +75,9 @@ export function ProjectSidebar({
   const openNodes = useProjectUIStore((s) => s.openNodes);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
+  const overviewOpen = useProjectUIStore((s) => s.overviewOpen);
   const toggleHistory = useProjectUIStore((s) => s.toggleHistory);
+  const toggleOverview = useProjectUIStore((s) => s.toggleOverview);
   const toggleSections = useProjectUIStore((s) => s.toggleSections);
   const toggleSkills = useProjectUIStore((s) => s.toggleSkills);
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
@@ -115,6 +118,14 @@ export function ProjectSidebar({
   );
 
   const items = [
+    {
+      icon: IconId,
+      iconClassName: undefined,
+      label: t("sidebar.overview"),
+      active: overviewOpen,
+      disabledReason: undefined,
+      onClick: toggleOverview,
+    },
     {
       icon: IconBook2,
       iconClassName: undefined,

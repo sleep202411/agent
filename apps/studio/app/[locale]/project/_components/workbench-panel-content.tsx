@@ -41,6 +41,7 @@ export function WorkbenchPanelContent({
   crewProjectId,
   assetTab,
   sectionsPanel,
+  overviewPanel,
   onOpenOnCanvas,
 }: {
   activeMode: string;
@@ -48,6 +49,8 @@ export function WorkbenchPanelContent({
   crewProjectId?: string;
   assetTab?: WorkbenchAssetTab;
   sectionsPanel?: ReactNode;
+  /** Platform projects only — the metadata/cover panel; Story keeps its own. */
+  overviewPanel?: ReactNode;
   onOpenOnCanvas: (nodeId: string) => void;
 }) {
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
@@ -56,6 +59,7 @@ export function WorkbenchPanelContent({
   const closeActors = useProjectUIStore((s) => s.closeActors);
   const crewAssetsOpen = useProjectUIStore((s) => s.crewAssetsOpen);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
+  const overviewOpen = useProjectUIStore((s) => s.overviewOpen);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
   const skillsOpen = useProjectUIStore((s) => s.skillsOpen);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
@@ -90,21 +94,23 @@ export function WorkbenchPanelContent({
   const activePanel =
     actorsOpen && crewProjectId && activeMode === "canvas"
       ? "actors"
-      : nodesOpen && canEdit
-        ? "nodes"
-        : assetsOpen
-          ? "assets"
-          : crewAssetsOpen && crewProjectId
-            ? "crew-assets"
-            : historyOpen
-              ? "activity"
-              : sectionsOpen && sectionsPanel
-                ? "sections"
-                : skillsOpen
-                  ? "skills"
-                  : selectedShotId && selectedRow
-                    ? "shot"
-                    : null;
+      : overviewOpen && overviewPanel
+        ? "overview"
+        : nodesOpen && canEdit
+          ? "nodes"
+          : assetsOpen
+            ? "assets"
+            : crewAssetsOpen && crewProjectId
+              ? "crew-assets"
+              : historyOpen
+                ? "activity"
+                : sectionsOpen && sectionsPanel
+                  ? "sections"
+                  : skillsOpen
+                    ? "skills"
+                    : selectedShotId && selectedRow
+                      ? "shot"
+                      : null;
 
   // Keep the previous body mounted during the rail's close animation.
   const [lastPanel, setLastPanel] = useState(activePanel);
@@ -132,6 +138,7 @@ export function WorkbenchPanelContent({
     return activePanel === "actors" && documentId ? (
       <AiActorsPanel key={documentId} documentId={documentId} onClose={closeActors} />
     ) : null;
+  if (renderedPanel === "overview" && overviewPanel) return overviewPanel;
   if (renderedPanel === "nodes" && canEdit) {
     return <NodesPanel actions={nodeActions} onAction={handleNodeAction} onClose={closeNodes} />;
   }
