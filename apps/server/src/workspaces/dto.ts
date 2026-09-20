@@ -50,6 +50,9 @@ export const UpdateProjectSchema = z.object({
   projectType: z.string().trim().min(1).max(64).optional(),
   visibility: z.enum(['private', 'workspace', 'public']).optional(),
   description: z.string().trim().max(5000).nullable().optional(),
+  /** Explicit cover asset. `null` clears it (thumbnail falls back to the
+   *  derived canvas-first-image); `undefined` leaves it untouched. */
+  coverAssetId: z.string().uuid().nullable().optional(),
   expectedVersion: z.number().int().min(0).optional(),
 });
 export type UpdateProjectInput = z.infer<typeof UpdateProjectSchema>;
