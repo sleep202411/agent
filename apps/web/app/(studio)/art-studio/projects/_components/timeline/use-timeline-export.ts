@@ -10,6 +10,7 @@ import {
   TimelineExportError,
   TimelineExportUnsupportedError,
   type ExportableShot,
+  type TimelineExportReport,
 } from "@/src/lib/timeline-export-mediabunny";
 
 export function useTimelineExport(
@@ -32,6 +33,9 @@ export function useTimelineExport(
   const locale = useLocale();
   const tt = useTranslations("timeline");
   const [progress, setProgress] = useState<{ scope: typeof scope; ratio: number } | null>(null);
+  const [lastReport, setLastReport] = useState<{ scope: typeof scope; report: TimelineExportReport } | null>(null);
+  const exportReport = lastReport?.scope === scope ? lastReport.report : null;
+  const dismissExportReport = () => setLastReport(null);
   const isExporting = progress?.scope === scope;
   const exportProgress = isExporting ? progress.ratio : 0;
   const handleExportMp4 = useCallback(async () => {
@@ -70,7 +74,7 @@ export function useTimelineExport(
       owner.current === owned && owned.operation === operation && !operation.signal.aborted;
     setProgress({ scope, ratio: 0 });
     try {
-      let partial = false;
+      const reports: TimelineExportReport[] = [];
       const blob = await exportTimelineToMp4(
         shots.map((shot) => ({
           id: shot.id,
@@ -80,7 +84,7 @@ export function useTimelineExport(
         {
           signal: operation.signal,
           onReport: (report) => {
-            partial = report.partial;
+            reports.push({ ...report, issues: report.issues.map((issue) => ({ ...issue })) });
           },
           onProgress: (ratio) => {
             if (current()) setProgress({ scope, ratio });
@@ -90,7 +94,9 @@ export function useTimelineExport(
       if (!current()) return;
       const filename = `timeline-${Date.now()}.mp4`;
       triggerBlobDownload(blob, filename);
-      if (partial) {
+      const report = reports.at(-1);
+      setLastReport(report?.partial ? { scope, report } : null);
+      if (report?.partial) {
         toast.warning(tt("exportPartial"), {
           description: tt("exportPartialDesc"),
           duration: 10_000,
@@ -117,5 +123,5 @@ export function useTimelineExport(
       }
     }
   }, [scope, locale, shots, tt]);
-  return { isExporting, exportProgress, handleExportMp4 };
+  return { isExporting, exportProgress, handleExportMp4, exportReport, dismissExportReport };
 }

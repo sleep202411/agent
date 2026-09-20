@@ -90,6 +90,7 @@ import {
   type TimelineShot,
 } from "./timeline-types";
 import { useTimelineExport } from "./use-timeline-export";
+import { TimelineExportReportPanel } from "./timeline-export-report";
 
 export function TimelineView() {
   const ts = useTranslations("storyboard");
@@ -395,7 +396,7 @@ export function TimelineView() {
   // toast so the user gets at least the same diagnostic the lipsync
   // dialog now provides; deeper "View error" UX is intentionally
   // deferred until we know whether this PoC sticks.
-  const { isExporting, exportProgress, handleExportMp4 } = useTimelineExport(
+  const { isExporting, exportProgress, handleExportMp4, exportReport, dismissExportReport } = useTimelineExport(
     previewShots,
     projectId,
     activeEpisodeId
@@ -767,6 +768,7 @@ export function TimelineView() {
   return (
     <>
       <div className="flex h-full flex-col overflow-hidden" onWheel={handleWheel}>
+        {exportReport && <TimelineExportReportPanel report={exportReport} onDismiss={dismissExportReport} />}
         <div
           data-tour-step="timeline-preview"
           className="flex min-min-h-100 flex-1 flex-col items-center justify-center overflow-auto p-4"
