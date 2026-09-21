@@ -77,7 +77,7 @@ import {
 import { useOperationLabel } from "@/lib/canvas-authoring/use-labels";
 import { ValidationAlertDialog } from "./validation-alert-dialog";
 import { ProjectSkillDetailDialog } from "@/components/project-skills/project-skill-detail-dialog";
-import { downloadCanvasMedia } from "./download-media";
+import { useCanvasMediaDownload } from "./use-canvas-media-download";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
@@ -323,6 +323,7 @@ function GenerationCard({
   dragging,
   modality,
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
+  const downloadCanvasMedia = useCanvasMediaDownload();
   const t = useTranslations("canvasOps");
   const tc = useTranslations("common");
   const ts = useTranslations("project.skills");

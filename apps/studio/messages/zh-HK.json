@@ -1,4 +1,9 @@
 {
+  "canvasDownload": {
+    "failed": "無法開始下載。請重試，或開啟來源檔案手動儲存。",
+    "openSource": "開啟來源檔案",
+    "blocked": "無法開啟來源檔案。請允許此網站的彈出式視窗，然後重新下載。"
+  },
   "common": {
     "save": "儲存",
     "cancel": "取消",

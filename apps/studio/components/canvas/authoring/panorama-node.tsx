@@ -8,7 +8,7 @@ import { IconDownload, IconPencil, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
-import { downloadCanvasMedia } from "./download-media";
+import { useCanvasMediaDownload } from "./use-canvas-media-download";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
 import { PortPlus } from "./ports";
@@ -24,6 +24,7 @@ export type PanoramaNodeType = Node<
  *  live view becomes `nodrag` only while entered, so looking around does not
  *  move the node. */
 function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeType>) {
+  const downloadCanvasMedia = useCanvasMediaDownload();
   const t = useTranslations("canvasNodes");
   const [full, setFull] = useState(false);
   const [renaming, setRenaming] = useState(false);

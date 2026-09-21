@@ -1,4 +1,9 @@
 {
+  "canvasDownload": {
+    "failed": "The download could not start. Try again, or open the source to save it manually.",
+    "openSource": "Open source",
+    "blocked": "The source could not open. Allow pop-ups for this site and try the download again."
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

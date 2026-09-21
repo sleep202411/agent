@@ -60,6 +60,30 @@ it("opens the original source after an HTTP failure without allocating a blob", 
   expect(URL.createObjectURL).not.toHaveBeenCalled();
   expect(window.open).toHaveBeenCalledWith("https://media.invalid/sound", "_blank");
 });
+it("reports a blocked fallback instead of silent completion", async () => {
+  vi.mocked(fetch).mockRejectedValue(new Error("network"));
+  await expect(downloadCanvasMedia("/media", "Work", "image")).resolves.toBe("failed");
+});
+it("reports an opened fallback separately from a download start", async () => {
+  vi.mocked(fetch).mockRejectedValue(new Error("network"));
+  vi.mocked(window.open).mockReturnValue({} as Window);
+  await expect(downloadCanvasMedia("/media", "Work", "image")).resolves.toBe("opened");
+});
+it("handles a throwing fallback without an unhandled rejection", async () => {
+  vi.mocked(fetch).mockRejectedValue(new Error("network"));
+  vi.mocked(window.open).mockImplementation(() => {
+    throw new Error("blocked");
+  });
+  await expect(downloadCanvasMedia("/media", "Work", "image")).resolves.toBe("failed");
+});
+it("does not fetch or open an absent source", async () => {
+  await expect(downloadCanvasMedia("", "Work", "image")).resolves.toBe("failed");
+  expect(fetch).not.toHaveBeenCalled();
+  expect(window.open).not.toHaveBeenCalled();
+});
+it("reports initiation, not completion on disk", async () => {
+  await expect(downloadCanvasMedia("/media", "Work", "audio")).resolves.toBe("started");
+});
 
 it.each([false, true])(
   "cancels failed download streams and retains fallback (cleanup rejects: %s)",
