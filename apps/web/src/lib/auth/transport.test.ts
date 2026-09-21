@@ -56,6 +56,7 @@ describe("createWebAuthTransport", () => {
 });
 
 it("records the actual code transport through body completion and preserves business errors", async () => {
+  vi.stubGlobal("localStorage", { getItem: () => "1" });
   const timing = await import("node:perf_hooks");
   vi.stubGlobal("performance", timing.performance);
   const name = "fizzdragon.auth.code-request";

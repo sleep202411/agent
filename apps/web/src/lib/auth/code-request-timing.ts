@@ -6,7 +6,16 @@ import {
 } from "@repo/auth-flow";
 
 export const CODE_REQUEST_MEASURE = "fizzdragon.auth.code-request";
+export const CODE_REQUEST_TIMING_OPT_IN = "fizzdragon.auth.code-request-timing";
 const MAX_MEASURES = 50;
+
+function timingEnabled(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(CODE_REQUEST_TIMING_OPT_IN) === "1";
+  } catch {
+    return false;
+  }
+}
 
 /** Local-only diagnostics: never retain the URL, identifier, body or error message. */
 export async function measureCodeRequest(
@@ -14,6 +23,7 @@ export async function measureCodeRequest(
   locale: string,
   send: () => Promise<AuthResponse>
 ): Promise<AuthResponse> {
+  if (!timingEnabled()) return send();
   const channel =
     input.path === "/user/email/getCode"
       ? "email"

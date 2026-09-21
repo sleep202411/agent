@@ -1,7 +1,11 @@
 import { performance as timing } from "node:perf_hooks";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AuthTransportError, type AuthRequest } from "@repo/auth-flow";
-import { CODE_REQUEST_MEASURE, measureCodeRequest } from "./code-request-timing";
+import {
+  CODE_REQUEST_MEASURE,
+  CODE_REQUEST_TIMING_OPT_IN,
+  measureCodeRequest,
+} from "./code-request-timing";
 const request: AuthRequest = {
   method: "GET",
   path: "/user/new/getCode",
@@ -10,6 +14,11 @@ const request: AuthRequest = {
 const result = { status: 200, body: { code: 200, msg: "private text", token: "private-token" } };
 const entries = () =>
   timing.getEntriesByName(CODE_REQUEST_MEASURE, "measure") as PerformanceMeasure[];
+beforeEach(() => {
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => (key === CODE_REQUEST_TIMING_OPT_IN ? "1" : null),
+  });
+});
 afterEach(() => {
   vi.unstubAllGlobals();
   timing.clearMeasures(CODE_REQUEST_MEASURE);
@@ -104,4 +113,28 @@ it("isolates unavailable or failing timing APIs", async () => {
       })
     ).rejects.toBe(error);
   }
+});
+
+it.each([null, "0"])("does not record without explicit opt-in (%s)", async (setting) => {
+  vi.stubGlobal("localStorage", { getItem: () => setting });
+  const measure = vi.fn();
+  vi.stubGlobal("performance", { measure });
+  const send = vi.fn(async () => result);
+  expect(await measureCodeRequest(request, "en-US", send)).toBe(result);
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(measure).not.toHaveBeenCalled();
+});
+it("preserves requests when local storage is unavailable", async () => {
+  vi.stubGlobal("localStorage", {
+    getItem: () => {
+      throw Error("blocked");
+    },
+  });
+  expect(await measureCodeRequest(request, "en-US", async () => result)).toBe(result);
+  const error = Error("original");
+  await expect(
+    measureCodeRequest(request, "en-US", async () => {
+      throw error;
+    })
+  ).rejects.toBe(error);
 });
