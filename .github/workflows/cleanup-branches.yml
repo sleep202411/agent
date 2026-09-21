@@ -25,8 +25,7 @@ jobs:
             });
 
             const featureBranches = branches
-              .filter(b => b.name.startsWith('feature/'))
-              .map(b => b.name);
+              .filter(b => b.name.startsWith('feature/'));
 
             if (featureBranches.length === 0) {
               console.log('No feature branches to clean up');
@@ -35,21 +34,26 @@ jobs:
 
             // Check which feature branches are merged into main
             const deleted = [];
-            for (const branch of featureBranches) {
+            for (const candidate of featureBranches) {
+              const branch = candidate.name;
+              const checkedSha = candidate.commit.sha;
               try {
                 const { data: comparison } = await github.rest.repos.compareCommits({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   base: 'main',
-                  head: branch,
+                  head: checkedSha,
                 });
 
                 if (comparison.status === 'behind' || comparison.status === 'identical') {
-                  await github.rest.git.deleteRef({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    ref: `heads/${branch}`,
-                  });
+                  // Delete only the exact head we checked. GitHub deleteRef
+                  // deletes by name and can erase work pushed after comparison.
+                  require('node:child_process').execFileSync('git', [
+                    'push',
+                    `--force-with-lease=refs/heads/${branch}:${checkedSha}`,
+                    'origin',
+                    `:refs/heads/${branch}`,
+                  ]);
                   deleted.push(branch);
                   console.log(`Deleted: ${branch}`);
                 }
