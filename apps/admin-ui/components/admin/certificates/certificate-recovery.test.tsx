@@ -168,3 +168,23 @@ it("retains a failed list and retries its read", async () => {
   await act(async () => click("刷新"));
   expect(container.textContent).not.toContain("FD-ONE");
 });
+
+it.each(["恢复", "永久删除"])(
+  "does not report an accepted %s as failed when only its refresh fails",
+  async (action) => {
+    fetchMock
+      .mockResolvedValueOnce(response())
+      .mockRejectedValueOnce(new Error("Refresh unavailable"))
+      .mockResolvedValue(response(page));
+    await render(view());
+    await act(async () => click(action));
+    expect(container.textContent).toContain("Refresh unavailable");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await act(async () => click("刷新"));
+    expect(fetchMock.mock.calls.map((call) => call[1].method)).toEqual([
+      action === "恢复" ? "POST" : "DELETE",
+      undefined,
+      undefined,
+    ]);
+  }
+);
