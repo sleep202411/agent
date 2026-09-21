@@ -52,7 +52,9 @@ export function PanoramaCanvas({
   const mountRef = useRef<HTMLDivElement>(null);
   const gizmoRef = useRef<HTMLCanvasElement>(null);
   const readoutRef = useRef<HTMLDivElement>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadState, setLoadState] = useState({ src, loading: true });
+  if (loadState.src !== src) setLoadState({ src, loading: true });
+  const loading = loadState.src !== src || loadState.loading;
   const onLoadRef = useRef(onLoad);
 
   useEffect(() => {
@@ -75,12 +77,17 @@ export function PanoramaCanvas({
     const material = new THREE.MeshBasicMaterial();
     scene.add(new THREE.Mesh(geometry, material));
 
+    let active = true;
     new THREE.TextureLoader().setCrossOrigin("anonymous").load(texturedSrc(src), (texture) => {
+      if (!active) {
+        texture.dispose();
+        return;
+      }
       texture.colorSpace = THREE.SRGBColorSpace;
       material.map = texture;
       material.needsUpdate = true;
       onLoadRef.current?.({ w: texture.image.width, h: texture.image.height });
-      setLoading(false);
+      setLoadState({ src, loading: false });
     });
 
     let lon = 0;
@@ -189,6 +196,7 @@ export function PanoramaCanvas({
     el.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
+      active = false;
       cancelAnimationFrame(raf);
       ro.disconnect();
       el.removeEventListener("pointerdown", onDown);
