@@ -279,15 +279,18 @@ export function CertificatesPanel({
     const operation = begin();
     if (!operation) return;
     setError(null);
+    let mutationAccepted = false;
     try {
       await requestEnvelope(url, { method, signal: operation.signal });
+      mutationAccepted = true;
       if (!operation.current()) return;
       const data = await readPage(targetPage, operation.signal);
       if (operation.current()) acceptPage(data);
     } catch (err) {
       if (operation.current()) {
         setError(toErrorMessage(err));
-        throw err;
+        // Close an accepted confirmation; its refresh can be retried separately.
+        if (!mutationAccepted) throw err;
       }
     } finally {
       operation.finish();
