@@ -245,6 +245,37 @@ it("classifies a stalled body as timeout while preserving active unauthorized no
   });
   expect(dispatchEvent).toHaveBeenCalledTimes(1);
 });
+
+it.each([
+  { code: 403, success: true },
+  { code: 200, success: false },
+])("rejects conflicting statuses in normal and raw requests: %j", async (status) => {
+  const body = { ...status, message: "Operation denied", data: { id: "untrusted" } };
+  const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(body)));
+  vi.stubGlobal("fetch", fetchMock);
+  for (const raw of [false, true]) {
+    await expect(api.post("/aurora/test", { raw })).rejects.toMatchObject({
+      name: "ApiRequestError",
+      message: "Operation denied",
+      code: status.code,
+      responseBody: JSON.stringify(body),
+    });
+  }
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it.each([{ success: true }, { code: "SUCCESS" }, { code: 202 }, { code: 200, success: true }])(
+  "accepts supported successful envelopes: %j",
+  async (status) => {
+    const body = { ...status, data: { id: "accepted" } };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(JSON.stringify(body)))
+    );
+    await expect(api.get("/aurora/test")).resolves.toEqual(body.data);
+    await expect(api.get("/aurora/test", { raw: true })).resolves.toEqual(body);
+  }
+);
 it("does not dump Cloudflare HTML as the error message", async () => {
   vi.stubGlobal(
     "fetch",

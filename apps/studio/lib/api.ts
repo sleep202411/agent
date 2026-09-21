@@ -226,9 +226,11 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     assertActive();
     const numericCode = typeof body.code === "number" ? body.code : null;
     const isSuccess =
-      body.success === true ||
-      (numericCode !== null && numericCode >= 200 && numericCode < 300) ||
-      body.code === "SUCCESS";
+      ("success" in body || "code" in body) &&
+      (!("success" in body) || body.success === true) &&
+      (!("code" in body) ||
+        (numericCode !== null && numericCode >= 200 && numericCode < 300) ||
+        body.code === "SUCCESS");
     if (!isSuccess) {
       const detail = responseErrorDetail(body as Record<string, unknown>);
       throw new ApiRequestError(
