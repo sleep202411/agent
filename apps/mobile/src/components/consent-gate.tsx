@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Alert,
   BackHandler,
   Modal,
   Platform,
@@ -36,12 +37,27 @@ export function ConsentGate() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    void hasPrivacyConsent().then((ok) => setVisible(!ok));
+    let active = true;
+    void hasPrivacyConsent().then(
+      (ok) => {
+        if (active) setVisible(!ok);
+      },
+      () => {
+        if (active) setVisible(true);
+      }
+    );
+    return () => {
+      active = false;
+    };
   }, []);
 
   const agree = async () => {
-    await setPrivacyConsent();
-    setVisible(false);
+    try {
+      await setPrivacyConsent();
+      setVisible(false);
+    } catch (error) {
+      Alert.alert(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const refuse = () => {
