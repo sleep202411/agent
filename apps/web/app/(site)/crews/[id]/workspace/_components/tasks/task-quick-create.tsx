@@ -119,9 +119,14 @@ export function TaskQuickCreate({
   const activeCycle = project.cycles.find((cycle) => cycle.status === "active") ?? null;
   const defaultCycleId = useMemo(() => {
     const filtered = activeView.filters.cycleIds ?? [];
-    if (filtered.length === 1) return filtered[0] ?? "";
+    if (filtered.length === 1) {
+      const filteredCycle = project.cycles.find(
+        (cycle) => cycle.id === filtered[0] && cycle.status !== "cancelled"
+      );
+      if (filteredCycle) return filteredCycle.id;
+    }
     return activeCycle?.id ?? "";
-  }, [activeCycle?.id, activeView.filters.cycleIds]);
+  }, [activeCycle?.id, activeView.filters.cycleIds, project.cycles]);
   const defaultWorkflowStateId = useMemo(() => {
     if (
       presetWorkflowStateId &&
