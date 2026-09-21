@@ -5,6 +5,15 @@ import {
   StoryProductionPlanSchema,
   StoryStoryboardPlanSchema,
 } from "./story-production.js";
+import {
+  MAX_STORY_EXIT_ROUTES,
+  MAX_STORY_STATE_NOTE_LENGTH,
+  StoryConditionSchema,
+  StoryStateEffectSchema,
+  StoryStateEffectsSchema,
+  StoryStateKeySchema,
+  type StoryCondition,
+} from "./story-stats.js";
 
 export const STORY_PATCH_SCHEMA_VERSION = "story-patch-v1" as const;
 
@@ -292,6 +301,39 @@ export const StoryAgentLocalizedTextSchema = z.record(
   StoryAgentLocaleSchema,
   z.string().max(4_000)
 );
+
+// Agent patch payloads write the canonical Story document. Re-export the
+// canonical state contracts instead of maintaining a second copy that can
+// drift from runtime and server validation.
+export const StoryAgentStateKeySchema = StoryStateKeySchema;
+export const StoryAgentStateEffectSchema = StoryStateEffectSchema;
+export const StoryAgentStateEffectsSchema = StoryStateEffectsSchema;
+export type StoryAgentCondition = StoryCondition;
+export const StoryAgentConditionSchema = StoryConditionSchema;
+
+const StoryAgentStateVariableBaseShape = {
+  key: StoryAgentStateKeySchema,
+  name: StoryAgentLocalizedTextSchema,
+  note: z.string().max(MAX_STORY_STATE_NOTE_LENGTH).optional(),
+} as const;
+
+export const StoryAgentStateVariableSchema = z.union([
+  z
+    .object({
+      ...StoryAgentStateVariableBaseShape,
+      valueType: z.literal("number"),
+      initialValue: z.number().finite(),
+    })
+    .strict(),
+  z
+    .object({
+      ...StoryAgentStateVariableBaseShape,
+      valueType: z.literal("boolean"),
+      initialValue: z.boolean(),
+    })
+    .strict(),
+]);
+export type StoryAgentStateVariable = z.infer<typeof StoryAgentStateVariableSchema>;
 export const StoryAgentCharacterSchema = z
   .object({
     id: StoryAgentStableIdSchema,
@@ -301,28 +343,74 @@ export const StoryAgentCharacterSchema = z
   .strict();
 export type StoryAgentCharacter = z.infer<typeof StoryAgentCharacterSchema>;
 
-export const StoryAgentGraphChoiceSchema = z
-  .object({
-    choiceId: StoryAgentStableIdSchema,
-    label: StoryAgentLocalizedTextSchema,
-    /** Null marks a choice the canvas has not connected to a target yet. */
-    nextNodeId: StoryAgentStableIdSchema.nullable(),
-  })
-  .strict();
+const StoryAgentGraphChoiceBaseShape = {
+  choiceId: StoryAgentStableIdSchema,
+  label: StoryAgentLocalizedTextSchema,
+  effects: StoryAgentStateEffectsSchema.optional(),
+  visibleWhen: StoryAgentConditionSchema.optional(),
+} as const;
+
+export const StoryAgentRouteTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("node"), nodeId: StoryAgentStableIdSchema }).strict(),
+  z.object({ kind: z.literal("ending"), endingId: StoryAgentStableIdSchema }).strict(),
+]);
+
+export const StoryAgentAutoRoutesSchema = z
+  .array(
+    z
+      .object({
+        when: StoryAgentConditionSchema.optional(),
+        target: StoryAgentRouteTargetSchema.nullable(),
+      })
+      .strict()
+  )
+  .min(1)
+  .max(MAX_STORY_EXIT_ROUTES);
+
+export const StoryAgentGraphChoiceSchema = z.union([
+  z
+    .object({
+      ...StoryAgentGraphChoiceBaseShape,
+      /** Null marks a choice the canvas has not connected to a target yet. */
+      target: StoryAgentRouteTargetSchema.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      ...StoryAgentGraphChoiceBaseShape,
+      /** Accepted for the screenplay compiler until it emits canonical targets. */
+      nextNodeId: StoryAgentStableIdSchema.nullable(),
+    })
+    .strict(),
+]);
 export type StoryAgentGraphChoice = z.infer<typeof StoryAgentGraphChoiceSchema>;
 
-export const StoryAgentInteractionActionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("continue") }).strict(),
+export const StoryAgentInteractionActionSchema = z.union([
+  z
+    .object({
+      kind: z.literal("continue"),
+      effects: StoryAgentStateEffectsSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal("seek"),
       timeMs: z.number().int().min(0),
+      effects: StoryAgentStateEffectsSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("goto"),
+      target: StoryAgentRouteTargetSchema,
+      effects: StoryAgentStateEffectsSchema.optional(),
     })
     .strict(),
   z
     .object({
       kind: z.literal("goto"),
       nodeId: StoryAgentStableIdSchema,
+      effects: StoryAgentStateEffectsSchema.optional(),
     })
     .strict(),
 ]);
@@ -399,16 +487,16 @@ export const StoryAgentGraphNodeSchema = z
   .object({
     kind: z.literal("clip"),
     nodeId: StoryAgentStableIdSchema,
+    communityPointPrice: z.number().int().min(0).max(2_147_483_647).optional(),
     clipKey: StoryAgentClipKeySchema,
     name: StoryAgentNodeNameSchema.optional(),
     description: StoryAgentNodeDescriptionSchema.optional(),
     interactions: z.array(StoryAgentHotspotInteractionSchema).max(100).default([]),
-    exit: z.discriminatedUnion("kind", [
+    onEnterEffects: StoryAgentStateEffectsSchema.optional(),
+    exit: z.union([
+      z.object({ kind: z.literal("auto"), routes: StoryAgentAutoRoutesSchema }).strict(),
       z
-        .object({
-          kind: z.literal("auto"),
-          nextNodeId: StoryAgentStableIdSchema.nullable(),
-        })
+        .object({ kind: z.literal("auto"), nextNodeId: StoryAgentStableIdSchema.nullable() })
         .strict(),
       z
         .object({
@@ -503,6 +591,25 @@ export const StoryPatchOperationShapeSchema = z.discriminatedUnion("kind", [
   z
     .object({
       ...StoryAgentOperationBaseShape,
+      kind: z.literal("story_bible.put_state_variable"),
+      payload: z
+        .object({
+          intent: StoryAgentPutIntentSchema,
+          variable: StoryAgentStateVariableSchema,
+        })
+        .strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...StoryAgentOperationBaseShape,
+      kind: z.literal("story_bible.remove_state_variable"),
+      payload: z.object({ key: StoryAgentStateKeySchema }).strict(),
+    })
+    .strict(),
+  z
+    .object({
+      ...StoryAgentOperationBaseShape,
       kind: z.literal("story_graph.set_entry_node"),
       payload: z.object({ nodeId: StoryAgentStableIdSchema.nullable() }).strict(),
     })
@@ -589,6 +696,8 @@ export const STORY_PATCH_OPERATION_LABELS: Record<StoryPatchOperation["kind"], s
   "story_bible.update_overview": "Update the story overview.",
   "story_bible.put_character": "Write a story-bible character.",
   "story_bible.remove_character": "Remove a story-bible character.",
+  "story_bible.put_state_variable": "Write a Story state variable.",
+  "story_bible.remove_state_variable": "Remove a Story state variable.",
   "story_graph.set_entry_node": "Set the chapter entry node.",
   "story_graph.put_node": "Write a story graph node.",
   "story_graph.remove_node": "Remove a story graph node.",
@@ -1111,6 +1220,31 @@ export const StoryScreenplayDialogueLineSchema = z
   })
   .strict();
 
+const StoryScreenplayExitSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("auto"),
+      nextNodeId: StoryAgentStableIdSchema.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("choice"),
+      decisionId: StoryAgentStableIdSchema,
+      prompt: StoryAgentLocalizedTextSchema,
+      choices: z.array(
+        z
+          .object({
+            choiceId: StoryAgentStableIdSchema,
+            label: StoryAgentLocalizedTextSchema,
+            nextNodeId: StoryAgentStableIdSchema.nullable(),
+          })
+          .strict()
+      ),
+    })
+    .strict(),
+]);
+
 export const StoryScreenplaySceneSchema = z
   .object({
     nodeId: StoryAgentStableIdSchema,
@@ -1120,9 +1254,22 @@ export const StoryScreenplaySceneSchema = z
     beat: z.string().trim().min(1).max(500),
     action: z.string().min(1).max(12_000).regex(/\S/),
     dialogue: z.array(StoryScreenplayDialogueLineSchema).max(120),
-    exit: StoryAgentGraphNodeSchema.shape.exit,
+    exit: StoryScreenplayExitSchema,
   })
   .strict();
+
+function storyAgentExitNodeIds(exit: z.infer<typeof StoryAgentGraphNodeSchema>["exit"]): string[] {
+  if (exit.kind === "auto") {
+    if ("nextNodeId" in exit) return exit.nextNodeId ? [exit.nextNodeId] : [];
+    return exit.routes.flatMap((route) =>
+      route.target?.kind === "node" ? [route.target.nodeId] : []
+    );
+  }
+  return exit.choices.flatMap((choice) => {
+    if ("nextNodeId" in choice) return choice.nextNodeId ? [choice.nextNodeId] : [];
+    return choice.target?.kind === "node" ? [choice.target.nodeId] : [];
+  });
+}
 
 export const StoryScreenplaySchema = z
   .object({
@@ -1146,7 +1293,7 @@ export const StoryScreenplaySchema = z
     const ids = new Set(screenplay.scenes.map((scene) => scene.nodeId));
     (screenplay.unresolvedNodeIds ?? []).forEach((nodeId, index) => {
       const scene = screenplay.scenes.find((item) => item.nodeId === nodeId);
-      if (!scene || scene.exit.kind !== "auto" || scene.exit.nextNodeId !== null) {
+      if (!scene || scene.exit.kind !== "auto" || storyAgentExitNodeIds(scene.exit).length > 0) {
         context.addIssue({
           code: "custom",
           path: ["unresolvedNodeIds", index],
@@ -1163,14 +1310,7 @@ export const StoryScreenplaySchema = z
       });
     }
     screenplay.scenes.forEach((scene, sceneIndex) => {
-      const targets =
-        scene.exit.kind === "auto"
-          ? scene.exit.nextNodeId === null
-            ? []
-            : [scene.exit.nextNodeId]
-          : scene.exit.choices
-              .map((choice) => choice.nextNodeId)
-              .filter((target): target is string => target !== null);
+      const targets = storyAgentExitNodeIds(scene.exit);
       targets.forEach((target) => {
         if (!ids.has(target)) {
           context.addIssue({
@@ -1261,8 +1401,9 @@ export function buildStoryScreenplayDocument(screenplay: StoryScreenplay): Story
     if (scene.exit.kind === "choice") {
       blocks.push({ kind: "paragraph", text: localizedStoryText(scene.exit.prompt) });
       for (const choice of scene.exit.choices) {
-        const target = choice.nextNodeId
-          ? (sceneNames.get(choice.nextNodeId) ?? choice.nextNodeId)
+        const targetNodeId = choice.nextNodeId;
+        const target = targetNodeId
+          ? (sceneNames.get(targetNodeId) ?? targetNodeId)
           : "(unresolved)";
         blocks.push({
           kind: "paragraph",

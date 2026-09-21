@@ -6,7 +6,11 @@ import {
   buildStoryCanvasModel,
   type StoryCanvasNodeData,
 } from "./project-canvas/story-project-canvas-model";
-import { storyAuthoringProposalReview } from "./story-authoring-proposal";
+import {
+  storyAgentAutoNextNodeId,
+  storyAgentChoiceNextNodeId,
+  storyAuthoringProposalReview,
+} from "./story-authoring-proposal";
 
 export type StoryPlotPreviewNodeData = StoryCanvasNodeData & {
   isEntry: boolean;
@@ -62,7 +66,7 @@ export function buildStoryPlotPreviewModel(
           interactions: [],
           exit:
             scene.exit.kind === "auto"
-              ? storyAutoExit(scene.exit.nextNodeId)
+              ? storyAutoExit(storyAgentAutoNextNodeId(scene.exit))
               : {
                   kind: "choice",
                   decisionId: scene.exit.decisionId,
@@ -70,7 +74,7 @@ export function buildStoryPlotPreviewModel(
                   choices: scene.exit.choices.map((choice) => ({
                     choiceId: choice.choiceId,
                     label: choice.label,
-                    target: storyNodeTarget(choice.nextNodeId),
+                    target: storyNodeTarget(storyAgentChoiceNextNodeId(choice)),
                   })),
                 },
         })

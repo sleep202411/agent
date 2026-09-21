@@ -228,6 +228,71 @@ describe('executeStoryPatch', () => {
     });
   });
 
+  it('creates typed state variables and validates graph effects atomically', () => {
+    const result = executeStoryPatch({
+      draft: draft(),
+      layout: { nodePositions: {} },
+      operations: [
+        operation({
+          kind: 'story_bible.put_state_variable',
+          payload: {
+            intent: 'create',
+            variable: {
+              key: 'courage',
+              name: { 'en-US': 'Courage' },
+              valueType: 'number',
+              initialValue: 0,
+              note: 'Confidence under pressure.',
+            },
+          },
+        }),
+        operation(
+          {
+            kind: 'story_graph.put_node',
+            payload: {
+              intent: 'replace',
+              node: {
+                kind: 'clip',
+                nodeId: 'opening',
+                clipKey: 'OPENING',
+                interactions: [],
+                onEnterEffects: [{ kind: 'add', key: 'courage', amount: 1 }],
+                exit: { kind: 'auto', routes: [{ target: null }] },
+              },
+            },
+          },
+          1,
+        ),
+      ],
+    });
+
+    expect(result.draft.storyBible.stateVariables).toEqual([
+      {
+        key: 'courage',
+        name: { 'en-US': 'Courage' },
+        valueType: 'number',
+        initialValue: 0,
+        note: 'Confidence under pressure.',
+      },
+    ]);
+    expect(result.draft.graph.nodes[0]).toMatchObject({
+      onEnterEffects: [{ kind: 'add', key: 'courage', amount: 1 }],
+    });
+
+    expect(() =>
+      executeStoryPatch({
+        draft: result.draft,
+        layout: { nodePositions: {} },
+        operations: [
+          operation({
+            kind: 'story_bible.remove_state_variable',
+            payload: { key: 'courage' },
+          }),
+        ],
+      }),
+    ).toThrow(StoryPatchExecutionError);
+  });
+
   it('fails loud on create conflicts and dangling graph targets', () => {
     expect(() =>
       executeStoryPatch({
