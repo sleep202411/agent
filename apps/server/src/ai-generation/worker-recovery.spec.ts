@@ -14,7 +14,7 @@ function fixture(status = 'in_progress', providerJobId?: string) {
   const pollJob = jest.fn().mockResolvedValue(undefined);
   const runJob = jest.fn().mockResolvedValue(undefined);
   const worker = Object.assign(
-    Object.create(AiGenerationWorkerService.prototype) as object,
+    Object.create(AiGenerationWorkerService.prototype) as RecoveryWorker,
     {
       store: {
         recordUnknownAcceptance: jest.fn().mockResolvedValue(true),
@@ -28,7 +28,7 @@ function fixture(status = 'in_progress', providerJobId?: string) {
       scheduleAcceptedPoll: pollJob,
       runJob,
     },
-  ) as RecoveryWorker;
+  );
   return { worker, pollJob, runJob };
 }
 
