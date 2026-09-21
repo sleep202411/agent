@@ -53,73 +53,97 @@ export async function readTextGameSse(
   onFrame: (frame: TextGameSseFrame) => void
 ): Promise<void> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TEXT_GAME_STREAM_TIMEOUT_MS);
-  let response: Response;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, TEXT_GAME_STREAM_TIMEOUT_MS);
   try {
-    response = await fetch(path, {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-        ...satokenHeader(),
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          ...satokenHeader(),
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === "AbortError";
+      throw new ApiRequestError(
+        "NETWORK_ERROR",
+        timedOut ? "Request timed out" : "Network connection failed",
+        0
+      );
+    }
+
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/event-stream")) {
+      const raw = await response.text();
+      throwIfJavaEnvelope(raw, response.status);
+      throw new ApiRequestError(
+        `HTTP_${response.status}`,
+        raw.trim() || `HTTP ${response.status}`,
+        response.status,
+        raw
+      );
+    }
+
+    if (!response.ok || !response.body) {
+      const raw = await response.text().catch(() => "");
+      throwIfJavaEnvelope(raw, response.status);
+      throw new ApiRequestError(
+        `HTTP_${response.status}`,
+        raw.trim() || `HTTP ${response.status}`,
+        response.status,
+        raw
+      );
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completed = false;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          completed = true;
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const { frames, rest } = takeTextGameSseFrames(buffer);
+        buffer = rest;
+        for (const frame of frames) {
+          if (frame.event === "error") {
+            throw new ApiRequestError(
+              "STREAM_ERROR",
+              textGameStreamErrorMessage(frame.data, "Request failed"),
+              200,
+              JSON.stringify(frame.data)
+            );
+          }
+          onFrame(frame);
+        }
+      }
+    } finally {
+      if (!completed) {
+        // Cancel without waiting on a potentially stalled upstream cleanup.
+        void reader.cancel().catch(() => undefined);
+        controller.abort();
+      }
+      reader.releaseLock();
+    }
   } catch (error) {
-    const timedOut = error instanceof DOMException && error.name === "AbortError";
-    throw new ApiRequestError(
-      "NETWORK_ERROR",
-      timedOut ? "Request timed out" : "Network connection failed",
-      0
-    );
+    if (timedOut) {
+      throw new ApiRequestError("NETWORK_ERROR", "Request timed out", 0);
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
-  }
-
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!contentType.includes("text/event-stream")) {
-    const raw = await response.text();
-    throwIfJavaEnvelope(raw, response.status);
-    throw new ApiRequestError(
-      `HTTP_${response.status}`,
-      raw.trim() || `HTTP ${response.status}`,
-      response.status,
-      raw
-    );
-  }
-
-  if (!response.ok || !response.body) {
-    const raw = await response.text().catch(() => "");
-    throwIfJavaEnvelope(raw, response.status);
-    throw new ApiRequestError(
-      `HTTP_${response.status}`,
-      raw.trim() || `HTTP ${response.status}`,
-      response.status,
-      raw
-    );
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const { frames, rest } = takeTextGameSseFrames(buffer);
-    buffer = rest;
-    for (const frame of frames) {
-      if (frame.event === "error") {
-        throw new ApiRequestError(
-          "STREAM_ERROR",
-          textGameStreamErrorMessage(frame.data, "Request failed"),
-          200,
-          JSON.stringify(frame.data)
-        );
-      }
-      onFrame(frame);
-    }
   }
 }
