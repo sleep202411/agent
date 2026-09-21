@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -295,6 +296,7 @@ export class BillingController {
    */
   @Public()
   @Post('webhooks/wechat')
+  @HttpCode(200)
   async handleWechatWebhook(
     @Req() req: RawBodyRequest,
     @Headers('wechatpay-serial') serial?: string | string[],
