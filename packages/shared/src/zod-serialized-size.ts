@@ -67,9 +67,6 @@ const STRING_FORMAT_MAX_CHARACTERS: ReadonlyMap<string, number> = new Map([
   ["uuidv7", 36],
   ["nanoid", 21],
   ["date", 10],
-  ["time", 32],
-  ["datetime", 64],
-  ["duration", 64],
 ]);
 
 /** A place the walker could not put a ceiling on. */
@@ -360,7 +357,26 @@ function measureString(
     return quotes + max * bytesPerCharacter;
   }
   const format = typeof def.format === "string" ? def.format : null;
-  const formatMax = format === null ? undefined : STRING_FORMAT_MAX_CHARACTERS.get(format);
+  const precision = def.precision;
+  const fixedTimeLength =
+    (format === "time" || format === "datetime") &&
+    typeof precision === "number" &&
+    Number.isSafeInteger(precision) &&
+    precision >= -1
+      ? precision === -1
+        ? 5
+        : precision === 0
+          ? 8
+          : 9 + precision
+      : undefined;
+  // Default ISO time/datetime permits arbitrary fractional precision; durations
+  // also permit arbitrary digit counts. Only explicit precision pins a width.
+  const formatMax =
+    fixedTimeLength !== undefined
+      ? fixedTimeLength + (format === "datetime" ? 11 + (def.offset ? 6 : 1) : 0)
+      : format === null
+        ? undefined
+        : STRING_FORMAT_MAX_CHARACTERS.get(format);
   if (formatMax !== undefined) {
     return quotes + formatMax * bytesPerCharacter;
   }
