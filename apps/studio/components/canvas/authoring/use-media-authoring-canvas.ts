@@ -505,14 +505,20 @@ export function useMediaAuthoringCanvas({
 
   const runUpload = useCallback(
     (id: string, file: File, kind: UploadMediaKind) => {
-      const signal = uploadStore.get(id)?.controller.signal;
+      const controller = uploadStore.get(id)?.controller;
+      if (!controller || controller.signal.aborted) return;
+      const signal = controller.signal;
+      const ownsAttempt = () => !signal.aborted && uploadStore.get(id)?.controller === controller;
       uploadFileViaSignedUrl(file, {
         kind: uploadKind(kind),
         ...(workspaceId ? { workspaceId } : {}),
         signal,
-        onProgress: (progress) => uploadStore.patchProgress(id, progress),
+        onProgress: (progress) => {
+          if (ownsAttempt()) uploadStore.patchProgress(id, progress);
+        },
       })
         .then((uploaded) => {
+          if (!ownsAttempt()) return;
           promoteLocalNode(id, {
             src: uploaded.url,
             mediaAssetId: uploaded.mediaAssetId,
@@ -538,7 +544,7 @@ export function useMediaAuthoringCanvas({
           }
         })
         .catch((error) => {
-          if (isUploadAbort(error)) return;
+          if (!ownsAttempt() || isUploadAbort(error)) return;
           uploadStore.markFailed(id, error instanceof Error ? error.message : String(error));
         });
     },
@@ -577,7 +583,7 @@ export function useMediaAuthoringCanvas({
     (id: string) => {
       const entry = uploadStore.get(id);
       const kind = entry ? canvasUploadMediaKind(entry.file, acceptedKinds) : null;
-      if (!entry || !kind) return;
+      if (!entry || entry.status !== "failed" || !kind) return;
       uploadStore.begin(id, {
         ...entry,
         status: "uploading",
