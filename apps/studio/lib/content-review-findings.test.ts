@@ -125,3 +125,36 @@ describe("groupReviewFindings", () => {
     expect(groups[1]?.comments.map((item) => item.id)).toEqual(["c3"]);
   });
 });
+
+describe("explicit timestamp unit boundaries", () => {
+  it("rejects out-of-range explicit seconds instead of treating them as milliseconds", () => {
+    expect(parseReviewTimeOffset("10800s")).toBe(10800);
+    expect(parseReviewTimeOffset("10801s")).toBeNull();
+    expect(parseReviewTimeOffset("10801 seconds")).toBeNull();
+  });
+  it("converts explicit milliseconds exactly once", () => {
+    expect(parseReviewTimeOffset("10800000ms")).toBe(10800);
+    expect(parseReviewTimeOffset("10801000ms")).toBeNull();
+  });
+  it("rejects out-of-range clocks without rescaling", () => {
+    expect(parseReviewTimeOffset("03:00:00")).toBe(10800);
+    expect(parseReviewTimeOffset("03:00:01")).toBeNull();
+  });
+  it("rejects invalid clock minute and second components", () => {
+    expect(parseReviewTimeOffset("01:60:00")).toBeNull();
+    expect(parseReviewTimeOffset("01:00:60")).toBeNull();
+    expect(parseReviewTimeOffset("01:60")).toBeNull();
+    expect(parseReviewTimeOffset("60:00")).toBe(3600);
+  });
+  it("does not move out-of-range saved comments to the start of the video", () => {
+    expect(
+      reviewFindingsFromComments([
+        { id: "long", seconds: 10801, body: "review here", createdByUserId: "u" },
+      ])
+    ).toEqual([]);
+  });
+  it("preserves the existing unitless provider heuristic", () => {
+    expect(parseReviewTimeOffset(15000)).toBe(15);
+    expect(parseReviewTimeOffset("15000")).toBe(15);
+  });
+});
