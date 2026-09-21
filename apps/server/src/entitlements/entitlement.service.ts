@@ -622,7 +622,6 @@ export class EntitlementService {
           OR: [{ endsAt: null }, { endsAt: { gt: input.now } }],
         },
         orderBy: [{ startsAt: 'desc' }, { createdAt: 'desc' }],
-        take: 5,
       });
       if (rows.length === 0) continue;
       const cache = await this.loadPlanCache();
@@ -664,7 +663,7 @@ export class EntitlementService {
         subjectId: input.workspaceId,
       });
     }
-    const sub = await this.prisma.billingSubscription.findFirst({
+    const subscriptions = await this.prisma.billingSubscription.findMany({
       where: {
         OR: subjects,
         planKey: { not: COMMUNITY_MEMBERSHIP_PLAN_KEY },
@@ -678,10 +677,31 @@ export class EntitlementService {
       },
       orderBy: [{ currentPeriodEnd: 'desc' }],
     });
-    if (!sub?.planKey) return null;
-
-    const planKey = this.normalizeComputePlanKey(sub.planKey) || 'free';
-    const plan = await this.activePlanByKey(planKey);
+    if (subscriptions.length === 0) return null;
+    const cache = await this.loadPlanCache();
+    const candidates = subscriptions.flatMap((sub) => {
+      if (!sub.planKey) return [];
+      const planKey = this.normalizeComputePlanKey(sub.planKey);
+      const plan = cache.byKey.get(planKey) ?? null;
+      return [
+        {
+          sub,
+          planKey,
+          plan,
+          rank: plan?.rank ?? rankForEntitlementPlanKey(planKey),
+        },
+      ];
+    });
+    if (candidates.length === 0) return null;
+    // Expiry only breaks a rank tie; a longer lower-tier subscription must
+    // not hide a stronger, still-current subscription on either subject.
+    candidates.sort(
+      (left, right) =>
+        right.rank - left.rank ||
+        (right.sub.currentPeriodEnd?.getTime() ?? 0) -
+          (left.sub.currentPeriodEnd?.getTime() ?? 0),
+    );
+    const { sub, planKey, plan } = candidates[0];
     return this.buildSnapshot({
       subject: { type: sub.subjectType, id: sub.subjectId },
       planKey,

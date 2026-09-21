@@ -93,6 +93,11 @@ describe('AiGenerationService cancellation transaction seam', () => {
     const providerCapacity = { release: jest.fn() };
     const billingWallet = { releaseForJob: jest.fn() };
     const service = serviceWith({ store, providerCapacity, billingWallet });
+    Object.assign(service, {
+      workspacePermissions: {
+        requireProjectRole: jest.fn().mockResolvedValue(undefined),
+      },
+    });
 
     await service.cancelJob(
       { userId: cancelled.userId } as never,

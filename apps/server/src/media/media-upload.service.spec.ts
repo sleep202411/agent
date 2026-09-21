@@ -810,3 +810,97 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     expect(fixture.createAsset).not.toHaveBeenCalled();
   });
 });
+
+describe('generic upload confirmation byte limits', () => {
+  it('rejects actual stored bytes above the kind limit despite a small declaration', async () => {
+    const f = serviceFixture();
+    const issued = await f.service.createUploadUrl(USER_ID, {
+      kind: 'episode_video',
+      contentType: 'video/mp4',
+      fileName: 'clip.mp4',
+      sizeBytes: 1024,
+    });
+    f.storage.headObject.mockResolvedValue({
+      exists: true,
+      provider: 'azure_blob',
+      bucket: 'media',
+      region: 'eastus2',
+      contentType: 'video/mp4',
+      sizeBytes: 2 * 1024 ** 3 + 1,
+    });
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'episode_video',
+        contentType: 'video/mp4',
+        storageKey: issued.storageKey,
+      }),
+    ).rejects.toMatchObject({ status: 413 });
+    expect(f.createAsset).not.toHaveBeenCalled();
+  });
+});
+
+describe('generic upload stored-size metadata', () => {
+  it.each([
+    null,
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])(
+    'rejects invalid stored size %s before recording an asset',
+    async (sizeBytes) => {
+      const f = serviceFixture();
+      const issued = await f.service.createUploadUrl(USER_ID, {
+        kind: 'episode_video',
+        contentType: 'video/mp4',
+        fileName: 'clip.mp4',
+        sizeBytes: 1024,
+      });
+      f.storage.headObject.mockResolvedValue({
+        exists: true,
+        provider: 'azure_blob',
+        bucket: 'media',
+        region: 'eastus2',
+        contentType: 'video/mp4',
+        sizeBytes,
+      } as never);
+      await expect(
+        f.service.confirmUpload(USER_ID, {
+          kind: 'episode_video',
+          contentType: 'video/mp4',
+          storageKey: issued.storageKey,
+        }),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(f.createAsset).not.toHaveBeenCalled();
+      expect(f.storage.setCacheControl).not.toHaveBeenCalled();
+    },
+  );
+  it('accepts exactly the kind limit', async () => {
+    const f = serviceFixture();
+    const sizeBytes = 2 * 1024 ** 3;
+    const issued = await f.service.createUploadUrl(USER_ID, {
+      kind: 'episode_video',
+      contentType: 'video/mp4',
+      fileName: 'clip.mp4',
+      sizeBytes,
+    });
+    f.storage.headObject.mockResolvedValue({
+      exists: true,
+      provider: 'azure_blob',
+      bucket: 'media',
+      region: 'eastus2',
+      contentType: 'video/mp4',
+      sizeBytes,
+    });
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'episode_video',
+        contentType: 'video/mp4',
+        storageKey: issued.storageKey,
+      }),
+    ).resolves.toHaveProperty('mediaAssetId');
+    expect(f.createAsset).toHaveBeenCalled();
+  });
+});
