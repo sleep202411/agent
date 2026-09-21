@@ -125,3 +125,77 @@ it("does not request authoring or approval evidence while signed out", async () 
   expect(api.active).not.toHaveBeenCalled();
   expect(api.byId).not.toHaveBeenCalled();
 });
+
+it.each(["authoring", "applying"])(
+  "retries a failed poll for an active %s run while the Agent is idle",
+  async (status) => {
+    vi.useFakeTimers();
+    api.active.mockReset();
+    api.active
+      .mockResolvedValueOnce({ id: first, status })
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ id: first, status: "completed" });
+    let observed: unknown;
+    function Probe() {
+      observed = useStoryAuthoringRun(project, first, false);
+      return null;
+    }
+    root = createRoot(document.createElement("div"));
+    try {
+      await act(async () => root!.render(createElement(Probe)));
+      await act(async () => vi.advanceTimersByTimeAsync(1500));
+      expect(api.active).toHaveBeenCalledTimes(2);
+      await act(async () => vi.advanceTimersByTimeAsync(1500));
+      expect(observed).toMatchObject({ status: "completed" });
+      expect(api.active).toHaveBeenCalledTimes(3);
+      await act(async () => vi.advanceTimersByTimeAsync(6000));
+      expect(api.active).toHaveBeenCalledTimes(3);
+    } finally {
+      await act(async () => root?.unmount());
+      root = undefined;
+      vi.useRealTimers();
+    }
+  }
+);
+
+it("cancels a scheduled recovery poll when the view leaves", async () => {
+  vi.useFakeTimers();
+  api.active.mockReset();
+  api.active.mockRejectedValue(new Error("offline"));
+  function Probe() {
+    useStoryAuthoringRun(project, first, false);
+    return null;
+  }
+  root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root!.render(createElement(Probe)));
+    expect(api.active).toHaveBeenCalledTimes(1);
+    const signal = api.active.mock.calls[0]![2] as AbortSignal;
+    await act(async () => root!.unmount());
+    root = undefined;
+    expect(signal.aborted).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(6000));
+    expect(api.active).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("recovers an initially failed idle read and stops on an empty run", async () => {
+  vi.useFakeTimers();
+  api.active.mockReset();
+  api.active.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(null);
+  function Probe() {
+    useStoryAuthoringRun(project, first, false);
+    return null;
+  }
+  root = createRoot(document.createElement("div"));
+  try {
+    await act(async () => root!.render(createElement(Probe)));
+    await act(async () => vi.advanceTimersByTimeAsync(6000));
+    expect(api.active).toHaveBeenCalledTimes(2);
+  } finally {
+    await act(async () => root?.unmount());
+    root = undefined;
+    vi.useRealTimers();
+  }
+});

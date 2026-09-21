@@ -92,10 +92,7 @@ export class ProduceProxyController {
     const url = `${this.mastraUrl}${path}`;
     const cookie = req.headers.cookie;
     if (cookie) {
-      const satoken = /(?:^|;\s*)satoken=([^;]+)/.exec(cookie)?.[1];
-      this.logger.log(
-        `→ ${path} cookie=present token=${satoken?.slice(0, 8) ?? '(none)'}`,
-      );
+      this.logger.log(`→ ${path} cookie=present`);
     } else {
       this.logger.warn(`→ ${path} cookie=MISSING`);
     }
@@ -303,9 +300,7 @@ export class ProduceProxyController {
     // forwarded a session cookie. Step 1's resolve_source throws
     // "Missing cookie in requestContext" when the agent gets no
     // cookie — the trail starts here.
-    const cookieHint = req.headers.cookie
-      ? `cookie=${String(req.headers.cookie).slice(0, 64)}…`
-      : 'cookie=MISSING';
+    const cookieHint = req.headers.cookie ? 'cookie=present' : 'cookie=MISSING';
     this.logger.log(
       `step1 generate-from-file projectId=${projectId} fileSize=${file.size} ${cookieHint}`,
     );

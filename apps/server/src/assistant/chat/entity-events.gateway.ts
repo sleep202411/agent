@@ -150,7 +150,7 @@ export class EntityEventsGateway
           ? `${cleaned}; satoken=${chosenToken}`
           : `satoken=${chosenToken}`;
       }
-      const tokenHint = chosenToken?.slice(0, 8) ?? '(none)';
+      const tokenHint = chosenToken ? 'present' : '(none)';
       this.logger.log(`ws handshake token=${tokenHint} src=${tokenSource}`);
       const user = await this.authenticateFromCookie(cookie);
       if (!user) {

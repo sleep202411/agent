@@ -183,7 +183,7 @@ export class ChatEventsGateway
           ? `${cleaned}; satoken=${chosenToken}`
           : `satoken=${chosenToken}`;
       }
-      const tokenHint = chosenToken?.slice(0, 8) ?? '(none)';
+      const tokenHint = chosenToken ? 'present' : '(none)';
       this.logger.log(
         `ws handshake projectId=${projectId} token=${tokenHint} src=${tokenSource}`,
       );

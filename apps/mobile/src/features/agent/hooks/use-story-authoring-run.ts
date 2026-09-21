@@ -46,7 +46,9 @@ export function useStoryAuthoringRun(
         const keepGoing = agentBusy || next?.status === "authoring" || next?.status === "applying";
         if (keepGoing) timer = setTimeout(() => void tick(), POLL_MS);
       } catch {
-        if (!cancelled && agentBusy) timer = setTimeout(() => void tick(), POLL_MS);
+        // A failed read cannot establish that the run is finished. Recover even
+        // when the Agent is idle; a successful terminal/empty read stops polling.
+        if (!cancelled) timer = setTimeout(() => void tick(), POLL_MS);
       }
     };
 
