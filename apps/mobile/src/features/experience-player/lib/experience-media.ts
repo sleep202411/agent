@@ -125,6 +125,11 @@ async function signPlayableUrl(absolute: string, signal?: AbortSignal): Promise<
       throw mediaAbortError();
     }
     if (!response.ok && response.status !== 206) {
+      try {
+        void response.body?.cancel?.().catch(() => {});
+      } catch {
+        // Keep the HTTP failure if this platform cannot cancel the probe body.
+      }
       throw new Error(`Media unavailable (${response.status})`);
     }
 
