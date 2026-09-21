@@ -191,28 +191,39 @@ export class CopilotDocumentService {
     file: CopilotDocumentUploadFile;
   }): Promise<CopilotDocumentRef> {
     const extracted = await extractCopilotDocumentText(input.file);
-    const existing = await this.prisma.copilotDocument.count({
-      where: { userId: input.userId, conversationId: input.conversationId },
-    });
-    if (existing >= COPILOT_DOCUMENT_MAX_PER_CONVERSATION) {
-      throw documentError(
-        'COPILOT_DOCUMENT_LIMIT_REACHED',
-        `This conversation has reached its ${COPILOT_DOCUMENT_MAX_PER_CONVERSATION}-document limit. Start a new conversation to upload more.`,
-        HttpStatus.TOO_MANY_REQUESTS,
-        { maximum: COPILOT_DOCUMENT_MAX_PER_CONVERSATION },
-      );
-    }
-    const row = await this.prisma.copilotDocument.create({
-      data: {
-        userId: input.userId,
-        conversationId: input.conversationId,
-        name: extracted.name,
-        mediaType: extracted.mediaType,
-        sizeBytes: input.file.size,
-        charCount: extracted.text.length,
-        text: extracted.text,
+    const row = await this.prisma.$transaction(
+      async (tx) => {
+        const key = JSON.stringify([
+          'copilot-document-limit',
+          input.userId,
+          input.conversationId,
+        ]);
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+        const existing = await tx.copilotDocument.count({
+          where: { userId: input.userId, conversationId: input.conversationId },
+        });
+        if (existing >= COPILOT_DOCUMENT_MAX_PER_CONVERSATION) {
+          throw documentError(
+            'COPILOT_DOCUMENT_LIMIT_REACHED',
+            `This conversation has reached its ${COPILOT_DOCUMENT_MAX_PER_CONVERSATION}-document limit. Start a new conversation to upload more.`,
+            HttpStatus.TOO_MANY_REQUESTS,
+            { maximum: COPILOT_DOCUMENT_MAX_PER_CONVERSATION },
+          );
+        }
+        return tx.copilotDocument.create({
+          data: {
+            userId: input.userId,
+            conversationId: input.conversationId,
+            name: extracted.name,
+            mediaType: extracted.mediaType,
+            sizeBytes: input.file.size,
+            charCount: extracted.text.length,
+            text: extracted.text,
+          },
+        });
       },
-    });
+      { isolationLevel: 'ReadCommitted' },
+    );
     return {
       documentId: row.id,
       name: row.name,

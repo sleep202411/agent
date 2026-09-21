@@ -152,7 +152,11 @@ describe('decodeUploadFilename', () => {
 
 describe('CopilotDocumentService', () => {
   function serviceWith(prisma: Record<string, unknown>) {
-    return new CopilotDocumentService(prisma as never);
+    return new CopilotDocumentService({
+      ...prisma,
+      $transaction: (run: (tx: unknown) => Promise<unknown>) =>
+        run({ ...prisma, $executeRaw: jest.fn().mockResolvedValue(1) }),
+    } as never);
   }
 
   it('stores the extracted document scoped to the conversation and returns the reference', async () => {
