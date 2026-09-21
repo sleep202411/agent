@@ -211,3 +211,82 @@ describe("placeCanvasClone", () => {
     expect(selectNodes).not.toHaveBeenCalled();
   });
 });
+
+describe("generation ownership on duplication", () => {
+  it.each(["submitting", "uncertain", "queued", "generating", "failed", "cancelled"])(
+    "creates an idle video copy from a %s original without changing its job",
+    (status) => {
+      const data = {
+        prompt: "A boat crosses the lake",
+        modelId: "seedance",
+        mode: "image-to-video",
+        settings: { aspectRatio: "auto" },
+        autoSubmit: true,
+        generation: {
+          status,
+          jobId: "original-job",
+          submissionKey: "original-receipt",
+          submissionOwnerId: "owner",
+          submission: { prompt: "original request" },
+          progress: 20,
+          etaSeconds: 315,
+          error: "previous error",
+        },
+        references: { first_frame: [reference("input", "image-source")] },
+      };
+      const original = node("video-source", "video", data);
+      const before = structuredClone(original);
+      const source = collectCanvasSelection(
+        [original],
+        [edge("input", "image-source", original.id)]
+      )!;
+      const cloned = cloneCanvasSelection(source, [original, node("image-source", "image")]);
+      expect(cloned.nodes[0].data.generation).toBeUndefined();
+      expect(cloned.nodes[0].data.autoSubmit).toBeUndefined();
+      expect(cloned.nodes[0].data).toMatchObject({
+        prompt: data.prompt,
+        modelId: data.modelId,
+        mode: data.mode,
+        settings: data.settings,
+        references: { first_frame: [expect.objectContaining({ sourceNodeId: "image-source" })] },
+      });
+      expect(cloned.nodes[0].id).not.toBe(original.id);
+      expect(original).toEqual(before);
+    }
+  );
+
+  it.each(["prompt", "audio"])("clears auto-submit on an idle %s copy", (type) => {
+    const original = node("source", type, { prompt: "draft", autoSubmit: true });
+    const clone = cloneCanvasSelection(collectCanvasSelection([original], []), [original]);
+    expect(clone.nodes[0].data).toEqual({ prompt: "draft" });
+    expect(original.data.autoSubmit).toBe(true);
+  });
+
+  it("retains completed media as a detached result without a reusable job receipt", () => {
+    const output = { type: "video", assetId: "asset", url: "https://cdn/video.mp4" };
+    const original = node("source", "video", {
+      generation: {
+        status: "done",
+        jobId: "job",
+        submissionKey: "receipt",
+        progress: 100,
+        outputs: [output],
+      },
+      autoSubmit: true,
+    });
+    const source = collectCanvasSelection([original], [])!;
+    const first = cloneCanvasSelection(source, [original]).nodes[0];
+    const second = cloneCanvasSelection(source, [original]).nodes[0];
+    expect(first.data.generation).toEqual({ status: "done", outputs: [output] });
+    expect(first.data.autoSubmit).toBeUndefined();
+    expect(second.id).not.toBe(first.id);
+    expect(original.data.generation).toMatchObject({ jobId: "job", submissionKey: "receipt" });
+  });
+
+  it("does not strip unrelated node data", () => {
+    const original = node("note", "note", { generation: "text metadata", autoSubmit: "text" });
+    expect(
+      cloneCanvasSelection(collectCanvasSelection([original], []), [original]).nodes[0].data
+    ).toEqual(original.data);
+  });
+});

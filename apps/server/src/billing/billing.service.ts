@@ -114,6 +114,8 @@ import type {
 import { PaymentProviderRegistry } from './payment-provider-registry.service';
 import {
   WechatPayProvider,
+  WechatRefundUnconfirmedException,
+  type WechatRefundNotification,
   type WechatTransaction,
 } from './providers/wechat-pay.provider';
 import type {
@@ -3081,6 +3083,7 @@ export class BillingService {
         requestId: prepared.refund.requestId,
         providerPaymentIntentId: prepared.providerPaymentIntentId,
         amountMinor: prepared.refund.amountMinor,
+        originalAmountMinor: prepared.originalAmountMinor,
         currency: prepared.refund.currency,
         reason: refundReasonForProvider(prepared.refund),
         metadata: {
@@ -3090,6 +3093,22 @@ export class BillingService {
         },
       });
     } catch (err) {
+      if (err instanceof WechatRefundUnconfirmedException) {
+        // No proof of rejection: do not restore spendable benefits or admit a new refund.
+        // A callback may already have settled this record while the response was lost.
+        await this.prisma.billingRefund.updateMany({
+          where: {
+            id: prepared.refund.id,
+            status: BillingRefundStatus.requested,
+          },
+          data: {
+            status: BillingRefundStatus.provider_pending,
+            failureCode: 'WECHAT_PAY_REFUND_UNCONFIRMED',
+            failureMessage: err.message,
+          },
+        });
+        throw err;
+      }
       await this.markRefundFailedAfterProviderError(
         prepared.refund.id,
         'BILLING_REFUND_PROVIDER_CREATE_FAILED',
@@ -4462,6 +4481,7 @@ export class BillingService {
     signatureType?: string;
   }): Promise<{ received: boolean; deduped?: boolean }> {
     const tx = this.wechatPay.verifyAndDecryptNotification(input);
+    if ('refund_status' in tx) return this.handleWechatRefundNotification(tx);
     if (tx.trade_state !== 'SUCCESS') {
       this.logger.log(
         `WeChat notify ${tx.out_trade_no}: trade_state=${tx.trade_state} — no fulfilment`,
@@ -4479,6 +4499,44 @@ export class BillingService {
     }
     const fulfilled = await this.fulfillPaidWechatOrder(order, tx);
     return fulfilled ? { received: true } : { received: true, deduped: true };
+  }
+
+  private async handleWechatRefundNotification(
+    notification: WechatRefundNotification,
+  ): Promise<{ received: boolean }> {
+    await this.prisma.$transaction(async (tx) => {
+      const refund = await tx.billingRefund.findFirst({
+        where: {
+          provider: PaymentProvider.wechat_pay,
+          OR: [
+            { refundNo: notification.out_refund_no },
+            { providerRefundId: notification.refund_id },
+          ],
+        },
+        include: { order: true },
+      });
+      if (
+        !refund ||
+        refund.order.orderNo !== notification.out_trade_no ||
+        refund.amountMinor !== BigInt(notification.amount.refund) ||
+        refund.order.amountMinor !== BigInt(notification.amount.total) ||
+        refund.currency !== 'CNY' ||
+        (refund.providerRefundId &&
+          refund.providerRefundId !== notification.refund_id)
+      ) {
+        throw new BadRequestException({
+          code: 'WECHAT_PAY_REFUND_MISMATCH',
+          msg: 'WeChat refund notification does not match a recorded refund.',
+        });
+      }
+      await this.applyProviderRefundSubmissionTx(tx, refund.id, {
+        providerRefundId: notification.refund_id,
+        providerStatus: notification.refund_status,
+        providerPaymentIntentId: notification.out_trade_no,
+        raw: { ...notification },
+      });
+    });
+    return { received: true };
   }
 
   /**
@@ -5764,6 +5822,7 @@ export class BillingService {
     input: CreateAdminBillingRefundInput,
   ): Promise<{
     refund: BillingRefund;
+    originalAmountMinor: bigint;
     providerPaymentIntentId: string;
     cancelProviderSubscriptionId: string | null;
   }> {
@@ -5894,6 +5953,7 @@ export class BillingService {
 
     return {
       refund: preparedRefund,
+      originalAmountMinor: order.amountMinor,
       providerPaymentIntentId,
       cancelProviderSubscriptionId,
     };
@@ -6113,6 +6173,19 @@ export class BillingService {
     ) {
       return this.getAdminRefundForTx(tx, refund.id);
     }
+    if (
+      refund.provider === PaymentProvider.wechat_pay &&
+      result.providerStatus === 'CLOSED'
+    ) {
+      return this.failRefundTx(tx, refund.id, {
+        failureCode: 'WECHAT_PAY_REFUND_CLOSED',
+        failureMessage: 'WeChat closed the refund.',
+        eventType: 'provider.refund.closed',
+        providerStatus: result.providerStatus,
+        payload: result.raw,
+      });
+    }
+    // ABNORMAL still needs merchant handling; retain the reservation.
     const providerStatus = result.providerStatus ?? refund.providerStatus;
     await tx.billingRefund.update({
       where: { id: refund.id },
@@ -6453,6 +6526,8 @@ export class BillingService {
           ? { providerPayload: input.payload as Prisma.InputJsonValue }
           : {}),
         succeededAt: new Date(),
+        failureCode: null,
+        failureMessage: null,
       },
     });
     await this.recordRefundEventTx(tx, {

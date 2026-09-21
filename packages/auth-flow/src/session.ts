@@ -35,10 +35,13 @@ export interface JavaEnvelope {
  */
 export function readEnvelope(body: unknown, httpStatus: number): JavaEnvelope {
   const root = objectRecord(body);
-  const rawCode = root.code ?? (httpStatus >= 200 && httpStatus < 300 ? 200 : httpStatus);
+  const httpOk = httpStatus >= 200 && httpStatus < 300;
+  // An HTTP rejection cannot become a successful login/code send because of
+  // a contradictory body. Preserve the transport status for diagnostics.
+  const rawCode = httpOk ? (root.code ?? 200) : httpStatus;
   const code = Number(rawCode);
   const msg = stringField(root, "msg") ?? stringField(root, "message");
-  return { ok: Number.isFinite(code) && code === 200, code, msg, body };
+  return { ok: httpOk && Number.isFinite(code) && code === 200, code, msg, body };
 }
 
 /**
