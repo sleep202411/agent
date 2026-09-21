@@ -160,6 +160,9 @@ export function measureMaxSerializedBytes(
   options: MeasureOptions = {}
 ): SerializedSizeReport {
   const bytesPerCharacter = options.bytesPerCharacter ?? DEFAULT_BYTES_PER_CHARACTER;
+  if (!Number.isFinite(bytesPerCharacter) || bytesPerCharacter <= 0) {
+    throw new Error("bytesPerCharacter must be a positive finite number.");
+  }
   const unbounded: UnboundedValue[] = [];
   const bytes = measure(schema, "$", [], unbounded, bytesPerCharacter);
   return { bytes, unbounded };
@@ -176,6 +179,9 @@ export function assertMaxSerializedBytes(
   label: string,
   options: MeasureOptions = {}
 ): void {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new Error(`${label} byte budget must be a non-negative safe integer.`);
+  }
   const report = measureMaxSerializedBytes(schema, options);
   if (report.unbounded.length > 0) {
     const findings = report.unbounded.map((item) => `  ${item.path}: ${item.reason}`).join("\n");
