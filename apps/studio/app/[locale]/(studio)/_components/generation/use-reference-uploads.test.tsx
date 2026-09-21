@@ -155,3 +155,69 @@ it("abandons references when edit authority is lost and rejects new starts", () 
   act(() => state.addFiles("refs", "image", [file]));
   expect(mock.upload).toHaveBeenCalledTimes(1);
 });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+it("keeps durations with their files when transfers and probes finish in different orders", async () => {
+  const firstUpload = deferred<{ url: string; mediaAssetId: string }>();
+  const secondUpload = deferred<{ url: string; mediaAssetId: string }>();
+  const firstProbe = deferred<number | null>();
+  const secondProbe = deferred<number | null>();
+  mock.upload.mockReturnValueOnce(firstUpload.promise).mockReturnValueOnce(secondUpload.promise);
+  mock.probe.mockReturnValueOnce(firstProbe.promise).mockReturnValueOnce(secondProbe.promise);
+  const other = new File(["second"], "second.mp4", { type: "video/mp4" });
+  act(() => state.addFiles("refs", "video", [file, other]));
+  await act(async () => {
+    firstUpload.resolve({ url: "first.mp4", mediaAssetId: "first" });
+    secondProbe.resolve(2.75);
+  });
+  expect(state.items.every((item) => item.uploading)).toBe(true);
+  await act(async () => secondUpload.resolve({ url: "second.mp4", mediaAssetId: "second" }));
+  expect(state.items[0]?.uploading).toBe(true);
+  expect(state.items[1]).toMatchObject({
+    name: "second.mp4",
+    url: "second.mp4",
+    mediaAssetId: "second",
+    durationSeconds: 2.75,
+    bytes: other.size,
+    uploading: false,
+  });
+  await act(async () => firstProbe.resolve(1.25));
+  expect(state.items[0]).toMatchObject({
+    name: "x.mp4",
+    url: "first.mp4",
+    mediaAssetId: "first",
+    durationSeconds: 1.25,
+    bytes: file.size,
+    uploading: false,
+  });
+  expect(state.items[1]?.durationSeconds).toBe(2.75);
+});
+
+it("does not restore a removed upload when its delayed duration probe resolves", async () => {
+  const probe = deferred<number | null>();
+  mock.upload.mockResolvedValueOnce({ url: "removed.mp4", mediaAssetId: "removed" });
+  mock.probe.mockReturnValueOnce(probe.promise);
+  await act(async () => state.addFiles("refs", "video", [file]));
+  const removed = state.items[0]!;
+  act(() => state.remove(removed.id));
+  mock.upload.mockResolvedValueOnce({ url: "current.mp4", mediaAssetId: "current" });
+  mock.probe.mockResolvedValueOnce(8.5);
+  await act(async () => state.addFiles("refs", "video", [file]));
+  await act(async () => probe.resolve(99));
+  expect(state.items).toHaveLength(1);
+  expect(state.items[0]).toMatchObject({
+    url: "current.mp4",
+    durationSeconds: 8.5,
+    uploading: false,
+  });
+  expect(state.items[0]?.id).not.toBe(removed.id);
+  expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith(removed.previewUrl);
+});
