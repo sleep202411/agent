@@ -5,6 +5,7 @@ const h = vi.hoisted(() => ({
   project: "first",
   active: false,
   assets: false,
+  secondAsset: false,
   confirm: undefined as undefined | ((config: { model: string; voiceId: string }) => void),
   post: vi.fn(),
   dispatch: vi.fn(),
@@ -38,7 +39,10 @@ vi.mock("@/src/store/slices/projectSlice", () => ({
             : []),
         ],
       },
-      { shotId: "two", shotValues: [{ presetColumnKey: "dialogue", value: "World" }] },
+      { shotId: "two", shotValues: [
+        { presetColumnKey: "dialogue", value: "World" },
+        ...(h.secondAsset ? [{ shotColumnId: "voice", files: [{ url: "https://cdn.test/two.png", preferred: true }] }] : []),
+      ] },
     ],
     columns: [],
     detail: {},
@@ -101,6 +105,7 @@ beforeEach(() => {
   h.project = "first";
   h.active = false;
   h.assets = false;
+  h.secondAsset = false;
   h.post.mockReset();
   h.success.mockReset();
   h.dispatch.mockReset().mockImplementation((a) => {
@@ -303,4 +308,53 @@ it("cancels a single admitted export on project replacement", async () => {
   await act(async () => resolve({ ok: true, blob: async () => new Blob(["old"]) }));
   expect(create).not.toHaveBeenCalled();
   expect(h.success).not.toHaveBeenCalled();
+});
+
+
+it.each([false, true])("retries only failed files and retains unresolved failures (retry fails=%s)", async (retryFails) => {
+  h.assets = true;
+  h.secondAsset = true;
+  const ok = () => ({ ok: true, blob: async () => new Blob(["image"]) });
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(ok())
+    .mockResolvedValueOnce({ ok: false, status: 503 })
+    .mockResolvedValueOnce(retryFails ? { ok: false, status: 503 } : ok());
+  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("URL", class extends URL {
+    static createObjectURL = vi.fn(() => "blob:test");
+    static revokeObjectURL = vi.fn();
+  });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  try {
+    const imageColumn = { id: "voice", presetColumnKey: "image_path" };
+    await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
+    await act(async () => container.querySelectorAll("button")[1]!.click());
+    expect(container.textContent).toContain("shot_2_final.png");
+    expect(container.textContent).not.toContain("shot_1_final.png");
+    expect(h.success).not.toHaveBeenCalled();
+    // Changing the current rows must not replace the failed batch snapshot.
+    h.secondAsset = false;
+    await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
+    const retry = Array.from(container.querySelectorAll("button")).find(b => b.textContent === "retryFailedDownloads")!;
+    await act(async () => { retry.click(); retry.click(); });
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual([
+      "https://cdn.test/one.png", "https://cdn.test/two.png", "https://cdn.test/two.png",
+    ]);
+    expect(container.textContent?.includes("shot_2_final.png")).toBe(retryFails);
+    expect(h.success).toHaveBeenCalledTimes(retryFails ? 0 : 1);
+  } finally { click.mockRestore(); }
+});
+
+it("drops the failed-file recovery action after switching projects", async () => {
+  h.assets = true;
+  const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 403 });
+  vi.stubGlobal("fetch", fetcher);
+  const imageColumn = { id: "voice", presetColumnKey: "image_path" };
+  await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
+  await act(async () => container.querySelectorAll("button")[1]!.click());
+  expect(container.textContent).toContain("retryFailedDownloads");
+  h.project = "second";
+  await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
+  expect(container.textContent).not.toContain("retryFailedDownloads");
+  expect(fetcher).toHaveBeenCalledTimes(1);
 });

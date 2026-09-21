@@ -3110,7 +3110,11 @@
     "maskTypeLabel": "掩码类型",
     "expandRatioLabel": "扩展比例",
     "maskFrameLabel": "掩码帧",
-    "shot": "镜头"
+    "shot": "镜头",
+    "batchDownloadsStarted": "已开始下载 {count} 个文件",
+    "batchDownloadRecoveryTitle": "部分文件无法下载",
+    "batchDownloadRecoveryHelp": "仅下列文件下载失败。重试不会再次下载已成功发起下载的文件。若源文件已不可用，请返回对应分镜选择可用文件。",
+    "retryFailedDownloads": "重试失败文件"
   },
   "script": {
     "title": "剧本",

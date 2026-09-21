@@ -3110,7 +3110,11 @@
     "maskTypeLabel": "遮罩類型",
     "expandRatioLabel": "擴展比例",
     "maskFrameLabel": "遮罩幀",
-    "shot": "鏡頭"
+    "shot": "鏡頭",
+    "batchDownloadsStarted": "已開始下載 {count} 個檔案",
+    "batchDownloadRecoveryTitle": "部分檔案無法下載",
+    "batchDownloadRecoveryHelp": "僅下列檔案下載失敗。重試不會再次下載已成功發起下載的檔案。若來源檔案已不可用，請返回對應分鏡選擇可用檔案。",
+    "retryFailedDownloads": "重試失敗檔案"
   },
   "script": {
     "title": "劇本",
