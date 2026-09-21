@@ -28,10 +28,10 @@ import { rootSchemaFor } from './document-modes';
  * -----------------
  * • DB-authoritative — every run rebuilds from persisted rows, never from
  *   in-process memory, so it cannot drift and self-heals after restarts.
- * • Multi-pod safe WITHOUT sticky routing or leader election — the persist is a
- *   monotonic guarded update (`WHERE snapshot_sequence < target`), so concurrent
- *   compactors on different pods can only ever move snapshotSequence forward; a
- *   superseded run is a harmless no-op. (A future phase may add sticky-routed
+ * • Multi-pod safe WITHOUT sticky routing or leader election — the persist
+ *   compares snapshotSequence with the base that was read. If another compactor
+ *   advances it (and may prune our input tail), discard this rebuild and retry
+ *   from the new base. (A future phase may add sticky-routed
  *   live docs for server-authored / AI co-editing; not needed to close the loop.)
  * • Memory bounded — folds the op tail in batches and caps ops per run, doing a
  *   partial compaction (and rescheduling) for very long tails.
@@ -236,7 +236,7 @@ export class DocumentCompactionService implements OnModuleDestroy {
       const result = await this.prisma.studioDocument.updateMany({
         where: {
           id: documentId,
-          snapshotSequence: { lt: newSnapshotSequence },
+          snapshotSequence: doc.snapshotSequence,
         },
         data: {
           crdtState: Buffer.from(merged.state),
@@ -246,10 +246,13 @@ export class DocumentCompactionService implements OnModuleDestroy {
         },
       });
       if (result.count === 0) {
-        // A concurrent compactor (this pod or another) already advanced past us.
+        // Another compactor replaced our base and may have pruned operations
+        // needed by this rebuild. Never persist that potentially incomplete
+        // state, even if our target is newer; re-read the base and tail instead.
         this.logger.debug(
           `compaction for document ${documentId} superseded at sequence ${newSnapshotSequence}`,
         );
+        return true;
       } else if (exhausted) {
         // Fully compacted to target by this run (count > 0): stamp a gated
         // autosave checkpoint from the just-merged state, then prune the
