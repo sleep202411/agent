@@ -167,7 +167,7 @@ describe("onSuccess", () => {
   });
 
   it("fires once when the user finishes every step", async () => {
-    const harness = mount();
+    const harness = mount({ initialInviteCode: "REF123" });
     await signIn(harness);
 
     await act(async () => harness.controller.actions.setNickname("Ada"));
@@ -183,7 +183,7 @@ describe("onSuccess", () => {
   });
 
   it("fires once when the user skips every step", async () => {
-    const harness = mount();
+    const harness = mount({ initialInviteCode: "REF123" });
     await signIn(harness);
 
     await act(async () => harness.controller.actions.skipProfile());
@@ -772,5 +772,41 @@ describe("pending code-send ownership", () => {
     expect(harness.controller.state.step).toBe("identifier");
     expect(harness.controller.state.identifier).toBe(OTHER_PHONE);
     expect(harness.events).toEqual([]);
+  });
+});
+
+describe("signing in without an invitation", () => {
+  it("finishes after profile without calling referral binding", async () => {
+    const harness = mount();
+    await signIn(harness);
+    await act(async () => harness.controller.actions.skipProfile());
+    expect(harness.controller.state.step).toBe("done");
+    expect(harness.onSuccess).toHaveBeenCalledTimes(1);
+    expect(harness.events.some((event) => event.type === "invite_bound")).toBe(false);
+  });
+});
+
+describe("optional referral failure recovery", () => {
+  it("retains the authenticated session and can continue after binding fails", async () => {
+    const harness = mount({
+      initialInviteCode: "REF123",
+      request: async (input) =>
+        input.path.endsWith("/login")
+          ? { status: 200, body: { code: 200, token: "tok-1", isNewUser: true, userId: "42" } }
+          : input.path.includes("bind")
+            ? { status: 200, body: { code: 500, msg: "Referral unavailable" } }
+            : { status: 200, body: { code: 200 } },
+    });
+    await signIn(harness);
+    await act(async () => harness.controller.actions.skipProfile());
+    const session = harness.controller.state.session;
+    await act(async () => harness.controller.actions.submitInvite());
+    expect(harness.controller.state.step).toBe("invite");
+    expect(harness.controller.state.error).not.toBeNull();
+    expect(harness.controller.state.session).toEqual(session);
+    expect(harness.onSuccess).not.toHaveBeenCalled();
+    await act(async () => harness.controller.actions.skipInvite());
+    expect(harness.controller.state.step).toBe("done");
+    expect(harness.onSuccess).toHaveBeenCalledExactlyOnceWith(session);
   });
 });
