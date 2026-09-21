@@ -6595,8 +6595,23 @@ export class BillingService {
     },
   ): Promise<CheckoutPromotionReservation> {
     const code = input.code.trim().toUpperCase();
-    const promotion = await tx.billingPromotion.findUnique({
+    const candidate = await tx.billingPromotion.findUnique({
       where: { code },
+      select: { id: true },
+    });
+    if (!candidate) {
+      throw new BadRequestException({
+        code: 'BILLING_PROMOTION_NOT_FOUND',
+        msg: 'Promotion code is invalid.',
+      });
+    }
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`billing:promotion:${candidate.id}`})::bigint)
+    `;
+    // The preceding checkout may have consumed the last redemption while we
+    // waited. Validate the committed promotion and binding after admission.
+    const promotion = await tx.billingPromotion.findUnique({
+      where: { id: candidate.id },
       include: {
         providerBindings: {
           where: {
@@ -6608,16 +6623,12 @@ export class BillingService {
         },
       },
     });
-    if (!promotion) {
+    if (!promotion || promotion.code !== code) {
       throw new BadRequestException({
         code: 'BILLING_PROMOTION_NOT_FOUND',
         msg: 'Promotion code is invalid.',
       });
     }
-
-    await tx.$executeRaw`
-      SELECT pg_advisory_xact_lock(hashtext(${`billing:promotion:${promotion.id}`})::bigint)
-    `;
 
     if (
       promotion.status !== BillingPromotionStatus.active ||
