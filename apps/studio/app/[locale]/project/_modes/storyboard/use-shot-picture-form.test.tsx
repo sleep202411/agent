@@ -29,11 +29,20 @@ let root: Root;
 let host: HTMLDivElement;
 let form: ShotPictureForm;
 const row = { id: "shot", pictures: [] } as unknown as ShotRow;
-function Harness({ bound = false }: { bound?: boolean }) {
+function Harness({
+  bound = false,
+  shotId = "shot",
+  slot = "image",
+}: {
+  bound?: boolean;
+  shotId?: string;
+  slot?: "image" | "video";
+}) {
   const current = useShotPictureForm(
     bound
       ? {
           ...row,
+          id: shotId,
           pictures: [
             {
               edgeId: "edge",
@@ -45,8 +54,8 @@ function Harness({ bound = false }: { bound?: boolean }) {
             },
           ],
         }
-      : row,
-    "image",
+      : { ...row, id: shotId },
+    slot,
     mocks.create
   );
   useLayoutEffect(() => {
@@ -98,4 +107,35 @@ it("uses the committed collaborative prompt and same-turn edits on a bound card"
     expect.objectContaining({ prompt: "local blur edit" })
   );
   expect(mocks.submit).toHaveBeenLastCalledWith("card");
+});
+
+it.each(["shot", "slot"])("does not submit another %s's uncommitted draft", (target) => {
+  act(() => root.render(<Harness />));
+  act(() => {
+    form.setPrompt("only for the first cell");
+    form.setSettings({ seed: 42 });
+  });
+  const shotId = target === "shot" ? "second" : "shot";
+  const slot = target === "slot" ? "video" : "image";
+  act(() => root.render(<Harness shotId={shotId} slot={slot} />));
+  expect(form.prompt).toBe("");
+  expect(form.settings).not.toHaveProperty("seed", 42);
+  act(() => form.generate());
+  expect(mocks.create).toHaveBeenLastCalledWith(
+    shotId,
+    slot,
+    expect.objectContaining({ prompt: "" })
+  );
+  act(() => root.render(<Harness />));
+  expect(form.prompt).toBe("");
+});
+it("retains a local draft across ordinary rerenders of the same cell", () => {
+  act(() => root.render(<Harness />));
+  act(() => {
+    form.setPrompt("keep this draft");
+    form.setSettings({ seed: 42 });
+  });
+  act(() => root.render(<Harness />));
+  expect(form.prompt).toBe("keep this draft");
+  expect(form.settings).toEqual({ seed: 42 });
 });

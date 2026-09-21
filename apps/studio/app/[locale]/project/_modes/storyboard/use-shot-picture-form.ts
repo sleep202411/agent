@@ -68,6 +68,14 @@ export function useShotPictureForm(
   const bound = node?.data as GenerationNodeData | undefined;
 
   const [draft, setDraft] = useState<ShotPictureSeed>({});
+  const [draftTarget, setDraftTarget] = useState({ shotId: row.id, slot });
+  // The drawer is reused when another cell is selected. Discard its local,
+  // uncommitted recipe before that new target can render or submit it.
+  if (draftTarget.shotId !== row.id || draftTarget.slot !== slot) {
+    setDraftTarget({ shotId: row.id, slot });
+    setDraft({});
+  }
+
   // Generate can run in the same turn as a TipTap blur commit; keep a live
   // prompt so we never seed/submit from a stale render closure.
   const promptRef = useRef("");
