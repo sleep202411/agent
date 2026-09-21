@@ -52,3 +52,14 @@
   outline: 2px solid white;
   outline-offset: -3px;
 }
+
+.stage :global(.vjs-current-time),
+.stage :global(.vjs-duration) {
+  display: block;
+  flex: none;
+  line-height: 44px;
+}
+
+.stage :global(.vjs-progress-control) {
+  min-width: 64px;
+}

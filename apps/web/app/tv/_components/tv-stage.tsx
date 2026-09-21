@@ -58,7 +58,13 @@ export function TvStage(props: TvStageProps) {
       languages: { "zh-CN": simplifiedChinese, "zh-HK": traditionalChinese },
       userActions: { doubleClick: false },
       controlBar: {
-        children: ["playToggle", "volumePanel"],
+        children: [
+          "playToggle",
+          "volumePanel",
+          "currentTimeDisplay",
+          "progressControl",
+          "durationDisplay",
+        ],
       },
     });
     playerRef.current = player;
