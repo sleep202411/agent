@@ -48,11 +48,12 @@ import {
   IconWorld,
   IconX,
 } from "@tabler/icons-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
+import { storyChapterWorkbenchQueryKey } from "../../_lib/use-story-chapter-workbench";
 import { StoryProjectSidePanelShell } from "../story-project-side-panel";
 import { StoryProjectWorkState } from "../story-project-work-state";
 import {
@@ -198,6 +199,7 @@ import {
 } from "./story-project-canvas-connections";
 import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
+import { cacheStoryWorkbenchDraft } from "./story-workbench-cache";
 import {
   StoryConnectionCreator,
   type StoryConnectionCreationKind,
@@ -662,16 +664,18 @@ function StoryProjectCanvasInner({
 
   const cacheSavedDraft = useCallback(
     (saved: StoryWorkbench["draft"]) => {
-      queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
-        current && saved.revision >= current.draft.revision ? { ...current, draft: saved } : current
-      );
+      const queryKeys: QueryKey[] = [workbenchQueryKey];
       if (resolvedChapterId) {
+        queryKeys.push(
+          storyChapterWorkbenchQueryKey(projectId, resolvedChapterId, user?.id ?? null)
+        );
         void queryClient.invalidateQueries({
           queryKey: storyProductionKeys.storyboard(projectId, resolvedChapterId),
         });
       }
+      cacheStoryWorkbenchDraft(queryClient, queryKeys, saved);
     },
-    [projectId, queryClient, resolvedChapterId, workbenchQueryKey]
+    [projectId, queryClient, resolvedChapterId, user?.id, workbenchQueryKey]
   );
 
   useLayoutEffect(() => {
