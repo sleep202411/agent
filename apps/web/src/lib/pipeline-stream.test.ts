@@ -13,6 +13,30 @@ function fixture() {
   return { reader, body, handlers };
 }
 const event = { done: false, value: new TextEncoder().encode('data: {"type":"done"}\n') };
+it("cancels an unread HTTP failure body before reporting the error", async () => {
+  const cancel = vi.fn();
+  const response = new Response(new ReadableStream({ cancel }), { status: 503 });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+  const onError = vi.fn();
+  pipelineStream("/pipeline", {}, { onError });
+  await vi.waitFor(() =>
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "HTTP 503" }))
+  );
+  expect(cancel).toHaveBeenCalledTimes(1);
+  expect(response.body?.locked).toBe(false);
+});
+
+it("preserves the HTTP error if cancelling its body fails", async () => {
+  const cancel = vi.fn().mockRejectedValue(new Error("cleanup failed"));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 502, body: { cancel } }));
+  const onError = vi.fn();
+  pipelineStream("/pipeline", {}, { onError });
+  await vi.waitFor(() =>
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "HTTP 502" }))
+  );
+  expect(cancel).toHaveBeenCalledTimes(1);
+});
+
 it("releases the reader after normal completion", async () => {
   const { reader, handlers } = fixture();
   reader.read.mockResolvedValueOnce(event).mockResolvedValue({ done: true });
