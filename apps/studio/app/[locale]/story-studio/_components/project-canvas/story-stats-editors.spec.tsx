@@ -253,6 +253,62 @@ describe("StoryStateVariablesPanel", () => {
     container.remove();
   });
 
+  it("keeps Chinese IME composition local until the variable name is committed", async () => {
+    let variables: StoryBibleStateVariable[] = [
+      { ...GOLD, name: { "zh-CN": "金币" }, note: "初始描述" },
+    ];
+    const render = () =>
+      root.render(
+        <StoryStateVariablesPanel
+          variables={variables}
+          locale="zh-CN"
+          defaultLocale="zh-CN"
+          canEdit
+          onChange={(next) => {
+            variables = next;
+            render();
+          }}
+        />
+      );
+    await act(async () => render());
+    await act(async () =>
+      (container.querySelector("article > button") as HTMLButtonElement).click()
+    );
+    const input = container.querySelector('article input:not([type="number"])') as HTMLInputElement;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+
+    await act(async () => {
+      input.focus();
+      input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      setValue.call(input, "yongqi");
+      input.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: "yongqi",
+          inputType: "insertCompositionText",
+          isComposing: true,
+        })
+      );
+    });
+    expect(variables[0]?.name["zh-CN"]).toBe("金币");
+    expect(input.value).toBe("yongqi");
+
+    await act(async () => {
+      setValue.call(input, "勇气");
+      input.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: "勇气",
+          inputType: "insertCompositionText",
+          isComposing: true,
+        })
+      );
+      input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "勇气" }));
+    });
+    expect(variables[0]?.name["zh-CN"]).toBe("勇气");
+    expect(input.value).toBe("勇气");
+  });
+
   it("requires a named add action instead of creating preset variables on click", async () => {
     const onChange = vi.fn();
     await act(async () => {

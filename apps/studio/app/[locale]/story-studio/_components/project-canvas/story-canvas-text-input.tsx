@@ -9,6 +9,7 @@ export function StoryCanvasTextInput({
   value,
   onValueChange,
   multiline = false,
+  rows,
   ...props
 }: {
   value: string;
@@ -17,6 +18,7 @@ export function StoryCanvasTextInput({
   disabled?: boolean;
   maxLength?: number;
   placeholder?: string;
+  rows?: number;
   "aria-label"?: string;
   className?: string;
 }) {
@@ -65,5 +67,5 @@ export function StoryCanvasTextInput({
     onDoubleClick: (event: React.MouseEvent<TextElement>) => event.stopPropagation(),
     onKeyDown: (event: React.KeyboardEvent<TextElement>) => event.stopPropagation(),
   };
-  return multiline ? <textarea {...shared} rows={1} /> : <input {...shared} />;
+  return multiline ? <textarea {...shared} rows={rows ?? 1} /> : <input {...shared} />;
 }

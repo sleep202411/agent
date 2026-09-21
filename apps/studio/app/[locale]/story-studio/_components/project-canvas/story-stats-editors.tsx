@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -55,6 +54,7 @@ import {
   storyEffectKindOption,
   storyRetargetEffectKind,
 } from "./story-stats-display";
+import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import { cn } from "@/lib/utils";
 
 const COMPARE_OPERATORS: StoryCompareOperator[] = [
@@ -276,12 +276,12 @@ function VariableCard({
           <p className="mb-3 text-xs text-white/38">{tStats("cardHint")}</p>
           <label className="block">
             <span className="text-xs font-semibold text-white/48">{t("name")}</span>
-            <Input
+            <StoryCanvasTextInput
               value={name}
               disabled={!canEdit}
               maxLength={80}
-              onChange={(event) =>
-                onChange({ ...variable, name: { ...variable.name, [locale]: event.target.value } })
+              onValueChange={(next) =>
+                onChange({ ...variable, name: { ...variable.name, [locale]: next } })
               }
               className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
             />
@@ -329,16 +329,17 @@ function VariableCard({
           </div>
           <label className="mt-2 block">
             <span className="text-xs font-semibold text-white/48">{t("description")}</span>
-            <Textarea
+            <StoryCanvasTextInput
+              multiline
               value={variable.note ?? ""}
               disabled={!canEdit}
               maxLength={2_000}
               rows={2}
               placeholder={t("descriptionPlaceholder")}
-              onChange={(event) =>
+              onValueChange={(next) =>
                 onChange({
                   ...variable,
-                  note: event.target.value.trim() ? event.target.value : undefined,
+                  note: next.trim() ? next : undefined,
                 })
               }
               className="mt-1 min-h-16 resize-y rounded-lg bg-white/[0.05] px-2.5 py-2 text-xs"
@@ -968,13 +969,13 @@ export function StoryRouteTargetPicker({
         <div className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
           <label className="min-w-0 text-xs text-white/48">
             {t("endingTitle")}
-            <Input
+            <StoryCanvasTextInput
               value={selectedEnding.title[locale] ?? ""}
               disabled={!canEdit}
               maxLength={80}
-              onChange={(event) =>
+              onValueChange={(next) =>
                 onUpdateEnding(selectedEnding.endingId, {
-                  title: { ...selectedEnding.title, [locale]: event.target.value },
+                  title: { ...selectedEnding.title, [locale]: next },
                 })
               }
               className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
