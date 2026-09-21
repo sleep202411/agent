@@ -748,6 +748,8 @@ export class MediaUploadService {
           userId,
           storageKey,
           input.contentType,
+          input.kind,
+          policy,
           storage,
           sourceLocation,
         );
@@ -969,6 +971,8 @@ export class MediaUploadService {
     userId: string,
     storageKey: string,
     requestedContentType: string,
+    uploadKind: UploadKind,
+    policy: UploadKindPolicy,
     storage: OutputStorageService = this.storage,
     sourceLocation?: StorageObjectRef,
   ): Promise<ConfirmedUploadTruth> {
@@ -976,6 +980,21 @@ export class MediaUploadService {
       ? await storage.headStoredObject(sourceLocation)
       : await this.headUploadObject(userId, storageKey, storage);
     if (!head.exists) throw mediaObjectNotFound();
+    // Signed PUT byte limits are advisory. The stored object, not the caller's
+    // declaration, must satisfy the kind's budget before it enters the ledger.
+    if (
+      head.sizeBytes == null ||
+      !Number.isSafeInteger(head.sizeBytes) ||
+      head.sizeBytes <= 0
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'MEDIA_SIZE_INVALID',
+        message: 'Media storage did not return a valid byte size.',
+      });
+    }
+    if (head.sizeBytes > policy.maxBytes) {
+      throw mediaFileTooLargeError(uploadKind, policy.maxBytes);
+    }
 
     // Generic objects retain their signed permanent key. Their cache metadata
     // is provider bookkeeping, not validation, and remains best-effort.
