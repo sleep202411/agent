@@ -275,7 +275,7 @@ function VariableCard({
         <div className="border-t border-white/[0.06] px-3.5 pt-3 pb-3.5">
           <p className="mb-3 text-xs text-white/38">{tStats("cardHint")}</p>
           <label className="block">
-            <span className="text-xs font-semibold text-white/48">{t("name")}</span>
+            <span className="block text-xs font-semibold text-white/48">{t("name")}</span>
             <StoryCanvasTextInput
               value={name}
               disabled={!canEdit}
@@ -283,7 +283,7 @@ function VariableCard({
               onValueChange={(next) =>
                 onChange({ ...variable, name: { ...variable.name, [locale]: next } })
               }
-              className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
+              className="mt-1 block h-8! w-full rounded-lg bg-white/[0.05] px-2.5 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-white/25"
             />
           </label>
           <div className="mt-2 grid grid-cols-2 gap-2">
@@ -328,7 +328,7 @@ function VariableCard({
             </label>
           </div>
           <label className="mt-2 block">
-            <span className="text-xs font-semibold text-white/48">{t("description")}</span>
+            <span className="block text-xs font-semibold text-white/48">{t("description")}</span>
             <StoryCanvasTextInput
               multiline
               value={variable.note ?? ""}
@@ -342,7 +342,7 @@ function VariableCard({
                   note: next.trim() ? next : undefined,
                 })
               }
-              className="mt-1 min-h-16 resize-y rounded-lg bg-white/[0.05] px-2.5 py-2 text-xs"
+              className="mt-1 block min-h-16 w-full resize-y rounded-lg bg-white/[0.05] px-2.5 py-2 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-white/25"
             />
           </label>
           <div className="mt-4 flex justify-end border-t border-white/[0.06] pt-3">
@@ -350,7 +350,7 @@ function VariableCard({
               type="button"
               disabled={!canEdit}
               onClick={onRemove}
-              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white/42 transition hover:bg-white/[0.06] hover:text-[#ff9b9e] disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-destructive transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
             >
               <IconTrash className="size-3.5" />
               {t("delete")}
@@ -968,7 +968,7 @@ export function StoryRouteTargetPicker({
       {selectedEnding ? (
         <div className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
           <label className="min-w-0 text-xs text-white/48">
-            {t("endingTitle")}
+            <span className="block">{t("endingTitle")}</span>
             <StoryCanvasTextInput
               value={selectedEnding.title[locale] ?? ""}
               disabled={!canEdit}
@@ -978,7 +978,7 @@ export function StoryRouteTargetPicker({
                   title: { ...selectedEnding.title, [locale]: next },
                 })
               }
-              className="mt-1 h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs"
+              className="mt-1 block h-8! w-full rounded-lg bg-white/[0.05] px-2.5 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-white/25"
             />
           </label>
           <label className="min-w-0 text-xs text-white/48">
