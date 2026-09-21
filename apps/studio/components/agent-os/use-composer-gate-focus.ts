@@ -22,6 +22,10 @@ export function useComposerGateFocus<T extends HTMLElement>(gateKey: string): Re
       );
       if (!shouldRestore) return;
       window.requestAnimationFrame(() => {
+        // A user or another surface may have claimed focus since cleanup.
+        if (document.activeElement !== document.body && !gate?.contains(document.activeElement)) {
+          return;
+        }
         const composer = document.querySelector<HTMLElement>("[data-agent-composer-input]");
         composer?.focus();
       });
