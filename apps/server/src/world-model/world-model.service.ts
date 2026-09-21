@@ -173,8 +173,10 @@ export class WorldModelService {
 
     const provider = this.providers.require(row.providerKey);
     const world = await provider.getWorld(row.providerWorldId);
-    const updated = await this.prisma.worldModelWorld.update({
-      where: { id: row.id },
+    // Provider reads can finish out of order. A terminal world must never
+    // be replaced by an older in-flight poll response.
+    await this.prisma.worldModelWorld.updateMany({
+      where: { id: row.id, status: PrismaWorldStatus.generating },
       data: {
         status: world.status as PrismaWorldStatus,
         name: world.name,
@@ -184,7 +186,9 @@ export class WorldModelService {
         errorMessage: world.error?.message ?? null,
       },
     });
-    return mapWorld(updated);
+    return mapWorld(
+      await this.requireWorld(workspaceId, storyProjectId, worldId),
+    );
   }
 
   async createSession(
@@ -259,8 +263,13 @@ export class WorldModelService {
     const status = heartbeat.alive
       ? WorldModelSessionStatus.active
       : WorldModelSessionStatus.expired;
-    await this.prisma.worldModelSession.update({
-      where: { id: session.id },
+    // Closing/expiry or rebinding may have happened during the provider call.
+    const updated = await this.prisma.worldModelSession.updateMany({
+      where: {
+        id: session.id,
+        status: WorldModelSessionStatus.active,
+        providerSessionId: session.providerSessionId,
+      },
       data: {
         status,
         lastHeartbeatAt: new Date(),
@@ -268,6 +277,12 @@ export class WorldModelService {
         closedAt: heartbeat.alive ? null : new Date(),
       },
     });
+    if (updated.count !== 1) {
+      throw new ConflictException({
+        code: 'WORLD_MODEL_SESSION_INACTIVE',
+        message: 'The world session changed or is no longer active.',
+      });
+    }
     return heartbeat;
   }
 
@@ -423,14 +438,24 @@ export class WorldModelService {
       storyProjectId,
       travelId,
     );
+    if (
+      travel.status === PrismaTravelStatus.completed ||
+      travel.status === PrismaTravelStatus.failed
+    )
+      return mapTravelStatus(travel);
     const provider = this.providers.require(travel.world.providerKey);
     const status = await provider.syncTravelStatus({
       providerTravelId: travel.providerTravelId,
       streamStatus: input.streamStatus,
       streamStatusChangedAtMs: input.streamStatusChangedAtMs,
     });
-    const updated = await this.prisma.worldModelTravel.update({
-      where: { id: travel.id },
+    // Do not overwrite a newer lifecycle transition or a rebound travel.
+    await this.prisma.worldModelTravel.updateMany({
+      where: {
+        id: travel.id,
+        status: travel.status,
+        providerTravelId: travel.providerTravelId,
+      },
       data: {
         status: status.status as PrismaTravelStatus,
         rtcStatus: status.rtcStatus,
@@ -441,7 +466,9 @@ export class WorldModelService {
           : null,
       },
     });
-    return mapTravelStatus(updated);
+    return mapTravelStatus(
+      await this.requireTravel(workspaceId, storyProjectId, travelId),
+    );
   }
 
   async getTravelArtifacts(
