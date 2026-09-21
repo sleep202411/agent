@@ -493,25 +493,12 @@ export class AiGenerationService {
     try {
       await this.queue.enqueue(queueName, id, 0, priority);
     } catch (err) {
-      await this.billingWallet.releaseForJob(job, 'ai_job_enqueue_failed');
-      const failed = await this.store.update(id, {
-        status: 'failed',
-        stage: 'failed',
-        completedAt: new Date().toISOString(),
-        error: {
-          code: 'QUEUE_UNAVAILABLE',
-          message: err instanceof Error ? err.message : String(err),
-          userMessage:
-            'Generation queue is temporarily unavailable. Please try again in a moment.',
-          retryable: true,
-          createdAt: new Date().toISOString(),
-        },
-      });
-      if (failed) this.emitJobUpdate(failed);
-      throw new ServiceUnavailableException({
-        code: 'QUEUE_UNAVAILABLE',
-        msg: 'Generation queue is temporarily unavailable. Please try again in a moment.',
-      });
+      // Admission already committed the job and its hold. A lost enqueue ACK
+      // does not prove the queue rejected it; refunding can race a live worker.
+      // The queued-row reconciler restores missing delivery with the same job.
+      this.logger.error(
+        `Generation ${id} awaiting queue recovery: ${String(err)}`,
+      );
     }
     const saved = (await this.store.findById(id)) ?? job;
     this.emitJobUpdate(saved);
