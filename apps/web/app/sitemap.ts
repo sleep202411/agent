@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 
+import { isProtectedPath } from "@/src/lib/auth/protected-paths";
 import { CANONICAL_HOST } from "@/src/lib/seo";
 
 /**
@@ -42,6 +43,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const entries: MetadataRoute.Sitemap = [];
 
   for (const { path, priority, changeFreq } of STATIC_PATHS) {
+    // Keep discovery aligned with the app's access policy; do not advertise login gates.
+    if (isProtectedPath(path)) continue;
     for (const locale of LOCALES) {
       const normalised = path === "/" ? "" : path;
       entries.push({
