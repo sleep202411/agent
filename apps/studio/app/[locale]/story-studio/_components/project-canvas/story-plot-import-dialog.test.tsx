@@ -79,7 +79,9 @@ describe("plot import dialog", () => {
     );
     expect(button("Import plot tree").disabled).toBe(true);
     await choose(valid);
-    expect(document.body.textContent).toContain("1 scenes · 0 decisions · 0 assets · 0 clips");
+    expect(document.body.textContent).toContain(
+      "1 scenes · 0 decisions · 0 variables · 0 assets · 0 clips"
+    );
     expect(onImport).not.toHaveBeenCalled();
     await act(async () => {
       button("Import plot tree").click();
@@ -139,7 +141,9 @@ describe("plot import dialog", () => {
     expect(document.body.textContent).toContain("Drop to select this file");
     expect((await dragFiles("drop")).defaultPrevented).toBe(true);
     expect(document.body.textContent).toContain("plot.json");
-    expect(document.body.textContent).toContain("1 scenes · 0 decisions · 0 assets · 0 clips");
+    expect(document.body.textContent).toContain(
+      "1 scenes · 0 decisions · 0 variables · 0 assets · 0 clips"
+    );
     expect(button("Import plot tree").disabled).toBe(false);
     expect(onImport).not.toHaveBeenCalled();
   });
