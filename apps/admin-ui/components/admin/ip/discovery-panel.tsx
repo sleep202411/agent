@@ -955,7 +955,7 @@ function AssetUploadField({
   );
 }
 
-function IpCombobox({
+export function IpCombobox({
   open,
   ipId,
   ipTitle,
@@ -969,7 +969,7 @@ function IpCombobox({
   onChange: (option: IpOption | null) => void;
 }) {
   const [search, setSearch] = useState("");
-  const { items: options } = useDiscoveryIpSearch(search, open);
+  const { items: options, error, loading, retry } = useDiscoveryIpSearch(search, open);
 
   const selectedIp =
     options.find((option) => option.id === ipId) ??
@@ -998,7 +998,7 @@ function IpCombobox({
       >
         <ComboboxInput placeholder="搜索房间号或标题" />
         <ComboboxContent>
-          <ComboboxEmpty>未找到 IP</ComboboxEmpty>
+          {!loading && !error ? <ComboboxEmpty>未找到 IP</ComboboxEmpty> : null}
           <ComboboxList>
             {(option: IpOption) => (
               <ComboboxItem key={option.id} value={option}>
@@ -1014,6 +1014,17 @@ function IpCombobox({
           </ComboboxList>
         </ComboboxContent>
       </Combobox>
+      {loading ? (
+        <p role="status" className="text-xs text-slate-500">Searching…</p>
+      ) : null}
+      {error ? (
+        <div role="alert" className="flex items-center gap-2 text-xs text-red-600">
+          <span>{error}</span>
+          <Button type="button" variant="outline" size="sm" disabled={loading} onClick={retry}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
       {ipId ? (
         <p className="truncate text-[11px] text-slate-500">
           已选择 <span className="font-mono text-slate-700">{ipId}</span>
