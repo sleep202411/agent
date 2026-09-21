@@ -87,6 +87,7 @@ function prismaMock(input: {
     },
     billingSubscription: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
     },
   };
 }
@@ -260,6 +261,7 @@ describe('EntitlementService.grantComplimentary', () => {
       },
       entitlementGrant: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
         upsert: jest.fn((args: { create: { planKey: string } }) => args.create),
       },
@@ -651,5 +653,62 @@ describe('Membership plan cache recovery', () => {
     expect(probe.planBenefits(current).concurrentJobs).toBe(11);
     expect(probe.planBenefits(old).concurrentJobs).toBe(2);
     expect(probe.planBenefits(current).concurrentJobs).toBe(11);
+  });
+});
+
+describe('entitlement selection across overlapping records', () => {
+  it('keeps an older high-rank grant when five lower-rank grants are newer', async () => {
+    const prisma = prismaMock({
+      plans: [plan(), plan({ planKey: 'pro', rank: 30 })],
+    });
+    const rows = [
+      ...Array.from({ length: 5 }, (_, index) =>
+        grant({ id: `basic-${index}` }),
+      ),
+      grant({
+        id: 'older-pro',
+        planKey: 'pro',
+        startsAt: new Date('2026-05-01T00:00:00Z'),
+      }),
+    ];
+    prisma.entitlementGrant.findMany
+      .mockReset()
+      .mockImplementation((query: { take?: number }) =>
+        Promise.resolve(rows.slice(0, query.take)),
+      );
+    const snapshot = await new EntitlementService(
+      prisma as never,
+    ).resolveForUser(user(), { now: NOW });
+    expect(snapshot.planKey).toBe('pro');
+  });
+
+  it('selects the higher-rank grace subscription even when the lower plan expires later', async () => {
+    const prisma = prismaMock({
+      plans: [plan(), plan({ planKey: 'pro', rank: 30 })],
+    });
+    const rows = [
+      {
+        subjectType: BillingSubjectType.user,
+        subjectId: 'user-1',
+        planKey: 'basic',
+        currentPeriodEnd: new Date('2026-08-01T00:00:00Z'),
+      },
+      {
+        subjectType: BillingSubjectType.user,
+        subjectId: 'user-1',
+        planKey: 'pro',
+        currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+      },
+    ];
+    prisma.billingSubscription.findFirst.mockResolvedValue(rows[0] as never);
+    Object.assign(prisma.billingSubscription, {
+      findMany: jest.fn().mockResolvedValue(rows),
+    });
+    const snapshot = await new EntitlementService(
+      prisma as never,
+    ).resolveForUser(user(), { now: NOW, workspaceId: 'workspace-1' });
+    expect(snapshot.planKey).toBe('pro');
+    expect(snapshot.subject.id).toBe('user-1');
+    expect(snapshot.source).toBe('subscription_grace');
   });
 });

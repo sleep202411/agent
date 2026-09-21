@@ -46,7 +46,7 @@ const StartSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['sizeBytes'],
-        message: 'Content review videos must be 500 MB or smaller',
+        message: 'Content review videos must be 2 GB or smaller',
       });
     }
   });

@@ -1,5 +1,5 @@
 /**
- * Multipart upload for AI content-review masters (up to 500 MB).
+ * Multipart upload for AI content-review masters (up to 2 GB).
  *
  * Reuses `/aurora/media/episode-uploads` with kind `content_review_video`.
  * Parts go straight to storage; the Next/Java proxies never see the bytes.
@@ -234,7 +234,7 @@ export async function uploadContentReviewVideo(
   options: ContentReviewUploadOptions
 ): Promise<EpisodeUploadResult & { url: string }> {
   if (!isVideoFileAllowed(file) || file.size <= 0 || file.size > MAX_REVIEW_VIDEO_BYTES) {
-    throw new UploadError("Select an MP4 or MOV video up to 500 MB", 400);
+    throw new UploadError("Select an MP4 or MOV video up to 2 GB", 400);
   }
   const contentType = contentTypeForFile(file);
   const { onProgress, workspaceId } = options;

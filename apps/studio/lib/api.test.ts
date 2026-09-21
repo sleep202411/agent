@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, setApiWorkspaceId } from "./api";
+import { api, messageFromHttpErrorBody, setApiWorkspaceId } from "./api";
 
 afterEach(() => {
   setApiWorkspaceId(null);
@@ -276,3 +276,25 @@ it.each([{ success: true }, { code: "SUCCESS" }, { code: 202 }, { code: 200, suc
     await expect(api.get("/aurora/test", { raw: true })).resolves.toEqual(body);
   }
 );
+it("does not dump Cloudflare HTML as the error message", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status: 524,
+      text: () =>
+        Promise.resolve(
+          `<html><body class="font-semibold">Ray ID</body><a href="https://www.cloudflare.com/5xx-error-landing?utm_source=errorcode_524">Cloudflare</a></html>`
+        ),
+    })
+  );
+  await expect(api.post("/api/user/video/moderation/ai/result")).rejects.toMatchObject({
+    status: 524,
+    message: "The request timed out at the gateway (HTTP 524). The upstream job may still finish.",
+  });
+});
+it("summarizes gateway HTML without a Cloudflare error code", () => {
+  expect(messageFromHttpErrorBody(502, "<html><body>Bad gateway</body></html>", "HTTP 502")).toBe(
+    "The gateway returned HTTP 502. Try again."
+  );
+});

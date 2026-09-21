@@ -74,6 +74,10 @@
       "types": "./dist/interactive-film-runtime.d.ts",
       "default": "./dist/interactive-film-runtime.js"
     },
+    "./story-stats": {
+      "types": "./dist/story-stats.d.ts",
+      "default": "./dist/story-stats.js"
+    },
     "./experience-runtime": {
       "types": "./dist/experience-runtime.d.ts",
       "default": "./dist/experience-runtime.js"

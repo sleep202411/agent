@@ -2,12 +2,23 @@ import type { Edge, Node } from "@xyflow/react";
 import type {
   InteractiveStoryDraftContent,
   StoryFrameProfile,
+  StoryGraphChoice,
   StoryGraphNode,
   StoryInteractionAction,
   StoryInteractionOutcomes,
   StoryInteractionTrigger,
 } from "@/lib/story-projects-api";
 import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
+import {
+  storyAutoFallbackNodeId,
+  storyRouteEndingId,
+  storyRouteNodeId,
+  type StoryCondition,
+  type StoryExitRoute,
+  type StoryRouteTarget,
+  type StoryStateEffect,
+} from "@repo/shared/story-stats";
+import { formatStoryConditionChip, storyVariableNameMap } from "./story-stats-display";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 
 type StoryCanvasNodeKind = "clip" | "world" | "decision";
@@ -19,6 +30,11 @@ export interface StoryCanvasChoiceData {
   label: string;
   targetNodeId: string | null;
   targetTitle: string | null;
+  targetEndingId: string | null;
+  targetEndingTitle: string | null;
+  target: StoryRouteTarget | null;
+  effects?: StoryStateEffect[];
+  visibleWhen?: StoryCondition;
 }
 
 export interface StoryCanvasInteractionData {
@@ -67,7 +83,7 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
 export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;
 
 type StoryCanvasEdgeData =
-  | { kind: "continuation" }
+  | { kind: "continuation"; conditional?: boolean }
   | { kind: "decision"; sourceNodeId: string; decisionId: string }
   | { kind: "choice"; sourceNodeId: string; choiceId: string }
   | {
@@ -122,7 +138,8 @@ export function buildStoryCanvasModel(
   locale: string,
   copyOverrides: Partial<StoryCanvasCopy> = DEFAULT_COPY,
   frameProfile: StoryFrameProfile = "landscape_16_9",
-  worlds: WorldModelWorld[] = []
+  worlds: WorldModelWorld[] = [],
+  variableLocale: string = locale
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
   const copy = { ...DEFAULT_COPY, ...copyOverrides };
   const frameAspectRatioOf = (profile: StoryFrameProfile): "16:9" | "9:16" =>
@@ -139,6 +156,41 @@ export function buildStoryCanvasModel(
     clipOrdinalsByNodeId.set(node.nodeId, ++nextClipOrdinal);
   });
   const worldsById = new Map(worlds.map((world) => [world.id, world]));
+  const variableNames = storyVariableNameMap(
+    content.storyBible.stateVariables,
+    variableLocale,
+    (text, activeLocale) => localizedDraftText(text, activeLocale)
+  );
+  const endingTitles = new Map(
+    (content.storyBible.endings ?? []).map((ending) => [
+      ending.endingId,
+      localizedDraftText(ending.title, locale) || ending.endingId,
+    ])
+  );
+  const mapChoice = (choice: StoryGraphChoice): StoryCanvasChoiceData => {
+    const targetNodeId = storyRouteNodeId(choice.target);
+    const targetEndingId = storyRouteEndingId(choice.target);
+    return {
+      choiceId: choice.choiceId,
+      communityPointPrice: destinationPrice(targetNodeId),
+      label: localizedDraftText(choice.label, locale),
+      targetNodeId,
+      targetTitle: targetNodeId
+        ? graphNodeDisplayTitle(
+            graphNodesById.get(targetNodeId),
+            copy.clip,
+            clipOrdinalsByNodeId.get(targetNodeId)
+          )
+        : null,
+      targetEndingId,
+      targetEndingTitle: targetEndingId
+        ? (endingTitles.get(targetEndingId) ?? targetEndingId)
+        : null,
+      target: choice.target,
+      effects: choice.effects,
+      visibleWhen: choice.visibleWhen,
+    };
+  };
   let clipOrdinal = 0;
 
   const projections: CanvasProjection[] = content.graph.nodes.flatMap<CanvasProjection>(
@@ -157,19 +209,7 @@ export function buildStoryCanvasModel(
               decisionId: node.exit.decisionId,
               exitKind: "choice",
               summary: localizedDraftText(node.exit.prompt, locale),
-              choices: node.exit.choices.map((choice) => ({
-                choiceId: choice.choiceId,
-                communityPointPrice: destinationPrice(choice.nextNodeId),
-                label: localizedDraftText(choice.label, locale),
-                targetNodeId: choice.nextNodeId,
-                targetTitle: choice.nextNodeId
-                  ? graphNodeDisplayTitle(
-                      graphNodesById.get(choice.nextNodeId ?? ""),
-                      copy.clip,
-                      clipOrdinalsByNodeId.get(choice.nextNodeId ?? "")
-                    )
-                  : null,
-              })),
+              choices: node.exit.choices.map(mapChoice),
             },
           },
         ];
@@ -194,26 +234,14 @@ export function buildStoryCanvasModel(
               worldEntryInstruction: node.entryInstruction,
               maxExperienceSeconds: node.maxExperienceSeconds,
               exitKind: "auto",
-              continuationTargetNodeId: node.exit.nextNodeId ?? undefined,
+              continuationTargetNodeId: storyAutoFallbackNodeId(node.exit) ?? undefined,
               summary: world?.prompt,
             },
           },
         ];
       }
       const choices: StoryCanvasChoiceData[] | undefined =
-        node.exit.kind === "choice"
-          ? node.exit.choices.map((choice) => ({
-              choiceId: choice.choiceId,
-              communityPointPrice: destinationPrice(choice.nextNodeId),
-              label: localizedDraftText(choice.label, locale),
-              targetNodeId: choice.nextNodeId,
-              targetTitle: graphNodeDisplayTitle(
-                graphNodesById.get(choice.nextNodeId ?? ""),
-                copy.clip,
-                clipOrdinalsByNodeId.get(choice.nextNodeId ?? "")
-              ),
-            }))
-          : undefined;
+        node.exit.kind === "choice" ? node.exit.choices.map(mapChoice) : undefined;
       const interactions = node.interactions.map((interaction) => ({
         interactionId: interaction.interactionId,
         label: localizedText(interaction.label, locale, interaction.interactionId),
@@ -225,9 +253,9 @@ export function buildStoryCanvasModel(
           targetTitle:
             action.kind === "goto"
               ? graphNodeDisplayTitle(
-                  graphNodesById.get(action.nodeId),
+                  graphNodesById.get(storyRouteNodeId(action.target) ?? ""),
                   copy.clip,
-                  clipOrdinalsByNodeId.get(action.nodeId)
+                  clipOrdinalsByNodeId.get(storyRouteNodeId(action.target) ?? "")
                 )
               : null,
         })),
@@ -252,7 +280,7 @@ export function buildStoryCanvasModel(
           interactions,
           continuationTargetNodeId:
             node.exit.kind === "auto"
-              ? (node.exit.nextNodeId ?? undefined)
+              ? (storyAutoFallbackNodeId(node.exit) ?? undefined)
               : storyDecisionCanvasNodeId(node.nodeId),
           frameAspectRatio: frameAspectRatioOf(frameProfile),
         },
@@ -282,7 +310,7 @@ export function buildStoryCanvasModel(
     }
   );
 
-  const connections = buildConnections(content.graph.nodes, graphNodesById, locale);
+  const connections = buildConnections(content.graph.nodes, graphNodesById, locale, variableNames);
   const storyEdges = connections
     .sort((left, right) => left.order - right.order || left.edge.id.localeCompare(right.edge.id))
     .map(({ edge }) => edge);
@@ -306,36 +334,47 @@ export function buildStoryCanvasModel(
 function buildConnections(
   graphNodes: StoryGraphNode[],
   graphNodesById: ReadonlyMap<string, StoryGraphNode>,
-  locale: string
+  locale: string,
+  variableNames: ReadonlyMap<string, string>
 ): CanvasConnection[] {
   const connections: CanvasConnection[] = [];
   let order = 0;
 
-  for (const node of graphNodes) {
-    if (node.kind === "world") {
-      if (!node.exit.nextNodeId || !graphNodesById.has(node.exit.nextNodeId)) continue;
+  const pushAutoRoutes = (nodeId: string, routes: readonly StoryExitRoute[]) => {
+    routes.forEach((route, index) => {
+      const target = storyRouteNodeId(route.target);
+      if (!target || !graphNodesById.has(target)) return;
       connections.push({
         order: order++,
         edge: {
-          id: `continuation:${node.nodeId}:${node.exit.nextNodeId}`,
-          source: node.nodeId,
-          target: node.exit.nextNodeId,
+          id: `continuation:${nodeId}:${index}:${target}`,
+          source: nodeId,
+          target,
           sourceHandle: "completion",
           targetHandle: "in",
-          data: { kind: "continuation" },
+          label: route.when ? formatStoryConditionChip(route.when, variableNames) : undefined,
+          data: { kind: "continuation", conditional: Boolean(route.when) },
         },
       });
+    });
+  };
+
+  for (const node of graphNodes) {
+    if (node.kind === "world") {
+      pushAutoRoutes(node.nodeId, node.exit.routes);
       continue;
     }
     for (const interaction of node.kind === "clip" ? node.interactions : []) {
       for (const [outcome, action] of interactionOutcomeEntries(interaction.outcomes)) {
-        if (action.kind !== "goto" || !graphNodesById.has(action.nodeId)) continue;
+        const interactionTarget = action.kind === "goto" ? storyRouteNodeId(action.target) : null;
+        if (action.kind !== "goto" || !interactionTarget || !graphNodesById.has(interactionTarget))
+          continue;
         connections.push({
           order: order++,
           edge: {
-            id: `interaction:${node.nodeId}:${interaction.interactionId}:${outcome}:${action.nodeId}`,
+            id: `interaction:${node.nodeId}:${interaction.interactionId}:${outcome}:${interactionTarget}`,
             source: node.nodeId,
-            target: action.nodeId,
+            target: interactionTarget,
             sourceHandle: `interaction:${interaction.interactionId}:${outcome}`,
             targetHandle: "in",
             label: localizedText(interaction.label, locale, interaction.interactionId),
@@ -350,19 +389,8 @@ function buildConnections(
       }
     }
 
-    if (node.exit.kind === "auto") {
-      if (!node.exit.nextNodeId || !graphNodesById.has(node.exit.nextNodeId)) continue;
-      connections.push({
-        order: order++,
-        edge: {
-          id: `continuation:${node.nodeId}:${node.exit.nextNodeId}`,
-          source: node.nodeId,
-          target: node.exit.nextNodeId,
-          sourceHandle: "completion",
-          targetHandle: "in",
-          data: { kind: "continuation" },
-        },
-      });
+    if (node.kind === "clip" && node.exit.kind === "auto") {
+      pushAutoRoutes(node.nodeId, node.exit.routes);
       continue;
     }
 
@@ -386,13 +414,14 @@ function buildConnections(
           },
         });
       for (const choice of node.exit.choices) {
-        if (!choice.nextNodeId || !graphNodesById.has(choice.nextNodeId)) continue;
+        const choiceTarget = storyRouteNodeId(choice.target);
+        if (!choiceTarget || !graphNodesById.has(choiceTarget)) continue;
         connections.push({
           order: order++,
           edge: {
-            id: `choice:${node.nodeId}:${choice.choiceId}:${choice.nextNodeId}`,
+            id: `choice:${node.nodeId}:${choice.choiceId}:${choiceTarget}`,
             source: decisionNodeId,
-            target: choice.nextNodeId,
+            target: choiceTarget,
             sourceHandle: `choice:${choice.choiceId}`,
             targetHandle: "in",
             label: localizedDraftText(choice.label, locale),

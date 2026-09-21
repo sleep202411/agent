@@ -23,6 +23,7 @@ describe("film-only story canvas projection", () => {
           label: "Go",
           targetNodeId: "clip:b",
           targetTitle: "Clip 2",
+          targetEndingId: null,
         },
       ],
     });
@@ -48,7 +49,7 @@ describe("film-only story canvas projection", () => {
     source.interactions = [
       hotspot("continue", { kind: "continue" }),
       hotspot("rewind", { kind: "seek", timeMs: 500 }),
-      hotspot("branch", { kind: "goto", nodeId: "clip:b" }),
+      hotspot("branch", { kind: "goto", target: { kind: "node", nodeId: "clip:b" } }),
     ];
 
     const model = buildStoryCanvasModel(content, "en-US");
@@ -69,6 +70,63 @@ describe("film-only story canvas projection", () => {
 
   it("uses the persisted canvas-layout identity for decision projections", () => {
     expect(storyDecisionCanvasNodeId("clip:a")).toBe("__decision__:clip:a");
+  });
+
+  it("projects every auto route that targets a node and labels conditional edges", () => {
+    const content = draft();
+    content.storyBible.stateVariables = [
+      {
+        key: "favorability.lin",
+        name: { "en-US": "Lin", "zh-CN": "小林" },
+        valueType: "number",
+        initialValue: 0,
+      },
+    ];
+    const opening = content.graph.nodes[1];
+    if (!opening || opening.kind !== "clip") throw new Error("Expected clip fixture.");
+    opening.exit = {
+      kind: "auto",
+      routes: [
+        {
+          when: {
+            kind: "compare",
+            variableKey: "favorability.lin",
+            operator: "at-least",
+            value: 80,
+          },
+          target: { kind: "node", nodeId: "clip:a" },
+        },
+        { target: { kind: "node", nodeId: "clip:a" } },
+      ],
+    };
+    const model = buildStoryCanvasModel(content, "en-US");
+    const autoEdges = model.edges.filter((edge) => edge.source === "clip:b");
+    expect(autoEdges).toEqual([
+      expect.objectContaining({
+        target: "clip:a",
+        label: "Lin ≥ 80",
+        data: { kind: "continuation", conditional: true },
+      }),
+      expect.objectContaining({
+        target: "clip:a",
+        data: { kind: "continuation", conditional: false },
+      }),
+    ]);
+
+    const localizedModel = buildStoryCanvasModel(
+      content,
+      "en-US",
+      undefined,
+      undefined,
+      undefined,
+      "zh-CN"
+    );
+    expect(localizedModel.edges.find((edge) => edge.source === "clip:b")?.label).toBe("小林 ≥ 80");
+    expect(
+      localizedModel.nodes.find((node) => node.id === storyDecisionCanvasNodeId("clip:a"))?.data
+    ).toMatchObject({
+      summary: "Where next?",
+    });
   });
 });
 
@@ -91,7 +149,13 @@ function draft(): InteractiveStoryDraftContent {
             kind: "choice",
             decisionId: "decision:a",
             prompt: { "en-US": "Where next?" },
-            choices: [{ choiceId: "go", label: { "en-US": "Go" }, nextNodeId: "clip:b" }],
+            choices: [
+              {
+                choiceId: "go",
+                label: { "en-US": "Go" },
+                target: { kind: "node", nodeId: "clip:b" },
+              },
+            ],
           },
         },
         {
@@ -99,7 +163,7 @@ function draft(): InteractiveStoryDraftContent {
           nodeId: "clip:b",
           clipKey: "B",
           interactions: [],
-          exit: { kind: "auto", nextNodeId: null },
+          exit: { kind: "auto", routes: [{ target: null }] },
         },
       ],
     },

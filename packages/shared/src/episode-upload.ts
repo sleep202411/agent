@@ -1,7 +1,7 @@
 /** Episode source uploads only; trailers and other media retain their own caps. */
 export const EPISODE_SOURCE_MAX_BYTES = 35 * 1024 ** 3;
-/** Aliyun Green videoDetection default: 500 MB per file. */
-export const CONTENT_REVIEW_VIDEO_MAX_BYTES = 500 * 1024 ** 2;
+/** Aliyun Green videoDetection quota for this account: 2 GB per file. */
+export const CONTENT_REVIEW_VIDEO_MAX_BYTES = 2 * 1024 ** 3;
 export const EPISODE_UPLOAD_PART_BYTES = 16 * 1024 ** 2;
 /** Workspace compute credits: 10 per billed minute, rounded up. */
 export const CONTENT_REVIEW_CREDITS_PER_MINUTE = 10;

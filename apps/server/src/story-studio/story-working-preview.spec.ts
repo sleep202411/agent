@@ -224,7 +224,10 @@ describe('StoryWorkingPreviewService', () => {
             name: 'The rain',
             description: 'A cat waits.\nThe door opens.',
             interactions: [],
-            exit: { kind: 'auto', nextNodeId: 'choice' },
+            exit: {
+              kind: 'auto',
+              routes: [{ target: { kind: 'node', nodeId: 'choice' } }],
+            },
           },
           {
             kind: 'decision',
@@ -236,7 +239,7 @@ describe('StoryWorkingPreviewService', () => {
               choices: Array.from({ length: optionCount }, (_, index) => ({
                 choiceId: `option:${index + 1}`,
                 label: {},
-                nextNodeId: null,
+                target: null,
               })),
             },
           },
@@ -321,12 +324,12 @@ describe('StoryWorkingPreviewService', () => {
               {
                 choiceId: 'stay',
                 label: { 'en-US': 'Stay' },
-                nextNodeId: 'last',
+                target: { kind: 'node', nodeId: 'last' },
               },
               {
                 choiceId: 'leave',
                 label: { 'en-US': 'Leave' },
-                nextNodeId: null,
+                target: null,
               },
             ],
           },
@@ -336,7 +339,7 @@ describe('StoryWorkingPreviewService', () => {
           nodeId: 'last',
           clipKey: 'LAST',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     };

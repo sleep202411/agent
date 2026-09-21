@@ -9,7 +9,8 @@
     "check-types": "turbo run check-types",
     "test": "turbo run test",
     "prepare": "husky",
-    "test:build-cache": "node scripts/verify-build-cache.mjs"
+    "test:build-cache": "node scripts/verify-build-cache.mjs",
+    "test:orchestration": "node scripts/verify-test-orchestration.mjs"
   },
   "lint-staged": {
     "*.{ts,tsx,json,css,md}": [

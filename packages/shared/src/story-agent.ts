@@ -305,7 +305,8 @@ export const StoryAgentGraphChoiceSchema = z
   .object({
     choiceId: StoryAgentStableIdSchema,
     label: StoryAgentLocalizedTextSchema,
-    nextNodeId: StoryAgentStableIdSchema,
+    /** Null marks a choice the canvas has not connected to a target yet. */
+    nextNodeId: StoryAgentStableIdSchema.nullable(),
   })
   .strict();
 export type StoryAgentGraphChoice = z.infer<typeof StoryAgentGraphChoiceSchema>;
@@ -1167,7 +1168,9 @@ export const StoryScreenplaySchema = z
           ? scene.exit.nextNodeId === null
             ? []
             : [scene.exit.nextNodeId]
-          : scene.exit.choices.map((choice) => choice.nextNodeId);
+          : scene.exit.choices
+              .map((choice) => choice.nextNodeId)
+              .filter((target): target is string => target !== null);
       targets.forEach((target) => {
         if (!ids.has(target)) {
           context.addIssue({
@@ -1258,11 +1261,12 @@ export function buildStoryScreenplayDocument(screenplay: StoryScreenplay): Story
     if (scene.exit.kind === "choice") {
       blocks.push({ kind: "paragraph", text: localizedStoryText(scene.exit.prompt) });
       for (const choice of scene.exit.choices) {
+        const target = choice.nextNodeId
+          ? (sceneNames.get(choice.nextNodeId) ?? choice.nextNodeId)
+          : "(unresolved)";
         blocks.push({
           kind: "paragraph",
-          text: `• ${localizedStoryText(choice.label)} → ${
-            sceneNames.get(choice.nextNodeId) ?? choice.nextNodeId
-          }`,
+          text: `• ${localizedStoryText(choice.label)} → ${target}`,
         });
       }
     }
