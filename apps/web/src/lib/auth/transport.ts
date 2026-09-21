@@ -17,6 +17,8 @@
 
 import { createFetchTransport, type AuthTransport } from "@repo/auth-flow";
 
+import { measureCodeRequest } from "./code-request-timing";
+
 const SIGN_IN_CODE_PATH = "/user/new/getCode";
 
 export function createWebAuthTransport(locale: string): AuthTransport {
@@ -34,12 +36,14 @@ export function createWebAuthTransport(locale: string): AuthTransport {
       // this query parameter. `locale` is the active website path locale
       // (`en-US`, `zh-CN` or `zh-HK`) supplied by AuthDialogProvider.
       if (input.path === SIGN_IN_CODE_PATH) {
-        return transport.request({
-          ...input,
-          query: { ...input.query, locale },
-        });
+        return measureCodeRequest(input, locale, () =>
+          transport.request({
+            ...input,
+            query: { ...input.query, locale },
+          })
+        );
       }
-      return transport.request(input);
+      return measureCodeRequest(input, locale, () => transport.request(input));
     },
   };
 }
