@@ -39,6 +39,8 @@ async function userLevelsFetch(path: string, init?: RequestInit): Promise<JavaEn
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
+    // Custom admin-token headers must never follow an upstream redirect.
+    redirect: "error",
   });
   const payload = (await response.json().catch(() => null)) as JavaEnvelope | null;
   if (!response.ok || !payload || payload.code !== 200) {
