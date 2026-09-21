@@ -36,6 +36,9 @@ import type { StoryAssetSpec as CurrentStoryAssetSpec } from "@/lib/story-produc
 import {
   storyAuthoringProposalReview,
   storyAuthoringProposalStage,
+  storyAgentAutoNextNodeId,
+  storyAgentChoiceNextNodeId,
+  storyAgentChoiceTargetsEnding,
   storyLocalizedText,
   type StoryAuthoringProposalReview,
   type StoryReviewableProposal,
@@ -261,31 +264,38 @@ function StructureProposalReview({
                           {storyLocalizedText(scene.exit.prompt)}
                         </p>
                         <ul className="mt-2 space-y-1.5">
-                          {scene.exit.choices.map((choice) => (
-                            <li
-                              key={choice.choiceId}
-                              className="flex items-start gap-2 text-xs leading-5 text-white/68"
-                            >
-                              <span className="mt-1.5 size-1 shrink-0 rounded-full bg-white/35" />
-                              <span className="min-w-0">
-                                <span className="text-white/72">
-                                  {storyLocalizedText(choice.label)}
+                          {scene.exit.choices.map((choice) => {
+                            const nextNodeId = storyAgentChoiceNextNodeId(choice);
+                            return (
+                              <li
+                                key={choice.choiceId}
+                                className="flex items-start gap-2 text-xs leading-5 text-white/68"
+                              >
+                                <span className="mt-1.5 size-1 shrink-0 rounded-full bg-white/35" />
+                                <span className="min-w-0">
+                                  <span className="text-white/72">
+                                    {storyLocalizedText(choice.label)}
+                                  </span>
+                                  <span className="px-1.5 text-white/50">→</span>
+                                  {nextNodeId
+                                    ? (sceneNames.get(nextNodeId) ?? nextNodeId)
+                                    : storyAgentChoiceTargetsEnding(choice)
+                                      ? t("proposal.ending")
+                                      : t("proposal.unresolved")}
                                 </span>
-                                <span className="px-1.5 text-white/50">→</span>
-                                {choice.nextNodeId
-                                  ? (sceneNames.get(choice.nextNodeId) ?? choice.nextNodeId)
-                                  : t("proposal.unresolved")}
-                              </span>
-                            </li>
-                          ))}
+                              </li>
+                            );
+                          })}
                         </ul>
                       </div>
                     ) : (
                       <p className="mt-3 flex items-center gap-1.5 text-xs text-white/62">
                         <IconMovie className="size-3.5" stroke={1.8} />
-                        {scene.exit.nextNodeId
+                        {storyAgentAutoNextNodeId(scene.exit)
                           ? t("proposal.continuesTo", {
-                              scene: sceneNames.get(scene.exit.nextNodeId) ?? scene.exit.nextNodeId,
+                              scene:
+                                sceneNames.get(storyAgentAutoNextNodeId(scene.exit)!) ??
+                                storyAgentAutoNextNodeId(scene.exit)!,
                             })
                           : t("proposal.ending")}
                       </p>

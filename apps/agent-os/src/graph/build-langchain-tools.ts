@@ -13,6 +13,12 @@ import {
 } from "@repo/agent-tools";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 import { STORY_PATCH_OPERATION_LABELS } from "@repo/shared/story-agent";
+import {
+  MAX_STORY_STATE_EFFECTS,
+  MAX_STORY_STATE_NOTE_LENGTH,
+  MAX_STORY_STATE_VARIABLES,
+  STORY_STATE_KEY_PATTERN,
+} from "@repo/shared/story-stats";
 import { z } from "zod/v3";
 
 import { toLangChainToolName } from "./tool-name.js";
@@ -371,6 +377,33 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     .min(1)
     .max(40)
     .regex(/^[A-Z][A-Z0-9_-]*$/);
+  const storyStateKey = z.string().min(1).max(240).regex(STORY_STATE_KEY_PATTERN);
+  const storyStateEffect = z.discriminatedUnion("kind", [
+    z.object({
+      kind: z.literal("set"),
+      key: storyStateKey,
+      value: z.union([z.number(), z.boolean()]),
+    }),
+    z.object({ kind: z.literal("add"), key: storyStateKey, amount: z.number() }),
+  ]);
+  const storyStateEffects = z.array(storyStateEffect).max(MAX_STORY_STATE_EFFECTS);
+  const storyStateVariableBase = {
+    key: storyStateKey,
+    name: storyLocalizedText,
+    note: z.string().max(MAX_STORY_STATE_NOTE_LENGTH).optional(),
+  };
+  const storyStateVariable = z.union([
+    z.object({
+      ...storyStateVariableBase,
+      valueType: z.literal("number"),
+      initialValue: z.number(),
+    }),
+    z.object({
+      ...storyStateVariableBase,
+      valueType: z.literal("boolean"),
+      initialValue: z.boolean(),
+    }),
+  ]);
   const storyScene = z.object({
     nodeId: storyStableId,
     clipKey: storyClipKey,
@@ -378,9 +411,17 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     description: z.string().max(4_000).optional(),
   });
   const storyInteractionAction = z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("continue") }),
-    z.object({ kind: z.literal("seek"), timeMs: z.number().int().min(0) }),
-    z.object({ kind: z.literal("goto"), nodeId: storyStableId }),
+    z.object({ kind: z.literal("continue"), effects: storyStateEffects.optional() }),
+    z.object({
+      kind: z.literal("seek"),
+      timeMs: z.number().int().min(0),
+      effects: storyStateEffects.optional(),
+    }),
+    z.object({
+      kind: z.literal("goto"),
+      nodeId: storyStableId,
+      effects: storyStateEffects.optional(),
+    }),
   ]);
   const storyInteractionTrigger = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("tap") }),
@@ -406,6 +447,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     }),
     startMs: z.number().int().min(0),
     endMs: z.number().int().min(1),
+    branchAtMs: z.number().int().min(1).optional(),
     outcomes: z.object({
       success: storyInteractionAction,
       failure: storyInteractionAction.optional(),
@@ -443,6 +485,14 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
       // Cast authoring is withdrawn — the canvas offers no way to create
       // character cards, so the agent must not be able to write them back.
       productionNotes: z.array(z.string().max(2_000)).max(200).optional(),
+    })
+  );
+  const storyUpdateStateVariables = bindStoryTool(
+    "story.updateStateVariables",
+    z.object({
+      ...storyBase,
+      upsert: z.array(storyStateVariable).max(MAX_STORY_STATE_VARIABLES).default([]),
+      removeKeys: z.array(storyStateKey).max(MAX_STORY_STATE_VARIABLES).default([]),
     })
   );
   const storyAddScene = bindStoryTool(
@@ -615,6 +665,8 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
                 "story_bible.update_overview",
                 "story_bible.put_character",
                 "story_bible.remove_character",
+                "story_bible.put_state_variable",
+                "story_bible.remove_state_variable",
                 "story_graph.set_entry_node",
                 "story_graph.put_node",
                 "story_graph.remove_node",
@@ -690,6 +742,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.read": storyRead,
     "story.confirmCreativeProfile": storyConfirmCreativeProfile,
     "story.updateBible": storyUpdateBible,
+    "story.updateStateVariables": storyUpdateStateVariables,
     "story.addScene": storyAddScene,
     "story.addBranch": storyAddBranch,
     "story.editNode": storyEditNode,

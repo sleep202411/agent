@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   StoryConditionSchema,
   StoryStateEffectSchema,
+  StoryStateKeySchema,
   compileStoryCondition,
   compileStoryEffects,
   measureStoryCondition,
@@ -15,6 +16,12 @@ import {
 } from "./story-stats.js";
 
 describe("story stats grammar", () => {
+  it("validates stable state keys without rewriting input", () => {
+    expect(StoryStateKeySchema.parse("player.courage")).toBe("player.courage");
+    expect(StoryStateKeySchema.safeParse(" player.courage ").success).toBe(false);
+    expect(StoryStateKeySchema.safeParse("player.__proto__").success).toBe(false);
+  });
+
   it("compiles set/add effects and compare conditions into the runtime state machine", () => {
     expect(compileStoryEffects([{ kind: "add", key: "favorability.lin", amount: 10 }])).toEqual([
       {

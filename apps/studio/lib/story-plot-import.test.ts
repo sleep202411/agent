@@ -95,9 +95,188 @@ describe("plot JSON import", () => {
       ).toBe(true);
       expect(buildStoryCanvasModel(content, locale).nodes).toHaveLength(4);
       expect(plot.assets).toHaveLength(2);
+      expect(plot.stateVariables).toHaveLength(1);
       expect(storyPlotImportClipWrites(plot, "ns").at(0)?.clips).toHaveLength(2);
     }
   );
+
+  it("imports typed variables, entry effects, conditional routes, choice effects and visibility without duplication", () => {
+    const value = example();
+    const stateful: Record<string, unknown> = {
+      ...value,
+      stateVariables: [
+        {
+          key: "courage",
+          name: "勇气",
+          valueType: "number",
+          initialValue: 0,
+          note: "面对危险时积累。",
+        },
+        {
+          key: "met",
+          name: "见过守门人",
+          valueType: "boolean",
+          initialValue: false,
+        },
+      ],
+      nodes: value.nodes.map((node) =>
+        node.id === "opening"
+          ? {
+              ...node,
+              onEnterEffects: [{ kind: "set", key: "met", value: true }],
+              routes: [
+                {
+                  when: {
+                    kind: "compare",
+                    variableKey: "courage",
+                    operator: "at-least",
+                    value: 3,
+                  },
+                  next: "ending",
+                },
+              ],
+            }
+          : node.type === "decision" && node.choices
+            ? {
+                ...node,
+                choices: node.choices.map((choice, index) => ({
+                  ...choice,
+                  ...(index === 0
+                    ? {
+                        effects: [{ kind: "add", key: "courage", amount: 1 }],
+                        visibleWhen: {
+                          kind: "compare",
+                          variableKey: "met",
+                          operator: "equals",
+                          value: true,
+                        },
+                      }
+                    : {}),
+                })),
+              }
+            : node
+      ),
+    };
+    const plot = parse(stateful);
+    const first = applyStoryPlotImport(empty(), plot, "zh-CN", "append", "one").content;
+    const second = applyStoryPlotImport(first, plot, "zh-CN", "append", "two").content;
+
+    expect(first.storyBible.stateVariables).toEqual([
+      {
+        key: "courage",
+        name: { "zh-CN": "勇气" },
+        valueType: "number",
+        initialValue: 0,
+        note: "面对危险时积累。",
+      },
+      {
+        key: "met",
+        name: { "zh-CN": "见过守门人" },
+        valueType: "boolean",
+        initialValue: false,
+      },
+    ]);
+    expect(second.storyBible.stateVariables).toEqual(first.storyBible.stateVariables);
+    expect(first.graph.nodes[0]).toMatchObject({
+      onEnterEffects: [{ kind: "set", key: "met", value: true }],
+      exit: {
+        routes: [
+          {
+            when: {
+              kind: "compare",
+              variableKey: "courage",
+              operator: "at-least",
+              value: 3,
+            },
+            target: { kind: "node", nodeId: "import:one:ending" },
+          },
+          { target: { kind: "node", nodeId: "import:one:choice" } },
+        ],
+      },
+    });
+    expect(first.graph.nodes[1]).toMatchObject({
+      exit: {
+        choices: [
+          {
+            effects: [{ kind: "add", key: "courage", amount: 1 }],
+            visibleWhen: {
+              kind: "compare",
+              variableKey: "met",
+              operator: "equals",
+              value: true,
+            },
+          },
+          {},
+        ],
+      },
+    });
+    expect(InteractiveStoryDraftContentSchema.safeParse(second).success).toBe(true);
+  });
+
+  it("rejects conflicting or unknown state definitions at their source path", () => {
+    const value = example();
+    const plot = parse({
+      ...value,
+      stateVariables: [
+        {
+          key: "met",
+          name: "Met",
+          valueType: "boolean",
+          initialValue: false,
+        },
+      ],
+    });
+    const current = empty();
+    current.storyBible.stateVariables = [
+      {
+        key: "met",
+        name: { "en-US": "Met" },
+        valueType: "number",
+        initialValue: 0,
+      },
+    ];
+    expect(() => applyStoryPlotImport(current, plot, "en-US")).toThrow(
+      "$.stateVariables[0].key: state"
+    );
+
+    const unknown = {
+      ...value,
+      nodes: value.nodes.map((node, index) =>
+        index === 0
+          ? {
+              ...node,
+              onEnterEffects: [{ kind: "add", key: "missing", amount: 1 }],
+            }
+          : node
+      ),
+    };
+    expect(() => applyStoryPlotImport(empty(), parse(unknown), "en-US")).toThrow(
+      "$.nodes[0].onEnterEffects[0]: state"
+    );
+  });
+
+  it("rejects imports that would exceed the chapter state-variable capacity", () => {
+    const current = empty();
+    current.storyBible.stateVariables = Array.from({ length: 64 }, (_, index) => ({
+      key: `existing_${index}`,
+      name: { "en-US": `Existing ${index}` },
+      valueType: "number" as const,
+      initialValue: 0,
+    }));
+    const plot = parse({
+      ...example(),
+      stateVariables: [
+        {
+          key: "overflow",
+          name: "Overflow",
+          valueType: "number",
+          initialValue: 0,
+        },
+      ],
+    });
+
+    expect(() => applyStoryPlotImport(current, plot, "en-US")).toThrow("$.stateVariables: state");
+  });
 
   it("preserves exact copy, ordered choices, rejoining branches, entry and terminal nodes through the server schema", () => {
     const result = applyStoryPlotImport(empty(), parse(example()), "zh-CN");

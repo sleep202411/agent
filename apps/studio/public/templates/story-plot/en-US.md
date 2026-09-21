@@ -8,15 +8,18 @@ Convert my screenplay into the JSON format below. Preserve my language, plot, di
 
 ## Contract
 
-- Root: `entryNodeId`, `assets`, `nodes`. Do not include a version field or any other keys.
+- Root: `entryNodeId`, `assets`, optional `stateVariables`, and `nodes`. Do not include a version field or any other keys.
+- State variable: `key` (a stable dot-separated identifier), `name`, `valueType` (`number` or `boolean`), `initialValue` of the same type, and optional `note`. At most 64. Reuse one key for one concept; never create numbered copies such as `courage_1`. Import merges definitions by key: a matching type and initial value reuses the existing definition; a conflict is rejected with its JSON path.
+- State effect: `{ "kind": "set", "key": "met", "value": true }` or `{ "kind": "add", "key": "courage", "amount": 1 }`. Effects may appear in `onEnterEffects` on any node or in `effects` on a choice.
+- State condition: `{ "kind": "compare", "variableKey": "courage", "operator": "at-least", "value": 3 }`. Conditions may appear in `visibleWhen` on a choice or in a scene's optional `routes`. A scene route is `{ "when": condition, "next": nodeIdOrNull }`; routes are tested in order before the scene's required `next` fallback.
 - Asset: `id`, `kind` (`character`, `location` or `prop`), `name` (required, at most 240 characters), `description` (optional, at most 4,000 characters), `imagePrompt` (required, at most 12,000 characters), `videoPrompt` (optional, at most 12,000 characters), `negativePrompt` (optional, at most 4,000 characters). At most 500 assets. Prompts must not contain `@` tokens.
-- Scene: `id`, `type: "scene"`, `title` (required, at most 120 characters), `description` (optional, at most 4,000 characters), `next` (another node ID, or `null` for an ending), `storyboard` (optional). `storyboard` has only `clips`.
+- Scene: `id`, `type: "scene"`, `title` (required, at most 120 characters), `description` (optional, at most 4,000 characters), `next` (another node ID, or `null` for an ending), optional `routes`, optional `onEnterEffects`, and optional `storyboard`. `storyboard` has only `clips`.
 - Clip: `id`, `kind` (`image` or `video`), `title` (required, at most 160 characters), `durationMs` (integer, 250–3,600,000), `prompt` (required, at most 12,000 characters), `negativePrompt` (optional, at most 4,000 characters). At most 100 clips per scene. Clips play in array order; FizzDragon accumulates start times. A scene’s clips cannot exceed 3,600,000 ms. Clip prompts must not contain `@` tokens. Do not add asset references or bindings.
-- Decision: `id`, `type: "decision"`, `prompt` (required, at most 4,000 characters), `choices` (2–6 ordered options). Each option has `label` (required, at most 4,000 characters) and `next` (an existing node ID). Endings are scenes with `next: null`, not choices with null targets.
+- Decision: `id`, `type: "decision"`, `prompt` (required, at most 4,000 characters), optional `onEnterEffects`, and `choices` (2–6 ordered options). Each option has `label`, `next`, and optional `effects` / `visibleWhen`. Endings are scenes with `next: null`, not choices with null targets.
 - Every ID is unique in its scope: 1–64 ASCII characters, beginning with a letter, followed by letters, digits or `_`, with optional `.` `:` `-` separators between groups. Node IDs are unique in the file. Asset IDs are unique in the file. Clip IDs are unique inside their scene. Every referenced node must exist. Every node must be reachable from `entryNodeId`. Branches may rejoin the same node; do not duplicate that node.
 - Keep node array order and choice array order intentional. JSON must escape line breaks inside text as `\n` and quotes as `\"`. Preserve the full text within the field limits; split long scenes into connected scene nodes rather than truncate them.
 - At most 500 nodes and 2 MB per file. Split longer stories into chapter files, each self-contained. Do not put cross-file links in `next`.
-- No media URLs, coordinates, `@` mentions, assetRefs or additional metadata. FizzDragon imports the plot tree, asset specs and clip prompts only; it does not generate media. Internal IDs are namespaced on import to avoid collisions with existing nodes.
+- No media URLs, coordinates, `@` mentions, assetRefs or additional metadata. FizzDragon imports the plot tree, state definitions, asset specs and clip prompts; it does not generate media. Internal node IDs are namespaced on import to avoid collisions, while state keys stay stable and are reused.
 
 ## Example
 
@@ -25,6 +28,15 @@ Replace this example with my story. The example text is not a required output la
 ```json
 {
   "entryNodeId": "arrival",
+  "stateVariables": [
+    {
+      "key": "courage",
+      "name": "Courage",
+      "valueType": "number",
+      "initialValue": 0,
+      "note": "Confidence built through difficult choices."
+    }
+  ],
   "assets": [
     {
       "id": "mira",
@@ -75,7 +87,8 @@ Replace this example with my story. The example text is not a required output la
       "choices": [
         {
           "label": "Open the letter",
-          "next": "truth"
+          "next": "truth",
+          "effects": [{ "kind": "add", "key": "courage", "amount": 1 }]
         },
         {
           "label": "Leave it unopened",

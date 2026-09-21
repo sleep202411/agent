@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-  ExperienceStatePathSchema,
-  type ExperienceCondition,
-  type ExperienceRuntimeAction,
-} from "./experience-runtime.js";
+import { type ExperienceCondition, type ExperienceRuntimeAction } from "./experience-runtime.js";
 
 export const MAX_STORY_STATE_VARIABLES = 64;
 export const MAX_STORY_STATE_EFFECTS = 6;
@@ -12,7 +8,15 @@ export const MAX_STORY_CONDITION_LEAVES = 12;
 export const MAX_STORY_EXIT_ROUTES = 8;
 export const MAX_STORY_STATE_NOTE_LENGTH = 2_000;
 
-export const StoryStateKeySchema = ExperienceStatePathSchema;
+export const STORY_STATE_KEY_PATTERN =
+  /^(?!.*(?:^|\.)(?:__proto__|prototype|constructor)(?:\.|$))[A-Za-z_][A-Za-z0-9_-]*(?:\.[A-Za-z_][A-Za-z0-9_-]*)*$/;
+
+/** Stable Story keys are validated exactly as entered and are never rewritten. */
+export const StoryStateKeySchema = z
+  .string()
+  .min(1)
+  .max(240)
+  .regex(STORY_STATE_KEY_PATTERN, "Use a safe dot-separated state key.");
 export type StoryStateKey = z.infer<typeof StoryStateKeySchema>;
 
 export const StoryStateValueTypeSchema = z.enum(["number", "boolean"]);
