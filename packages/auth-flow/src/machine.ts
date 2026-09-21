@@ -21,13 +21,7 @@ import { secondsUntil } from "./resend-clock";
 import type { AuthMode, AuthSession, NormalizedIdentifier } from "./types";
 
 export type AuthStep =
-  | "identifier"
-  | "code"
-  | "password"
-  | "reset_password"
-  | "profile"
-  | "invite"
-  | "done";
+  "identifier" | "code" | "password" | "reset_password" | "profile" | "invite" | "done";
 
 export type { AuthMode };
 
@@ -298,7 +292,7 @@ export function authFlowReducer(state: AuthFlowState, event: AuthFlowEvent): Aut
         password: "",
         newPassword: "",
         confirmPassword: "",
-        step: stepAfterLogin(event.session, state.steps, state.mode),
+        step: stepAfterLogin(event.session, state.steps, state.mode, state.inviteCode),
       };
 
     case "avatar_upload_started":
@@ -315,7 +309,7 @@ export function authFlowReducer(state: AuthFlowState, event: AuthFlowEvent): Aut
         ...state,
         pending: false,
         error: null,
-        step: state.steps.invite ? "invite" : "done",
+        step: state.steps.invite && state.inviteCode.trim() ? "invite" : "done",
       };
 
     case "invite_finished":
@@ -453,11 +447,12 @@ function refreshCooldown(state: AuthFlowState, now: number, deadline = 0): AuthF
 export function stepAfterLogin(
   session: AuthSession,
   steps: AuthStepConfig,
-  mode: AuthMode = "signin"
+  mode: AuthMode = "signin",
+  inviteCode = ""
 ): AuthStep {
   if (mode === "reset" || !session.isNewUser) return "done";
   if (steps.profile) return "profile";
-  if (steps.invite) return "invite";
+  if (steps.invite && inviteCode.trim()) return "invite";
   return "done";
 }
 

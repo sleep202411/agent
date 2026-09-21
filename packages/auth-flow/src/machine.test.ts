@@ -79,7 +79,10 @@ describe("step transitions", () => {
   });
 
   it("routes a brand-new user through profile then invite", () => {
-    const afterLogin = reduce(initial(), { type: "logged_in", session: session(true) });
+    const afterLogin = reduce(initial({ inviteCode: "REF123" }), {
+      type: "logged_in",
+      session: session(true),
+    });
     expect(afterLogin.step).toBe("profile");
     expect(reduce(afterLogin, { type: "profile_finished" }).step).toBe("invite");
     expect(reduce(afterLogin, { type: "profile_finished" }, { type: "invite_finished" }).step).toBe(
@@ -88,7 +91,7 @@ describe("step transitions", () => {
   });
 
   it("honours a per-app step opt-out", () => {
-    const noProfile = initial({ steps: { profile: false } });
+    const noProfile = initial({ steps: { profile: false }, inviteCode: "REF123" });
     expect(reduce(noProfile, { type: "logged_in", session: session(true) }).step).toBe("invite");
 
     const neither = initial({ steps: { profile: false, invite: false } });
@@ -104,7 +107,9 @@ describe("step transitions", () => {
   it("stepAfterLogin is the single source of that routing", () => {
     expect(stepAfterLogin(session(false), { profile: true, invite: true })).toBe("done");
     expect(stepAfterLogin(session(true), { profile: true, invite: true })).toBe("profile");
-    expect(stepAfterLogin(session(true), { profile: false, invite: true })).toBe("invite");
+    expect(
+      stepAfterLogin(session(true), { profile: false, invite: true }, "signin", "REF123")
+    ).toBe("invite");
     expect(stepAfterLogin(session(true), { profile: false, invite: false })).toBe("done");
   });
 
@@ -127,7 +132,10 @@ describe("step transitions", () => {
 });
 
 describe("dismissing a live session", () => {
-  const onboarding = reduce(initial(), { type: "logged_in", session: session(true) });
+  const onboarding = reduce(initial({ inviteCode: "REF123" }), {
+    type: "logged_in",
+    session: session(true),
+  });
 
   it("treats a dismiss on profile as skipping the rest of onboarding", () => {
     const state = reduce(onboarding, { type: "dismissed" });
@@ -183,7 +191,10 @@ describe("back navigation", () => {
   });
 
   it("is a no-op on the onboarding steps", () => {
-    const profile = reduce(initial(), { type: "logged_in", session: session(true) });
+    const profile = reduce(initial({ inviteCode: "REF123" }), {
+      type: "logged_in",
+      session: session(true),
+    });
     expect(reduce(profile, { type: "back" }).step).toBe("profile");
   });
 
@@ -743,5 +754,20 @@ describe("validation + selectors", () => {
     expect(canDismiss(state)).toBe(true);
     expect(canDismiss({ ...state, pending: true })).toBe(false);
     expect(canDismiss({ ...state, uploadingAvatar: true })).toBe(false);
+  });
+});
+
+describe("optional referral routing", () => {
+  it.each(["", "   "])("finishes onboarding without a referral for %j", (inviteCode) => {
+    const state = reduce(
+      initial({ inviteCode }),
+      { type: "logged_in", session: session(true) },
+      { type: "profile_finished" }
+    );
+    expect(state.step).toBe("done");
+    expect(state.session).toEqual(session(true));
+    expect(
+      stepAfterLogin(session(true), { profile: false, invite: true }, "signin", inviteCode)
+    ).toBe("done");
   });
 });
