@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import {
   ConflictException,
   Injectable,
@@ -32,12 +33,20 @@ import {
   StoryGetGenerationBatchInputSchema,
   StoryProductionContinuationPlanSchema,
   StoryUpdateBibleInputSchema,
+  StoryUpdateStateVariablesInputSchema,
 } from '@repo/agent-tools';
 import {
   STORY_PATCH_OPERATION_LABELS,
   StoryPatchOperationsSchema,
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
+import {
+  migrateStoryInteraction,
+  migrateStoryNodeStats,
+  storyAutoFallbackNodeId,
+  storyExitNodeIds,
+  storyRouteNodeId,
+} from '@repo/shared/story-stats';
 import {
   storyVisualStyleSkillBySlug,
   type StoryVisualStyleSkillSlug,
@@ -88,6 +97,7 @@ const STORY_TOOL_IDS = new Set([
   'story.read',
   'story.confirmCreativeProfile',
   'story.updateBible',
+  'story.updateStateVariables',
   'story.addScene',
   'story.addBranch',
   'story.editNode',
@@ -114,6 +124,12 @@ const MOBILE_H5_DEFAULT_VISUAL_STYLE = 'cinematic-realism' as const;
 
 type StoryNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type StoryClipNode = Extract<StoryNode, { kind: 'clip' }>;
+// Fine-grained scene creation still uses the compact legacy route shape;
+// migrateStoryNodeStats canonicalizes it before the executor validates the draft.
+type StoryAgentPutNode = Extract<
+  z.infer<typeof StoryPatchOperationsSchema>[number],
+  { kind: 'story_graph.put_node' }
+>['payload']['node'];
 type StoryOperationDraft = {
   kind: StoryPatchOperation['kind'];
   payload: unknown;
@@ -178,6 +194,38 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
               });
             }
             return finalizeOperations(operations);
+          },
+        );
+      }
+      case 'story.updateStateVariables': {
+        const args = StoryUpdateStateVariablesInputSchema.parse(
+          input.arguments,
+        );
+        return this.mutateStory(
+          input,
+          chapterId,
+          args.baseDraftRevision,
+          (state) => {
+            const existing = new Set(
+              (state.content.storyBible.stateVariables ?? []).map(
+                (variable) => variable.key,
+              ),
+            );
+            return finalizeOperations([
+              ...args.upsert.map((variable) => ({
+                kind: 'story_bible.put_state_variable' as const,
+                payload: {
+                  intent: existing.has(variable.key)
+                    ? ('replace' as const)
+                    : ('create' as const),
+                  variable,
+                },
+              })),
+              ...args.removeKeys.map((key) => ({
+                kind: 'story_bible.remove_state_variable' as const,
+                payload: { key },
+              })),
+            ]);
           },
         );
       }
@@ -861,8 +909,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           name: character.name,
           summary: character.summary,
         })),
+        stateVariables: state.content.storyBible.stateVariables ?? [],
       },
-      graph: state.content.graph,
+      graph: {
+        entryNodeId: state.content.graph.entryNodeId,
+        nodes: state.content.graph.nodes.map(toAgentReadNode),
+      },
       productionNotes: state.content.productionNotes,
       productionState,
       creativeProfile: {
@@ -1665,18 +1717,23 @@ export function buildPutInteractionOperations(
     (interaction) =>
       interaction.interactionId === args.interaction.interactionId,
   );
+  // The protocol interaction still uses pre-stats actions; migrate it into
+  // the draft shape before merging into the node.
+  const interaction = migrateStoryInteraction(
+    args.interaction,
+  ) as (typeof node.interactions)[number];
   const interactions = [...node.interactions];
   if (existingIndex >= 0) {
-    interactions[existingIndex] = args.interaction;
+    interactions[existingIndex] = interaction;
   } else {
-    interactions.push(args.interaction);
+    interactions.push(interaction);
   }
   return finalizeOperations([
     {
       kind: 'story_graph.put_node',
       payload: {
         intent: 'replace',
-        node: { ...node, interactions },
+        node: toAgentClipNode({ ...node, interactions }),
       },
     },
   ]);
@@ -1703,7 +1760,7 @@ export function buildRemoveInteractionOperations(
       kind: 'story_graph.put_node',
       payload: {
         intent: 'replace',
-        node: { ...node, interactions },
+        node: toAgentClipNode({ ...node, interactions }),
       },
     },
   ]);
@@ -1726,23 +1783,18 @@ function descendantsOf(
 }
 
 function targetsOf(node: StoryNode): string[] {
-  const exitTargets =
-    node.exit.kind === 'auto'
-      ? node.exit.nextNodeId
-        ? [node.exit.nextNodeId]
-        : []
-      : node.exit.choices.flatMap((choice) =>
-          choice.nextNodeId ? [choice.nextNodeId] : [],
-        );
+  node = migrateStoryNodeStats(node) as StoryNode;
   const interactionTargets =
     node.kind === 'clip'
       ? node.interactions.flatMap((interaction) =>
-          Object.values(interaction.outcomes).flatMap((action) =>
-            action?.kind === 'goto' ? [action.nodeId] : [],
-          ),
+          Object.values(interaction.outcomes).flatMap((action) => {
+            if (action?.kind !== 'goto') return [];
+            const nodeId = storyRouteNodeId(action.target);
+            return nodeId ? [nodeId] : [];
+          }),
         )
       : [];
-  return [...exitTargets, ...interactionTargets];
+  return [...storyExitNodeIds(node.exit), ...interactionTargets];
 }
 
 function requireNode(
@@ -1778,12 +1830,76 @@ function missingNode(nodeId: string): UnprocessableEntityException {
 }
 
 function requireOpenAutoExit(node: StoryNode): void {
-  if (node.exit.kind === 'auto' && node.exit.nextNodeId === null) return;
+  const migrated = migrateStoryNodeStats(node) as StoryNode;
+  if (
+    migrated.exit.kind === 'auto' &&
+    storyAutoFallbackNodeId(migrated.exit) === null
+  )
+    return;
   throw new UnprocessableEntityException({
     code: 'STORY_SCENE_EXIT_OCCUPIED',
     message: `Scene ${node.nodeId} already has an outgoing path. Choose an open ending or refactor the graph explicitly.`,
     nodeId: node.nodeId,
   });
+}
+
+function toAgentClipNode(
+  node: Extract<StoryNode, { kind: 'clip' }>,
+): StoryAgentPutNode {
+  return {
+    kind: 'clip',
+    nodeId: node.nodeId,
+    ...(node.communityPointPrice !== undefined
+      ? { communityPointPrice: node.communityPointPrice }
+      : {}),
+    clipKey: node.clipKey,
+    ...(node.name ? { name: node.name } : {}),
+    ...(node.description ? { description: node.description } : {}),
+    ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
+    interactions: node.interactions,
+    exit:
+      node.exit.kind === 'auto'
+        ? {
+            kind: 'auto' as const,
+            routes: node.exit.routes,
+          }
+        : {
+            kind: 'choice' as const,
+            decisionId: node.exit.decisionId,
+            prompt: node.exit.prompt,
+            choices: node.exit.choices.map((choice) => ({
+              choiceId: choice.choiceId,
+              label: choice.label,
+              ...(choice.effects ? { effects: choice.effects } : {}),
+              ...(choice.visibleWhen
+                ? { visibleWhen: choice.visibleWhen }
+                : {}),
+              target: choice.target,
+            })),
+          },
+  };
+}
+
+function toAgentReadNode(node: StoryNode) {
+  if (node.kind === 'clip') return toAgentClipNode(node);
+  return {
+    ...node,
+    exit:
+      node.exit.kind === 'auto'
+        ? { kind: 'auto' as const, routes: node.exit.routes }
+        : {
+            ...node.exit,
+            choices: node.exit.choices.map((choice) => ({
+              choiceId: choice.choiceId,
+              label: choice.label,
+              ...(choice.effects ? { effects: choice.effects } : {}),
+              ...(choice.visibleWhen
+                ? { visibleWhen: choice.visibleWhen }
+                : {}),
+              target: choice.target,
+            })),
+          },
+  };
 }
 
 function storyContinuationLocale(

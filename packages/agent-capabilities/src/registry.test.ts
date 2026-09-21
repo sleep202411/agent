@@ -117,6 +117,15 @@ describe("agent capability registry", () => {
     expect(instructions).not.toContain("hand-build a whole tree scene-by-scene");
   });
 
+  it("keeps fine-grained Story edits inside the creator's requested scope", () => {
+    const instructions = requireModeDefinition("story", "story").instructions;
+    expect(instructions).toMatch(
+      /Keep every fine-grained edit inside the creator's requested scope/
+    );
+    expect(instructions).toMatch(/Never repair,\s+rename, retype/);
+    expect(instructions).toMatch(/wait for explicit authorization/);
+  });
+
   it("owns each mode's exact tool subset", () => {
     expect(getModeDefinition("platform", "canvas")?.toolIds).toEqual([
       "characters.list",

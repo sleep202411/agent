@@ -3,6 +3,11 @@ import {
   InteractiveFilmReleaseSchema,
   type InteractiveFilmRelease,
 } from '@repo/shared/interactive-film-runtime';
+import {
+  storyAutoFallbackNodeId,
+  storyExitNodeIds,
+  storyRouteNodeId,
+} from '@repo/shared/story-stats';
 import type { ExperienceRuntimeManifest } from '@repo/shared/experience-runtime';
 import type {
   StoryBuildDiagnosticDto,
@@ -726,7 +731,10 @@ function analyzePaths(
             ) ?? 0);
 
     let facts: NodePathFacts = DEAD_END;
-    if (node.exit.kind === 'auto' && node.exit.nextNodeId === null) {
+    if (
+      node.exit.kind === 'auto' &&
+      storyAutoFallbackNodeId(node.exit) === null
+    ) {
       facts = {
         pathCount: 1,
         terminalNodeIds: new Set([node.nodeId]),
@@ -734,14 +742,7 @@ function analyzePaths(
         durationMaxMs: selfMs,
       };
     } else {
-      const successors: string[] = [];
-      if (node.exit.kind === 'choice') {
-        node.exit.choices.forEach((choice) => {
-          if (choice.nextNodeId) successors.push(choice.nextNodeId);
-        });
-      } else if (node.exit.nextNodeId) {
-        successors.push(node.exit.nextNodeId);
-      }
+      const successors = storyExitNodeIds(node.exit);
       if (successors.length > 0) {
         facts = combineSuccessorFacts(
           successors.map((next) => factsFor(next)),
@@ -853,6 +854,7 @@ function compileIntermediateRelease(
         },
         overlays: [],
         interactions: [],
+        ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
         exit: compileExit(node),
       });
       return;
@@ -869,6 +871,7 @@ function compileIntermediateRelease(
         presentation: { kind: 'decision' },
         overlays: [],
         interactions: [],
+        ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
         exit: compileExit(node),
       });
       return;
@@ -882,10 +885,9 @@ function compileIntermediateRelease(
     const segments = timeline?.segments ?? [];
     // A choice immediately after footage still opens over that footage. Keep
     // the standalone scene too, for entry points and other incoming routes.
-    const nextNode =
-      node.exit.kind === 'auto' && node.exit.nextNodeId
-        ? nodes.get(node.exit.nextNodeId)
-        : undefined;
+    const nextNodeId =
+      node.exit.kind === 'auto' ? storyAutoFallbackNodeId(node.exit) : null;
+    const nextNode = nextNodeId ? nodes.get(nextNodeId) : undefined;
     const exitOwner =
       nextNode?.kind === 'decision' && nextNode.exit.kind === 'choice'
         ? nextNode
@@ -918,6 +920,7 @@ function compileIntermediateRelease(
       },
       overlays: [],
       interactions: node.interactions,
+      ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
       exit: compileExit(exitOwner),
     });
   });
@@ -933,14 +936,13 @@ function compileIntermediateRelease(
     const node = runtimeById.get(nodeId);
     if (!node) continue;
     reachableRuntimeIds.add(nodeId);
-    if (node.exit.kind === 'auto') {
-      if (node.exit.nextNodeId) pending.push(node.exit.nextNodeId);
-    } else if (node.exit.kind === 'choice') {
-      pending.push(...node.exit.choices.map((choice) => choice.nextNodeId));
-    }
+    pending.push(...storyExitNodeIds(node.exit));
     for (const interaction of node.interactions) {
       for (const action of Object.values(interaction.outcomes)) {
-        if (action?.kind === 'goto') pending.push(action.nodeId);
+        if (action?.kind === 'goto') {
+          const targetNodeId = storyRouteNodeId(action.target);
+          if (targetNodeId) pending.push(targetNodeId);
+        }
       }
     }
   }
@@ -954,6 +956,19 @@ function compileIntermediateRelease(
     defaultLocale: input.defaultLocale,
     locales,
     media,
+    stateVariables: (input.draft.storyBible.stateVariables ?? []).map(
+      (variable) => ({
+        key: variable.key,
+        name: variable.name,
+        valueType: variable.valueType,
+        initialValue: variable.initialValue,
+      }),
+    ),
+    endings: (input.draft.storyBible.endings ?? []).map((ending) => ({
+      endingId: ending.endingId,
+      title: ending.title,
+      kind: ending.kind,
+    })),
     nodes: runtimeNodes.filter((node) => reachableRuntimeIds.has(node.nodeId)),
   };
 }
@@ -963,19 +978,23 @@ function compileExit(
 ): InteractiveFilmRelease['nodes'][number]['exit'] {
   const exit = node.exit;
   if (exit.kind === 'auto') {
-    return { kind: 'auto', nextNodeId: exit.nextNodeId };
+    return { kind: 'auto', routes: exit.routes };
   }
   return {
     kind: 'choice',
     decisionId: exit.decisionId,
     prompt: exit.prompt,
     choices: exit.choices.flatMap((choice) =>
-      choice.nextNodeId
+      choice.target
         ? [
             {
               choiceId: choice.choiceId,
               label: choice.label,
-              nextNodeId: choice.nextNodeId,
+              ...(choice.effects ? { effects: choice.effects } : {}),
+              ...(choice.visibleWhen
+                ? { visibleWhen: choice.visibleWhen }
+                : {}),
+              target: choice.target,
             },
           ]
         : [],
@@ -1005,23 +1024,17 @@ export function storyMusicTrackId(mediaAssetId: string): string {
 function nextNodeIds(
   node: InteractiveStoryDraftContent['graph']['nodes'][number],
 ): string[] {
-  const exitTargets =
-    node.exit.kind === 'choice'
-      ? node.exit.choices.flatMap((choice) =>
-          choice.nextNodeId ? [choice.nextNodeId] : [],
-        )
-      : node.exit.nextNodeId
-        ? [node.exit.nextNodeId]
-        : [];
   const interactionTargets =
     node.kind === 'clip'
       ? node.interactions.flatMap((interaction) =>
-          Object.values(interaction.outcomes).flatMap((action) =>
-            action?.kind === 'goto' ? [action.nodeId] : [],
-          ),
+          Object.values(interaction.outcomes).flatMap((action) => {
+            if (action?.kind !== 'goto') return [];
+            const nodeId = storyRouteNodeId(action.target);
+            return nodeId ? [nodeId] : [];
+          }),
         )
       : [];
-  return [...new Set([...exitTargets, ...interactionTargets])];
+  return [...new Set([...storyExitNodeIds(node.exit), ...interactionTargets])];
 }
 
 function diagnostic(

@@ -48,11 +48,12 @@ import {
   IconWorld,
   IconX,
 } from "@tabler/icons-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
+import { storyChapterWorkbenchQueryKey } from "../../_lib/use-story-chapter-workbench";
 import { StoryProjectSidePanelShell } from "../story-project-side-panel";
 import { StoryProjectWorkState } from "../story-project-work-state";
 import {
@@ -106,6 +107,8 @@ import {
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
   type InteractiveStoryDraftContent,
+  type StoryBibleEnding,
+  type StoryBibleWriterPatch,
   type StoryCandidateAsset,
   type StoryCanvasPosition,
   type StoryCanvasLayout,
@@ -123,6 +126,7 @@ import {
   storyDecisionCanvasNodeId,
   type StoryCanvasEdge,
   type StoryCanvasNode,
+  type StoryCanvasNodeData,
 } from "./story-project-canvas-model";
 import {
   reconcileStoryCanvasSelectedIds,
@@ -158,20 +162,35 @@ import {
 import { useLastDefinedData } from "./use-last-defined-data";
 import {
   addChoiceOption,
+  applyStoryBiblePatch,
   connectSceneContinuation,
   createDecisionNode,
   materializeStoryDecisionNodes,
   connectChoiceTarget,
+  createStoryEndingForAutoRoute,
+  createStoryEndingForChoice,
   createClipNode,
   createWorldNode,
   moveChoiceOption,
+  putStoryEnding,
   removeChoiceOption,
+  removeStoryEnding,
   replaceStoryNodeInteractions,
+  setAutoRoutes,
+  setNodeOnEnterEffects,
+  updateChoiceStats,
   updateStoryClipMeta,
   updateStoryWorldNode,
   updateChoiceExitPrompt,
   updateChoiceOptionLabel,
 } from "./story-project-canvas-mutations";
+import type { StoryCondition, StoryRouteTarget, StoryStateEffect } from "@repo/shared/story-stats";
+import {
+  StoryChoiceAttachmentBar,
+  storyGraphNodePickerItems,
+  storyGraphNodePickerTitles,
+} from "./story-stats-editors";
+
 import {
   canConnectStoryCompletion,
   choiceIdFromHandle,
@@ -180,6 +199,7 @@ import {
 } from "./story-project-canvas-connections";
 import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
+import { cacheStoryWorkbenchDraft } from "./story-workbench-cache";
 import {
   StoryConnectionCreator,
   type StoryConnectionCreationKind,
@@ -247,6 +267,25 @@ type StoryCanvasChoiceContextValue = {
   updateChoice: (sourceNodeId: string, choiceId: string, label: string) => void;
   moveChoice: (sourceNodeId: string, choiceId: string, direction: "up" | "down") => void;
   removeChoice: (sourceNodeId: string, choiceId: string) => void;
+  stateVariables: InteractiveStoryDraftContent["storyBible"]["stateVariables"];
+  endings: StoryBibleEnding[];
+  nodes: Array<{ nodeId: string; title: string }>;
+  locale: string;
+  patchChoice: (
+    sourceNodeId: string,
+    choiceId: string,
+    patch: {
+      effects?: StoryStateEffect[] | null;
+      visibleWhen?: StoryCondition | null;
+      target?: StoryRouteTarget | null;
+    }
+  ) => void;
+  createEndingForChoice: (sourceNodeId: string, choiceId: string) => void;
+  updateEnding: (
+    endingId: string,
+    patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
+  ) => void;
+  deleteEnding: (endingId: string) => void;
 };
 type StoryCanvasWorldContextValue = {
   projectId: string;
@@ -343,6 +382,7 @@ function StoryProjectCanvasInner({
   requestedChapterId?: string;
 }) {
   const { user } = useAuth();
+  const interfaceLocale = useLocale();
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
@@ -624,16 +664,18 @@ function StoryProjectCanvasInner({
 
   const cacheSavedDraft = useCallback(
     (saved: StoryWorkbench["draft"]) => {
-      queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
-        current && saved.revision >= current.draft.revision ? { ...current, draft: saved } : current
-      );
+      const queryKeys: QueryKey[] = [workbenchQueryKey];
       if (resolvedChapterId) {
+        queryKeys.push(
+          storyChapterWorkbenchQueryKey(projectId, resolvedChapterId, user?.id ?? null)
+        );
         void queryClient.invalidateQueries({
           queryKey: storyProductionKeys.storyboard(projectId, resolvedChapterId),
         });
       }
+      cacheStoryWorkbenchDraft(queryClient, queryKeys, saved);
     },
-    [projectId, queryClient, resolvedChapterId, workbenchQueryKey]
+    [projectId, queryClient, resolvedChapterId, user?.id, workbenchQueryKey]
   );
 
   useLayoutEffect(() => {
@@ -1104,7 +1146,8 @@ function StoryProjectCanvasInner({
             project?.defaultLocale ?? "en-US",
             projectionCopy,
             project?.frameProfile,
-            STORY_WORLD_EXPERIENCE_AVAILABLE ? (worldsQuery.data ?? []) : []
+            STORY_WORLD_EXPERIENCE_AVAILABLE ? (worldsQuery.data ?? []) : [],
+            interfaceLocale
           )
         : null,
     // Translation values are primitives. Depending on them keeps the model
@@ -1113,6 +1156,7 @@ function StoryProjectCanvasInner({
     [
       content,
       project?.defaultLocale,
+      interfaceLocale,
       project?.frameProfile,
       projectionCopy.clip,
       projectionCopy.decision,
@@ -1142,6 +1186,23 @@ function StoryProjectCanvasInner({
   });
   const canEdit = editPolicy.canEditContent;
   const canMutateCanvasLayout = editPolicy.canEditLayout;
+  const updateEnding = (
+    endingId: string,
+    patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
+  ) => {
+    applyGraphMutation(
+      (current) => {
+        const ending = (current.storyBible.endings ?? []).find(
+          (candidate) => candidate.endingId === endingId
+        );
+        return ending ? putStoryEnding(current, { ...ending, ...patch }) : current;
+      },
+      { mergeKey: `ending:${endingId}:${Object.keys(patch).join(",")}:${authoringLocale}` }
+    );
+  };
+  const deleteEnding = (endingId: string) => {
+    applyGraphMutation((current) => removeStoryEnding(current, endingId));
+  };
   const choiceContext: StoryCanvasChoiceContextValue = {
     setCommunityPointPrice: async (nodeId, price) => {
       if (!mutationBarrier.permits("content")) throw new Error(t("communityPrice.unavailable"));
@@ -1186,6 +1247,38 @@ function StoryProjectCanvasInner({
     removeChoice: (sourceNodeId, choiceId) => {
       applyGraphMutation((current) => removeChoiceOption(current, sourceNodeId, choiceId));
     },
+    stateVariables: content?.storyBible.stateVariables ?? [],
+    endings: content?.storyBible.endings ?? [],
+    nodes: content
+      ? storyGraphNodePickerItems(
+          content.graph.nodes,
+          "",
+          storyGraphNodePickerTitles(
+            content.graph.nodes,
+            t("nodeKinds.clip"),
+            t("nodeKinds.decision")
+          )
+        )
+      : [],
+    locale: authoringLocale,
+    patchChoice: (sourceNodeId, choiceId, patch) => {
+      applyGraphMutation((current) => updateChoiceStats(current, sourceNodeId, choiceId, patch), {
+        mergeKey: `choice-stats:${sourceNodeId}:${choiceId}`,
+      });
+    },
+    createEndingForChoice: (sourceNodeId, choiceId) => {
+      applyGraphMutation((current) =>
+        createStoryEndingForChoice(
+          current,
+          sourceNodeId,
+          choiceId,
+          authoringLocale,
+          t("stats.untitledEnding")
+        )
+      );
+    },
+    updateEnding,
+    deleteEnding,
   };
   const candidateAssets = useStoryCandidateAssets({
     projectId,
@@ -1865,16 +1958,12 @@ function StoryProjectCanvasInner({
   // Story-bible edits arrive from the overview dock through the registered
   // foundationWriter while this canvas is mounted, keeping the canvas the
   // draft's only writer (autosave, undo history).
-  const updateFoundation = (field: "logline" | "synopsis", value: string) => {
+  const updateFoundation = (patch: StoryBibleWriterPatch) => {
     const current = latestContentRef.current;
     if (!current || !mutationBarrier.permits("content")) return;
-    commitContent(
-      {
-        ...current,
-        storyBible: { ...current.storyBible, [field]: value },
-      },
-      { mergeKey: `foundation:${field}` }
-    );
+    commitContent(applyStoryBiblePatch(current, patch), {
+      mergeKey: `foundation:${Object.keys(patch).sort().join(":")}`,
+    });
   };
   const updateFoundationRef = useRef(updateFoundation);
   useLayoutEffect(() => {
@@ -2395,7 +2484,7 @@ function StoryProjectCanvasInner({
   // while mounted, then reset them on unmount.
   useEffect(() => {
     setDraftBarrier(withSavedDraftSnapshot);
-    setFoundationWriter((field, value) => updateFoundationRef.current(field, value));
+    setFoundationWriter((patch) => updateFoundationRef.current(patch));
     return () => {
       setDraftBarrier(null);
       setFoundationWriter(null);
@@ -2499,6 +2588,30 @@ function StoryProjectCanvasInner({
                 )}
               onConnectChapter={connectChapterTarget}
               onEditInteractions={setInteractionEditorNodeId}
+              locale={authoringLocale}
+              onSetOnEnterEffects={(nodeId, effects) =>
+                applyGraphMutation((current) => setNodeOnEnterEffects(current, nodeId, effects), {
+                  mergeKey: `on-enter:${nodeId}`,
+                })
+              }
+              onSetAutoRoutes={(nodeId, routes) =>
+                applyGraphMutation((current) => setAutoRoutes(current, nodeId, routes), {
+                  mergeKey: `auto-routes:${nodeId}`,
+                })
+              }
+              onCreateEndingForRoute={(nodeId, routeIndex) =>
+                applyGraphMutation((current) =>
+                  createStoryEndingForAutoRoute(
+                    current,
+                    nodeId,
+                    routeIndex,
+                    authoringLocale,
+                    t("stats.untitledEnding")
+                  )
+                )
+              }
+              onUpdateEnding={updateEnding}
+              onDeleteEnding={deleteEnding}
               onDeleteSelected={() => {
                 if (focusedNode) deleteStoryElements({ nodes: [focusedNode], edges: [] });
               }}
@@ -2863,7 +2976,8 @@ function storyInteractionTriggerDraft(
 function storyInteractionActionDocument(
   action: StoryInteractionActionDraft
 ): StoryInteractionAction {
-  if (action.kind === "goto") return { kind: "goto", nodeId: action.targetNodeId };
+  if (action.kind === "goto")
+    return { kind: "goto", target: { kind: "node", nodeId: action.targetNodeId } };
   if (action.kind === "seek") {
     return { kind: "seek", timeMs: Math.round(action.timeSeconds * 1_000) };
   }
@@ -2871,7 +2985,12 @@ function storyInteractionActionDocument(
 }
 
 function storyInteractionActionDraft(action: StoryInteractionAction): StoryInteractionActionDraft {
-  if (action.kind === "goto") return { kind: "goto", targetNodeId: action.nodeId };
+  if (action.kind === "goto") {
+    return {
+      kind: "goto",
+      targetNodeId: action.target.kind === "node" ? action.target.nodeId : "",
+    };
+  }
   if (action.kind === "seek") return { kind: "seek", timeSeconds: action.timeMs / 1_000 };
   return { kind: "continue" };
 }
@@ -2942,6 +3061,146 @@ function StoryPortHandle({
         ...style,
       }}
     />
+  );
+}
+
+function ChoiceOptionRow({
+  choice,
+  index,
+  choiceCount,
+  sourceNodeId,
+  isConnectable,
+}: {
+  choice: NonNullable<StoryCanvasNodeData["choices"]>[number];
+  index: number;
+  choiceCount: number;
+  sourceNodeId: string;
+  isConnectable: boolean;
+}) {
+  const t = useTranslations("storyStudio.canvas");
+  const tStats = useTranslations("storyStudio.canvas.stats");
+  const choiceContext = useContext(StoryCanvasChoiceContext);
+  const destination = choice.targetEndingTitle
+    ? tStats("endingArrow", { title: choice.targetEndingTitle })
+    : choice.targetNodeId
+      ? `→ ${choice.targetTitle ?? t("interactionCard.linkedTarget")}`
+      : t("interactionCard.unconnected");
+  return (
+    <div className="border-b border-white/[0.055] last:border-b-0">
+      <div className="group/choice relative grid min-h-14 grid-cols-[32px_minmax(0,1fr)_auto_auto_26px] items-center gap-2 px-3 text-xs transition-colors hover:bg-white/[0.035] focus-within:bg-white/[0.045]">
+        <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <StoryCanvasTextInput
+          value={choice.label}
+          disabled={!choiceContext?.canEditContent}
+          maxLength={4_000}
+          placeholder={t("interactionCard.untitledOption")}
+          aria-label={t("interactionCard.optionPlaceholder")}
+          onValueChange={(value) =>
+            choiceContext?.updateChoice(sourceNodeId, choice.choiceId, value)
+          }
+          className={cn(
+            "nodrag nopan nowheel w-full min-w-0 bg-transparent py-2 text-[12px] font-medium outline-none placeholder:text-white/36 disabled:cursor-default",
+            choice.label.trim() ? "text-white/78" : "text-white/36"
+          )}
+        />
+        {choice.targetNodeId ? (
+          <StoryCommunityPriceLabel price={choice.communityPointPrice} />
+        ) : (
+          <span />
+        )}
+        <span className="max-w-[118px] truncate rounded-lg bg-white/[0.055] px-2 py-1.5 text-xs text-white/42 group-hover/choice:hidden group-focus-within/choice:hidden">
+          {destination}
+        </span>
+        {choiceContext?.canEditContent ? (
+          <span className="nodrag nopan hidden items-center gap-1 group-hover/choice:flex group-focus-within/choice:flex">
+            <button
+              type="button"
+              disabled={index === 0}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                choiceContext.moveChoice(sourceNodeId, choice.choiceId, "up");
+              }}
+              className="grid size-8 place-items-center rounded-lg text-white/70 transition hover:bg-white/[0.12] hover:text-white disabled:opacity-25"
+              aria-label={t("inspector.moveChoiceUp")}
+            >
+              <IconArrowUp className="size-[18px]" stroke={1.9} />
+            </button>
+            <button
+              type="button"
+              disabled={index === choiceCount - 1}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                choiceContext.moveChoice(sourceNodeId, choice.choiceId, "down");
+              }}
+              className="grid size-8 place-items-center rounded-lg text-white/70 transition hover:bg-white/[0.12] hover:text-white disabled:opacity-25"
+              aria-label={t("inspector.moveChoiceDown")}
+            >
+              <IconArrowDown className="size-[18px]" stroke={1.9} />
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                choiceContext.removeChoice(sourceNodeId, choice.choiceId);
+              }}
+              className="grid size-8 place-items-center rounded-lg text-white/70 transition hover:bg-white/[0.12] hover:text-[#ff9b9e]"
+              aria-label={t("inspector.removeChoice")}
+            >
+              <IconTrash className="size-[18px]" stroke={1.9} />
+            </button>
+          </span>
+        ) : null}
+        <span
+          className="pointer-events-none relative flex h-full items-center justify-end"
+          aria-hidden="true"
+        >
+          <span className="h-px w-4 bg-[#5b9dff]/55" />
+        </span>
+        <StoryPortHandle
+          id={`choice:${choice.choiceId}`}
+          type="source"
+          position={Position.Right}
+          isConnectable={isConnectable && choice.targetNodeId === null}
+          emphasized
+          color={STORY_PORT_COLORS.choice}
+          label={t("ports.choiceOption", {
+            label: choice.label.trim() || t("interactionCard.untitledOption"),
+          })}
+          className="-right-2.25!"
+        />
+      </div>
+      {choiceContext ? (
+        <StoryChoiceAttachmentBar
+          effects={choice.effects ?? []}
+          visibleWhen={choice.visibleWhen}
+          variables={choiceContext.stateVariables ?? []}
+          locale={choiceContext.locale}
+          canEdit={choiceContext.canEditContent}
+          onEffectsChange={(effects) =>
+            choiceContext.patchChoice(sourceNodeId, choice.choiceId, { effects })
+          }
+          onVisibleWhenChange={(visibleWhen) =>
+            choiceContext.patchChoice(sourceNodeId, choice.choiceId, {
+              visibleWhen: visibleWhen ?? null,
+            })
+          }
+          target={choice.target}
+          nodes={choiceContext.nodes.filter((node) => node.nodeId !== sourceNodeId)}
+          endings={choiceContext.endings}
+          onTargetChange={(target) =>
+            choiceContext.patchChoice(sourceNodeId, choice.choiceId, { target })
+          }
+          onCreateEnding={() => choiceContext.createEndingForChoice(sourceNodeId, choice.choiceId)}
+          onUpdateEnding={choiceContext.updateEnding}
+          onDeleteEnding={choiceContext.deleteEnding}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -3323,106 +3582,14 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
               />
               <div className="border-y border-white/[0.065]">
                 {interactionChoices.map((choice, index) => (
-                  <div
+                  <ChoiceOptionRow
                     key={choice.choiceId}
-                    className="group/choice relative grid min-h-14 grid-cols-[32px_minmax(0,1fr)_auto_auto_26px] items-center gap-2 border-b border-white/[0.055] px-3 text-xs transition-colors last:border-b-0 hover:bg-white/[0.035] focus-within:bg-white/[0.045]"
-                  >
-                    <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <StoryCanvasTextInput
-                      value={choice.label}
-                      disabled={!choiceContext?.canEditContent}
-                      maxLength={4_000}
-                      placeholder={t("interactionCard.untitledOption")}
-                      aria-label={t("interactionCard.optionPlaceholder")}
-                      onValueChange={(value) =>
-                        choiceContext?.updateChoice(interactionSourceNodeId, choice.choiceId, value)
-                      }
-                      className={cn(
-                        "nodrag nopan nowheel w-full min-w-0 bg-transparent py-2 text-[12px] font-medium outline-none placeholder:text-white/36 disabled:cursor-default",
-                        choice.label.trim() ? "text-white/78" : "text-white/36"
-                      )}
-                    />
-                    {choice.targetNodeId ? (
-                      <StoryCommunityPriceLabel price={choice.communityPointPrice} />
-                    ) : (
-                      <span />
-                    )}
-                    <span className="max-w-[118px] truncate rounded-lg bg-white/[0.055] px-2 py-1.5 text-[10px] text-white/42 group-hover/choice:hidden group-focus-within/choice:hidden">
-                      {choice.targetNodeId
-                        ? `→ ${choice.targetTitle ?? t("interactionCard.linkedTarget")}`
-                        : t("interactionCard.unconnected")}
-                    </span>
-                    {choiceContext?.canEditContent ? (
-                      <span className="nodrag nopan hidden items-center gap-0.5 group-hover/choice:flex group-focus-within/choice:flex">
-                        <button
-                          type="button"
-                          disabled={index === 0}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            choiceContext.moveChoice(
-                              interactionSourceNodeId,
-                              choice.choiceId,
-                              "up"
-                            );
-                          }}
-                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
-                          aria-label={t("inspector.moveChoiceUp")}
-                        >
-                          <IconArrowUp className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={index === interactionChoices.length - 1}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            choiceContext.moveChoice(
-                              interactionSourceNodeId,
-                              choice.choiceId,
-                              "down"
-                            );
-                          }}
-                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
-                          aria-label={t("inspector.moveChoiceDown")}
-                        >
-                          <IconArrowDown className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            choiceContext.removeChoice(interactionSourceNodeId, choice.choiceId);
-                          }}
-                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-[#ff9b9e]"
-                          aria-label={t("inspector.removeChoice")}
-                        >
-                          <IconTrash className="size-3" />
-                        </button>
-                      </span>
-                    ) : null}
-                    <span
-                      className="pointer-events-none relative flex h-full items-center justify-end"
-                      aria-hidden="true"
-                    >
-                      <span className="h-px w-4 bg-[#5b9dff]/55" />
-                    </span>
-                    <StoryPortHandle
-                      id={`choice:${choice.choiceId}`}
-                      type="source"
-                      position={Position.Right}
-                      isConnectable={isConnectable && choice.targetNodeId === null}
-                      emphasized
-                      color={STORY_PORT_COLORS.choice}
-                      label={t("ports.choiceOption", {
-                        label: choice.label.trim() || t("interactionCard.untitledOption"),
-                      })}
-                      className="-right-2.25!"
-                    />
-                  </div>
+                    choice={choice}
+                    index={index}
+                    choiceCount={interactionChoices.length}
+                    sourceNodeId={interactionSourceNodeId}
+                    isConnectable={isConnectable}
+                  />
                 ))}
               </div>
               {interactionChoiceCount < MAX_PLAYER_CHOICES && choiceContext?.canCreateOption ? (

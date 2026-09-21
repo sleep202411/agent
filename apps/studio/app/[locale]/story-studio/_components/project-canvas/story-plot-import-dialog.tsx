@@ -189,6 +189,7 @@ export function StoryPlotImportDialog({
                       decisions: selection.plot.nodes.filter((node) => node.type === "decision")
                         .length,
                       assets: selection.plot.assets.length,
+                      variables: selection.plot.stateVariables.length,
                       clips: selection.plot.nodes.reduce(
                         (count, node) =>
                           count + (node.type === "scene" ? node.storyboard.clips.length : 0),

@@ -73,6 +73,9 @@ interface LinearTaskWorkspaceProps {
   canEditCrewInfo: boolean;
   members: CrewMemberDTO[];
   isOwner: boolean;
+  canReview: boolean;
+  canSubmitAssigned: boolean;
+  canComment: boolean;
   viewerUserId?: string;
   deeplinkTaskId?: string | null;
   onSelectedTaskChange?: (taskId: string | null) => void;
@@ -93,6 +96,9 @@ function LinearTaskSession({
   canEditCrewInfo,
   members,
   isOwner,
+  canReview,
+  canSubmitAssigned,
+  canComment,
   viewerUserId,
   deeplinkTaskId,
   onSelectedTaskChange,
@@ -716,6 +722,9 @@ function LinearTaskSession({
               task={taskQuery.data}
               members={members}
               isOwner={isOwner}
+              canReview={canReview}
+              canSubmitAssigned={canSubmitAssigned}
+              canComment={canComment}
               canWork={
                 isOwner ||
                 Boolean(
@@ -783,7 +792,7 @@ function LinearTaskSession({
           setWorkflowEditor({ state, afterStateId: null });
         }}
       />
-      <SubmitTaskDialog
+      {canSubmitAssigned && <SubmitTaskDialog
         open={Boolean(submitTask)}
         onOpenChange={(open) => !open && setSubmitTask(null)}
         crewId={crewId}
@@ -792,7 +801,7 @@ function LinearTaskSession({
           setSubmitTask(null);
           selectTask(taskId);
         }}
-      />
+      />}
     </div>
   );
 }

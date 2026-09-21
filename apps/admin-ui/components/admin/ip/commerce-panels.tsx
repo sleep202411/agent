@@ -435,6 +435,7 @@ export function IpEntitlementsPanel({
     const operation = begin();
     if (!operation) return;
     setError(null);
+    let accepted = false;
     try {
       await requestEnvelope<unknown>(
         `/api/admin/ip-commerce/entitlements/${encodeURIComponent(entitlementId)}/revoke`,
@@ -445,6 +446,7 @@ export function IpEntitlementsPanel({
           body: JSON.stringify({ reason: "运营手动撤销 IP 权益。" }),
         }
       );
+      accepted = true;
       if (!operation.current()) return;
       const params = entitlementParams().toString();
       const next = await readEntitlements(params, operation.signal);
@@ -455,7 +457,8 @@ export function IpEntitlementsPanel({
     } catch (err) {
       if (operation.current()) {
         setError(toErrorMessage(err));
-        throw err;
+        // An accepted revoke must not remain retryable because its read failed.
+        if (!accepted) throw err;
       }
     } finally {
       operation.finish();

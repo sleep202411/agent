@@ -341,7 +341,19 @@ describe("agent-tools registry", () => {
       chapterId: "00000000-0000-4000-8000-000000000001",
       draftRevision: 0,
       contentHash: "a".repeat(64),
-      storyBible: { logline: "", synopsis: "", characters: [] },
+      storyBible: {
+        logline: "",
+        synopsis: "",
+        characters: [],
+        stateVariables: [
+          {
+            key: "courage",
+            name: { "en-US": "Courage" },
+            valueType: "number",
+            initialValue: 0,
+          },
+        ],
+      },
       graph: { entryNodeId: null, nodes: [] },
       productionNotes: [],
       productionState: {
@@ -379,7 +391,22 @@ describe("agent-tools registry", () => {
         kind: "clip",
         nodeId: "opening",
         clipKey: "OPENING",
-        exit: { kind: "auto", nextNodeId: "decision:opening" },
+        onEnterEffects: [{ kind: "add", key: "courage", amount: 1 }],
+        exit: {
+          kind: "auto",
+          routes: [
+            {
+              when: {
+                kind: "compare",
+                variableKey: "courage",
+                operator: "at-least",
+                value: 3,
+              },
+              target: { kind: "node", nodeId: "decision:opening" },
+            },
+            { target: null },
+          ],
+        },
       },
       {
         kind: "decision",
@@ -388,7 +415,14 @@ describe("agent-tools registry", () => {
           kind: "choice",
           decisionId: "opening_choice",
           prompt: { "en-US": "Where next?" },
-          choices: [{ choiceId: "explore", label: { "en-US": "Explore" }, nextNodeId: "world" }],
+          choices: [
+            {
+              choiceId: "explore",
+              label: { "en-US": "Explore" },
+              target: { kind: "node", nodeId: "world" },
+              effects: [{ kind: "add", key: "courage", amount: 1 }],
+            },
+          ],
         },
       },
       {
@@ -396,7 +430,7 @@ describe("agent-tools registry", () => {
         nodeId: "world",
         worldId: null,
         maxExperienceSeconds: 60,
-        exit: { kind: "auto", nextNodeId: null },
+        exit: { kind: "auto", routes: [{ target: null }] },
       },
     ];
     expect(
@@ -424,6 +458,30 @@ describe("agent-tools registry", () => {
         },
       })
     ).toThrow(/requires its canonical document id and sequence/);
+  });
+
+  it("validates one atomic state-variable mutation command", () => {
+    expect(
+      parseToolInput("story.updateStateVariables", {
+        baseDraftRevision: 4,
+        upsert: [
+          {
+            key: "courage",
+            name: { "en-US": "Courage" },
+            valueType: "number",
+            initialValue: 0,
+          },
+        ],
+        removeKeys: ["met"],
+      })
+    ).toMatchObject({ upsert: [{ key: "courage" }], removeKeys: ["met"] });
+    expect(() =>
+      parseToolInput("story.updateStateVariables", {
+        baseDraftRevision: 4,
+        upsert: [],
+        removeKeys: [],
+      })
+    ).toThrow(/Upsert or remove/);
   });
 
   it("makes the Server production-state projection the story.read routing authority", () => {

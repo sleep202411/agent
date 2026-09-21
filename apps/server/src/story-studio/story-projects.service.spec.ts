@@ -60,7 +60,7 @@ function lockableDraft(): InteractiveStoryDraftContent {
           nodeId: 'node.opening',
           clipKey: 'S00',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     },
@@ -81,7 +81,7 @@ function multiChapterDraft(): InteractiveStoryDraftContent {
           nodeId: 'node.chapter-two',
           clipKey: 'S10',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     },
@@ -1175,7 +1175,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       nodeId: 'node.second',
       clipKey: 'S01',
       interactions: [],
-      exit: { kind: 'auto', nextNodeId: null },
+      exit: { kind: 'auto', routes: [{ target: null }] },
     });
     const savedChapter = chapterRow({
       nodeIds: ['node.opening', 'node.second'],
@@ -1371,11 +1371,20 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           imagePrompt: 'Cinematic portrait of Mira at dawn.',
         },
       ],
+      stateVariables: [
+        {
+          key: 'courage',
+          name: 'Courage',
+          valueType: 'number',
+          initialValue: 0,
+        },
+      ],
       nodes: [
         {
           id: 'opening',
           type: 'scene',
           title: 'Opening',
+          onEnterEffects: [{ kind: 'add', key: 'courage', amount: 1 }],
           next: null,
           storyboard: {
             clips: [
@@ -1408,6 +1417,16 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     );
 
     expect(result.importedNodeIds).toHaveLength(1);
+    expect(result.draft.content.storyBible.stateVariables).toEqual([
+      expect.objectContaining({ key: 'courage', valueType: 'number' }),
+    ]);
+    expect(
+      persistedContent.graph.nodes.find(
+        (node) => node.nodeId === result.importedNodeIds[0],
+      ),
+    ).toMatchObject({
+      onEnterEffects: [{ kind: 'add', key: 'courage', amount: 1 }],
+    });
     expect(tx.storyAssetSpec.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         name: 'Mira',

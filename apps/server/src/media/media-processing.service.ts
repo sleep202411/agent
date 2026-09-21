@@ -90,6 +90,21 @@ export class MediaProcessingService {
         'The processing key belongs to a different asset, variant or job type.',
       );
     if (!restartExisting) return existing;
+    // Pending includes the interval between remote HLS polls. Resetting that
+    // job would discard its task ID and submit another task on the next run.
+    const output = existing.output;
+    if (
+      existing.jobType === MediaProcessingJobType.hls_stream &&
+      existing.status === MediaProcessingJobStatus.pending &&
+      output !== null &&
+      typeof output === 'object' &&
+      !Array.isArray(output) &&
+      typeof output.immTaskId === 'string' &&
+      output.immTaskId.length > 0
+    )
+      throw new ConflictException(
+        'The HLS job is awaiting its remote task result. Wait for processing to finish before restarting.',
+      );
     const [clock] = await tx.$queryRaw<
       { nowMs: number }[]
     >`SELECT extract(epoch FROM clock_timestamp())::double precision * 1000 AS "nowMs"`;

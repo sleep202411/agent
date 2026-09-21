@@ -4,6 +4,7 @@ import {
   CLOSED_STORY_CANVAS_INSPECTOR,
   type StoryCanvasInspectorTarget,
 } from "../_components/project-canvas/story-canvas-inspector-target";
+import type { StoryBibleWriterPatch } from "@/lib/story-projects-api";
 import type { SavedDraftSnapshotRunner } from "../_components/project-canvas/use-story-publication";
 
 /**
@@ -12,7 +13,7 @@ import type { SavedDraftSnapshotRunner } from "../_components/project-canvas/use
  * dock, one tenant; null is closed. Every tenant renders inside
  * StoryProjectSidePanelShell — the shell alone owns the dock's width.
  */
-export type StorySidePanel = "catalog" | "world" | "chapters" | null;
+export type StorySidePanel = "catalog" | "world" | "stats" | "chapters" | null;
 
 /** Live authoring-head signals the canvas publishes while mounted. */
 export interface StoryLiveDraftSignals {
@@ -91,10 +92,8 @@ interface StoryProjectUIState {
    * routes bible edits through it so the mounted canvas stays the draft's
    * only writer; when null (any other step), the dock saves the draft itself.
    */
-  foundationWriter: ((field: "logline" | "synopsis", value: string) => void) | null;
-  setFoundationWriter: (
-    writer: ((field: "logline" | "synopsis", value: string) => void) | null
-  ) => void;
+  foundationWriter: ((patch: StoryBibleWriterPatch) => void) | null;
+  setFoundationWriter: (writer: ((patch: StoryBibleWriterPatch) => void) | null) => void;
 }
 
 export const useStoryProjectUiStore = create<StoryProjectUIState>()(

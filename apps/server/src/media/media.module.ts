@@ -27,6 +27,8 @@ import { EpisodeUploadController } from './episode-upload.controller';
 import { EpisodeUploadService } from './episode-upload.service';
 import { ContentReviewBillingController } from './content-review-billing.controller';
 import { ContentReviewBillingService } from './content-review-billing.service';
+import { ContentReviewRecordsController } from './content-review-records.controller';
+import { ContentReviewRecordsService } from './content-review-records.service';
 import { PlayableVideoProbeService } from './playable-video-probe.service';
 import { PlayableAudioProbeService } from './playable-audio-probe.service';
 import { UploadedImageProbeService } from './uploaded-image-probe.service';
@@ -59,6 +61,7 @@ import { VideoPosterService } from './video-poster.service';
   controllers: [
     EpisodeUploadController,
     ContentReviewBillingController,
+    ContentReviewRecordsController,
     MediaUploadController,
     MediaAccessController,
     AdminMediaController,
@@ -66,6 +69,7 @@ import { VideoPosterService } from './video-poster.service';
   providers: [
     EpisodeUploadService,
     ContentReviewBillingService,
+    ContentReviewRecordsService,
     MediaUploadService,
     MediaAssetFactsService,
     MediaAssetReadinessService,

@@ -13,6 +13,7 @@ import {
   isStoryScreenplayProposal,
   isStoryStoryboardProposal,
 } from "@repo/shared/story-agent";
+import { storyAutoFallbackNodeId } from "@repo/shared/story-stats";
 
 export type StoryReviewableProposal =
   | StoryPatchProposal
@@ -43,6 +44,24 @@ export interface StoryAuthoringProposalReview {
     endings: number;
     interactions: number;
   };
+}
+
+type StoryAgentExit = StoryAgentGraphNode["exit"];
+type StoryAgentAutoExit = Extract<StoryAgentExit, { kind: "auto" }>;
+type StoryAgentChoice = Extract<StoryAgentExit, { kind: "choice" }>["choices"][number];
+
+export function storyAgentAutoNextNodeId(exit: StoryAgentAutoExit): string | null {
+  if ("nextNodeId" in exit) return exit.nextNodeId;
+  return storyAutoFallbackNodeId(exit);
+}
+
+export function storyAgentChoiceNextNodeId(choice: StoryAgentChoice): string | null {
+  if ("nextNodeId" in choice) return choice.nextNodeId;
+  return choice.target?.kind === "node" ? choice.target.nodeId : null;
+}
+
+export function storyAgentChoiceTargetsEnding(choice: StoryAgentChoice): boolean {
+  return "target" in choice && choice.target?.kind === "ending";
 }
 
 /**
@@ -86,7 +105,7 @@ export function storyAuthoringProposalReview(
         endings: scenes.filter(
           (scene) =>
             scene.exit.kind === "auto" &&
-            scene.exit.nextNodeId === null &&
+            storyAgentAutoNextNodeId(scene.exit) === null &&
             !proposal.screenplay.unresolvedNodeIds?.includes(scene.nodeId)
         ).length,
         interactions: 0,
@@ -143,7 +162,7 @@ export function storyAuthoringProposalReview(
         0
       ),
       endings: orderedScenes.filter(
-        (scene) => scene.exit.kind === "auto" && scene.exit.nextNodeId === null
+        (scene) => scene.exit.kind === "auto" && storyAgentAutoNextNodeId(scene.exit) === null
       ).length,
       interactions: orderedScenes.reduce((count, scene) => count + scene.interactions.length, 0),
     },

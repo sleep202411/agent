@@ -88,6 +88,27 @@ function resolveRequestLocale(): string {
     : "en-US";
 }
 
+const HTML_ERROR_BODY = /<\/?(?:html|body|head|script|div|span|style)\b/i;
+const CLOUDFLARE_ERROR_BODY = /cloudflare|cf-error|cf-footer|errorcode[_-]?\d{3}/i;
+
+export function messageFromHttpErrorBody(
+  status: number,
+  rawBody: string,
+  fallback: string
+): string {
+  const trimmed = rawBody.trim();
+  if (!trimmed) return fallback;
+  if (!HTML_ERROR_BODY.test(trimmed) && !CLOUDFLARE_ERROR_BODY.test(trimmed)) {
+    return trimmed;
+  }
+  const matched = /errorcode[_-]?(\d{3})/i.exec(trimmed);
+  const code = Number(matched?.[1] ?? status);
+  if (code === 524 || code === 522 || code === 504) {
+    return `The request timed out at the gateway (HTTP ${code}). The upstream job may still finish.`;
+  }
+  return `The gateway returned HTTP ${Number.isFinite(code) && code > 0 ? code : status}. Try again.`;
+}
+
 function responseErrorDetail(body: Record<string, unknown>): {
   code?: string | number;
   message?: string;
@@ -187,7 +208,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
           message = detail.message ?? message;
           code = detail.code ?? code;
         } catch {
-          if (rawBody.trim()) message = rawBody.trim();
+          message = messageFromHttpErrorBody(response.status, rawBody, message);
         }
       } catch {
         /* ignore */
@@ -205,9 +226,11 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     assertActive();
     const numericCode = typeof body.code === "number" ? body.code : null;
     const isSuccess =
-      body.success === true ||
-      (numericCode !== null && numericCode >= 200 && numericCode < 300) ||
-      body.code === "SUCCESS";
+      ("success" in body || "code" in body) &&
+      (!("success" in body) || body.success === true) &&
+      (!("code" in body) ||
+        (numericCode !== null && numericCode >= 200 && numericCode < 300) ||
+        body.code === "SUCCESS");
     if (!isSuccess) {
       const detail = responseErrorDetail(body as Record<string, unknown>);
       throw new ApiRequestError(

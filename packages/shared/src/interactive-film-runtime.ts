@@ -1,4 +1,15 @@
 import { z } from "zod";
+import {
+  StoryAutoRoutesSchema,
+  StoryConditionSchema,
+  StoryEndingKindSchema,
+  StoryRouteTargetSchema,
+  StoryStateEffectsSchema,
+  StoryStateKeySchema,
+  StoryStateValueTypeSchema,
+  migrateStoryReleaseStats,
+  storyRouteNodeId,
+} from "./story-stats.js";
 
 export const INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION = 2 as const;
 
@@ -177,14 +188,33 @@ const ChoiceSchema = z
   .object({
     choiceId: stableId,
     label: localizedText,
-    nextNodeId: stableId,
+    effects: StoryStateEffectsSchema.optional(),
+    visibleWhen: StoryConditionSchema.optional(),
+    target: StoryRouteTargetSchema,
   })
   .strict();
 
 const RuntimeInteractionActionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("continue") }).strict(),
-  z.object({ kind: z.literal("seek"), timeMs: z.number().int().nonnegative() }).strict(),
-  z.object({ kind: z.literal("goto"), nodeId: stableId }).strict(),
+  z
+    .object({
+      kind: z.literal("continue"),
+      effects: StoryStateEffectsSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("seek"),
+      timeMs: z.number().int().nonnegative(),
+      effects: StoryStateEffectsSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("goto"),
+      target: StoryRouteTargetSchema,
+      effects: StoryStateEffectsSchema.optional(),
+    })
+    .strict(),
 ]);
 
 const RuntimeInteractionTriggerSchema = z.discriminatedUnion("kind", [
@@ -257,8 +287,8 @@ const RuntimeHotspotInteractionSchema = z
 export const RuntimeAutoExitSchema = z
   .object({
     kind: z.literal("auto"),
-    /** Null marks a clip that naturally completes playback. */
-    nextNodeId: stableId.nullable(),
+    /** A null fallback target marks a clip that naturally completes playback. */
+    routes: StoryAutoRoutesSchema,
   })
   .strict();
 
@@ -394,13 +424,31 @@ const SceneNodeSchema = z
     music: z.object({ trackId: stableId, url: RuntimeUriSchema }).strict().optional(),
     overlays: z.array(OverlaySchema).default([]),
     interactions: z.array(RuntimeHotspotInteractionSchema).max(100).default([]),
+    onEnterEffects: StoryStateEffectsSchema.optional(),
     exit: RuntimeNodeExitSchema,
   })
   .strict();
 
 export const InteractiveFilmRuntimeNodeSchema = SceneNodeSchema;
 
-export const InteractiveFilmReleaseSchema = z
+const RuntimeStateVariableSchema = z
+  .object({
+    key: StoryStateKeySchema,
+    name: localizedText,
+    valueType: StoryStateValueTypeSchema,
+    initialValue: z.union([z.number().finite(), z.boolean()]),
+  })
+  .strict();
+
+const RuntimeEndingSchema = z
+  .object({
+    endingId: stableId,
+    title: localizedText,
+    kind: StoryEndingKindSchema,
+  })
+  .strict();
+
+const InteractiveFilmReleaseObjectSchema = z
   .object({
     schemaVersion: z.literal(INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION),
     channel: z.enum(["preview", "production"]),
@@ -411,12 +459,16 @@ export const InteractiveFilmReleaseSchema = z
     defaultLocale: stableId,
     locales: z.array(stableId).min(1),
     media: z.array(RuntimeMediaAssetSchema).default([]),
+    stateVariables: z.array(RuntimeStateVariableSchema).default([]),
+    endings: z.array(RuntimeEndingSchema).default([]),
     nodes: z.array(InteractiveFilmRuntimeNodeSchema).min(1),
   })
   .strict()
   .superRefine((release, context) => {
     const media = uniqueIndex(release.media, (asset) => asset.assetId, ["media"], context);
     const nodes = uniqueIndex(release.nodes, (node) => node.nodeId, ["nodes"], context);
+    const endings = uniqueIndex(release.endings, (ending) => ending.endingId, ["endings"], context);
+    uniqueIndex(release.stateVariables, (variable) => variable.key, ["stateVariables"], context);
     validateRuntimeDecisionDefinitions(release.nodes, context);
 
     if (!release.locales.includes(release.defaultLocale)) {
@@ -459,6 +511,21 @@ export const InteractiveFilmReleaseSchema = z
       }
     };
 
+    const requireTarget = (
+      target: { kind: "node"; nodeId: string } | { kind: "ending"; endingId: string } | null,
+      path: PropertyKey[]
+    ) => {
+      if (!target) return;
+      if (target.kind === "node") requireNode(target.nodeId, path);
+      else if (!endings.has(target.endingId)) {
+        context.addIssue({
+          code: "custom",
+          path,
+          message: `Unknown ending ${target.endingId}`,
+        });
+      }
+    };
+
     const requireLocaleCoverage = (value: Record<string, string>, path: PropertyKey[]): void => {
       release.locales.forEach((locale) => {
         if (!value[locale]) {
@@ -470,6 +537,12 @@ export const InteractiveFilmReleaseSchema = z
         }
       });
     };
+    release.stateVariables.forEach((variable, index) => {
+      requireLocaleCoverage(variable.name, ["stateVariables", index, "name"]);
+    });
+    release.endings.forEach((ending, index) => {
+      requireLocaleCoverage(ending.title, ["endings", index, "title"]);
+    });
 
     release.nodes.forEach((node, nodeIndex) => {
       const presentationPath = ["nodes", nodeIndex, "presentation"];
@@ -554,7 +627,7 @@ export const InteractiveFilmReleaseSchema = z
           requireLocaleCoverage(interaction.label, [...interactionPath, "label"]);
           Object.entries(interaction.outcomes).forEach(([outcome, action]) => {
             if (action?.kind === "goto") {
-              requireNode(action.nodeId, [...interactionPath, "outcomes", outcome, "nodeId"]);
+              requireTarget(action.target, [...interactionPath, "outcomes", outcome, "target"]);
             }
           });
         });
@@ -562,9 +635,9 @@ export const InteractiveFilmReleaseSchema = z
 
       const exitPath = ["nodes", nodeIndex, "exit"];
       if (node.exit.kind === "auto") {
-        if (node.exit.nextNodeId !== null) {
-          requireNode(node.exit.nextNodeId, [...exitPath, "nextNodeId"]);
-        }
+        node.exit.routes.forEach((route, routeIndex) => {
+          requireTarget(route.target, [...exitPath, "routes", routeIndex, "target"]);
+        });
       }
       if (node.exit.kind === "choice") {
         requireLocaleCoverage(node.exit.prompt, [...exitPath, "prompt"]);
@@ -579,7 +652,7 @@ export const InteractiveFilmReleaseSchema = z
           }
           choiceIds.add(choice.choiceId);
           requireLocaleCoverage(choice.label, [...exitPath, "choices", choiceIndex, "label"]);
-          requireNode(choice.nextNodeId, [...exitPath, "choices", choiceIndex, "nextNodeId"]);
+          requireTarget(choice.target, [...exitPath, "choices", choiceIndex, "target"]);
         });
       }
     });
@@ -594,13 +667,16 @@ export const InteractiveFilmReleaseSchema = z
       if (!node) continue;
       const nextNodeIds =
         node.exit.kind === "auto"
-          ? [node.exit.nextNodeId]
+          ? node.exit.routes.map((route) => storyRouteNodeId(route.target))
           : node.exit.kind === "choice"
-            ? node.exit.choices.map((choice) => choice.nextNodeId)
+            ? node.exit.choices.map((choice) => storyRouteNodeId(choice.target))
             : [];
       node.interactions.forEach((interaction) => {
         Object.values(interaction.outcomes).forEach((action) => {
-          if (action?.kind === "goto") pending.push(action.nodeId);
+          if (action?.kind === "goto") {
+            const targetNodeId = storyRouteNodeId(action.target);
+            if (targetNodeId) pending.push(targetNodeId);
+          }
         });
       });
       nextNodeIds.forEach((nextNodeId) => {
@@ -622,6 +698,11 @@ export const InteractiveFilmReleaseSchema = z
     // an explicit user action. Authoring diagnostics may still surface this
     // shape as a warning, but it is not a malformed release contract.
   });
+
+export const InteractiveFilmReleaseSchema = z.preprocess(
+  migrateStoryReleaseStats,
+  InteractiveFilmReleaseObjectSchema
+);
 
 export type InteractiveFilmRelease = z.infer<typeof InteractiveFilmReleaseSchema>;
 export type InteractiveFilmRuntimeNode = z.infer<typeof InteractiveFilmRuntimeNodeSchema>;

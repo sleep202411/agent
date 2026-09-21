@@ -48,7 +48,7 @@ export class ConversationRealtimeOutboxService
 {
   private readonly logger = new Logger(ConversationRealtimeOutboxService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
   private stopped = false;
 
   constructor(
@@ -65,16 +65,24 @@ export class ConversationRealtimeOutboxService
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.draining;
   }
 
   /** Public for deterministic health checks and focused tests. */
   async drainOnce(): Promise<void> {
-    if (this.stopped || this.draining) return;
-    this.draining = true;
+    if (this.stopped) return;
+    if (this.draining) return;
+    this.draining = this.drain().finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(): Promise<void> {
     try {
       for (let sent = 0; sent < DISPATCH_BATCH; sent += 1) {
         if (this.stopped) break;
@@ -87,8 +95,6 @@ export class ConversationRealtimeOutboxService
       this.logger.error(
         `conversation realtime outbox drain failed: ${this.errorMessage(error)}`,
       );
-    } finally {
-      this.draining = false;
     }
   }
 

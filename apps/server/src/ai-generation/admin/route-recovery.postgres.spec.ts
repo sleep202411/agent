@@ -175,6 +175,25 @@ integration(
         ).toMatchObject({ status: 400 });
       },
     );
+    it.each(['provider', 'model'] as const)(
+      'rejects new routes after %s status-only archival',
+      async (kind) => {
+        if (kind === 'provider')
+          await service().updateProviderAccount(providerId, adminId, {
+            status: 'archived',
+          });
+        else
+          await service().updateCanonicalModel(modelId, adminId, {
+            status: 'archived',
+          });
+        const before = await snapshot();
+        await expect(write('binding-create')).rejects.toMatchObject({
+          status: 400,
+        });
+        expect(await snapshot()).toEqual(before);
+      },
+    );
+
     it('rejects a new binding after endpoint archival', async () => {
       await write('endpoint-archive');
       const before = await snapshot();

@@ -68,6 +68,73 @@ integration('Promotion update recovery (owned PostgreSQL)', () => {
   afterAll(async () => {
     await db?.$disconnect();
   });
+  it.each(['exhausted', 'paused'] as const)(
+    'rejects explicit codes made %s while checkout waits',
+    async (kind) => {
+      const promotion = await db.billingPromotion.update({
+        where: { id: promotionId },
+        data: { status: 'active', maxRedemptions: 1, redemptionCount: 0 },
+      });
+      let release!: () => void;
+      let entered!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const holder = db.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`billing:promotion:${promotionId}`})::bigint)`;
+        entered();
+        await gate;
+        await tx.billingPromotion.update({
+          where: { id: promotionId },
+          data:
+            kind === 'exhausted'
+              ? { redemptionCount: 1 }
+              : { status: 'paused' },
+        });
+      });
+      await ready;
+      const target = service() as unknown as {
+        reserveCheckoutPromotionTx(
+          tx: unknown,
+          input: unknown,
+        ): Promise<unknown>;
+      };
+      const pending = db.$transaction((tx) =>
+        target.reserveCheckoutPromotionTx(tx, {
+          userId: randomUUID(),
+          provider: 'airwallex',
+          code: promotion.code,
+          price: {
+            id: randomUUID(),
+            itemId: randomUUID(),
+            currency: 'USD',
+            item: { productType: 'compute_topup' },
+          },
+          subtotalAmountMinor: 1000n,
+          now: new Date('2026-09-21'),
+          requiresProviderCoupon: false,
+        }),
+      );
+      void pending.catch(() => undefined);
+      try {
+        await waitForLock();
+      } finally {
+        release();
+      }
+      await holder;
+      await expect(pending).rejects.toMatchObject({
+        response: {
+          code:
+            kind === 'exhausted'
+              ? 'BILLING_PROMOTION_REDEMPTION_LIMIT_REACHED'
+              : 'BILLING_PROMOTION_NOT_ACTIVE',
+        },
+      });
+    },
+  );
   const waitForLock = async () => {
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {

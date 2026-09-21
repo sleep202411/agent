@@ -551,7 +551,12 @@ function storyReadResult(input: {
     chapterId: CHAPTER_ID,
     draftRevision: 3,
     contentHash: "a".repeat(64),
-    storyBible: { logline: "Night watch.", synopsis: "", characters: [] },
+    storyBible: {
+      logline: "Night watch.",
+      synopsis: "",
+      characters: [],
+      stateVariables: [],
+    },
     graph: { entryNodeId: null, nodes: [] },
     productionNotes: [],
     productionState: {

@@ -5,8 +5,8 @@
  *             returning 200, restart the pod.
  *
  * `/ready`   — the process is alive AND has every dependency it needs
- *             to serve real traffic (provider creds present, Web PubSub
- *             configured, future: Redis/PG/OSS reachable). LB should
+ *             to serve real traffic (storage, PostgreSQL, Redis and configured realtime).
+ *             Dependency responses are bounded to three seconds. LB should
  *             stop routing to a pod whose `/ready` returns 503 but
  *             keep the pod itself running (it may recover).
  */
@@ -25,6 +25,8 @@ import { PrismaService } from '../db/db.module';
 import { REDIS } from '../redis/redis.module';
 import { OutputStorageService } from '../storage/storage.types';
 
+import { ReadinessProbeRunner } from './readiness-probe';
+
 interface ReadinessProbe {
   name: string;
   ok: boolean;
@@ -33,6 +35,7 @@ interface ReadinessProbe {
 
 @Controller()
 export class HealthController {
+  private readonly probes = new ReadinessProbeRunner();
   constructor(
     private readonly storage: OutputStorageService,
     private readonly prisma: PrismaService,
@@ -50,9 +53,9 @@ export class HealthController {
   @Get('ready')
   async readiness(@Res({ passthrough: true }) res: Response) {
     const [storageOk, dbOk, redisOk] = await Promise.all([
-      this.storage.isHealthy(),
-      this.probeDb(),
-      this.probeRedis(),
+      this.probes.check('storage', () => this.storage.isHealthy()),
+      this.probes.check('postgres', () => this.probeDb()),
+      this.probes.check('redis', () => this.probeRedis()),
     ]);
     // Realtime readiness validates the self-hosted WS plane — the only transport
     // now that Web PubSub is decommissioned (P5). When enabled it needs its

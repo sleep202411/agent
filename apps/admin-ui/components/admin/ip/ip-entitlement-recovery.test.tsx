@@ -233,3 +233,16 @@ it("retains failed pages and retries the same entitlement cursor", async () => {
   await act(async () => click("加载更多"));
   expect(fetchMock.mock.calls[1][0]).toContain("cursor=next");
 });
+
+it("does not reject an accepted revocation when its refresh fails", async () => {
+  fetchMock
+    .mockResolvedValueOnce(response({}))
+    .mockRejectedValueOnce(new Error("Refresh unavailable"))
+    .mockResolvedValue(response({ items: [], nextCursor: null }));
+  await render(view());
+  await act(async () => click("Confirm revoke"));
+  expect(container.textContent).toContain("Refresh unavailable");
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => click("刷新"));
+  expect(fetchMock.mock.calls.map((c) => c[1]?.method ?? "GET")).toEqual(["PATCH", "GET", "GET"]);
+});

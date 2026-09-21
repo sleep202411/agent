@@ -12,14 +12,21 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function ContentReviewPage() {
   const t = await getTranslations("studioModes.contentReview");
   return (
-    <main className="w-full px-6 py-8">
+    <main className="w-full px-6 py-5">
       <SectionHeading as="h1" title={t("title")} subtitle={t("subtitle")} />
-      <ul className="mt-4 max-w-2xl list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-        <li>{t("capVisual")}</li>
-        <li>{t("capAudio")}</li>
-        <li>{t("capReport")}</li>
-        <li>{t("capCredits")}</li>
-      </ul>
+      <details className="mt-2 max-w-3xl text-sm text-muted-foreground">
+        <summary className="cursor-pointer select-none text-white/55 hover:text-white/80">
+          {t("aboutToggle")}
+        </summary>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>{t("capVisual")}</li>
+          <li>{t("capAudio")}</li>
+          <li>{t("capReport")}</li>
+          <li>{t("capCredits")}</li>
+          <li>{t("capTimeline")}</li>
+          <li>{t("capShare")}</li>
+        </ul>
+      </details>
       <WorkspaceRemount>
         <ContentReviewStudio />
       </WorkspaceRemount>

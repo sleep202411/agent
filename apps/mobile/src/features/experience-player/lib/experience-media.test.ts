@@ -16,6 +16,34 @@ beforeEach(() => {
   fetchMock.mockReset();
 });
 afterEach(() => vi.unstubAllGlobals());
+it.each(["resolve", "reject", "throw", "absent"])(
+  "releases a failed probe while preserving its HTTP error (cleanup: %s)",
+  async (mode) => {
+    const cancel = vi.fn(() => {
+      if (mode === "throw") throw new Error("cleanup threw");
+      return mode === "reject" ? Promise.reject(new Error("cleanup rejected")) : Promise.resolve();
+    });
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      body: mode === "absent" ? null : { cancel },
+    });
+    await expect(resolvePlayableMediaUrl(uri())).rejects.toThrow("Media unavailable (503)");
+    expect(cancel).toHaveBeenCalledTimes(mode === "absent" ? 0 : 1);
+  }
+);
+
+it("can retry resolution after a failed probe without caching the failure", async () => {
+  const cancel = vi.fn().mockResolvedValue(undefined);
+  fetchMock
+    .mockResolvedValueOnce({ ok: false, status: 503, body: { cancel } })
+    .mockResolvedValueOnce(response("https://cdn.invalid/recovered.mp4"));
+  const address = uri();
+  await expect(resolvePlayableMediaUrl(address)).rejects.toThrow("Media unavailable (503)");
+  await expect(resolvePlayableMediaUrl(address)).resolves.toBe("https://cdn.invalid/recovered.mp4");
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
 it("rejects cancelled callers before using direct or cached URLs", async () => {
   const controller = new AbortController();
   controller.abort();
@@ -70,4 +98,63 @@ it("aborts the last owner and preserves replacement work from delayed cleanup", 
   await expect(second).resolves.toBe("https://cdn.invalid/new.mp4");
   await expect(joined).resolves.toBe("https://cdn.invalid/new.mp4");
   await expect(resolvePlayableMediaUrl(address)).resolves.toBe("https://cdn.invalid/new.mp4");
+});
+
+it("reuses OSS V4 signatures until their relative expiry safety margin", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date("2026-09-17T10:00:00Z"));
+    const address = uri();
+    const signed =
+      "https://cdn.invalid/clip.mp4?x-oss-date=20260917T100000Z&x-oss-expires=3600&x-oss-signature-version=OSS4-HMAC-SHA256";
+    fetchMock.mockResolvedValue(response(signed));
+    await expect(resolvePlayableMediaUrl(address)).resolves.toBe(signed);
+    vi.setSystemTime(new Date("2026-09-17T10:58:59Z"));
+    await expect(resolvePlayableMediaUrl(address)).resolves.toBe(signed);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(new Date("2026-09-17T10:59:00Z"));
+    await resolvePlayableMediaUrl(address);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it.each([
+  "x-oss-date=20260917T100000Z&x-oss-expires=30",
+  "x-oss-date=20260916T100000Z&x-oss-expires=3600",
+  "x-oss-expires=3600",
+  "x-oss-date=invalid&x-oss-expires=3600",
+  "x-oss-date=20260917T100000Z&x-oss-expires=Infinity",
+  "x-oss-date=20260917T100000Z&x-oss-expires=0",
+])("does not cache unusable OSS V4 expiration: %s", async (query) => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date("2026-09-17T10:00:00Z"));
+    const address = uri();
+    fetchMock.mockResolvedValue(response(`https://cdn.invalid/clip.mp4?${query}`));
+    await resolvePlayableMediaUrl(address);
+    await resolvePlayableMediaUrl(address);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it.each([
+  "Expires=1789642800",
+  "se=2026-09-17T11%3A00%3A00Z",
+  "X-Amz-Date=20260917T100000Z&X-Amz-Expires=3600",
+])("retains existing provider expiry formats: %s", async (query) => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date("2026-09-17T10:00:00Z"));
+    const address = uri();
+    fetchMock.mockResolvedValue(response(`https://cdn.invalid/clip.mp4?${query}`));
+    await resolvePlayableMediaUrl(address);
+    await resolvePlayableMediaUrl(address);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });

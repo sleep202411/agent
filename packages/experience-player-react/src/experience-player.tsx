@@ -112,6 +112,8 @@ export interface ExperiencePlayerProps {
   frameProfile?: ExperiencePlayerFrameProfile;
   loadTheme?: ExperienceThemeLoader;
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
+  /** Authoring hosts may observe session state without changing playback. */
+  onStateChange?: (state: ExperienceRuntimeState) => void;
 }
 
 const PRIMARY_BUTTON =
@@ -132,6 +134,7 @@ export function ExperiencePlayer({
   previewAccess = false,
   accessCheckpoint,
   onAccessCheckpoint,
+  onStateChange,
 }: ExperiencePlayerProps) {
   const hydrationSeedId = useId();
   const [restartEpoch, setRestartEpoch] = useState(0);
@@ -194,6 +197,7 @@ export function ExperiencePlayer({
       previewAccess={previewAccess}
       accessCheckpoint={restartEpoch === 0 ? accessCheckpoint : undefined}
       onAccessCheckpoint={onAccessCheckpoint}
+      onStateChange={onStateChange}
       manifest={prepared.manifest}
       controller={prepared.controller}
       locale={locale}
@@ -224,9 +228,11 @@ function ActiveExperienceRuntimePlayer({
   previewAccess,
   accessCheckpoint,
   onAccessCheckpoint,
+  onStateChange,
 }: {
   accessCheckpoint?: ExperienceAccessCheckpoint;
   onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
+  onStateChange?: (state: ExperienceRuntimeState) => void;
   access?: ExperiencePlayerAccess;
   previewAccess: boolean;
   manifest: ExperienceRuntimeManifest;
@@ -240,6 +246,9 @@ function ActiveExperienceRuntimePlayer({
   onRestart: () => void;
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
+  useEffect(() => {
+    onStateChange?.(runtimeState);
+  }, [onStateChange, runtimeState]);
   const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sceneEpoch, setSceneEpoch] = useState(0);
   const [sceneTimeMs, setSceneTimeMs] = useState(0);

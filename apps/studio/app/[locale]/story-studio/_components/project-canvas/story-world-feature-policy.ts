@@ -3,6 +3,12 @@ import type {
   StoryGraphNode,
   StoryInteractionAction,
 } from "@/lib/story-projects-api";
+import {
+  storyAutoFallbackNodeId,
+  storyNodeTarget,
+  storyRouteNodeId,
+  type StoryRouteTarget,
+} from "@repo/shared/story-stats";
 
 /**
  * World experiences are temporarily unavailable while the upstream provider
@@ -38,7 +44,7 @@ export function removeWorldExperienceNodes(
       visited.add(currentNodeId);
       const node = nodesById.get(currentNodeId);
       if (!node || node.kind !== "world") return currentNodeId;
-      currentNodeId = node.exit.nextNodeId;
+      currentNodeId = storyAutoFallbackNodeId(node.exit);
     }
     return null;
   };
@@ -49,8 +55,10 @@ export function removeWorldExperienceNodes(
     const interactions = (node.kind === "clip" ? node.interactions : []).map((interaction) => {
       const resolveAction = (action: StoryInteractionAction): StoryInteractionAction => {
         if (action.kind !== "goto") return action;
-        const targetNodeId = resolveActiveTarget(action.nodeId);
-        return targetNodeId ? { kind: "goto", nodeId: targetNodeId } : { kind: "continue" };
+        const targetNodeId = resolveActiveTarget(storyRouteNodeId(action.target));
+        return targetNodeId
+          ? { kind: "goto", target: { kind: "node", nodeId: targetNodeId } }
+          : { kind: "continue" };
       };
       return {
         ...interaction,
@@ -66,13 +74,25 @@ export function removeWorldExperienceNodes(
       };
     });
 
+    const resolveTarget = (target: StoryRouteTarget | null) => {
+      if (!target) return null;
+      if (target.kind === "ending") return target;
+      return storyNodeTarget(resolveActiveTarget(target.nodeId));
+    };
+
     if (node.exit.kind === "auto") {
       if (node.kind !== "clip") return [node];
       return [
         {
           ...node,
           interactions,
-          exit: { kind: "auto" as const, nextNodeId: resolveActiveTarget(node.exit.nextNodeId) },
+          exit: {
+            kind: "auto" as const,
+            routes: node.exit.routes.map((route) => ({
+              ...route,
+              target: resolveTarget(route.target),
+            })),
+          },
         },
       ];
     }
@@ -83,10 +103,10 @@ export function removeWorldExperienceNodes(
         ...(node.kind === "clip" ? { interactions } : {}),
         exit: {
           ...node.exit,
-          choices: node.exit.choices.map((choice) => {
-            const targetNodeId = resolveActiveTarget(choice.nextNodeId);
-            return { ...choice, nextNodeId: targetNodeId };
-          }),
+          choices: node.exit.choices.map((choice) => ({
+            ...choice,
+            target: resolveTarget(choice.target),
+          })),
         },
       },
     ];

@@ -41,6 +41,8 @@ async function applicationsFetch(path: string, init?: RequestInit): Promise<Java
         ...(init?.headers ?? {}),
       },
       cache: "no-store",
+      // Custom admin-token headers must never follow an upstream redirect.
+      redirect: "error",
     }
   );
   const payload = (await response.json().catch(() => null)) as JavaEnvelope | null;

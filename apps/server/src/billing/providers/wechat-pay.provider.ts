@@ -61,6 +61,25 @@ export interface WechatTransaction {
   attach?: string;
 }
 
+export interface WechatRefundNotification {
+  mchid: string;
+  out_trade_no: string;
+  out_refund_no: string;
+  refund_id: string;
+  refund_status: 'SUCCESS' | 'CLOSED' | 'PROCESSING' | 'ABNORMAL';
+  amount: { total: number; refund: number };
+}
+
+/** Acceptance may have happened: retain the refund reservation for reconciliation. */
+export class WechatRefundUnconfirmedException extends ServiceUnavailableException {
+  constructor() {
+    super({
+      code: 'WECHAT_PAY_REFUND_UNCONFIRMED',
+      msg: 'WeChat refund submission could not be confirmed. Check the existing refund before retrying.',
+    });
+  }
+}
+
 /** The 8 fields the mobile WeChat OpenSDK needs (`WXApi.sendReq`). */
 export interface WechatAppInvokeParams {
   appId: string;
@@ -450,7 +469,7 @@ export class WechatPayProvider implements PaymentProviderAdapter {
     nonce?: string;
     signatureType?: string;
     rawBody: Buffer;
-  }): WechatTransaction {
+  }): WechatTransaction | WechatRefundNotification {
     const cfg = this.config();
     this.verifyMessageSignature(cfg, input);
     const { rawBody } = input;
@@ -475,7 +494,31 @@ export class WechatPayProvider implements PaymentProviderAdapter {
       resource.associated_data ?? '',
       resource.ciphertext,
     );
-    const tx = safeJson<WechatTransaction>(plaintext);
+    const decoded = safeJson<Record<string, unknown>>(plaintext);
+    if (decoded && 'refund_status' in decoded) {
+      const refund = decoded as unknown as WechatRefundNotification;
+      if (
+        refund.mchid !== cfg.mchId ||
+        ![refund.out_trade_no, refund.out_refund_no, refund.refund_id].every(
+          (value) => typeof value === 'string' && value.trim().length > 0,
+        ) ||
+        !['SUCCESS', 'CLOSED', 'PROCESSING', 'ABNORMAL'].includes(
+          refund.refund_status,
+        ) ||
+        !Number.isSafeInteger(refund.amount?.total) ||
+        refund.amount.total <= 0 ||
+        !Number.isSafeInteger(refund.amount?.refund) ||
+        refund.amount.refund <= 0 ||
+        refund.amount.refund > refund.amount.total
+      ) {
+        throw new UnauthorizedException({
+          code: 'WECHAT_PAY_REFUND_BAD_RESOURCE',
+          msg: 'Invalid WeChat refund notification.',
+        });
+      }
+      return refund;
+    }
+    const tx = decoded as unknown as WechatTransaction | undefined;
     if (!tx?.out_trade_no || !tx.trade_state) {
       throw new UnauthorizedException({
         code: 'WECHAT_PAY_NOTIFY_BAD_RESOURCE',
@@ -524,8 +567,23 @@ export class WechatPayProvider implements PaymentProviderAdapter {
     input: CreateProviderRefundInput,
   ): Promise<CreateProviderRefundResult> {
     const cfg = this.config();
+    const total = input.originalAmountMinor;
+    if (
+      total === undefined ||
+      total <= 0n ||
+      input.amountMinor <= 0n ||
+      input.amountMinor > total ||
+      total > BigInt(Number.MAX_SAFE_INTEGER) ||
+      input.currency !== 'CNY'
+    ) {
+      throw new ServiceUnavailableException({
+        code: 'WECHAT_PAY_REFUND_INVALID_AMOUNT',
+        msg: 'WeChat refund requires the original CNY order total and a valid refund amount.',
+      });
+    }
+    // Recorded before the provider call, so even an early callback can match it.
     const outRefundNo = requireOutTradeNo(
-      `rf_${randomUUID().replace(/-/g, '')}`.slice(0, 32),
+      input.metadata.fizzdragon_refund_no ?? '',
     );
     const body = JSON.stringify({
       out_trade_no: input.providerPaymentIntentId, // our order no = WeChat out_trade_no
@@ -534,34 +592,61 @@ export class WechatPayProvider implements PaymentProviderAdapter {
       notify_url: cfg.notifyUrl,
       amount: {
         refund: Number(input.amountMinor),
-        total: Number(input.amountMinor),
+        total: Number(total),
         currency: 'CNY',
       },
     });
     const auth = this.authorizationHeader(cfg, 'POST', REFUND_PATH, body);
-    const res = await fetch(`${V3_HOST}${REFUND_PATH}`, {
-      method: 'POST',
-      headers: {
-        Authorization: auth,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'fizzdragon-server/1.0',
-      },
-      body,
-    });
-    const text = await res.text();
+    let res: Response;
+    let text: string;
+    try {
+      res = await fetch(`${V3_HOST}${REFUND_PATH}`, {
+        method: 'POST',
+        headers: {
+          Authorization: auth,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'fizzdragon-server/1.0',
+        },
+        body,
+        signal: AbortSignal.timeout(30_000),
+      });
+      text = await res.text();
+    } catch {
+      throw new WechatRefundUnconfirmedException();
+    }
     if (!res.ok) {
+      if (res.status >= 500 || res.status === 408)
+        throw new WechatRefundUnconfirmedException();
       throw new ServiceUnavailableException({
         code: 'WECHAT_PAY_REFUND_FAILED',
         msg: `WeChat Pay refund failed (${res.status}): ${text}`,
       });
     }
-    const parsed = safeJson<{ refund_id?: string; status?: string }>(text);
+    const parsed = safeJson<{
+      refund_id?: unknown;
+      status?: unknown;
+      out_refund_no?: unknown;
+      out_trade_no?: unknown;
+    }>(text);
+    if (
+      !parsed ||
+      typeof parsed.refund_id !== 'string' ||
+      !parsed.refund_id.trim() ||
+      typeof parsed.status !== 'string' ||
+      !['SUCCESS', 'CLOSED', 'PROCESSING', 'ABNORMAL'].includes(
+        parsed.status,
+      ) ||
+      parsed.out_refund_no !== outRefundNo ||
+      parsed.out_trade_no !== input.providerPaymentIntentId
+    ) {
+      throw new WechatRefundUnconfirmedException();
+    }
     return {
-      providerRefundId: parsed?.refund_id ?? outRefundNo,
-      providerStatus: parsed?.status ?? null,
+      providerRefundId: parsed.refund_id,
+      providerStatus: parsed.status,
       providerPaymentIntentId: input.providerPaymentIntentId,
-      raw: (parsed ?? {}) as Record<string, unknown>,
+      raw: parsed,
     };
   }
 

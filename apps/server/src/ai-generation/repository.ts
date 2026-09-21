@@ -403,6 +403,30 @@ export class AiGenerationRepository {
     });
   }
 
+  async recordUnknownAcceptance(jobId: string): Promise<boolean> {
+    const result = await this.prisma.aiJob.updateMany({
+      where: {
+        id: jobId,
+        status: 'in_progress',
+        providerJobId: null,
+        deletedAt: null,
+      },
+      data: {
+        error: {
+          code: 'WORKER_CRASHED',
+          message:
+            'Worker interrupted before provider acceptance could be confirmed. Reconcile provider records before retry or refund.',
+          userMessage:
+            'Generation status needs review. Your task has been preserved; do not submit it again.',
+          retryable: false,
+          createdAt: new Date().toISOString(),
+        },
+        version: { increment: 1 },
+      },
+    });
+    return result.count === 1;
+  }
+
   async claimQueuedJob(
     options: ClaimQueuedJobOptions,
   ): Promise<ClaimQueuedJobResult> {

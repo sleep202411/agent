@@ -2,6 +2,11 @@ import { createHash } from 'node:crypto';
 import { MediaStorageProvider } from '@prisma/client';
 import { UploadedImageProbeService } from './uploaded-image-probe.service';
 
+// This suite supplies signed URLs directly; storage SDKs are outside its scope.
+jest.mock('../infra/storage/media-storage-access.service', () => ({
+  MediaStorageAccessService: class {},
+}));
+
 const VALID_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
@@ -46,6 +51,50 @@ function asset(bytes = VALID_PNG) {
 describe('UploadedImageProbeService', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it.each([
+    [503, null, 'MEDIA_IMAGE_STORAGE_UNAVAILABLE'],
+    [200, '999', 'MEDIA_IMAGE_SIZE_MISMATCH'],
+  ])(
+    'releases rejected response streams (status %s, length %s)',
+    async (status, length, code) => {
+      const { service } = harness();
+      const cancel = jest.fn();
+      const body = new ReadableStream({ cancel });
+      jest.mocked(global.fetch).mockResolvedValue(
+        new Response(body, {
+          status,
+          headers: length ? { 'content-length': length } : {},
+        }),
+      );
+      await expect(
+        service.probe(asset(), {
+          expectedContentType: 'image/png',
+          maxBytes: 30 * 1024 * 1024,
+        }),
+      ).rejects.toMatchObject({ response: { code } });
+      expect(cancel).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('preserves the storage error if response cleanup rejects', async () => {
+    const { service } = harness();
+    const cancel = jest.fn().mockRejectedValue(new Error('cleanup failed'));
+    jest
+      .mocked(global.fetch)
+      .mockResolvedValue(
+        new Response(new ReadableStream({ cancel }), { status: 503 }),
+      );
+    await expect(
+      service.probe(asset(), {
+        expectedContentType: 'image/png',
+        maxBytes: 30 * 1024 * 1024,
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'MEDIA_IMAGE_STORAGE_UNAVAILABLE' },
+    });
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it('streams and hashes exact final bytes, fully decodes them, and reports real dimensions', async () => {

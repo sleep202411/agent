@@ -83,7 +83,7 @@ export class PlayableVideoProbeService {
           '-v',
           'error',
           '-show_entries',
-          'stream=codec_type,codec_name,profile,level,pix_fmt,width,height,duration:stream_tags=rotate:stream_side_data=rotation:format=format_name,duration:format_tags=major_brand',
+          'stream=codec_type,codec_name,profile,level,pix_fmt,width,height,duration:stream_tags=rotate:stream_side_data=rotation:stream_disposition=attached_pic:format=format_name,duration:format_tags=major_brand',
           '-of',
           'json',
           filePath,
@@ -144,7 +144,11 @@ export function parsePlayableVideoFfprobeOutput(
     .map(record)
     .filter((stream): stream is Record<string, unknown> => stream !== null);
   const stream =
-    streams.find((candidate) => candidate.codec_type === 'video') ?? null;
+    streams.find(
+      (candidate) =>
+        candidate.codec_type === 'video' &&
+        finiteNumber(record(candidate.disposition)?.attached_pic) !== 1,
+    ) ?? null;
   const format = record(root?.format);
   const formatNames =
     typeof format?.format_name === 'string'

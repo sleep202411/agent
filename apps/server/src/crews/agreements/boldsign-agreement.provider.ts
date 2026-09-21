@@ -274,24 +274,41 @@ export class BoldSignAgreementProvider implements OnModuleInit {
       },
       30_000,
     );
+    const maxBytes = this.archiveMaxBytes;
+    const tooLarge = () =>
+      new BadGatewayException({
+        message: `BoldSign artifact exceeds the configured ${maxBytes}-byte archive limit.`,
+      });
     const declaredLength = Number(response.headers.get('content-length'));
-    if (
-      Number.isFinite(declaredLength) &&
-      declaredLength > this.archiveMaxBytes
-    ) {
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+      await response.body?.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const reader = response.body?.getReader();
+    if (reader) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          size += value.byteLength;
+          if (size > maxBytes) {
+            await reader.cancel().catch(() => undefined);
+            throw tooLarge();
+          }
+          chunks.push(Buffer.from(value));
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    }
+    if (size === 0) {
       throw new BadGatewayException({
-        message: `BoldSign artifact exceeds the configured ${this.archiveMaxBytes}-byte archive limit.`,
+        message: 'BoldSign returned an empty agreement artifact.',
       });
     }
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length === 0 || bytes.length > this.archiveMaxBytes) {
-      throw new BadGatewayException({
-        message:
-          bytes.length === 0
-            ? 'BoldSign returned an empty agreement artifact.'
-            : `BoldSign artifact exceeds the configured ${this.archiveMaxBytes}-byte archive limit.`,
-      });
-    }
+    const bytes = Buffer.concat(chunks, size);
     const contentType = response.headers.get('content-type')?.toLowerCase();
     if (
       !contentType?.startsWith('application/pdf') ||

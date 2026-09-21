@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, setApiWorkspaceId } from "./api";
+import { api, messageFromHttpErrorBody, setApiWorkspaceId } from "./api";
 
 afterEach(() => {
   setApiWorkspaceId(null);
@@ -244,4 +244,57 @@ it("classifies a stalled body as timeout while preserving active unauthorized no
     message: "Session expired",
   });
   expect(dispatchEvent).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { code: 403, success: true },
+  { code: 200, success: false },
+])("rejects conflicting statuses in normal and raw requests: %j", async (status) => {
+  const body = { ...status, message: "Operation denied", data: { id: "untrusted" } };
+  const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(body)));
+  vi.stubGlobal("fetch", fetchMock);
+  for (const raw of [false, true]) {
+    await expect(api.post("/aurora/test", { raw })).rejects.toMatchObject({
+      name: "ApiRequestError",
+      message: "Operation denied",
+      code: status.code,
+      responseBody: JSON.stringify(body),
+    });
+  }
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it.each([{ success: true }, { code: "SUCCESS" }, { code: 202 }, { code: 200, success: true }])(
+  "accepts supported successful envelopes: %j",
+  async (status) => {
+    const body = { ...status, data: { id: "accepted" } };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(JSON.stringify(body)))
+    );
+    await expect(api.get("/aurora/test")).resolves.toEqual(body.data);
+    await expect(api.get("/aurora/test", { raw: true })).resolves.toEqual(body);
+  }
+);
+it("does not dump Cloudflare HTML as the error message", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: false,
+      status: 524,
+      text: () =>
+        Promise.resolve(
+          `<html><body class="font-semibold">Ray ID</body><a href="https://www.cloudflare.com/5xx-error-landing?utm_source=errorcode_524">Cloudflare</a></html>`
+        ),
+    })
+  );
+  await expect(api.post("/api/user/video/moderation/ai/result")).rejects.toMatchObject({
+    status: 524,
+    message: "The request timed out at the gateway (HTTP 524). The upstream job may still finish.",
+  });
+});
+it("summarizes gateway HTML without a Cloudflare error code", () => {
+  expect(messageFromHttpErrorBody(502, "<html><body>Bad gateway</body></html>", "HTTP 502")).toBe(
+    "The gateway returned HTTP 502. Try again."
+  );
 });

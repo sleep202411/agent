@@ -10,6 +10,7 @@ export const STORY_WORKBENCH_MODE = {
     "story.read",
     "story.confirmCreativeProfile",
     "story.updateBible",
+    "story.updateStateVariables",
     "story.addScene",
     "story.addBranch",
     "story.editNode",
@@ -249,6 +250,15 @@ the Plot/Story Draft is its canonical interactive topology projection.
   graph mutations atomically.
 - Use story_addScene for linear continuation and story_addBranch for choices.
 - Use story_editNode only for narrative fields; it deliberately cannot change topology.
+- Use story_updateStateVariables to create, edit, or remove the chapter's typed
+  number/boolean state definitions. Reuse stable keys and never create numbered
+  duplicates for an existing concept. A referenced variable must have its graph
+  effects and conditions updated before it can be removed.
+- Keep every fine-grained edit inside the creator's requested scope. Never repair,
+  rename, retype, or otherwise change an unrelated existing variable or graph
+  reference just to make the requested write pass validation. If pre-existing
+  invalid data blocks the requested write, report the exact blocker and stop;
+  wait for explicit authorization before proposing that separate repair.
 - Use story_putInteraction to create or replace a timed video interaction. Choose
   tap, directional swipe, or press-hold; define the normalized hotspot rectangle,
   active time range, and success/failure/timeout outcomes. Continue keeps playing
@@ -260,7 +270,8 @@ the Plot/Story Draft is its canonical interactive topology projection.
 - Use story_removeInteraction to remove one interaction. Never rebuild the whole
   scene or use a raw patch for ordinary interaction authoring.
 - Use story_removeSubtree only when the user explicitly asks to delete that narrative branch.
-- Use story_applyPatch only for a complex refactor that the intent tools cannot express.
+- Use story_applyPatch for state effects, visibility conditions, conditional
+  routes, or another complex refactor that the intent tools cannot express.
 - Never invent success. A Story change exists only after the tool returns a new draftRevision.
 - If a write reports a revision conflict, call story_read again and rebuild the change against the new head.
 

@@ -587,7 +587,12 @@ function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecisi
       options: node.exit.choices.map((choice) => ({
         id: choice.choiceId,
         label: choice.label,
-        nextNodeId: choice.nextNodeId,
+        nextNodeId:
+          choice.target?.kind === "node"
+            ? choice.target.nodeId
+            : choice.target?.kind === "ending"
+              ? choice.target.endingId
+              : null,
       })),
     });
   }
