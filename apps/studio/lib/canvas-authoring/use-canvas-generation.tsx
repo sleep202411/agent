@@ -189,6 +189,7 @@ function removeReferencesFromSources(
 type GenerationContextValue = {
   submit: (nodeId: string) => void;
   cancel: (nodeId: string) => void;
+  statusUnavailable: (jobId?: string) => boolean;
   canSubmit: boolean;
   disabledReason: string | null;
   /** Catalog-driven preflight issues for a node (cleared on successful submit path). */
@@ -210,6 +211,7 @@ export function useGeneration(): GenerationContextValue {
     useContext(GenerationContext) ?? {
       submit: () => {},
       cancel: () => {},
+      statusUnavailable: () => false,
       canSubmit: false,
       disabledReason: null,
       preflightIssues: () => [],
@@ -380,6 +382,10 @@ export function CanvasGenerationProvider({
   const { data: wallet } = useComputeWalletBalance();
   const { user } = useAuth();
   const userId = user?.id != null ? String(user.id) : undefined;
+  const [readFailures, setReadFailures] = useState<{ scope: string; ids: string[] }>({
+    scope: "",
+    ids: [],
+  });
   const [rechargePrompt, setRechargePrompt] = useState<RechargePromptState | null>(null);
   const [preflightByNode, setPreflightByNode] = useState<Record<string, ValidationIssue[]>>({});
   useEffect(() => {
@@ -429,6 +435,7 @@ export function CanvasGenerationProvider({
       cancellations.clear();
       reconciling.current?.abort();
       reconciling.current = null;
+      setReadFailures({ scope: "", ids: [] });
       setPreflightByNode({});
       setRechargePrompt(null);
     };
@@ -605,13 +612,40 @@ export function CanvasGenerationProvider({
       documentId: generationDocumentId,
       sourceSurface,
     };
-    const readJobs = (filter: Parameters<typeof listFizzAiJobs>[0]) =>
-      queryClient.fetchQuery({
-        queryKey: ["canvas-jobs", userId, scope, filter],
-        queryFn: () => listFizzAiJobs({ ...scope, ...filter }),
-        staleTime: 0,
-        retry: false,
-      });
+    const readJobs = async (filter: Parameters<typeof listFizzAiJobs>[0]) => {
+      const setFailed = (failed: boolean, ids = filter.ids ?? []) => {
+        if (run.signal.aborted || activeSubmissionScope.current !== submissionScope) return;
+        setReadFailures((previous) => {
+          const next = new Set(previous.scope === submissionScope ? previous.ids : []);
+          ids.forEach((id) => (failed ? next.add(id) : next.delete(id)));
+          return { scope: submissionScope, ids: [...next] };
+        });
+      };
+      try {
+        const result = await queryClient.fetchQuery({
+          queryKey: ["canvas-jobs", userId, scope, filter],
+          queryFn: () => listFizzAiJobs({ ...scope, ...filter }),
+          staleTime: 0,
+          retry: false,
+        });
+        const returnedIds = new Set(result.jobs.map((job) => job.id));
+        const requestedIds = filter.ids ?? [];
+        setFailed(
+          false,
+          requestedIds.filter((id) => returnedIds.has(id))
+        );
+        // A successful batch response can still omit an inaccessible/missing
+        // task. Do not present its cached generation state as freshly verified.
+        setFailed(
+          true,
+          requestedIds.filter((id) => !returnedIds.has(id))
+        );
+        return result;
+      } catch (error) {
+        setFailed(true);
+        throw error;
+      }
+    };
     try {
       const active = getNodes().filter(
         (node) =>
@@ -1174,6 +1208,10 @@ export function CanvasGenerationProvider({
     () => ({
       submit: (id) => void submit(id),
       cancel: (id) => void cancel(id),
+      statusUnavailable: (jobId) =>
+        Boolean(
+          jobId && readFailures.scope === submissionScope && readFailures.ids.includes(jobId)
+        ),
       canSubmit: canGenerate && projectSkillsReady,
       disabledReason: effectiveDisabledReason,
       preflightIssues,
@@ -1185,6 +1223,8 @@ export function CanvasGenerationProvider({
       canGenerate,
       projectSkillsReady,
       effectiveDisabledReason,
+      readFailures,
+      submissionScope,
       preflightIssues,
       clearPreflightIssues,
     ]
