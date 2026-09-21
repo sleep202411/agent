@@ -17,7 +17,7 @@ export type ReviewFinding = {
 };
 
 export function parseReviewTimeOffset(value: string | number | null | undefined): number | null {
-  if (typeof value === "number") return normalizeSeconds(value);
+  if (typeof value === "number") return normalizeUnitlessOffset(value);
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -31,6 +31,7 @@ export function parseReviewTimeOffset(value: string | number | null | undefined)
   if (/^\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(trimmed)) {
     const parts = trimmed.split(":").map(Number);
     if (parts.some((part) => !Number.isFinite(part))) return null;
+    if (parts.at(-1)! >= 60 || (parts.length === 3 && parts[1] >= 60)) return null;
     if (parts.length === 3) {
       return normalizeSeconds(parts[0] * 3600 + parts[1] * 60 + parts[2]);
     }
@@ -38,7 +39,7 @@ export function parseReviewTimeOffset(value: string | number | null | undefined)
   }
 
   const numeric = Number(trimmed);
-  return Number.isFinite(numeric) ? normalizeSeconds(numeric) : null;
+  return Number.isFinite(numeric) ? normalizeUnitlessOffset(numeric) : null;
 }
 
 export function formatReviewTimecode(seconds: number): string {
@@ -166,9 +167,12 @@ export function findingsNearTime(
   });
 }
 
+// Only unitless provider values need the legacy seconds/milliseconds heuristic.
+function normalizeUnitlessOffset(value: number): number | null {
+  return normalizeSeconds(value > MAX_REVIEW_SECONDS ? value / 1000 : value);
+}
+
 function normalizeSeconds(value: number): number | null {
-  if (!Number.isFinite(value) || value < 0) return null;
-  const seconds = value > MAX_REVIEW_SECONDS ? value / 1000 : value;
-  if (!Number.isFinite(seconds) || seconds < 0 || seconds > MAX_REVIEW_SECONDS) return null;
-  return seconds;
+  if (!Number.isFinite(value) || value < 0 || value > MAX_REVIEW_SECONDS) return null;
+  return value;
 }
