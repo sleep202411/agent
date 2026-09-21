@@ -6,7 +6,7 @@ import { EDITABLE_COLUMN_KEYS, cellDomId } from "./storyboard-columns";
 export type NavDirection = "next" | "prev" | "down" | "up";
 
 export interface FocusedCell {
-  rowIndex: number;
+  rowId: string;
   columnKey: string;
 }
 
@@ -17,7 +17,7 @@ export interface FocusedCell {
  * hook computes the NEXT cell based on direction, handles row/column wrapping,
  * and focuses the target element. When the target row is outside the virtual
  * window, it calls `scrollToIndex` first — the row mounts on the next tick,
- * then the pending focus resolves via `requestAnimationFrame`.
+ * then the pending focus resolves after that render.
  *
  * Usage at the table level:
  *   const { pendingFocus, moveFocus, resolvePendingFocus } = useGridNavigation({ scrollToIndex });
@@ -50,7 +50,7 @@ export function useGridNavigation({
       direction: NavDirection,
       currentRowIndex: number,
       currentColumnKey: string,
-      rowIds: readonly string[],
+      rowIds: readonly string[]
     ) => {
       const currentColIdx = editableKeys.indexOf(currentColumnKey);
       if (currentColIdx === -1) return; // Not an editable column — ignore.
@@ -89,26 +89,29 @@ export function useGridNavigation({
       if (!nextRowId) return;
 
       // Try to focus immediately.
-      if (focusElement(nextRowId, nextColKey)) return;
+      if (focusElement(nextRowId, nextColKey)) {
+        setPendingFocus(null);
+        return;
+      }
 
       // Row not mounted (outside virtual window) — scroll to it, then focus
       // on the next tick after it mounts.
       scrollToIndex(nextRow, { align: "center" });
-      setPendingFocus({ rowIndex: nextRow, columnKey: nextColKey });
+      setPendingFocus({ rowId: nextRowId, columnKey: nextColKey });
     },
-    [rowCount, colCount, editableKeys, focusElement, scrollToIndex],
+    [rowCount, colCount, editableKeys, focusElement, scrollToIndex]
   );
 
   /** Called after virtual items render — resolves a pending focus request. */
   const resolvePendingFocus = useCallback(
     (rowIds: readonly string[]) => {
       if (!pendingFocus) return;
-      const rowId = rowIds[pendingFocus.rowIndex];
-      if (rowId && focusElement(rowId, pendingFocus.columnKey)) {
+      const { rowId, columnKey } = pendingFocus;
+      if (!rowIds.includes(rowId) || focusElement(rowId, columnKey)) {
         setPendingFocus(null);
       }
     },
-    [pendingFocus, focusElement],
+    [pendingFocus, focusElement]
   );
 
   return { pendingFocus, moveFocus, resolvePendingFocus };
