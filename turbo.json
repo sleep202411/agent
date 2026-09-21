@@ -3,9 +3,18 @@
   "ui": "tui",
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "inputs": ["$TURBO_DEFAULT$", ".env*"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**"
+      ],
       "env": [
         "NEXT_PUBLIC_*",
         "ADMIN_SITE",
@@ -15,17 +24,29 @@
         "JAVA_STUDIO_URL",
         "AURORA_STRIP_PREFIX"
       ],
-      "passThroughEnv": ["DATABASE_URL"]
+      "passThroughEnv": [
+        "DATABASE_URL"
+      ]
     },
     "lint": {
-      "dependsOn": ["^build", "^lint"]
+      "dependsOn": [
+        "^build",
+        "^lint"
+      ]
     },
     "check-types": {
-      "dependsOn": ["^build", "^check-types"]
+      "dependsOn": [
+        "^build",
+        "^check-types"
+      ]
     },
     "test": {
-      "dependsOn": ["^build"],
-      "outputs": ["coverage/**"],
+      "dependsOn": [
+        "^build"
+      ],
+      "outputs": [
+        "coverage/**"
+      ],
       "env": [
         "TEST_REDIS_URL",
         "TASK01_TEST_DATABASE_URL",
@@ -35,7 +56,19 @@
         "LEGACY_AGENT_TEST_DATABASE_URL",
         "DATABASE_POSTGRES_INTEGRATION",
         "CREW_WORKSPACE_TEST_DATABASE_URL",
-        "EPISODE_UPLOAD_INTEGRATION"
+        "EPISODE_UPLOAD_INTEGRATION",
+        "STORY_AGENT_POSTGRES_INTEGRATION",
+        "STORY_PRODUCTION_GENERATION_POSTGRES_INTEGRATION",
+        "AGENT_OS_START_POSTGRES_INTEGRATION",
+        "AGENT_OS_TOOL_RECEIPT_POSTGRES_INTEGRATION",
+        "COPILOT_POSTGRES_INTEGRATION",
+        "CONVERSATIONS_POSTGRES_INTEGRATION",
+        "CREW_ACCOUNTABILITY_POSTGRES_INTEGRATION",
+        "NOTIFICATION_POSTGRES_INTEGRATION",
+        "CREW_LEGACY_TEST_DATABASE_URL",
+        "CREW_QUOTA_TEST_DATABASE_URL",
+        "NOTIFICATION_TEST_DATABASE_URL",
+        "REDIS_RATE_LIMIT_INTEGRATION_URL"
       ]
     },
     "dev": {
@@ -43,5 +76,7 @@
       "persistent": true
     }
   },
-  "globalPassThroughEnv": ["NODE_OPTIONS"]
+  "globalPassThroughEnv": [
+    "NODE_OPTIONS"
+  ]
 }
