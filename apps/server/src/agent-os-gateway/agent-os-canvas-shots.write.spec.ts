@@ -111,6 +111,35 @@ describe('shot writes', () => {
     expect(row.description).toBe('人写的画面描述');
   });
 
+  it('retains Agent prompt edits when the canvas is serialized and reopened', () => {
+    const doc = newDoc();
+    seedHumanShot(doc, 'human-1', {
+      order: 'V',
+      description: 'The creator’s scene description',
+      prompt: 'Original prompt',
+    });
+    write(doc, [
+      {
+        id: 'human-1',
+        intent: 'replace',
+        prompt: 'Moonlit rooftop, wide shot',
+      },
+    ]);
+
+    const reopened = newDoc();
+    Y.applyUpdate(reopened, Y.encodeStateAsUpdate(doc));
+    expect(rows(reopened)).toEqual([
+      expect.objectContaining({
+        id: 'human-1',
+        prompt: 'Moonlit rooftop, wide shot',
+        description: 'The creator’s scene description',
+        agentAuthored: false,
+      }),
+    ]);
+    doc.destroy();
+    reopened.destroy();
+  });
+
   it('refuses to create over an existing id and to replace a missing one', () => {
     const doc = newDoc();
     write(doc, [create('s1')]);
