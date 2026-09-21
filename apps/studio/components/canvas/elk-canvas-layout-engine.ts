@@ -50,8 +50,8 @@ interface Bounds {
 export async function layoutCanvasTidyGraph(
   request: CanvasTidyLayoutRequest
 ): Promise<CanvasTidyPosition[]> {
-  const elk = await getElk();
   try {
+    const elk = await getElk();
     return await withTimeout(runCanvasTidyGraph(request, elk), LAYOUT_TIMEOUT_MS);
   } catch (error) {
     resetElkLayoutEngine();
