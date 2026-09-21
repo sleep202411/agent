@@ -508,7 +508,12 @@ describe("LangGraph golden path: script → characters", () => {
               chapterId: "00000000-0000-4000-8000-000000000001",
               draftRevision: 0,
               contentHash: "a".repeat(64),
-              storyBible: { logline: "", synopsis: "", characters: [] },
+              storyBible: {
+                logline: "",
+                synopsis: "",
+                characters: [],
+                stateVariables: [],
+              },
               graph: { entryNodeId: null, nodes: [] },
               productionNotes: [],
               productionState: {

@@ -1,10 +1,30 @@
 import { describe, expect, it } from "vitest";
 import type { StoryPatchProposal, StoryScreenplayProposal } from "@repo/shared/story-agent";
-import { storyAuthoringProposalReview } from "./story-authoring-proposal";
+import { storyAgentAutoNextNodeId, storyAuthoringProposalReview } from "./story-authoring-proposal";
 
 const OPERATION_ID = "00000000-0000-4000-8000-000000000001";
 
 describe("storyAuthoringProposalReview", () => {
+  it("uses the unconditional route as the canonical continuation", () => {
+    expect(
+      storyAgentAutoNextNodeId({
+        kind: "auto",
+        routes: [
+          {
+            when: {
+              kind: "compare",
+              variableKey: "courage",
+              operator: "at-least",
+              value: 3,
+            },
+            target: { kind: "node", nodeId: "secret" },
+          },
+          { target: { kind: "node", nodeId: "main" } },
+        ],
+      })
+    ).toBe("main");
+  });
+
   it("projects authored operations into reviewable content and metrics", () => {
     const proposal = {
       operations: [

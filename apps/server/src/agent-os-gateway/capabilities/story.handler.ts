@@ -33,6 +33,7 @@ import {
   StoryGetGenerationBatchInputSchema,
   StoryProductionContinuationPlanSchema,
   StoryUpdateBibleInputSchema,
+  StoryUpdateStateVariablesInputSchema,
 } from '@repo/agent-tools';
 import {
   STORY_PATCH_OPERATION_LABELS,
@@ -96,6 +97,7 @@ const STORY_TOOL_IDS = new Set([
   'story.read',
   'story.confirmCreativeProfile',
   'story.updateBible',
+  'story.updateStateVariables',
   'story.addScene',
   'story.addBranch',
   'story.editNode',
@@ -122,8 +124,8 @@ const MOBILE_H5_DEFAULT_VISUAL_STYLE = 'cinematic-realism' as const;
 
 type StoryNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type StoryClipNode = Extract<StoryNode, { kind: 'clip' }>;
-// The wire protocol still speaks the pre-stats node shape (nextNodeId /
-// goto.nodeId); migrateStoryNodeStats adapts inbound payloads at the executor.
+// Fine-grained scene creation still uses the compact legacy route shape;
+// migrateStoryNodeStats canonicalizes it before the executor validates the draft.
 type StoryAgentPutNode = Extract<
   z.infer<typeof StoryPatchOperationsSchema>[number],
   { kind: 'story_graph.put_node' }
@@ -192,6 +194,38 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
               });
             }
             return finalizeOperations(operations);
+          },
+        );
+      }
+      case 'story.updateStateVariables': {
+        const args = StoryUpdateStateVariablesInputSchema.parse(
+          input.arguments,
+        );
+        return this.mutateStory(
+          input,
+          chapterId,
+          args.baseDraftRevision,
+          (state) => {
+            const existing = new Set(
+              (state.content.storyBible.stateVariables ?? []).map(
+                (variable) => variable.key,
+              ),
+            );
+            return finalizeOperations([
+              ...args.upsert.map((variable) => ({
+                kind: 'story_bible.put_state_variable' as const,
+                payload: {
+                  intent: existing.has(variable.key)
+                    ? ('replace' as const)
+                    : ('create' as const),
+                  variable,
+                },
+              })),
+              ...args.removeKeys.map((key) => ({
+                kind: 'story_bible.remove_state_variable' as const,
+                payload: { key },
+              })),
+            ]);
           },
         );
       }
@@ -875,8 +909,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           name: character.name,
           summary: character.summary,
         })),
+        stateVariables: state.content.storyBible.stateVariables ?? [],
       },
-      graph: state.content.graph,
+      graph: {
+        entryNodeId: state.content.graph.entryNodeId,
+        nodes: state.content.graph.nodes.map(toAgentReadNode),
+      },
       productionNotes: state.content.productionNotes,
       productionState,
       creativeProfile: {
@@ -1808,52 +1846,22 @@ function requireOpenAutoExit(node: StoryNode): void {
 function toAgentClipNode(
   node: Extract<StoryNode, { kind: 'clip' }>,
 ): StoryAgentPutNode {
-  const toAgentAction = (action: {
-    kind: string;
-    target?:
-      | { kind: 'node'; nodeId: string }
-      | { kind: 'ending'; endingId: string }
-      | null;
-    nodeId?: string;
-    timeMs?: number;
-    effects?: unknown;
-  }) => {
-    if (action.kind === 'goto') {
-      const nodeId =
-        storyRouteNodeId(action.target ?? null) ??
-        (typeof action.nodeId === 'string' ? action.nodeId : null);
-      return nodeId
-        ? { kind: 'goto' as const, nodeId }
-        : { kind: 'continue' as const };
-    }
-    if (action.kind === 'seek') {
-      return { kind: 'seek' as const, timeMs: action.timeMs ?? 0 };
-    }
-    return { kind: 'continue' as const };
-  };
   return {
     kind: 'clip',
     nodeId: node.nodeId,
+    ...(node.communityPointPrice !== undefined
+      ? { communityPointPrice: node.communityPointPrice }
+      : {}),
     clipKey: node.clipKey,
     ...(node.name ? { name: node.name } : {}),
     ...(node.description ? { description: node.description } : {}),
-    interactions: node.interactions.map((interaction) => ({
-      ...interaction,
-      outcomes: {
-        success: toAgentAction(interaction.outcomes.success),
-        ...(interaction.outcomes.failure
-          ? { failure: toAgentAction(interaction.outcomes.failure) }
-          : {}),
-        ...(interaction.outcomes.timeout
-          ? { timeout: toAgentAction(interaction.outcomes.timeout) }
-          : {}),
-      },
-    })),
+    ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
+    interactions: node.interactions,
     exit:
       node.exit.kind === 'auto'
         ? {
             kind: 'auto' as const,
-            nextNodeId: storyAutoFallbackNodeId(node.exit),
+            routes: node.exit.routes,
           }
         : {
             kind: 'choice' as const,
@@ -1862,7 +1870,33 @@ function toAgentClipNode(
             choices: node.exit.choices.map((choice) => ({
               choiceId: choice.choiceId,
               label: choice.label,
-              nextNodeId: storyRouteNodeId(choice.target),
+              ...(choice.effects ? { effects: choice.effects } : {}),
+              ...(choice.visibleWhen
+                ? { visibleWhen: choice.visibleWhen }
+                : {}),
+              target: choice.target,
+            })),
+          },
+  };
+}
+
+function toAgentReadNode(node: StoryNode) {
+  if (node.kind === 'clip') return toAgentClipNode(node);
+  return {
+    ...node,
+    exit:
+      node.exit.kind === 'auto'
+        ? { kind: 'auto' as const, routes: node.exit.routes }
+        : {
+            ...node.exit,
+            choices: node.exit.choices.map((choice) => ({
+              choiceId: choice.choiceId,
+              label: choice.label,
+              ...(choice.effects ? { effects: choice.effects } : {}),
+              ...(choice.visibleWhen
+                ? { visibleWhen: choice.visibleWhen }
+                : {}),
+              target: choice.target,
             })),
           },
   };

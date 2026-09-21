@@ -123,6 +123,7 @@ describe('StoryAgentCapabilityHandler', () => {
   it('claims only the new Story capability family', () => {
     expect(handler.supports('story.read')).toBe(true);
     expect(handler.supports('story.confirmCreativeProfile')).toBe(true);
+    expect(handler.supports('story.updateStateVariables')).toBe(true);
     expect(handler.supports('story.addBranch')).toBe(true);
     expect(handler.supports('story.putInteraction')).toBe(true);
     expect(handler.supports('story.removeInteraction')).toBe(true);
@@ -141,6 +142,7 @@ describe('StoryAgentCapabilityHandler', () => {
     const projectId = '0197f4a2-0800-7000-8000-0000000000c5';
     const chapterId = '0197f4a2-0800-7000-8000-0000000000c7';
     const content = draft([node('scene.gate')]);
+    let latestWrittenContent: InteractiveStoryDraftContent | undefined;
     const tx = {
       storyProject: {
         findFirst: jest.fn().mockResolvedValue({
@@ -168,7 +170,16 @@ describe('StoryAgentCapabilityHandler', () => {
         }),
         update: jest.fn().mockResolvedValue({}),
       },
-      storyDraft: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      storyDraft: {
+        updateMany: jest
+          .fn()
+          .mockImplementation(
+            (input: { data: { content: InteractiveStoryDraftContent } }) => {
+              latestWrittenContent = input.data.content;
+              return Promise.resolve({ count: 1 });
+            },
+          ),
+      },
       storyChapter: { update: jest.fn().mockResolvedValue({}) },
       storyChapterGraphRepair: { upsert: jest.fn().mockResolvedValue({}) },
       storyStoryboardSequence: {
@@ -212,11 +223,33 @@ describe('StoryAgentCapabilityHandler', () => {
       }),
     ).resolves.toMatchObject({ draftRevision: 4 });
 
+    await expect(
+      scoped.execute({
+        ...storyboardExecuteInput('story.updateStateVariables', {
+          baseDraftRevision: 3,
+          upsert: [
+            {
+              key: 'courage',
+              name: { 'en-US': 'Courage' },
+              valueType: 'number',
+              initialValue: 0,
+            },
+          ],
+        }),
+        projectId,
+        workbenchContext: { chapterId },
+      }),
+    ).resolves.toMatchObject({ draftRevision: 4 });
+
+    expect(latestWrittenContent?.storyBible.stateVariables).toEqual([
+      expect.objectContaining({ key: 'courage' }),
+    ]);
+
     expect(tx.storyChapter.update).toHaveBeenCalledWith({
       where: { id: chapterId },
       data: { nodeIds: ['scene.gate'], entryNodeId: 'scene.gate' },
     });
-    expect(tx.storyChapterGraphRepair.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.storyChapterGraphRepair.upsert).toHaveBeenCalledTimes(2);
     expect(tx.storyStoryboardSequence.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         storyProjectId: projectId,
@@ -1481,6 +1514,17 @@ describe('StoryAgentCapabilityHandler', () => {
 
   it('creates and replaces an interaction by stable id without duplicates', () => {
     const current = draft([node('opening'), node('ending')]);
+    current.storyBible.stateVariables = [
+      {
+        key: 'courage',
+        name: { 'en-US': 'Courage' },
+        valueType: 'number',
+        initialValue: 0,
+      },
+    ];
+    const opening = current.graph.nodes[0];
+    if (opening?.kind !== 'clip') throw new Error('Expected clip');
+    opening.onEnterEffects = [{ kind: 'add', key: 'courage', amount: 1 }];
     const create = StoryPutInteractionInputSchema.parse({
       baseDraftRevision: 0,
       nodeId: 'opening',
@@ -1493,7 +1537,10 @@ describe('StoryAgentCapabilityHandler', () => {
         startMs: 500,
         endMs: 1_500,
         outcomes: {
-          success: { kind: 'continue' },
+          success: {
+            kind: 'continue',
+            effects: [{ kind: 'add', key: 'courage', amount: 1 }],
+          },
           timeout: { kind: 'goto', nodeId: 'ending' },
         },
       },
@@ -1523,6 +1570,12 @@ describe('StoryAgentCapabilityHandler', () => {
       kind: 'press-hold',
       durationMs: 700,
       controlTimeline: false,
+    });
+    expect(replacedOpening.onEnterEffects).toEqual([
+      { kind: 'add', key: 'courage', amount: 1 },
+    ]);
+    expect(replacedOpening.interactions[0]?.outcomes.success).toMatchObject({
+      effects: [{ kind: 'add', key: 'courage', amount: 1 }],
     });
   });
 
