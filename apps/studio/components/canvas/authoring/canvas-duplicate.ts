@@ -25,6 +25,7 @@ import {
   type ShotNodeData,
   type ShotNodeLike,
 } from "@/lib/canvas-authoring/shot-node";
+import { isGenerationNodeType } from "@/lib/canvas-authoring/generation-node-types";
 import type { GenerationNodeData } from "./generation-card";
 import type { CardReference, CardReferences } from "./reference-stack";
 
@@ -135,6 +136,22 @@ export function cloneCanvasSelection(
   return {
     nodes: source.nodes.map((node) => {
       let data = remapReferences(node.data, nodeIds, edgeIds);
+      if (isGenerationNodeType(node.type)) {
+        // A new node owns no job or submission receipt. Copy authored inputs,
+        // not the original node's recovery/cancellation/auto-submit state.
+        const generation = (data as GenerationNodeData).generation;
+        data = { ...data };
+        delete data.generation;
+        delete data.autoSubmit;
+        // Completed media remains useful on a copy, but must not route future
+        // job events (or reuse an idempotency receipt) from the original.
+        if (generation?.status === "done" && generation.outputs?.length) {
+          data.generation = {
+            status: "done",
+            outputs: generation.outputs.map((output) => ({ ...output })),
+          };
+        }
+      }
       if (node.type === SHOT_NODE_TYPE) {
         lastShotOrder = shotOrderBetween(lastShotOrder, null);
         data = { ...data, order: lastShotOrder };
