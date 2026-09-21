@@ -29,7 +29,8 @@ export function adminApiUrl(path: string): string {
 }
 
 export function adminApiBaseUrl(): string {
-  const base = process.env.ADMIN_API_BASE_URL ?? process.env.ADMIN_GLOBAL_API_BASE_URL;
+  const base =
+    process.env.ADMIN_API_BASE_URL?.trim() || process.env.ADMIN_GLOBAL_API_BASE_URL?.trim();
   if (base) return base;
   throw new Error("Missing admin API base URL (set ADMIN_API_BASE_URL).");
 }
