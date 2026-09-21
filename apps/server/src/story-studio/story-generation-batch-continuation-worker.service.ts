@@ -131,6 +131,13 @@ export class StoryGenerationBatchContinuationWorkerService
         this.clearBackoff(candidateId);
         await this.journal.publishCommitted(dispatch);
       }
+    } catch (error) {
+      // Scheduled drains are fire-and-forget. Contain lookup and post-commit
+      // publication failures as well as the per-candidate delivery failures.
+      // Committed events remain recoverable through the journal outbox.
+      this.logger.warn(
+        `Story generation continuation drain failed: ${errorText(error)}`,
+      );
     } finally {
       this.draining = false;
     }

@@ -94,7 +94,7 @@ function makePrisma(init: {
       where,
       data,
     }: {
-      where: { snapshotSequence: { lt: number } };
+      where: { snapshotSequence: number };
       data: {
         crdtState: Buffer;
         contentSnapshot: unknown;
@@ -102,14 +102,14 @@ function makePrisma(init: {
         lastCompactedAt: Date;
       };
     }) => {
-      if (init.forceSupersede) return Promise.resolve({ count: 0 });
-      if (!(doc.snapshotSequence < where.snapshotSequence.lt)) {
+      if (doc.snapshotSequence !== where.snapshotSequence) {
         return Promise.resolve({ count: 0 });
       }
       doc.crdtState = data.crdtState;
       doc.contentSnapshot = data.contentSnapshot;
       doc.snapshotSequence = data.snapshotSequence;
-      return Promise.resolve({ count: 1 });
+      // Simulate another writer committing the same complete result first.
+      return Promise.resolve({ count: init.forceSupersede ? 0 : 1 });
     },
   );
 
@@ -240,6 +240,36 @@ describe('DocumentCompactionService', () => {
 
     service.schedule('doc-1');
     await expect(service.flush('doc-1')).resolves.toBeUndefined();
+  });
+
+  it('rebuilds from the new base when another compactor prunes the old tail', async () => {
+    const ops = buildOps(6);
+    const { prisma, doc, calls } = makePrisma({ currentSequence: 6, ops });
+    const concurrent = mergeDocumentState(
+      null,
+      ops.slice(0, 4).map((op) => op.yjsUpdate),
+      CANVAS_SCHEMA,
+    );
+    // This run has read base 0/target 6. A compactor that previously read
+    // target 4 commits and prunes operations 1..3 before our first tail read.
+    calls.findMany.mockImplementationOnce(() => {
+      doc.snapshotSequence = 4;
+      doc.crdtState = Buffer.from(concurrent.state);
+      doc.contentSnapshot = concurrent.snapshot;
+      return Promise.resolve(ops.slice(3));
+    });
+    const service = new DocumentCompactionService(
+      prisma as never,
+      noopAutosave as never,
+    );
+    service.schedule('doc-1');
+    await service.flush('doc-1');
+
+    expect(doc.snapshotSequence).toBe(6);
+    expect(
+      mergeDocumentState(doc.crdtState, [], CANVAS_SCHEMA).snapshot,
+    ).toEqual(expectedSnapshot(6));
+    expect(calls.findUnique).toHaveBeenCalledTimes(2);
   });
 
   it('skips deleted documents', async () => {

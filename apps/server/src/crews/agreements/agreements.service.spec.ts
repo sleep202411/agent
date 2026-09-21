@@ -527,13 +527,15 @@ describe('CrewAgreementsService', () => {
     });
     t.prisma.crewAgreement.findUnique.mockResolvedValue(sent);
     t.prisma.crewAgreement.update.mockResolvedValue(completed);
-    t.prisma.crewAgreement.findUniqueOrThrow.mockResolvedValue({
-      ...completed,
-      archiveJob: {
-        status: 'pending',
-        attempt: 0,
-      },
-    });
+    t.prisma.crewAgreement.findUniqueOrThrow
+      .mockResolvedValueOnce(sent)
+      .mockResolvedValue({
+        ...completed,
+        archiveJob: {
+          status: 'pending',
+          attempt: 0,
+        },
+      });
 
     await expect(
       t.service.sync(AGREEMENT_ID, MEMBER_ID),

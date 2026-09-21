@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Jest mock payload inspection is intentionally structural. */
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import {
   StoryGenerationBatchStatus,
   StoryProductionGenerationTargetKind,
@@ -15,6 +15,45 @@ const RUN_ID = '20000000-0000-4000-8000-000000000002';
 const TURN_ID = '30000000-0000-4000-8000-000000000003';
 
 describe('StoryGenerationBatchContinuationWorkerService', () => {
+  it.each(['candidate lookup', 'committed publish'])(
+    'contains a %s failure and resumes on the next sweep',
+    async (phase) => {
+      const failure = new Error('temporary dependency failure');
+      const query = jest.fn().mockResolvedValue([]);
+      const publish = jest.fn().mockResolvedValue(undefined);
+      const transaction = jest.fn().mockResolvedValue({});
+      if (phase === 'candidate lookup') query.mockRejectedValueOnce(failure);
+      else {
+        query.mockResolvedValueOnce([{ id: BATCH_ID }]);
+        publish.mockRejectedValueOnce(failure);
+      }
+      const worker = new StoryGenerationBatchContinuationWorkerService(
+        { $queryRaw: query, $transaction: transaction } as never,
+        { publishCommitted: publish } as never,
+      );
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        await expect(worker.drainOnce()).resolves.toBeUndefined();
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(failure.message),
+        );
+        await expect(worker.drainOnce()).resolves.toBeUndefined();
+        expect(query).toHaveBeenCalledTimes(2);
+        expect(transaction).toHaveBeenCalledTimes(
+          phase === 'committed publish' ? 1 : 0,
+        );
+        expect(publish).toHaveBeenCalledTimes(
+          phase === 'committed publish' ? 1 : 0,
+        );
+      } finally {
+        warn.mockRestore();
+        worker.onModuleDestroy();
+      }
+    },
+  );
+
   it('resumes the original Agent turn only after the Asset batch completes', async () => {
     const fixture = makeFixture(StoryGenerationBatchStatus.completed);
 
