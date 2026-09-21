@@ -38,18 +38,16 @@ export function ContentReviewSidebar({
   const [draft, setDraft] = useState("");
   const [openCommentGroups, setOpenCommentGroups] = useState<Record<string, boolean>>({});
   const groups = useMemo(() => groupReviewFindings(findings), [findings]);
+  const selectedCommentGroupKey = useMemo(() => {
+    const selected = findings.find((finding) => finding.id === selectedId);
+    if (!selected || selected.source !== "comment") return null;
+    return selected.seconds == null ? "untimed" : String(Math.floor(selected.seconds));
+  }, [findings, selectedId]);
 
   useEffect(() => {
     if (!commentFocusToken) return;
     inputRef.current?.focus();
   }, [commentFocusToken]);
-
-  useEffect(() => {
-    const selected = findings.find((finding) => finding.id === selectedId);
-    if (!selected || selected.source !== "comment") return;
-    const key = selected.seconds == null ? "untimed" : String(Math.floor(selected.seconds));
-    setOpenCommentGroups((previous) => (previous[key] ? previous : { ...previous, [key]: true }));
-  }, [findings, selectedId]);
 
   const submit = async () => {
     const body = draft.trim();
@@ -75,7 +73,8 @@ export function ContentReviewSidebar({
       ) : (
         <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
           {groups.map((group) => {
-            const commentsOpen = Boolean(openCommentGroups[group.key]);
+            const commentsOpen =
+              Boolean(openCommentGroups[group.key]) || group.key === selectedCommentGroupKey;
             const nestComments = group.detections.length > 0 && group.comments.length > 0;
             const collapseStandaloneComments = !nestComments && group.comments.length > 1;
             const toggleComments = () => {
