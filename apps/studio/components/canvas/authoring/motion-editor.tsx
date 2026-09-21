@@ -72,7 +72,7 @@ export function MotionEditor({
 
   const stageRef = useRef<HTMLDivElement>(null);
   const maskRef = useRef<HTMLCanvasElement>(null);
-  const drawing = useRef(false);
+  const drawingPointer = useRef<number | null>(null);
   const lastPaint = useRef<Pt | null>(null);
 
   useEffect(() => {
@@ -135,9 +135,9 @@ export function MotionEditor({
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
-    if (!dims) return;
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-    drawing.current = true;
+    if (!dims || e.button !== 0 || drawingPointer.current !== null) return;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drawingPointer.current = e.pointerId;
     const p = stagePoint(e);
     if (tool === "path") {
       setPath([p]); // a fresh trajectory each draw
@@ -147,7 +147,7 @@ export function MotionEditor({
     }
   };
   const onPointerMove = (e: React.PointerEvent) => {
-    if (!drawing.current) return;
+    if (drawingPointer.current !== e.pointerId) return;
     const p = stagePoint(e);
     if (tool === "path") {
       setPath((pts) => {
@@ -159,8 +159,9 @@ export function MotionEditor({
       paintTo(p);
     }
   };
-  const onPointerUp = () => {
-    drawing.current = false;
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (drawingPointer.current !== e.pointerId) return;
+    drawingPointer.current = null;
     lastPaint.current = null;
   };
 
@@ -400,6 +401,7 @@ export function MotionEditor({
                   onPointerMove={onPointerMove}
                   onPointerUp={onPointerUp}
                   onPointerCancel={onPointerUp}
+                  onLostPointerCapture={onPointerUp}
                 />
               </>
             )}
