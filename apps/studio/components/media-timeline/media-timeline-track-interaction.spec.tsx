@@ -130,11 +130,64 @@ describe("MediaTimelineRange pointer interactions", () => {
     expect(onSeek).toHaveBeenNthCalledWith(1, 5);
     expect(onSeek).toHaveBeenLastCalledWith(10);
   });
+  it("keeps the first pointer in control of a range drag", async () => {
+    const onChange = vi.fn();
+    await act(async () =>
+      root.render(
+        <MediaTimelineTrack durationSeconds={10}>
+          <MediaTimelineRange
+            ariaLabel="Hotspot"
+            value={{ startSeconds: 2, endSeconds: 5 }}
+            onChange={onChange}
+          >
+            Hotspot
+          </MediaTimelineRange>
+        </MediaTimelineTrack>
+      )
+    );
+    const range = requiredElement(
+      container.querySelector<HTMLElement>("[aria-label=Hotspot]")?.parentElement ?? null
+    );
+    await act(async () => {
+      range.dispatchEvent(pointerEvent("pointerdown", 200));
+      range.dispatchEvent(pointerEvent("pointerdown", 700, 2));
+      range.dispatchEvent(pointerEvent("pointermove", 400));
+      range.dispatchEvent(pointerEvent("pointerup", 700, 2));
+      range.dispatchEvent(pointerEvent("pointermove", 500));
+    });
+    expect(onChange).toHaveBeenNthCalledWith(1, { startSeconds: 4, endSeconds: 7 });
+    expect(onChange).toHaveBeenLastCalledWith({ startSeconds: 5, endSeconds: 8 });
+  });
+
+  it("does not let another pointer steal timeline scrubbing", async () => {
+    const onSeek = vi.fn();
+    await act(async () =>
+      root.render(
+        <MediaTimelineTrack durationSeconds={10} seekOnPointerDrag onSeek={onSeek}>
+          Track
+        </MediaTimelineTrack>
+      )
+    );
+    const track = requiredElement(
+      container.querySelector<HTMLElement>('[data-slot="media-timeline-track"]')
+    );
+    await act(async () => {
+      track.dispatchEvent(pointerEvent("pointerdown", 200));
+      track.dispatchEvent(pointerEvent("pointerdown", 900, 2));
+      track.dispatchEvent(pointerEvent("pointermove", 400));
+    });
+    expect(onSeek.mock.calls.map(([seconds]) => seconds)).toEqual([2, 4]);
+    await act(async () => {
+      track.dispatchEvent(pointerEvent("pointercancel", 400));
+      track.dispatchEvent(pointerEvent("pointerdown", 800, 2));
+    });
+    expect(onSeek).toHaveBeenLastCalledWith(8);
+  });
 });
 
-function pointerEvent(type: string, clientX: number): Event {
+function pointerEvent(type: string, clientX: number, pointerId = 1): Event {
   const event = new MouseEvent(type, { bubbles: true, button: 0, clientX });
-  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerId", { value: pointerId });
   return event;
 }
 

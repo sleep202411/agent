@@ -43,7 +43,7 @@ export interface StoryInteractionDraft {
    */
   branchAtSeconds: number | null;
   /** `window` plays through the range. `hold` pauses at the start until the gesture resolves. */
-  timing: "window" | "hold";
+  timing?: "window" | "hold";
   trigger: StoryInteractionTriggerDraft;
   outcomes: StoryInteractionOutcomesDraft;
 }

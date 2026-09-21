@@ -79,6 +79,7 @@ export function MediaTimelineTrack({
           seekFromClientX(event.currentTarget, event.clientX);
         }}
         onPointerDown={(event) => {
+          if (seekPointerIdRef.current !== null) return;
           if (!seekOnPointerDrag || !onSeek || width <= 0 || event.button !== 0) return;
           seekPointerIdRef.current = event.pointerId;
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -153,7 +154,7 @@ export function MediaTimelineRange({
 
   const beginOperation = (event: ReactPointerEvent, kind: TimelineRangeOperation["kind"]) => {
     event.stopPropagation();
-    if (disabled || width <= 0 || event.button !== 0) return;
+    if (operationRef.current || disabled || width <= 0 || event.button !== 0) return;
     event.preventDefault();
     onSelect?.();
     const captureElement = event.target instanceof HTMLElement ? event.target : rangeRef.current;
