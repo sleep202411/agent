@@ -28,61 +28,71 @@ import { CANONICAL_HOST } from "@/src/lib/seo";
  *             entire body is the shared dialog, so there is nothing for
  *             a crawler to index on any of them.
  */
+const DISALLOWED_PATHS = [
+  "/api/",
+  "/_next/",
+  "/__legacy/",
+  ...["", "/en-US", "/zh-CN", "/zh-HK"].flatMap((prefix) =>
+    ["/login", "/register", "/forgot-password"].map((path) => `${prefix}${path}`)
+  ),
+];
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/api/", "/_next/", "/__legacy/", "/login", "/register", "/forgot-password"],
+        disallow: DISALLOWED_PATHS,
       },
-      // Explicit AI-engine allow list. The wildcard above already
-      // allows everything — these named entries are for *auditability*
+      // Explicit AI-engine list. Named groups do not inherit wildcard rules,
+      // so repeat the same exclusions while keeping public pages crawlable.
+      // These named entries are for *auditability*
       // (so anyone reading robots.txt can immediately see which AI
       // engines we want consuming our content). Categorised by
       // operator. If a crawler isn't listed, it's still allowed.
       //
       // OpenAI
-      { userAgent: "GPTBot", allow: "/" },
-      { userAgent: "ChatGPT-User", allow: "/" },
-      { userAgent: "OAI-SearchBot", allow: "/" },
+      { userAgent: "GPTBot", allow: "/", disallow: DISALLOWED_PATHS },
+      { userAgent: "ChatGPT-User", allow: "/", disallow: DISALLOWED_PATHS },
+      { userAgent: "OAI-SearchBot", allow: "/", disallow: DISALLOWED_PATHS },
       // Anthropic
-      { userAgent: "anthropic-ai", allow: "/" },
-      { userAgent: "ClaudeBot", allow: "/" },
-      { userAgent: "Claude-Web", allow: "/" },
-      { userAgent: "Claude-User", allow: "/" },
+      { userAgent: "anthropic-ai", allow: "/", disallow: DISALLOWED_PATHS },
+      { userAgent: "ClaudeBot", allow: "/", disallow: DISALLOWED_PATHS },
+      { userAgent: "Claude-Web", allow: "/", disallow: DISALLOWED_PATHS },
+      { userAgent: "Claude-User", allow: "/", disallow: DISALLOWED_PATHS },
       // Perplexity
-      { userAgent: "PerplexityBot", allow: "/" },
-      { userAgent: "Perplexity-User", allow: "/" },
+      { userAgent: "PerplexityBot", allow: "/", disallow: DISALLOWED_PATHS },
+      { userAgent: "Perplexity-User", allow: "/", disallow: DISALLOWED_PATHS },
       // Google (Gemini training opt-in)
-      { userAgent: "Google-Extended", allow: "/" },
+      { userAgent: "Google-Extended", allow: "/", disallow: DISALLOWED_PATHS },
       // Apple (Apple Intelligence / Siri training opt-in)
-      { userAgent: "Applebot-Extended", allow: "/" },
+      { userAgent: "Applebot-Extended", allow: "/", disallow: DISALLOWED_PATHS },
       // Meta (Llama training)
-      { userAgent: "meta-externalagent", allow: "/" },
-      { userAgent: "FacebookBot", allow: "/" },
+      { userAgent: "meta-externalagent", allow: "/", disallow: DISALLOWED_PATHS },
+      { userAgent: "FacebookBot", allow: "/", disallow: DISALLOWED_PATHS },
       // ByteDance (Doubao / 豆包 / Bytespider also serves Coze)
-      { userAgent: "Bytespider", allow: "/" },
+      { userAgent: "Bytespider", allow: "/", disallow: DISALLOWED_PATHS },
       // DeepSeek
-      { userAgent: "DeepSeekBot", allow: "/" },
+      { userAgent: "DeepSeekBot", allow: "/", disallow: DISALLOWED_PATHS },
       // Moonshot / Kimi
-      { userAgent: "MoonshotBot", allow: "/" },
+      { userAgent: "MoonshotBot", allow: "/", disallow: DISALLOWED_PATHS },
       // Alibaba (Qwen / 通义千问)
-      { userAgent: "Qwenbot", allow: "/" },
+      { userAgent: "Qwenbot", allow: "/", disallow: DISALLOWED_PATHS },
       // Zhipu (智谱 / GLM / ChatGLM)
-      { userAgent: "ZhipuBot", allow: "/" },
+      { userAgent: "ZhipuBot", allow: "/", disallow: DISALLOWED_PATHS },
       // Mistral
-      { userAgent: "MistralAI-User", allow: "/" },
+      { userAgent: "MistralAI-User", allow: "/", disallow: DISALLOWED_PATHS },
       // Cohere
-      { userAgent: "cohere-ai", allow: "/" },
+      { userAgent: "cohere-ai", allow: "/", disallow: DISALLOWED_PATHS },
       // You.com (YouChat)
-      { userAgent: "YouBot", allow: "/" },
+      { userAgent: "YouBot", allow: "/", disallow: DISALLOWED_PATHS },
       // DuckDuckGo's DuckAssist
-      { userAgent: "DuckAssistBot", allow: "/" },
+      { userAgent: "DuckAssistBot", allow: "/", disallow: DISALLOWED_PATHS },
       // Amazon (Bedrock / Alexa)
-      { userAgent: "Amazonbot", allow: "/" },
+      { userAgent: "Amazonbot", allow: "/", disallow: DISALLOWED_PATHS },
       // Diffbot (Knowledge graph used by many downstream AI products)
-      { userAgent: "Diffbot", allow: "/" },
+      { userAgent: "Diffbot", allow: "/", disallow: DISALLOWED_PATHS },
     ],
     sitemap: `${CANONICAL_HOST}/sitemap.xml`,
     host: CANONICAL_HOST,
