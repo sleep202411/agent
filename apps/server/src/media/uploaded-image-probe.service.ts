@@ -132,12 +132,16 @@ async function downloadAndHash(
   } catch {
     throw imageStorageUnavailable();
   }
-  if (!response.ok || !response.body) throw imageStorageUnavailable();
+  if (!response.ok || !response.body) {
+    await response.body?.cancel().catch(() => undefined);
+    throw imageStorageUnavailable();
+  }
 
   const declaredLength = response.headers.get('content-length');
   if (declaredLength && /^\d+$/.test(declaredLength)) {
     const headerSize = Number(declaredLength);
     if (!Number.isSafeInteger(headerSize) || headerSize !== expectedSize) {
+      await response.body.cancel().catch(() => undefined);
       throw imageSizeMismatch(expectedSize, headerSize);
     }
   }
