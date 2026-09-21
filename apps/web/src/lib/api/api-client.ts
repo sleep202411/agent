@@ -309,7 +309,10 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     const body = await response.json();
     assertRequestActive(signal);
 
-    const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
+    const isSuccess =
+      ("success" in body || "code" in body) &&
+      (!("success" in body) || body.success === true) &&
+      (!("code" in body) || body.code === 200 || body.code === "SUCCESS");
     if (!isSuccess) {
       // Java backends return 200 OK with an envelope-level "not authed"
       // code for expired / missing sessions. Sa-Token uses 302 (the
@@ -395,7 +398,10 @@ async function upload<T>(
 
     const body = await response.json();
     assertRequestActive(signal);
-    const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
+    const isSuccess =
+      ("success" in body || "code" in body) &&
+      (!("success" in body) || body.success === true) &&
+      (!("code" in body) || body.code === 200 || body.code === "SUCCESS");
     if (!isSuccess) {
       throw new ApiRequestError(
         body.code ?? "UNKNOWN",

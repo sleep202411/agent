@@ -196,3 +196,72 @@ describe("request configuration preservation", () => {
     }
   );
 });
+
+it.each([
+  { code: 403, success: true },
+  { code: 200, success: false },
+])("rejects conflicting response statuses: %j", async (status) => {
+  const body = { ...status, message: "Operation denied", data: { id: "untrusted" } };
+  const mock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(body)));
+  vi.stubGlobal("fetch", mock);
+  for (const raw of [false, true]) {
+    await expect(api.post("/user/test", { raw })).rejects.toMatchObject({
+      message: "Operation denied",
+      code: status.code,
+    });
+  }
+  expect(mock).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  { code: 403, success: true },
+  { code: 200, success: false },
+])("rejects conflicting multipart statuses: %j", async (status) => {
+  const mock = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(JSON.stringify({ ...status, message: "Upload denied", data: "wrong" }))
+    );
+  vi.stubGlobal("fetch", mock);
+  await expect(api.upload("/user/test", new File(["test"], "test.txt"))).rejects.toMatchObject({
+    message: "Upload denied",
+    code: status.code,
+  });
+  expect(mock).toHaveBeenCalledTimes(1);
+});
+
+it.each([{ success: true }, { code: 200 }, { code: "SUCCESS" }, { code: 200, success: true }])(
+  "retains supported success responses: %j",
+  async (status) => {
+    const body = { ...status, data: { id: "accepted" } };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(JSON.stringify(body)))
+    );
+    await expect(api.get("/user/test")).resolves.toEqual(body.data);
+    await expect(api.get("/user/test", { raw: true })).resolves.toEqual(body);
+  }
+);
+
+it("retains unauthorized handling when success conflicts with code 401", async () => {
+  const { setUnauthorizedHandler } = await import("./api-client");
+  const handler = vi.fn();
+  setUnauthorizedHandler(handler);
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ code: 401, success: true, message: "Sign in again" }))
+      )
+  );
+  try {
+    await expect(api.post("/user/test")).rejects.toMatchObject({
+      status: 401,
+      message: "Sign in again",
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+  } finally {
+    setUnauthorizedHandler(null);
+  }
+});
