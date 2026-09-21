@@ -35,11 +35,12 @@ function parseJsonWithRepair(raw: string): unknown {
   }
 }
 
-const FENCE_REGEX = /```json\s*\n([\s\S]*?)\n?```\s*$/;
+// Stay within one fence: an earlier JSON example must not consume a later action block.
+const FENCE_REGEX = /```json[ \t]*\r?\n((?:(?!```)[\s\S])*?)\n?```\s*$/;
 // Streaming fallback — matches an unclosed ```json block at the tail.
 // Used to hide the half-rendered code block while it's still streaming,
 // before FENCE_REGEX matches.
-const STREAMING_FENCE_REGEX = /```json\s*\n[\s\S]*$/;
+const STREAMING_FENCE_REGEX = /```json[ \t]*\r?\n(?:(?!```)[\s\S])*$/;
 
 function validateAction(raw: unknown): SuggestedAction | null {
   if (!raw || typeof raw !== "object") return null;
