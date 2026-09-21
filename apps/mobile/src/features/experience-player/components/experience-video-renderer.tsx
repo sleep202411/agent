@@ -1,7 +1,6 @@
-import { useStillPlaybackClock } from "../hooks/use-still-playback-clock";
+import { ExperienceStillSegment } from "./experience-still-segment";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import type { VideoContentFit } from "expo-video";
 
@@ -516,84 +515,6 @@ export function ExperienceVideoRenderer({
   }
 
   return visual;
-}
-
-/**
- * A storyboard still on the sequence timeline. A still has no element that
- * plays itself, so it is governed like footage: it starts its hold clock once
- * the scene is presenting (stills only mount after Start), reports elapsed
- * time so time-anchored interactions stay live, and advances the sequence
- * when that clock runs out — the same beat H5 owns on the still, not on a
- * parent timeout that remounts can drop.
- */
-function ExperienceStillSegment({
-  uri,
-  fit,
-  durationMs,
-  timelineOffsetMs,
-  playbackIdentity,
-  presenting,
-  onDisplayed,
-  onHoldComplete,
-  onTimelineTimeMs,
-  onLoadError,
-}: {
-  uri: string;
-  fit: VideoContentFit;
-  durationMs: number;
-  timelineOffsetMs: number;
-  playbackIdentity: string;
-  presenting: boolean;
-  onDisplayed: () => void;
-  onHoldComplete: () => void;
-  onTimelineTimeMs: (timeMs: number) => void;
-  onLoadError: () => void;
-}) {
-  const [playableUri, setPlayableUri] = useState<string | null>(null);
-  const mediaKey = `${playbackIdentity}:${uri}`;
-  const [previousMediaKey, setPreviousMediaKey] = useState(mediaKey);
-  if (previousMediaKey !== mediaKey) {
-    setPreviousMediaKey(mediaKey);
-    setPlayableUri(null);
-  }
-  const reportLoadError = useEffectEvent(() => onLoadError());
-  useStillPlaybackClock({
-    identity: mediaKey,
-    ready: Boolean(playableUri),
-    presenting,
-    durationMs,
-    timelineOffsetMs,
-    onDisplayed,
-    onHoldComplete,
-    onTimelineTimeMs,
-  });
-
-  useEffect(() => {
-    const abort = new AbortController();
-    void resolvePlaybackUri(uri, abort.signal)
-      .then((resolved) => {
-        if (!abort.signal.aborted) setPlayableUri(resolved);
-      })
-      .catch(() => {
-        if (!abort.signal.aborted) reportLoadError();
-      });
-    return () => {
-      abort.abort();
-    };
-  }, [playbackIdentity, uri]);
-
-  if (!playableUri) return null;
-
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Image
-        source={{ uri: playableUri }}
-        style={StyleSheet.absoluteFill}
-        contentFit={fit === "contain" ? "contain" : "cover"}
-        onError={onLoadError}
-      />
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({
