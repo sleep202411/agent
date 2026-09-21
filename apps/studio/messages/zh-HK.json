@@ -1965,7 +1965,8 @@
       "skills": "技能",
       "skillsComingSoon": "技能 · 即將推出",
       "activity": "動態",
-      "members": "成員"
+      "members": "成員",
+      "aiActors": "AI 演員"
     },
     "overview": {
       "title": "專案概覽",
@@ -4362,5 +4363,23 @@
     "reference": "參考生影片",
     "edit": "影片編輯",
     "extend": "影片延長"
+  },
+  "aiActors": {
+    "title": "AI 演員",
+    "intro": "獨特形象，助力下一段故事。工作區可免費解鎖。",
+    "close": "關閉演員庫",
+    "loading": "正在載入演員…",
+    "retry": "重試",
+    "failed": "調用演員失敗，請重試。",
+    "invalidResponse": "演員回應與本次請求不符。",
+    "added": "已將 {name} 加入畫布。連接至生成卡片即可用作參考圖。",
+    "use": "調用演員",
+    "unlock": "免費解鎖",
+    "working": "處理中…",
+    "empty": "暫無可用演員。",
+    "readOnly": "解鎖或調用演員需要編輯權限。",
+    "previous": "上一頁",
+    "next": "下一頁",
+    "page": "第 {page} 頁"
   }
 }

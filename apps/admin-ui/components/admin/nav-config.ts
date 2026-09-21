@@ -96,6 +96,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     permission: "ai_model_ops.read",
   },
   {
+    key: "/ai-actors",
+    href: "/ai-actors",
+    label: "AI Actors",
+    icon: IconMasksTheater,
+    permission: "media.read",
+  },
+  {
     key: "/media",
     href: "/media",
     label: "媒体资产",

@@ -1965,7 +1965,8 @@
       "skills": "技能",
       "skillsComingSoon": "技能 · 即将推出",
       "activity": "动态",
-      "members": "成员"
+      "members": "成员",
+      "aiActors": "AI 演员"
     },
     "overview": {
       "title": "项目概览",
@@ -4362,5 +4363,23 @@
     "reference": "参考生视频",
     "edit": "视频编辑",
     "extend": "视频延长"
+  },
+  "aiActors": {
+    "title": "AI 演员",
+    "intro": "独特形象，助力下一段故事。工作区可免费解锁。",
+    "close": "关闭演员库",
+    "loading": "正在加载演员…",
+    "retry": "重试",
+    "failed": "调用演员失败，请重试。",
+    "invalidResponse": "演员响应与本次请求不符。",
+    "added": "已将 {name} 添加到画布。连接至生成卡片即可用作参考图。",
+    "use": "调用演员",
+    "unlock": "免费解锁",
+    "working": "处理中…",
+    "empty": "暂无可用演员。",
+    "readOnly": "解锁或调用演员需要编辑权限。",
+    "previous": "上一页",
+    "next": "下一页",
+    "page": "第 {page} 页"
   }
 }

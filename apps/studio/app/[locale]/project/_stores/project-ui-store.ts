@@ -20,6 +20,12 @@ interface ProjectUIState {
   assetsOpen: boolean;
   /** Crew drive asset browser open. */
   crewAssetsOpen: boolean;
+  actorsOpen: boolean;
+  actorFocus: { nodeId: string; documentId: string } | null;
+  focusActor: (nodeId: string, documentId: string) => void;
+  clearActorFocus: (nodeId: string) => void;
+  openActors: () => void;
+  closeActors: () => void;
   /** Canvas node catalog panel open. */
   nodesOpen: boolean;
   /** Project activity feed panel open. */
@@ -75,8 +81,13 @@ interface ProjectUIState {
 export const useProjectUIStore = create<ProjectUIState>()(
   devtools(
     (set) => ({
+      actorFocus: null,
+      focusActor: (nodeId, documentId) => set({ actorFocus: { nodeId, documentId } }),
+      clearActorFocus: (nodeId) =>
+        set((s) => (s.actorFocus?.nodeId === nodeId ? { actorFocus: null } : {})),
       assetsOpen: false,
       crewAssetsOpen: false,
+      actorsOpen: false,
       nodesOpen: false,
       sectionsOpen: false,
       skillsOpen: false,
@@ -89,10 +100,25 @@ export const useProjectUIStore = create<ProjectUIState>()(
       nodeInsertRequest: null,
       nodeInsertSerial: 0,
 
+      openActors: () =>
+        set({
+          actorsOpen: true,
+          overviewOpen: false,
+          assetsOpen: false,
+          crewAssetsOpen: false,
+          nodesOpen: false,
+          historyOpen: false,
+          sectionsOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
+          selectedShotId: null,
+        }),
+      closeActors: () => set({ actorsOpen: false }),
       openAssets: () =>
         set({
           assetsOpen: true,
           crewAssetsOpen: false,
+          actorsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           overviewOpen: false,
@@ -105,6 +131,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
       openCrewAssets: () =>
         set({
           crewAssetsOpen: true,
+          actorsOpen: false,
           assetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
@@ -120,6 +147,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           nodesOpen: true,
           assetsOpen: false,
           crewAssetsOpen: false,
+          actorsOpen: false,
           historyOpen: false,
           overviewOpen: false,
           sectionsOpen: false,
@@ -142,6 +170,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
       toggleOverview: () =>
         set((state) => ({
           overviewOpen: !state.overviewOpen,
+          actorsOpen: false,
           assetsOpen: false,
           crewAssetsOpen: false,
           nodesOpen: false,
@@ -157,6 +186,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           sectionsOpen: !state.sectionsOpen,
           assetsOpen: false,
           crewAssetsOpen: false,
+          actorsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           overviewOpen: false,
@@ -171,6 +201,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           selectedSkillId: skillId ?? null,
           assetsOpen: false,
           crewAssetsOpen: false,
+          actorsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           overviewOpen: false,
@@ -183,6 +214,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           selectedSkillId: null,
           assetsOpen: false,
           crewAssetsOpen: false,
+          actorsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           overviewOpen: false,
@@ -197,6 +229,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           selectedSlot: slot,
           assetsOpen: false,
           crewAssetsOpen: false,
+          actorsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           overviewOpen: false,
@@ -212,6 +245,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           historyOpen: !state.historyOpen,
           assetsOpen: false,
           crewAssetsOpen: false,
+          actorsOpen: false,
           nodesOpen: false,
           overviewOpen: false,
           sectionsOpen: false,
