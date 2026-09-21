@@ -3,6 +3,7 @@ import {
   classifyReviewSource,
   findingsNearTime,
   formatReviewTimecode,
+  groupReviewFindings,
   parseReviewTimeOffset,
   reviewFindingsFromComments,
   reviewFindingsFromDetails,
@@ -67,5 +68,60 @@ describe("reviewFindingsFromDetails", () => {
         { id: "c2", seconds: -1, body: "nope", createdByUserId: "1" },
       ]).map((finding) => finding.source)
     ).toEqual(["comment"]);
+  });
+});
+
+describe("groupReviewFindings", () => {
+  it("keeps same-second comments together and separate from detections", () => {
+    const groups = groupReviewFindings([
+      {
+        id: "f1",
+        seconds: 4,
+        source: "frame",
+        label: "violent_bloody",
+        description: "血腥",
+        confidence: null,
+        frameUrl: "https://example/a.jpg",
+        audioText: null,
+        createdByUserId: null,
+      },
+      {
+        id: "c1",
+        seconds: 4.2,
+        source: "comment",
+        label: "",
+        description: "不错",
+        confidence: null,
+        frameUrl: null,
+        audioText: null,
+        createdByUserId: "1",
+      },
+      {
+        id: "c2",
+        seconds: 4.8,
+        source: "comment",
+        label: "",
+        description: "你好",
+        confidence: null,
+        frameUrl: null,
+        audioText: null,
+        createdByUserId: "1",
+      },
+      {
+        id: "c3",
+        seconds: 2,
+        source: "comment",
+        label: "",
+        description: "删除",
+        confidence: null,
+        frameUrl: null,
+        audioText: null,
+        createdByUserId: "1",
+      },
+    ]);
+    expect(groups.map((group) => group.key)).toEqual(["4", "2"]);
+    expect(groups[0]?.detections.map((item) => item.id)).toEqual(["f1"]);
+    expect(groups[0]?.comments.map((item) => item.id)).toEqual(["c1", "c2"]);
+    expect(groups[1]?.comments.map((item) => item.id)).toEqual(["c3"]);
   });
 });

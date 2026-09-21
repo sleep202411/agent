@@ -4,13 +4,17 @@ import {
   CONTENT_REVIEW_VIDEO_MAX_BYTES,
   contentReviewCreditsForDurationSeconds,
 } from "@repo/shared";
-import { api, ApiRequestError } from "@/lib/api";
+import { api, ApiRequestError, messageFromHttpErrorBody } from "@/lib/api";
 
-const RESULT_PATH = "/api/user/video/moderation/ai/result";
+const SUBMIT_PATH = "/api/user/video/moderation/ai/submit";
+const QUERY_PATH = "/api/user/video/moderation/ai/query";
 const EXPORT_PATH = "/api/user/video/moderation/ai/exportExcel";
 const CHARGE_PATH = "/aurora/content-review/charges";
 const RECORD_PATH = "/aurora/content-review/records";
 const REVIEW_TIMEOUT_MS = 30 * 60_000;
+const REVIEW_POLL_INTERVAL_MS = 5_000;
+const SUBMIT_TIMEOUT_MS = 60_000;
+const QUERY_TIMEOUT_MS = 30_000;
 
 export function isVideoFileAllowed(file: File): boolean {
   const type = file.type.toLowerCase();
@@ -149,7 +153,7 @@ async function readApiError(response: Response, fallback: string): Promise<never
       code = codeCandidate;
     }
   } catch {
-    if (rawBody.trim()) message = rawBody.trim();
+    message = messageFromHttpErrorBody(response.status, rawBody, message);
   }
   throw new ApiRequestError(code, message, response.status, rawBody);
 }
@@ -203,25 +207,104 @@ export async function releaseReviewCredits(chargeId: string): Promise<void> {
   });
 }
 
-export async function reviewModeration(
-  videoUrl: string,
-  signal?: AbortSignal
-): Promise<ModerationResult> {
-  const data = await api.post<ModerationResult>(RESULT_PATH, {
-    data: { url: videoUrl },
-    timeout: REVIEW_TIMEOUT_MS,
-    signal,
-    requestScope: "user",
+interface ModerationJobSnapshot {
+  status?: string | null;
+  message?: string | null;
+  taskId?: string | null;
+  overview?: ModerationOverview | null;
+  details?: ModerationDetail[] | null;
+  fileName?: string | null;
+}
+
+function isProcessingStatus(status: string | null | undefined): boolean {
+  const value = status?.trim().toLowerCase();
+  return !value || value === "processing";
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new DOMException("Request aborted", "AbortError")
+      );
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new DOMException("Request aborted", "AbortError")
+      );
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
-  if (!data?.overview) {
+}
+
+function resultFromJob(data: ModerationJobSnapshot): ModerationResult {
+  if (!data.overview) {
     throw new ApiRequestError("INVALID_RESULT", "Review returned no overview", 200);
   }
   return {
     overview: data.overview,
     details: Array.isArray(data.details) ? data.details : [],
     fileName: data.fileName || "video-moderation.xlsx",
-    creditsCharged: data.creditsCharged ?? null,
+    creditsCharged: null,
   };
+}
+
+export async function reviewModeration(
+  videoUrl: string,
+  signal?: AbortSignal
+): Promise<ModerationResult> {
+  const submitted = await api.post<{ taskId?: string }>(SUBMIT_PATH, {
+    data: { url: videoUrl },
+    timeout: SUBMIT_TIMEOUT_MS,
+    signal,
+    requestScope: "user",
+  });
+  const taskId = submitted?.taskId?.trim();
+  if (!taskId) {
+    throw new ApiRequestError("INVALID_RESULT", "Review returned no task id", 200);
+  }
+
+  const deadline = Date.now() + REVIEW_TIMEOUT_MS;
+  while (true) {
+    const data = await api.post<ModerationJobSnapshot>(QUERY_PATH, {
+      data: { taskId, url: videoUrl },
+      timeout: QUERY_TIMEOUT_MS,
+      signal,
+      requestScope: "user",
+    });
+    const status = data?.status?.trim();
+    if (status?.toLowerCase() === "failed") {
+      throw new ApiRequestError(
+        "REVIEW_FAILED",
+        data.message?.trim() || "Review failed. Please try again.",
+        200
+      );
+    }
+    if (status?.toLowerCase() === "success" || data?.overview) {
+      return resultFromJob(data);
+    }
+    if (!isProcessingStatus(status)) {
+      throw new ApiRequestError(
+        "INVALID_RESULT",
+        data?.message?.trim() || "Review returned an unknown status",
+        200
+      );
+    }
+    if (Date.now() >= deadline) {
+      throw new ApiRequestError("NETWORK_ERROR", "Request timed out", 0);
+    }
+    await sleep(REVIEW_POLL_INTERVAL_MS, signal);
+  }
 }
 
 export async function listContentReviewRecords(
