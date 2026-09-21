@@ -149,10 +149,12 @@ export function StoryboardTable({
       virtualizer.scrollToIndex(idx, opts as { align?: "start" | "center" | "end" }),
   });
 
+  const virtualItems = virtualizer.getVirtualItems();
+
   // After virtual items render, resolve any pending focus (target row was outside the virtual window).
   useEffect(() => {
     resolvePendingFocus(rowIds);
-  }, [resolvePendingFocus, rowIds, pendingFocus]);
+  }, [resolvePendingFocus, rowIds, pendingFocus, virtualItems]);
 
   const handleNavigate = useCallback(
     (rowIndex: number, columnKey: string, direction: NavDirection) => {
@@ -348,7 +350,7 @@ export function StoryboardTable({
                     style={{ height: virtualizer.getTotalSize() }}
                   >
                     <SortableContext items={rowIds} strategy={verticalListSortingStrategy}>
-                      {virtualizer.getVirtualItems().map((item) => {
+                      {virtualItems.map((item) => {
                         const row = rows[item.index];
                         if (!row) return null;
                         return (
