@@ -897,7 +897,14 @@ export class AiGenerationService {
         msg: 'AI generation job not found.',
       });
     }
-    if (job.userId === user.userId) return job;
+
+    // Keep the existing creator history/read contract. Mutations on scoped
+    // jobs must recheck current permissions, even for the original submitter.
+    if (
+      job.userId === user.userId &&
+      minimumRole === WorkspaceMemberRole.viewer
+    )
+      return job;
 
     if (job.projectId) {
       await this.workspacePermissions.requireProjectRole(
@@ -929,6 +936,9 @@ export class AiGenerationService {
       );
       return job;
     }
+
+    // Legacy unscoped jobs still belong to their original submitter.
+    if (job.userId === user.userId) return job;
 
     throw new NotFoundException({
       code: 'JOB_NOT_FOUND',
