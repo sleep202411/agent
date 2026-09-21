@@ -3156,6 +3156,8 @@
     "noShots": "No shots",
     "exportMp4": "Export MP4",
     "exportSuccess": "Export complete",
+    "exportPartial": "Partial export — download started",
+    "exportPartialDesc": "Some video or audio could not be included. Review the exported file before sharing.",
     "exportFailed": "Export failed",
     "exportUnsupported": "Browser not supported",
     "exportUnsupportedDesc": "MP4 export needs WebCodecs. Use the latest Chrome or Edge.",
@@ -3164,7 +3166,18 @@
     "enterSeconds": "Enter seconds",
     "confirmDeleteShot": "Delete this shot? This cannot be undone.",
     "insertAfter": "Insert after",
-    "shotLabel": "Shot {no}"
+    "shotLabel": "Shot {no}",
+    "exportReportTitle": "Last export: affected shots",
+    "exportReportHelp": "A partial-file download was started. Positions below refer to the last export. Check or replace these shots’ video sources, then use Export MP4 again. No media is regenerated automatically.",
+    "exportReportShot": "Shot {number}",
+    "exportIssue": {
+      "missing_video": "No video selected",
+      "no_video_track": "Source has no video track",
+      "probe_failed": "Could not read the video",
+      "encoding_failed": "Video encoding failed",
+      "no_frames": "No video frames available",
+      "cancelled": "Export interrupted"
+    }
   },
   "produce": {
     "title": "Production Mode",

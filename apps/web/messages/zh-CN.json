@@ -3156,6 +3156,8 @@
     "noShots": "暂无镜头",
     "exportMp4": "导出 MP4",
     "exportSuccess": "导出完成",
+    "exportPartial": "部分导出：已发起下载",
+    "exportPartialDesc": "部分视频或音频未能导出，请在分享前检查导出文件。",
     "exportFailed": "导出失败",
     "exportUnsupported": "当前浏览器不支持",
     "exportUnsupportedDesc": "MP4 导出依赖 WebCodecs，请使用最新版 Chrome 或 Edge。",
@@ -3164,7 +3166,18 @@
     "enterSeconds": "请输入秒数",
     "confirmDeleteShot": "确认删除这个镜头吗？删除后不可恢复。",
     "insertAfter": "后插镜头",
-    "shotLabel": "分镜{no}"
+    "shotLabel": "分镜{no}",
+    "exportReportTitle": "上次导出：受影响的分镜",
+    "exportReportHelp": "已开始下载部分导出文件。以下位置对应上次导出。请检查或替换这些分镜的视频来源，再次使用导出 MP4。系统不会自动重新生成素材。",
+    "exportReportShot": "分镜 {number}",
+    "exportIssue": {
+      "missing_video": "未选择视频",
+      "no_video_track": "源文件没有视频轨道",
+      "probe_failed": "无法读取视频",
+      "encoding_failed": "视频编码失败",
+      "no_frames": "没有可用视频帧",
+      "cancelled": "导出中断"
+    }
   },
   "produce": {
     "title": "制片模式",

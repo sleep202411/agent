@@ -3156,6 +3156,8 @@
     "noShots": "暫無鏡頭",
     "exportMp4": "匯出 MP4",
     "exportSuccess": "匯出完成",
+    "exportPartial": "部分匯出：已開始下載",
+    "exportPartialDesc": "部分影片或音訊未能匯出，請在分享前檢查匯出檔案。",
     "exportFailed": "匯出失敗",
     "exportUnsupported": "目前瀏覽器不支援",
     "exportUnsupportedDesc": "MP4 匯出需要 WebCodecs，請使用最新版 Chrome 或 Edge。",
@@ -3164,7 +3166,18 @@
     "enterSeconds": "請輸入秒數",
     "confirmDeleteShot": "確認刪除這個鏡頭嗎？刪除後不可恢復。",
     "insertAfter": "後插鏡頭",
-    "shotLabel": "分鏡{no}"
+    "shotLabel": "分鏡{no}",
+    "exportReportTitle": "上次匯出：受影響的分鏡",
+    "exportReportHelp": "已開始下載部分匯出檔案。以下位置對應上次匯出。請檢查或替換這些分鏡的影片來源，再次使用匯出 MP4。系統不會自動重新生成素材。",
+    "exportReportShot": "分鏡 {number}",
+    "exportIssue": {
+      "missing_video": "未選擇影片",
+      "no_video_track": "來源檔案沒有影片軌道",
+      "probe_failed": "無法讀取影片",
+      "encoding_failed": "影片編碼失敗",
+      "no_frames": "沒有可用影片畫格",
+      "cancelled": "匯出中斷"
+    }
   },
   "produce": {
     "title": "製片模式",

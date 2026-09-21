@@ -60,6 +60,27 @@ export interface ExportableShot {
   duration?: number;
 }
 
+export interface TimelineExportIssue {
+  /** Original timeline position, so repeated shot IDs remain distinguishable. */
+  index: number;
+  shotId: string;
+  reason:
+    | "missing_video"
+    | "no_video_track"
+    | "probe_failed"
+    | "encoding_failed"
+    | "no_frames"
+    | "cancelled";
+}
+
+export interface TimelineExportReport {
+  requestedShots: number;
+  /** Completed encoding without error; not a guarantee of source quality. */
+  completedShots: number;
+  partial: boolean;
+  issues: TimelineExportIssue[];
+}
+
 export interface TimelineExportOptions {
   /** Output bitrate target. Defaults to a subjective "medium" quality
    * preset, which Mediabunny resolves to a per-codec sensible default
@@ -74,6 +95,8 @@ export interface TimelineExportOptions {
   audioBitrate?: number;
   /** 0..1 progress callback. Fires after each shot is processed. */
   onProgress?: (ratio: number) => void;
+  /** Emitted only after a usable output is finalized. Observer failures are isolated. */
+  onReport?: (report: TimelineExportReport) => void;
   /** AbortSignal — propagated into Mediabunny's Input.dispose() so
    * an in-flight network read can be cancelled mid-export. */
   signal?: AbortSignal;
@@ -111,6 +134,7 @@ export function isExportSupported(): boolean {
 }
 
 interface ProbedShot {
+  index: number;
   shot: ExportableShot;
   input: Input;
   videoTrack: InputVideoTrack;
@@ -146,7 +170,13 @@ export async function exportTimelineToMp4(
   }
 
   options.signal?.throwIfAborted();
-  const eligible = shots.filter((shot) => Boolean(shot.videoUrl));
+  const issues: TimelineExportIssue[] = [];
+  const eligible = shots.flatMap((shot, index) => {
+    if (shot.videoUrl) return [{ shot, index }];
+    issues.push({ index, shotId: shot.id, reason: "missing_video" });
+    return [];
+  });
+  let completedShots = 0;
   if (eligible.length === 0) {
     throw new TimelineExportError("Timeline has no shots with a video URL to export.");
   }
@@ -174,7 +204,7 @@ export async function exportTimelineToMp4(
   options.signal?.addEventListener("abort", onAbort, { once: true });
   try {
     await Promise.all(
-      eligible.map(async (shot) => {
+      eligible.map(async ({ shot, index }) => {
         let input: Input | null = null;
         try {
           options.signal?.throwIfAborted();
@@ -183,6 +213,7 @@ export async function exportTimelineToMp4(
           const videoTrack = await input.getPrimaryVideoTrack();
           options.signal?.throwIfAborted();
           if (!videoTrack) {
+            issues.push({ index, shotId: shot.id, reason: "no_video_track" });
             console.warn(`[timeline-export] shot ${shot.id}: no primary video track, skipping`);
             releaseInput(input);
             return;
@@ -197,8 +228,9 @@ export async function exportTimelineToMp4(
           // than source) is the common case and works naturally via
           // the bounded `samples(0, end)` iterator below.
           const effectiveDuration = Math.min(requested, sourceDuration);
-          probed.push({ shot, input, videoTrack, audioTrack, effectiveDuration });
+          probed.push({ index, shot, input, videoTrack, audioTrack, effectiveDuration });
         } catch (error) {
+          issues.push({ index, shotId: shot.id, reason: "probe_failed" });
           console.error(`[timeline-export] shot ${shot.id} probe failed:`, error);
           if (firstProbeError == null) firstProbeError = error;
           if (input) releaseInput(input);
@@ -209,11 +241,7 @@ export async function exportTimelineToMp4(
     options.signal?.throwIfAborted();
     // Probe results may be out of order due to concurrent fetches —
     // restore the user's original shot ordering before encoding.
-    probed.sort(
-      (a, b) =>
-        eligible.findIndex((s) => s.id === a.shot.id) -
-        eligible.findIndex((s) => s.id === b.shot.id)
-    );
+    probed.sort((a, b) => a.index - b.index);
 
     if (probed.length === 0) {
       const detail =
@@ -283,7 +311,7 @@ export async function exportTimelineToMp4(
     let totalFramesEncoded = 0;
     let firstShotError: unknown = null;
 
-    for (const { shot, input, videoTrack, audioTrack, effectiveDuration } of probed) {
+    for (const { index, shot, input, videoTrack, audioTrack, effectiveDuration } of probed) {
       if (options.signal?.aborted) {
         // Caller cancelled — finalise what we already encoded so the
         // user at least gets a valid (truncated) MP4.
@@ -292,6 +320,7 @@ export async function exportTimelineToMp4(
 
       const offset = timelineOffsetSeconds;
       let shotFramesEncoded = 0;
+      let shotAudioSamplesEncoded = 0;
 
       try {
         const encodeVideo = async () => {
@@ -322,6 +351,7 @@ export async function exportTimelineToMp4(
             try {
               sample.setTimestamp(sample.timestamp + offset);
               await audioSource.add(sample);
+              shotAudioSamplesEncoded += 1;
             } finally {
               sample.close();
             }
@@ -332,8 +362,13 @@ export async function exportTimelineToMp4(
         const failure = encoded.find((result) => result.status === "rejected");
         if (failure?.status === "rejected") throw failure.reason;
 
-        timelineOffsetSeconds += effectiveDuration;
-        totalFramesEncoded += shotFramesEncoded;
+        if (options.signal?.aborted) {
+          issues.push({ index, shotId: shot.id, reason: "cancelled" });
+        } else if (shotFramesEncoded === 0) {
+          issues.push({ index, shotId: shot.id, reason: "no_frames" });
+        } else {
+          completedShots += 1;
+        }
         console.info(
           `[timeline-export] shot ${shot.id}: ${shotFramesEncoded} frames, ${effectiveDuration.toFixed(2)}s` +
             (audioTrack ? " (+audio)" : "")
@@ -343,9 +378,16 @@ export async function exportTimelineToMp4(
         // error would discard the user's already-encoded earlier shots.
         // The "no frames at all" guard after the loop catches the
         // pathological case where every shot failed.
+        issues.push({ index, shotId: shot.id, reason: "encoding_failed" });
         console.error(`[timeline-export] shot ${shot.id} failed:`, error);
         if (firstShotError == null) firstShotError = error;
       } finally {
+        // Encoders cannot roll back already accepted samples after a later failure.
+        // Retain those frames and reserve the slot before encoding the next shot.
+        totalFramesEncoded += shotFramesEncoded;
+        if (shotFramesEncoded > 0 || shotAudioSamplesEncoded > 0) {
+          timelineOffsetSeconds += effectiveDuration;
+        }
         releaseInput(input);
       }
 
@@ -374,7 +416,23 @@ export async function exportTimelineToMp4(
       throw new TimelineExportError("Output finalised without producing a buffer.");
     }
 
-    return new Blob([buffer], { type: "video/mp4" });
+    if (options.signal?.aborted) {
+      for (const { index, shot } of probed.slice(processedShots)) {
+        issues.push({ index, shotId: shot.id, reason: "cancelled" });
+      }
+    }
+    const blob = new Blob([buffer], { type: "video/mp4" });
+    try {
+      options.onReport?.({
+        requestedShots: shots.length,
+        completedShots,
+        partial: issues.length > 0 || Boolean(options.signal?.aborted),
+        issues: issues.sort((a, b) => a.index - b.index),
+      });
+    } catch (error) {
+      console.warn("[timeline-export] report observer failed:", error);
+    }
+    return blob;
   } finally {
     options.signal?.removeEventListener("abort", onAbort);
     for (const input of inputs) releaseInput(input);
