@@ -544,18 +544,22 @@ export class AiModelOpsService {
         }),
         await tx.aiCanonicalModel.findUniqueOrThrow({
           where: { id: input.canonicalModelId },
-          select: { id: true, modality: true, archivedAt: true },
+          select: { id: true, modality: true, archivedAt: true, status: true },
         }),
       ];
       if (
         endpoint.archivedAt ||
         endpoint.status === AiControlPlaneStatus.archived ||
-        endpoint.providerAccount.archivedAt
+        endpoint.providerAccount.archivedAt ||
+        endpoint.providerAccount.status === AiControlPlaneStatus.archived
       )
         throw new BadRequestException(
           'Cannot bind an archived provider endpoint or account.',
         );
-      if (canonicalModel.archivedAt) {
+      if (
+        canonicalModel.archivedAt ||
+        canonicalModel.status === AiControlPlaneStatus.archived
+      ) {
         throw new BadRequestException(
           'Cannot bind an archived canonical model.',
         );

@@ -67,6 +67,11 @@ export async function downloadMediaFile(
     signal?.throwIfAborted();
     const response = await fetch(url, { signal });
     if (!response.ok) {
+      try {
+        await response.body?.cancel();
+      } catch {
+        // Cleanup failure must not change the caller's download-failure result.
+      }
       return false;
     }
     const blob = await response.blob();

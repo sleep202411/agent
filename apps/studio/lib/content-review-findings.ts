@@ -118,6 +118,35 @@ export function mergeReviewFindings(
   return [...findings, ...comments].sort(compareFindings);
 }
 
+export type ReviewFindingGroup = {
+  key: string;
+  seconds: number | null;
+  detections: ReviewFinding[];
+  comments: ReviewFinding[];
+};
+
+export function groupReviewFindings(findings: ReviewFinding[]): ReviewFindingGroup[] {
+  const groups: ReviewFindingGroup[] = [];
+  const byKey = new Map<string, ReviewFindingGroup>();
+  for (const finding of findings) {
+    const key = finding.seconds == null ? "untimed" : String(Math.floor(finding.seconds));
+    let group = byKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        seconds: finding.seconds == null ? null : Math.floor(finding.seconds),
+        detections: [],
+        comments: [],
+      };
+      byKey.set(key, group);
+      groups.push(group);
+    }
+    if (finding.source === "comment") group.comments.push(finding);
+    else group.detections.push(finding);
+  }
+  return groups;
+}
+
 function compareFindings(a: ReviewFinding, b: ReviewFinding): number {
   if (a.seconds == null && b.seconds == null) return a.id.localeCompare(b.id);
   if (a.seconds == null) return 1;

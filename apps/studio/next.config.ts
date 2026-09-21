@@ -73,7 +73,8 @@ const nextConfig: NextConfig = {
   // (CSS/JS chunks stall, blank page). Required before putting studio behind FD.
   compress: false,
   // Next.js `next dev` rewrite proxyTimeout defaults to 30s. AI content
-  // review polls Aliyun Green for up to ~4 minutes on `/api/user/video/moderation/ai/exportExcel`.
+  // review submit/query calls stay short; keep a wide proxy window for Excel
+  // export on `/api/user/video/moderation/ai/exportExcel`.
   experimental: {
     proxyTimeout: 31 * 60 * 1000,
   },

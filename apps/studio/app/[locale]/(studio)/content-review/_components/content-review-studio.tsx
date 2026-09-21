@@ -317,13 +317,27 @@ export function ContentReviewStudio() {
           error.code === "INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS");
       const chargeUnavailable =
         error instanceof ApiRequestError && error.code === "CHARGE_UNAVAILABLE";
+      const gatewayTimeout =
+        error instanceof ApiRequestError &&
+        (error.status === 524 ||
+          error.status === 522 ||
+          error.status === 504 ||
+          /timed out at the gateway/i.test(error.message));
+      const reviewTimeout =
+        error instanceof ApiRequestError &&
+        error.code === "NETWORK_ERROR" &&
+        /timed out/i.test(error.message);
       const message = insufficient
         ? tError("insufficientCredits")
         : chargeUnavailable
           ? t("chargeUnavailable")
-          : error instanceof ApiRequestError || error instanceof Error
-            ? error.message
-            : t("failed");
+          : gatewayTimeout
+            ? t("gatewayTimeout")
+            : reviewTimeout
+              ? t("reviewTimeout")
+              : error instanceof ApiRequestError || error instanceof Error
+                ? error.message
+                : t("failed");
       toast.error(message || t("failed"));
       setPhase("idle");
     } finally {

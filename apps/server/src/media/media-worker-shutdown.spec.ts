@@ -2,6 +2,11 @@ import { CdnPurgeWorkerService } from './cdn-purge-worker.service';
 import { MediaTakedownWorkerService } from './media-takedown-worker.service';
 import { MediaProcessingWorkerService } from './media-processing-worker.service';
 
+// Provider execution is controlled by spies in these lifecycle tests.
+jest.mock('../infra/storage/imm-transcode.service', () => ({
+  ImmTranscodeService: class {},
+}));
+
 type Worker = {
   drainOnce: () => Promise<void>;
   onModuleDestroy: () => void;
@@ -91,9 +96,15 @@ describe.each(cases)('$name shutdown', ({ create, method }) => {
     );
     const pending = worker.drainOnce();
     await Promise.resolve();
-    worker.onModuleDestroy();
+    let shutdownFinished = false;
+    const shutdown = Promise.resolve(worker.onModuleDestroy()).then(() => {
+      shutdownFinished = true;
+    });
+    await Promise.resolve();
+    const finishedEarly = shutdownFinished;
     finish();
-    await pending;
+    await Promise.all([pending, shutdown]);
+    expect(finishedEarly).toBe(false);
     expect(process).toHaveBeenCalledTimes(1);
   });
 });
