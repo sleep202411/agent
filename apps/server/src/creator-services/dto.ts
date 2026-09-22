@@ -69,12 +69,14 @@ export type QuestionInput = z.infer<typeof QuestionInputSchema>;
 const ServiceBaseSchema = z.object({
   title: z.string().trim().min(1).max(120),
   summary: z.string().trim().min(1).max(1000),
-  coverPath: z.string().trim().max(512).default(''),
+  coverPath: z.string().trim().max(512),
   category: z.enum(SERVICE_CATEGORIES),
-  tags: z.array(z.string().trim().min(1).max(48)).max(10).default([]),
+  tags: z.array(z.string().trim().min(1).max(48)).max(10),
 });
 
 export const CreateServiceSchema = ServiceBaseSchema.extend({
+  coverPath: ServiceBaseSchema.shape.coverPath.default(''),
+  tags: ServiceBaseSchema.shape.tags.default([]),
   clientRequestKey: z.string().trim().min(8).max(64).optional(),
   /// Optional on create — a freshly drafted service may have zero
   /// packages yet. Publishing rejects services with empty packages.
