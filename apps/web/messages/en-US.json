@@ -2117,6 +2117,8 @@
     "categorySubtitle": "AIGC stories, interviews and announcements from {category}."
   },
   "creator": {
+    "directoryLoadFailed": "Unable to load creators. Please try again.",
+    "directoryRetry": "Retry",
     "plaza": "Talent Market",
     "eyebrowMeta": "Creators · Open to Collaborate",
     "heroTitle": "Find Creators",

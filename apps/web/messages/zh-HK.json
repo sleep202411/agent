@@ -2117,6 +2117,8 @@
     "categorySubtitle": "來自{category}的 AIGC 報道、訪談與公告。"
   },
   "creator": {
+    "directoryLoadFailed": "無法載入創作者，請重試。",
+    "directoryRetry": "重試",
     "plaza": "人才市場",
     "eyebrowMeta": "創作者 · 開放接洽",
     "heroTitle": "發現創作者",

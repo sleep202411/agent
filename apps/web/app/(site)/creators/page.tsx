@@ -52,7 +52,17 @@ export default function CreatorsPage() {
   const listQuery = useCreators();
   const searchQuery = useCreatorSearch(debouncedSearch, isSearching);
   const active = isSearching ? searchQuery : listQuery;
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = active;
+  const {
+    data,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isError,
+    isFetching,
+    isFetchNextPageError,
+    refetch,
+  } = active;
 
   const creators = data?.list ?? [];
   const showQr = isQrActive();
@@ -64,7 +74,7 @@ export default function CreatorsPage() {
     if (!node) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) {
+        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage && !isError) {
           fetchNextPage();
         }
       },
@@ -72,7 +82,7 @@ export default function CreatorsPage() {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isError]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -151,11 +161,28 @@ export default function CreatorsPage() {
           ) : null}
         </div>
       </div>
-      <CreatorsTalentGrid
-        creators={creators}
-        isLoading={isLoading}
-        emptyMessage={isSearching ? t("noResults") : undefined}
-      />
+      {isError && (
+        <div role="alert" className="mx-auto max-w-screen-2xl px-6 py-6 text-muted-foreground">
+          <p>{t("directoryLoadFailed")}</p>
+          <button
+            type="button"
+            disabled={isFetching}
+            onClick={() => {
+              void (isFetchNextPageError ? fetchNextPage() : refetch());
+            }}
+            className="mt-3 rounded-full border border-white/10 px-4 py-2 text-foreground disabled:opacity-50"
+          >
+            {t("directoryRetry")}
+          </button>
+        </div>
+      )}
+      {(!isError || creators.length > 0) && (
+        <CreatorsTalentGrid
+          creators={creators}
+          isLoading={isLoading}
+          emptyMessage={isSearching ? t("noResults") : undefined}
+        />
+      )}
       <div ref={sentinelRef} aria-hidden className="h-px w-full" />
       {isFetchingNextPage && (
         <div className="flex items-center justify-center py-8 text-muted-foreground">
