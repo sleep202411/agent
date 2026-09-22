@@ -7,7 +7,7 @@
 // canvas per DESIGN.md; the plaza's presentational card is reused. Works for any
 // tag (active or hidden) — future competitions/themes just need a tag + entries.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IconRefresh, IconSearch, IconSparkles, IconWheat } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
@@ -63,9 +63,9 @@ export function TagPageClient({ code }: { code: string }) {
     );
   }, [debouncedSearch, allProjects]);
 
-  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const [loadMoreNode, setLoadMoreNode] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
-    const node = loadMoreRef.current;
+    const node = loadMoreNode;
     if (!node || !hasNextPage) return;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -79,7 +79,7 @@ export function TagPageClient({ code }: { code: string }) {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [loadMoreNode, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (isLoading) return <TagSkeleton />;
 
@@ -172,20 +172,23 @@ export function TagPageClient({ code }: { code: string }) {
                 <IPPlazaCard key={project.id} project={project} />
               ))}
             </div>
-            <div ref={loadMoreRef} className="h-px" aria-hidden />
-            {hasNextPage ? (
-              <div className="py-6 text-center text-xs text-muted-foreground">
-                {isFetchingNextPage ? t("loading") : ""}
-              </div>
-            ) : null}
           </>
         ) : (
           <div className="py-24 text-center text-muted-foreground">
             <IconSparkles className="mx-auto mb-3 size-10 opacity-30" />
-            <p className="text-sm">{debouncedSearch ? t("noResults") : t("tagEmptyTitle")}</p>
+            <p className="text-sm">
+              {debouncedSearch ? (hasNextPage ? t("loading") : t("noResults")) : t("tagEmptyTitle")}
+            </p>
             {!debouncedSearch ? <p className="mt-1 text-xs">{t("tagEmptyBody")}</p> : null}
           </div>
         )}
+        {/* Keep pagination mounted even when filtering hides every loaded card. */}
+        <div ref={setLoadMoreNode} className="h-px" aria-hidden />
+        {hasNextPage && projects.length > 0 ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            {isFetchingNextPage ? t("loading") : ""}
+          </div>
+        ) : null}
       </div>
     </div>
   );
