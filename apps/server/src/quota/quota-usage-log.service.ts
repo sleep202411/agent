@@ -46,6 +46,9 @@ export class QuotaUsageLogService {
    *  saturated PG can't keep us spinning. Resets on the first success. */
   private consecutiveFailures = 0;
   private static readonly FAILURE_BUDGET = 32;
+  private static readonly RECOVERY_DELAY_MS = 30_000;
+  private retryAfter = 0;
+  private recoveryPending = false;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -55,11 +58,13 @@ export class QuotaUsageLogService {
    * tests, exceptions are swallowed and counted internally.
    */
   log(event: QuotaLogEvent): void {
-    if (this.consecutiveFailures > QuotaUsageLogService.FAILURE_BUDGET) {
-      // Circuit-broken: DB is unhappy. Drop until next success and
-      // let an external alert pick this up rather than continue to
-      // hammer the connection pool from every controller.
-      return;
+    const recovering =
+      this.consecutiveFailures > QuotaUsageLogService.FAILURE_BUDGET;
+    if (recovering) {
+      // Use the next real event as a single recovery attempt after cooldown.
+      // Permanently dropping writes would make recovery impossible.
+      if (this.recoveryPending || Date.now() < this.retryAfter) return;
+      this.recoveryPending = true;
     }
     const row = {
       id: newShortId(),
@@ -81,9 +86,16 @@ export class QuotaUsageLogService {
           );
         }
         this.consecutiveFailures = 0;
+        this.retryAfter = 0;
       })
       .catch((err: unknown) => {
         this.consecutiveFailures += 1;
+        if (
+          recovering ||
+          this.consecutiveFailures === QuotaUsageLogService.FAILURE_BUDGET + 1
+        ) {
+          this.retryAfter = Date.now() + QuotaUsageLogService.RECOVERY_DELAY_MS;
+        }
         const msg = err instanceof Error ? err.message : String(err);
         // Avoid log spam — sample after the first few failures.
         if (this.consecutiveFailures <= 4) {
@@ -91,6 +103,9 @@ export class QuotaUsageLogService {
             `quota_usage_log write failed (${this.consecutiveFailures}): ${msg}`,
           );
         }
+      })
+      .finally(() => {
+        if (recovering) this.recoveryPending = false;
       });
   }
 }
