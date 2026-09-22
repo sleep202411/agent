@@ -176,6 +176,7 @@ export function useMoveNode(config: UseMoveNodeConfig) {
   useHotkeys(
     shortcutKeys,
     (event) => {
+      if (!editor?.isFocused) return;
       event.preventDefault();
       handleMoveNode();
     },
