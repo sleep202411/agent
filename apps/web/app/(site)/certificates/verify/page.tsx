@@ -28,6 +28,7 @@ export default function CertificateVerificationPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     const normalized = normalizeCertNo(certNo);
     if (!normalized) {
       setResult(null);
@@ -37,6 +38,7 @@ export default function CertificateVerificationPage() {
 
     setCertNo(normalized);
     setSubmitting(true);
+    setResult(null);
     setError(null);
 
     try {
@@ -105,7 +107,12 @@ export default function CertificateVerificationPage() {
                 <input
                   id="certNo"
                   value={certNo}
-                  onChange={(event) => setCertNo(event.target.value)}
+                  disabled={submitting}
+                  onChange={(event) => {
+                    setCertNo(event.target.value);
+                    setResult(null);
+                    setError(null);
+                  }}
                   placeholder={t("inputPlaceholder")}
                   autoComplete="off"
                   autoCapitalize="characters"
