@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
+import { ExperienceStableIdSchema, parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
 import {
   advanceExperienceTimeline,
   assertExperienceRuntimeCompatibility,
@@ -777,4 +777,29 @@ test("very short polygon edges retain a distance-based boundary tolerance", () =
   };
   assert.equal(hitTestExperienceGeometry(geometry, { x: 90, y: 10 }, transform), false);
   assert.equal(hitTestExperienceGeometry(geometry, { x: 20, y: 50 }, transform), true);
+});
+
+test("audio cue counters survive JSON restoration without inherited ID collisions", () => {
+  for (const cueId of ["constructor", "toString", "hasOwnProperty"]) {
+    assert.equal(ExperienceStableIdSchema.parse(cueId), cueId);
+    const manifest = {
+      audio: {
+        cues: [{
+          cueId,
+          assetIds: ["audio.a", "audio.b"],
+          selection: "sequential",
+          playbackRate: { minimum: 1, maximum: 1 },
+        }],
+      },
+    };
+    let state = JSON.parse(JSON.stringify(createExperienceDeterministicRuntimeState()));
+    const first = resolveExperienceAudioPlayback(manifest, state, cueId);
+    assert.equal(first.assetId, "audio.a");
+    assert.equal(first.playbackOrdinal, 0);
+    state = JSON.parse(JSON.stringify(state));
+    const second = resolveExperienceAudioPlayback(manifest, state, cueId);
+    assert.equal(second.assetId, "audio.b");
+    assert.equal(second.playbackOrdinal, 1);
+    assert.equal(state.audioCuePlayCounts[cueId], 2);
+  }
 });

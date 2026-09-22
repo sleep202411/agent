@@ -37,7 +37,10 @@ export function resolveExperienceAudioPlayback(
       `Cannot resolve unknown audio cue ${cueId}`
     );
   }
-  const playbackOrdinal = runtime.audioCuePlayCounts[cueId] ?? 0;
+  // Snapshots/clones can use ordinary objects; inherited names are not counts.
+  const playbackOrdinal = Object.prototype.hasOwnProperty.call(runtime.audioCuePlayCounts, cueId)
+    ? (runtime.audioCuePlayCounts[cueId] ?? 0)
+    : 0;
   const requiresRandom =
     cue.selection === "random" || cue.playbackRate.minimum !== cue.playbackRate.maximum;
   if (requiresRandom && !runtime.randomSeed) {
