@@ -50,6 +50,7 @@ function GameCatalog({ account }: { account: string }) {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col text-sm lg:flex-row">
       {!ownsLibrary && (
         <aside
+          data-lenis-prevent
           className="min-w-0 shrink-0 border-b border-white/[0.06] lg:w-[280px] lg:overflow-y-auto lg:border-b-0 lg:border-r"
           aria-label={t("catalog")}
         >
