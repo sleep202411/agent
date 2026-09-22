@@ -6557,6 +6557,7 @@
     "notApproved": "暂未通过审批"
   },
   "courses": {
+    "accessDenied": "暂无权限，您可以联系 business@fizzdragon.com 为您开通权限。",
     "heroEyebrow": "课程中心",
     "heroMeta": "系统学习 · 实战进阶",
     "heroTitle": "精选好课，",

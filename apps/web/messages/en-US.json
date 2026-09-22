@@ -6557,6 +6557,7 @@
     "notApproved": "Not approved yet."
   },
   "courses": {
+    "accessDenied": "You do not have access to this course. Contact business@fizzdragon.com to request access.",
     "heroEyebrow": "Academy",
     "heroMeta": "Structured Learning · Practice Ready",
     "heroTitle": "Curated Courses,",

@@ -31,11 +31,11 @@ export default function CourseDetailPage() {
 
   useEffect(() => {
     if (isCourseApiError(playError, 403)) {
-      toast.error("暂无权限，您可以联系 business@fizzdragon.com 为您开通权限", {
+      toast.error(t("accessDenied"), {
         id: `course-video-no-permission-${detail?.currentVideoId}`,
       });
     }
-  }, [detail?.currentVideoId, playError]);
+  }, [detail?.currentVideoId, playError, t]);
 
   return (
     <main className="bg-[#08080d] text-white lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
