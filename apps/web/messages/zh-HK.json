@@ -424,7 +424,7 @@
     "ipsFundraising": "個 IP 正在融資",
     "ipsPresale": "個 IP 開放預售",
     "newThisWeek": "本週新增",
-    "createIP": "建立 IP 房間",
+    "createIP": "建立 AI 頻道",
     "browseIPs": "瀏覽 IP",
     "enterStudio": "進入工作台",
     "catAll": "發現",
@@ -997,11 +997,11 @@
   },
   "newIpCreate": {
     "close": "關閉",
-    "pageTitle": "建立 IP",
-    "heroEyebrow": "新版 IP",
+    "pageTitle": "建立 AI 頻道",
+    "heroEyebrow": "新建 AI 頻道",
     "heroSubtitle": "先儲存一個乾淨的 IP 草稿，後續設定、劇集、資產和商業化都歸入同一個工作台。",
-    "fieldName": "IP 名稱",
-    "fieldNamePlaceholder": "請輸入 IP 名稱",
+    "fieldName": "頻道名稱",
+    "fieldNamePlaceholder": "輸入頻道名稱",
     "fieldGenres": "類型",
     "fieldTags": "標籤",
     "taxonomyHelp": "已選 {count}/{max}",
@@ -10026,5 +10026,11 @@
     "empty": "沒有可用的自有工作區",
     "unlink": "取消關聯",
     "open": "在 Studio 中開啟"
+  },
+  "channels": {
+    "category": "頻道類別",
+    "ip": "IP 頻道",
+    "community": "社區頻道",
+    "create": "建立 AI 頻道"
   }
 }

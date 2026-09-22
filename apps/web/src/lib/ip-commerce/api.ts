@@ -127,7 +127,10 @@ export interface IpEngagementMutationResult {
   engagement: IpEngagementSnapshot;
 }
 
+export type IpChannelType = "ip" | "community";
+
 export interface IpCommerceIp {
+  channelType?: IpChannelType;
   id: string;
   roomNumber: string;
   slug: string | null;
@@ -538,6 +541,7 @@ export interface CreateIpPurchaseInput {
 }
 
 export interface CreateIpDraftInput {
+  channelType?: IpChannelType;
   title: string;
   summary?: string;
   genreCodes: string[];
@@ -685,6 +689,7 @@ export interface UpsertIpBlockInput {
 
 export function listIpCommerceIps(
   params?: {
+    channelType?: IpChannelType;
     genreCodes?: string[];
     tagCodes?: string[];
     regions?: string[];
@@ -741,6 +746,7 @@ export interface IpCommerceDiscoveryItem {
 
 export function listIpCommerceDiscovery(
   params: {
+    channelType?: IpChannelType;
     placementKey: IpDiscoveryPlacementKey;
     locale?: string;
   },

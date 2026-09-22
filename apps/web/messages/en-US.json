@@ -424,7 +424,7 @@
     "ipsFundraising": "IPs fundraising",
     "ipsPresale": "IPs in pre-order",
     "newThisWeek": "New this week",
-    "createIP": "Create IP Room",
+    "createIP": "Create AI Channel",
     "browseIPs": "Browse IPs",
     "enterStudio": "Enter Studio",
     "catAll": "Discover",
@@ -997,11 +997,11 @@
   },
   "newIpCreate": {
     "close": "Close",
-    "pageTitle": "Create IP",
-    "heroEyebrow": "New IP",
+    "pageTitle": "Create AI Channel",
+    "heroEyebrow": "New AI Channel",
     "heroSubtitle": "Save a clean IP draft first. Settings, episodes, assets, and commerce will live in one workspace.",
-    "fieldName": "IP Name",
-    "fieldNamePlaceholder": "Enter IP name",
+    "fieldName": "Channel name",
+    "fieldNamePlaceholder": "Enter channel name",
     "fieldGenres": "Genres",
     "fieldTags": "Tags",
     "taxonomyHelp": "{count}/{max} selected",
@@ -10026,5 +10026,11 @@
     "empty": "No owned workspaces available",
     "unlink": "Unlink workspace",
     "open": "Open in Studio"
+  },
+  "channels": {
+    "category": "Channel category",
+    "ip": "IP Channel",
+    "community": "Community Channel",
+    "create": "Create AI Channel"
   }
 }

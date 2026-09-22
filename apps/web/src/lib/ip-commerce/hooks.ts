@@ -145,6 +145,7 @@ export function useIpCommerceIps(params?: {
 }
 
 export function useInfiniteIpCommerceIps(params?: {
+  channelType?: "ip" | "community";
   genreCodes?: string[];
   tagCodes?: string[];
   regions?: string[];
@@ -216,6 +217,7 @@ export function useIpCommerceTaxonomyTerms(params?: {
 }
 
 export function useIpCommerceDiscovery(params: {
+  channelType?: "ip" | "community";
   placementKey: IpDiscoveryPlacementKey;
   locale?: string;
   enabled?: boolean;
@@ -224,10 +226,18 @@ export function useIpCommerceDiscovery(params: {
   return useQuery({
     queryKey: [
       ...ipCommerceKeys.discovery(params.placementKey, params.locale),
+      params.channelType ?? "all",
       user?.id ?? "guest",
     ],
     queryFn: ({ signal }) =>
-      listIpCommerceDiscovery({ placementKey: params.placementKey, locale: params.locale }, signal),
+      listIpCommerceDiscovery(
+        {
+          placementKey: params.placementKey,
+          locale: params.locale,
+          channelType: params.channelType,
+        },
+        signal
+      ),
     staleTime: 60_000,
     enabled: params.enabled ?? true,
   });

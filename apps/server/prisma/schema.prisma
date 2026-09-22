@@ -3565,7 +3565,13 @@ enum MemberPoolBatchStatus {
   voided
 }
 
+enum IpChannelType {
+  ip
+  community
+}
+
 model Ip {
+  channelType IpChannelType @default(community) @map("channel_type")
   gameAssociations       IpGameAssociationRevision[]
   stageApplications      IpStageApplication[]
   productionStage        IpProductionStage?
@@ -3638,6 +3644,7 @@ model Ip {
   /// IpLocalization by partial unique SQL.
   @@index([createdById, status, updatedAt(sort: Desc)], map: "ips_creator_recent_idx")
   @@index([status, listingVisibility, publishedAt(sort: Desc)], map: "ips_public_feed_idx")
+  @@index([channelType, status, listingVisibility], map: "ips_channel_public_idx")
   @@map("ips")
 }
 

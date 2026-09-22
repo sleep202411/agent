@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
@@ -10,7 +11,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useTvIps, useTvSelectedIp } from "../_hooks/use-tv-ips";
 import { EpisodeFeedback } from "@/app/(site)/ips/_components/episode-feedback";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+
 import { TvGames } from "./tv-games";
 import { TvStage } from "./tv-stage";
 import { TvIpList } from "./tv-ip-list";
@@ -18,12 +19,18 @@ import { TvInfoBar } from "./tv-info-bar";
 import { TvEmptyState, TvErrorState, TvLoadingState } from "./tv-empty";
 import { TvRightRail } from "./tv-right-rail";
 
+import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
+import { ChannelTabs } from "@/components/channel-tabs";
+
 export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const { user } = useCurrentUser();
   const t = useTranslations("tvGames");
+  const channels = useTranslations("channels");
+  const [createOpen, setCreateOpen] = useState(false);
   const tv = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
+  const [channelType, setChannelType] = useState<"ip" | "community">("ip");
   const [mode, setMode] = useState<"videos" | "games">("videos");
   return (
     <div className="flex min-h-full min-w-0 max-w-full flex-col lg:h-full lg:min-h-0 bg-[#0c0e13] text-white">
@@ -40,6 +47,16 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
           </button>
         ))}
       </div>
+      <div className="px-4 pb-2">
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className="min-h-11 rounded-full bg-primary px-5 text-sm font-medium text-white"
+        >
+          {channels("create")}
+        </button>
+      </div>
+      <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
       {mode === "games" && !embedded && (
         <button
           type="button"
@@ -51,7 +68,14 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
         </button>
       )}
       {mode === "videos" ? (
-        <TvVideoApp key={user?.id ?? "guest"} embedded={embedded} />
+        <>
+          <ChannelTabs value={channelType} onChange={setChannelType} />
+          <TvVideoApp
+            key={`${user?.id ?? "guest"}:${channelType}`}
+            embedded={embedded}
+            channelType={channelType}
+          />
+        </>
       ) : (
         <TvGames />
       )}
@@ -59,7 +83,13 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
+function TvVideoApp({
+  embedded = false,
+  channelType,
+}: {
+  embedded?: boolean;
+  channelType: "ip" | "community";
+}) {
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
@@ -82,7 +112,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
     fetchNextPage,
     fetchNextChannels,
     isFetchingNextPage,
-  } = useTvIps({ q: debouncedSearch });
+  } = useTvIps({ q: debouncedSearch, channelType });
   const [episodeChoice, setEpisodeChoice] = useState<{ ipId: string; episodeId: string } | null>(
     null
   );
@@ -252,29 +282,62 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
               {item && Boolean(item.episodes?.length) && (
                 <div className="shrink-0 space-y-2 px-4 py-2">
                   <p className="text-xs text-white/60">{t("episodeSelector")}</p>
-                  <NativeSelect
+                  <div
+                    role="group"
                     aria-label={t("episodeSelector")}
-                    value={episode?.id ?? ""}
-                    onChange={(episodeId) => {
-                      navigationVersion.current += 1;
-                      setAdvancing(false);
-                      setNextError(null);
-                      setIsPlaying(false);
-                      setEpisodeChoice(episodeId ? { ipId: item.id, episodeId } : null);
-                    }}
+                    className="flex gap-3 overflow-x-auto pb-2"
                   >
-                    <NativeSelectOption value="">{t("preview")}</NativeSelectOption>
-                    {item.episodes?.map((entry) => (
-                      <NativeSelectOption key={entry.id} value={entry.id}>
-                        {entry.number}. {entry.title}
-                        {entry.locked
-                          ? ` · ${t("lockedEpisode")}`
-                          : !entry.video
-                            ? ` · ${t("videoUnavailable")}`
-                            : ""}
-                      </NativeSelectOption>
+                    {[
+                      {
+                        id: "",
+                        title: t("preview"),
+                        cover: item.cover,
+                        number: 0,
+                        locked: false,
+                        video: item.trailer,
+                      },
+                      ...(item.episodes ?? []),
+                    ].map((entry) => (
+                      <button
+                        type="button"
+                        key={entry.id}
+                        data-episode-id={entry.id}
+                        aria-pressed={(episode?.id ?? "") === entry.id}
+                        onClick={() => {
+                          navigationVersion.current += 1;
+                          setAdvancing(false);
+                          setNextError(null);
+                          setIsPlaying(false);
+                          setEpisodeChoice(
+                            entry.id ? { ipId: item.id, episodeId: entry.id } : null
+                          );
+                        }}
+                        className="w-40 shrink-0 rounded-lg p-1 text-left text-sm text-white/70 ring-2 ring-transparent hover:bg-white/10 aria-pressed:text-white aria-pressed:ring-white"
+                      >
+                        {entry.cover ? (
+                          <Image
+                            unoptimized
+                            width={160}
+                            height={90}
+                            src={entry.cover}
+                            alt=""
+                            className="mb-2 aspect-video w-full rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="mb-2 flex aspect-video items-center justify-center rounded-md bg-white/10">
+                            {entry.number || t("preview")}
+                          </span>
+                        )}
+                        <span className="line-clamp-2">
+                          {entry.number ? `${entry.number}. ` : ""}
+                          {entry.title}
+                        </span>
+                        {entry.locked && (
+                          <span className="block text-xs">{t("lockedEpisode")}</span>
+                        )}
+                      </button>
                     ))}
-                  </NativeSelect>
+                  </div>
                   {episode && !episode.video && (
                     <p role="status" className="text-sm text-white/60">
                       {episode.locked ? t("episodeAccess") : t("videoUnavailable")}{" "}

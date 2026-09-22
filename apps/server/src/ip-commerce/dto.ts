@@ -131,6 +131,7 @@ const RegionListFromQuerySchema = z.preprocess(
 );
 
 export const ListIpsQuerySchema = z.object({
+  channelType: z.enum(['ip', 'community']).optional(),
   genreCodes: TaxonomyCodeListFromQuerySchema(8),
   tagCodes: TaxonomyCodeListFromQuerySchema(20),
   // ISO-3166 alpha-2 codes or the 'GLOBAL' sentinel (scalar Ip.region filter).
@@ -320,6 +321,7 @@ export type ReorderAdminIpDiscoveryInput = z.infer<
 >;
 
 export const ListPublicIpDiscoveryQuerySchema = z.object({
+  channelType: z.enum(['ip', 'community']).optional(),
   placementKey: IpDiscoveryPlacementKeySchema,
   locale: LocaleQuerySchema,
 });
@@ -343,6 +345,7 @@ export type ListCreatorIpsQuery = z.infer<typeof ListCreatorIpsQuerySchema>;
 
 export const CreateIpDraftSchema = z
   .object({
+    channelType: z.enum(['ip', 'community']).optional(),
     title: z.string().trim().min(1).max(80),
     summary: z.string().trim().max(280).optional(),
     genreCodes: GenreCodesSchema,
@@ -614,6 +617,7 @@ export type UpsertCreatorIpPriceRuleInput = z.infer<
 >;
 
 export const ListAdminIpsQuerySchema = z.object({
+  channelType: z.enum(['ip', 'community']).optional(),
   genreCodes: TaxonomyCodeListFromQuerySchema(8),
   tagCodes: TaxonomyCodeListFromQuerySchema(20),
   status: IpPublicationStatusSchema.optional(),
@@ -1099,3 +1103,10 @@ export const UpsertIpUserBlockSchema = z
     }
   });
 export type UpsertIpUserBlockInput = z.infer<typeof UpsertIpUserBlockSchema>;
+
+export const UpdateIpChannelSchema = z
+  .object({
+    channelType: z.enum(['ip', 'community']),
+    expectedVersion: z.number().int().min(0),
+  })
+  .strict();
