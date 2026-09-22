@@ -386,6 +386,7 @@
   "update.updateNow": "Update",
   "update.later": "Later",
   "update.upToDate": "You're on the latest version.",
+  "update.openFailed": "Couldn’t open the update link. Try again from Settings.",
   "update.checkFailed": "Couldn't check for updates. Try again later.",
   "tabs.loadingWorkspace": "Loading workspace",
   "tabs.home": "Home",
