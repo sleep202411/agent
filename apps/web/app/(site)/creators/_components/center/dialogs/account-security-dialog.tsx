@@ -29,7 +29,7 @@
  * that belongs to web's 个人中心.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { AuthClient, AuthRequestError, errorText } from "@repo/auth-flow";
@@ -77,6 +77,8 @@ export function AccountSecurityDialog({
     (!hasExistingPassword || oldPassword.length > 0) &&
     !submitting;
 
+  const session = useRef(0);
+  const saving = useRef(false);
   const reset = () => {
     setHasExistingPassword(false);
     setOldPassword("");
@@ -85,21 +87,34 @@ export function AccountSecurityDialog({
     setError(null);
   };
 
+  useEffect(() => {
+    return () => {
+      session.current += 1;
+    };
+  }, [open]);
+
   const handleOpenChange = (next: boolean) => {
-    if (!next) reset();
+    if (!next) {
+      session.current += 1;
+      reset();
+    }
     onOpenChange(next);
   };
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit || saving.current) return;
+    saving.current = true;
+    const submittedSession = session.current;
     setError(null);
     setSubmitting(true);
     try {
       await client.setPassword(password, hasExistingPassword ? oldPassword : undefined);
+      if (session.current !== submittedSession) return;
       toast.success(t("saved"));
       handleOpenChange(false);
     } catch (thrown) {
+      if (session.current !== submittedSession) return;
       // Java answers business failures with a localized `msg` and no
       // machine-readable code, so the package's classification is a
       // heuristic guess. `errorText` is the same rule the dialog uses:
@@ -113,6 +128,7 @@ export function AccountSecurityDialog({
         setError(authT("errorServer"));
       }
     } finally {
+      saving.current = false;
       setSubmitting(false);
     }
   };
@@ -128,6 +144,7 @@ export function AccountSecurityDialog({
           <FieldGroup>
             <label className="flex cursor-pointer items-start gap-2 text-sm text-muted-foreground">
               <Checkbox
+                disabled={submitting}
                 checked={hasExistingPassword}
                 onCheckedChange={(value) => setHasExistingPassword(value === true)}
                 className="mt-0.5"
@@ -139,6 +156,7 @@ export function AccountSecurityDialog({
               <Field>
                 <FieldLabel htmlFor="old-password">{t("currentPasswordLabel")}</FieldLabel>
                 <Input
+                  disabled={submitting}
                   id="old-password"
                   type="password"
                   autoComplete="current-password"
@@ -153,6 +171,7 @@ export function AccountSecurityDialog({
             <Field>
               <FieldLabel htmlFor="new-password">{t("newPasswordLabel")}</FieldLabel>
               <Input
+                disabled={submitting}
                 id="new-password"
                 type="password"
                 autoComplete="new-password"
@@ -167,6 +186,7 @@ export function AccountSecurityDialog({
             <Field>
               <FieldLabel htmlFor="confirm-new-password">{t("confirmPasswordLabel")}</FieldLabel>
               <Input
+                disabled={submitting}
                 id="confirm-new-password"
                 type="password"
                 autoComplete="new-password"
