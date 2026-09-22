@@ -149,6 +149,8 @@ export function ContentReviewStudio() {
         toast.error(t("tooLarge"));
         return;
       }
+      abortRef.current?.abort();
+      abortRef.current = null;
       if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
       const url = URL.createObjectURL(next);
       objectUrlRef.current = url;
@@ -177,6 +179,7 @@ export function ContentReviewStudio() {
       abortRef.current = controller;
       try {
         const record = await getContentReviewRecord(id, controller.signal);
+        if (controller.signal.aborted || abortRef.current !== controller) return;
         if (objectUrlRef.current) {
           URL.revokeObjectURL(objectUrlRef.current);
           objectUrlRef.current = null;
@@ -202,6 +205,7 @@ export function ContentReviewStudio() {
         setProgress(0);
         if (inputRef.current) inputRef.current.value = "";
       } catch (error) {
+        if (controller.signal.aborted || abortRef.current !== controller) return;
         if (
           isUploadAbort(error) ||
           (error instanceof DOMException && error.name === "AbortError")
