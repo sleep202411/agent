@@ -91,10 +91,21 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
   const pathname = usePathname() ?? "/";
   const defaultSourceLocale = localeFromPathname(pathname);
 
-  const [name, setName] = useState("");
+  const [name, setNameState] = useState("");
   const [genreCodes, setGenreCodes] = useState<string[]>([]);
   const [region, setRegion] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescriptionState] = useState("");
+  // Async analysis must consult the latest draft, including edits made while it runs.
+  const nameRef = useRef("");
+  const descriptionRef = useRef("");
+  const setName = (value: string) => {
+    nameRef.current = value;
+    setNameState(value);
+  };
+  const setDescription = (value: string) => {
+    descriptionRef.current = value;
+    setDescriptionState(value);
+  };
   const create = useCreateIpCommerceIp();
   const creating = create.isPending;
   const sparkAnalyze = useNewIpSparkAnalyze();
@@ -174,11 +185,11 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
       // Apply only fields the backend returned. Don't overwrite values the
       // user has already typed, unless they explicitly clear them.
-      if (result.name && !name.trim()) {
+      if (result.name && !nameRef.current.trim()) {
         setName(result.name);
         markAi("name");
       }
-      if (result.description && !description.trim()) {
+      if (result.description && !descriptionRef.current.trim()) {
         setDescription(result.description);
         markAi("description");
       }
