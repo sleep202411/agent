@@ -1,4 +1,5 @@
 "use client";
+import { IpChannelPanel } from "./channel-panel";
 
 import { useRef, useState } from "react";
 import { useAdminOperation } from "../use-admin-operation";
@@ -267,6 +268,9 @@ export function IpTitlesPanel({
             <div className="min-w-0">
               <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
                 {ip.title}
+              </p>
+              <p className="text-xs text-slate-500">
+                {ip.channelType === "ip" ? "IP Channel" : "Community Channel"}
               </p>
               <p className="mt-0.5 max-w-[260px] truncate text-[12px] text-slate-500">
                 {ip.slug ?? ip.id}
@@ -543,7 +547,10 @@ export function IpTitlesPanel({
         loading={detailLoading}
         error={detailError}
         onClose={closeIpDetail}
-        onRefresh={(ipId) => void openIpDetail(ipId)}
+        onRefresh={(ipId) => {
+          void openIpDetail(ipId);
+          void refreshIps();
+        }}
         onUpdatePublication={updateSelectedIpPublication}
         onResolveReport={resolveSelectedReport}
       />
@@ -708,6 +715,13 @@ function IpDetailDrawer({
           {error ? <ErrorBanner message={error} /> : null}
           {ip ? (
             <div className="space-y-4">
+              <IpChannelPanel
+                key={`${ip.id}:${ip.version}`}
+                ipId={ip.id}
+                version={ip.version}
+                channelType={ip.channelType}
+                onSaved={() => onRefresh(ip.id)}
+              />
               <Link
                 href={`/ip/titles/${encodeURIComponent(ip.id)}/production`}
                 className="inline-block text-sm underline"
@@ -715,6 +729,10 @@ function IpDetailDrawer({
                 Production review evidence
               </Link>
               <section className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-2">
+                <DetailCell
+                  label="Channel"
+                  value={ip.channelType === "ip" ? "IP Channel" : "Community Channel"}
+                />
                 <DetailCell label="状态" value={statusLabel(ip.status)} />
                 <DetailCell label="可见性" value={visibilityLabel(ip.listingVisibility)} />
                 <DetailCell

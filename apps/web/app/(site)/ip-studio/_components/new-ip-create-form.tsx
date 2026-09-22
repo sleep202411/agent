@@ -85,6 +85,8 @@ export function NewIpCreateDialog({ open, onOpenChange }: NewIpCreateDialogProps
  */
 export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
   const t = useTranslations("newIpCreate");
+  const channelT = useTranslations("channels");
+  const [channelType, setChannelType] = useState<"ip" | "community">("community");
   const router = useRouter();
   const pathname = usePathname() ?? "/";
   const defaultSourceLocale = localeFromPathname(pathname);
@@ -110,6 +112,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
   const resetForm = () => {
     setName("");
+    setChannelType("community");
     setGenreCodes([]);
     setRegion("");
     setDescription("");
@@ -200,6 +203,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
     setAnalyzedFileName("");
     // Only clear fields that were AI-filled and haven't been edited by the user.
     if (aiFilledFields.has("name")) setName("");
+    setChannelType("community");
     if (aiFilledFields.has("description")) setDescription("");
     setAiFilledFields(new Set());
   };
@@ -210,6 +214,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
     create.mutate(
       {
         title: name.trim(),
+        channelType,
         genreCodes,
         sourceLocale: defaultSourceLocale,
         summary: description.trim() || undefined,
@@ -280,6 +285,18 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
         />
 
         <FieldGroup>
+          <Field>
+            <FieldLabel>{channelT("category")}</FieldLabel>
+            <NativeSelect
+              aria-label={channelT("category")}
+              value={channelType}
+              disabled={creating}
+              onChange={(v) => setChannelType(v as "ip" | "community")}
+            >
+              <option value="ip">{channelT("ip")}</option>
+              <option value="community">{channelT("community")}</option>
+            </NativeSelect>
+          </Field>
           <Field>
             <FieldLabel required>
               {t("fieldName")}

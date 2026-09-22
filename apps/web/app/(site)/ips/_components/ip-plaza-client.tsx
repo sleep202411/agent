@@ -35,9 +35,20 @@ import { IPPlazaCard } from "./ip-plaza-card";
 import { mergePinnedProjects } from "./merge-pinned-projects";
 import type { PlazaProject } from "./plaza-types";
 
+import { ChannelTabs } from "@/components/channel-tabs";
 const PAGE_SIZE = 20;
 
 export function IpPlazaClient() {
+  const [channelType, setChannelType] = useState<"ip" | "community">("ip");
+  return (
+    <>
+      <ChannelTabs value={channelType} onChange={setChannelType} />
+      <ChannelPlaza key={channelType} channelType={channelType} />
+    </>
+  );
+}
+
+function ChannelPlaza({ channelType }: { channelType: "ip" | "community" }) {
   const t = useTranslations("ip");
   const commonT = useTranslations("common");
   const tvT = useTranslations("tv");
@@ -63,6 +74,7 @@ export function IpPlazaClient() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteIpCommerceIps({
+    channelType,
     genreCodes: selectedGenreCode ? [selectedGenreCode] : undefined,
     tagCodes: selectedTagCode ? [selectedTagCode] : undefined,
     regions: selectedRegion ? [selectedRegion] : undefined,
@@ -72,12 +84,18 @@ export function IpPlazaClient() {
   });
   const { data: taxonomyData } = useIpCommerceTaxonomyTerms({ type: "genre", locale });
   const { data: tagData } = useIpCommerceTaxonomyTerms({ type: "tag", locale });
-  const { data: heroData } = useIpCommerceDiscovery({ placementKey: "ip_plaza_hero", locale });
+  const { data: heroData } = useIpCommerceDiscovery({
+    channelType,
+    placementKey: "ip_plaza_hero",
+    locale,
+  });
   const { data: forYouData } = useIpCommerceDiscovery({
+    channelType,
     placementKey: "ip_plaza_for_you",
     locale,
   });
   const { data: pinnedData } = useIpCommerceDiscovery({
+    channelType,
     placementKey: "ip_plaza_list_pinned",
     locale,
   });
@@ -162,7 +180,7 @@ export function IpPlazaClient() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="-mt-16">
+      <div className="relative">
         <IPCinematicHero
           loading={loading}
           slides={heroProjects.slice(0, 5)}

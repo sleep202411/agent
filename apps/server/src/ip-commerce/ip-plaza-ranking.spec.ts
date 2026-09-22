@@ -36,7 +36,7 @@ describe('IP plaza ranking', () => {
       CREATE TABLE ips (
         id uuid PRIMARY KEY, room_number varchar(19), published_at timestamptz(6), created_at timestamptz(6) NOT NULL,
         deleted_at timestamptz, status text DEFAULT 'published',
-        listing_visibility text DEFAULT 'public', region text DEFAULT 'GLOBAL',
+        channel_type text DEFAULT 'community', listing_visibility text DEFAULT 'public', region text DEFAULT 'GLOBAL',
         created_by_id text DEFAULT 'creator', copyright_owner text, trailer_asset_id uuid
       );
       CREATE TABLE ip_engagement_aggregates (
@@ -115,6 +115,27 @@ describe('IP plaza ranking', () => {
       );
     }
   }
+
+  it('filters channel category before ranking and pagination', async () => {
+    await addIp(1, { views: 10000 });
+    await addIp(2);
+    await addIp(3);
+    await db.query("UPDATE ips SET channel_type = 'ip' WHERE id = $1", [id(2)]);
+    const commercial = await page({ channelType: 'ip', limit: 1 });
+    expect(commercial.pageIds).toEqual([id(2)]);
+    expect(commercial.nextCursor).toBeNull();
+    const community = await page({ channelType: 'community', limit: 1 });
+    expect(community.pageIds).not.toContain(id(2));
+    const next = await page({
+      channelType: 'community',
+      limit: 1,
+      cursor: community.nextCursor,
+    });
+    expect([...community.pageIds, ...next.pageIds].sort()).toEqual([
+      id(1),
+      id(3),
+    ]);
+  });
 
   async function addVideo(
     n: number,

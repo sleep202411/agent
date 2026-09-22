@@ -8,6 +8,9 @@ import type { IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock("@/app/(site)/ip-studio/_components/new-ip-create-form", () => ({
+  NewIpCreateDialog: () => null,
+}));
 vi.mock("./tv-right-rail", () => ({ TvRightRail: () => null }));
 vi.mock("@/components/auth/auth-dialog-provider", () => ({
   useAuthDialog: () => ({ open: vi.fn() }),
@@ -190,6 +193,30 @@ describe("TV IP list", () => {
     expect(details.textContent).toContain("First IP");
   });
 
+  it("changes category without reusing the previous catalog or curated feed", async () => {
+    await render();
+    await waitForSource("ip-1");
+    harness.list.mockResolvedValue({
+      items: [makeIp("community-1", "Community video")],
+      nextCursor: null,
+    });
+    await act(async () => {
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "channels.community")!
+        .click();
+    });
+    await waitForText("Community video");
+    expect(harness.get).toHaveBeenCalledWith(
+      "/aurora/ip-commerce/ips",
+      expect.objectContaining({ params: expect.objectContaining({ channelType: "community" }) })
+    );
+    expect(harness.get).toHaveBeenCalledWith(
+      "/aurora/ip-commerce/discovery",
+      expect.objectContaining({ params: expect.objectContaining({ channelType: "community" }) })
+    );
+    expect(container.textContent).not.toContain("Second IP");
+  });
+
   it("cancels catalog and discovery reads when the viewer changes", async () => {
     harness.list.mockImplementation(() => new Promise(() => {}));
     harness.discovery.mockImplementation(() => new Promise(() => {}));
@@ -283,20 +310,18 @@ describe("TV IP list", () => {
     harness.list.mockResolvedValue({ items: [first, ips[1]], nextCursor: null });
     await render();
     await waitForSource("ip-1");
-    const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="tv.episodeSelector"]'
+    const select = container.querySelector<HTMLElement>(
+      '[role="group"][aria-label="tv.episodeSelector"]'
     )!;
     expect(select.textContent).toContain("First episode");
     expect(select.textContent).toContain("Locked");
     await act(async () => {
-      select.value = "episode-1";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.querySelector<HTMLButtonElement>('[data-episode-id="episode-1"]')!.click();
     });
     await waitForSource("episode-one");
     expect(container.querySelector('[data-feedback="episode-1"]')).not.toBeNull();
     await act(async () => {
-      select.value = "locked";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.querySelector<HTMLButtonElement>('[data-episode-id="locked"]')!.click();
     });
     expect(container.textContent).toContain("tv.episodeAccess");
     expect(container.querySelector("[data-feedback]")).toBeNull();
@@ -311,6 +336,7 @@ describe("TV IP list", () => {
     expect(harness.get).toHaveBeenCalledWith("/aurora/ip-commerce/ips", {
       signal: expect.any(AbortSignal),
       params: {
+        channelType: "ip",
         locale: "en-US",
         cursor: undefined,
         q: undefined,
@@ -444,6 +470,7 @@ describe("TV IP list", () => {
     expect(harness.list).toHaveBeenLastCalledWith({
       signal: expect.any(AbortSignal),
       params: {
+        channelType: "ip",
         locale: "en-US",
         cursor: "next",
         q: undefined,
@@ -723,12 +750,11 @@ describe("TV IP list", () => {
     harness.list.mockResolvedValue({ items: [ip], nextCursor: null });
     await render();
     await waitForSource("ip-1");
-    const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="tv.episodeSelector"]'
+    const select = container.querySelector<HTMLElement>(
+      '[role="group"][aria-label="tv.episodeSelector"]'
     )!;
     await act(async () => {
-      select.value = "mov-episode";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.querySelector<HTMLButtonElement>('[data-episode-id="mov-episode"]')!.click();
     });
     await vi.waitFor(() => {
       expect(player().currentSrc()).toBe(media.url);

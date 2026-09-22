@@ -424,7 +424,7 @@
     "ipsFundraising": "个 IP 正在融资",
     "ipsPresale": "个 IP 开放预售",
     "newThisWeek": "本周新增",
-    "createIP": "创建 IP 房间",
+    "createIP": "创建 AI 频道",
     "browseIPs": "浏览 IP",
     "enterStudio": "进入工作台",
     "catAll": "发现",
@@ -997,11 +997,11 @@
   },
   "newIpCreate": {
     "close": "关闭",
-    "pageTitle": "创建 IP",
-    "heroEyebrow": "新版 IP",
+    "pageTitle": "创建 AI 频道",
+    "heroEyebrow": "新建 AI 频道",
     "heroSubtitle": "先保存一个干净的 IP 草稿，后续设定、剧集、资产和商业化都归入同一个工作台。",
-    "fieldName": "IP 名称",
-    "fieldNamePlaceholder": "请输入 IP 名称",
+    "fieldName": "频道名称",
+    "fieldNamePlaceholder": "输入频道名称",
     "fieldGenres": "类型",
     "fieldTags": "标签",
     "taxonomyHelp": "已选 {count}/{max}",
@@ -10026,5 +10026,11 @@
     "empty": "没有可用的自有工作区",
     "unlink": "取消关联",
     "open": "在 Studio 中打开"
+  },
+  "channels": {
+    "category": "频道类别",
+    "ip": "IP 频道",
+    "community": "社区频道",
+    "create": "创建 AI 频道"
   }
 }

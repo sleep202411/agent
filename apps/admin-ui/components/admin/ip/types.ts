@@ -61,6 +61,7 @@ export type IpLibraryAssetRow = {
 };
 
 export type IpRow = {
+  channelType?: "ip" | "community";
   id: string;
   roomNumber: string;
   slug: string | null;

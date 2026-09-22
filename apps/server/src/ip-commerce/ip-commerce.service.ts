@@ -1098,6 +1098,7 @@ export class IpCommerceService {
         ],
         // P1.1 drift guard: only render placements whose IP is still displayable.
         ip: {
+          channelType: query.channelType,
           status: IpPublicationStatus.published,
           listingVisibility: IpListingVisibility.public,
           deletedAt: null,
@@ -2187,6 +2188,7 @@ export class IpCommerceService {
     const ip = await this.prisma.$transaction(async (tx) => {
       const created = await tx.ip.create({
         data: {
+          channelType: input.channelType ?? 'community',
           status: IpPublicationStatus.draft,
           listingVisibility: IpListingVisibility.private,
           sourceLocale,
@@ -3472,6 +3474,32 @@ export class IpCommerceService {
         entitlement: commerceEntitlementDto(row, row.ip.sourceLocale),
         alreadyRevoked: false,
       };
+    });
+  }
+
+  async updateAdminIpChannel(
+    user: AuthUser,
+    ipId: string,
+    input: { channelType: 'ip' | 'community'; expectedVersion: number },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.ip.updateMany({
+        where: { id: ipId, deletedAt: null, version: input.expectedVersion },
+        data: {
+          channelType: input.channelType,
+          updatedById: user.userId,
+          version: { increment: 1 },
+        },
+      });
+      if (result.count !== 1)
+        throw new ConflictException(
+          'Channel changed or no longer exists. Refresh and retry.',
+        );
+      const ip = await tx.ip.findUniqueOrThrow({
+        where: { id: ipId },
+        include: adminIpInclude,
+      });
+      return { channelType: ip.channelType };
     });
   }
 
@@ -6520,6 +6548,7 @@ function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {
   const search = query.q?.trim();
   return {
     deletedAt: null,
+    channelType: query.channelType,
     status: query.status as IpPublicationStatus | undefined,
     listingVisibility: query.listingVisibility as
       | IpListingVisibility
@@ -6851,6 +6880,7 @@ function publicIpRankBaseFilterSql(
         AND localization.archived_at IS NULL
         AND localization.status::text IN (${Prisma.join(PUBLIC_LOCALIZATION_STATUSES)})
     )
+    ${query.channelType ? Prisma.sql`AND ip.channel_type::text = ${query.channelType}` : Prisma.empty}
     ${genreFilter}
     ${tagFilter}
     ${regionFilter}
@@ -7631,6 +7661,7 @@ function adminIpSummaryDto(
   return {
     id: title.id,
     roomNumber: title.roomNumber,
+    channelType: title.channelType,
     slug: copy.value?.slug ?? null,
     title: copy.value?.title ?? title.id,
     subtitle: copy.value?.subtitle ?? null,
@@ -7691,6 +7722,7 @@ function creatorIpSummaryDto(
   return {
     id: title.id,
     roomNumber: title.roomNumber,
+    channelType: title.channelType,
     title: copy.value?.title ?? title.id,
     summary: copy.value?.summary ?? '',
     description: copy.value?.description ?? null,
@@ -8429,6 +8461,7 @@ function ipDto(
   return {
     id: title.id,
     roomNumber: title.roomNumber,
+    channelType: title.channelType,
     slug: copy.value?.slug ?? null,
     status: title.status,
     listingVisibility: title.listingVisibility,

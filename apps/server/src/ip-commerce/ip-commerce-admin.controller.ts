@@ -48,6 +48,7 @@ import {
   ResolveAdminIpReportSchema,
   UpdateAdminIpTaxonomyTermSchema,
   UpdateAdminIpPublicationSchema,
+  UpdateIpChannelSchema,
   UpdateAdminIpRevenueConfigSchema,
   UpdateIpCommerceSettingSchema,
   IpCommerceSettingParamsSchema,
@@ -466,6 +467,37 @@ export class IpCommerceAdminController {
     return {
       code: 200,
       data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('ips/:ipId/channel')
+  async updateChannel(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(IpParamsSchema)) params: IpParams,
+    @Body(new ZodValidationPipe(UpdateIpChannelSchema))
+    body: { channelType: 'ip' | 'community'; expectedVersion: number },
+    @Req() request: Request,
+  ) {
+    await this.ipCommerce.updateAdminIpChannel(
+      adminToAuthUser(admin),
+      params.ipId,
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.channel.update',
+      resourceType: 'ip',
+      resourceId: params.ipId,
+      metadata: { channelType: body.channelType },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data: await this.ipCommerce.getAdminIp(params.ipId, {}),
     };
   }
 
