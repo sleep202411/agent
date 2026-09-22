@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import {
   IconExternalLink,
@@ -94,9 +94,11 @@ export function ProductionProjectResources({
 
 function ResourcePicker({ crewId }: { crewId: string }) {
   const t = useTranslations("crewProduction");
+  const tc = useTranslations("common");
   const createResource = useCreateCrewProductionResource(crewId);
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"link" | "asset">("link");
+  const draftRevision = useRef(0);
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [query, setQuery] = useState("");
@@ -109,6 +111,7 @@ function ResourcePicker({ crewId }: { crewId: string }) {
   const validUrl = isHttpUrl(url.trim());
 
   const close = () => {
+    draftRevision.current += 1;
     setOpen(false);
     setTitle("");
     setUrl("");
@@ -121,9 +124,11 @@ function ResourcePicker({ crewId }: { crewId: string }) {
       ...(title.trim() ? { title: title.trim() } : {}),
       url: url.trim(),
     };
-    close();
+    const revision = draftRevision.current;
+    setOpen(false);
     try {
       await createResource.mutateAsync(input);
+      if (draftRevision.current === revision) close();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("resources.addFailed"));
     }
@@ -147,7 +152,10 @@ function ResourcePicker({ crewId }: { crewId: string }) {
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) close();
-        else setOpen(true);
+        else {
+          draftRevision.current += 1;
+          setOpen(true);
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -200,7 +208,10 @@ function ResourcePicker({ crewId }: { crewId: string }) {
                 <Input
                   autoFocus
                   value={url}
-                  onChange={(event) => setUrl(event.target.value)}
+                  onChange={(event) => {
+                    draftRevision.current += 1;
+                    setUrl(event.target.value);
+                  }}
                   placeholder="https://"
                   inputMode="url"
                 />
@@ -211,7 +222,10 @@ function ResourcePicker({ crewId }: { crewId: string }) {
                 </span>
                 <Input
                   value={title}
-                  onChange={(event) => setTitle(event.target.value)}
+                  onChange={(event) => {
+                    draftRevision.current += 1;
+                    setTitle(event.target.value);
+                  }}
                   placeholder={t("resources.linkTitleOptional")}
                 />
               </label>
@@ -245,6 +259,24 @@ function ResourcePicker({ crewId }: { crewId: string }) {
                   <IconLoader2 className="size-4 animate-spin text-[#747b85]" />
                 </div>
               ) : null}
+              {assets.isError ? (
+                <div role="alert" className="space-y-2 px-3 py-3 text-xs text-destructive">
+                  <p>{assets.error.message}</p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={assets.isFetching}
+                    onClick={() =>
+                      void (assets.isFetchNextPageError
+                        ? assets.fetchNextPage({ cancelRefetch: false })
+                        : assets.refetch())
+                    }
+                  >
+                    {tc("retry")}
+                  </Button>
+                </div>
+              ) : null}
               {items.map((asset) => (
                 <button
                   key={asset.id}
@@ -256,7 +288,18 @@ function ResourcePicker({ crewId }: { crewId: string }) {
                   <span className="truncate">{asset.name}</span>
                 </button>
               ))}
-              {!assets.isLoading && items.length === 0 ? (
+              {assets.hasNextPage ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={assets.isFetching}
+                  onClick={() => void assets.fetchNextPage({ cancelRefetch: false })}
+                >
+                  {tc("loadMore")}
+                </Button>
+              ) : null}
+              {!assets.isLoading && !assets.isError && items.length === 0 ? (
                 <p className="px-3 py-8 text-center text-[10px] text-[#696f79]">
                   {t("resources.noAssets")}
                 </p>
