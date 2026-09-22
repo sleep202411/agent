@@ -34,6 +34,8 @@ export interface RateLimitArgs {
   windowSec: number;
 }
 
+const REDIS_ADMISSION_TIMEOUT_MS = 1_000;
+
 const ADMIT_COUNTER = `
 local count = redis.call('INCR', KEYS[1])
 if redis.call('TTL', KEYS[1]) < 0 then
@@ -61,15 +63,23 @@ export class RateLimitService {
     const key = `ratelimit:${args.bucket}:${args.actorId}:${windowStart}`;
 
     let count: number;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      // The shared client queues offline commands indefinitely.
+      if (this.redis.status !== 'ready') {
+        throw new Error('Redis is not ready');
+      }
       // One operation prevents interruption between increment and expiry.
       // Also repair counters left without TTL by the former two-call path.
-      count = (await this.redis.eval(
-        ADMIT_COUNTER,
-        1,
-        key,
-        args.windowSec + 5,
-      )) as number;
+      count = (await Promise.race([
+        this.redis.eval(ADMIT_COUNTER, 1, key, args.windowSec + 5),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Redis rate-limit admission timed out')),
+            REDIS_ADMISSION_TIMEOUT_MS,
+          );
+        }),
+      ])) as number;
     } catch (err) {
       // Fail-open on Redis errors: rate limit is a defense-in-depth
       // measure, not the primary access control. Better to serve
@@ -77,6 +87,8 @@ export class RateLimitService {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`rate-limit redis error (failing open): ${msg}`);
       return { remaining: args.max, resetInSec: args.windowSec };
+    } finally {
+      clearTimeout(timer);
     }
 
     const remaining = Math.max(0, args.max - count);
