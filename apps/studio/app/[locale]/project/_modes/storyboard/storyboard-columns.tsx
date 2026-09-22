@@ -19,25 +19,25 @@ function ShotFrameCell({ row, selected, actions }: StoryboardCellProps) {
 function ShotClipCell({ row, selected, actions }: StoryboardCellProps) {
   return <ShotPictureCell row={row} kind="video" selected={selected} onOpen={() => actions.onSelect(row.id, "video")} />;
 }
-function ShotSizeCell({ row, canEdit, label, actions }: StoryboardCellProps) {
-  return <ShotOptionCell group="size" value={row.data.shotSize} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { shotSize: next })} />;
+function ShotSizeCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+  return <ShotOptionCell group="size" value={row.data.shotSize} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { shotSize: next })} cellId={cellId} onNavigate={onNavigate} />;
 }
-function ShotAngleCell({ row, canEdit, label, actions }: StoryboardCellProps) {
-  return <ShotOptionCell group="angle" value={row.data.perspective} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { perspective: next })} />;
+function ShotAngleCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+  return <ShotOptionCell group="angle" value={row.data.perspective} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { perspective: next })} cellId={cellId} onNavigate={onNavigate} />;
 }
-function ShotMovementCell({ row, canEdit, label, actions }: StoryboardCellProps) {
-  return <ShotOptionCell group="movement" value={row.data.movement} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { movement: next })} />;
+function ShotMovementCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+  return <ShotOptionCell group="movement" value={row.data.movement} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { movement: next })} cellId={cellId} onNavigate={onNavigate} />;
 }
-function ShotDurationColumnCell({ row, canEdit, label, actions }: StoryboardCellProps) {
-  return <ShotDurationCell value={row.data.durationSeconds} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { durationSeconds: next })} />;
+function ShotDurationColumnCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+  return <ShotDurationCell value={row.data.durationSeconds} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { durationSeconds: next })} cellId={cellId} onNavigate={onNavigate} />;
 }
-function ShotDialogueCell({ row, canEdit, label, actions }: StoryboardCellProps) {
+function ShotDialogueCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return <ShotTextCell value={row.data.dialogue ?? ""} placeholder={t("cell.dialoguePlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { dialogue: next || undefined })} />;
+  return <ShotTextCell value={row.data.dialogue ?? ""} placeholder={t("cell.dialoguePlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { dialogue: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
 }
-function ShotNotesCell({ row, canEdit, label, actions }: StoryboardCellProps) {
+function ShotNotesCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return <ShotTextCell value={row.data.notes ?? ""} placeholder={t("cell.notesPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { notes: next || undefined })} />;
+  return <ShotTextCell value={row.data.notes ?? ""} placeholder={t("cell.notesPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { notes: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
 }
 function ShotDescriptionCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
   const t = useTranslations("storyboard");
