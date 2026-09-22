@@ -6,6 +6,7 @@ import {
   acceptsSubmissionResponse,
   isUncertainSubmission,
   matchesCanvasJob,
+  needsJobRecovery,
 } from "./canvas-job-recovery";
 
 const job = {
@@ -14,12 +15,27 @@ const job = {
   documentBlockId: "node-1",
   modelId: "wan",
 } as FizzAiJobView;
+const completedVideoJob = {
+  ...job,
+  type: "video",
+  status: "completed",
+  stage: "completed",
+  outputs: [{ type: "video", url: "https://cdn.test/video.mp4" }],
+} as FizzAiJobView;
 function node(generation: GenerationState): CanvasNodeShape {
   return {
     id: "node-1",
     type: "video",
     position: { x: 0, y: 0 },
     data: { modelId: "wan", generation },
+  };
+}
+function emptyNode(overrides: Partial<CanvasNodeShape["data"]> = {}): CanvasNodeShape {
+  return {
+    id: "node-1",
+    type: "video",
+    position: { x: 0, y: 0 },
+    data: { modelId: "wan", ...overrides },
   };
 }
 
@@ -39,6 +55,22 @@ describe("canvas generation recovery", () => {
     );
     expect(matchesCanvasJob(node({ status: "failed" }), job)).toBe(false);
     expect(matchesCanvasJob(node({ status: "generating", jobId: "new-job" }), job)).toBe(false);
+  });
+  it("recovers an erased generation projection only with exact block, type, and model", () => {
+    expect(matchesCanvasJob(emptyNode(), completedVideoJob)).toBe(true);
+    expect(matchesCanvasJob(emptyNode({ modelId: "veo" }), completedVideoJob)).toBe(false);
+    expect(matchesCanvasJob({ ...emptyNode(), type: "audio" }, completedVideoJob)).toBe(false);
+    expect(matchesCanvasJob({ ...emptyNode(), id: "other-node" }, completedVideoJob)).toBe(false);
+  });
+  it("rechecks a completed card that has no persisted output", () => {
+    expect(needsJobRecovery({ status: "done", jobId: "job-1" })).toBe(true);
+    expect(
+      needsJobRecovery({
+        status: "done",
+        jobId: "job-1",
+        outputs: [{ type: "video", url: "https://cdn.test/video.mp4" }],
+      })
+    ).toBe(false);
   });
   it("ignores late acknowledgements after a newer submission or completion", () => {
     expect(

@@ -237,6 +237,13 @@ describe("canvas task lifecycle", () => {
     expect(state()).toMatchObject({ status: "done", outputs: [{ assetId: "asset" }] });
     expect(submitFizzAiJob).toHaveBeenCalledTimes(1);
   });
+  it("hydrates outputs for a card persisted as done before its output read completed", async () => {
+    nodes[0].data.generation = { status: "done", jobId: "job-1" };
+    vi.mocked(listFizzAiJobs).mockResolvedValue({ jobs: [job], nextCursor: null });
+    await mount();
+    expect(state()).toMatchObject({ status: "done", outputs: [{ assetId: "asset" }] });
+    expect(listFizzAiJobs).toHaveBeenCalledWith(expect.objectContaining({ ids: ["job-1"] }));
+  });
   it("unblocks an old card after a failed lookup recovers and confirms no job exists", async () => {
     vi.useFakeTimers();
     nodes[0].data.generation = { status: "submitting" };

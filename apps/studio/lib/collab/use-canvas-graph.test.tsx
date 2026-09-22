@@ -4,7 +4,20 @@ import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 import * as Y from "yjs";
 import { readAllNodes, writeNode } from "./canvas-doc";
-import { useCanvasGraph, type CanvasGraph } from "./use-canvas-graph";
+import { mergeNodeReplacementData, useCanvasGraph, type CanvasGraph } from "./use-canvas-graph";
+
+it("preserves a generation receipt when a stale full-node replacement omits it", () => {
+  const receipt = { status: "generating", jobId: "job-1" };
+  expect(
+    mergeNodeReplacementData({ prompt: "old", generation: receipt }, { prompt: "new" })
+  ).toEqual({ prompt: "new", generation: receipt });
+  expect(
+    mergeNodeReplacementData(
+      { generation: receipt },
+      { generation: { status: "done", jobId: "job-2" } }
+    )
+  ).toEqual({ generation: { status: "done", jobId: "job-2" } });
+});
 
 it("undoes prompt edits without losing the submission receipt or completed output", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -32,6 +45,21 @@ it("undoes prompt edits without losing the submission receipt or completed outpu
     const receipt = { status: "submitting", submissionKey: "receipt" };
     await act(async () => graph.patchNodeData("node", { generation: receipt }));
     expect(graph.canUndo).toBe(false);
+    await act(async () =>
+      graph.onNodesChange([
+        {
+          type: "replace",
+          id: "node",
+          item: {
+            id: "node",
+            type: "video",
+            position: { x: 0, y: 0 },
+            data: { prompt: "stale replacement" },
+          },
+        } as never,
+      ])
+    );
+    expect(graph.getNode("node")?.data.generation).toEqual(receipt);
     await act(async () => graph.patchNodeData("node", { prompt: "edited" }));
     await act(async () => graph.undo());
     expect(graph.getNode("node")?.data).toEqual({ prompt: "original", generation: receipt });
