@@ -138,13 +138,14 @@ export function useLinkHandler(props: LinkHandlerProps) {
     if (!url || !editor) return;
 
     const { selection } = editor.state;
-    const isEmpty = selection.empty;
+    // A caret inside an existing link updates its destination, not its label.
+    const insertLabel = selection.empty && !editor.isActive("link");
 
     let chain = editor.chain().focus();
 
     chain = chain.extendMarkRange("link").setLink({ href: url });
 
-    if (isEmpty) {
+    if (insertLabel) {
       chain = chain.insertContent({ type: "text", text: url });
     }
 
