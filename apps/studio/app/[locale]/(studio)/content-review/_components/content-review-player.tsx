@@ -115,6 +115,15 @@ export function ContentReviewPlayer({
             onTime?.(next);
           }}
           onLoadedMetadata={(event) => {
+            // A selected finding may predate the signed playback URL/video.
+            // Replay the current selection once metadata is available.
+            if (selected?.seconds != null) {
+              event.currentTarget.currentTime = selected.seconds;
+              event.currentTarget.pause();
+              setPlaying(false);
+              setCurrent(selected.seconds);
+              onTime?.(selected.seconds);
+            }
             const next = event.currentTarget.duration;
             if (Number.isFinite(next) && next > 0) {
               setDuration(next);
