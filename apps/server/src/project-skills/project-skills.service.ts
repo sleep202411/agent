@@ -567,7 +567,6 @@ export class ProjectSkillsService {
     requestId?: string,
   ) {
     const context = await this.requireManage(user.userId, ownerKind, projectId);
-    const observed = await this.requireInstallation(context, installationId);
     await this.ensureState(context);
     return this.executeIdempotent(
       context,
@@ -576,6 +575,11 @@ export class ProjectSkillsService {
       'uninstall',
       { installationId, ...body },
       async (tx) => {
+        const observed = await this.requireInstallation(
+          context,
+          installationId,
+          tx,
+        );
         const projectRevision = await this.bumpProjectRevision(
           tx,
           context,
@@ -870,8 +874,9 @@ export class ProjectSkillsService {
   private async requireInstallation(
     context: OwnerContext,
     installationId: string,
+    db: Prisma.TransactionClient = this.prisma,
   ) {
-    const row = await this.prisma.projectSkillInstallation.findFirst({
+    const row = await db.projectSkillInstallation.findFirst({
       where: {
         id: installationId,
         ...installationOwnerWhere(context.ownerKind, context.projectId),
