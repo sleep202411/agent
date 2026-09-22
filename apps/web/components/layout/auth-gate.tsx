@@ -61,7 +61,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   // Providers level (covers /projects too, not just (site) routes).
   useEffect(() => {
     const stripped = stripLocalePrefix(pathname);
-    if (!isProtectedPath(stripped)) return;
+    if (!isProtectedPath(stripped)) {
+      promptedFor.current = null;
+      return;
+    }
     if (isLoading || !isFetched) return;
     if (user) {
       promptedFor.current = null;
