@@ -6557,6 +6557,7 @@
     "notApproved": "暫未通過審批"
   },
   "courses": {
+    "accessDenied": "暫無權限，您可以聯絡 business@fizzdragon.com 為您開通權限。",
     "heroEyebrow": "課程中心",
     "heroMeta": "系統學習 · 實戰進階",
     "heroTitle": "精選好課，",
