@@ -14,8 +14,9 @@ suite('rate-limit expiry recovery (Redis)', () => {
   let redis: Redis;
   let service: RateLimitService;
   const keys: string[] = [];
-  beforeAll(() => {
+  beforeAll(async () => {
     redis = new Redis(fixtureUrl!);
+    await redis.ping();
     service = new RateLimitService(redis);
   });
   afterAll(async () => {
