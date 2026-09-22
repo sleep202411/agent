@@ -322,7 +322,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
     expect(onSelect.mock.calls[0][0].videoVariant).not.toBeNull();
   });
 
-  it.each(["account", "project", "close", "authority"])(
+  it.each(["account", "project", "close"])(
     "abandons Crew import before binding after %s changes",
     async (change) => {
       shared.list.mockResolvedValue([
@@ -373,6 +373,38 @@ describe("StoryCandidateAssetPickerDialog", () => {
       expect(onOpenChange).not.toHaveBeenCalledWith(false);
     }
   );
+  it("keeps an in-flight upload alive across a transient canSelect change", async () => {
+    let finish!: () => void;
+    const onUpload = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const onOpenChange = vi.fn();
+    await renderDialog({ onUpload, onOpenChange, allowedKinds: ["video"] });
+    const input = document.querySelector('input[type="file"]')!;
+    const drop = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(drop, "dataTransfer", {
+      value: {
+        files: [new File(["video"], "scene.mp4", { type: "video/mp4" })],
+        dropEffect: "none",
+      },
+    });
+    await act(async () => input.parentElement!.dispatchEvent(drop));
+    const signal = (onUpload.mock.calls[0] as unknown as [File, unknown, AbortSignal])[2];
+
+    await renderDialog({
+      canSelect: false,
+      onUpload,
+      onOpenChange,
+      allowedKinds: ["video"],
+    });
+    expect(signal.aborted).toBe(false);
+
+    await act(async () => finish());
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
   it("aborts an upload after closing and ignores its delayed success", async () => {
     let finish!: () => void;
     const onUpload = vi.fn(

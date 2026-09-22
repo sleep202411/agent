@@ -84,7 +84,9 @@ export function StoryCandidateAssetPickerDialog(props: StoryCandidateAssetPicker
     props.projectId,
     user?.id,
     props.open,
-    props.canSelect,
+    // A transient capability change must not remount the picker and abort an
+    // upload already accepted by the user. Upload confirmation and candidate
+    // attachment re-check authorization on the server.
     [...props.allowedKinds].sort(),
   ]);
   return props.projectId ? (
