@@ -133,7 +133,7 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   archive_sha="$(shasum -a 256 /tmp/cn-src.tar.gz | awk '{print $1}')"
   chunk_dir="$TMP_DIR/chunks"
   mkdir -p "$chunk_dir"
-  (cd "$chunk_dir" && split -b 4m /tmp/cn-src.tar.gz part-)
+  (cd "$chunk_dir" && split -b 32m /tmp/cn-src.tar.gz part-)
   "${SSH[@]}" "root@$ECS_IP" 'rm -rf /root/src-chunks && mkdir -p /root/src-chunks'
   for chunk in "$chunk_dir"/part-*; do
     name="$(basename "$chunk")"
