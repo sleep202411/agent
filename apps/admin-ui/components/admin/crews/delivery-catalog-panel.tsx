@@ -1,4 +1,5 @@
 "use client";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 type Field = {
@@ -18,7 +19,7 @@ type Definition = {
 type Category = { id: string; version: number; definition: Definition };
 type Page = { items: Category[]; nextCursor: string | null };
 async function request<T>(path: string, signal: AbortSignal, data?: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(adminUiApiPath(path), {
     method: data ? "POST" : "GET",
     signal,
     cache: "no-store",

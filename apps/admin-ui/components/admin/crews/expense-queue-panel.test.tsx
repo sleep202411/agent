@@ -30,6 +30,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 const click = async (label: string) =>
   act(async () => {
@@ -74,4 +75,17 @@ it("guards overlapping refreshes and ignores results after the session scope cha
   await act(async () => finish(response([row])));
   expect(container.textContent).toContain("No pending submissions");
   expect(container.textContent).not.toContain("creator-a");
+});
+
+it.each(["", "/ops"])("uses configured base %s for queue and pagination", async (base) => {
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_UI_BASE_PATH", base);
+  await act(async () => root.render(<ExpenseQueuePanel />));
+  expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
+    `${base}/api/admin/crew-expense-submissions?limit=50`
+  );
+  vi.mocked(fetch).mockResolvedValueOnce(response([]));
+  await click("Load more");
+  expect(vi.mocked(fetch).mock.calls[1][0]).toBe(
+    `${base}/api/admin/crew-expense-submissions?limit=50&after=${row.id}`
+  );
 });

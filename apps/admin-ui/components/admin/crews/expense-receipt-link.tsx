@@ -1,4 +1,5 @@
 "use client";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 export function ExpenseReceiptLink({
@@ -26,7 +27,9 @@ export function ExpenseReceiptLink({
     setUrl(null);
     try {
       const response = await fetch(
-        `/api/admin/crew-expense-submissions/${encodeURIComponent(draftId)}/receipts/${encodeURIComponent(id)}/read?version=${version}`,
+        adminUiApiPath(
+          `/api/admin/crew-expense-submissions/${encodeURIComponent(draftId)}/receipts/${encodeURIComponent(id)}/read?version=${version}`
+        ),
         { cache: "no-store", signal: controller.signal }
       );
       const body = await response.json();
