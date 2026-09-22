@@ -67,7 +67,18 @@ interface LevelApplyDialogProps {
   lockedLevelId?: number;
 }
 
-export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApplyDialogProps) {
+export function LevelApplyDialog(props: LevelApplyDialogProps) {
+  return props.open ? <LevelApplyForm {...props} /> : null;
+}
+
+function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogProps) {
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const t = useTranslations("creatorCenter");
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
@@ -160,7 +171,10 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
   }
 
   function handleOpenChange(next: boolean) {
-    if (!next) resetForm();
+    if (!next) {
+      active.current = false;
+      resetForm();
+    }
     onOpenChange(next);
   }
 
@@ -169,15 +183,19 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
     setUploading(true);
     try {
       const path = await uploadUserLevelApplyAttachment(file);
+      if (!active.current) return;
       setAttachmentPath(path);
       setAttachmentName(file.name);
       toast.success(t("levels.apply.uploadSuccess"));
     } catch (err) {
+      if (!active.current) return;
       const msg = err instanceof ApiRequestError ? err.message : t("levels.apply.uploadFailed");
       toast.error(msg);
     } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      if (active.current) {
+        setUploading(false);
+        if (fileRef.current) fileRef.current.value = "";
+      }
     }
   }
 
@@ -213,14 +231,16 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
         ...(attachmentPath ? { attachmentUrl: attachmentPath } : {}),
         ...(note ? { extraInfo: note } : {}),
       });
+      if (!active.current) return;
       toast.success(t("levels.apply.submitSuccess"));
       void pendingQuery.refetch();
       handleOpenChange(false);
     } catch (err) {
+      if (!active.current) return;
       const msg = err instanceof ApiRequestError ? err.message : t("levels.apply.submitFailed");
       toast.error(msg);
     } finally {
-      setSubmitting(false);
+      if (active.current) setSubmitting(false);
     }
   }
 
