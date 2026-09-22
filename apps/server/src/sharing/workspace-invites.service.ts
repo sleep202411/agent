@@ -79,23 +79,29 @@ export class WorkspaceInvitesService {
     const role = ROLE_MAP[input.role];
     const { token, tokenHash } = generateInviteToken();
     const expiresAt = new Date(Date.now() + input.expiresInDays * MS_PER_DAY);
-    const invite = await this.prisma.workspaceInvite.create({
-      data: {
-        workspaceId,
-        role,
-        tokenHash,
-        status: WorkspaceInviteStatus.pending,
-        invitedById: actor.userId,
-        expiresAt,
-      },
-    });
-    await this.audit.record({
-      workspaceId,
-      actorUserId: actor.userId,
-      action: 'workspace.invite.created',
-      entityType: 'workspace_invite',
-      entityId: invite.id,
-      after: { role, expiresAt: expiresAt.toISOString() },
+    const invite = await this.prisma.$transaction(async (tx) => {
+      const invite = await tx.workspaceInvite.create({
+        data: {
+          workspaceId,
+          role,
+          tokenHash,
+          status: WorkspaceInviteStatus.pending,
+          invitedById: actor.userId,
+          expiresAt,
+        },
+      });
+      await this.audit.record(
+        {
+          workspaceId,
+          actorUserId: actor.userId,
+          action: 'workspace.invite.created',
+          entityType: 'workspace_invite',
+          entityId: invite.id,
+          after: { role, expiresAt: expiresAt.toISOString() },
+        },
+        tx,
+      );
+      return invite;
     });
     return {
       inviteId: invite.id,
