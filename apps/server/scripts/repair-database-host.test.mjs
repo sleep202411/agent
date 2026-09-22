@@ -5,9 +5,10 @@ import ts from 'typescript';
 
 // Exercise the scripts' actual admission functions without running their
 // top-level database setup or main(), even when tests fail.
-for (const [script, variable] of [
-  ['repair-storyboard-node-identities.ts', 'connectionString'],
-  ['repair-story-chapter-graphs.ts', 'databaseUrl'],
+for (const [script, variable, functionName] of [
+  ['repair-storyboard-node-identities.ts', 'connectionString', 'assertDatabaseAllowed'],
+  ['repair-story-chapter-graphs.ts', 'databaseUrl', 'assertDatabaseAllowed'],
+  ['backfill-media-original-placements.ts', 'connectionString', 'assertLocalDatabase'],
 ]) {
   const source = readFileSync(new URL(script, import.meta.url), 'utf8');
   const file = ts.createSourceFile(
@@ -19,13 +20,13 @@ for (const [script, variable] of [
   const guard = file.statements.find(
     (node) =>
       ts.isFunctionDeclaration(node) &&
-      node.name?.text === 'assertDatabaseAllowed',
+      node.name?.text === functionName,
   );
   assert.ok(guard);
   const js = ts.transpileModule(guard.getText(file), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
-  const load = new Function(variable, `${js}; return assertDatabaseAllowed;`);
+  const load = new Function(variable, `${js}; return ${functionName};`);
   for (const host of ['localhost', '127.0.0.1', '[::1]']) {
     test(`${script}: admits loopback ${host}`, () => {
       assert.doesNotThrow(() =>
