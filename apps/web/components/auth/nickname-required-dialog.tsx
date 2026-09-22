@@ -14,15 +14,12 @@
  * `preventDefault()`s outside / escape closes, and we render no close
  * button. The only way out is to submit a valid nickname.
  *
- * Avatar is optional: the slot defaults to the DiceBear fallback
- * (seeded by user id, so even brand-new accounts get a unique face).
- * Hovering reveals a camera overlay; clicking opens a file picker and
- * uploads via `useUploadAvatar`. The newly-uploaded path lives in local
- * state until Save, so the user can preview before committing — Save
- * bundles `avatar` into the same `updateUserInfo` call as `nickName`.
+ * Avatar is optional and uploads directly to the current account. Each
+ * account receives a fresh form; pending work cannot carry its draft or
+ * feedback into a replacement account's gate.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { IconCamera, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 
@@ -37,31 +34,29 @@ import { useUserInfo, useUpdateUserInfo, useUploadAvatar } from "@/src/hooks/use
 import { ApiRequestError } from "@/src/lib/api";
 
 export function NicknameRequiredDialog() {
+  const { data: userInfo, isFetched } = useUserInfo();
+  const hasUser = userInfo?.id !== undefined && userInfo?.id !== null;
+  if (!isFetched || !hasUser || (userInfo?.nickName ?? "").trim()) return null;
+  return <NicknameForm key={userInfo.id} />;
+}
+
+function NicknameForm() {
   const t = useTranslations("auth");
   const tc = useTranslations("common");
-  const { data: userInfo, isFetched } = useUserInfo();
+  const { data: userInfo } = useUserInfo();
   const update = useUpdateUserInfo();
   const uploadAvatar = useUploadAvatar();
-
   const [nickname, setNickname] = useState("");
   const [description, setDescription] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Trigger condition. Wait for `isFetched` so we don't flash the dialog
-  // before the user-info query resolves on first paint. Treat both empty
-  // string and whitespace-only as "missing".
-  const hasUser = !!userInfo && userInfo.id !== undefined && userInfo.id !== null;
-  const needsNickname = hasUser && !(userInfo?.nickName ?? "").trim();
-  const open = isFetched && needsNickname;
-
-  // Reset draft state each time the dialog opens so values from a prior
-  // session don't linger.
-  useEffect(() => {
-    if (open) {
-      setNickname("");
-      setDescription("");
-    }
-  }, [open]);
+  const active = useRef(false);
+  const pending = useRef(false);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   const submitting = update.isPending;
   const uploading = uploadAvatar.isPending;
@@ -77,28 +72,33 @@ export function NicknameRequiredDialog() {
   // any local "pending" state. We don't need to forward `avatar` in
   // the Save payload below.
   const handlePickAvatar = () => {
-    if (uploading) return;
+    if (!active.current || pending.current) return;
     fileInputRef.current?.click();
   };
 
   const handleAvatarFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
-    if (!file) return;
+    if (!file || !active.current || pending.current) return;
     if (!file.type.startsWith("image/")) {
       toast.error(t("avatarImageOnly"));
       return;
     }
+    pending.current = true;
     try {
       await uploadAvatar.mutateAsync(file);
     } catch (err) {
+      if (!active.current) return;
       const msg = err instanceof Error ? err.message : "";
       toast.error(msg || t("avatarUploadFailed"));
+    } finally {
+      pending.current = false;
     }
   };
 
   const handleSubmit = () => {
-    if (!canSubmit) return;
+    if (!active.current || pending.current || !canSubmit) return;
+    pending.current = true;
     update.mutate(
       {
         nickName: nickname.trim(),
@@ -107,10 +107,15 @@ export function NicknameRequiredDialog() {
         ...(description.trim() ? { description: description.trim() } : {}),
       },
       {
+        onSettled: () => {
+          pending.current = false;
+        },
         onSuccess: () => {
+          if (!active.current) return;
           toast.success(t("nicknameSaved"));
         },
         onError: (err) => {
+          if (!active.current) return;
           // Surface raw backend response — same pattern as the profile
           // edit dialog. A 422 / 409 (duplicate nickname?) is exactly
           // what the user needs to see to recover.
@@ -126,7 +131,7 @@ export function NicknameRequiredDialog() {
   };
 
   return (
-    <Dialog open={open}>
+    <Dialog open>
       <DialogContent showCloseButton={false} className="sm:max-w-md">
         {/* Custom header — skipping `<DialogHeader>` because that always
             renders a close button, which would let users bypass the gate. */}
@@ -143,7 +148,7 @@ export function NicknameRequiredDialog() {
             <button
               type="button"
               onClick={handlePickAvatar}
-              disabled={uploading}
+              disabled={uploading || submitting}
               className="group relative size-20 shrink-0 overflow-hidden rounded-full outline-none ring-1 ring-border transition-all hover:ring-primary/40 focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait"
               aria-label={t("avatarUpload")}
             >
@@ -165,6 +170,7 @@ export function NicknameRequiredDialog() {
               ref={fileInputRef}
               type="file"
               accept="image/*"
+              disabled={uploading || submitting}
               className="hidden"
               onChange={handleAvatarFile}
             />
@@ -174,6 +180,7 @@ export function NicknameRequiredDialog() {
             <Field>
               <FieldLabel required>{t("nicknameLabel")}</FieldLabel>
               <Input
+                disabled={uploading || submitting}
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 placeholder={t("nicknamePlaceholder")}
@@ -188,6 +195,7 @@ export function NicknameRequiredDialog() {
             <Field>
               <FieldLabel>{t("descriptionLabel")}</FieldLabel>
               <Textarea
+                disabled={uploading || submitting}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={t("descriptionPlaceholder")}
