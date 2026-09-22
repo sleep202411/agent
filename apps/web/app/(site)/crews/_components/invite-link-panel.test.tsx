@@ -119,3 +119,44 @@ it("identifies and revokes community links from the management list", async () =
     vi.resetAllMocks();
   }
 });
+
+it.each(["same", "other", "failed"])("handles %s link revocation after creation", async (kind) => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  mocks.links = [
+    {
+      id: kind === "other" ? "other" : "new",
+      kind: "member",
+      maxUses: null,
+      useCount: 0,
+      expiresAt: null,
+    },
+  ];
+  mocks.create.mockResolvedValue({ id: "new", token: "new-token" });
+  if (kind === "failed") mocks.revoke.mockRejectedValue(new Error("Unavailable"));
+  else mocks.revoke.mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+  try {
+    act(() => root.render(<InviteLinkPanel crewId="crew" open canGrantPolicies={false} />));
+    await act(async () =>
+      [...host.querySelectorAll<HTMLButtonElement>("button")]
+        .find((b) => b.textContent?.includes("inviteLinkCreate"))!
+        .click()
+    );
+    expect(host.querySelector("input")?.value).toContain("new-token");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('button[aria-label="inviteLinkRevoke"]')!.click()
+    );
+    if (kind === "same") {
+      expect(host.querySelector('button[aria-label="inviteLinkCopy"]')).toBeNull();
+      expect(host.querySelector("input")).toBeNull();
+    } else expect(host.querySelector("input")?.value).toContain("new-token");
+  } finally {
+    act(() => root.unmount());
+    mocks.links = [];
+    vi.resetAllMocks();
+  }
+});
