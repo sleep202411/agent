@@ -80,6 +80,23 @@ const RECHARGE_PENDING_KEY = "community_recharge_pending";
 // conversion (with the order id as dedupe_id) on the `?recharge=success` return.
 const AXON_PENDING_PURCHASE_KEY = "axon_pending_purchase:recharge";
 
+function hasPendingRecharge(): boolean {
+  try {
+    return window.sessionStorage.getItem(RECHARGE_PENDING_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistPendingRecharge(pending: boolean): void {
+  try {
+    if (pending) window.sessionStorage.setItem(RECHARGE_PENDING_KEY, "1");
+    else window.sessionStorage.removeItem(RECHARGE_PENDING_KEY);
+  } catch {
+    // Reload recovery is best-effort; storage must not block the current refresh.
+  }
+}
+
 export interface CommunityRechargeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -218,7 +235,7 @@ export function CommunityRechargeDialog({
     if (returnClaimed) return;
     const params = new URLSearchParams(window.location.search);
     const outcome = params.get("recharge");
-    const pending = window.sessionStorage?.getItem(RECHARGE_PENDING_KEY) === "1";
+    const pending = hasPendingRecharge();
     if (outcome !== "success" && outcome !== "cancelled" && !pending) return;
     returnClaimed = true;
 
@@ -250,14 +267,14 @@ export function CommunityRechargeDialog({
     if (outcome === "success") {
       axonFlushPendingPurchase(AXON_PENDING_PURCHASE_KEY);
     }
-    window.sessionStorage?.setItem(RECHARGE_PENDING_KEY, "1");
+    persistPendingRecharge(true);
     const toastId = toast.loading(t("paymentProcessing"));
     void (async () => {
       try {
         await onSuccess?.();
         await sleep(2500);
         await onSuccess?.();
-        window.sessionStorage?.removeItem(RECHARGE_PENDING_KEY);
+        persistPendingRecharge(false);
         toast.success(t("paymentSuccess"), { id: toastId });
       } catch {
         toast.error(t("paymentBalanceRefreshFailed"), { id: toastId });
