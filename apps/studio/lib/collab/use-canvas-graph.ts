@@ -115,6 +115,27 @@ function stableSig(value: unknown): string {
     .join(",")}}`;
 }
 
+/**
+ * React Flow can send a full `replace` payload that was derived from a stale
+ * render. Generation receipts are owned by the job reconciler and may have
+ * landed in the Y.Doc after that render, so a replacement that omits the
+ * field must not clear it. Other fields keep the existing replacement
+ * semantics, including deliberate writes of an explicit `generation` value.
+ */
+export function mergeNodeReplacementData(
+  currentData: Record<string, unknown> | undefined,
+  incomingData: Record<string, unknown>
+): Record<string, unknown> {
+  if (
+    currentData &&
+    Object.prototype.hasOwnProperty.call(currentData, "generation") &&
+    !Object.prototype.hasOwnProperty.call(incomingData, "generation")
+  ) {
+    return { ...incomingData, generation: currentData.generation };
+  }
+  return incomingData;
+}
+
 export function useCanvasGraph(
   doc: Y.Doc | null,
   awareness?: Awareness | null,
@@ -481,11 +502,13 @@ export function useCanvasGraph(
           dragEnded = true;
         } else if (change.type === "add" || change.type === "replace") {
           const item = change.item;
+          const currentNode = current(item.id);
+          const incomingData = (item.data ?? {}) as Record<string, unknown>;
           writes.push({
             id: item.id,
             type: item.type ?? "default",
             position: item.position,
-            data: (item.data ?? {}) as Record<string, unknown>,
+            data: mergeNodeReplacementData(currentNode?.data, incomingData),
           });
         }
       }

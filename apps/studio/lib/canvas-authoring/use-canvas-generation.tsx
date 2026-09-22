@@ -649,7 +649,9 @@ export function CanvasGenerationProvider({
     try {
       const active = getNodes().filter(
         (node) =>
-          isGenerationNodeType(node.type) && needsJobRecovery((node.data as GenNodeData).generation)
+          isGenerationNodeType(node.type) &&
+          (!(node.data as GenNodeData).generation ||
+            needsJobRecovery((node.data as GenNodeData).generation))
       );
       const ids = [
         ...new Set(
@@ -667,17 +669,17 @@ export function CanvasGenerationProvider({
         jobs.forEach(applyJobUpdate);
       }
       for (const node of active) {
-        const generation = (node.data as GenNodeData).generation!;
-        if (generation.jobId || submittingNodes.current.has(node.id)) continue;
+        const generation = (node.data as GenNodeData).generation;
+        if (generation?.jobId || submittingNodes.current.has(node.id)) continue;
         const { jobs } = await readJobs({
           documentBlockId: node.id,
-          idempotencyKey: generation.submissionKey,
+          ...(generation?.submissionKey ? { idempotencyKey: generation.submissionKey } : {}),
           limit: 1,
         });
         if (run.signal.aborted) return;
         const job = jobs.find((candidate) => matchesCanvasJob(node, candidate));
         if (job) applyJobUpdate(job);
-        else if (generation.status === "submitting" || generation.status === "uncertain") {
+        else if (generation?.status === "submitting" || generation?.status === "uncertain") {
           // No acknowledged job: keep the exact receipt for a safe retry.
           // Old cards without a receipt can be retried after this lookup.
           patchNodeData(node.id, (current) => {
@@ -861,15 +863,31 @@ export function CanvasGenerationProvider({
     [nodes]
   );
 
+  // Empty generation cards need one authoritative lookup as well: the
+  // generation projection may have been erased by a stale full-node replace,
+  // while the job remains durable on the server. Keep these out of the polling
+  // interval; realtime updates and tab refocus still cover late completions.
+  const missingGenerationNodeIds = useMemo(
+    () =>
+      nodes
+        .filter((node) => isGenerationNodeType(node.type) && !(node.data as GenNodeData).generation)
+        .map((node) => node.id)
+        .sort()
+        .join(","),
+    [nodes]
+  );
+  const recoveryKey = `${activeJobIds}|${missingGenerationNodeIds}`;
+
   useEffect(() => {
-    if (!activeJobIds) return;
+    if (!recoveryKey) return;
     void reconcile();
+    if (!activeJobIds) return;
     const timer = window.setInterval(
       () => void reconcile(),
       realtimeConnected ? CONNECTED_RECONCILE_INTERVAL_MS : DISCONNECTED_FALLBACK_INTERVAL_MS
     );
     return () => window.clearInterval(timer);
-  }, [activeJobIds, realtimeConnected, reconcile]);
+  }, [activeJobIds, recoveryKey, realtimeConnected, reconcile]);
 
   // Tab refocus → reconcile (catches anything missed while the tab was hidden).
   useEffect(() => {
