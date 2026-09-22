@@ -18,8 +18,13 @@ export function mediaAccessPath(
   const signed = ["X-Amz-Signature", "Signature", "sig", "OSSAccessKeyId"].some((key) =>
     url.searchParams.has(key)
   );
+  // Older canvas repairs persisted the R2 S3 API endpoint in the generation
+  // payload. It is a storage API URL, not a browser playback URL, but the
+  // durable asset ID still gives the server enough information to issue the
+  // correct CDN/signed URL.
+  const internalR2 = url.hostname.endsWith(".r2.cloudflarestorage.com");
   const id = assetId ?? match?.[1];
-  if (!id || (!match && !signed)) return null;
+  if (!id || (!match && !signed && !internalR2)) return null;
   const params = match ? url.searchParams : new URLSearchParams();
   if (documentId) params.set("documentId", documentId);
   return `/aurora/media/assets/${encodeURIComponent(id)}/access${params.size ? `?${params}` : ""}`;
