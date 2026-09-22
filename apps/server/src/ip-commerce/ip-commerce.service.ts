@@ -1,3 +1,5 @@
+import { createCrewTx } from '../crews/create-crew';
+import { hasCrewCreatePass } from '../integrations/java/user-level-gates';
 import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import { ConversationsService } from '../conversations/conversations.service';
 import { joinCrewFanTx } from '../crews/fan-community';
@@ -2202,6 +2204,27 @@ export class IpCommerceService {
         },
       });
 
+      // Private IP drafts must not create a public Crew or bypass certification.
+      if (hasCrewCreatePass(user.levelIds)) {
+        const crew = await createCrewTx(
+          tx,
+          this.conversations,
+          user.userId,
+          {
+            name: input.title,
+            description: summary,
+            logo: '',
+            genres: [],
+            styles: [],
+            socialLinks: [],
+            showcaseWorks: [],
+            productionTemplateLocale: input.sourceLocale,
+          },
+          'unlisted',
+        );
+        await tx.$executeRaw`INSERT INTO ip_crew_origins (ip_id, crew_id, linked_by_id) VALUES (${created.id}::uuid, ${crew.id}, ${user.userId})`;
+      }
+
       await replaceIpTaxonomyAssignmentsTx(tx, {
         ipId: created.id,
         type: IpTaxonomyTermType.genre,
@@ -3812,14 +3835,16 @@ export class IpCommerceService {
           { crewId: string }[]
         >`SELECT crew_id AS "crewId" FROM ip_crew_origins WHERE ip_id = ${ipId}::uuid`;
         if (origin)
-          conversationId = (
-            await joinCrewFanTx(
-              tx,
-              this.conversations,
-              origin.crewId,
-              actor.userId,
-            )
-          ).id;
+          conversationId =
+            (
+              await joinCrewFanTx(
+                tx,
+                this.conversations,
+                origin.crewId,
+                actor.userId,
+                true,
+              )
+            )?.id ?? null;
       }
       const existing = await tx.ipLike.findUnique({
         where: { ipId_userId: { ipId, userId: actor.userId } },
