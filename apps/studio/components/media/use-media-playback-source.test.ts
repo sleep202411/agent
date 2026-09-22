@@ -22,6 +22,15 @@ describe("media playback addresses", () => {
       )
     ).toBe("/aurora/media/assets/asset/access?documentId=canvas");
   });
+  it("recovers legacy R2 API URLs through the durable asset access route", () => {
+    expect(
+      mediaAccessPath(
+        "https://account.r2.cloudflarestorage.com/bucket/video.mp4",
+        "asset",
+        "canvas"
+      )
+    ).toBe("/aurora/media/assets/asset/access?documentId=canvas");
+  });
   it("preserves the existing document/variant access context", () => {
     expect(
       mediaAccessPath("/aurora/media/assets/asset/content?variantKey=original&documentId=canvas")

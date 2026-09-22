@@ -21,6 +21,7 @@ import type { MentionItem, SkillMarketItem } from "@/lib/prompt-mentions";
 import { cn } from "@/lib/utils";
 import {
   enumOptions,
+  stringMaxLength,
   type FizzAiCatalog,
   type FizzAiModel,
   type ModelSettings,
@@ -402,6 +403,7 @@ export function GenerationPromptComposer({
                   placeholder={promptPlaceholder}
                   aria-label={promptAriaLabel}
                   rows={isExpanded ? Math.max(promptRows, 10) : promptRows}
+                  maxLength={stringMaxLength(model, "prompt")}
                   autoFocus={isExpanded || promptAutoFocus}
                   readOnly={promptReadOnly}
                   className={cn(
