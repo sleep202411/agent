@@ -108,7 +108,9 @@ function Queue({ crewId, userId }: { crewId: string; userId: string }) {
             const current = refreshed.data.pages
               .flatMap((p) => p.items)
               .find((a) => a.id === selected.id);
-            setSelected(current ?? null);
+            setSelected((activeSelection) =>
+              activeSelection === selected ? (current ?? null) : activeSelection
+            );
           }
         }}
       >
