@@ -93,3 +93,61 @@ it("uses the loaded IP version and retains the selection on failed save", async 
   expect(container.querySelector('[role="combobox"]')!.textContent).toContain("Origin Crew");
   expect(container.textContent).toContain("Refresh first");
 });
+
+it("ignores an old IP read after switching to a different IP", async () => {
+  let finish!: (value: unknown) => void;
+  let signal!: AbortSignal;
+  vi.mocked(api.get).mockImplementationOnce((_path, options) => {
+    signal = options!.signal as AbortSignal;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  await render();
+  vi.mocked(api.get).mockResolvedValue({ crew: { id: "new", name: "New Crew" } });
+  await act(async () => root.render(<IpCrewOrigin ipId="other-ip" />));
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ crew: { id: "old", name: "Old Crew" } }));
+  expect(container.textContent).toContain("New Crew");
+  expect(container.textContent).not.toContain("Old Crew");
+});
+
+it("recovers an initial editable read failure before permitting a versioned save", async () => {
+  vi.mocked(api.get).mockRejectedValueOnce(new Error("Temporarily unavailable"));
+  await render(true);
+  const save = () =>
+    Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "save"
+    )!;
+  expect(save().disabled).toBe(true);
+  vi.mocked(api.get).mockResolvedValue({ crewId: "crew", version: 12, choices: [crew] });
+  await act(async () => click("reload"));
+  expect(save().disabled).toBe(false);
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  vi.mocked(api.put).mockResolvedValue({ crewId: "crew", version: 13, choices: [crew] });
+  await act(async () => click("save"));
+  expect(api.put).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.objectContaining({ data: { crewId: "crew", expectedVersion: 12 } })
+  );
+});
+
+it("retires an editable save when the host removes edit permission", async () => {
+  vi.mocked(api.get).mockResolvedValue({ crewId: "crew", version: 7, choices: [crew] });
+  await render(true);
+  let finish!: (value: unknown) => void;
+  let signal!: AbortSignal;
+  vi.mocked(api.put).mockImplementation((_path, options) => {
+    signal = options!.signal as AbortSignal;
+    return new Promise((resolve) => {
+      finish = resolve;
+    });
+  });
+  act(() => click("save"));
+  vi.mocked(api.get).mockResolvedValue({ crew: { id: "visible", name: "Public Crew" } });
+  await render(false);
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ crewId: "crew", version: 8, choices: [crew] }));
+  expect(container.textContent).toContain("Public Crew");
+  expect(container.querySelector('[role="combobox"]')).toBeNull();
+});
