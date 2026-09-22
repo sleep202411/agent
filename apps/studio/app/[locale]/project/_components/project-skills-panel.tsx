@@ -552,6 +552,7 @@ export function ProjectSkillsPanel() {
               <span className="text-[10px] leading-4 text-white/36">{t("upload.fileHint")}</span>
               <input
                 type="file"
+                disabled={importMutation.isPending}
                 accept=".md,.zip,text/markdown,application/zip"
                 className="sr-only"
                 aria-required="true"
@@ -579,7 +580,9 @@ export function ProjectSkillsPanel() {
           <Field label={t("upload.scopeLabel")} required>
             <div className="grid grid-cols-2 gap-2">
               {(["project", "workspace"] as const).map((scope) => {
-                const disabled = scope === "workspace" && !catalog.data?.canManageWorkspace;
+                const disabled =
+                  importMutation.isPending ||
+                  (scope === "workspace" && !catalog.data?.canManageWorkspace);
                 return (
                   <button
                     key={scope}
@@ -617,6 +620,7 @@ export function ProjectSkillsPanel() {
                 <button
                   key={kind}
                   type="button"
+                  disabled={importMutation.isPending}
                   aria-pressed={uploadKind === kind}
                   onClick={() => setUploadKind(kind)}
                   className={cn(
