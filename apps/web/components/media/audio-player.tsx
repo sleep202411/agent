@@ -52,7 +52,8 @@ function AudioPlayerSession({ src, name }: AudioPlayerProps) {
       setDuration(formatTime(ws.getDuration()));
     });
 
-    ws.on("audioprocess", () => {
+    // Position updates also fire when the waveform is sought while paused.
+    ws.on("timeupdate", () => {
       if (!current()) return;
       setCurrentTime(formatTime(ws.getCurrentTime()));
     });

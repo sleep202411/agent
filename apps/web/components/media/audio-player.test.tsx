@@ -49,12 +49,20 @@ describe("audio preview ownership", () => {
   const render = async (src: string) => {
     await act(async () => root.render(<AudioPlayer src={src} />));
   };
+  it("updates the timestamp when seeking while paused", async () => {
+    await render("first");
+    act(() => players[0]!.emit("ready"));
+    expect(container.textContent).toContain("0:00 / 2:05");
+    act(() => players[0]!.emit("timeupdate"));
+    expect(container.textContent).toContain("1:01 / 2:05");
+    expect(players[0]!.playPause).not.toHaveBeenCalled();
+  });
   it("resets controls and timestamps for a replacement file", async () => {
     await render("first");
     act(() => {
       players[0]!.emit("ready");
       players[0]!.emit("play");
-      players[0]!.emit("audioprocess");
+      players[0]!.emit("timeupdate");
     });
     expect(container.textContent).toContain("1:01 / 2:05");
     await render("second");
@@ -68,7 +76,7 @@ describe("audio preview ownership", () => {
     await render("second");
     act(() => {
       old.emit("ready");
-      old.emit("audioprocess");
+      old.emit("timeupdate");
     });
     expect(container.querySelector("button")!.disabled).toBe(true);
     expect(container.textContent).toContain("0:00 / 0:00");
