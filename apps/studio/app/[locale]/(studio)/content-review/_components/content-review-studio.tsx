@@ -389,6 +389,8 @@ export function ContentReviewStudio() {
           seconds: playheadSeconds,
           body,
         });
+        // A completed comment belongs to its submitted record, not a newly opened one.
+        if (openedRecordIdRef.current !== recordId) return false;
         setComments(next);
         const created = next[next.length - 1];
         if (created) setSelectedFindingId(created.id);
