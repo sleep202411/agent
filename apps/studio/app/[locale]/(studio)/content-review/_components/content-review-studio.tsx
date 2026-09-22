@@ -56,6 +56,10 @@ export function ContentReviewStudio() {
   const objectUrlRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pendingSaveRef = useRef<SaveContentReviewRecordInput | null>(null);
+  const savingRecordRef = useRef<{
+    input: SaveContentReviewRecordInput;
+    promise: Promise<string | null>;
+  } | null>(null);
   const openedRecordIdRef = useRef<string | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
@@ -219,15 +223,27 @@ export function ContentReviewStudio() {
       if (openedRecordIdRef.current) return openedRecordIdRef.current;
       const input = pendingSaveRef.current;
       if (!input) return null;
-      const saved = await saveContentReviewRecord(input, signal);
-      pendingSaveRef.current = null;
-      openedRecordIdRef.current = saved.id;
-      setOpenedRecordId(saved.id);
-      setComments(saved.comments);
-      await queryClient.invalidateQueries({
-        queryKey: [CONTENT_REVIEW_RECORDS_QUERY_KEY, workspaceId],
-      });
-      return saved.id;
+      if (savingRecordRef.current?.input === input) return savingRecordRef.current.promise;
+      const promise = (async () => {
+        const saved = await saveContentReviewRecord(input, signal);
+        // A file/record switch invalidates this save's ownership of the view.
+        if (pendingSaveRef.current !== input) return null;
+        pendingSaveRef.current = null;
+        openedRecordIdRef.current = saved.id;
+        setOpenedRecordId(saved.id);
+        setComments(saved.comments);
+        await queryClient.invalidateQueries({
+          queryKey: [CONTENT_REVIEW_RECORDS_QUERY_KEY, workspaceId],
+        });
+        return saved.id;
+      })();
+      const operation = { input, promise };
+      savingRecordRef.current = operation;
+      try {
+        return await promise;
+      } finally {
+        if (savingRecordRef.current === operation) savingRecordRef.current = null;
+      }
     },
     [queryClient, workspaceId]
   );
