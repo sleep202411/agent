@@ -29,6 +29,7 @@
  *     params (which may carry PII) and never the password.
  */
 import {
+  HttpException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -188,6 +189,9 @@ export class LegacyMysqlService implements OnModuleInit, OnApplicationShutdown {
             : String(rollbackErr);
         this.logger.error(`legacy-mysql rollback failed: ${msg}`);
       }
+      // Domain validation (for example missing users or insufficient points)
+      // must keep its actionable response after rollback, not become an outage.
+      if (err instanceof HttpException) throw err;
       throw this.toUpstreamError(err, 'TRANSACTION', Date.now());
     } finally {
       conn.release();
