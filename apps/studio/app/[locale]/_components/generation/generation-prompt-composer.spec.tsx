@@ -174,9 +174,14 @@ describe("GenerationPromptComposer presentation", () => {
   });
 
   it("passes the selected model prompt limit to the editor", async () => {
-    const model = {
+    const model: FizzAiModel = {
+      id: "seedance-2.0",
+      type: "video",
+      name: "Seedance 2.0",
+      enabled: true,
+      schemaVersion: "1",
       input_schema: { properties: { prompt: { maxLength: 15_000 } } },
-    } as FizzAiModel;
+    };
 
     await act(async () => {
       root.render(<GenerationPromptComposer {...props({ model })} />);
