@@ -10,6 +10,7 @@ import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
 import { useActiveWorkspace } from "@/app/_components/workspace-context";
 import { PageHeader, Panel } from "../_components/settings-ui";
+import { openSettings } from "@/lib/settings-hash";
 import { CurrentPlanPanel } from "../_components/current-plan-panel";
 
 /**
@@ -73,7 +74,7 @@ export default function UsageSettingsPage() {
             )}
           </div>
           {canManageBilling ? (
-            <Button size="sm" onClick={() => setUpgradeOpen(true)}>
+            <Button size="sm" onClick={() => openSettings("billing")}>
               {t("rechargeCredits")}
             </Button>
           ) : null}
