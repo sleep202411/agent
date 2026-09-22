@@ -55,25 +55,33 @@ export function NewsList({
   const [displayedArticles, setDisplayedArticles] = useState<NewsItem[]>(articles);
   const [isPending, startTransition] = useTransition();
   const reqRef = useRef(0);
+  const loadedTagRef = useRef(ALL_TAG_ID);
 
   const selectTag = (tagId: string) => {
     if (tagId === activeTagId) return;
     setActiveTagId(tagId);
     const reqId = ++reqRef.current;
     if (tagId === ALL_TAG_ID) {
+      loadedTagRef.current = ALL_TAG_ID;
       setDisplayedArticles(articles);
       return;
     }
     startTransition(async () => {
       try {
         const next = await fetchNewsByTag(locale, tagId);
-        if (reqId === reqRef.current) setDisplayedArticles(next);
+        if (reqId === reqRef.current) {
+          loadedTagRef.current = tagId;
+          setDisplayedArticles(next);
+        }
       } catch {
         // A failed tag fetch — transient network, or a Server Action id mismatch
         // when the open page is from a previous deploy — must NOT bubble to the
         // error boundary and crash the whole page. Keep the current list; the
         // user can retry, and a reload picks up the current build.
-        if (reqId === reqRef.current) toast.error(t("tFilterFailed"));
+        if (reqId === reqRef.current) {
+          setActiveTagId(loadedTagRef.current);
+          toast.error(t("tFilterFailed"));
+        }
       }
     });
   };
