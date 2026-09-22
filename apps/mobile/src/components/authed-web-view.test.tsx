@@ -39,7 +39,7 @@ vi.mock("@/i18n", () => ({ useLocale: () => "en-US", useTranslations: () => (s: 
 import { AuthedWebView } from "./authed-web-view";
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.token = { tokenName: "satoken", tokenValue: "fixture-token" };
   state.props = null;
   host = document.createElement("div");
