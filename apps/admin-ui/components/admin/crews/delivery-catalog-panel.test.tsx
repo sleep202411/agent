@@ -30,6 +30,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 const click = async (text: string) =>
   act(async () => {
@@ -39,7 +40,8 @@ const click = async (text: string) =>
     if (!button) throw Error(text);
     button.click();
   });
-it("retains edits and request identity after failure and guards duplicate saves", async () => {
+it.each(["", "/ops"])("retains edits and routes list/save under %s", async (base) => {
+  vi.stubEnv("NEXT_PUBLIC_ADMIN_UI_BASE_PATH", base);
   await act(async () => root.render(<DeliveryCatalogPanel />));
   await click("Edit Animation");
   act(() => {
@@ -64,6 +66,12 @@ it("retains edits and request identity after failure and guards duplicate saves"
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
   expect(fetch).toHaveBeenCalledTimes(2);
+  expect(vi.mocked(fetch).mock.calls[0][0]).toBe(
+    `${base}/api/admin/crew-delivery-catalog?limit=50`
+  );
+  expect(vi.mocked(fetch).mock.calls[1][0]).toBe(
+    `${base}/api/admin/crew-delivery-catalog/${row.id}`
+  );
   const options = vi.mocked(fetch).mock.calls[1][1]!;
   await act(async () =>
     finish(new Response(JSON.stringify({ message: "Save unavailable" }), { status: 503 }))

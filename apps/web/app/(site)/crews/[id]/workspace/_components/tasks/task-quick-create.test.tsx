@@ -93,7 +93,7 @@ function renderQuickCreate(
   onCreated = vi.fn(),
   onOpenChange = vi.fn(),
   taskProject = project,
-  context: { open?: boolean; crewId?: string; parentId?: string } = {}
+  context: { open?: boolean; crewId?: string; parentId?: string; activeView?: CrewTaskViewDTO } = {}
 ) {
   if (!root) {
     container = document.createElement("div");
@@ -177,6 +177,141 @@ afterEach(() => {
 });
 
 describe("TaskQuickCreate", () => {
+  it.each(["missing", "cancelled"])(
+    "ignores a %s cycle in the saved view default",
+    async (kind) => {
+      const taskProject = {
+        ...project,
+        cycles: [
+          { id: "current", name: "Current", status: "active" },
+          ...(kind === "cancelled" ? [{ id: "stale", name: "Old", status: "cancelled" }] : []),
+        ],
+      } as unknown as CrewTaskProjectDTO;
+      renderQuickCreate(vi.fn(), vi.fn(), taskProject, {
+        activeView: { ...view, filters: { cycleIds: ["stale"] } },
+      });
+      act(() =>
+        fill(
+          document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+          "Review a shot"
+        )
+      );
+      await act(async () => {
+        click(exactButton("Create"));
+      });
+      expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ cycleId: "current" }));
+    }
+  );
+
+  it("uses Backlog when a stale view cycle has no active replacement", async () => {
+    renderQuickCreate(vi.fn(), vi.fn(), project, {
+      activeView: { ...view, filters: { cycleIds: ["removed"] } },
+    });
+    act(() =>
+      fill(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        "Review a shot"
+      )
+    );
+    await act(async () => {
+      click(exactButton("Create"));
+    });
+    expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ cycleId: null }));
+  });
+
+  it("retains a valid filtered cycle ahead of the active default", async () => {
+    const taskProject = {
+      ...project,
+      cycles: [
+        { id: "current", name: "Current", status: "active" },
+        { id: "planned", name: "Upcoming", status: "planned" },
+      ],
+    } as unknown as CrewTaskProjectDTO;
+    renderQuickCreate(vi.fn(), vi.fn(), taskProject, {
+      activeView: { ...view, filters: { cycleIds: ["planned"] } },
+    });
+    act(() =>
+      fill(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        "Review a shot"
+      )
+    );
+    await act(async () => {
+      click(exactButton("Create"));
+    });
+    expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ cycleId: "planned" }));
+  });
+
+  it("recomputes an implicit cycle after refresh without losing the title or assignee", async () => {
+    const taskProject = {
+      ...project,
+      cycles: [
+        { id: "current", name: "Current", status: "active" },
+        { id: "filtered", name: "Filtered", status: "planned" },
+      ],
+    } as unknown as CrewTaskProjectDTO;
+    const context = { activeView: { ...view, filters: { cycleIds: ["filtered"] } } };
+    renderQuickCreate(vi.fn(), vi.fn(), taskProject, context);
+    act(() =>
+      fill(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        "Keep my assignment"
+      )
+    );
+    await act(async () => click(document.querySelector('button[aria-label="Assignees"]')!));
+    const assignee = [...document.querySelectorAll('[role="option"]')].find(
+      (item) => item.textContent?.trim() === "Isaac"
+    );
+    await act(async () => click(assignee!));
+    renderQuickCreate(
+      vi.fn(),
+      vi.fn(),
+      {
+        ...taskProject,
+        cycles: taskProject.cycles.map((cycle) =>
+          cycle.id === "filtered" ? { ...cycle, status: "cancelled" } : cycle
+        ),
+      },
+      context
+    );
+    await act(async () => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Keep my assignment",
+        cycleId: "current",
+        assignees: [{ userId: "member-1", currency: "USD" }],
+      })
+    );
+  });
+
+  it("preserves an explicit Backlog choice when the active cycle refreshes", async () => {
+    const taskProject = {
+      ...project,
+      cycles: [{ id: "current", name: "Current", status: "active" }],
+    } as unknown as CrewTaskProjectDTO;
+    renderQuickCreate(vi.fn(), vi.fn(), taskProject);
+    act(() =>
+      fill(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        "Keep in Backlog"
+      )
+    );
+    await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+    await act(async () => click(document.querySelector('button[aria-label="Cycle"]')!));
+    const backlog = [...document.querySelectorAll('[role="option"]')].find(
+      (item) => item.textContent?.trim() === "Backlog"
+    );
+    await act(async () => click(backlog!));
+    renderQuickCreate(vi.fn(), vi.fn(), {
+      ...taskProject,
+      cycles: [{ ...taskProject.cycles[0]!, id: "next" }],
+    });
+    await act(async () => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({ cycleId: null, title: "Keep in Backlog" })
+    );
+  });
+
   it("creates a minimal task from the compact issue composer", async () => {
     const onCreated = vi.fn();
     const onOpenChange = vi.fn();

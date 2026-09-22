@@ -30,13 +30,21 @@ vi.mock("./production-activity-editor", () => ({
   EMPTY_PRODUCTION_ACTIVITY_DOCUMENT: { type: "doc", content: [{ type: "paragraph" }] },
   ProductionActivityEditor: ({
     placeholder,
+    value,
+    onSubmit,
     onChange,
   }: {
     placeholder: string;
+    value: { content?: Array<{ content?: Array<{ text?: string }> }> };
+    onSubmit: () => void;
     onChange: (document: object, plainText: string) => void;
   }) => (
     <textarea
       placeholder={placeholder}
+      value={value.content?.[0]?.content?.[0]?.text ?? ""}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && event.ctrlKey) onSubmit();
+      }}
       onChange={(event) =>
         onChange(
           {
@@ -150,4 +158,63 @@ describe("ProductionActivityComposer", () => {
       },
     });
   });
+});
+
+it("keeps text entered while the previous post is saving", async () => {
+  let finish!: () => void;
+  state.create.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  renderComposer();
+  act(() => setTextarea("First update"));
+  act(() =>
+    [...container!.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "updates.post")!
+      .click()
+  );
+  act(() => setTextarea("Next update in progress"));
+  await act(async () => finish());
+  expect(container!.querySelector("textarea")!.value).toBe("Next update in progress");
+});
+
+it("ignores repeated keyboard submissions while a post is saving", async () => {
+  let finish!: () => void;
+  state.create.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  renderComposer();
+  act(() => setTextarea("One update"));
+  act(() => {
+    const input = container!.querySelector("textarea")!;
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })
+    );
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })
+    );
+  });
+  const calls = state.create.mock.calls.length;
+  await act(async () => finish());
+  expect(calls).toBe(1);
+});
+
+it("retains a rejected draft and allows retry", async () => {
+  state.create.mockRejectedValueOnce(new Error("Try again")).mockResolvedValueOnce(undefined);
+  renderComposer();
+  act(() => setTextarea("Retry this update"));
+  const submit = () =>
+    [...container!.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "updates.post")!
+      .click();
+  await act(async () => submit());
+  expect(container!.querySelector("textarea")!.value).toBe("Retry this update");
+  await act(async () => submit());
+  expect(state.create).toHaveBeenCalledTimes(2);
+  expect(container!.querySelector("textarea")!.value).toBe("");
 });

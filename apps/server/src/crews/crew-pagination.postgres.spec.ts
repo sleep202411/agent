@@ -181,7 +181,11 @@ integration(
           where: { id: node.id },
           data:
             change === 'trash'
-              ? { status: 'trashed' }
+              ? {
+                  status: 'trashed',
+                  trashedAt: new Date(),
+                  trashedByUserId: 'fixture',
+                }
               : { name: 'outside-search' },
         });
         await expect(

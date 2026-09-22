@@ -67,10 +67,21 @@ function mapSummary(dto: CrewDto): CrewSummary {
 
 async function fetchPositions(crewId: string): Promise<CrewRoleOpening[]> {
   try {
-    const res = await api.get<PositionDto[]>(`/crews/${crewId}/positions`, { ...AURORA });
-    const list = Array.isArray(res) ? res : [];
+    const list: PositionDto[] = [];
+    const cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const page = await api.get<{ items: PositionDto[]; nextCursor: string | null }>(
+        `/crews/${crewId}/positions`,
+        { ...AURORA, params: { cursor } }
+      );
+      list.push(...page.items);
+      cursor = page.nextCursor ?? undefined;
+      if (cursor && cursors.has(cursor)) throw new Error("Repeated crew positions cursor");
+      if (cursor) cursors.add(cursor);
+    } while (cursor);
     return list
-      .filter((position) => position.status !== "closed")
+      .filter((position) => position.status === "open")
       .map((position) => ({
         id: position.id,
         title: prettyRole(position.positionType),
@@ -147,11 +158,11 @@ export async function fetchCrewById(id: string): Promise<CrewDetail | undefined>
 export async function fetchMyCrews(): Promise<CrewSummary[]> {
   try {
     const res = await api.get<
-      { items?: CrewDto[]; owned?: CrewDto[]; joined?: CrewDto[] } | CrewDto[]
+      { items?: CrewDto[]; founded?: CrewDto[]; joined?: CrewDto[] } | CrewDto[]
     >("/crews/my", { ...AURORA });
     const list = Array.isArray(res)
       ? res
-      : (res.items ?? [...(res.owned ?? []), ...(res.joined ?? [])]);
+      : (res.items ?? [...(res.founded ?? []), ...(res.joined ?? [])]);
     // De-dupe (a crew can be both owned and joined).
     const seen = new Set<string>();
     return list.filter((dto) => dto?.id && !seen.has(dto.id) && seen.add(dto.id)).map(mapSummary);

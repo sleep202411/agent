@@ -152,3 +152,42 @@ it("does not show a failed catalogue as empty", async () => {
   expect(host.textContent).toContain("Access denied");
   expect(host.textContent).not.toContain("empty");
 });
+
+it.each(["actorId", "nodeId"])(
+  "rejects a mismatched %s without inserting a reference",
+  async (field) => {
+    state.post.mockImplementation((_path, config) =>
+      Promise.resolve({
+        nodeId: config.data.requestId,
+        actorId: "actor",
+        name: "Mira",
+        mediaAssetId: "photo",
+        url: "/photo",
+        [field]: "unexpected",
+      })
+    );
+    await render();
+    await click("use");
+    expect(state.addNode).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("invalidResponse");
+  }
+);
+
+it("does not duplicate a reference already present when a use response is replayed", async () => {
+  state.getNode.mockReturnValue({ id: "existing" });
+  await render();
+  await click("use");
+  expect(state.getNode).toHaveBeenCalledWith(state.post.mock.calls[0][1].data.requestId);
+  expect(state.addNode).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("added");
+});
+
+it("allocates a fresh request identity for a second successful insertion", async () => {
+  await render();
+  await click("use");
+  await click("use");
+  expect(state.post.mock.calls[0][1].data.requestId).not.toBe(
+    state.post.mock.calls[1][1].data.requestId
+  );
+  expect(state.addNode).toHaveBeenCalledTimes(2);
+});
