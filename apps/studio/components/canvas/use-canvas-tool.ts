@@ -16,7 +16,13 @@ export function useCanvasTool(
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) {
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        isEditableTarget(event.target)
+      ) {
         return;
       }
 

@@ -91,8 +91,9 @@ export function useCanvasAuthoringShortcuts({
       }
       if (mod || event.altKey) return;
 
+      const shortcut = event.shiftKey ? `shift+${key}` : key;
       const action =
-        addNodeActions.find((candidate) => ADD_NODE_SHORTCUTS[candidate] === key) ?? null;
+        addNodeActions.find((candidate) => ADD_NODE_SHORTCUTS[candidate] === shortcut) ?? null;
       if (!action) return;
       event.preventDefault();
       addNode(action);

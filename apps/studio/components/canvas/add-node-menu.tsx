@@ -40,11 +40,11 @@ export const PROJECT_CANVAS_ADD_NODE_ACTIONS: readonly AddNodeAction[] = [
 /** Storyboard projects the canvas's shot nodes as rows, so this is its only creation action. */
 export const STORYBOARD_ADD_NODE_ACTIONS: readonly AddNodeAction[] = ["shot"];
 
-/** Keyboard shortcut per creation action (single key, no modifier). */
+/** Creation shortcuts; Shift+V leaves plain V available for the Select tool. */
 export const ADD_NODE_SHORTCUTS: Record<AddNodeAction, string> = {
   upload: "u",
   "generate-image": "i",
-  "generate-video": "v",
+  "generate-video": "shift+v",
   "generate-audio": "a",
   note: "n",
   shot: "s",
