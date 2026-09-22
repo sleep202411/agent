@@ -37,7 +37,38 @@ export function useScrollToHash(config: UseScrollToHashConfig = {}) {
 
   const { editor } = useTiptapEditor(providedEditor);
 
-  const lastProcessedHashRef = useRef<string | null>(null);
+  const scopeRef = useRef<{
+    editor: Editor | null;
+    lastProcessedHash: string | null;
+    timers: Set<ReturnType<typeof setTimeout>>;
+  } | null>(null);
+
+  useEffect(() => {
+    const scope = {
+      editor,
+      lastProcessedHash: null,
+      timers: new Set<ReturnType<typeof setTimeout>>(),
+    };
+    scopeRef.current = scope;
+    return () => {
+      if (scopeRef.current === scope) scopeRef.current = null;
+      scope.timers.forEach(clearTimeout);
+      scope.timers.clear();
+    };
+  }, [editor]);
+
+  const schedule = useCallback(
+    (callback: () => void, delay: number) => {
+      const scope = scopeRef.current;
+      if (!scope || scope.editor !== editor || editor?.isDestroyed) return;
+      const timer = setTimeout(() => {
+        scope.timers.delete(timer);
+        if (scopeRef.current === scope && !editor?.isDestroyed) callback();
+      }, delay);
+      scope.timers.add(timer);
+    },
+    [editor]
+  );
 
   const onTargetFoundRef = useRef(onTargetFound);
   const onTargetNotFoundRef = useRef(onTargetNotFound);
@@ -49,7 +80,7 @@ export function useScrollToHash(config: UseScrollToHashConfig = {}) {
 
   const scrollToNode = useCallback(
     (id: string): boolean => {
-      if (!editor) return false;
+      if (!editor || editor.isDestroyed || scopeRef.current?.editor !== editor) return false;
 
       const attributeName =
         getEditorExtension(editor, "uniqueID")?.options?.attributeName ?? "data-id";
@@ -67,7 +98,7 @@ export function useScrollToHash(config: UseScrollToHashConfig = {}) {
 
       selectNodeAndHideFloating(editor, position);
 
-      setTimeout(() => {
+      schedule(() => {
         const dom = editor.view.nodeDOM(position!) as HTMLElement | null;
 
         if (dom) {
@@ -77,7 +108,7 @@ export function useScrollToHash(config: UseScrollToHashConfig = {}) {
 
       return true;
     },
-    [editor]
+    [editor, schedule]
   );
 
   const handleScroll = useCallback(
@@ -86,18 +117,19 @@ export function useScrollToHash(config: UseScrollToHashConfig = {}) {
       if (!hash) return;
 
       // Skip if we already scrolled to this exact hash
-      if (hash === lastProcessedHashRef.current) return;
+      if (hash === scopeRef.current?.lastProcessedHash) return;
 
-      setTimeout(() => {
+      schedule(() => {
+        if (window.location.hash.substring(1) !== hash) return;
         if (scrollToNode(hash)) {
-          lastProcessedHashRef.current = hash;
+          if (scopeRef.current) scopeRef.current.lastProcessedHash = hash;
           onTargetFoundRef.current(hash);
         } else {
           onTargetNotFoundRef.current(hash);
         }
       }, delay);
     },
-    [scrollToNode]
+    [scrollToNode, schedule]
   );
 
   useEffect(() => {
