@@ -9,6 +9,14 @@ const require = createRequire(import.meta.url);
 const turbo = process.argv[2] ?? require.resolve("turbo/bin/turbo");
 const config = JSON.parse(readFileSync(new URL("../turbo.json", import.meta.url), "utf8"));
 const flags = [
+  "IP_FEEDBACK_POSTGRES_TEST",
+  "IP_ORIGIN_POSTGRES_TEST",
+  "IP_COMMENTS_POSTGRES_TEST",
+  "IP_RELEASE_LINKS_POSTGRES_TEST",
+  "IP_GAME_POSTGRES_TEST",
+  "STORY_COMMERCE_POSTGRES_TEST",
+  "CREATOR_EARNINGS_POSTGRES_TEST",
+  "AI_ACTOR_TEST_DATABASE_URL",
   "STORY_AGENT_POSTGRES_INTEGRATION",
   "STORY_PRODUCTION_GENERATION_POSTGRES_INTEGRATION",
   "AGENT_OS_START_POSTGRES_INTEGRATION",
