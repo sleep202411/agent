@@ -2,6 +2,7 @@ import type { AiBillingPolicy, AiJsonValue } from '../../types';
 import { createBytePlusVideoRuntimeConfig } from './byteplus-runtime';
 
 const seedance25Policy = {
+  promptMaxLength: 15_000,
   defaultResolution: '720p',
   resolutionOptions: ['480p', '720p'],
   defaultDurationSeconds: '5',
@@ -65,6 +66,10 @@ describe('Seedance 2.5 BytePlus runtime contract', () => {
   it('publishes the provider limits and MOV output option to every client', () => {
     const { inputSchema } = seedance25Runtime();
 
+    expect(inputSchema.properties.prompt).toMatchObject({
+      minLength: 1,
+      maxLength: 15_000,
+    });
     expect(
       (inputSchema.properties.referenceImages as { maxItems?: number })
         .maxItems,

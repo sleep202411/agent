@@ -493,7 +493,7 @@ function videoInputSchemaFor(
       type: 'string',
       title: 'Prompt',
       minLength: 1,
-      maxLength: 4000,
+      maxLength: numberFromPolicy(parameterPolicy, 'promptMaxLength') ?? 4000,
       'x-ui': {
         control: 'textarea',
         group: 'prompt',
@@ -985,6 +985,10 @@ function capabilityMatrixFor(
   ) {
     inputModalities.push('audio');
   }
+  const promptSchema = inputSchema.properties.prompt as
+    | { maxLength?: unknown }
+    | undefined;
+  const promptMaxLength = promptSchema?.maxLength;
   return {
     source: 'internal',
     inputModalities,
@@ -999,7 +1003,8 @@ function capabilityMatrixFor(
     },
     limits: {
       maxOutputs: 1,
-      maxPromptCharacters: 4000,
+      maxPromptCharacters:
+        typeof promptMaxLength === 'number' ? promptMaxLength : 4000,
     },
   };
 }

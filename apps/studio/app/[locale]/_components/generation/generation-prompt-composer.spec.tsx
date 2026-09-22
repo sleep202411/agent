@@ -3,6 +3,7 @@
 import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { FizzAiModel } from "@/lib/canvas-authoring/generation-api";
 import { GenerationPromptComposer } from "./generation-prompt-composer";
 
 vi.mock("next-intl", () => ({
@@ -29,6 +30,7 @@ vi.mock("@/components/canvas/authoring/prompt-textarea", () => ({
     onMentionActivate,
     onCommit,
     value,
+    maxLength,
   }: {
     "aria-label"?: string;
     mentions?: Array<{ id: string; kind: "image" | "video" | "audio" | "skill"; label: string }>;
@@ -39,10 +41,12 @@ vi.mock("@/components/canvas/authoring/prompt-textarea", () => ({
     }) => void;
     onCommit: (value: string) => void;
     value: string;
+    maxLength?: number;
   }) => (
     <div>
       <textarea
         aria-label={ariaLabel}
+        data-prompt-max-length={maxLength}
         value={value}
         onChange={(event) => onCommit(event.currentTarget.value)}
       />
@@ -167,6 +171,18 @@ describe("GenerationPromptComposer presentation", () => {
     expect(
       document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Prompt"]')?.value
     ).toBe("A quiet garden");
+  });
+
+  it("passes the selected model prompt limit to the editor", async () => {
+    const model = {
+      input_schema: { properties: { prompt: { maxLength: 15_000 } } },
+    } as FizzAiModel;
+
+    await act(async () => {
+      root.render(<GenerationPromptComposer {...props({ model })} />);
+    });
+
+    expect(document.querySelector("textarea")?.dataset.promptMaxLength).toBe("15000");
   });
 
   it("renders an active Skill as an actionable inline prompt entity", async () => {

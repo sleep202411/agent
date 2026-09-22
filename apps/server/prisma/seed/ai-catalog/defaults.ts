@@ -1250,6 +1250,7 @@ const SEEDANCE_2_5_DURATION_OPTIONS = [
 export const SEEDANCE_2_5_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'seedance',
+  promptMaxLength: 15_000,
   defaultResolution: '720p',
   resolutionOptions: ['480p', '720p', '1080p'],
   defaultDurationSeconds: '5',
