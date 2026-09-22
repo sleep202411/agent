@@ -177,7 +177,10 @@ export function AccountMenu({
             </span>
             <button
               type="button"
-              onClick={() => openSettings("account")}
+              onClick={() => {
+                setMenuOpen(false);
+                openSettings("account");
+              }}
               aria-label={t("settings")}
               className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
             >
