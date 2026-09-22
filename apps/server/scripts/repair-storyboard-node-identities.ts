@@ -361,11 +361,8 @@ function readOption(argv: string[], name: string): string | undefined {
 }
 
 function assertDatabaseAllowed(args: Args): void {
-  if (
-    connectionString.includes('localhost') ||
-    connectionString.includes('127.0.0.1') ||
-    connectionString.includes('[::1]')
-  ) {
+  const url = new URL(connectionString);
+  if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
     return;
   }
   if (!args.allowRemote) {

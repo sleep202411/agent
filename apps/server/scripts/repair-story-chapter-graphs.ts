@@ -204,7 +204,7 @@ function parseArgs(argv: string[]): Args {
 
 function assertDatabaseAllowed(args: Args): void {
   const url = new URL(databaseUrl);
-  const local = ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
   if (!local && !args.allowRemote) {
     throw new Error('Remote database access requires --allow-remote.');
   }
