@@ -1,4 +1,5 @@
 "use client";
+import { IpFanCommunity } from "../../_components/ip-fan-community";
 
 import { IpEngagementActions } from "./ip-engagement-actions";
 
@@ -545,6 +546,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                     {t("actions.report")}
                   </ActionButton>
                 </IpEngagementActions>
+                {!detailIp.previewMode && <IpFanCommunity ipId={detailIp.id} />}
               </div>
 
               <PurchasePanel

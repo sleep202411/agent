@@ -4816,6 +4816,7 @@ model Crew {
   /// Visitor-page hero visual comes from `showcaseWorks[0]`; the
   /// logo enlarges into a gradient empty-state when no showcase is
   /// set yet (no separate `cover` asset — by design).
+  /// Empty for an automatically created IP Crew until its owner uploads a logo.
   logo                String                     @map("logo") @db.VarChar(512)
   /// Optional one-line hook shown under crew name in hero. ≤140
   /// chars. Owner-curated.

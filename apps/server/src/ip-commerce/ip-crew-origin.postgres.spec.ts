@@ -110,6 +110,113 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
   afterAll(async () => {
     await db?.$disconnect();
   });
+  it.each(['en-US', 'zh-CN', 'zh-HK'] as const)(
+    'automatically creates one unlisted owned Crew for a new %s IP',
+    async (sourceLocale) => {
+      const genre = await db.ipTaxonomyTerm.findFirstOrThrow({
+        where: { type: 'genre', status: 'active', archivedAt: null },
+      });
+      const result = await ips.createCreatorIp(
+        { userId: owner, levelIds: [13] },
+        {
+          title: 'Auto Crew IP',
+          sourceLocale,
+          genreCodes: [genre.code],
+          tagCodes: [],
+        },
+      );
+      try {
+        const linked = await origins.own(result.ip.id, { userId: owner });
+        expect(linked.crewId).toBeTruthy();
+        expect(linked.crewId).not.toBe(crewId);
+        const crew = await db.crew.findUniqueOrThrow({
+          where: { id: linked.crewId! },
+          include: { ownership: { include: { member: true } } },
+        });
+        expect(crew.listingStatus).toBe('unlisted');
+        expect(crew.listedAt).toBeNull();
+        expect(crew.ownership?.member.userId).toBe(owner);
+        expect(
+          await db.crewTaskWorkflowState.count({ where: { crewId: crew.id } }),
+        ).toBeGreaterThan(0);
+        expect(
+          await db.conversationParticipant.count({
+            where: { userId: owner, leftAt: null },
+          }),
+        ).toBe(1);
+        await db.ip.update({
+          where: { id: result.ip.id },
+          data: {
+            status: 'published',
+            listingVisibility: 'public',
+            localizations: {
+              updateMany: { where: {}, data: { status: 'published' } },
+            },
+          },
+        });
+        expect((await origins.publicOrigin(result.ip.id)).crew).toBeNull();
+        await db.crew.update({
+          where: { id: crew.id },
+          data: { listingStatus: 'listed', listedAt: new Date() },
+        });
+        expect((await origins.publicOrigin(result.ip.id)).crew?.id).toBe(
+          crew.id,
+        );
+        expect(
+          (await origins.own(result.ip.id, { userId: owner })).crewId,
+        ).toBe(crew.id);
+      } finally {
+        await db.ip.delete({ where: { id: result.ip.id } });
+        await db.crew.updateMany({
+          where: { createdByUserId: owner },
+          data: { deletedAt: new Date() },
+        });
+      }
+    },
+  );
+  it('keeps uncertified IP creation without granting Crew creation', async () => {
+    const genre = await db.ipTaxonomyTerm.findFirstOrThrow({
+      where: { type: 'genre', status: 'active', archivedAt: null },
+    });
+    const result = await ips.createCreatorIp(
+      { userId: owner, levelIds: [] },
+      {
+        title: 'No auto Crew',
+        sourceLocale: 'en-US',
+        genreCodes: [genre.code],
+        tagCodes: [],
+      },
+    );
+    try {
+      expect(
+        (await origins.own(result.ip.id, { userId: owner })).crewId,
+      ).toBeNull();
+      expect(await db.crew.count({ where: { createdByUserId: owner } })).toBe(
+        1,
+      );
+    } finally {
+      await db.ip.delete({ where: { id: result.ip.id } });
+    }
+  });
+  it('rolls back automatic IP, Crew and membership creation when chat fails', async () => {
+    jest
+      .spyOn(conversations, 'syncCrewParticipant')
+      .mockRejectedValueOnce(new Error('chat failed'));
+    await expect(
+      ips.createCreatorIp(
+        { userId: owner, levelIds: [13] },
+        {
+          title: 'Failing creation',
+          sourceLocale: 'en-US',
+          genreCodes: [],
+          tagCodes: [],
+        },
+      ),
+    ).rejects.toThrow('chat failed');
+    expect(await db.ip.count({ where: { createdById: owner } })).toBe(1);
+    expect(await db.crew.count({ where: { createdByUserId: owner } })).toBe(1);
+    expect(await db.crewMember.count({ where: { userId: owner } })).toBe(1);
+  });
   it('keeps joined fan communities discoverable across reads without production membership', async () => {
     const fan = `discovery-${randomUUID()}`;
     expect((await crewService().myCrews(fan)).community).toEqual([]);
@@ -266,9 +373,14 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
       where: { id: crewId },
       data: { listingStatus: 'unlisted' },
     });
-    await expect(ips.likeIp({ userId: 'other' }, ipId)).rejects.toThrow(
-      'Crew not found',
-    );
+    const privateCrewLike = await ips.likeIp({ userId: 'other' }, ipId);
+    expect(privateCrewLike.conversationId).toBeNull();
+    expect(
+      await db.conversationParticipant.count({ where: { userId: 'other' } }),
+    ).toBe(0);
+    await expect(
+      crewService().joinFanCommunity(crewId, 'other'),
+    ).rejects.toThrow('Crew not found');
   });
   it('keeps unlinked IP likes independent and does not backfill prior likes when linking', async () => {
     const fan = { userId: `fan-${randomUUID()}` };

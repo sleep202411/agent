@@ -23,7 +23,7 @@ import { joinCrewFanTx } from './fan-community';
  * The public community channel is a separate Conversation (`crew:<crewId>:community`)
  * whose participants are subscribers, not crew members.
  */
-import { randomUUID } from 'node:crypto';
+import { createCrewTx } from './create-crew';
 import { releaseRecruitedPositions } from './recruitment-capacity';
 import {
   BadRequestException,
@@ -59,17 +59,8 @@ import type {
   UpdateCrewListingInput,
 } from './dto';
 import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
-import { newCrewDomainId, newCrewId } from './id';
+import { newCrewDomainId } from './id';
 import { toAdminCrewDTO, toCrewDTO } from './mappers';
-import {
-  CREW_PRODUCTION_TEMPLATE_VERSION,
-  createDefaultProductionDocument,
-  createDefaultProductionPlan,
-} from './production/production-document';
-import {
-  DEFAULT_CREW_TASK_WORKFLOW_STATES,
-  defaultCrewTaskView,
-} from './tasks/task-defaults';
 
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 100;
@@ -100,121 +91,7 @@ export class CrewsService {
     }
     const creatorUserId = creator.userId;
     const crew = await this.prisma.$transaction(async (tx) => {
-      const productionPlan = createDefaultProductionPlan(
-        input.productionTemplateLocale,
-      );
-      const c = await tx.crew.create({
-        data: {
-          id: newCrewId(),
-          name: input.name,
-          description: input.description,
-          logo: input.logo,
-          tagline: input.tagline ?? null,
-          genres: input.genres,
-          styles: input.styles,
-          // Empty arrays come through as SQL NULL — Prisma's JsonB
-          // column requires Prisma.DbNull for the null literal.
-          ...(input.socialLinks.length > 0
-            ? { socialLinks: input.socialLinks }
-            : { socialLinks: Prisma.DbNull }),
-          ...(input.showcaseWorks.length > 0
-            ? { showcaseWorks: input.showcaseWorks }
-            : { showcaseWorks: Prisma.DbNull }),
-          createdByUserId: creatorUserId,
-          // Product decision (2026-05-21): new crews are public by
-          // default so they show up in the Crew Hall immediately —
-          // founders can still toggle to `unlisted` later via
-          // updateListing(). DB column default is still `unlisted`
-          // (kept as the safer fallback if a future caller forgets
-          // to pass listingStatus) — set it explicitly here.
-          listingStatus: 'listed',
-          listedAt: new Date(),
-          productionPage: {
-            create: {
-              document: createDefaultProductionDocument(
-                input.productionTemplateLocale,
-              ),
-              createdByUserId: creatorUserId,
-              updatedByUserId: creatorUserId,
-            },
-          },
-          productionActivity: {
-            create: {
-              kind: 'project_created',
-              createdByUserId: creatorUserId,
-              payload: {
-                productionTemplateVersion: CREW_PRODUCTION_TEMPLATE_VERSION,
-                productionTemplateLocale: input.productionTemplateLocale,
-              },
-            },
-          },
-        },
-      });
-      const ownerMember = await tx.crewMember.create({
-        data: {
-          id: newCrewDomainId(),
-          crewId: c.id,
-          userId: creatorUserId,
-          status: CrewMembershipStatus.active,
-          joinedVia: 'creation',
-        },
-      });
-      await tx.crewOwnership.create({
-        data: { crewId: c.id, memberId: ownerMember.id },
-      });
-      const workflowStateIds = new Map(
-        DEFAULT_CREW_TASK_WORKFLOW_STATES.map((state) => [
-          state.systemKey,
-          randomUUID(),
-        ]),
-      );
-      await tx.crewTaskWorkflowState.createMany({
-        data: DEFAULT_CREW_TASK_WORKFLOW_STATES.map((state) => ({
-          id: workflowStateIds.get(state.systemKey)!,
-          crewId: c.id,
-          name: state.name,
-          color: state.color,
-          semantic: state.semantic,
-          systemKey: state.systemKey,
-          position: state.position,
-          createdByUserId: creatorUserId,
-        })),
-      });
-      await tx.crewTaskView.create({
-        data: defaultCrewTaskView(c.id, creatorUserId),
-      });
-
-      const episodeId = randomUUID();
-      await tx.crewEpisode.create({
-        data: {
-          id: episodeId,
-          crewId: c.id,
-          number: 1,
-          title: productionPlan.episode.title,
-          synopsis: productionPlan.episode.synopsis,
-          status: 'planned',
-          rank: 1024,
-          createdByUserId: creatorUserId,
-        },
-      });
-
-      // One crew, one group chat — opened with the crew so there is
-      // never a window where a member exists without a thread to talk
-      // in. No `crew.member.joined` system message here on purpose:
-      // the founder joining the crew they just created, into a chat
-      // with no other reader, is not an event — the chat's existence
-      // already says it. Every LATER join announces itself.
-      await this.conversations.openCrewConversation(c.id, tx);
-      await this.conversations.syncCrewParticipant(
-        c.id,
-        creatorUserId,
-        'join',
-        tx,
-      );
-      return tx.crew.findUniqueOrThrow({
-        where: { id: c.id },
-        include: CREW_OWNER_INCLUDE,
-      });
+      return createCrewTx(tx, this.conversations, creatorUserId, input);
     });
     return toCrewDTO(crew, {
       memberCount: 1,
