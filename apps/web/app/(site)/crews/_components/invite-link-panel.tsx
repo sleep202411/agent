@@ -71,7 +71,8 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
   const [accessPreset, setAccessPreset] = useState<CrewInviteAccessPreset>("standard");
   const [expiry, setExpiry] = useState<(typeof EXPIRY_CHOICES)[number]>("never");
   const [uses, setUses] = useState<(typeof USES_CHOICES)[number]>("unlimited");
-  const [freshUrl, setFreshUrl] = useState<string | null>(null);
+  const [freshLink, setFreshLink] = useState<{ id: string; url: string } | null>(null);
+  const freshUrl = freshLink?.url;
 
   const links = useCrewInviteLinks(crewId, open);
   const { mutateAsync: createLink, isPending: creating } = useCreateCrewInviteLink(crewId);
@@ -88,7 +89,7 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
       });
       if (!active.current) return;
       const url = crewInviteUrl(created.token);
-      setFreshUrl(url);
+      setFreshLink({ id: created.id, url });
       await copy(url);
     } catch (err) {
       if (active.current) toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
@@ -114,7 +115,10 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
     revokePending.current = true;
     try {
       await revokeLink(link.id);
-      if (active.current) toast.success(t("inviteLinkRevoked"));
+      if (active.current) {
+        setFreshLink((current) => (current?.id === link.id ? null : current));
+        toast.success(t("inviteLinkRevoked"));
+      }
     } catch (err) {
       if (active.current) toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
     } finally {
