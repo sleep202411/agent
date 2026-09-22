@@ -96,33 +96,30 @@ type CreatorsListDto = {
  * gets the full window.
  */
 export async function fetchCreators(limit = 50, offset = 0): Promise<CreatorsPage> {
-  try {
-    const res = await api.get<CreatorsListDto>("/creators", {
-      service: "aurora",
-      params: { limit, offset },
+  // Let callers distinguish transport failures from a successful empty directory.
+  const res = await api.get<CreatorsListDto>("/creators", {
+    service: "aurora",
+    params: { limit, offset },
+  });
+  const seen = new Set<string>();
+  const creators: CreatorSummary[] = [];
+  for (const item of res.items ?? []) {
+    const id = nonEmpty(item.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    creators.push({
+      id,
+      name: nonEmpty(item.name) ?? "Creator",
+      avatarUrl: nonEmpty(item.avatarUrl),
+      openToWork: item.openToWork === true,
+      levels: [],
     });
-    const seen = new Set<string>();
-    const creators: CreatorSummary[] = [];
-    for (const item of res.items ?? []) {
-      const id = nonEmpty(item.id);
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
-      creators.push({
-        id,
-        name: nonEmpty(item.name) ?? "Creator",
-        avatarUrl: nonEmpty(item.avatarUrl),
-        openToWork: item.openToWork === true,
-        levels: [],
-      });
-    }
-    return {
-      creators,
-      total: res.total ?? creators.length,
-      requiresLogin: res.requiresLogin === true,
-    };
-  } catch {
-    return { creators: [], total: 0, requiresLogin: false };
   }
+  return {
+    creators,
+    total: res.total ?? creators.length,
+    requiresLogin: res.requiresLogin === true,
+  };
 }
 
 export async function fetchCreatorById(id: string): Promise<CreatorSummary | undefined> {
