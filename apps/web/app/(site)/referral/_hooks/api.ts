@@ -113,9 +113,11 @@ export class ReferralApiError extends Error {
   }
 }
 
-async function call<T>(method: string, path: string): Promise<T> {
+async function call<T>(method: string, path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
+    signal,
+    cache: "no-store",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
   });
@@ -138,9 +140,9 @@ async function call<T>(method: string, path: string): Promise<T> {
   return body as T;
 }
 
-export async function fetchReferralDashboard(): Promise<ReferralDashboard> {
+export async function fetchReferralDashboard(signal?: AbortSignal): Promise<ReferralDashboard> {
   try {
-    return await call<ReferralDashboard>("GET", "/referrals/me");
+    return await call<ReferralDashboard>("GET", "/referrals/me", signal);
   } catch (error) {
     if (error instanceof ReferralApiError && error.status === 404) {
       return EMPTY_REFERRAL_DASHBOARD;
@@ -158,4 +160,5 @@ export async function claimReferralReward(rewardId: string): Promise<{ status: s
 
 export const referralKeys = {
   dashboard: ["referral", "dashboard"] as const,
+  account: (accountId: string) => ["referral", "dashboard", accountId] as const,
 };

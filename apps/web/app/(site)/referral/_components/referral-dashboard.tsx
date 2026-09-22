@@ -21,6 +21,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import {
   claimReferralReward,
@@ -90,6 +91,12 @@ const STATUS_KEY: Record<ReferralRewardStatus, string> = {
 };
 
 export function ReferralDashboardPage() {
+  const { user } = useCurrentUser();
+  if (!user) return null;
+  return <AccountReferralDashboard key={user.id} accountId={user.id} />;
+}
+
+function AccountReferralDashboard({ accountId }: { accountId: string }) {
   const t = useTranslations("referral");
   const locale = useLocale() as Locale;
   const queryClient = useQueryClient();
@@ -102,15 +109,15 @@ export function ReferralDashboardPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: referralKeys.dashboard,
-    queryFn: fetchReferralDashboard,
+    queryKey: referralKeys.account(accountId),
+    queryFn: ({ signal }) => fetchReferralDashboard(signal),
   });
 
   const claim = useMutation({
     mutationFn: claimReferralReward,
     onMutate: () => setClaimError(null),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: referralKeys.dashboard });
+      void queryClient.invalidateQueries({ queryKey: referralKeys.account(accountId) });
     },
     onError: (err: Error) => {
       // Surface the backend message verbatim (house error-reporting rule).
