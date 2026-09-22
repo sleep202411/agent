@@ -1,11 +1,21 @@
+// @vitest-environment jsdom
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { PanoramaCanvas } from "./panorama-viewer";
+type TestTexture = {
+  image: { width: number; height: number };
+  dispose: ReturnType<typeof vi.fn>;
+};
+type TestMaterial = {
+  map?: TestTexture;
+  dispose: ReturnType<typeof vi.fn>;
+};
+type TestRenderer = { dispose: ReturnType<typeof vi.fn> };
 const m = vi.hoisted(() => ({
-  loads: [] as Array<(texture: any) => void>,
-  materials: [] as any[],
-  renderers: [] as any[],
+  loads: [] as Array<(texture: TestTexture) => void>,
+  materials: [] as TestMaterial[],
+  renderers: [] as TestRenderer[],
 }));
 vi.mock("three", () => ({
   Vector3: class {
@@ -36,7 +46,7 @@ vi.mock("three", () => ({
     dispose() {}
   },
   MeshBasicMaterial: class {
-    map: any;
+    map?: TestTexture;
     dispose = vi.fn();
     constructor() {
       m.materials.push(this);
@@ -47,7 +57,7 @@ vi.mock("three", () => ({
     setCrossOrigin() {
       return this;
     }
-    load(_src: string, done: (texture: any) => void) {
+    load(_src: string, done: (texture: TestTexture) => void) {
       m.loads.push(done);
     }
   },
@@ -130,4 +140,25 @@ it("reports the current image and disposes the loaded texture on cleanup", () =>
   root = undefined;
   expect(loaded.dispose).toHaveBeenCalledOnce();
   expect(m.renderers[0].dispose).toHaveBeenCalledOnce();
+});
+
+it("rejects retired loads when returning to the same source", () => {
+  show("a");
+  show("b");
+  const current = show("a");
+  const firstA = texture();
+  const oldB = texture();
+  act(() => {
+    m.loads[0](firstA);
+    m.loads[1](oldB);
+  });
+  expect(current).not.toHaveBeenCalled();
+  expect(firstA.dispose).toHaveBeenCalledOnce();
+  expect(oldB.dispose).toHaveBeenCalledOnce();
+  expect(host.querySelector('[data-testid="loading"]')).not.toBeNull();
+  const latestA = texture();
+  act(() => m.loads[2](latestA));
+  expect(current).toHaveBeenCalledExactlyOnceWith({ w: 800, h: 400 });
+  expect(latestA.dispose).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-testid="loading"]')).toBeNull();
 });
