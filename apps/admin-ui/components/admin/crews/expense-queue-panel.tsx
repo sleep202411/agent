@@ -1,4 +1,5 @@
 "use client";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { ExpenseReceiptLink } from "./expense-receipt-link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,9 @@ export function ExpenseQueuePanel() {
     setError(null);
     try {
       const response = await fetch(
-        `/api/admin/crew-expense-submissions?limit=50${after ? `&after=${encodeURIComponent(after)}` : ""}`,
+        adminUiApiPath(
+          `/api/admin/crew-expense-submissions?limit=50${after ? `&after=${encodeURIComponent(after)}` : ""}`
+        ),
         { signal: controller.signal, cache: "no-store" }
       );
       const result = await response.json();
