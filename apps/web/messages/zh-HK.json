@@ -1006,6 +1006,7 @@
     "fieldTags": "標籤",
     "taxonomyHelp": "已選 {count}/{max}",
     "taxonomyEmpty": "暫無可用類型標籤",
+    "taxonomyLoadFailed": "類型標籤載入失敗，請重試。",
     "fieldDescription": "短簡介",
     "fieldDescriptionPlaceholder": "一兩句話講清楚：你的 IP 憑什麼吸引人？",
     "dropzoneIdleTitle": "把劇本、提案或大綱拖到這裡",

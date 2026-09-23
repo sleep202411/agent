@@ -1006,6 +1006,7 @@
     "fieldTags": "Tags",
     "taxonomyHelp": "{count}/{max} selected",
     "taxonomyEmpty": "No taxonomy terms available",
+    "taxonomyLoadFailed": "Could not load genres. Please retry.",
     "fieldDescription": "Short description",
     "fieldDescriptionPlaceholder": "A short pitch — what makes this IP stand out?",
     "dropzoneIdleTitle": "Drop a script, treatment, or outline",
