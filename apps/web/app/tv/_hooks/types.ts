@@ -3,6 +3,7 @@
  * withholds mediaAsset URLs for locked episodes.
  */
 export interface TvItem {
+  channelType?: "ip" | "community";
   id: string;
   roomNumber: string;
   title: string;

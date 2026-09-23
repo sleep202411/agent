@@ -1,4 +1,5 @@
 export interface PlazaProject {
+  channelType?: "ip" | "community";
   id: string;
   roomNumber: string;
   name: string;

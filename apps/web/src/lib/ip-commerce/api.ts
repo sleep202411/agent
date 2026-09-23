@@ -541,7 +541,6 @@ export interface CreateIpPurchaseInput {
 }
 
 export interface CreateIpDraftInput {
-  channelType?: IpChannelType;
   title: string;
   summary?: string;
   genreCodes: string[];

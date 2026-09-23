@@ -10033,5 +10033,26 @@
     "ip": "IP Channel",
     "community": "Community Channel",
     "create": "Create AI Channel"
+  },
+  "channelSubmissions": {
+    "title": "Channel submissions",
+    "open": "Accepting submissions",
+    "closed": "Submissions closed",
+    "description": "Submit an existing published work. It appears here only after the channel owner approves it.",
+    "close": "Close submissions",
+    "enable": "Open submissions",
+    "submit": "Submit a work",
+    "choose": "Choose your published work",
+    "loading": "Loading…",
+    "noWorks": "No published public works available.",
+    "more": "Load more",
+    "send": "Send for approval",
+    "empty": "No submissions to display.",
+    "pending": "Pending approval",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "approve": "Approve",
+    "reject": "Reject",
+    "retry": "Retry"
   }
 }

@@ -1,4 +1,5 @@
 "use client";
+import { ChannelBadge } from "@/components/channel-badge";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -267,6 +268,7 @@ export function TvIpList({
                       </span>
                     )}
                     {item.genre && <span className="truncate">{item.genre}</span>}
+                    <ChannelBadge category={item.channelType} />
                   </span>
                 </span>
                 {active && item.trailer && (

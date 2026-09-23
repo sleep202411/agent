@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { AdminSessionBoundary } from "../admin-session-boundary";
+vi.mock("./submissions-panel", () => ({ IpSubmissionsPanel: () => null }));
 import { IpChannelPanel } from "./channel-panel";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 it("keeps failed category edits retryable", async () => {
