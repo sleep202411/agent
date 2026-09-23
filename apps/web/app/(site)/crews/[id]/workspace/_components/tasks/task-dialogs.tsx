@@ -234,7 +234,11 @@ export function SubmitTaskDialog({
                     color="muted"
                     size="sm"
                     disabled={saving || assetQuery.isFetching}
-                    onClick={() => void assetQuery.refetch()}
+                    onClick={() =>
+                      void (assetQuery.isFetchNextPageError
+                        ? assetQuery.fetchNextPage({ cancelRefetch: false })
+                        : assetQuery.refetch())
+                    }
                   >
                     {common("retry")}
                   </Button>
@@ -268,6 +272,17 @@ export function SubmitTaskDialog({
               )}
             </div>
           </div>
+          {assetQuery.hasNextPage && !assetQuery.isFetchNextPageError && (
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              disabled={saving || assetQuery.isFetching}
+              onClick={() => void assetQuery.fetchNextPage({ cancelRefetch: false })}
+            >
+              {assetQuery.isFetchingNextPage ? common("loading") : common("loadMore")}
+            </Button>
+          )}
           {template.isPending ? <p role="status">{deliveryT("loading")}</p> : null}
           {template.error ? (
             <div role="alert">

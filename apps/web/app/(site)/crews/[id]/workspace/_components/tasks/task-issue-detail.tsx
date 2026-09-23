@@ -972,6 +972,7 @@ function CommentComposer({
   displays: ReturnType<typeof useUserDisplays>;
 }) {
   const t = useTranslations("crewTasks");
+  const common = useTranslations("common");
   const memberPositionLabel = useCrewMemberPositionLabel();
   const create = useCreateCrewTaskComment(task.crewId, task.id);
   const assetContext = useCrewAssetContext(task.crewId);
@@ -1232,9 +1233,47 @@ function CommentComposer({
         <PickerPanel
           title={t("chooseCrewAsset")}
           onClose={() => setAssetOpen(false)}
-          empty={(recentAssets.data?.items.length ?? 0) === 0}
+          empty={
+            !recentAssets.isLoading &&
+            !recentAssets.isError &&
+            (recentAssets.data?.items.length ?? 0) === 0
+          }
           emptyText={t("noRecentAssets")}
         >
+          {recentAssets.isLoading && <p role="status">{common("loading")}</p>}
+          {recentAssets.isError && (
+            <div role="alert">
+              <p>
+                {recentAssets.error instanceof Error
+                  ? recentAssets.error.message
+                  : common("loadFailed")}
+              </p>
+              <Button
+                variant="outline"
+                color="muted"
+                size="sm"
+                disabled={saving || recentAssets.isFetching}
+                onClick={() =>
+                  void (recentAssets.isFetchNextPageError
+                    ? recentAssets.fetchNextPage({ cancelRefetch: false })
+                    : recentAssets.refetch())
+                }
+              >
+                {common("retry")}
+              </Button>
+            </div>
+          )}
+          {recentAssets.hasNextPage && !recentAssets.isFetchNextPageError && (
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              disabled={saving || recentAssets.isFetching}
+              onClick={() => void recentAssets.fetchNextPage({ cancelRefetch: false })}
+            >
+              {recentAssets.isFetching ? common("loading") : common("loadMore")}
+            </Button>
+          )}
           {(recentAssets.data?.items ?? []).map((asset) => {
             const selected = attachments.some(
               (attachment) => attachment.source === "asset" && attachment.assetNodeId === asset.id

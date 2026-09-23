@@ -11,6 +11,10 @@ const assetQuery = vi.hoisted(() => ({
   isFetching: false,
   error: null as Error | null,
   refetch: vi.fn(),
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  isFetchNextPageError: false,
+  fetchNextPage: vi.fn(),
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useSubmitCrewTask: () => ({ mutateAsync: submit, isPending: false }),
@@ -59,6 +63,9 @@ afterEach(() => {
   vi.resetAllMocks();
   assetQuery.error = null;
   assetQuery.isLoading = false;
+  assetQuery.hasNextPage = false;
+  assetQuery.isFetchingNextPage = false;
+  assetQuery.isFetchNextPageError = false;
   assetQuery.data = { items: [{ id: "asset-1", name: "Output" }] };
 });
 
@@ -167,3 +174,58 @@ vi.mock("./task-delivery-template", () => ({
   useTaskDeliveryTemplate: () => ({ data: null, isPending: false, isError: false }),
   TaskDeliveryFields: () => null,
 }));
+
+it("loads and submits attachments beyond the first page without losing earlier selections", async () => {
+  assetQuery.hasNextPage = true;
+  render("task-1");
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  const more = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === "loadMore"
+  );
+  expect(more).toBeDefined();
+  await act(async () => more!.click());
+  expect(assetQuery.fetchNextPage).toHaveBeenCalledWith({ cancelRefetch: false });
+  assetQuery.data = {
+    items: [
+      { id: "asset-1", name: "Output" },
+      { id: "asset-101", name: "Older output" },
+    ],
+  };
+  assetQuery.hasNextPage = false;
+  render("task-1");
+  expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
+  act(() => document.querySelectorAll<HTMLButtonElement>('[role="checkbox"]')[1]!.click());
+  submit.mockResolvedValue({ id: "task-1" });
+  await act(async () => clickSubmit());
+  expect(submit).toHaveBeenCalledWith({
+    taskId: "task-1",
+    note: "",
+    assetNodeIds: ["asset-1", "asset-101"],
+  });
+});
+
+it("retries the failed asset page and keeps the selected attachments", async () => {
+  render("task-1");
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  assetQuery.hasNextPage = true;
+  assetQuery.isFetchNextPageError = true;
+  assetQuery.error = new Error("Next page unavailable");
+  render("task-1");
+  expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
+  await act(async () =>
+    [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "retry")!.click()
+  );
+  expect(assetQuery.fetchNextPage).toHaveBeenCalledWith({ cancelRefetch: false });
+  expect(assetQuery.refetch).not.toHaveBeenCalled();
+});
+it("disables loading more attachments while a request is in flight", () => {
+  assetQuery.hasNextPage = true;
+  assetQuery.isFetching = true;
+  assetQuery.isFetchingNextPage = true;
+  render("task-1");
+  const more = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === "loading"
+  )!;
+  expect(more.disabled).toBe(true);
+  assetQuery.isFetching = false;
+});
