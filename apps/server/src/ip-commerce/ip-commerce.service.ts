@@ -2302,6 +2302,7 @@ export class IpCommerceService {
     const tagCodes = input.tagCodes;
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       if (
         title !== undefined ||
         summary !== undefined ||
@@ -2401,6 +2402,7 @@ export class IpCommerceService {
     this.assertExpectedVersion(input.expectedVersion, ip.version);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       const coverAssetId = await this.resolveMediaAssetPatchTx(tx, {
         assetId: input.coverAssetId,
         kind: MediaAssetKind.image,
@@ -2578,6 +2580,7 @@ export class IpCommerceService {
     for (let attempt = 0; ; attempt += 1) {
       try {
         const updated = await this.prisma.$transaction(async (tx) => {
+          await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
           const maxEpisode = await tx.ipEpisode.aggregate({
             where: { ipId: ip.id },
             _max: { episodeNo: true, sortOrder: true },
@@ -2693,6 +2696,7 @@ export class IpCommerceService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       if (
         input.episodeNo !== undefined &&
         input.episodeNo !== episode.episodeNo
@@ -2892,6 +2896,7 @@ export class IpCommerceService {
     const now = new Date();
     const status = input.status as IpPriceRuleStatus;
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       await tx.ipPriceRule.updateMany({
         where: {
           ipId: ip.id,
@@ -3019,6 +3024,7 @@ export class IpCommerceService {
 
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       await tx.ipReviewSubmission.updateMany({
         where: {
           targetType: IpReviewTargetType.ip,
@@ -5357,6 +5363,28 @@ export class IpCommerceService {
       ...ip,
       sourceLocale: normalizeLocale(ip.sourceLocale),
     };
+  }
+
+  private async lockCreatorIpSnapshotTx(
+    tx: Prisma.TransactionClient,
+    ipId: string,
+    version: number,
+  ) {
+    // Preflight reads do not protect against another save committing before
+    // this transaction. Lock the parent before touching any child rows, then
+    // verify the snapshot used for validation is still current.
+    const [current] = await tx.$queryRaw<Array<{ version: number }>>`
+      SELECT version FROM ips
+      WHERE id = ${ipId}::uuid AND deleted_at IS NULL
+      FOR UPDATE
+    `;
+    if (!current) {
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    }
+    this.assertExpectedVersion(version, current.version);
   }
 
   private assertExpectedVersion(expected: number | undefined, actual: number) {
