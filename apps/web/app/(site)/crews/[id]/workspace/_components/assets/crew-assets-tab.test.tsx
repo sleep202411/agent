@@ -120,6 +120,7 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 let legacyProject: { id: string; name: string } | null = null;
 let canLink = true;
+let permissionReadFails = false;
 let linkFails = false;
 let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
@@ -206,6 +207,8 @@ function installFetch() {
         return jsonResponse([]);
       }
       if (method === "GET" && url.endsWith("/assets/file-1/permissions")) {
+        if (permissionReadFails)
+          return jsonResponse({ message: "Access read unavailable" }, { status: 503 });
         return jsonResponse({
           accessMode: "inherit",
           permissionVersion: accessVersion,
@@ -359,6 +362,7 @@ afterEach(() => {
   accessVersion = 1;
   refreshedAsset = false;
   trashFails = false;
+  permissionReadFails = false;
   vi.clearAllMocks();
   act(() => root?.unmount());
   container?.remove();
@@ -770,6 +774,23 @@ it("rebuilds asset pages after a cursor rejection instead of replaying the inval
   const retried = requests.slice(before).find((request) => request.url.includes("/assets?"))!;
   expect(retried.url).not.toContain("cursor=");
   await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
+});
+
+it("retries failed access reads without closing the asset preview", async () => {
+  permissionReadFails = true;
+  await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Access read unavailable"));
+  const panel = document.querySelector('aside[aria-label="Asset preview and details"]')!;
+  const retry = [...panel.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Retry"
+  );
+  expect(retry).toBeDefined();
+  permissionReadFails = false;
+  await click(retry!);
+  await vi.waitFor(() => expect(panel.textContent).toContain("Manage access"));
+  expect(panel.textContent).not.toContain("Access read unavailable");
+  expect(panel.textContent).toContain("concept.png");
 });
 
 it("blocks duplicate folder creation and retains a failed draft for retry", async () => {
