@@ -619,7 +619,10 @@ export function CrewAssetsTab({
                   <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                   <input
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setCheckedIds(new Set());
+                    }}
                     placeholder={t("searchPlaceholder")}
                     className="h-8 w-full rounded-lg border border-border/70 bg-background/60 pl-8 pr-3 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60"
                   />
@@ -627,7 +630,10 @@ export function CrewAssetsTab({
                 <ToolbarSelect
                   ariaLabel={t("typeFilter")}
                   value={typeFilter}
-                  onChange={(value) => setTypeFilter(value as "all" | CrewAssetKind)}
+                  onChange={(value) => {
+                    setTypeFilter(value as "all" | CrewAssetKind);
+                    setCheckedIds(new Set());
+                  }}
                   options={[
                     ["all", t("allTypes")],
                     ["folder", t("typeFolder")],
