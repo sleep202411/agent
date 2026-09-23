@@ -135,7 +135,7 @@ function ChannelContents({
           {t("submit")}
         </Button>
       )}
-      {choosing && (
+      {choosing && data.open && (
         <div className="space-y-3">
           <label className="block">
             {t("choose")}
@@ -170,7 +170,7 @@ function ChannelContents({
             </Button>
           )}
           <Button
-            disabled={!selected || mutation.isPending}
+            disabled={!works.some((work) => work.id === selected) || mutation.isPending}
             onClick={() => mutation.mutate({ kind: "submit", workId: selected })}
           >
             {t("send")}
