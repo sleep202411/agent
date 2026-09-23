@@ -1131,6 +1131,7 @@
       "splitPrompt": "将该收益池分配给你的团队：",
       "allocated": "{allocated} / 100%",
       "ownerFallbackNote": "未分配的部分以及取整余额，归 IP 管理员所有。",
+      "invalidShare": "请输入有效的百分比，或留空以清除分成比例。",
       "overAllocated": "参与分成的比例之和超过 100%，请先调低后再保存。",
       "loading": "正在加载成员…",
       "loadFailed": "成员加载失败，请重试。",

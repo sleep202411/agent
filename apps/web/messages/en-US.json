@@ -1131,6 +1131,7 @@
       "splitPrompt": "Split that pool among your team:",
       "allocated": "{allocated} / 100%",
       "ownerFallbackNote": "Anything left unallocated, plus rounding, goes to the IP owner.",
+      "invalidShare": "Enter a valid percentage, or leave blank to clear the share.",
       "overAllocated": "Eligible shares exceed 100%. Lower a share before saving.",
       "loading": "Loading members…",
       "loadFailed": "Could not load members. Try again.",
