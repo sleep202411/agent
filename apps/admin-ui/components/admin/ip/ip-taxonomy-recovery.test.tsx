@@ -166,3 +166,26 @@ it("retains loaded terms through refresh failure and retries", async () => {
   await act(async () => click("刷新词库"));
   expect(container.textContent).not.toContain("one");
 });
+
+it.each([false, true])(
+  "closes an accepted save when list refresh fails (editing=%s)",
+  async (editing) => {
+    fetchMock
+      .mockResolvedValueOnce(response({ term }))
+      .mockRejectedValueOnce(new Error("Refresh unavailable"))
+      .mockResolvedValueOnce(response({ items: [term] }));
+    await render(view());
+    await act(async () => click(editing ? "编辑" : "新增词条"));
+    await input("English label", "Saved label");
+    await act(async () => click(editing ? "保存词条" : "创建词条"));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Refresh unavailable");
+    expect(container.textContent).toContain("one");
+    await act(async () => click("刷新词库"));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST" || init?.method === "PATCH")
+    ).toHaveLength(1);
+    expect(container.textContent).not.toContain("Refresh unavailable");
+  }
+);
