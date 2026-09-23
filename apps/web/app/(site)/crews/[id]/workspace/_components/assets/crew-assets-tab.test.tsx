@@ -520,6 +520,43 @@ describe("crew asset center", () => {
     });
   });
 
+  it("locks the permission draft while saving and retains it after failure", async () => {
+    await render();
+    const originalFetch = globalThis.fetch;
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/assets/file-1/permissions") && init?.method === "PUT") {
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      return originalFetch(input, init);
+    });
+    await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await click(byText("button", "Manage access"));
+    const restricted = document.querySelector<HTMLInputElement>(
+      'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+    )!;
+    await click(restricted);
+    await click(byText("button", "Save access"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(restricted.disabled).toBe(true);
+    expect((byText("button", "Cancel") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => finish(jsonResponse({ message: "Save unavailable" }, { status: 503 })));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(restricted.disabled).toBe(false);
+    expect(restricted.checked).toBe(true);
+    expect((byText("button", "Cancel") as HTMLButtonElement).disabled).toBe(false);
+    expect(byText("button", "Save access")).toBeTruthy();
+  });
+
   it("requires confirmation before permanent deletion from Trash", async () => {
     await render();
     await click(byText("button", "Trash"));
