@@ -9,7 +9,7 @@ import { useProjectContext } from "@/app/[locale]/project/_components/project-co
 import { useCharacterOperation } from "@/app/[locale]/(studio)/characters/_lib/use-character-operation";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
-import { api } from "@/lib/api";
+import { api, ApiRequestError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { DrawerPanel } from "@/components/ui/drawer-panel";
 
@@ -111,7 +111,14 @@ function ActorLibrary({ onClose, documentId }: { onClose: () => void; documentId
         setNotice(t("added", { name: result.name }));
       }
     } catch (err) {
-      if (operation.isCurrent(run)) setError(err instanceof Error ? err.message : t("failed"));
+      if (operation.isCurrent(run)) {
+        if (err instanceof ApiRequestError && err.code === "AI_ACTOR_PHOTO_CHANGED") {
+          // This identity can never succeed again; ordinary network retries must keep theirs.
+          retryIds.current.delete(actor.id);
+          void client.invalidateQueries({ queryKey: ["ai-actors", user?.id, workspaceId] });
+        }
+        setError(err instanceof Error ? err.message : t("failed"));
+      }
     } finally {
       if (operation.finish(run)) setBusy(null);
     }

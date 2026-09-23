@@ -127,9 +127,10 @@ export class AiActorsService {
           'This request identity has already been used.',
         );
       if (previous && previous.photoAssetId !== actor.photoAssetId)
-        throw new ConflictException(
-          'The actor photo changed. Start a new use.',
-        );
+        throw new ConflictException({
+          code: 'AI_ACTOR_PHOTO_CHANGED',
+          message: 'The actor photo changed. Start a new use.',
+        });
       if (!previous)
         await tx.aiActorUse.create({
           data: {

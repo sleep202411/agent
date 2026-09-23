@@ -8,6 +8,7 @@ import {
   defaultScheduler,
 } from "@tanstack/react-query";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { ApiRequestError } from "@/lib/api";
 import { AiActorsPanel } from "./ai-actors-panel";
 const state = vi.hoisted(() => ({
   user: "alice",
@@ -36,7 +37,10 @@ vi.mock("@/lib/canvas-core/canvas-graph-context", () => ({
     selectNodes: vi.fn(),
   }),
 }));
-vi.mock("@/lib/api", () => ({ api: { get: state.get, post: state.post } }));
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  api: { get: state.get, post: state.post },
+}));
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 let root: Root, host: HTMLDivElement, client: QueryClient;
 const actor = { id: "actor", name: "Mira", photoUrl: "/mira.png", unlocked: true };
@@ -190,4 +194,30 @@ it("allocates a fresh request identity for a second successful insertion", async
     state.post.mock.calls[1][1].data.requestId
   );
   expect(state.addNode).toHaveBeenCalledTimes(2);
+});
+
+it("starts a new use after photo replacement but preserves ambiguous network retries", async () => {
+  state.post.mockRejectedValueOnce(new Error("Response lost after acceptance"));
+  await render();
+  await click("use");
+  const acceptedId = state.post.mock.calls[0][1].data.requestId;
+  state.post.mockRejectedValueOnce(
+    new ApiRequestError("AI_ACTOR_PHOTO_CHANGED", "The actor photo changed. Start a new use.", 409)
+  );
+  await click("use");
+  expect(state.post.mock.calls[1][1].data.requestId).toBe(acceptedId);
+  expect(state.addNode).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Start a new use.");
+  await click("use");
+  expect(state.post.mock.calls[2][1].data.requestId).not.toBe(acceptedId);
+  expect(state.addNode).toHaveBeenCalledTimes(1);
+});
+it("does not discard retry identity for an unrelated conflict", async () => {
+  state.post.mockRejectedValueOnce(new ApiRequestError(409, "Conflict", 409));
+  await render();
+  await click("use");
+  await click("use");
+  expect(state.post.mock.calls[0][1].data.requestId).toBe(
+    state.post.mock.calls[1][1].data.requestId
+  );
 });
