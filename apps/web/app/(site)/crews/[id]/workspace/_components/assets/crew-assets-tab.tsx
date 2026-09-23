@@ -2,7 +2,7 @@
 
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
   IconArrowLeft,
@@ -119,6 +119,10 @@ export function CrewAssetsTab({
   const [sort, setSort] = useState<CrewAssetSort>("modified");
   const [folderPath, setFolderPath] = useState<FolderCrumb[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState("");
+  const currentSelection = useRef(selectedAssetId);
+  useLayoutEffect(() => {
+    currentSelection.current = selectedAssetId;
+  }, [selectedAssetId]);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
   const bulkPending = useRef(false);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -320,6 +324,11 @@ export function CrewAssetsTab({
     const results = await Promise.allSettled(ids.map(action));
     const succeeded = new Set(ids.filter((_, index) => results[index].status === "fulfilled"));
     setCheckedIds((current) => new Set([...current].filter((id) => !succeeded.has(id))));
+    if (succeeded.has(currentSelection.current)) {
+      setSelectedAssetId("");
+      setInspectorOpen(false);
+      onSelectedAssetChange?.(null);
+    }
     const failed = results.find((result) => result.status === "rejected");
     if (failed?.status === "rejected") throw failed.reason;
   };
@@ -338,9 +347,6 @@ export function CrewAssetsTab({
         await settleCheckedActions(ids, (id) => trashAsset.mutateAsync(id));
         toast.success(t("movedToTrash", { count: ids.length }));
       }
-      setSelectedAssetId("");
-      setInspectorOpen(false);
-      onSelectedAssetChange?.(null);
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
     } finally {
@@ -357,9 +363,6 @@ export function CrewAssetsTab({
     try {
       await settleCheckedActions(ids, (id) => restoreAsset.mutateAsync(id));
       toast.success(t("restored", { count: ids.length }));
-      setSelectedAssetId("");
-      setInspectorOpen(false);
-      onSelectedAssetChange?.(null);
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
     } finally {

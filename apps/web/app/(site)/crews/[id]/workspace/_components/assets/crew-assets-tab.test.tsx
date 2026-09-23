@@ -491,7 +491,9 @@ describe("crew asset center", () => {
 
   it("keeps move versions through refresh and retry until the dialog is reopened", async () => {
     const client = await render();
-    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+    await click(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!
+    );
     await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
     refreshedAsset = true;
     await act(async () => {
@@ -1091,3 +1093,42 @@ it.each(["trash", "restore"])("prevents duplicate bulk %s while pending", async 
     document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.checked
   ).toBe(false);
 });
+
+it.each(["trash", "restore"])(
+  "keeps a different preview opened while bulk %s is pending",
+  async (action) => {
+    await render();
+    if (action === "restore") {
+      await click(byText("button", "Trash"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!);
+    const originalFetch = globalThis.fetch;
+    let finish!: () => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const matches =
+          action === "trash"
+            ? init?.method === "DELETE" && String(input).endsWith("/assets/folder-1")
+            : init?.method === "POST" && String(input).endsWith("/assets/folder-1/restore");
+        if (!matches) return originalFetch(input, init);
+        return new Promise<Response>((resolve) => {
+          finish = () =>
+            resolve(action === "trash" ? new Response(null, { status: 204 }) : jsonResponse({}));
+        });
+      })
+    );
+    await click(byText("button", action === "trash" ? "Delete" : "Restore"));
+    const row = byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!;
+    await click(row);
+    const preview = () => document.querySelector('aside[aria-label="Asset preview and details"]');
+    expect(preview()?.textContent).toContain("concept.png");
+    await act(async () => {
+      finish();
+    });
+    expect(preview()?.textContent).toContain("concept.png");
+  }
+);
