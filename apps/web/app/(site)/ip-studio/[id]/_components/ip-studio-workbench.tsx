@@ -261,7 +261,6 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
       </div>
 
       <IpProfileEditDialog
-        key={`${ip.id}:${ip.version}:${profileEditOpen ? "open" : "closed"}`}
         ip={ip}
         open={profileEditOpen}
         onOpenChange={setProfileEditOpen}
@@ -1575,7 +1574,7 @@ function PricingPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
       </div>
 
       {mode === "free" ? <FreeModeCard t={t} /> : null}
-      {mode === "bundle" ? <BundlePriceEditor ip={ip} t={t} /> : null}
+      {mode === "bundle" ? <BundlePriceEditor key={ip.id} ip={ip} t={t} /> : null}
       {mode === "episode" ? <EpisodePricingList ip={ip} episodes={sellableEpisodes} t={t} /> : null}
     </Section>
   );
@@ -1721,19 +1720,32 @@ const BUNDLE_QUICK_PICKS = ["30", "50", "99"] as const;
 
 // Prominent whole-IP bundle card. One price unlocks every episode (incl. future
 // ones) via an IP-level entitlement. No per-episode prices exist in this mode.
-function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+export function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   const upsertPrice = useUpsertIpCommercePriceRule();
-  const [amount, setAmount] = useState(ip.price?.amount ?? "");
-  const [originalAmount, setOriginalAmount] = useState(ip.price?.originalAmount ?? "");
-  const [startsAt, setStartsAt] = useState(toDateTimeLocal(ip.price?.startsAt));
-  const [endsAt, setEndsAt] = useState(toDateTimeLocal(ip.price?.endsAt));
+  const [baseline, setBaseline] = useState(ip);
+  const [amount, setAmount] = useState(baseline.price?.amount ?? "");
+  const [originalAmount, setOriginalAmount] = useState(baseline.price?.originalAmount ?? "");
+  const [startsAt, setStartsAt] = useState(toDateTimeLocal(baseline.price?.startsAt));
+  const [endsAt, setEndsAt] = useState(toDateTimeLocal(baseline.price?.endsAt));
+  const dirty =
+    amount !== (baseline.price?.amount ?? "") ||
+    originalAmount !== (baseline.price?.originalAmount ?? "") ||
+    startsAt !== toDateTimeLocal(baseline.price?.startsAt) ||
+    endsAt !== toDateTimeLocal(baseline.price?.endsAt);
+  if (!dirty && !upsertPrice.isPending && ip.version > baseline.version) {
+    setBaseline(ip);
+    setAmount(ip.price?.amount ?? "");
+    setOriginalAmount(ip.price?.originalAmount ?? "");
+    setStartsAt(toDateTimeLocal(ip.price?.startsAt));
+    setEndsAt(toDateTimeLocal(ip.price?.endsAt));
+  }
   const valid = validatePriceRuleInput({ amount, originalAmount, startsAt, endsAt });
   const canSave = !upsertPrice.isPending && valid;
 
   const handleSave = async () => {
     if (!canSave) return;
     try {
-      await upsertPrice.mutateAsync({
+      const result = await upsertPrice.mutateAsync({
         ipId: ip.id,
         targetType: "ip",
         status: "active",
@@ -1743,8 +1755,9 @@ function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
         startsAt: dateTimeLocalToIso(startsAt),
         endsAt: dateTimeLocalToIso(endsAt),
         maxPerUser: null,
-        expectedVersion: ip.version,
+        expectedVersion: baseline.version,
       });
+      setBaseline(result.ip);
       toast.success(t("pricingPanel.toasts.saved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("pricingPanel.toasts.saveFailed"));
@@ -1825,7 +1838,7 @@ function deriveEpisodePriceState(episode: StudioEpisode): EpisodePriceState {
 // One row in the per-episode pricing list. Hides the amount input behind an
 // explicit "Set price" affordance; supports clearing back to unpriced and a
 // "Free preview" state. Compare-at + schedule live behind a per-row disclosure.
-function EpisodePriceEditor({
+export function EpisodePriceEditor({
   ip,
   episode,
   displayNumber,
@@ -1854,19 +1867,20 @@ function EpisodePriceEditor({
   // Clear the free-preview flag (if set) before/while pricing, since a priced
   // episode is not a free preview.
   const clearFreePreview = async () => {
-    if (!episode.isFreePreview) return;
-    await updateEpisode.mutateAsync({
+    if (!episode.isFreePreview) return ip.version;
+    const result = await updateEpisode.mutateAsync({
       ipId: ip.id,
       episodeId: episode.id,
       isFreePreview: false,
       expectedVersion: ip.version,
     });
+    return result.ip.version;
   };
 
   const handleSavePrice = async () => {
     if (!valid || busy) return;
     try {
-      await clearFreePreview();
+      const expectedVersion = await clearFreePreview();
       await upsertPrice.mutateAsync({
         ipId: ip.id,
         targetType: "episode",
@@ -1878,7 +1892,7 @@ function EpisodePriceEditor({
         startsAt: dateTimeLocalToIso(startsAt),
         endsAt: dateTimeLocalToIso(endsAt),
         maxPerUser: null,
-        expectedVersion: ip.version,
+        expectedVersion,
       });
       toast.success(t("pricingPanel.toasts.saved"));
       setEditing(false);
@@ -1889,8 +1903,8 @@ function EpisodePriceEditor({
 
   // Disable any active episode price rule, returning the episode to unpriced.
   const disablePrice = async () => {
-    if (!episode.price) return;
-    await upsertPrice.mutateAsync({
+    if (!episode.price) return ip.version;
+    const result = await upsertPrice.mutateAsync({
       ipId: ip.id,
       targetType: "episode",
       episodeId: episode.id,
@@ -1899,18 +1913,19 @@ function EpisodePriceEditor({
       maxPerUser: null,
       expectedVersion: ip.version,
     });
+    return result.ip.version;
   };
 
   const handleClear = async () => {
     if (busy) return;
     try {
-      await disablePrice();
+      const expectedVersion = await disablePrice();
       if (episode.isFreePreview) {
         await updateEpisode.mutateAsync({
           ipId: ip.id,
           episodeId: episode.id,
           isFreePreview: false,
-          expectedVersion: ip.version,
+          expectedVersion,
         });
       }
       toast.success(t("pricingPanel.toasts.saved"));
@@ -1924,12 +1939,12 @@ function EpisodePriceEditor({
     if (busy || episode.isFreePreview) return;
     try {
       // A free preview is free — drop any active price first.
-      await disablePrice();
+      const expectedVersion = await disablePrice();
       await updateEpisode.mutateAsync({
         ipId: ip.id,
         episodeId: episode.id,
         isFreePreview: true,
-        expectedVersion: ip.version,
+        expectedVersion,
       });
       toast.success(t("pricingPanel.toasts.saved"));
       setEditing(false);
@@ -2726,7 +2741,7 @@ function UserSearchPicker({
   );
 }
 
-function MemberRow({
+export function MemberRow({
   ip,
   contributor,
   contributors,
@@ -2758,6 +2773,10 @@ function MemberRow({
 
   const commitShare = async () => {
     const nextBps = percentTextToBps(shareText);
+    if (nextBps === undefined) {
+      toast.error(t("membersPanel.invalidShare"));
+      return;
+    }
     if (nextBps === contributor.revenueShareBps) return;
     // Client guard: eligible totals must stay <= 100%.
     if (contributor.revenueEligible && eligibleSumExcludingThis + (nextBps ?? 0) > BPS_FULL) {
@@ -2862,7 +2881,7 @@ function MemberRow({
   );
 }
 
-function AddMemberDialog({
+export function AddMemberDialog({
   open,
   onOpenChange,
   ip,
@@ -2903,6 +2922,10 @@ function AddMemberDialog({
   const handleSubmit = async () => {
     if (!canSubmit) return;
     const shareBps = eligible ? percentTextToBps(shareText) : null;
+    if (shareBps === undefined) {
+      toast.error(t("membersPanel.invalidShare"));
+      return;
+    }
     if (eligible && !linkedUser) {
       toast.error(t("membersPanel.mustLinkToEarn"));
       return;
@@ -3037,7 +3060,7 @@ function AddMemberDialog({
 function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   return (
     <Section title={t("assetsPanel.rightsTitle")} description={t("assetsPanel.rightsBody")}>
-      <RightsGovernanceEditor ip={ip} t={t} />
+      <RightsGovernanceEditor key={ip.id} ip={ip} t={t} />
       <IpCrewOrigin ipId={ip.id} editable />
       <IpReleaseLinks ipId={ip.id} editable />
       <IpGameAssociations ipId={ip.id} />
@@ -3046,13 +3069,14 @@ function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   );
 }
 
-function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+export function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   const update = useUpdateIpCommerceIpProfile();
-  const currentOwner = ip.copyrightOwner ?? "";
-  const currentRights = jsonStringField(ip.rightsSummary, "statement");
-  const currentAiStatement = jsonStringField(ip.aiDisclosure, "statement");
-  const currentGeneratedVisuals = jsonBooleanField(ip.aiDisclosure, "generatedVisuals");
-  const currentGeneratedCopy = jsonBooleanField(ip.aiDisclosure, "generatedCopy");
+  const [baseline, setBaseline] = useState(ip);
+  const currentOwner = baseline.copyrightOwner ?? "";
+  const currentRights = jsonStringField(baseline.rightsSummary, "statement");
+  const currentAiStatement = jsonStringField(baseline.aiDisclosure, "statement");
+  const currentGeneratedVisuals = jsonBooleanField(baseline.aiDisclosure, "generatedVisuals");
+  const currentGeneratedCopy = jsonBooleanField(baseline.aiDisclosure, "generatedCopy");
   const [owner, setOwner] = useState(currentOwner);
   const [rightsStatement, setRightsStatement] = useState(currentRights);
   const [aiStatement, setAiStatement] = useState(currentAiStatement);
@@ -3065,12 +3089,21 @@ function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
     aiStatement.trim() !== currentAiStatement.trim() ||
     generatedVisuals !== currentGeneratedVisuals ||
     generatedCopy !== currentGeneratedCopy;
+  // Refresh clean forms, but never attach a newer version to an older draft.
+  if (!dirty && !update.isPending && ip.version > baseline.version) {
+    setBaseline(ip);
+    setOwner(ip.copyrightOwner ?? "");
+    setRightsStatement(jsonStringField(ip.rightsSummary, "statement"));
+    setAiStatement(jsonStringField(ip.aiDisclosure, "statement"));
+    setGeneratedVisuals(jsonBooleanField(ip.aiDisclosure, "generatedVisuals"));
+    setGeneratedCopy(jsonBooleanField(ip.aiDisclosure, "generatedCopy"));
+  }
   const canSave = dirty && !update.isPending;
 
   const handleSave = async () => {
     if (!canSave) return;
     try {
-      await update.mutateAsync({
+      const result = await update.mutateAsync({
         ipId: ip.id,
         copyrightOwner: owner.trim() || null,
         rightsSummary: {
@@ -3081,8 +3114,9 @@ function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
           generatedCopy,
           statement: aiStatement.trim(),
         },
-        expectedVersion: ip.version,
+        expectedVersion: baseline.version,
       });
+      setBaseline(result.ip);
       toast.success(t("assetsPanel.rightsForm.saved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("assetsPanel.rightsForm.saveFailed"));
@@ -3300,15 +3334,28 @@ function AssetPreview({
   );
 }
 
-function IpProfileEditDialog({
-  ip,
-  open,
-  onOpenChange,
-}: {
+type IpProfileEditDialogProps = {
   ip: IpCreatorIp;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+export function IpProfileEditDialog(props: IpProfileEditDialogProps) {
+  return (
+    <IpProfileEditSession
+      key={`${props.ip.id}:${props.open ? "open" : "closed"}`}
+      {...props}
+    />
+  );
+}
+
+function IpProfileEditSession({
+  ip: currentIp,
+  open,
+  onOpenChange,
+}: IpProfileEditDialogProps) {
+  // An open editing session owns both its initial fields and their server version.
+  const [ip] = useState(currentIp);
   const t = useTranslations("newIpWorkbench");
   const typeT = useTranslations("newIpCreate");
   const locale = useLocale() as Locale;
@@ -3877,11 +3924,11 @@ function bpsToPercentText(bps: number | null): string {
   return bps == null ? "" : String(bps / 100);
 }
 
-function percentTextToBps(text: string): number | null {
+function percentTextToBps(text: string): number | null | undefined {
   const trimmed = text.trim();
   if (trimmed === "") return null;
   const percent = Number(trimmed);
-  if (Number.isNaN(percent)) return null;
+  if (!Number.isFinite(percent)) return undefined;
   return Math.round(percent * 100);
 }
 

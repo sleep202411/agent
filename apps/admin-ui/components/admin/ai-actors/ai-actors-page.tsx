@@ -404,21 +404,21 @@ function UsageDialog({ actor, onClose }: { actor: Actor; onClose: () => void }) 
               <p className="text-muted-foreground">No reference uses recorded yet.</p>
             )}
           </div>
-          <div className="mt-5 flex justify-between">
-            <Button variant="ghost" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
-              Previous
-            </Button>
-            <span>Page {page}</span>
-            <Button
-              variant="ghost"
-              disabled={page * 24 >= data.total}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
-          </div>
         </>
       )}
+      <div className="mt-5 flex justify-between">
+        <Button variant="ghost" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+          Previous
+        </Button>
+        <span>Page {page}</span>
+        <Button
+          variant="ghost"
+          disabled={!data || page * 24 >= data.total}
+          onClick={() => setPage((p) => p + 1)}
+        >
+          Next
+        </Button>
+      </div>
     </Modal>
   );
 }

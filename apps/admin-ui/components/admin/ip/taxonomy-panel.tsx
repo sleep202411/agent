@@ -71,6 +71,7 @@ type TaxonomyFormState = {
   enUS: string;
   zhHK: string;
   description: string;
+  aliasesByLocale: Record<string, string[]>;
 };
 
 export function IpTaxonomyPanel({
@@ -175,9 +176,15 @@ export function IpTaxonomyPanel({
         }
       );
       if (!operation.current()) return false;
-      const next = await readTaxonomy(locale, operation.signal);
-      if (!operation.current()) return false;
-      setTaxonomy(next);
+      // A failed read must not turn an acknowledged write into a retryable save.
+      try {
+        const next = await readTaxonomy(locale, operation.signal);
+        if (!operation.current()) return false;
+        setTaxonomy(next);
+      } catch (err) {
+        if (!operation.current()) return false;
+        setError(toErrorMessage(err));
+      }
       return true;
     } catch (err) {
       if (operation.current()) setError(toErrorMessage(err));
@@ -205,6 +212,9 @@ export function IpTaxonomyPanel({
       enUS: taxonomyLabel(term, "en-US"),
       zhHK: taxonomyLabel(term, "zh-HK"),
       description: term.description ?? "",
+      aliasesByLocale: Object.fromEntries(
+        term.localizations.map((item) => [item.locale, [...item.aliases]])
+      ),
     });
     setSheetOpen(true);
   }
@@ -602,6 +612,7 @@ function emptyTaxonomyForm(type: "genre" | "tag" = "genre"): TaxonomyFormState {
     enUS: "",
     zhHK: "",
     description: "",
+    aliasesByLocale: {},
   };
 }
 
@@ -619,6 +630,6 @@ function taxonomyLocalizationsFromForm(form: TaxonomyFormState): IpTaxonomyLocal
     .map((item) => ({
       ...item,
       description: form.description.trim() || null,
-      aliases: [],
+      aliases: form.aliasesByLocale[item.locale] ?? [],
     }));
 }
