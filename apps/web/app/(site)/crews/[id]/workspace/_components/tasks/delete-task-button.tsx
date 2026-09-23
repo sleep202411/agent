@@ -31,7 +31,8 @@ export function DeleteTaskButton(props: DeleteTaskButtonProps) {
 
 function DeleteTaskSession({ task, onDeleted }: DeleteTaskButtonProps) {
   const t = useTranslations("crewTasks.deletion");
-  const [open, setOpen] = useState(false);
+  const [confirmedVersion, setConfirmedVersion] = useState<number | null>(null);
+  const open = confirmedVersion !== null;
   const deletion = useDeleteCrewTask(task.crewId);
   const alive = useRef(true);
   const pending = useRef(false);
@@ -43,13 +44,13 @@ function DeleteTaskSession({ task, onDeleted }: DeleteTaskButtonProps) {
     };
   }, []);
   const submit = async () => {
-    if (!alive.current || !open || pending.current) return;
+    if (!alive.current || confirmedVersion === null || pending.current) return;
     pending.current = true;
     setSaving(true);
     try {
-      await deletion.mutateAsync({ taskId: task.id, expectedVersion: task.version });
+      await deletion.mutateAsync({ taskId: task.id, expectedVersion: confirmedVersion });
       if (!alive.current) return;
-      setOpen(false);
+      setConfirmedVersion(null);
       toast.success(t("success"));
       onDeleted?.();
     } catch (error) {
@@ -61,13 +62,13 @@ function DeleteTaskSession({ task, onDeleted }: DeleteTaskButtonProps) {
   };
   return (
     <>
-      <Button variant="ghost" onClick={() => setOpen(true)}>
+      <Button variant="ghost" onClick={() => setConfirmedVersion(task.version)}>
         {t("label")}
       </Button>
       <Dialog
         open={open}
         onOpenChange={(next) => {
-          if (!pending.current) setOpen(next);
+          if (!pending.current) setConfirmedVersion(next ? task.version : null);
         }}
       >
         <DialogContent showCloseButton={false}>
@@ -76,7 +77,7 @@ function DeleteTaskSession({ task, onDeleted }: DeleteTaskButtonProps) {
             <DialogDescription>{t("description")}</DialogDescription>
           </div>
           <DialogFooter>
-            <Button variant="outline" disabled={saving} onClick={() => setOpen(false)}>
+            <Button variant="outline" disabled={saving} onClick={() => setConfirmedVersion(null)}>
               {t("cancel")}
             </Button>
             <Button disabled={saving} onClick={() => void submit()}>

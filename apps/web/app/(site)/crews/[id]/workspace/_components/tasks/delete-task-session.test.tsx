@@ -30,9 +30,9 @@ const container = document.createElement("div");
 document.body.appendChild(container);
 let root = createRoot(container);
 const onDeleted = vi.fn();
-async function render(id = "task", crewId = "crew") {
+async function render(id = "task", crewId = "crew", version = 7) {
   await act(async () =>
-    root.render(<DeleteTaskButton task={{ id, crewId, version: 7 }} onDeleted={onDeleted} />)
+    root.render(<DeleteTaskButton task={{ id, crewId, version }} onDeleted={onDeleted} />)
   );
 }
 async function open() {
@@ -104,4 +104,24 @@ it("suppresses deletion errors after leaving", async () => {
   await act(async () => root.render(null));
   await act(async () => pending.reject(new Error("old failure")));
   expect(state.error).not.toHaveBeenCalled();
+});
+
+it("keeps the confirmed version through refresh and conflict retries", async () => {
+  state.remove.mockRejectedValue(new Error("Refresh before deleting"));
+  await render();
+  await open();
+  await render("task", "crew", 8);
+  await act(async () => confirm().click());
+  expect(state.remove).toHaveBeenLastCalledWith({ taskId: "task", expectedVersion: 7 });
+  await render("task", "crew", 9);
+  await act(async () => confirm().click());
+  expect(state.remove).toHaveBeenLastCalledWith({ taskId: "task", expectedVersion: 7 });
+  await act(async () => {
+    Array.from(container.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+      .find((button) => button.textContent === "cancel")!
+      .click();
+  });
+  await open();
+  await act(async () => confirm().click());
+  expect(state.remove).toHaveBeenLastCalledWith({ taskId: "task", expectedVersion: 9 });
 });
