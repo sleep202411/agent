@@ -2634,22 +2634,35 @@ function UserSearchPicker({
   const [account, setAccount] = useState("");
   const [results, setResults] = useState<IpUserSearchHit[]>([]);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const lookupVersion = useRef(0);
+
+  useEffect(
+    () => () => {
+      lookupVersion.current += 1;
+    },
+    []
+  );
 
   const handleSearch = async () => {
     const value = account.trim();
     if (!value) return;
+    const version = ++lookupVersion.current;
     setLookupError(null);
+    setResults([]);
     try {
       const hits = await search.mutateAsync(value);
+      if (version !== lookupVersion.current) return;
       setResults(hits);
       if (hits.length === 0) setLookupError(t("membersPanel.lookupNotFound"));
     } catch (err) {
+      if (version !== lookupVersion.current) return;
       setResults([]);
       setLookupError(errorMessage(err) || t("membersPanel.lookupFailed"));
     }
   };
 
   const handleSelect = (hit: IpUserSearchHit) => {
+    lookupVersion.current += 1;
     onSelect(hit);
     setAccount("");
     setResults([]);
@@ -2657,6 +2670,7 @@ function UserSearchPicker({
   };
 
   const handleClear = () => {
+    lookupVersion.current += 1;
     onClear();
     setAccount("");
     setResults([]);
@@ -2686,7 +2700,9 @@ function UserSearchPicker({
         <Input
           value={account}
           onChange={(event) => {
+            lookupVersion.current += 1;
             setAccount(event.target.value);
+            setResults([]);
             setLookupError(null);
           }}
           onKeyDown={(event) => {
