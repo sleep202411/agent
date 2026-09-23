@@ -1629,8 +1629,16 @@ function PermissionSummary({
   }
   if (permissions.isError || !permissions.data) {
     return (
-      <div className="border-t border-border/60 pt-4 text-[10px] text-destructive">
-        {describeError(permissions.error, t("permissionsLoadFailed"))}
+      <div role="alert" className="border-t border-border/60 pt-4 text-[10px] text-destructive">
+        <p>{describeError(permissions.error, t("permissionsLoadFailed"))}</p>
+        <button
+          type="button"
+          disabled={permissions.isFetching}
+          onClick={() => void permissions.refetch()}
+          className="mt-2 text-[10px] font-semibold text-primary hover:underline disabled:opacity-50"
+        >
+          {t("retry")}
+        </button>
       </div>
     );
   }
