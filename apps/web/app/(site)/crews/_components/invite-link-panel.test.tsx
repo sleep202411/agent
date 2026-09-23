@@ -4,6 +4,9 @@ import { expect, it, vi } from "vitest";
 import { InviteLinkPanel } from "./invite-link-panel";
 const mocks = vi.hoisted(() => ({
   userId: "alice" as string | null,
+  error: null as Error | null,
+  fetching: false,
+  refetch: vi.fn(),
   create: vi.fn(),
   revoke: vi.fn(),
   links: [] as Array<{
@@ -20,7 +23,13 @@ vi.mock("@/src/hooks/use-user", () => ({
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/app/(site)/crews/_hooks/use-invite-links", () => ({
   useCreateCrewInviteLink: () => ({ mutateAsync: mocks.create }),
-  useCrewInviteLinks: () => ({ data: mocks.links }),
+  useCrewInviteLinks: () => ({
+    data: mocks.links,
+    isError: !!mocks.error,
+    error: mocks.error,
+    isFetching: mocks.fetching,
+    refetch: mocks.refetch,
+  }),
   useRevokeCrewInviteLink: () => ({ mutateAsync: mocks.revoke }),
   crewInviteUrl: (token: string) => `https://example.test/${token}`,
 }));
@@ -156,6 +165,48 @@ it.each(["same", "other", "failed"])("handles %s link revocation after creation"
     } else expect(host.querySelector("input")?.value).toContain("new-token");
   } finally {
     act(() => root.unmount());
+    mocks.links = [];
+    vi.resetAllMocks();
+  }
+});
+
+it("recovers a failed link list in place without losing a freshly created token", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  mocks.create.mockResolvedValue({ id: "new", token: "new-token" });
+  mocks.error = new Error("Invite list unavailable");
+  const render = () =>
+    act(() => root.render(<InviteLinkPanel crewId="crew" open canGrantPolicies={false} />));
+  const button = (label: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => item.textContent === label
+    )!;
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
+  try {
+    render();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("Invite list unavailable");
+    expect(host.textContent).not.toContain("inviteLinkNone");
+    await act(async () => button("inviteLinkCreate").click());
+    await act(async () => button("retry").click());
+    expect(mocks.refetch).toHaveBeenCalledOnce();
+    mocks.fetching = true;
+    render();
+    expect(button("retry").disabled).toBe(true);
+    expect(host.querySelector("input")?.value).toContain("new-token");
+    mocks.fetching = false;
+    mocks.error = null;
+    mocks.links = [{ id: "new", kind: "member", maxUses: null, useCount: 0, expiresAt: null }];
+    render();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector('button[aria-label="inviteLinkRevoke"]')).not.toBeNull();
+    expect(host.querySelector("input")?.value).toContain("new-token");
+  } finally {
+    act(() => root.unmount());
+    mocks.error = null;
+    mocks.fetching = false;
     mocks.links = [];
     vi.resetAllMocks();
   }
