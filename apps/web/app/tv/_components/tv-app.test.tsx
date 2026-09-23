@@ -193,28 +193,29 @@ describe("TV IP list", () => {
     expect(details.textContent).toContain("First IP");
   });
 
-  it("changes category without reusing the previous catalog or curated feed", async () => {
-    await render();
-    await waitForSource("ip-1");
+  it("shows both categories together without filtering catalog or discovery", async () => {
     harness.list.mockResolvedValue({
-      items: [makeIp("community-1", "Community video")],
+      items: [
+        { ...makeIp("ip-1", "First IP"), channelType: "ip" },
+        { ...makeIp("community-1", "Community video"), channelType: "community" },
+      ],
       nextCursor: null,
     });
-    await act(async () => {
-      Array.from(container.querySelectorAll("button"))
-        .find((button) => button.textContent === "channels.community")!
-        .click();
-    });
+    await render();
     await waitForText("Community video");
-    expect(harness.get).toHaveBeenCalledWith(
-      "/aurora/ip-commerce/ips",
-      expect.objectContaining({ params: expect.objectContaining({ channelType: "community" }) })
-    );
-    expect(harness.get).toHaveBeenCalledWith(
-      "/aurora/ip-commerce/discovery",
-      expect.objectContaining({ params: expect.objectContaining({ channelType: "community" }) })
-    );
-    expect(container.textContent).not.toContain("Second IP");
+    expect(container.textContent).toContain("First IP");
+    expect(container.textContent).toContain("channels.ip");
+    expect(container.textContent).toContain("channels.community");
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (b) => b.textContent === "channels.community"
+      )
+    ).toBe(false);
+    for (const [path, options] of harness.get.mock.calls) {
+      if (path === "/aurora/ip-commerce/ips" || path === "/aurora/ip-commerce/discovery") {
+        expect(options.params.channelType).toBeUndefined();
+      }
+    }
   });
 
   it("cancels catalog and discovery reads when the viewer changes", async () => {
@@ -336,7 +337,6 @@ describe("TV IP list", () => {
     expect(harness.get).toHaveBeenCalledWith("/aurora/ip-commerce/ips", {
       signal: expect.any(AbortSignal),
       params: {
-        channelType: "ip",
         locale: "en-US",
         cursor: undefined,
         q: undefined,
@@ -470,7 +470,6 @@ describe("TV IP list", () => {
     expect(harness.list).toHaveBeenLastCalledWith({
       signal: expect.any(AbortSignal),
       params: {
-        channelType: "ip",
         locale: "en-US",
         cursor: "next",
         q: undefined,

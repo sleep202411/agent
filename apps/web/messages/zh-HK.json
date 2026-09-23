@@ -10033,5 +10033,26 @@
     "ip": "IP 頻道",
     "community": "社區頻道",
     "create": "建立 AI 頻道"
+  },
+  "channelSubmissions": {
+    "title": "頻道投稿",
+    "open": "開放投稿中",
+    "closed": "已關閉投稿",
+    "description": "選擇已發佈的作品投稿，經頻道負責人審核通過後展示。",
+    "close": "關閉投稿",
+    "enable": "開放投稿",
+    "submit": "我要投稿",
+    "choose": "選擇已發佈的作品",
+    "loading": "載入中…",
+    "noWorks": "暫無已公開發佈的作品。",
+    "more": "載入更多",
+    "send": "提交審核",
+    "empty": "暫無可展示的投稿。",
+    "pending": "待審核",
+    "approved": "已通過",
+    "rejected": "未通過",
+    "approve": "通過",
+    "reject": "拒絕",
+    "retry": "重試"
   }
 }

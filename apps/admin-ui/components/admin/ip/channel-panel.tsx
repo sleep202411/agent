@@ -1,4 +1,5 @@
 "use client";
+import { IpSubmissionsPanel } from "./submissions-panel";
 import { useState } from "react";
 import { useAdminOperation } from "../use-admin-operation";
 import { requestEnvelope, toErrorMessage } from "./shared";
@@ -60,8 +61,9 @@ export function IpChannelPanel({
         </button>
       </div>
       <p className="text-xs text-slate-500">
-        Controls IP Plaza and TV placement. Publication and pricing are unchanged.
+        Sets the category badge. All channels appear together in IP Plaza and TV.
       </p>
+      {channelType === "community" && <IpSubmissionsPanel key={ipId} ipId={ipId} />}
       {error && (
         <p role="alert" className="text-sm text-red-700">
           {error}

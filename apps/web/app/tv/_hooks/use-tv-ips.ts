@@ -11,10 +11,7 @@ import { ipPreviewVideoUrl, previewVideoUrl } from "@/src/lib/ip-commerce/previe
 import { prioritizeForYou } from "./prioritize-for-you";
 import type { TvItem } from "./types";
 
-function listTvIps(
-  params: { locale: string; cursor?: string; q?: string; channelType?: "ip" | "community" },
-  signal: AbortSignal
-) {
+function listTvIps(params: { locale: string; cursor?: string; q?: string }, signal: AbortSignal) {
   return api.get<{ items: IpCommerceIp[]; nextCursor: string | null }>("/aurora/ip-commerce/ips", {
     params: {
       ...params,
@@ -24,17 +21,15 @@ function listTvIps(
   });
 }
 
-export function useTvIps(options?: { q?: string; channelType?: "ip" | "community" }) {
+export function useTvIps(options?: { q?: string }) {
   const { user } = useCurrentUser();
   const locale = useLocale();
   const t = useTranslations("tv");
-  const channelType = options?.channelType;
   const q = options?.q?.trim() || undefined;
   const query = useInfiniteQuery({
-    queryKey: ["tv", "ips", channelType ?? "all", locale, q ?? "", user?.id ?? "guest"],
+    queryKey: ["tv", "ips", locale, q ?? "", user?.id ?? "guest"],
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) =>
-      listTvIps({ locale, cursor: pageParam, q, channelType }, signal),
+    queryFn: ({ pageParam, signal }) => listTvIps({ locale, cursor: pageParam, q }, signal),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 60_000,
   });
@@ -42,7 +37,6 @@ export function useTvIps(options?: { q?: string; channelType?: "ip" | "community
   // query, so the rail steps aside.
   const discovery = useIpCommerceDiscovery({
     placementKey: "ip_plaza_for_you",
-    channelType,
     locale,
     enabled: !q,
   });
@@ -97,6 +91,7 @@ export function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>
   const trailer = ipPreviewVideoUrl(ip);
   return {
     id: ip.id,
+    channelType: ip.channelType,
     roomNumber: ip.roomNumber,
     title: ip.title || t("untitled"),
     subtitle: ip.subtitle || "",

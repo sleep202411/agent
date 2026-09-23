@@ -1,4 +1,5 @@
 "use client";
+import { ChannelBadge } from "@/components/channel-badge";
 
 import Link from "next/link";
 import {
@@ -68,6 +69,7 @@ export function IPPlazaCard({ project }: { project: PlazaProject }) {
       </div>
 
       <div className="flex-1 space-y-3.5 p-4">
+        <ChannelBadge category={project.channelType} />
         {project.description && (
           <p className="line-clamp-2 text-[13px] leading-relaxed text-muted-foreground">
             {project.description}

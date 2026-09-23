@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { ChannelBadge } from "@/components/channel-badge";
 import {
   IconBolt,
   IconMovie,
@@ -152,6 +153,7 @@ export function IPCinematicHero({
             <h1 className="font-heading text-5xl font-black uppercase tracking-tight text-white drop-shadow-lg sm:text-7xl">
               {slide.name}
             </h1>
+            <ChannelBadge category={slide.channelType} />
             {slide.subtitle && (
               <div className="mt-2 font-heading text-sm font-bold uppercase tracking-[0.3em] text-white/70 sm:text-base">
                 {slide.subtitle}
@@ -261,6 +263,7 @@ function RailOnly({
               <div className="absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-black/85 to-transparent" />
               <div className="absolute inset-x-3 bottom-3">
                 <h3 className="line-clamp-1 text-sm font-semibold text-white">{item.name}</h3>
+                <ChannelBadge category={item.channelType} />
               </div>
             </div>
             {item.episodes > 0 && (
