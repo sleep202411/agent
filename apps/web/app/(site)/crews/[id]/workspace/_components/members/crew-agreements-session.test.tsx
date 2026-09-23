@@ -116,6 +116,7 @@ async function render(open = true, crewId = "crew") {
         crewId={crewId}
         members={[
           { userId: "member" } as import("@/app/(site)/crews/_hooks/use-crew").CrewMemberDTO,
+          { userId: "other-member" } as import("@/app/(site)/crews/_hooks/use-crew").CrewMemberDTO,
         ]}
         isOwner
         open={open}
@@ -278,3 +279,35 @@ it.each(["sync", "sendRetry", "archiveRetry"])(
     expect(state.error).not.toHaveBeenCalled();
   }
 );
+
+it("requires a new signer email when switching the agreement member", async () => {
+  state.create.mockResolvedValue({});
+  await render();
+  await fill();
+  await act(async () => {
+    const select = host.querySelector("select")!;
+    select.value = "other-member";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const email = host.querySelector<HTMLInputElement>('input[type="email"]')!;
+  expect(email.value).toBe("");
+  expect(host.querySelectorAll("input")[0]!.value).toBe("other-member");
+  expect(host.querySelectorAll("input")[2]!.value).toBe("My agreement");
+  expect(button("queueWithBoldSign").disabled).toBe(true);
+  await click("queueWithBoldSign");
+  expect(state.create).not.toHaveBeenCalled();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      email,
+      "other@example.com"
+    );
+    email.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await click("queueWithBoldSign");
+  expect(state.create).toHaveBeenCalledWith({
+    memberUserId: "other-member",
+    signerName: "other-member",
+    signerEmail: "other@example.com",
+    title: "My agreement",
+  });
+});
