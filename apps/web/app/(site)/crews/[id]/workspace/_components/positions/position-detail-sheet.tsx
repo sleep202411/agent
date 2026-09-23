@@ -155,15 +155,15 @@ function PositionDetailSession({
       rejected: rejected.length,
     };
 
-  const handleFreezeToggle = () => {
+  const changeStatus = (status: "open" | "frozen") => {
     if (!begin()) return;
     updatePosition.mutate(
-      { positionId: position.id, status: isFrozen ? "open" : "frozen" },
+      { positionId: position.id, status },
       {
         onSettled,
         onSuccess: () => {
           if (!alive.current) return;
-          toast.success(isFrozen ? t("unfreezeSuccess") : t("closeJobSuccess", { name: label }));
+          toast.success(status === "open" ? t("unfreezeSuccess") : t("closeJobSuccess", { name: label }));
           setConfirmFreeze(false);
         },
         onError: (err) => {
@@ -414,7 +414,7 @@ function PositionDetailSession({
                       variant="outline"
                       color="muted"
                       size="sm"
-                      onClick={() => handleFreezeToggle()}
+                      onClick={() => changeStatus("open")}
                       disabled={busy}
                     >
                       <IconLockOpen className="size-3.5" />
@@ -476,7 +476,7 @@ function PositionDetailSession({
               disabled={busy}
               onClick={(e) => {
                 e.preventDefault();
-                handleFreezeToggle();
+                changeStatus("frozen");
               }}
             >
               {busy ? <IconLoader2 className="size-4 animate-spin" /> : null}
