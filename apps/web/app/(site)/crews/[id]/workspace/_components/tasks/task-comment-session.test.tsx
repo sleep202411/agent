@@ -1,3 +1,4 @@
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -168,6 +169,7 @@ afterEach(async () => {
   attachmentQuery.hasNextPage = false;
   attachmentQuery.isError = false;
   attachmentQuery.error = null;
+  attachmentQuery.isFetchNextPageError = false;
   state.items = [];
   state.timelineError = false;
   state.pageError = false;
@@ -699,4 +701,24 @@ it("shows attachment read errors instead of claiming the Crew has no files", asy
   );
   expect(container.textContent).toContain("Files unavailable");
   expect(container.textContent).not.toContain("noRecentAssets");
+});
+
+it("restarts comment attachment discovery after an invalid cursor", async () => {
+  attachmentQuery.isError = true;
+  attachmentQuery.isFetchNextPageError = true;
+  attachmentQuery.error = new CrewApiError(400, {
+    code: "CREW_ASSET_CURSOR_INVALID",
+    message: "Restart assets",
+  });
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="chooseCrewAsset"]')!.click()
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((b) => b.textContent?.trim() === "retry")!
+      .click()
+  );
+  expect(attachmentQuery.refetch).toHaveBeenCalledTimes(1);
+  expect(attachmentQuery.fetchNextPage).not.toHaveBeenCalled();
 });

@@ -1,4 +1,6 @@
 "use client";
+
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { useTaskDeliveryTemplate, TaskDeliveryFields } from "./task-delivery-template";
 
 import { useEffect, useRef, useState } from "react";
@@ -235,7 +237,8 @@ export function SubmitTaskDialog({
                     size="sm"
                     disabled={saving || assetQuery.isFetching}
                     onClick={() =>
-                      void (assetQuery.isFetchNextPageError
+                      void (assetQuery.isFetchNextPageError &&
+                      !isCrewCursorError(assetQuery.error, "CREW_ASSET_CURSOR_INVALID")
                         ? assetQuery.fetchNextPage({ cancelRefetch: false })
                         : assetQuery.refetch())
                     }
