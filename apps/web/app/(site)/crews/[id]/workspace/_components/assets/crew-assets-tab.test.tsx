@@ -766,6 +766,45 @@ it("retries failed access reads without closing the asset preview", async () => 
   expect(panel.textContent).toContain("concept.png");
 });
 
+it("blocks duplicate folder creation and retains a failed draft for retry", async () => {
+  await render();
+  const original = globalThis.fetch;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const create = vi.fn(() => pending);
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    init?.method === "POST" && String(input).endsWith("/assets/folders")
+      ? create()
+      : original(input, init)
+  );
+  await click(byText("button", "New folder"));
+  const input = document.querySelector<HTMLInputElement>('input[placeholder="Folder name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "References"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const form = input.closest("form")!;
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(input.disabled).toBe(true);
+  await act(async () => finish(jsonResponse({ message: "Create unavailable" }, { status: 503 })));
+  expect(input.value).toBe("References");
+  expect(input.disabled).toBe(false);
+  vi.stubGlobal("fetch", original);
+  await act(async () =>
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  );
+  expect(document.querySelector('input[placeholder="Folder name"]')).toBeNull();
+});
+
 it("keeps the original rename version when assets refresh during editing", async () => {
   const client = await render();
   await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
