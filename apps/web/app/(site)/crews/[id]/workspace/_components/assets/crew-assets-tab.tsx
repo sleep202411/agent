@@ -122,6 +122,8 @@ export function CrewAssetsTab({
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const folderCreatePending = useRef(false);
+  const [savingFolder, setSavingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [assetAction, setAssetAction] = useState<AssetAction | null>(null);
   const [assetActionTargetIds, setAssetActionTargetIds] = useState<string[]>([]);
@@ -349,9 +351,11 @@ export function CrewAssetsTab({
   };
 
   const addFolder = async () => {
-    if (!canCreateFolder) return;
+    if (!canCreateFolder || folderCreatePending.current) return;
     const name = newFolderName.trim();
     if (!name) return;
+    folderCreatePending.current = true;
+    setSavingFolder(true);
     try {
       await createFolder.mutateAsync({ name, parentId: activeFolderId });
       setCreatingFolder(false);
@@ -359,6 +363,9 @@ export function CrewAssetsTab({
       toast.success(t("folderCreated"));
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      folderCreatePending.current = false;
+      setSavingFolder(false);
     }
   };
 
@@ -807,6 +814,7 @@ export function CrewAssetsTab({
                   checkedIds={checkedIds}
                   selectedAssetId={selectedAssetId}
                   creatingFolder={creatingFolder}
+                  savingFolder={savingFolder}
                   newFolderName={newFolderName}
                   t={t}
                   onNewFolderNameChange={setNewFolderName}
@@ -1099,6 +1107,7 @@ function AssetList({
   checkedIds,
   selectedAssetId,
   creatingFolder,
+  savingFolder,
   newFolderName,
   t,
   onNewFolderNameChange,
@@ -1114,6 +1123,7 @@ function AssetList({
   checkedIds: Set<string>;
   selectedAssetId: string;
   creatingFolder: boolean;
+  savingFolder: boolean;
   newFolderName: string;
   t: Translation;
   onNewFolderNameChange: (value: string) => void;
@@ -1170,6 +1180,7 @@ function AssetList({
             <IconFolder className="size-5 shrink-0 fill-amber-300/15 text-amber-300/80" />
             <input
               autoFocus
+              disabled={savingFolder}
               value={newFolderName}
               onChange={(event) => onNewFolderNameChange(event.target.value)}
               placeholder={t("folderNamePlaceholder")}
@@ -1183,12 +1194,14 @@ function AssetList({
           <div className="flex items-center justify-end gap-1">
             <button
               type="submit"
+              disabled={savingFolder || !newFolderName.trim()}
               className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground"
             >
               {t("save")}
             </button>
             <button
               type="button"
+              disabled={savingFolder}
               onClick={onCancelNewFolder}
               className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-secondary"
               aria-label={t("cancel")}
