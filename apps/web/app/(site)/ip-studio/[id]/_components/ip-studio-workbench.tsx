@@ -154,7 +154,7 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
   const t = useTranslations("newIpWorkbench");
   const [activeTab, setActiveTab] = useState<StudioTabKey>("overview");
   const [profileEditOpen, setProfileEditOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useMyIpCommerceIp(ipId, { locale });
+  const { data, isLoading, isFetching, error, refetch } = useMyIpCommerceIp(ipId, { locale });
   const submitReview = useSubmitIpCommerceIpForReview();
 
   if (isLoading) {
@@ -165,7 +165,7 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
     );
   }
 
-  if (error || !data?.ip) {
+  if (!data?.ip) {
     return (
       <main className="min-h-[calc(100vh-4rem)] bg-background px-5 py-10 text-foreground">
         <div className="mx-auto flex max-w-xl flex-col items-start gap-5 rounded-2xl border border-border bg-card p-6">
@@ -196,6 +196,14 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
 
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
+      {error && (
+        <div role="alert" className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 text-sm text-destructive">
+          <span>{errorMessage(error) || t("notFoundBody")}</span>
+          <Button type="button" variant="outline" size="sm" disabled={isFetching} onClick={() => void refetch()}>
+            {t("retry")}
+          </Button>
+        </div>
+      )}
       <EditStyleHero
         ip={ip}
         t={t}
