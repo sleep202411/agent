@@ -109,3 +109,76 @@ it("keeps write actions disabled for a read-only admin", async () => {
   expect(button("Edit").disabled).toBe(true);
   expect(button("Usage").disabled).toBe(false);
 });
+
+const usageRow = (name: string) => ({
+  id: name,
+  userId: "user",
+  workspaceId: "workspace",
+  projectId: "project",
+  workspace: { name: "Workspace" },
+  project: { name },
+  createdAt: "2026-09-23T00:00:00Z",
+});
+function usageButton(text: string) {
+  return [...host.querySelectorAll<HTMLButtonElement>("dialog button")].find(
+    (b) => b.textContent === text
+  );
+}
+it("lets an operator return to the previous usage page after a later page fails", async () => {
+  await render();
+  fetcher.mockImplementation(async (url: string) =>
+    url.includes("page=2")
+      ? Response.json({ code: 503, msg: "Usage unavailable" }, { status: 503 })
+      : envelope({ items: [usageRow("First project")], total: 25 })
+  );
+  await click("Usage");
+  await act(async () => usageButton("Next")!.click());
+  expect(host.querySelector("dialog")!.textContent).toContain("Usage unavailable");
+  expect(usageButton("Previous")).toBeDefined();
+  expect(usageButton("Next")!.disabled).toBe(true);
+  await act(async () => usageButton("Previous")!.click());
+  expect(host.querySelector("dialog")!.textContent).toContain("First project");
+  expect(host.querySelector("dialog")!.textContent).toContain("Page 1");
+});
+it("can leave a loading usage page and ignores its late result", async () => {
+  await render();
+  let finish!: (response: Response) => void;
+  let signal!: AbortSignal;
+  fetcher.mockImplementation(async (url: string, options: RequestInit) => {
+    if (url.includes("page=2")) {
+      signal = options.signal!;
+      return new Promise<Response>((resolve) => {
+        finish = resolve;
+      });
+    }
+    return envelope({ items: [usageRow("First project")], total: 25 });
+  });
+  await click("Usage");
+  await act(async () => usageButton("Next")!.click());
+  expect(usageButton("Previous")).toBeDefined();
+  await act(async () => usageButton("Previous")!.click());
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(envelope({ items: [usageRow("Late project")], total: 25 })));
+  expect(host.querySelector("dialog")!.textContent).toContain("First project");
+  expect(host.querySelector("dialog")!.textContent).not.toContain("Late project");
+});
+
+it("retries the failed usage page without losing its page number", async () => {
+  await render();
+  let failed = false;
+  fetcher.mockImplementation(async (url: string) => {
+    if (!url.includes("page=2")) return envelope({ items: [usageRow("First project")], total: 25 });
+    if (!failed) {
+      failed = true;
+      return Response.json({ code: 503, msg: "Usage unavailable" }, { status: 503 });
+    }
+    return envelope({ items: [usageRow("Second project")], total: 25 });
+  });
+  await click("Usage");
+  await act(async () => usageButton("Next")!.click());
+  expect(host.querySelector("dialog")!.textContent).toContain("Page 2");
+  await act(async () => usageButton("Retry")!.click());
+  expect(host.querySelector("dialog")!.textContent).toContain("Second project");
+  expect(usageButton("Next")!.disabled).toBe(true);
+  expect(usageButton("Previous")!.disabled).toBe(false);
+});
