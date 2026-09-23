@@ -869,6 +869,30 @@ it("blocks restricted-access saves and retries a failed member list", async () =
   expect(requests.some((r) => r.method === "PUT")).toBe(false);
 });
 
+it("shows destination read failure and retries before allowing a move", async () => {
+  folderReadFails = true;
+  await render();
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-slot="dialog-content"]')?.textContent).toContain(
+      "Folders unavailable"
+    )
+  );
+  const form = document.querySelector('[data-slot="dialog-content"] form')!;
+  expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+  folderReadFails = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() =>
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
+  );
+  expect(form.textContent).not.toContain("Folders unavailable");
+});
+
 it("keeps the original rename version when assets refresh during editing", async () => {
   const client = await render();
   await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
@@ -985,28 +1009,4 @@ it("clears checked assets when the type filter hides them", async () => {
   expect(option).toBeDefined();
   await click(option);
   expect(document.body.textContent).not.toContain("1 selected");
-});
-
-it("shows destination read failure and retries before allowing a move", async () => {
-  folderReadFails = true;
-  await render();
-  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
-  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
-  await vi.waitFor(() =>
-    expect(document.querySelector('[data-slot="dialog-content"]')?.textContent).toContain(
-      "Folders unavailable"
-    )
-  );
-  const form = document.querySelector('[data-slot="dialog-content"] form')!;
-  expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
-  await act(async () => {
-    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-  });
-  expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
-  folderReadFails = false;
-  await click(byText("button", "Retry"));
-  await vi.waitFor(() =>
-    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
-  );
-  expect(form.textContent).not.toContain("Folders unavailable");
 });
