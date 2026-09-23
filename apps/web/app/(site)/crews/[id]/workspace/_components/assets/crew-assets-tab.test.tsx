@@ -977,3 +977,53 @@ it("clears checked assets when the type filter hides them", async () => {
   await click(option);
   expect(document.body.textContent).not.toContain("1 selected");
 });
+
+it.each(["trash", "restore"])("prevents duplicate bulk %s while pending", async (action) => {
+  await render();
+  if (action === "restore") {
+    await click(byText("button", "Trash"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  const originalFetch = globalThis.fetch;
+  const finishes: Array<() => void> = [];
+  let attempts = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const matches =
+        action === "trash"
+          ? init?.method === "DELETE" && String(input).endsWith("/assets/file-1")
+          : init?.method === "POST" && String(input).endsWith("/assets/file-1/restore");
+      if (!matches) return originalFetch(input, init);
+      attempts += 1;
+      return new Promise<Response>((resolve) => {
+        finishes.push(() =>
+          resolve(action === "trash" ? new Response(null, { status: 204 }) : jsonResponse({}))
+        );
+      });
+    })
+  );
+  try {
+    const button = byText("button", action === "trash" ? "Delete" : "Restore") as HTMLButtonElement;
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+    expect(attempts).toBe(1);
+    expect(button.disabled).toBe(true);
+    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!);
+  } finally {
+    await act(async () => {
+      finishes.forEach((finish) => finish());
+    });
+  }
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.checked
+  ).toBe(true);
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.checked
+  ).toBe(false);
+});
