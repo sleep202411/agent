@@ -1604,12 +1604,14 @@ function PermissionSummary({
   );
   const setPermissions = useSetCrewAssetPermissions(crewId);
   const members = useCrewMembers(crewId);
+  const membersIncomplete = members.isPending || members.isError || members.hasNextPage;
   const memberIds = (members.data ?? []).map((member) => member.userId);
   const actorIds = (permissionEvents.data ?? []).map((event) => event.actorUserId);
   const displays = useUserDisplays([...new Set([...memberIds, ...actorIds])]);
   const [editing, setEditing] = useState(false);
   const savePending = useRef(false);
   const [restricted, setRestricted] = useState(false);
+  const [editPermissionVersion, setEditPermissionVersion] = useState<number | null>(null);
   const [draftGrants, setDraftGrants] = useState<
     Array<{ userId: string; permission: CrewAssetPermission }>
   >([]);
@@ -1617,6 +1619,7 @@ function PermissionSummary({
   const beginEdit = () => {
     if (!permissions.data?.canManage) return;
     setRestricted(permissions.data.accessMode === "restricted");
+    setEditPermissionVersion(permissions.data.permissionVersion);
     setDraftGrants(
       permissions.data.grants.map((grant) => ({
         userId: grant.userId,
@@ -1628,13 +1631,19 @@ function PermissionSummary({
 
   const save = async () => {
     const current = permissions.data;
-    if (!current || savePending.current) return;
+    if (
+      !current?.canManage ||
+      editPermissionVersion === null ||
+      (restricted && membersIncomplete) ||
+      savePending.current
+    )
+      return;
     savePending.current = true;
     try {
       await setPermissions.mutateAsync({
         nodeId: asset.id,
         accessMode: restricted ? "restricted" : "inherit",
-        expectedVersion: current.permissionVersion,
+        expectedVersion: editPermissionVersion,
         grants: restricted ? draftGrants : [],
       });
       setEditing(false);
@@ -1662,8 +1671,16 @@ function PermissionSummary({
   }
   if (permissions.isError || !permissions.data) {
     return (
-      <div className="border-t border-border/60 pt-4 text-[10px] text-destructive">
-        {describeError(permissions.error, t("permissionsLoadFailed"))}
+      <div role="alert" className="border-t border-border/60 pt-4 text-[10px] text-destructive">
+        <p>{describeError(permissions.error, t("permissionsLoadFailed"))}</p>
+        <button
+          type="button"
+          disabled={permissions.isFetching}
+          onClick={() => void permissions.refetch()}
+          className="mt-2 text-[10px] font-semibold text-primary hover:underline disabled:opacity-50"
+        >
+          {t("retry")}
+        </button>
       </div>
     );
   }
@@ -1725,6 +1742,23 @@ function PermissionSummary({
           </label>
           {restricted ? (
             <div className="max-h-60 space-y-1 overflow-y-auto">
+              {members.isError ? (
+                <div role="alert" className="text-[10px] text-destructive">
+                  <p>{describeError(members.error, t("loadFailed"))}</p>
+                  <button
+                    type="button"
+                    disabled={members.isFetching}
+                    onClick={() => void members.refetch()}
+                    className="mt-2 font-semibold text-primary hover:underline disabled:opacity-50"
+                  >
+                    {t("retry")}
+                  </button>
+                </div>
+              ) : membersIncomplete ? (
+                <p role="status" className="text-[10px] text-muted-foreground">
+                  {t("loading")}
+                </p>
+              ) : null}
               {(members.data ?? []).map((member) => {
                 const permission =
                   draftGrants.find((grant) => grant.userId === member.userId)?.permission ?? "none";
@@ -1775,7 +1809,7 @@ function PermissionSummary({
             </button>
             <button
               type="button"
-              disabled={setPermissions.isPending}
+              disabled={setPermissions.isPending || (restricted && membersIncomplete)}
               onClick={() => void save()}
               className="h-7 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground disabled:opacity-50"
             >

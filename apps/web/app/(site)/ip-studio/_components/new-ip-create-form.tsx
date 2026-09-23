@@ -184,11 +184,11 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
       // Apply only fields the backend returned. Don't overwrite values the
       // user has already typed, unless they explicitly clear them.
       if (result.name && !nameRef.current.trim()) {
-        setName(result.name);
+        setName(result.name.slice(0, NAME_MAX_LENGTH));
         markAi("name");
       }
       if (result.description && !descriptionRef.current.trim()) {
-        setDescription(result.description);
+        setDescription(result.description.slice(0, DESCRIPTION_MAX_LENGTH));
         markAi("description");
       }
       setAnalyzeStatus("success");

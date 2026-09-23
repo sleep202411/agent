@@ -120,10 +120,13 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 let legacyProject: { id: string; name: string } | null = null;
 let canLink = true;
+let permissionReadFails = false;
 let linkFails = false;
 let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
 let movedSecond = false;
+let memberReadFails = false;
+let accessVersion = 1;
 let refreshedAsset = false;
 let trashFails = false;
 
@@ -205,16 +208,20 @@ function installFetch() {
         return jsonResponse([]);
       }
       if (method === "GET" && url.endsWith("/assets/file-1/permissions")) {
+        if (permissionReadFails)
+          return jsonResponse({ message: "Access read unavailable" }, { status: 503 });
         return jsonResponse({
           accessMode: "inherit",
-          permissionVersion: 1,
+          permissionVersion: accessVersion,
           effectivePermission: "manage",
           canManage: true,
           grants: [],
         });
       }
-      if (method === "GET" && url.endsWith("/members")) {
-        return jsonResponse([]);
+      if (method === "GET" && new URL(url, "http://localhost").pathname.endsWith("/members")) {
+        if (memberReadFails)
+          return jsonResponse({ message: "Member list unavailable" }, { status: 403 });
+        return jsonResponse({ items: [], nextCursor: null, total: 0 });
       }
       if (method === "PATCH" && url.includes("/assets/")) {
         if (url.endsWith("/file-1"))
@@ -355,8 +362,11 @@ beforeEach(() => {
 afterEach(() => {
   bulkMove = false;
   movedSecond = false;
+  memberReadFails = false;
+  accessVersion = 1;
   refreshedAsset = false;
   trashFails = false;
+  permissionReadFails = false;
   vi.clearAllMocks();
   act(() => root?.unmount());
   container?.remove();
@@ -728,6 +738,31 @@ describe("Legacy project link", () => {
   });
 });
 
+it("keeps the original permission version through refresh and reloads it on reopening", async () => {
+  const client = await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await click(byText("button", "Manage access"));
+  const checkbox = document.querySelector<HTMLInputElement>(
+    'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+  )!;
+  await click(checkbox);
+  accessVersion = 2;
+  await act(async () => {
+    await client.invalidateQueries();
+  });
+  expect(checkbox.checked).toBe(true);
+  await click(byText("button", "Save access"));
+  const writes = () =>
+    requests.filter((r) => r.method === "PUT" && r.url.endsWith("/assets/file-1/permissions"));
+  expect(writes()[0]?.body).toMatchObject({ expectedVersion: 1, accessMode: "restricted" });
+  await click(byText("button", "Manage access"));
+  await click(byText("button", "Save access"));
+  expect(writes()[1]?.body).toMatchObject({ expectedVersion: 2 });
+});
+
 it("rebuilds asset pages after a cursor rejection instead of replaying the invalid boundary", async () => {
   paginated = true;
   cursorRejected = true;
@@ -743,6 +778,23 @@ it("rebuilds asset pages after a cursor rejection instead of replaying the inval
   const retried = requests.slice(before).find((request) => request.url.includes("/assets?"))!;
   expect(retried.url).not.toContain("cursor=");
   await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
+});
+
+it("retries failed access reads without closing the asset preview", async () => {
+  permissionReadFails = true;
+  await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Access read unavailable"));
+  const panel = document.querySelector('aside[aria-label="Asset preview and details"]')!;
+  const retry = [...panel.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Retry"
+  );
+  expect(retry).toBeDefined();
+  permissionReadFails = false;
+  await click(retry!);
+  await vi.waitFor(() => expect(panel.textContent).toContain("Manage access"));
+  expect(panel.textContent).not.toContain("Access read unavailable");
+  expect(panel.textContent).toContain("concept.png");
 });
 
 it("blocks duplicate folder creation and retains a failed draft for retry", async () => {
@@ -782,6 +834,30 @@ it("blocks duplicate folder creation and retains a failed draft for retry", asyn
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
   );
   expect(document.querySelector('input[placeholder="Folder name"]')).toBeNull();
+});
+
+it("blocks restricted-access saves and retries a failed member list", async () => {
+  memberReadFails = true;
+  await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await click(byText("button", "Manage access"));
+  await click(
+    document.querySelector<HTMLInputElement>(
+      'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+    )!
+  );
+  expect((byText("button", "Save access") as HTMLButtonElement).disabled).toBe(true);
+  expect(document.body.textContent).toContain("Member list unavailable");
+  memberReadFails = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() =>
+    expect((byText("button", "Save access") as HTMLButtonElement).disabled).toBe(false)
+  );
+  expect(document.body.textContent).not.toContain("Member list unavailable");
+  expect(requests.some((r) => r.method === "PUT")).toBe(false);
 });
 
 it("keeps the original rename version when assets refresh during editing", async () => {

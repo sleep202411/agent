@@ -57,20 +57,18 @@ const click = async (text: string) => {
   await settle();
 };
 async function render() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   await act(async () =>
     root.render(
-      <QueryClientProvider
-        client={
-          new QueryClient({
-            defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-          })
-        }
-      >
+      <QueryClientProvider client={client}>
         <ChannelSubmissions ipId="channel" />
       </QueryClientProvider>
     )
   );
   await settle();
+  return client;
 }
 beforeEach(() => {
   vi.resetAllMocks();
@@ -227,4 +225,40 @@ it("preserves available choices when the next page of a creator's works fails", 
   expect(h.mine.mock.calls[2][0].cursor).toBe("works-2");
   expect(node.textContent).toContain("My work");
   expect(node.textContent).toContain("Other work");
+});
+
+it("hides an already open work chooser when submissions close on refresh", async () => {
+  const client = await render();
+  await click("submit");
+  expect(node.querySelector("select")).not.toBeNull();
+  h.get.mockResolvedValue({ community: true, open: false, canManage: false, items: [] });
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["channel-submissions"] });
+  });
+  await settle();
+  expect(button("send")).toBeUndefined();
+  expect(node.querySelector("select")).toBeNull();
+  expect(node.textContent).toContain("closed");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("blocks a selected work that becomes ineligible on refresh", async () => {
+  const client = await render();
+  await click("submit");
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = "work";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(button("send").disabled).toBe(false);
+  h.mine.mockResolvedValue({
+    items: [{ id: "work", title: "My work", status: "published", listingVisibility: "private" }],
+    nextCursor: null,
+  });
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["channel-submit-works"] });
+  });
+  await settle();
+  expect(button("send").disabled).toBe(true);
+  await click("send");
+  expect(h.post).not.toHaveBeenCalled();
 });
