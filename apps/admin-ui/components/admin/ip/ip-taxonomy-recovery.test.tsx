@@ -61,7 +61,7 @@ vi.mock("@/components/ui/button", () => ({
 let root: Root | undefined;
 let container: HTMLDivElement;
 const fetchMock = vi.fn();
-const term = {
+const term: IpTaxonomyTerm = {
   id: "one",
   type: "genre",
   code: "genre",
@@ -70,7 +70,20 @@ const term = {
   displayOrder: 1,
   localizations: [{ locale: "en-US", label: "Original", aliases: [], description: null }],
   assignmentCount: 0,
-} as IpTaxonomyTerm;
+  description: null,
+  aliases: [],
+  localization: {
+    requestedLocale: "en-US",
+    locale: "en-US",
+    sourceLocale: "en-US",
+    isFallback: false,
+    availableLocales: ["en-US"],
+    status: null,
+  },
+  createdAt: null,
+  updatedAt: null,
+  archivedAt: null,
+};
 const view = () => (
   <IpTaxonomyPanel
     siteLabel="Global"
