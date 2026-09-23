@@ -5,6 +5,7 @@ import { MemberRow, AddMemberDialog, MembersPanel } from "./ip-studio-workbench"
 import type { IpCreatorIp, IpCreatorContributor } from "@/src/lib/ip-commerce/api";
 const state = vi.hoisted(() => ({
   create: vi.fn(),
+  creating: false,
   update: vi.fn(),
   error: vi.fn(),
   readError: null as Error | null,
@@ -22,7 +23,7 @@ vi.mock("@/src/lib/ip-commerce/hooks", () => ({
   useGrantIpEditAccess: () => ({}),
   useRevokeIpEditAccess: () => ({}),
   useTransferIpOwner: () => ({}),
-  useCreateIpCommerceContributor: () => ({ mutateAsync: state.create, isPending: false }),
+  useCreateIpCommerceContributor: () => ({ mutateAsync: state.create, isPending: state.creating }),
   useSearchIpCommerceUsers: () => ({
     mutateAsync: async () => [{ userId: "user", nickname: "Creator" }],
     isPending: false,
@@ -38,6 +39,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  state.creating = false;
   state.create.mockReset().mockResolvedValue({});
   state.update.mockReset().mockResolvedValue({});
   state.error.mockClear();
@@ -232,4 +234,26 @@ it("keeps an open contributor draft through background list failure and retry", 
   state.readError = null;
   renderPanel();
   expect(input.value).toBe("New creator");
+});
+
+it("prevents editing or dismissing a contributor while its save is pending", async () => {
+  const close = vi.fn();
+  state.creating = true;
+  await act(async () =>
+    root.render(
+      <AddMemberDialog
+        open
+        onOpenChange={close}
+        ip={{ id: "ip" } as IpCreatorIp}
+        contributors={[]}
+        t={(key) => key}
+      />
+    )
+  );
+  const input = document.querySelector<HTMLInputElement>(
+    'input[placeholder="membersPanel.displayNamePlaceholder"]'
+  )!;
+  expect(input.matches(":disabled")).toBe(true);
+  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  expect(close).not.toHaveBeenCalled();
 });
