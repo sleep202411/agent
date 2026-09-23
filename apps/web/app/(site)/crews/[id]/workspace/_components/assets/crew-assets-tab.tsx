@@ -433,6 +433,7 @@ export function CrewAssetsTab({
 
   const submitAssetAction = async () => {
     if (!assetAction || assetActionTargets.length === 0 || assetActionBusy) return;
+    if (assetAction === "move" && (folderQuery.isPending || folderQuery.isError)) return;
     setAssetActionBusy(true);
     setAssetActionErrors([]);
     try {
@@ -930,6 +931,12 @@ export function CrewAssetsTab({
         folders={(folderQuery.data ?? []).filter((folder) =>
           hasAssetPermission(folder.effectivePermission, "upload")
         )}
+        foldersLoading={folderQuery.isPending}
+        foldersError={
+          folderQuery.isError ? describeError(folderQuery.error, t("operationFailed")) : null
+        }
+        foldersFetching={folderQuery.isFetching}
+        onRetryFolders={() => void folderQuery.refetch()}
         pending={assetActionBusy}
         errors={assetActionErrors}
         t={t}
@@ -1916,6 +1923,10 @@ function AssetActionDialog({
   name,
   destinationId,
   folders,
+  foldersLoading,
+  foldersError,
+  foldersFetching,
+  onRetryFolders,
   pending,
   errors,
   t,
@@ -1929,6 +1940,10 @@ function AssetActionDialog({
   name: string;
   destinationId: string;
   folders: CrewAssetFolderDTO[];
+  foldersLoading: boolean;
+  foldersError: string | null;
+  foldersFetching: boolean;
+  onRetryFolders: () => void;
   pending: boolean;
   errors: string[];
   t: Translation;
@@ -1937,6 +1952,8 @@ function AssetActionDialog({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const common = useTranslations("common");
+  const moveBlocked = action === "move" && (foldersLoading || Boolean(foldersError));
   const moveCount = assets.length;
   const excludedFolderIds = useMemo(
     () => assets.filter((asset) => asset.kind === "folder").map((asset) => asset.id),
@@ -1968,6 +1985,20 @@ function AssetActionDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
+            {action === "move" && foldersLoading && <p role="status">{common("loading")}</p>}
+            {action === "move" && foldersError && (
+              <div role="alert" className="mb-3 space-y-2 text-sm text-destructive">
+                <p>{foldersError}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pending || foldersFetching}
+                  onClick={onRetryFolders}
+                >
+                  {common("retry")}
+                </Button>
+              </div>
+            )}
             {errors.length ? (
               <ul role="alert" className="mb-3 max-h-40 overflow-auto text-xs text-destructive">
                 {errors.map((error, index) => (
@@ -1994,6 +2025,7 @@ function AssetActionDialog({
                   {t("destination")}
                 </span>
                 <NativeSelect
+                  disabled={pending || moveBlocked}
                   aria-label={t("destination")}
                   value={destinationId}
                   onChange={onDestinationChange}
@@ -2024,7 +2056,7 @@ function AssetActionDialog({
               variant="solid"
               color="primary"
               loading={pending}
-              disabled={action === "rename" && !name.trim()}
+              disabled={pending || moveBlocked || (action === "rename" && !name.trim())}
             >
               {action === "move" ? t("move") : t("rename")}
             </Button>
