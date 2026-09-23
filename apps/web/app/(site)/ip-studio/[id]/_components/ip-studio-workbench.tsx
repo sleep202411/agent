@@ -261,7 +261,6 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
       </div>
 
       <IpProfileEditDialog
-        key={`${ip.id}:${ip.version}:${profileEditOpen ? "open" : "closed"}`}
         ip={ip}
         open={profileEditOpen}
         onOpenChange={setProfileEditOpen}
@@ -3325,15 +3324,28 @@ function AssetPreview({
   );
 }
 
-function IpProfileEditDialog({
-  ip,
-  open,
-  onOpenChange,
-}: {
+type IpProfileEditDialogProps = {
   ip: IpCreatorIp;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+export function IpProfileEditDialog(props: IpProfileEditDialogProps) {
+  return (
+    <IpProfileEditSession
+      key={`${props.ip.id}:${props.open ? "open" : "closed"}`}
+      {...props}
+    />
+  );
+}
+
+function IpProfileEditSession({
+  ip: currentIp,
+  open,
+  onOpenChange,
+}: IpProfileEditDialogProps) {
+  // An open editing session owns both its initial fields and their server version.
+  const [ip] = useState(currentIp);
   const t = useTranslations("newIpWorkbench");
   const typeT = useTranslations("newIpCreate");
   const locale = useLocale() as Locale;
