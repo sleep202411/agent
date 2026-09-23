@@ -1610,6 +1610,7 @@ function PermissionSummary({
   const [editing, setEditing] = useState(false);
   const savePending = useRef(false);
   const [restricted, setRestricted] = useState(false);
+  const [editPermissionVersion, setEditPermissionVersion] = useState<number | null>(null);
   const [draftGrants, setDraftGrants] = useState<
     Array<{ userId: string; permission: CrewAssetPermission }>
   >([]);
@@ -1617,6 +1618,7 @@ function PermissionSummary({
   const beginEdit = () => {
     if (!permissions.data?.canManage) return;
     setRestricted(permissions.data.accessMode === "restricted");
+    setEditPermissionVersion(permissions.data.permissionVersion);
     setDraftGrants(
       permissions.data.grants.map((grant) => ({
         userId: grant.userId,
@@ -1628,13 +1630,13 @@ function PermissionSummary({
 
   const save = async () => {
     const current = permissions.data;
-    if (!current || savePending.current) return;
+    if (!current?.canManage || editPermissionVersion === null || savePending.current) return;
     savePending.current = true;
     try {
       await setPermissions.mutateAsync({
         nodeId: asset.id,
         accessMode: restricted ? "restricted" : "inherit",
-        expectedVersion: current.permissionVersion,
+        expectedVersion: editPermissionVersion,
         grants: restricted ? draftGrants : [],
       });
       setEditing(false);
