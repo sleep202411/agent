@@ -73,7 +73,7 @@ async function render() {
   await settle();
 }
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   h.user = "creator";
   node = document.createElement("div");
   document.body.append(node);
@@ -144,4 +144,87 @@ it("displays a submission failure instead of a success state", async () => {
   await render();
   await click("close");
   expect(node.querySelector("[role=alert]")?.textContent).toContain("Submission changed");
+});
+
+it("keeps approved works visible when loading the next page fails and retries that page", async () => {
+  const first = {
+    community: true,
+    open: true,
+    canManage: false,
+    items: [
+      {
+        workId: "one",
+        title: "First approved work",
+        roomNumber: "101",
+        status: "approved",
+        version: 1,
+      },
+    ],
+    nextCursor: "cursor-1",
+  };
+  h.get
+    .mockResolvedValueOnce(first)
+    .mockRejectedValueOnce(new Error("Page unavailable"))
+    .mockResolvedValueOnce({
+      ...first,
+      items: [
+        {
+          workId: "two",
+          title: "Second approved work",
+          roomNumber: "102",
+          status: "approved",
+          version: 1,
+        },
+      ],
+      nextCursor: null,
+    });
+  await render();
+  await click("more");
+  expect(node.textContent).toContain("First approved work");
+  expect(node.textContent).toContain("Page unavailable");
+  await click("retry");
+  expect(h.get.mock.calls[2][1].params.cursor).toBe("cursor-1");
+  expect(node.textContent).toContain("First approved work");
+  expect(node.textContent).toContain("Second approved work");
+});
+it("lets creators retry failed work loading without falsely claiming they have no works", async () => {
+  h.mine.mockRejectedValueOnce(new Error("Works unavailable"));
+  await render();
+  await click("submit");
+  expect(node.textContent).toContain("Works unavailable");
+  expect(node.textContent).not.toContain("noWorks");
+  await click("retry");
+  expect(node.textContent).toContain("My work");
+  expect(node.textContent).not.toContain("Works unavailable");
+});
+
+it("retries a failed initial channel read without showing an empty catalog", async () => {
+  h.get.mockRejectedValueOnce(new Error("Channel unavailable"));
+  await render();
+  expect(node.textContent).toContain("Channel unavailable");
+  expect(node.textContent).not.toContain("empty");
+  await click("retry");
+  expect(node.textContent).toContain("description");
+});
+it("preserves available choices when the next page of a creator's works fails", async () => {
+  h.mine
+    .mockResolvedValueOnce({
+      items: [{ id: "work", title: "My work", status: "published", listingVisibility: "public" }],
+      nextCursor: "works-2",
+    })
+    .mockRejectedValueOnce(new Error("Next works unavailable"))
+    .mockResolvedValueOnce({
+      items: [
+        { id: "other", title: "Other work", status: "published", listingVisibility: "public" },
+      ],
+      nextCursor: null,
+    });
+  await render();
+  await click("submit");
+  await click("more");
+  expect(node.textContent).toContain("My work");
+  await click("retry");
+  expect(h.mine.mock.calls[2][0].cursor).toBe("works-2");
+  expect(node.textContent).toContain("My work");
+  expect(node.textContent).toContain("Other work");
 });
