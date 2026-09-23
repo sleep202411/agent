@@ -2270,7 +2270,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
 
 type LinkedUserDraft = { userId: string; name: string };
 
-function AccessControlPanel({
+export function AccessControlPanel({
   ip,
   contributors,
   t,
@@ -2364,7 +2364,8 @@ function AccessControlPanel({
         permission: "edit",
       });
       toast.success(t("membersPanel.toasts.accessGranted"));
-      setSelectedUser(null);
+      // A completed grant must not discard an account selected while it was pending.
+      setSelectedUser((current) => (current === selectedUser ? null : current));
     } catch (err) {
       toast.error(errorMessage(err) || t("membersPanel.toasts.accessGrantFailed"));
     }
