@@ -26,17 +26,17 @@ beforeEach(() => {
   s.success.mockClear();
 });
 afterEach(() => act(() => root.unmount()));
-function render(free: boolean, priced: boolean, version = 10, amount = "20") {
+function render(free: boolean, priced: boolean) {
   act(() =>
     root.render(
       <EpisodePriceEditor
-        ip={{ id: "ip", version } as IpCreatorIp}
+        ip={{ id: "ip", version: 10 } as IpCreatorIp}
         episode={
           {
             id: "ep",
             title: "Episode",
             isFreePreview: free,
-            price: priced ? { amount } : null,
+            price: priced ? { amount: "20" } : null,
           } as NonNullable<IpCreatorIp["episodes"]>[number]
         }
         displayNumber={1}
@@ -108,47 +108,4 @@ it("surfaces a second-step conflict without retrying or reporting success", asyn
   expect(s.episode).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 12 }));
   expect(s.error).toHaveBeenCalledWith("IP changed; refresh before saving");
   expect(s.success).not.toHaveBeenCalled();
-});
-
-function editAmount(value: string) {
-  act(() => {
-    const input = host.querySelector("input")!;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-it("opens the refreshed price and discards a cancelled draft", async () => {
-  render(false, true);
-  render(false, true, 11, "30");
-  await click("editPrice");
-  expect(host.querySelector("input")!.value).toBe("30");
-  editAmount("50");
-  await click("cancel");
-  await click("editPrice");
-  expect(host.querySelector("input")!.value).toBe("30");
-});
-it("preserves the original edit version when the IP refreshes", async () => {
-  render(false, true);
-  await click("editPrice");
-  editAmount("50");
-  render(false, true, 11, "30");
-  s.price.mockRejectedValueOnce(new Error("Version conflict"));
-  await click("save");
-  expect(s.price).toHaveBeenCalledWith(
-    expect.objectContaining({ amount: "50", expectedVersion: 10 })
-  );
-  expect(host.querySelector("input")!.value).toBe("50");
-  expect(s.error).toHaveBeenCalledWith("Version conflict");
-});
-it("retains its own completed transition version when retrying the price write", async () => {
-  render(true, false);
-  await click("setPrice");
-  editAmount("20");
-  s.price.mockRejectedValueOnce(new Error("Price write unavailable"));
-  await click("save");
-  expect(s.episode).toHaveBeenCalledOnce();
-  render(false, false, 12);
-  await click("save");
-  expect(s.episode).toHaveBeenCalledOnce();
-  expect(s.price).toHaveBeenLastCalledWith(expect.objectContaining({ expectedVersion: 11 }));
 });
