@@ -20,12 +20,10 @@ import { TvEmptyState, TvErrorState, TvLoadingState } from "./tv-empty";
 import { TvRightRail } from "./tv-right-rail";
 
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
-import { ChannelTabs } from "@/components/channel-tabs";
+import { TvCatalogToolbar } from "./tv-catalog-toolbar";
 
 export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const { user } = useCurrentUser();
-  const t = useTranslations("tvGames");
-  const channels = useTranslations("channels");
   const [createOpen, setCreateOpen] = useState(false);
   const tv = useTranslations("tv");
   const locale = useLocale() as Locale;
@@ -34,28 +32,13 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const [mode, setMode] = useState<"videos" | "games">("videos");
   return (
     <div className="flex min-h-full min-w-0 max-w-full flex-col lg:h-full lg:min-h-0 bg-[#0c0e13] text-white">
-      <div role="group" aria-label={t("catalog")} className="flex shrink-0 gap-1 px-4 py-2">
-        {(["videos", "games"] as const).map((value) => (
-          <button
-            type="button"
-            key={value}
-            aria-pressed={mode === value}
-            onClick={() => setMode(value)}
-            className="min-h-11 rounded-full px-3 text-sm font-medium leading-5 text-white/60 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white aria-pressed:bg-white/10 aria-pressed:text-white"
-          >
-            {t(value)}
-          </button>
-        ))}
-      </div>
-      <div className="px-4 pb-2">
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className="min-h-11 rounded-full bg-primary px-5 text-sm font-medium text-white"
-        >
-          {channels("create")}
-        </button>
-      </div>
+      <TvCatalogToolbar
+        mode={mode}
+        channelType={channelType}
+        onModeChange={setMode}
+        onChannelChange={setChannelType}
+        onCreate={() => setCreateOpen(true)}
+      />
       <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
       {mode === "games" && !embedded && (
         <button
@@ -69,7 +52,6 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
       )}
       {mode === "videos" ? (
         <>
-          <ChannelTabs value={channelType} onChange={setChannelType} />
           <TvVideoApp
             key={`${user?.id ?? "guest"}:${channelType}`}
             embedded={embedded}
