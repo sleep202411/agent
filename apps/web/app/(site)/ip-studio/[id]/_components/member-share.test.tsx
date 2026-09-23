@@ -21,6 +21,7 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  state.create.mockReset().mockResolvedValue({});
   state.update.mockReset().mockResolvedValue({});
   state.error.mockClear();
   const contributor = {
@@ -54,7 +55,7 @@ async function edit(value: string) {
   });
   await act(async () => input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
 }
-it.each(["1..5", ".", "9".repeat(400)])(
+it.each(["1..5", ".", "9".repeat(400), "-5", "1e2", "1,5", "abc", "12abc"])(
   "does not clear the share for malformed percentage %s",
   async (value) => {
     await edit(value);
@@ -71,45 +72,51 @@ it("saves a valid decimal percentage", async () => {
   expect(state.update).toHaveBeenCalledWith(expect.objectContaining({ revenueShareBps: 1234 }));
 });
 
-it("blocks malformed shares when adding a linked eligible contributor", async () => {
-  await act(async () =>
-    root.render(
-      <AddMemberDialog
-        open
-        onOpenChange={() => {}}
-        ip={{ id: "ip" } as IpCreatorIp}
-        contributors={[]}
-        t={(key) => key}
-      />
-    )
-  );
-  const enter = async (selector: string, value: string) => {
-    await act(async () => {
-      const input = document.querySelector<HTMLInputElement>(selector)!;
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-  };
-  await enter('input[placeholder="membersPanel.linkUserPlaceholder"]', "creator");
-  await act(async () =>
-    [...document.querySelectorAll("button")]
-      .find((b) => b.textContent === "membersPanel.lookup")!
-      .click()
-  );
-  await act(async () =>
-    [...document.querySelectorAll("button")]
-      .find((b) => b.textContent?.includes("Creator"))!
-      .click()
-  );
-  await act(async () =>
-    document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click()
-  );
-  await enter('input[aria-label="membersPanel.shareAriaLabel"]', "1..5");
-  await act(async () =>
-    [...document.querySelectorAll("button")]
-      .find((b) => b.textContent === "membersPanel.add")!
-      .click()
-  );
-  expect(state.create).not.toHaveBeenCalled();
-  expect(state.error).toHaveBeenCalledWith("membersPanel.invalidShare");
-});
+it.each(["1..5", "-5", "1e2", "1,5", "abc", "12abc"])(
+  "blocks malformed share %s when adding a linked eligible contributor",
+  async (value) => {
+    await act(async () =>
+      root.render(
+        <AddMemberDialog
+          open
+          onOpenChange={() => {}}
+          ip={{ id: "ip" } as IpCreatorIp}
+          contributors={[]}
+          t={(key) => key}
+        />
+      )
+    );
+    const enter = async (selector: string, value: string) => {
+      await act(async () => {
+        const input = document.querySelector<HTMLInputElement>(selector)!;
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          input,
+          value
+        );
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    await enter('input[placeholder="membersPanel.linkUserPlaceholder"]', "creator");
+    await act(async () =>
+      [...document.querySelectorAll("button")]
+        .find((b) => b.textContent === "membersPanel.lookup")!
+        .click()
+    );
+    await act(async () =>
+      [...document.querySelectorAll("button")]
+        .find((b) => b.textContent?.includes("Creator"))!
+        .click()
+    );
+    await act(async () =>
+      document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click()
+    );
+    await enter('input[aria-label="membersPanel.shareAriaLabel"]', value);
+    await act(async () =>
+      [...document.querySelectorAll("button")]
+        .find((b) => b.textContent === "membersPanel.add")!
+        .click()
+    );
+    expect(state.create).not.toHaveBeenCalled();
+    expect(state.error).toHaveBeenCalledWith("membersPanel.invalidShare");
+  }
+);

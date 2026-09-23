@@ -1788,7 +1788,7 @@ export function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) 
         <FormTextField
           label={t("pricingPanel.form.amount")}
           value={amount}
-          onChange={(value) => setAmount(value.replace(/[^\d]/g, ""))}
+          onChange={setAmount}
           placeholder={t("pricingPanel.form.amountPlaceholder")}
         />
         <div className="mt-2 flex flex-wrap gap-2">
@@ -1807,7 +1807,7 @@ export function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) 
         originalAmount={originalAmount}
         startsAt={startsAt}
         endsAt={endsAt}
-        onOriginalAmountChange={(value) => setOriginalAmount(value.replace(/[^\d]/g, ""))}
+        onOriginalAmountChange={setOriginalAmount}
         onStartsAtChange={setStartsAt}
         onEndsAtChange={setEndsAt}
         t={t}
@@ -1979,7 +1979,7 @@ export function EpisodePriceEditor({
             <FormTextField
               label={t("pricingPanel.form.amount")}
               value={amount}
-              onChange={(value) => setAmount(value.replace(/[^\d]/g, ""))}
+              onChange={setAmount}
               placeholder={t("pricingPanel.form.amountPlaceholder")}
             />
           </div>
@@ -1987,7 +1987,7 @@ export function EpisodePriceEditor({
             originalAmount={originalAmount}
             startsAt={startsAt}
             endsAt={endsAt}
-            onOriginalAmountChange={(value) => setOriginalAmount(value.replace(/[^\d]/g, ""))}
+            onOriginalAmountChange={setOriginalAmount}
             onStartsAtChange={setStartsAt}
             onEndsAtChange={setEndsAt}
             t={t}
@@ -2873,7 +2873,7 @@ export function MemberRow({
       </Button>
       <Input
         value={shareText}
-        onChange={(event) => setShareText(event.target.value.replace(/[^\d.]/g, ""))}
+        onChange={(event) => setShareText(event.target.value)}
         onBlur={() => void commitShare()}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
@@ -3047,7 +3047,7 @@ export function AddMemberDialog({
               </label>
               <Input
                 value={shareText}
-                onChange={(event) => setShareText(event.target.value.replace(/[^\d.]/g, ""))}
+                onChange={(event) => setShareText(event.target.value)}
                 disabled={!linkedUser || !eligible}
                 placeholder={t("membersPanel.sharePlaceholder")}
                 aria-label={t("membersPanel.shareAriaLabel")}
@@ -3945,6 +3945,7 @@ function bpsToPercentText(bps: number | null): string {
 function percentTextToBps(text: string): number | null | undefined {
   const trimmed = text.trim();
   if (trimmed === "") return null;
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(trimmed)) return undefined;
   const percent = Number(trimmed);
   if (!Number.isFinite(percent)) return undefined;
   return Math.round(percent * 100);
