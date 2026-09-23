@@ -7721,6 +7721,7 @@ function creatorIpSummaryDto(
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
+    createdById: title.createdById,
     roomNumber: title.roomNumber,
     channelType: title.channelType,
     title: copy.value?.title ?? title.id,

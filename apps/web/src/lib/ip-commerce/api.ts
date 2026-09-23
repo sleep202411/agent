@@ -190,6 +190,7 @@ export interface IpCommerceIp {
 }
 
 export interface IpCreatorIp {
+  createdById?: string;
   id: string;
   roomNumber: string;
   title: string;
