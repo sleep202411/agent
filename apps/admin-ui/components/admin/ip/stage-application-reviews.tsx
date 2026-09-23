@@ -18,11 +18,23 @@ export function StageApplicationReviews({
   canReview: boolean;
 }) {
   const router = useRouter();
-  const [items, setItems] = useState(initial);
+  const [reviewed, setReviewed] = useState<StageApplication | null>(null);
+  // Server refreshes own the list. Keep a completed local review visible while
+  // its refresh is in flight, without masking newer server decisions.
+  const items = initial.map((item) =>
+    item.status === "pending" && item.id === reviewed?.id ? reviewed : item
+  );
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const active = useRef<AbortController | null>(null);
+  const pendingId = items.find((item) => item.status === "pending")?.id ?? null;
+  const [reasonFor, setReasonFor] = useState(pendingId);
+  if (reasonFor !== pendingId) {
+    setReasonFor(pendingId);
+    setReason("");
+    setError(null);
+  }
   useEffect(
     () => () => {
       active.current?.abort();
@@ -47,7 +59,7 @@ export function StageApplicationReviews({
         }
       );
       if (!controller.signal.aborted) {
-        setItems((previous) => previous.map((row) => (row.id === id ? item : row)));
+        setReviewed(item);
         setReason("");
         router.refresh();
       }

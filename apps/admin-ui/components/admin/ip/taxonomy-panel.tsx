@@ -167,9 +167,15 @@ export function IpTaxonomyPanel({
         }
       );
       if (!operation.current()) return false;
-      const next = await readTaxonomy(locale, operation.signal);
-      if (!operation.current()) return false;
-      setTaxonomy(next);
+      // A failed read must not turn an acknowledged write into a retryable save.
+      try {
+        const next = await readTaxonomy(locale, operation.signal);
+        if (!operation.current()) return false;
+        setTaxonomy(next);
+      } catch (err) {
+        if (!operation.current()) return false;
+        setError(toErrorMessage(err));
+      }
       return true;
     } catch (err) {
       if (operation.current()) setError(toErrorMessage(err));
