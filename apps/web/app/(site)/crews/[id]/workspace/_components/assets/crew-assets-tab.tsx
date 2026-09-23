@@ -312,16 +312,24 @@ export function CrewAssetsTab({
     setCreatingFolder(false);
   };
 
+  const settleCheckedActions = async (ids: string[], action: (id: string) => Promise<unknown>) => {
+    const results = await Promise.allSettled(ids.map(action));
+    const succeeded = new Set(ids.filter((_, index) => results[index].status === "fulfilled"));
+    setCheckedIds((current) => new Set([...current].filter((id) => !succeeded.has(id))));
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+  };
+
   const deleteChecked = async () => {
     if (checkedIds.size === 0) return;
     if (activeSource === "trash" ? !canDeleteForever : !canTrash) return;
     const ids = [...checkedIds];
     try {
       if (activeSource === "trash") {
-        await Promise.all(ids.map((id) => permanentlyDeleteAsset.mutateAsync(id)));
+        await settleCheckedActions(ids, (id) => permanentlyDeleteAsset.mutateAsync(id));
         toast.success(t("deletedForever", { count: ids.length }));
       } else {
-        await Promise.all(ids.map((id) => trashAsset.mutateAsync(id)));
+        await settleCheckedActions(ids, (id) => trashAsset.mutateAsync(id));
         toast.success(t("movedToTrash", { count: ids.length }));
       }
       setCheckedIds(new Set());
@@ -337,7 +345,7 @@ export function CrewAssetsTab({
     if (checkedIds.size === 0 || !canRestore) return;
     const ids = [...checkedIds];
     try {
-      await Promise.all(ids.map((id) => restoreAsset.mutateAsync(id)));
+      await settleCheckedActions(ids, (id) => restoreAsset.mutateAsync(id));
       toast.success(t("restored", { count: ids.length }));
       setCheckedIds(new Set());
       setSelectedAssetId("");

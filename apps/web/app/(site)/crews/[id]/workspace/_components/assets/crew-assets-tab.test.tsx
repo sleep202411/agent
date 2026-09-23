@@ -124,6 +124,7 @@ let linkFails = false;
 let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
 let movedSecond = false;
+let trashFails = false;
 
 function installFetch() {
   vi.stubGlobal(
@@ -269,7 +270,11 @@ function installFetch() {
           { status: 201 }
         );
       }
+      if (method === "POST" && trashFails && url.endsWith("/assets/file-1/restore"))
+        return jsonResponse({ message: "Asset temporarily unavailable" }, { status: 503 });
       if (method === "PUT" || method === "POST") return jsonResponse({ favorite: true });
+      if (method === "DELETE" && trashFails && url.endsWith("/assets/file-1"))
+        return jsonResponse({ message: "Asset temporarily unavailable" }, { status: 503 });
       if (method === "DELETE") return new Response(null, { status: 204 });
       throw new Error(`Unhandled request: ${method} ${url}`);
     })
@@ -345,6 +350,7 @@ beforeEach(() => {
 afterEach(() => {
   bulkMove = false;
   movedSecond = false;
+  trashFails = false;
   vi.clearAllMocks();
   act(() => root?.unmount());
   container?.remove();
@@ -695,3 +701,40 @@ it("rebuilds asset pages after a cursor rejection instead of replaying the inval
   expect(retried.url).not.toContain("cursor=");
   await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
 });
+
+it.each(["trash", "restore"])(
+  "retries only failed assets after partial bulk %s",
+  async (action) => {
+    const suffix = action === "restore" ? "/restore" : "";
+    const method = action === "restore" ? "POST" : "DELETE";
+    const label = action === "restore" ? "Restore" : "Delete";
+    trashFails = true;
+    await render();
+    if (action === "restore") {
+      await click(byText("button", "Trash"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    await act(async () => {
+      document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.click();
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.click();
+    });
+    await click(byText("button", label));
+    expect(document.body.textContent).toContain("1 selected");
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.checked
+    ).toBe(false);
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.checked
+    ).toBe(true);
+    trashFails = false;
+    await click(byText("button", label));
+    expect(
+      requests.filter((r) => r.method === method && r.url.endsWith(`/assets/folder-1${suffix}`))
+    ).toHaveLength(1);
+    expect(
+      requests.filter((r) => r.method === method && r.url.endsWith(`/assets/file-1${suffix}`))
+    ).toHaveLength(2);
+  }
+);
