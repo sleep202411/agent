@@ -730,23 +730,6 @@ describe("Legacy project link", () => {
   });
 });
 
-it("rebuilds asset pages after a cursor rejection instead of replaying the invalid boundary", async () => {
-  paginated = true;
-  cursorRejected = true;
-  await render();
-  const scroller = container!.querySelector<HTMLElement>(".relative.overflow-auto")!;
-  await act(async () => scroller.dispatchEvent(new Event("scroll", { bubbles: true })));
-  await vi.waitFor(() => expect(document.body.textContent).toContain("Restart assets"));
-  expect(document.body.textContent).toContain("concept.png");
-  const before = requests.length;
-  paginated = false;
-  await click(byText("button", "Retry"));
-  await vi.waitFor(() => expect(requests.length).toBeGreaterThan(before));
-  const retried = requests.slice(before).find((request) => request.url.includes("/assets?"))!;
-  expect(retried.url).not.toContain("cursor=");
-  await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
-});
-
 it("keeps the original permission version through refresh and reloads it on reopening", async () => {
   const client = await render();
   await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
@@ -770,6 +753,62 @@ it("keeps the original permission version through refresh and reloads it on reop
   await click(byText("button", "Manage access"));
   await click(byText("button", "Save access"));
   expect(writes()[1]?.body).toMatchObject({ expectedVersion: 2 });
+});
+
+it("rebuilds asset pages after a cursor rejection instead of replaying the invalid boundary", async () => {
+  paginated = true;
+  cursorRejected = true;
+  await render();
+  const scroller = container!.querySelector<HTMLElement>(".relative.overflow-auto")!;
+  await act(async () => scroller.dispatchEvent(new Event("scroll", { bubbles: true })));
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Restart assets"));
+  expect(document.body.textContent).toContain("concept.png");
+  const before = requests.length;
+  paginated = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() => expect(requests.length).toBeGreaterThan(before));
+  const retried = requests.slice(before).find((request) => request.url.includes("/assets?"))!;
+  expect(retried.url).not.toContain("cursor=");
+  await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
+});
+
+it("blocks duplicate folder creation and retains a failed draft for retry", async () => {
+  await render();
+  const original = globalThis.fetch;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const create = vi.fn(() => pending);
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    init?.method === "POST" && String(input).endsWith("/assets/folders")
+      ? create()
+      : original(input, init)
+  );
+  await click(byText("button", "New folder"));
+  const input = document.querySelector<HTMLInputElement>('input[placeholder="Folder name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "References"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const form = input.closest("form")!;
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(input.disabled).toBe(true);
+  await act(async () => finish(jsonResponse({ message: "Create unavailable" }, { status: 503 })));
+  expect(input.value).toBe("References");
+  expect(input.disabled).toBe(false);
+  vi.stubGlobal("fetch", original);
+  await act(async () =>
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  );
+  expect(document.querySelector('input[placeholder="Folder name"]')).toBeNull();
 });
 
 it("keeps the original rename version when assets refresh during editing", async () => {
