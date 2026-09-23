@@ -125,6 +125,7 @@ let linkFails = false;
 let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
 let movedSecond = false;
+let memberReadFails = false;
 let accessVersion = 1;
 let refreshedAsset = false;
 let trashFails = false;
@@ -217,8 +218,10 @@ function installFetch() {
           grants: [],
         });
       }
-      if (method === "GET" && url.endsWith("/members")) {
-        return jsonResponse([]);
+      if (method === "GET" && new URL(url, "http://localhost").pathname.endsWith("/members")) {
+        if (memberReadFails)
+          return jsonResponse({ message: "Member list unavailable" }, { status: 403 });
+        return jsonResponse({ items: [], nextCursor: null, total: 0 });
       }
       if (method === "PATCH" && url.includes("/assets/")) {
         if (url.endsWith("/file-1"))
@@ -359,6 +362,7 @@ beforeEach(() => {
 afterEach(() => {
   bulkMove = false;
   movedSecond = false;
+  memberReadFails = false;
   accessVersion = 1;
   refreshedAsset = false;
   trashFails = false;
@@ -830,6 +834,30 @@ it("blocks duplicate folder creation and retains a failed draft for retry", asyn
     form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
   );
   expect(document.querySelector('input[placeholder="Folder name"]')).toBeNull();
+});
+
+it("blocks restricted-access saves and retries a failed member list", async () => {
+  memberReadFails = true;
+  await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await click(byText("button", "Manage access"));
+  await click(
+    document.querySelector<HTMLInputElement>(
+      'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+    )!
+  );
+  expect((byText("button", "Save access") as HTMLButtonElement).disabled).toBe(true);
+  expect(document.body.textContent).toContain("Member list unavailable");
+  memberReadFails = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() =>
+    expect((byText("button", "Save access") as HTMLButtonElement).disabled).toBe(false)
+  );
+  expect(document.body.textContent).not.toContain("Member list unavailable");
+  expect(requests.some((r) => r.method === "PUT")).toBe(false);
 });
 
 it("keeps the original rename version when assets refresh during editing", async () => {
