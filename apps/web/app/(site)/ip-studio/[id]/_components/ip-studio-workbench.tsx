@@ -3037,7 +3037,7 @@ function AddMemberDialog({
 function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   return (
     <Section title={t("assetsPanel.rightsTitle")} description={t("assetsPanel.rightsBody")}>
-      <RightsGovernanceEditor ip={ip} t={t} />
+      <RightsGovernanceEditor key={ip.id} ip={ip} t={t} />
       <IpCrewOrigin ipId={ip.id} editable />
       <IpReleaseLinks ipId={ip.id} editable />
       <IpGameAssociations ipId={ip.id} />
@@ -3046,13 +3046,14 @@ function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   );
 }
 
-function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+export function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   const update = useUpdateIpCommerceIpProfile();
-  const currentOwner = ip.copyrightOwner ?? "";
-  const currentRights = jsonStringField(ip.rightsSummary, "statement");
-  const currentAiStatement = jsonStringField(ip.aiDisclosure, "statement");
-  const currentGeneratedVisuals = jsonBooleanField(ip.aiDisclosure, "generatedVisuals");
-  const currentGeneratedCopy = jsonBooleanField(ip.aiDisclosure, "generatedCopy");
+  const [baseline, setBaseline] = useState(ip);
+  const currentOwner = baseline.copyrightOwner ?? "";
+  const currentRights = jsonStringField(baseline.rightsSummary, "statement");
+  const currentAiStatement = jsonStringField(baseline.aiDisclosure, "statement");
+  const currentGeneratedVisuals = jsonBooleanField(baseline.aiDisclosure, "generatedVisuals");
+  const currentGeneratedCopy = jsonBooleanField(baseline.aiDisclosure, "generatedCopy");
   const [owner, setOwner] = useState(currentOwner);
   const [rightsStatement, setRightsStatement] = useState(currentRights);
   const [aiStatement, setAiStatement] = useState(currentAiStatement);
@@ -3065,12 +3066,21 @@ function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
     aiStatement.trim() !== currentAiStatement.trim() ||
     generatedVisuals !== currentGeneratedVisuals ||
     generatedCopy !== currentGeneratedCopy;
+  // Refresh clean forms, but never attach a newer version to an older draft.
+  if (!dirty && !update.isPending && ip.version > baseline.version) {
+    setBaseline(ip);
+    setOwner(ip.copyrightOwner ?? "");
+    setRightsStatement(jsonStringField(ip.rightsSummary, "statement"));
+    setAiStatement(jsonStringField(ip.aiDisclosure, "statement"));
+    setGeneratedVisuals(jsonBooleanField(ip.aiDisclosure, "generatedVisuals"));
+    setGeneratedCopy(jsonBooleanField(ip.aiDisclosure, "generatedCopy"));
+  }
   const canSave = dirty && !update.isPending;
 
   const handleSave = async () => {
     if (!canSave) return;
     try {
-      await update.mutateAsync({
+      const result = await update.mutateAsync({
         ipId: ip.id,
         copyrightOwner: owner.trim() || null,
         rightsSummary: {
@@ -3081,8 +3091,9 @@ function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
           generatedCopy,
           statement: aiStatement.trim(),
         },
-        expectedVersion: ip.version,
+        expectedVersion: baseline.version,
       });
+      setBaseline(result.ip);
       toast.success(t("assetsPanel.rightsForm.saved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("assetsPanel.rightsForm.saveFailed"));
