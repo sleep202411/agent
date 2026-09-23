@@ -58,9 +58,20 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useCrewEpisodes: () => ({ data: [] }),
   useCrewTaskOptions: () => ({ data: [] }),
 }));
+const attachmentQuery = vi.hoisted(() => ({
+  data: { items: [] as Array<{ id: string; name: string }> },
+  hasNextPage: false,
+  isLoading: false,
+  isFetching: false,
+  isError: false,
+  isFetchNextPageError: false,
+  error: null as Error | null,
+  fetchNextPage: vi.fn(),
+  refetch: vi.fn(),
+}));
 vi.mock("../../_hooks/use-crew-assets", () => ({
   useCrewAssetContext: () => ({ data: { capabilities: { upload: true } } }),
-  useCrewAssets: () => ({ data: { items: [] } }),
+  useCrewAssets: () => attachmentQuery,
   discardPendingCrewAssetUpload: state.discard,
 }));
 vi.mock("@/src/lib/media-upload", () => ({ uploadFileViaSignedUrl: state.upload }));
@@ -153,6 +164,10 @@ afterEach(async () => {
   await act(async () => root.unmount());
   root = createRoot(container);
   vi.clearAllMocks();
+  attachmentQuery.data = { items: [] };
+  attachmentQuery.hasNextPage = false;
+  attachmentQuery.isError = false;
+  attachmentQuery.error = null;
   state.items = [];
   state.timelineError = false;
   state.pageError = false;
@@ -647,4 +662,41 @@ it("removes open comment editors and composer when permission is revoked", async
   expect(row().querySelector("textarea")).toBeNull();
   expect(row().textContent).toContain("original");
   expect(state.update).not.toHaveBeenCalled();
+});
+
+it("loads older Crew files for a task comment and submits the chosen attachment", async () => {
+  attachmentQuery.data = { items: [{ id: "new-file", name: "Recent file" }] };
+  attachmentQuery.hasNextPage = true;
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="chooseCrewAsset"]')!.click()
+  );
+  const more = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === "loadMore"
+  );
+  expect(more).toBeDefined();
+  await act(async () => more!.click());
+  expect(attachmentQuery.fetchNextPage).toHaveBeenCalledWith({ cancelRefetch: false });
+  attachmentQuery.data.items.push({ id: "old-file", name: "Older file" });
+  await render();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((b) => b.textContent?.trim() === "Older file")!
+      .click()
+  );
+  state.create.mockResolvedValue(undefined);
+  await act(async () => send());
+  expect(state.create).toHaveBeenCalledWith(
+    expect.objectContaining({ attachments: [{ source: "asset", assetNodeId: "old-file" }] })
+  );
+});
+it("shows attachment read errors instead of claiming the Crew has no files", async () => {
+  attachmentQuery.isError = true;
+  attachmentQuery.error = new Error("Files unavailable");
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="chooseCrewAsset"]')!.click()
+  );
+  expect(container.textContent).toContain("Files unavailable");
+  expect(container.textContent).not.toContain("noRecentAssets");
 });
