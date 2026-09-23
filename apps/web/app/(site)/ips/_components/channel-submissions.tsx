@@ -142,6 +142,7 @@ function ChannelContents({
             <NativeSelect
               className="mt-2 block w-full rounded-md border border-white/20 bg-neutral-900 p-2"
               value={selected}
+              disabled={mutation.isPending}
               onChange={setSelected}
             >
               <option value="">{t("choose")}</option>
