@@ -125,6 +125,7 @@ let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
 let movedSecond = false;
 let memberReadFails = false;
+let accessVersion = 1;
 let refreshedAsset = false;
 let trashFails = false;
 
@@ -208,7 +209,7 @@ function installFetch() {
       if (method === "GET" && url.endsWith("/assets/file-1/permissions")) {
         return jsonResponse({
           accessMode: "inherit",
-          permissionVersion: 1,
+          permissionVersion: accessVersion,
           effectivePermission: "manage",
           canManage: true,
           grants: [],
@@ -359,6 +360,7 @@ afterEach(() => {
   bulkMove = false;
   movedSecond = false;
   memberReadFails = false;
+  accessVersion = 1;
   refreshedAsset = false;
   trashFails = false;
   vi.clearAllMocks();
@@ -730,6 +732,31 @@ describe("Legacy project link", () => {
     expect((byText("button", "Project: Old canvas") as HTMLButtonElement).disabled).toBe(true);
     expect(requests.some((r) => r.url.endsWith("/studio-workspace-options"))).toBe(false);
   });
+});
+
+it("keeps the original permission version through refresh and reloads it on reopening", async () => {
+  const client = await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await click(byText("button", "Manage access"));
+  const checkbox = document.querySelector<HTMLInputElement>(
+    'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+  )!;
+  await click(checkbox);
+  accessVersion = 2;
+  await act(async () => {
+    await client.invalidateQueries();
+  });
+  expect(checkbox.checked).toBe(true);
+  await click(byText("button", "Save access"));
+  const writes = () =>
+    requests.filter((r) => r.method === "PUT" && r.url.endsWith("/assets/file-1/permissions"));
+  expect(writes()[0]?.body).toMatchObject({ expectedVersion: 1, accessMode: "restricted" });
+  await click(byText("button", "Manage access"));
+  await click(byText("button", "Save access"));
+  expect(writes()[1]?.body).toMatchObject({ expectedVersion: 2 });
 });
 
 it("rebuilds asset pages after a cursor rejection instead of replaying the invalid boundary", async () => {
