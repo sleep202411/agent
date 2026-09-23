@@ -1858,6 +1858,10 @@ export function EpisodePriceEditor({
   const updateEpisode = useUpdateIpCommerceEpisode();
   const serverState = deriveEpisodePriceState(episode);
   const [editing, setEditing] = useState(false);
+  const [draftBase, setDraftBase] = useState({
+    version: ip.version,
+    isFreePreview: episode.isFreePreview,
+  });
   const [amount, setAmount] = useState(episode.price?.amount ?? "");
   const [originalAmount, setOriginalAmount] = useState(episode.price?.originalAmount ?? "");
   const [startsAt, setStartsAt] = useState(toDateTimeLocal(episode.price?.startsAt));
@@ -1865,16 +1869,26 @@ export function EpisodePriceEditor({
   const valid = validatePriceRuleInput({ amount, originalAmount, startsAt, endsAt });
   const busy = upsertPrice.isPending || updateEpisode.isPending;
 
+  const beginEdit = () => {
+    setDraftBase({ version: ip.version, isFreePreview: episode.isFreePreview });
+    setAmount(episode.price?.amount ?? "");
+    setOriginalAmount(episode.price?.originalAmount ?? "");
+    setStartsAt(toDateTimeLocal(episode.price?.startsAt));
+    setEndsAt(toDateTimeLocal(episode.price?.endsAt));
+    setEditing(true);
+  };
+
   // Clear the free-preview flag (if set) before/while pricing, since a priced
   // episode is not a free preview.
   const clearFreePreview = async () => {
-    if (!episode.isFreePreview) return ip.version;
+    if (!draftBase.isFreePreview) return draftBase.version;
     const result = await updateEpisode.mutateAsync({
       ipId: ip.id,
       episodeId: episode.id,
       isFreePreview: false,
-      expectedVersion: ip.version,
+      expectedVersion: draftBase.version,
     });
+    setDraftBase({ version: result.ip.version, isFreePreview: false });
     return result.ip.version;
   };
 
@@ -2021,7 +2035,7 @@ export function EpisodePriceEditor({
             size="sm"
             variant={serverState === "priced" ? "outline" : "solid"}
             color={serverState === "priced" ? "muted" : "primary"}
-            onClick={() => setEditing(true)}
+            onClick={beginEdit}
             disabled={busy}
           >
             <IconCoin className="size-3.5" />
