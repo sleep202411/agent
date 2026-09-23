@@ -1593,6 +1593,7 @@ function PermissionSummary({
   const actorIds = (permissionEvents.data ?? []).map((event) => event.actorUserId);
   const displays = useUserDisplays([...new Set([...memberIds, ...actorIds])]);
   const [editing, setEditing] = useState(false);
+  const savePending = useRef(false);
   const [restricted, setRestricted] = useState(false);
   const [draftGrants, setDraftGrants] = useState<
     Array<{ userId: string; permission: CrewAssetPermission }>
@@ -1612,7 +1613,8 @@ function PermissionSummary({
 
   const save = async () => {
     const current = permissions.data;
-    if (!current) return;
+    if (!current || savePending.current) return;
+    savePending.current = true;
     try {
       await setPermissions.mutateAsync({
         nodeId: asset.id,
@@ -1624,6 +1626,8 @@ function PermissionSummary({
       toast.success(t("permissionsSaved"));
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      savePending.current = false;
     }
   };
 
@@ -1690,6 +1694,7 @@ function PermissionSummary({
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border/60 p-2.5">
             <input
               type="checkbox"
+              disabled={setPermissions.isPending}
               checked={restricted}
               onChange={(event) => setRestricted(event.target.checked)}
               className="mt-0.5 size-3.5 accent-primary"
@@ -1722,6 +1727,7 @@ function PermissionSummary({
                       {displayNameOf(member.userId, displays)}
                     </span>
                     <NativeSelect
+                      disabled={setPermissions.isPending}
                       value={permission}
                       onChange={(nextValue) =>
                         updateGrant(member.userId, nextValue as CrewAssetPermission | "none")
@@ -1746,6 +1752,7 @@ function PermissionSummary({
           <div className="flex justify-end gap-2">
             <button
               type="button"
+              disabled={setPermissions.isPending}
               onClick={() => setEditing(false)}
               className="h-7 rounded-md px-2 text-[10px] font-semibold text-muted-foreground hover:bg-secondary"
             >
