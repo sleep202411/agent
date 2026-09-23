@@ -68,7 +68,7 @@ const term = {
   label: "Original",
   status: "active",
   displayOrder: 1,
-  localizations: [{ locale: "en-US", label: "Original" }],
+  localizations: [{ locale: "en-US", label: "Original", aliases: [], description: null }],
   assignmentCount: 0,
 } as IpTaxonomyTerm;
 const view = () => (
@@ -165,6 +165,47 @@ it("retains loaded terms through refresh failure and retries", async () => {
   expect(container.textContent).toContain("Read unavailable");
   await act(async () => click("刷新词库"));
   expect(container.textContent).not.toContain("one");
+});
+
+it("preserves each language's aliases when editing a taxonomy label", async () => {
+  fetchMock.mockResolvedValue(response({ items: [term] }));
+  await render(
+    <IpTaxonomyPanel
+      siteLabel="Global"
+      databaseLabel="Fixture"
+      initialError={null}
+      initialTaxonomy={{
+        items: [
+          {
+            ...term,
+            localizations: [
+              {
+                locale: "en-US",
+                label: "Original",
+                aliases: ["Science fiction"],
+                description: null,
+              },
+              { locale: "zh-CN", label: "科幻", aliases: ["科学幻想"], description: null },
+            ],
+          },
+        ],
+      }}
+    />
+  );
+  await act(async () => click("编辑"));
+  await input("English label", "Updated label");
+  await act(async () => click("保存词条"));
+  const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+  expect(payload.localizations).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        locale: "en-US",
+        label: "Updated label",
+        aliases: ["Science fiction"],
+      }),
+      expect.objectContaining({ locale: "zh-CN", aliases: ["科学幻想"] }),
+    ])
+  );
 });
 
 it.each([false, true])(
