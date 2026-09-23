@@ -125,6 +125,7 @@ let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
 let movedSecond = false;
 let refreshedAsset = false;
+let trashFails = false;
 
 function installFetch() {
   vi.stubGlobal(
@@ -274,7 +275,11 @@ function installFetch() {
           { status: 201 }
         );
       }
+      if (method === "POST" && trashFails && url.endsWith("/assets/file-1/restore"))
+        return jsonResponse({ message: "Asset temporarily unavailable" }, { status: 503 });
       if (method === "PUT" || method === "POST") return jsonResponse({ favorite: true });
+      if (method === "DELETE" && trashFails && url.endsWith("/assets/file-1"))
+        return jsonResponse({ message: "Asset temporarily unavailable" }, { status: 503 });
       if (method === "DELETE") return new Response(null, { status: 204 });
       throw new Error(`Unhandled request: ${method} ${url}`);
     })
@@ -351,6 +356,7 @@ afterEach(() => {
   bulkMove = false;
   movedSecond = false;
   refreshedAsset = false;
+  trashFails = false;
   vi.clearAllMocks();
   act(() => root?.unmount());
   container?.remove();
@@ -524,6 +530,43 @@ describe("crew asset center", () => {
       expectedVersion: 1,
       grants: [],
     });
+  });
+
+  it("locks the permission draft while saving and retains it after failure", async () => {
+    await render();
+    const originalFetch = globalThis.fetch;
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/assets/file-1/permissions") && init?.method === "PUT") {
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      return originalFetch(input, init);
+    });
+    await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await click(byText("button", "Manage access"));
+    const restricted = document.querySelector<HTMLInputElement>(
+      'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+    )!;
+    await click(restricted);
+    await click(byText("button", "Save access"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(restricted.disabled).toBe(true);
+    expect((byText("button", "Cancel") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => finish(jsonResponse({ message: "Save unavailable" }, { status: 503 })));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(restricted.disabled).toBe(false);
+    expect(restricted.checked).toBe(true);
+    expect((byText("button", "Cancel") as HTMLButtonElement).disabled).toBe(false);
+    expect(byText("button", "Save access")).toBeTruthy();
   });
 
   it("requires confirmation before permanent deletion from Trash", async () => {
@@ -744,4 +787,78 @@ it("keeps the original rename version when assets refresh during editing", async
   ).toMatchObject({
     expectedUpdatedAt: "2026-09-23T10:00:00.000Z",
   });
+});
+
+it.each(["trash", "restore"])(
+  "retries only failed assets after partial bulk %s",
+  async (action) => {
+    const suffix = action === "restore" ? "/restore" : "";
+    const method = action === "restore" ? "POST" : "DELETE";
+    const label = action === "restore" ? "Restore" : "Delete";
+    trashFails = true;
+    await render();
+    if (action === "restore") {
+      await click(byText("button", "Trash"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    await act(async () => {
+      document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.click();
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.click();
+    });
+    await click(byText("button", label));
+    expect(document.body.textContent).toContain("1 selected");
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.checked
+    ).toBe(false);
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.checked
+    ).toBe(true);
+    trashFails = false;
+    await click(byText("button", label));
+    expect(
+      requests.filter((r) => r.method === method && r.url.endsWith(`/assets/folder-1${suffix}`))
+    ).toHaveLength(1);
+    expect(
+      requests.filter((r) => r.method === method && r.url.endsWith(`/assets/file-1${suffix}`))
+    ).toHaveLength(2);
+  }
+);
+
+it("clears checked assets when the search changes", async () => {
+  await render();
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.click()
+  );
+  const search = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]')!;
+  expect(search).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "concept"
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')?.checked
+  ).not.toBe(true);
+  expect(document.body.textContent).not.toContain("1 selected");
+});
+
+it("clears checked assets when the type filter hides them", async () => {
+  await render();
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.click()
+  );
+  const filter = document.querySelector<HTMLElement>('[aria-label="Filter by type"]')!;
+  await act(async () =>
+    filter.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  );
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent === "Video"
+  )!;
+  expect(option).toBeDefined();
+  await click(option);
+  expect(document.body.textContent).not.toContain("1 selected");
 });

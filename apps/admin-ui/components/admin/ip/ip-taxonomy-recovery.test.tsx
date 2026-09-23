@@ -61,16 +61,29 @@ vi.mock("@/components/ui/button", () => ({
 let root: Root | undefined;
 let container: HTMLDivElement;
 const fetchMock = vi.fn();
-const term = {
+const term: IpTaxonomyTerm = {
   id: "one",
   type: "genre",
   code: "genre",
   label: "Original",
   status: "active",
   displayOrder: 1,
-  localizations: [{ locale: "en-US", label: "Original" }],
+  localizations: [{ locale: "en-US", label: "Original", aliases: [], description: null }],
   assignmentCount: 0,
-} as IpTaxonomyTerm;
+  description: null,
+  aliases: [],
+  localization: {
+    requestedLocale: "en-US",
+    locale: "en-US",
+    sourceLocale: "en-US",
+    isFallback: false,
+    availableLocales: ["en-US"],
+    status: null,
+  },
+  createdAt: null,
+  updatedAt: null,
+  archivedAt: null,
+};
 const view = () => (
   <IpTaxonomyPanel
     siteLabel="Global"
@@ -166,3 +179,93 @@ it("retains loaded terms through refresh failure and retries", async () => {
   await act(async () => click("刷新词库"));
   expect(container.textContent).not.toContain("one");
 });
+
+it.each(["1.5", "12wrong", "", "-1", "1000001"])(
+  "does not submit invalid taxonomy order %j",
+  async (order) => {
+    fetchMock.mockResolvedValue(response({ items: [term] }));
+    await render(view());
+    await act(async () => click("新增词条"));
+    await input("English label", "New label");
+    await input("排序", order);
+    await act(async () => click("创建词条"));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.querySelector('input[placeholder="排序"]')?.getAttribute("aria-invalid")).toBe(
+      "true"
+    );
+    expect(container.textContent).toContain("Enter a whole number from 0 to 1,000,000.");
+  }
+);
+
+it.each(["0", "1000000", "1e3"])("submits the exact numeric taxonomy order %s", async (order) => {
+  fetchMock.mockResolvedValue(response({ items: [term] }));
+  await render(view());
+  await act(async () => click("编辑"));
+  await input("排序", order);
+  await act(async () => click("保存词条"));
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).displayOrder).toBe(Number(order));
+});
+
+it("preserves each language's aliases when editing a taxonomy label", async () => {
+  fetchMock.mockResolvedValue(response({ items: [term] }));
+  await render(
+    <IpTaxonomyPanel
+      siteLabel="Global"
+      databaseLabel="Fixture"
+      initialError={null}
+      initialTaxonomy={{
+        items: [
+          {
+            ...term,
+            localizations: [
+              {
+                locale: "en-US",
+                label: "Original",
+                aliases: ["Science fiction"],
+                description: null,
+              },
+              { locale: "zh-CN", label: "科幻", aliases: ["科学幻想"], description: null },
+            ],
+          },
+        ],
+      }}
+    />
+  );
+  await act(async () => click("编辑"));
+  await input("English label", "Updated label");
+  await act(async () => click("保存词条"));
+  const payload = JSON.parse(fetchMock.mock.calls[0][1].body);
+  expect(payload.localizations).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        locale: "en-US",
+        label: "Updated label",
+        aliases: ["Science fiction"],
+      }),
+      expect.objectContaining({ locale: "zh-CN", aliases: ["科学幻想"] }),
+    ])
+  );
+});
+
+it.each([false, true])(
+  "closes an accepted save when list refresh fails (editing=%s)",
+  async (editing) => {
+    fetchMock
+      .mockResolvedValueOnce(response({ term }))
+      .mockRejectedValueOnce(new Error("Refresh unavailable"))
+      .mockResolvedValueOnce(response({ items: [term] }));
+    await render(view());
+    await act(async () => click(editing ? "编辑" : "新增词条"));
+    await input("English label", "Saved label");
+    await act(async () => click(editing ? "保存词条" : "创建词条"));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.textContent).toContain("Refresh unavailable");
+    expect(container.textContent).toContain("one");
+    await act(async () => click("刷新词库"));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST" || init?.method === "PATCH")
+    ).toHaveLength(1);
+    expect(container.textContent).not.toContain("Refresh unavailable");
+  }
+);
