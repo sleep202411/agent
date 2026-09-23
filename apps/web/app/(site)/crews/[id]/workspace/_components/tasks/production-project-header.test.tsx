@@ -171,3 +171,46 @@ describe("ProductionProjectHeader project identity", () => {
     ).toBe(true);
   });
 });
+
+it.each([
+  ["projectInfo.nameLabel", "New crew name", "name"],
+  ["projectInfo.summaryLabel", "New project summary", "tagline"],
+])("retains a failed %s draft and allows retry without retyping", async (label, draft, field) => {
+  renderHeader();
+  state.updateCrew.mockRejectedValueOnce(new Error("Connection interrupted"));
+  const input = container!.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  await act(async () => {
+    input.focus();
+    changeInput(input, draft);
+  });
+  await act(async () => input.blur());
+  expect(input.value).toBe(draft);
+  expect(state.updateCrew).toHaveBeenCalledTimes(1);
+  await act(async () => input.focus());
+  await act(async () => input.blur());
+  expect(state.updateCrew).toHaveBeenCalledTimes(2);
+  expect(state.updateCrew).toHaveBeenLastCalledWith({
+    id: "crew-1",
+    expectedVersion: 7,
+    [field]: draft,
+  });
+});
+
+it("still lets Escape discard a failed draft without sending another request", async () => {
+  renderHeader();
+  state.updateCrew.mockRejectedValueOnce(new Error("Connection interrupted"));
+  const input = container!.querySelector<HTMLInputElement>(
+    'input[aria-label="projectInfo.nameLabel"]'
+  )!;
+  await act(async () => {
+    input.focus();
+    changeInput(input, "Unsaved name");
+  });
+  await act(async () => input.blur());
+  await act(async () => {
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(input.value).toBe("Original crew");
+  expect(state.updateCrew).toHaveBeenCalledTimes(1);
+});
