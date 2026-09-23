@@ -241,3 +241,62 @@ describe('PositionsService.list', () => {
     );
   });
 });
+
+describe('PositionsService.update recruitment status', () => {
+  function editor(status: 'open' | 'frozen' | 'full', recruitedCount: number) {
+    const before = { ...position('position-1'), status, recruitedCount };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      crewPosition: {
+        findFirst: jest.fn().mockResolvedValue(before),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Partial<typeof before> }) =>
+            Promise.resolve({ ...before, ...data }),
+          ),
+      },
+    };
+    const db = {
+      $transaction: (work: (value: typeof tx) => Promise<unknown>) => work(tx),
+    };
+    const service = new PositionsService(
+      db as never,
+      { require: jest.fn().mockResolvedValue({}) } as never,
+    );
+    return { service, tx };
+  }
+
+  it('keeps a full closed position hidden when editing its description', async () => {
+    const { service } = editor('frozen', 2);
+    const result = await service.update('crew-1', 'position-1', 'owner-1', {
+      description: 'Updated description',
+      targetCount: 2,
+    });
+    expect(result.status).toBe('frozen');
+    expect(result.description).toBe('Updated description');
+  });
+
+  it('honors an explicit close while increasing capacity on a full position', async () => {
+    const { service } = editor('full', 2);
+    const result = await service.update('crew-1', 'position-1', 'owner-1', {
+      status: 'frozen',
+      targetCount: 3,
+    });
+    expect(result.status).toBe('frozen');
+  });
+
+  it.each([
+    ['full', 2, 3, 'open'],
+    ['open', 2, 2, 'full'],
+    ['frozen', 1, 3, 'frozen'],
+  ] as const)(
+    'derives capacity without losing closed intent (%s)',
+    async (status, recruitedCount, targetCount, expected) => {
+      const { service } = editor(status, recruitedCount);
+      const result = await service.update('crew-1', 'position-1', 'owner-1', {
+        targetCount,
+      });
+      expect(result.status).toBe(expected);
+    },
+  );
+});

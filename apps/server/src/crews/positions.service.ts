@@ -394,7 +394,8 @@ export class PositionsService {
       }
 
       let nextStatus = input.status ?? pos.status;
-      if (input.targetCount !== undefined) {
+      // Closing is explicit owner intent; capacity edits must not publish it again.
+      if (input.targetCount !== undefined && nextStatus !== 'frozen') {
         const tc = input.targetCount;
         if (pos.recruitedCount >= tc) nextStatus = 'full';
         else if (pos.status === 'full' && pos.recruitedCount < tc)
