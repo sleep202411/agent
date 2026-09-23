@@ -749,6 +749,45 @@ it("rebuilds asset pages after a cursor rejection instead of replaying the inval
   await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
 });
 
+it("blocks duplicate folder creation and retains a failed draft for retry", async () => {
+  await render();
+  const original = globalThis.fetch;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const create = vi.fn(() => pending);
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    init?.method === "POST" && String(input).endsWith("/assets/folders")
+      ? create()
+      : original(input, init)
+  );
+  await click(byText("button", "New folder"));
+  const input = document.querySelector<HTMLInputElement>('input[placeholder="Folder name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "References"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const form = input.closest("form")!;
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(input.disabled).toBe(true);
+  await act(async () => finish(jsonResponse({ message: "Create unavailable" }, { status: 503 })));
+  expect(input.value).toBe("References");
+  expect(input.disabled).toBe(false);
+  vi.stubGlobal("fetch", original);
+  await act(async () =>
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  );
+  expect(document.querySelector('input[placeholder="Folder name"]')).toBeNull();
+});
+
 it("blocks restricted-access saves and retries a failed member list", async () => {
   memberReadFails = true;
   await render();
