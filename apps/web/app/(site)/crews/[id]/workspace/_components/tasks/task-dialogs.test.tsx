@@ -1,3 +1,4 @@
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -228,4 +229,26 @@ it("disables loading more attachments while a request is in flight", () => {
   )!;
   expect(more.disabled).toBe(true);
   assetQuery.isFetching = false;
+});
+
+it("restarts expired asset pagination without losing the delivery draft", async () => {
+  render("task-1");
+  act(() => {
+    fill("Delivery draft");
+    document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click();
+  });
+  assetQuery.hasNextPage = true;
+  assetQuery.isFetchNextPageError = true;
+  assetQuery.error = new CrewApiError(400, {
+    code: "CREW_ASSET_CURSOR_INVALID",
+    message: "Restart assets",
+  });
+  render("task-1");
+  await act(async () =>
+    [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "retry")!.click()
+  );
+  expect(assetQuery.refetch).toHaveBeenCalledTimes(1);
+  expect(assetQuery.fetchNextPage).not.toHaveBeenCalled();
+  expect(document.querySelector("textarea")!.value).toBe("Delivery draft");
+  expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
 });

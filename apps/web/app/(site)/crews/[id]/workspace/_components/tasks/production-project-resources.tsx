@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
 import { useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -268,7 +270,8 @@ function ResourcePicker({ crewId }: { crewId: string }) {
                     size="sm"
                     disabled={assets.isFetching}
                     onClick={() =>
-                      void (assets.isFetchNextPageError
+                      void (assets.isFetchNextPageError &&
+                      !isCrewCursorError(assets.error, "CREW_ASSET_CURSOR_INVALID")
                         ? assets.fetchNextPage({ cancelRefetch: false })
                         : assets.refetch())
                     }
@@ -288,7 +291,7 @@ function ResourcePicker({ crewId }: { crewId: string }) {
                   <span className="truncate">{asset.name}</span>
                 </button>
               ))}
-              {assets.hasNextPage ? (
+              {assets.hasNextPage && !assets.isFetchNextPageError ? (
                 <Button
                   type="button"
                   variant="ghost"

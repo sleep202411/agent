@@ -1,4 +1,6 @@
 "use client";
+
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { TaskCommitments } from "@/app/(site)/crews/_components/accountability/task-commitments";
 
 import { TaskDeliveryTemplatePanel } from "./task-delivery-template";
@@ -1254,7 +1256,8 @@ function CommentComposer({
                 size="sm"
                 disabled={saving || recentAssets.isFetching}
                 onClick={() =>
-                  void (recentAssets.isFetchNextPageError
+                  void (recentAssets.isFetchNextPageError &&
+                  !isCrewCursorError(recentAssets.error, "CREW_ASSET_CURSOR_INVALID")
                     ? recentAssets.fetchNextPage({ cancelRefetch: false })
                     : recentAssets.refetch())
                 }

@@ -1,3 +1,4 @@
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -165,4 +166,20 @@ it("preserves loaded assets and retries the failed next page", async () => {
   });
   expect(state.next).toHaveBeenCalledWith({ cancelRefetch: false });
   expect(state.refetch).not.toHaveBeenCalled();
+});
+
+it("restarts asset discovery when the continuation cursor was invalidated", async () => {
+  state.error = new CrewApiError(400, {
+    code: "CREW_ASSET_CURSOR_INVALID",
+    message: "Restart assets",
+  });
+  state.nextError = true;
+  await render();
+  await assetMode();
+  await act(async () => {
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click();
+  });
+  expect(state.refetch).toHaveBeenCalledTimes(1);
+  expect(state.next).not.toHaveBeenCalled();
+  expect(more()).toBeUndefined();
 });
