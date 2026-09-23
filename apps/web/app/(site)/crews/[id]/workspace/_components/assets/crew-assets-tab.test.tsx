@@ -123,6 +123,7 @@ let canLink = true;
 let permissionReadFails = false;
 let linkFails = false;
 let linkedWorkspaceId: string | null = null;
+let folderReadFails = false;
 let bulkMove = false;
 let movedSecond = false;
 let memberReadFails = false;
@@ -234,7 +235,11 @@ function installFetch() {
           parentId: "folder-1",
         });
       }
-      if (method === "GET" && url.endsWith("/assets/folders")) return jsonResponse([ROOT_ITEMS[0]]);
+      if (method === "GET" && url.endsWith("/assets/folders")) {
+        if (folderReadFails)
+          return jsonResponse({ message: "Folders unavailable" }, { status: 503 });
+        return jsonResponse([ROOT_ITEMS[0]]);
+      }
       if (method === "GET" && url.includes("/assets")) {
         if (assetListFails)
           return jsonResponse({ message: "Refresh unavailable" }, { status: 503 });
@@ -360,6 +365,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  folderReadFails = false;
   bulkMove = false;
   movedSecond = false;
   memberReadFails = false;
@@ -391,6 +397,9 @@ describe("crew asset center", () => {
     await click(document.querySelector<HTMLInputElement>('input[aria-label="Select second.png"]')!);
     await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
     const form = document.querySelector('[data-slot="dialog-content"] form')!;
+    await vi.waitFor(() =>
+      expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
+    );
     await act(async () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -976,4 +985,28 @@ it("clears checked assets when the type filter hides them", async () => {
   expect(option).toBeDefined();
   await click(option);
   expect(document.body.textContent).not.toContain("1 selected");
+});
+
+it("shows destination read failure and retries before allowing a move", async () => {
+  folderReadFails = true;
+  await render();
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-slot="dialog-content"]')?.textContent).toContain(
+      "Folders unavailable"
+    )
+  );
+  const form = document.querySelector('[data-slot="dialog-content"] form')!;
+  expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+  folderReadFails = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() =>
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
+  );
+  expect(form.textContent).not.toContain("Folders unavailable");
 });
