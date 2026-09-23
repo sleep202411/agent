@@ -180,6 +180,29 @@ describe("CrewTransfersProvider", () => {
     expect(uploadMock).toHaveBeenCalledTimes(4);
   });
 
+  it("does not start queued uploads after leaving the workspace", async () => {
+    const signals: AbortSignal[] = [];
+    uploadMock.mockImplementation((_file: File, options: { signal: AbortSignal }) => {
+      signals.push(options.signal);
+      return new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () =>
+          reject(new DOMException("Upload aborted", "AbortError"))
+        );
+      });
+    });
+    await render(4);
+    await click(document.querySelector("button")!);
+    expect(uploadMock).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      root!.unmount();
+      root = null;
+    });
+    await flush();
+    expect(signals.slice(0, 3).every((signal) => signal.aborted)).toBe(true);
+    expect(uploadMock).toHaveBeenCalledTimes(3);
+    expect(attachMock).not.toHaveBeenCalled();
+  });
+
   it("retries only the asset attach step after bytes were already confirmed", async () => {
     uploadMock.mockResolvedValue({
       mediaAssetId: "media-1",

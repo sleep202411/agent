@@ -190,6 +190,7 @@ export function CrewTransfersProvider({
   }, [executeTransfer]);
 
   const pump = useCallback(() => {
+    if (!mountedRef.current) return;
     const available = MAX_PARALLEL_TRANSFERS - controllersRef.current.size;
     if (available <= 0) return;
     const queued = jobsRef.current.filter((job) => job.status === "queued").slice(0, available);
