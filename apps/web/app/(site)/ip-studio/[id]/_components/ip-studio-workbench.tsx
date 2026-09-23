@@ -533,7 +533,7 @@ function EpisodesPanel({
   );
 }
 
-function EpisodeManager({
+export function EpisodeManager({
   ip,
   t,
   onOpenPricing,
@@ -546,7 +546,6 @@ function EpisodeManager({
   const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
   const episodes = ip.episodes ?? [];
   const editingEpisode = episodes.find((episode) => episode.id === editingEpisodeId) ?? null;
-  const nextEpisodeNo = episodes.reduce((max, episode) => Math.max(max, episode.episodeNo), 0) + 1;
 
   return (
     <div className="space-y-3">
@@ -608,7 +607,7 @@ function EpisodeManager({
       </div>
 
       <EpisodeUpsertDialog
-        key={`create:${createDialogOpen}:${nextEpisodeNo}:${ip.version}`}
+        key={`create:${ip.id}:${createDialogOpen}`}
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         ip={ip}
@@ -616,7 +615,7 @@ function EpisodeManager({
       />
       {editingEpisode ? (
         <EpisodeUpsertDialog
-          key={`edit:${editingEpisode.id}:${ip.version}`}
+          key={`edit:${ip.id}:${editingEpisode.id}`}
           open={Boolean(editingEpisode)}
           onOpenChange={(open) => {
             if (!open) setEditingEpisodeId(null);
@@ -656,6 +655,8 @@ function EpisodeUpsertDialog({
   episode?: StudioEpisode;
   t: Translate;
 }) {
+  // Preserve the concurrency version belonging to this open draft.
+  const [expectedVersion] = useState(ip.version);
   const oldT = useTranslations("ipEdit");
   const commonT = useTranslations("common");
   const createEpisode = useCreateIpCommerceEpisode();
@@ -853,7 +854,7 @@ function EpisodeUpsertDialog({
           isFreePreview: draft.isFreePreview,
           coverAssetId: draft.coverAssetId,
           mediaAssetId: draft.mediaAssetId,
-          expectedVersion: ip.version,
+          expectedVersion,
         });
         toast.success(t("episodesPanel.toasts.saved"));
       } else {
@@ -868,7 +869,7 @@ function EpisodeUpsertDialog({
           isFreePreview: draft.isFreePreview,
           coverAssetId: draft.coverAssetId ?? undefined,
           mediaAssetId: draft.mediaAssetId ?? undefined,
-          expectedVersion: ip.version,
+          expectedVersion,
         });
         toast.success(t("episodesPanel.toasts.created"));
       }
@@ -2634,22 +2635,35 @@ function UserSearchPicker({
   const [account, setAccount] = useState("");
   const [results, setResults] = useState<IpUserSearchHit[]>([]);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const lookupVersion = useRef(0);
+
+  useEffect(
+    () => () => {
+      lookupVersion.current += 1;
+    },
+    []
+  );
 
   const handleSearch = async () => {
     const value = account.trim();
     if (!value) return;
+    const version = ++lookupVersion.current;
     setLookupError(null);
+    setResults([]);
     try {
       const hits = await search.mutateAsync(value);
+      if (version !== lookupVersion.current) return;
       setResults(hits);
       if (hits.length === 0) setLookupError(t("membersPanel.lookupNotFound"));
     } catch (err) {
+      if (version !== lookupVersion.current) return;
       setResults([]);
       setLookupError(errorMessage(err) || t("membersPanel.lookupFailed"));
     }
   };
 
   const handleSelect = (hit: IpUserSearchHit) => {
+    lookupVersion.current += 1;
     onSelect(hit);
     setAccount("");
     setResults([]);
@@ -2657,6 +2671,7 @@ function UserSearchPicker({
   };
 
   const handleClear = () => {
+    lookupVersion.current += 1;
     onClear();
     setAccount("");
     setResults([]);
@@ -2686,7 +2701,9 @@ function UserSearchPicker({
         <Input
           value={account}
           onChange={(event) => {
+            lookupVersion.current += 1;
             setAccount(event.target.value);
+            setResults([]);
             setLookupError(null);
           }}
           onKeyDown={(event) => {

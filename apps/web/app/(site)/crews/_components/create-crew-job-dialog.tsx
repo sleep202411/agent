@@ -200,10 +200,10 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
   const pendingApplicantCount = applications.summary?.pending ?? 0;
 
   // ─── Per-step validation ──────────
-  const parsedCount = Number.parseInt(count, 10);
+  const parsedCount = Number(count);
   const parsedMin = salaryMin === "" ? null : Number.parseFloat(salaryMin);
   const parsedMax = salaryMax === "" ? null : Number.parseFloat(salaryMax);
-  const parsedDuration = durationMonths === "" ? null : Number.parseInt(durationMonths, 10);
+  const parsedDuration = durationMonths === "" ? null : Number(durationMonths);
   const parsedShare = revenueSharePercent === "" ? null : Number.parseFloat(revenueSharePercent);
   const needsLocation = workMode !== "remote";
   const locationOk = !needsLocation || location.trim().length > 0;
@@ -213,7 +213,7 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
   // actually typed something. Server enforces the hard caps in zod.
   const durationOk =
     parsedDuration == null ||
-    (Number.isFinite(parsedDuration) && parsedDuration >= 1 && parsedDuration <= 60);
+    (Number.isInteger(parsedDuration) && parsedDuration >= 1 && parsedDuration <= 60);
   const shareOk =
     parsedShare == null ||
     (Number.isFinite(parsedShare) &&
@@ -221,12 +221,8 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
       parsedShare <= 50 &&
       Math.round(parsedShare * 2) === parsedShare * 2);
 
-  const step1Valid =
-    positionType.length > 0 &&
-    description.trim().length > 0 &&
-    Number.isFinite(parsedCount) &&
-    parsedCount >= 1 &&
-    parsedCount <= 99;
+  const countOk = Number.isInteger(parsedCount) && parsedCount >= 1 && parsedCount <= 99;
+  const step1Valid = positionType.length > 0 && description.trim().length > 0 && countOk;
   const step2Valid = locationOk;
   const step3Valid = salaryRangeOk && durationOk && shareOk;
 
@@ -381,10 +377,17 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
                   inputMode="numeric"
                   min={1}
                   max={99}
+                  step={1}
+                  aria-invalid={!countOk}
                   value={count}
                   onChange={(e) => setCount(e.target.value)}
                   disabled={submitting}
                 />
+                {!countOk ? (
+                  <p role="alert" className="mt-1 text-xs text-destructive">
+                    {t("createJobNumberError")}
+                  </p>
+                ) : null}
               </Field>
 
               <Field>
@@ -601,6 +604,7 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
                   inputMode="numeric"
                   min={1}
                   max={60}
+                  aria-invalid={!durationOk}
                   step={1}
                   value={durationMonths}
                   onChange={(e) => setDurationMonths(e.target.value)}
@@ -610,7 +614,9 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
                 />
                 <p className="mt-1 text-xs text-muted-foreground">{t("createJobDurationHint")}</p>
                 {!durationOk ? (
-                  <p className="mt-1 text-xs text-rose-400">{t("createJobDurationError")}</p>
+                  <p role="alert" className="mt-1 text-xs text-destructive">
+                    {t("createJobDurationError")}
+                  </p>
                 ) : null}
               </Field>
 
