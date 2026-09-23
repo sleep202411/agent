@@ -195,5 +195,11 @@ it('rejects stale retry after the actor photo was replaced', async () => {
   });
   await expect(
     service.use('member', actorId, projectId, requestId),
-  ).rejects.toThrow('photo changed');
+  ).rejects.toMatchObject({
+    response: {
+      code: 'AI_ACTOR_PHOTO_CHANGED',
+      message: 'The actor photo changed. Start a new use.',
+    },
+  });
+  expect(tx.aiActorUse.create).not.toHaveBeenCalled();
 });
