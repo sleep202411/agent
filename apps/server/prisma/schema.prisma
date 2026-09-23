@@ -3571,7 +3571,10 @@ enum IpChannelType {
 }
 
 model Ip {
-  channelType IpChannelType @default(community) @map("channel_type")
+  submissionSettings IpChannelSubmissionSettings?
+  incomingWorks IpChannelSubmission[] @relation("ChannelWorks")
+  submittedToChannels IpChannelSubmission[] @relation("SubmittedWorks")
+  channelType IpChannelType @default(ip) @map("channel_type")
   gameAssociations       IpGameAssociationRevision[]
   stageApplications      IpStageApplication[]
   productionStage        IpProductionStage?
@@ -10342,4 +10345,31 @@ model AiActorUse {
 
   @@index([actorId, createdAt, id])
   @@map("ai_actor_uses")
+}
+
+
+model IpChannelSubmissionSettings {
+  ipId String @id @map("ip_id") @db.Uuid
+  open Boolean @default(false)
+  updatedById String @map("updated_by_id") @db.VarChar(64)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  ip Ip @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  @@map("ip_channel_submission_settings")
+}
+
+model IpChannelSubmission {
+  id String @id @db.Uuid
+  channelId String @map("channel_id") @db.Uuid
+  workId String @map("work_id") @db.Uuid
+  submittedById String @map("submitted_by_id") @db.VarChar(64)
+  status String @default("pending")
+  version Int @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedById String? @map("reviewed_by_id") @db.VarChar(64)
+  reviewedAt DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  channel Ip @relation("ChannelWorks", fields: [channelId], references: [id], onDelete: Cascade)
+  work Ip @relation("SubmittedWorks", fields: [workId], references: [id], onDelete: Cascade)
+  @@unique([channelId, workId])
+  @@index([channelId, createdAt(sort: Desc), id(sort: Desc)], map: "ip_channel_submissions_recent")
+  @@map("ip_channel_submissions")
 }

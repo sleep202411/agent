@@ -14,6 +14,7 @@ import { EpisodeFeedback } from "@/app/(site)/ips/_components/episode-feedback";
 
 import { TvGames } from "./tv-games";
 import { TvStage } from "./tv-stage";
+import stageStyles from "./tv-stage.module.css";
 import { TvIpList } from "./tv-ip-list";
 import { TvInfoBar } from "./tv-info-bar";
 import { TvEmptyState, TvErrorState, TvLoadingState } from "./tv-empty";
@@ -28,17 +29,10 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const tv = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const [channelType, setChannelType] = useState<"ip" | "community">("ip");
   const [mode, setMode] = useState<"videos" | "games">("videos");
   return (
     <div className="flex min-h-full min-w-0 max-w-full flex-col lg:h-full lg:min-h-0 bg-[#0c0e13] text-white">
-      <TvCatalogToolbar
-        mode={mode}
-        channelType={channelType}
-        onModeChange={setMode}
-        onChannelChange={setChannelType}
-        onCreate={() => setCreateOpen(true)}
-      />
+      <TvCatalogToolbar mode={mode} onModeChange={setMode} onCreate={() => setCreateOpen(true)} />
       <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
       {mode === "games" && !embedded && (
         <button
@@ -52,11 +46,7 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
       )}
       {mode === "videos" ? (
         <>
-          <TvVideoApp
-            key={`${user?.id ?? "guest"}:${channelType}`}
-            embedded={embedded}
-            channelType={channelType}
-          />
+          <TvVideoApp key={user?.id ?? "guest"} embedded={embedded} />
         </>
       ) : (
         <TvGames />
@@ -65,13 +55,7 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-function TvVideoApp({
-  embedded = false,
-  channelType,
-}: {
-  embedded?: boolean;
-  channelType: "ip" | "community";
-}) {
+function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
@@ -94,7 +78,7 @@ function TvVideoApp({
     fetchNextPage,
     fetchNextChannels,
     isFetchingNextPage,
-  } = useTvIps({ q: debouncedSearch, channelType });
+  } = useTvIps({ q: debouncedSearch });
   const [episodeChoice, setEpisodeChoice] = useState<{ ipId: string; episodeId: string } | null>(
     null
   );
@@ -208,7 +192,7 @@ function TvVideoApp({
         aria-label={t("playerTitle")}
         className="relative flex min-w-0 shrink-0 flex-col lg:flex-1 lg:overflow-hidden"
       >
-        <div className="relative aspect-video shrink-0 lg:aspect-auto lg:min-h-0 lg:flex-1">
+        <div className={`${stageStyles.viewport} relative aspect-video shrink-0 lg:aspect-auto lg:min-h-0 lg:flex-1`}>
           {item ? (
             <TvStage
               item={playbackItem!}

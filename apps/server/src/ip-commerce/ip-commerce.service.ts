@@ -2188,7 +2188,7 @@ export class IpCommerceService {
     const ip = await this.prisma.$transaction(async (tx) => {
       const created = await tx.ip.create({
         data: {
-          channelType: input.channelType ?? 'community',
+          channelType: 'ip',
           status: IpPublicationStatus.draft,
           listingVisibility: IpListingVisibility.private,
           sourceLocale,

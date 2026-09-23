@@ -1,3 +1,8 @@
+import { ChannelSubmissionsAdminController } from './channel-submissions-admin.controller';
+import {
+  ChannelSubmissionsService,
+  ChannelSubmissionsController,
+} from './channel-submissions';
 import {
   IpGameAssociationController,
   IpGameAssociationService,
@@ -51,6 +56,8 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     LegacyMysqlModule,
   ],
   controllers: [
+    ChannelSubmissionsAdminController,
+    ChannelSubmissionsController,
     IpGameAssociationController,
     ViewerAssistanceController,
     IpStageApplicationsController,
@@ -69,6 +76,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     CreatorTrustController,
   ],
   providers: [
+    ChannelSubmissionsService,
     IpGameAssociationService,
     IpStageApplicationsService,
     CrewAuthorizationService,

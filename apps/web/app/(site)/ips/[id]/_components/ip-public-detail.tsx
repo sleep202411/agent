@@ -1,4 +1,5 @@
 "use client";
+import { ChannelSubmissions } from "../../_components/channel-submissions";
 import { IpFanCommunity } from "../../_components/ip-fan-community";
 
 import { IpEngagementActions } from "./ip-engagement-actions";
@@ -547,6 +548,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   </ActionButton>
                 </IpEngagementActions>
                 {!detailIp.previewMode && <IpFanCommunity ipId={detailIp.id} />}
+                {!detailIp.previewMode && <ChannelSubmissions ipId={detailIp.id} />}
               </div>
 
               <PurchasePanel

@@ -48,15 +48,23 @@ it('defaults existing records to community without changing publication', async 
   }
 }, 30000);
 it('validates category choices and requires an Admin version', () => {
-  for (const channelType of ['ip', 'community'])
+  for (const channelType of ['ip', 'community']) {
     expect(
-      CreateIpDraftSchema.parse({
+      CreateIpDraftSchema.safeParse({
         title: 'Test',
         genreCodes: ['drama'],
         sourceLocale: 'en-US',
         channelType,
-      }).channelType,
-    ).toBe(channelType);
+      }).success,
+    ).toBe(false);
+  }
+  expect(
+    CreateIpDraftSchema.safeParse({
+      title: 'Test',
+      genreCodes: ['drama'],
+      sourceLocale: 'en-US',
+    }).success,
+  ).toBe(true);
   expect(ListIpsQuerySchema.safeParse({ channelType: 'other' }).success).toBe(
     false,
   );
@@ -129,4 +137,32 @@ it('reclassifies without changing publication and rejects stale versions', async
       expectedVersion: 3,
     }),
   ).rejects.toBeInstanceOf(ConflictException);
+});
+
+it('changes only the future default and preserves existing categories', async () => {
+  const db = await PGlite.create();
+  try {
+    await db.exec(
+      "CREATE TABLE ips (id int, channel_type text DEFAULT 'community'); INSERT INTO ips VALUES (1,'community'),(2,'ip');",
+    );
+    await db.exec(
+      readFileSync(
+        join(
+          __dirname,
+          '../../prisma/migrations/20260923143000_new_channels_default_ip/migration.sql',
+        ),
+        'utf8',
+      ),
+    );
+    await db.exec('INSERT INTO ips(id) VALUES(3)');
+    expect(
+      (await db.query('SELECT channel_type FROM ips ORDER BY id')).rows,
+    ).toEqual([
+      { channel_type: 'community' },
+      { channel_type: 'ip' },
+      { channel_type: 'ip' },
+    ]);
+  } finally {
+    await db.close();
+  }
 });

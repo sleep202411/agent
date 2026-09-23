@@ -345,7 +345,6 @@ export type ListCreatorIpsQuery = z.infer<typeof ListCreatorIpsQuerySchema>;
 
 export const CreateIpDraftSchema = z
   .object({
-    channelType: z.enum(['ip', 'community']).optional(),
     title: z.string().trim().min(1).max(80),
     summary: z.string().trim().max(280).optional(),
     genreCodes: GenreCodesSchema,

@@ -10033,5 +10033,26 @@
     "ip": "IP 频道",
     "community": "社区频道",
     "create": "创建 AI 频道"
+  },
+  "channelSubmissions": {
+    "title": "频道投稿",
+    "open": "开放投稿中",
+    "closed": "已关闭投稿",
+    "description": "选择已发布的作品投稿，经频道负责人审核通过后展示。",
+    "close": "关闭投稿",
+    "enable": "开放投稿",
+    "submit": "我要投稿",
+    "choose": "选择已发布的作品",
+    "loading": "加载中…",
+    "noWorks": "暂无已公开发布的作品。",
+    "more": "加载更多",
+    "send": "提交审核",
+    "empty": "暂无可展示的投稿。",
+    "pending": "待审核",
+    "approved": "已通过",
+    "rejected": "未通过",
+    "approve": "通过",
+    "reject": "拒绝",
+    "retry": "重试"
   }
 }
