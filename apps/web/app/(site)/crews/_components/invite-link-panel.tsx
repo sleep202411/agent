@@ -67,6 +67,7 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
     };
   }, []);
   const t = useTranslations("workspace");
+  const commonT = useTranslations("common");
 
   const [accessPreset, setAccessPreset] = useState<CrewInviteAccessPreset>("standard");
   const [expiry, setExpiry] = useState<(typeof EXPIRY_CHOICES)[number]>("never");
@@ -221,10 +222,26 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
 
       <div className="flex flex-col gap-2">
         <span className="text-xs font-medium text-foreground">{t("inviteLinkActive")}</span>
+        {links.isError ? (
+          <div role="alert" className="space-y-2 text-sm">
+            <p className="text-destructive">{links.error?.message || commonT("loadFailed")}</p>
+            <Button
+              type="button"
+              variant="outline"
+              color="muted"
+              disabled={links.isFetching}
+              onClick={() => void links.refetch()}
+            >
+              {commonT("retry")}
+            </Button>
+          </div>
+        ) : null}
         {links.isLoading ? (
           <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
         ) : (links.data?.length ?? 0) === 0 ? (
-          <p className="m-0 text-[11px] leading-5 text-muted-foreground">{t("inviteLinkNone")}</p>
+          !links.isError ? (
+            <p className="m-0 text-[11px] leading-5 text-muted-foreground">{t("inviteLinkNone")}</p>
+          ) : null
         ) : (
           links.data?.map((link) => (
             <div
