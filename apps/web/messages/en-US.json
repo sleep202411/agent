@@ -4167,6 +4167,8 @@
     "applyPortfolioHint": "Owner can already see your profile and published works",
     "applyExpectedSalaryLabel": "Expected salary",
     "applyAvailableDateLabel": "Available from",
+    "applyInvalidAmount": "Enter an amount between 0 and 100,000,000.",
+    "applyInvalidExperience": "Enter whole years of experience between 0 and 80.",
     "applyYearsExperienceLabel": "Years of experience",
     "applicantProfile": "Profile",
     "applicantWorks": "Works",
