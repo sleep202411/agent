@@ -1575,7 +1575,7 @@ function PricingPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
       </div>
 
       {mode === "free" ? <FreeModeCard t={t} /> : null}
-      {mode === "bundle" ? <BundlePriceEditor ip={ip} t={t} /> : null}
+      {mode === "bundle" ? <BundlePriceEditor key={ip.id} ip={ip} t={t} /> : null}
       {mode === "episode" ? <EpisodePricingList ip={ip} episodes={sellableEpisodes} t={t} /> : null}
     </Section>
   );
@@ -1721,19 +1721,32 @@ const BUNDLE_QUICK_PICKS = ["30", "50", "99"] as const;
 
 // Prominent whole-IP bundle card. One price unlocks every episode (incl. future
 // ones) via an IP-level entitlement. No per-episode prices exist in this mode.
-function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+export function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   const upsertPrice = useUpsertIpCommercePriceRule();
-  const [amount, setAmount] = useState(ip.price?.amount ?? "");
-  const [originalAmount, setOriginalAmount] = useState(ip.price?.originalAmount ?? "");
-  const [startsAt, setStartsAt] = useState(toDateTimeLocal(ip.price?.startsAt));
-  const [endsAt, setEndsAt] = useState(toDateTimeLocal(ip.price?.endsAt));
+  const [baseline, setBaseline] = useState(ip);
+  const [amount, setAmount] = useState(baseline.price?.amount ?? "");
+  const [originalAmount, setOriginalAmount] = useState(baseline.price?.originalAmount ?? "");
+  const [startsAt, setStartsAt] = useState(toDateTimeLocal(baseline.price?.startsAt));
+  const [endsAt, setEndsAt] = useState(toDateTimeLocal(baseline.price?.endsAt));
+  const dirty =
+    amount !== (baseline.price?.amount ?? "") ||
+    originalAmount !== (baseline.price?.originalAmount ?? "") ||
+    startsAt !== toDateTimeLocal(baseline.price?.startsAt) ||
+    endsAt !== toDateTimeLocal(baseline.price?.endsAt);
+  if (!dirty && !upsertPrice.isPending && ip.version > baseline.version) {
+    setBaseline(ip);
+    setAmount(ip.price?.amount ?? "");
+    setOriginalAmount(ip.price?.originalAmount ?? "");
+    setStartsAt(toDateTimeLocal(ip.price?.startsAt));
+    setEndsAt(toDateTimeLocal(ip.price?.endsAt));
+  }
   const valid = validatePriceRuleInput({ amount, originalAmount, startsAt, endsAt });
   const canSave = !upsertPrice.isPending && valid;
 
   const handleSave = async () => {
     if (!canSave) return;
     try {
-      await upsertPrice.mutateAsync({
+      const result = await upsertPrice.mutateAsync({
         ipId: ip.id,
         targetType: "ip",
         status: "active",
@@ -1743,8 +1756,9 @@ function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
         startsAt: dateTimeLocalToIso(startsAt),
         endsAt: dateTimeLocalToIso(endsAt),
         maxPerUser: null,
-        expectedVersion: ip.version,
+        expectedVersion: baseline.version,
       });
+      setBaseline(result.ip);
       toast.success(t("pricingPanel.toasts.saved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("pricingPanel.toasts.saveFailed"));
