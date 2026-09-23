@@ -73,17 +73,15 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
   const levelsQuery = useQuery({
     queryKey: ["user-levels", "options", locale],
     queryFn: listUserLevelOptions,
-    enabled: open,
     staleTime: 60_000,
   });
   const pendingQuery = useQuery({
     queryKey: ["user-levels", "apply", "mine", USER_LEVEL_APPLY_STATUS.PENDING, locale],
     queryFn: () => listMyUserLevelApplications(USER_LEVEL_APPLY_STATUS.PENDING),
-    enabled: open,
     staleTime: 30_000,
   });
-  const crewsQuery = useMyCrews(open);
-  const ipsQuery = useAllMyIpCommerceIps(open, { locale });
+  const crewsQuery = useMyCrews(true);
+  const ipsQuery = useAllMyIpCommerceIps(true, { locale });
 
   const crews = useMemo(() => {
     const founded = crewsQuery.data?.founded ?? [];
@@ -224,7 +222,7 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
   }
 
   const loadingLists =
-    levelsQuery.isLoading || pendingQuery.isLoading || crewsQuery.isLoading || ipsQuery.isLoading;
+    levelsQuery.isPending || pendingQuery.isPending || crewsQuery.isPending || ipsQuery.isPending;
   const canSubmit =
     Boolean(levelId && crewId && ipId) &&
     !selectedLevelPending &&
