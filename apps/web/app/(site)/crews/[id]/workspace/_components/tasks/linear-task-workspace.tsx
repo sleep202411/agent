@@ -1,5 +1,6 @@
 "use client";
 
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { TrustAppealLink } from "./trust-appeal-link";
 import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import {
@@ -294,15 +295,30 @@ function LinearTaskSession({
     }
   };
 
-  if (projectQuery.isError) {
-    return <LoadingState label={projectQuery.error.message} />;
-  }
+  const projectError = projectQuery.isError ? (
+    <div role="alert" className="flex shrink-0 items-center gap-3 p-3 text-sm text-destructive">
+      <p>{projectQuery.error.message}</p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={projectQuery.isFetching}
+        onClick={() => void projectQuery.refetch()}
+      >
+        {t("retry")}
+      </Button>
+    </div>
+  ) : null;
+  const projectUnavailable = projectQuery.error instanceof CrewApiError &&
+    [401, 403, 404].includes(projectQuery.error.status);
+  if (projectQuery.isError && (!project || projectUnavailable)) return projectError;
   if (projectQuery.isLoading || !project || !activeView || !effectiveView) {
     return <LoadingState label={t("loading")} />;
   }
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#090a0c] text-[#e8e9ec]">
+      {projectError}
       <header className="shrink-0 border-b border-white/[0.065] bg-[#0b0c0f]">
         <nav
           className="flex h-10 items-center gap-1.5 overflow-x-auto border-t border-white/[0.045] px-3"
@@ -792,16 +808,18 @@ function LinearTaskSession({
           setWorkflowEditor({ state, afterStateId: null });
         }}
       />
-      {canSubmitAssigned && <SubmitTaskDialog
-        open={Boolean(submitTask)}
-        onOpenChange={(open) => !open && setSubmitTask(null)}
-        crewId={crewId}
-        task={submitTask}
-        onSubmitted={(taskId) => {
-          setSubmitTask(null);
-          selectTask(taskId);
-        }}
-      />}
+      {canSubmitAssigned && (
+        <SubmitTaskDialog
+          open={Boolean(submitTask)}
+          onOpenChange={(open) => !open && setSubmitTask(null)}
+          crewId={crewId}
+          task={submitTask}
+          onSubmitted={(taskId) => {
+            setSubmitTask(null);
+            selectTask(taskId);
+          }}
+        />
+      )}
     </div>
   );
 }
