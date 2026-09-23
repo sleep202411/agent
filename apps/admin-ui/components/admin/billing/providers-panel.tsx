@@ -48,9 +48,13 @@ const PROVIDER_ORDER: PaymentProvider[] = [
   "internal",
 ];
 
-// Providers that do not require provider-side sync (line offline / internal
-// issuance). Mirrors the ProviderBadge sync-button exemption verbatim.
-const SYNC_EXEMPT: ReadonlySet<PaymentProvider> = new Set<PaymentProvider>(["manual", "internal"]);
+// WeChat charges the internal CNY amount directly and has no provider catalog.
+// Manual/internal issuance keeps the existing local-only behavior.
+const SYNC_EXEMPT: ReadonlySet<PaymentProvider> = new Set<PaymentProvider>([
+  "wechat_pay",
+  "manual",
+  "internal",
+]);
 
 type ProviderHealthRow = {
   provider: PaymentProvider;

@@ -111,6 +111,9 @@ const catalog = () => (
     }}
   />
 );
+const cnCatalog = () => (
+  <BillingCatalogPanel {...props} siteKey="cn" initialPrices={{ items: [] }} />
+);
 const promotions = () => (
   <BillingPromotionsPanel
     {...props}
@@ -230,4 +233,41 @@ it("uses the current promotion filters for row status refreshes", async () => {
   });
   expect(fetchMock.mock.calls.filter((call) => call[1]?.method === "PATCH")).toHaveLength(1);
   expect(fetchMock.mock.calls[1][0]).toContain("provider=airwallex");
+});
+
+it("creates a CN WeChat package without a client-owned synchronization status", async () => {
+  fetchMock.mockResolvedValueOnce(response()).mockResolvedValueOnce(response({ items: [] }));
+  await render(cnCatalog());
+  await act(async () => click("新建套餐"));
+
+  const productType = container.querySelector<HTMLSelectElement>('select[name="productType"]')!;
+  await act(async () => {
+    productType.value = "community_point_pack";
+    productType.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  const values: Record<string, string> = {
+    itemName: "5,000 社区积分",
+    amountMinor: "35000",
+    grantsWalletAmount: "5000",
+  };
+  await act(async () => {
+    for (const [name, value] of Object.entries(values)) {
+      const input = container.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  });
+
+  await act(async () => submit());
+
+  const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(payload).toMatchObject({
+    productType: "community_point_pack",
+    currency: "CNY",
+    grantsWalletCurrency: "community_point",
+    providerBindings: [{ provider: "wechat_pay" }],
+  });
+  expect(payload.providerBindings[0]).not.toHaveProperty("status");
 });

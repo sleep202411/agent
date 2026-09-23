@@ -235,7 +235,7 @@ function ProviderBindingsTable({
       {
         id: "binding",
         header: () => (
-          <ColumnHeader help="内部价格和支付供应商价格/商品 ID 的绑定。Airwallex/微信需要同步，线下确认和内部发放不需要。">
+          <ColumnHeader help="内部价格和支付渠道的绑定。只有 Airwallex 需要同步供应商商品；微信直接使用内部 CNY 价格。">
             Provider Binding
           </ColumnHeader>
         ),
@@ -318,8 +318,8 @@ function ProviderBindingsTable({
       <div className="border-b border-slate-200 p-4">
         <h3 className="text-sm font-semibold text-slate-950">商品价格渠道映射</h3>
         <p className="mt-1 text-[12px] text-slate-500">
-          内部价格和支付供应商价格/商品 ID
-          的绑定。Airwallex/微信需要同步，线下确认和内部发放不需要。
+          内部价格和支付渠道的绑定。只有 Airwallex 需要同步供应商商品；微信支付直接使用内部 CNY
+          价格。
         </p>
       </div>
       <DataTable

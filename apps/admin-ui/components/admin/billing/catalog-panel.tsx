@@ -168,7 +168,7 @@ export function BillingCatalogPanel({
             ? [
                 {
                   provider,
-                  status: "sync_pending",
+                  ...(siteKey === "cn" ? {} : { status: "sync_pending" }),
                 },
               ]
             : [],
@@ -644,7 +644,7 @@ function CatalogView({
       <AdminDialog
         open={createDialogOpen}
         title="新建套餐"
-        description="创建内部商品价格；支付供应商只通过 binding 同步，套餐权益直接进入当前 billing 钱包账本。"
+        description="创建内部商品价格；微信支付按内部价格直接生效，Airwallex 通过 binding 同步，套餐权益进入当前 billing 钱包账本。"
         onClose={() => onCreateDialogOpenChange(false)}
         footer={
           <>
@@ -883,15 +883,19 @@ function CreatePriceForm({
       >
         <Select name="provider" value={provider} onChange={setProvider}>
           <option value="">稍后配置</option>
-          <option value="airwallex" title={providerHelp("airwallex")}>
-            Airwallex
-          </option>
+          {siteKey !== "cn" ? (
+            <option value="airwallex" title={providerHelp("airwallex")}>
+              Airwallex
+            </option>
+          ) : null}
           <option value="wechat_pay" title={providerHelp("wechat_pay")}>
             微信支付
           </option>
-          <option value="alipay" title={providerHelp("alipay")}>
-            支付宝
-          </option>
+          {siteKey !== "cn" ? (
+            <option value="alipay" title={providerHelp("alipay")}>
+              支付宝
+            </option>
+          ) : null}
           <option value="manual" title={providerHelp("manual")}>
             线下确认
           </option>
@@ -900,7 +904,7 @@ function CreatePriceForm({
       <TextInput name="itemDescription" placeholder="内部备注，可选" />
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
         {siteKey === "cn"
-          ? "中国站算力积分必须使用 CNY，后台显式填写售价和到账算力积分；支付通道使用微信支付或支付宝，不能混入国际站 USD 价格。"
+          ? "中国站面向用户的在线支付只使用 CNY 和微信支付；微信按内部价格直接下单，创建后立即生效，不需要同步供应商商品。线下确认仅用于后台补单。"
           : "国际站算力积分锚定 USD：1 USD minor = 1 算力积分，Airwallex 负责面向用户的本地币种和 FX。"}
       </div>
       <AutoCodePreview code={generatedItemCode} />

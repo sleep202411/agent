@@ -340,7 +340,10 @@ export function ProviderBadge({
         {risky ? <IconAlertTriangle className="size-3" /> : <IconCircleCheck className="size-3" />}
         {providerLabel(binding.provider)}
       </span>
-      {onSync && binding.provider !== "manual" && binding.provider !== "internal" ? (
+      {onSync &&
+      binding.provider !== "manual" &&
+      binding.provider !== "internal" &&
+      binding.provider !== "wechat_pay" ? (
         <button
           type="button"
           onClick={() => onSync(binding.id)}
@@ -743,7 +746,7 @@ export function providerLabel(provider: string) {
 export function providerHelp(provider: string) {
   const labels: Record<string, string> = {
     airwallex: "国际站支付供应商。用于银行卡、本地支付、订阅、优惠券同步和结算对账。",
-    wechat_pay: "中国站支付供应商。只在中国站部署中使用，不和国际站数据库共享。",
+    wechat_pay: "中国站支付供应商。直接按内部 CNY 价格下单，没有供应商商品目录，不需要价格同步。",
     alipay: "中国站支付供应商。只在中国站部署中使用，不和国际站数据库共享。",
     manual: "后台确认的线下收款或企业转账。不是兑换码，仍然必须走订单、履约、ledger 和审计。",
     internal: "平台内部承担成本的发放，例如迁移补偿、运营赠送或 100% 免费兑换码的零元订单。",
