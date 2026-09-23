@@ -989,6 +989,7 @@ function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }
   const [name, setName] = useState(field.name);
   const [description, setDescription] = useState(field.description);
   const [options, setOptions] = useState(field.options.map((option) => option.label).join(", "));
+  const [originalOptions, setOriginalOptions] = useState(options);
   const [required, setRequired] = useState(field.required);
   const supportsOptions = field.type === "single_select" || field.type === "multi_select";
 
@@ -998,6 +999,7 @@ function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }
     setName(field.name);
     setDescription(field.description);
     setOptions(field.options.map((option) => option.label).join(", "));
+    setOriginalOptions(field.options.map((option) => option.label).join(", "));
     setRequired(field.required);
     setEditUpdatedAt(field.updatedAt);
     setDeleteArmed(false);
@@ -1015,7 +1017,7 @@ function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }
           name: name.trim(),
           description: description.trim(),
           required,
-          ...(supportsOptions
+          ...(supportsOptions && options !== originalOptions
             ? {
                 options: nextLabels.map((label) => ({
                   id:

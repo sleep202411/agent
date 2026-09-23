@@ -160,7 +160,8 @@ function EditableProjectText({
     }
     const next = draft.trim();
     if (next === value) return;
-    if (!(await onSave(next))) setDraft(value);
+    // Failed saves already surface an error; retain the draft for correction or retry.
+    await onSave(next);
   };
 
   return (
