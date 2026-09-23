@@ -71,6 +71,7 @@ type TaxonomyFormState = {
   enUS: string;
   zhHK: string;
   description: string;
+  aliasesByLocale: Record<string, string[]>;
 };
 
 export function IpTaxonomyPanel({
@@ -196,6 +197,9 @@ export function IpTaxonomyPanel({
       enUS: taxonomyLabel(term, "en-US"),
       zhHK: taxonomyLabel(term, "zh-HK"),
       description: term.description ?? "",
+      aliasesByLocale: Object.fromEntries(
+        term.localizations.map((item) => [item.locale, [...item.aliases]])
+      ),
     });
     setSheetOpen(true);
   }
@@ -587,6 +591,7 @@ function emptyTaxonomyForm(type: "genre" | "tag" = "genre"): TaxonomyFormState {
     enUS: "",
     zhHK: "",
     description: "",
+    aliasesByLocale: {},
   };
 }
 
@@ -604,6 +609,6 @@ function taxonomyLocalizationsFromForm(form: TaxonomyFormState): IpTaxonomyLocal
     .map((item) => ({
       ...item,
       description: form.description.trim() || null,
-      aliases: [],
+      aliases: form.aliasesByLocale[item.locale] ?? [],
     }));
 }
