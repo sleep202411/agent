@@ -110,3 +110,66 @@ it.each(["account", "crew", "position", "close"])(
     expect(state.success).not.toHaveBeenCalled();
   }
 );
+
+async function numberInput(index: number, value: string) {
+  await act(async () => {
+    const input = container.querySelectorAll<HTMLInputElement>('input[type="number"]')[index]!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it("preserves fractional compensation instead of truncating it", async () => {
+  await render();
+  await type("Application");
+  await numberInput(0, "1250.50");
+  await submit();
+  expect(state.apply.mock.calls[0]?.[0].expectedCompensation.amount).toBe(1250.5);
+});
+it.each(["-1", "100000001"])("blocks out-of-range compensation %s", async (value) => {
+  await render();
+  await type("Application");
+  await numberInput(0, value);
+  await submit();
+  expect(state.apply).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="alert"]')).not.toBeNull();
+});
+it.each(["1.5", "-1", "81"])("blocks invalid experience %s without truncation", async (value) => {
+  await render();
+  await type("Application");
+  await numberInput(1, value);
+  await submit();
+  expect(state.apply).not.toHaveBeenCalled();
+});
+it("accepts zero values and recovers when invalid experience is corrected", async () => {
+  await render();
+  await type("Application");
+  await numberInput(1, "1.5");
+  await numberInput(1, "0");
+  await numberInput(0, "0");
+  await submit();
+  expect(state.apply.mock.calls[0]?.[0]).toMatchObject({
+    yearsExperience: 0,
+    expectedCompensation: { amount: 0 },
+  });
+});
+
+it("parses exponent notation accepted by number inputs without dropping its exponent", async () => {
+  await render();
+  await type("Application");
+  await numberInput(0, "1e3");
+  await numberInput(1, "1e1");
+  await submit();
+  expect(state.apply.mock.calls[0]?.[0]).toMatchObject({
+    expectedCompensation: { amount: 1000 },
+    yearsExperience: 10,
+  });
+});
+it("leaves optional compensation and experience unset when blank", async () => {
+  await render();
+  await type("Application");
+  await submit();
+  expect(state.apply.mock.calls[0]?.[0]).toMatchObject({
+    expectedCompensation: null,
+    yearsExperience: null,
+  });
+});

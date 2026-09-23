@@ -111,7 +111,15 @@ function ApplicationForm({
   const showCurrencyPicker = currencyOptions.length > 1;
 
   const messageTrimmed = message.trim();
-  const canSubmit = !submitting && messageTrimmed.length > 0;
+  const parsedAmount = expectedAmount === "" ? null : Number(expectedAmount);
+  const parsedExperience = yearsExperience === "" ? null : Number(yearsExperience);
+  const amountValid =
+    parsedAmount === null ||
+    (Number.isFinite(parsedAmount) && parsedAmount >= 0 && parsedAmount <= 100_000_000);
+  const experienceValid =
+    parsedExperience === null ||
+    (Number.isInteger(parsedExperience) && parsedExperience >= 0 && parsedExperience <= 80);
+  const canSubmit = !submitting && messageTrimmed.length > 0 && amountValid && experienceValid;
 
   const handleSubmit = () => {
     if (!alive.current || pending.current || !canSubmit) return;
@@ -124,12 +132,12 @@ function ApplicationForm({
         expectedAmount === ""
           ? null
           : {
-              amount: Number.parseInt(expectedAmount, 10),
+              amount: parsedAmount,
               currency: expectedCurrency,
               period: expectedPeriod || null,
             },
       availableStartDate: availableDate || null,
-      yearsExperience: yearsExperience === "" ? null : Number.parseInt(yearsExperience, 10),
+      yearsExperience: parsedExperience,
     };
     apply.mutate(body, {
       onSuccess: () => {
@@ -188,8 +196,11 @@ function ApplicationForm({
                 <div className="flex items-center gap-1.5">
                   <Input
                     type="number"
-                    inputMode="numeric"
+                    inputMode="decimal"
                     min={0}
+                    max={100_000_000}
+                    step="any"
+                    aria-invalid={!amountValid}
                     value={expectedAmount}
                     onChange={(e) => setExpectedAmount(e.target.value)}
                     placeholder="8000"
@@ -202,6 +213,11 @@ function ApplicationForm({
                     </span>
                   ) : null}
                 </div>
+                {!amountValid && (
+                  <p role="alert" className="text-xs text-destructive">
+                    {t("applyInvalidAmount")}
+                  </p>
+                )}
               </Field>
               <Field>
                 <FieldLabel>{t("createJobSalaryPeriodLabel")}</FieldLabel>
@@ -254,12 +270,19 @@ function ApplicationForm({
                   inputMode="numeric"
                   min={0}
                   max={80}
+                  step={1}
+                  aria-invalid={!experienceValid}
                   value={yearsExperience}
                   onChange={(e) => setYearsExperience(e.target.value)}
                   placeholder="3"
                   disabled={submitting}
                   className="text-xs tabular-nums"
                 />
+                {!experienceValid && (
+                  <p role="alert" className="text-xs text-destructive">
+                    {t("applyInvalidExperience")}
+                  </p>
+                )}
               </Field>
             </div>
 

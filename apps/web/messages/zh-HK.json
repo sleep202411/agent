@@ -4166,6 +4166,8 @@
     "applyPortfolioHint": "Owner 也能看到你的個人主頁和已發布作品",
     "applyExpectedSalaryLabel": "期望薪資",
     "applyAvailableDateLabel": "最早可入職",
+    "applyInvalidAmount": "請輸入 0 到 100,000,000 之間的金額。",
+    "applyInvalidExperience": "請輸入 0 到 80 之間的整數工作年資。",
     "applyYearsExperienceLabel": "工作年限",
     "applicantProfile": "主頁",
     "applicantWorks": "作品",
