@@ -120,6 +120,8 @@ export function CrewAssetsTab({
   const [folderPath, setFolderPath] = useState<FolderCrumb[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
+  const bulkPending = useRef(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const folderCreatePending = useRef(false);
@@ -324,9 +326,11 @@ export function CrewAssetsTab({
   };
 
   const deleteChecked = async () => {
-    if (checkedIds.size === 0) return;
+    if (checkedIds.size === 0 || bulkPending.current) return;
     if (activeSource === "trash" ? !canDeleteForever : !canTrash) return;
     const ids = [...checkedIds];
+    bulkPending.current = true;
+    setBulkBusy(true);
     try {
       if (activeSource === "trash") {
         await settleCheckedActions(ids, (id) => permanentlyDeleteAsset.mutateAsync(id));
@@ -335,27 +339,33 @@ export function CrewAssetsTab({
         await settleCheckedActions(ids, (id) => trashAsset.mutateAsync(id));
         toast.success(t("movedToTrash", { count: ids.length }));
       }
-      setCheckedIds(new Set());
       setSelectedAssetId("");
       setInspectorOpen(false);
       onSelectedAssetChange?.(null);
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      bulkPending.current = false;
+      setBulkBusy(false);
     }
   };
 
   const restoreChecked = async () => {
-    if (checkedIds.size === 0 || !canRestore) return;
+    if (checkedIds.size === 0 || !canRestore || bulkPending.current) return;
     const ids = [...checkedIds];
+    bulkPending.current = true;
+    setBulkBusy(true);
     try {
       await settleCheckedActions(ids, (id) => restoreAsset.mutateAsync(id));
       toast.success(t("restored", { count: ids.length }));
-      setCheckedIds(new Set());
       setSelectedAssetId("");
       setInspectorOpen(false);
       onSelectedAssetChange?.(null);
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      bulkPending.current = false;
+      setBulkBusy(false);
     }
   };
 
@@ -767,6 +777,7 @@ export function CrewAssetsTab({
                   <BulkAction
                     icon={<IconRefresh />}
                     label={t("restore")}
+                    disabled={bulkBusy}
                     onClick={() => void restoreChecked()}
                   />
                 ) : null}
@@ -775,6 +786,7 @@ export function CrewAssetsTab({
                     <BulkAction
                       icon={<IconTrash />}
                       label={t("deleteForever")}
+                      disabled={bulkBusy}
                       destructive
                       onClick={() => setConfirmPermanentDeleteOpen(true)}
                     />
@@ -783,6 +795,7 @@ export function CrewAssetsTab({
                   <BulkAction
                     icon={<IconTrash />}
                     label={t("delete")}
+                    disabled={bulkBusy}
                     destructive
                     onClick={() => void deleteChecked()}
                   />
@@ -942,6 +955,7 @@ export function CrewAssetsTab({
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
+              disabled={bulkBusy}
               variant="solid"
               color="destructive"
               onClick={() => {
@@ -2130,19 +2144,22 @@ function BulkAction({
   icon,
   label,
   destructive = false,
+  disabled = false,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   destructive?: boolean;
+  disabled?: boolean;
   onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors [&>svg]:size-3.5",
+        "inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors disabled:opacity-50 [&>svg]:size-3.5",
         destructive
           ? "text-destructive hover:bg-destructive/10"
           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
