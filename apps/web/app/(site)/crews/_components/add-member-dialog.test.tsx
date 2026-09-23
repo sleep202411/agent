@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { AddCrewMemberDialog } from "./add-member-dialog";
 const state = vi.hoisted(() => ({
   account: "alice",
+  agreements: false,
   invite: vi.fn(),
   close: vi.fn(),
   success: vi.fn(),
@@ -16,7 +17,10 @@ vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key 
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   CrewApiError: class extends Error {},
   useInviteCrewMember: () => ({ mutateAsync: state.invite, isPending: false }),
-  useCrewAgreements: () => ({ data: { capabilities: { create: false } }, isLoading: false }),
+  useCrewAgreements: () => ({
+    data: { capabilities: { create: state.agreements } },
+    isLoading: false,
+  }),
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-users", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/app/(site)/crews/_hooks/use-users")>();
@@ -54,6 +58,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
   state.account = "alice";
+  state.agreements = false;
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -162,4 +167,49 @@ it("suppresses an invitation error after closure", async () => {
   await render(false);
   await act(async () => request.reject(new Error("Old failure")));
   expect(state.error).not.toHaveBeenCalled();
+});
+
+it("requires new signer details after changing the invited account", async () => {
+  state.agreements = true;
+  await render();
+  await type("first@example.com");
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  expect(container.querySelector<HTMLInputElement>('input[type="email"]')?.value).toBe(
+    "first@example.com"
+  );
+  await act(async () => {
+    const title = container.querySelector<HTMLInputElement>(
+      'input[placeholder="addMemberAgreementTitlePlaceholder"]'
+    )!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      title,
+      "Crew agreement"
+    );
+    title.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await type("second@example.com");
+  expect(container.querySelector<HTMLInputElement>('input[type="email"]')?.value).toBe("");
+  expect(
+    [...container.querySelectorAll("input")].some((input) => input.value === "first@example.com")
+  ).toBe(false);
+  await submit();
+  expect(state.invite).not.toHaveBeenCalled();
+  expect(
+    container.querySelector<HTMLInputElement>(
+      'input[placeholder="addMemberAgreementTitlePlaceholder"]'
+    )?.value
+  ).toBe("Crew agreement");
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  await submit();
+  expect(state.invite).toHaveBeenCalledWith(
+    expect.objectContaining({
+      account: "second@example.com",
+      agreement: {
+        title: "Crew agreement",
+        signerName: "second@example.com",
+        signerEmail: "second@example.com",
+      },
+    })
+  );
 });

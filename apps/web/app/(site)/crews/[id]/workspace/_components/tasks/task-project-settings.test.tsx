@@ -7,6 +7,7 @@ import { ProjectSettingsDialog } from "./task-project-settings";
 const state = vi.hoisted(() => ({
   account: "alice",
   rows: false,
+  options: [] as { id: string; label: string }[],
   name: "Original",
   updatedAt: "2026-09-01T00:00:00.000Z",
   create: vi.fn(),
@@ -95,9 +96,9 @@ async function render(open = true, crewId = "crew") {
                     id: "field",
                     name: state.name,
                     description: "Description",
-                    type: "text",
+                    type: state.options.length ? "single_select" : "text",
                     required: false,
-                    options: [],
+                    options: state.options,
                     updatedAt: state.updatedAt,
                   },
                 ]
@@ -135,6 +136,7 @@ afterEach(async () => {
   vi.clearAllMocks();
   state.account = "alice";
   state.rows = false;
+  state.options = [];
   state.name = "Original";
   state.updatedAt = "2026-09-01T00:00:00.000Z";
 });
@@ -248,3 +250,34 @@ it.each(["cycles", "labels", "customFields"])(
     expect(inputs.some((input) => input.value === "Updated")).toBe(true);
   }
 );
+
+it("does not rewrite untouched options when saving other custom-field properties", async () => {
+  state.rows = true;
+  state.options = [{ id: "existing", label: "Review, final" }];
+  state.create.mockResolvedValue(undefined);
+  await render();
+  await startEdit("customFields");
+  await act(async () => button("save").click());
+  expect(state.create.mock.calls[0][0].input).not.toHaveProperty("options");
+});
+
+it("still submits intentionally changed custom-field options with existing IDs", async () => {
+  state.rows = true;
+  state.options = [{ id: "existing", label: "Review" }];
+  state.create.mockResolvedValue(undefined);
+  await render();
+  await startEdit("customFields");
+  await act(async () => {
+    const input = [...container.querySelectorAll("input")].find((item) => item.value === "Review")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "Review, Ready"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => button("save").click());
+  expect(state.create.mock.calls[0][0].input.options).toEqual([
+    { id: "existing", label: "Review" },
+    { id: expect.any(String), label: "Ready" },
+  ]);
+});

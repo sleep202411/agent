@@ -2,6 +2,8 @@
 import { ChannelSubmissions } from "../../_components/channel-submissions";
 import { IpFanCommunity } from "../../_components/ip-fan-community";
 
+import { useReportSubmission } from "../_hooks/use-report-submission";
+
 import { IpEngagementActions } from "./ip-engagement-actions";
 
 import { EpisodeFeedback } from "../../_components/episode-feedback";
@@ -64,7 +66,6 @@ import type {
   IpTargetType,
 } from "@/src/lib/ip-commerce/api";
 import {
-  useBlockIpContent,
   useCommunityPointBalance,
   useIpAccess,
   useIpCommerceCollection,
@@ -73,7 +74,6 @@ import {
   usePurchaseIpContent,
   useRecordIpView,
   useRemoveIpCommerceCollection,
-  useReportIpContent,
   useSaveIpCommerceCollection,
   useToggleIpEngagementLike,
 } from "@/src/lib/ip-commerce/hooks";
@@ -155,8 +155,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   );
   const saveCollection = useSaveIpCommerceCollection();
   const removeCollection = useRemoveIpCommerceCollection();
-  const reportContent = useReportIpContent();
-  const blockContent = useBlockIpContent();
+  const reportSubmission = useReportSubmission(user?.id);
   const recordView = useRecordIpView();
   const toggleLike = useToggleIpEngagementLike();
   const viewedIpRef = useRef<string | null>(null);
@@ -334,19 +333,17 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
     const reportTargetType: IpTargetType = selectedEpisode ? "episode" : "ip";
     const targetId = selectedEpisode?.id ?? currentIp.id;
     try {
-      await reportContent.mutateAsync({
-        targetType: reportTargetType,
-        targetId,
-        reason: input.reason as CreateIpReportInput["reason"],
-        description: input.description,
+      const completed = await reportSubmission.submit({
+        ipId: currentIp.id,
+        report: {
+          targetType: reportTargetType,
+          targetId,
+          reason: input.reason as CreateIpReportInput["reason"],
+          description: input.description,
+        },
+        blockIp: input.blockIp,
       });
-      if (input.blockIp) {
-        await blockContent.mutateAsync({
-          targetType: "ip",
-          targetId: currentIp.id,
-          reason: input.reason,
-        });
-      }
+      if (!completed) return;
       toast.success(input.blockIp ? t("report.successBlocked") : t("report.success"));
       setReportOpen(false);
     } catch (err) {
@@ -539,7 +536,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   </ActionButton>
                   <ActionButton
                     disabled={
-                      detailIp.previewMode || reportContent.isPending || blockContent.isPending
+                      detailIp.previewMode || reportSubmission.isPending
                     }
                     onClick={() => (user ? setReportOpen(true) : router.push(loginHref))}
                     icon={IconFlag}
@@ -662,7 +659,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
           onOpenChange={setReportOpen}
           title={selectedEpisode ? selectedEpisode.title : detailIp.title}
           targetType={selectedEpisode ? "episode" : "ip"}
-          pending={reportContent.isPending || blockContent.isPending}
+          pending={reportSubmission.isPending}
           t={t}
           onSubmit={handleReportSubmit}
         />
