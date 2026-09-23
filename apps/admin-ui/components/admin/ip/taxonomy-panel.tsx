@@ -96,7 +96,16 @@ export function IpTaxonomyPanel({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [form, setForm] = useState<TaxonomyFormState>(() => emptyTaxonomyForm());
   const editing = Boolean(form.id);
-  const canSubmit = Boolean(form.zhCN.trim() || form.enUS.trim() || form.zhHK.trim()) && !loading;
+  const displayOrder = Number(form.displayOrder);
+  const validDisplayOrder =
+    form.displayOrder.trim() !== "" &&
+    Number.isInteger(displayOrder) &&
+    displayOrder >= 0 &&
+    displayOrder <= 1_000_000;
+  const canSubmit =
+    Boolean(form.zhCN.trim() || form.enUS.trim() || form.zhHK.trim()) &&
+    validDisplayOrder &&
+    !loading;
 
   const metrics = useMemo(() => {
     const items = taxonomy.items;
@@ -202,21 +211,20 @@ export function IpTaxonomyPanel({
 
   async function submit() {
     if (!canSubmit) return;
-    const displayOrder = Number.parseInt(form.displayOrder, 10);
     const localizations = taxonomyLocalizationsFromForm(form);
     if (!localizations.length) return;
 
     const ok = form.id
       ? await saveTaxonomyTerm(form.id, {
           status: form.status,
-          displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+          displayOrder,
           localizations,
         })
       : await saveTaxonomyTerm(null, {
           type: form.type,
           code: form.code.trim() || undefined,
           status: form.status,
-          displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+          displayOrder,
           localizations,
         });
 
@@ -481,7 +489,14 @@ export function IpTaxonomyPanel({
                   placeholder="排序"
                   className="h-9"
                   inputMode="numeric"
+                  aria-invalid={!validDisplayOrder}
+                  aria-describedby={!validDisplayOrder ? "taxonomy-order-error" : undefined}
                 />
+                {!validDisplayOrder && (
+                  <p id="taxonomy-order-error" role="alert" className="text-xs text-red-700">
+                    Enter a whole number from 0 to 1,000,000.
+                  </p>
+                )}
               </Field>
             </div>
             <Field label="简体中文名称">

@@ -166,3 +166,29 @@ it("retains loaded terms through refresh failure and retries", async () => {
   await act(async () => click("刷新词库"));
   expect(container.textContent).not.toContain("one");
 });
+
+it.each(["1.5", "12wrong", "", "-1", "1000001"])(
+  "does not submit invalid taxonomy order %j",
+  async (order) => {
+    fetchMock.mockResolvedValue(response({ items: [term] }));
+    await render(view());
+    await act(async () => click("新增词条"));
+    await input("English label", "New label");
+    await input("排序", order);
+    await act(async () => click("创建词条"));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.querySelector('input[placeholder="排序"]')?.getAttribute("aria-invalid")).toBe(
+      "true"
+    );
+    expect(container.textContent).toContain("Enter a whole number from 0 to 1,000,000.");
+  }
+);
+
+it.each(["0", "1000000", "1e3"])("submits the exact numeric taxonomy order %s", async (order) => {
+  fetchMock.mockResolvedValue(response({ items: [term] }));
+  await render(view());
+  await act(async () => click("编辑"));
+  await input("排序", order);
+  await act(async () => click("保存词条"));
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).displayOrder).toBe(Number(order));
+});
