@@ -1825,7 +1825,7 @@ function deriveEpisodePriceState(episode: StudioEpisode): EpisodePriceState {
 // One row in the per-episode pricing list. Hides the amount input behind an
 // explicit "Set price" affordance; supports clearing back to unpriced and a
 // "Free preview" state. Compare-at + schedule live behind a per-row disclosure.
-function EpisodePriceEditor({
+export function EpisodePriceEditor({
   ip,
   episode,
   displayNumber,
@@ -1854,19 +1854,20 @@ function EpisodePriceEditor({
   // Clear the free-preview flag (if set) before/while pricing, since a priced
   // episode is not a free preview.
   const clearFreePreview = async () => {
-    if (!episode.isFreePreview) return;
-    await updateEpisode.mutateAsync({
+    if (!episode.isFreePreview) return ip.version;
+    const result = await updateEpisode.mutateAsync({
       ipId: ip.id,
       episodeId: episode.id,
       isFreePreview: false,
       expectedVersion: ip.version,
     });
+    return result.ip.version;
   };
 
   const handleSavePrice = async () => {
     if (!valid || busy) return;
     try {
-      await clearFreePreview();
+      const expectedVersion = await clearFreePreview();
       await upsertPrice.mutateAsync({
         ipId: ip.id,
         targetType: "episode",
@@ -1878,7 +1879,7 @@ function EpisodePriceEditor({
         startsAt: dateTimeLocalToIso(startsAt),
         endsAt: dateTimeLocalToIso(endsAt),
         maxPerUser: null,
-        expectedVersion: ip.version,
+        expectedVersion,
       });
       toast.success(t("pricingPanel.toasts.saved"));
       setEditing(false);
@@ -1889,8 +1890,8 @@ function EpisodePriceEditor({
 
   // Disable any active episode price rule, returning the episode to unpriced.
   const disablePrice = async () => {
-    if (!episode.price) return;
-    await upsertPrice.mutateAsync({
+    if (!episode.price) return ip.version;
+    const result = await upsertPrice.mutateAsync({
       ipId: ip.id,
       targetType: "episode",
       episodeId: episode.id,
@@ -1899,18 +1900,19 @@ function EpisodePriceEditor({
       maxPerUser: null,
       expectedVersion: ip.version,
     });
+    return result.ip.version;
   };
 
   const handleClear = async () => {
     if (busy) return;
     try {
-      await disablePrice();
+      const expectedVersion = await disablePrice();
       if (episode.isFreePreview) {
         await updateEpisode.mutateAsync({
           ipId: ip.id,
           episodeId: episode.id,
           isFreePreview: false,
-          expectedVersion: ip.version,
+          expectedVersion,
         });
       }
       toast.success(t("pricingPanel.toasts.saved"));
@@ -1924,12 +1926,12 @@ function EpisodePriceEditor({
     if (busy || episode.isFreePreview) return;
     try {
       // A free preview is free — drop any active price first.
-      await disablePrice();
+      const expectedVersion = await disablePrice();
       await updateEpisode.mutateAsync({
         ipId: ip.id,
         episodeId: episode.id,
         isFreePreview: true,
-        expectedVersion: ip.version,
+        expectedVersion,
       });
       toast.success(t("pricingPanel.toasts.saved"));
       setEditing(false);
