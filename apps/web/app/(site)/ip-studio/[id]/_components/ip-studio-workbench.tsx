@@ -3376,6 +3376,7 @@ function IpProfileEditSession({
   const [ip] = useState(currentIp);
   const t = useTranslations("newIpWorkbench");
   const typeT = useTranslations("newIpCreate");
+  const commonT = useTranslations("common");
   const locale = useLocale() as Locale;
   const update = useUpdateIpCommerceIpProfile();
   const taxonomy = useIpCommerceTaxonomyTerms({ locale });
@@ -3512,14 +3513,28 @@ function IpProfileEditSession({
 
             <Field>
               <FieldLabel required>{t("profileEdit.genres")}</FieldLabel>
-              <TaxonomyPicker
-                items={genreOptions}
-                selectedCodes={genreCodes}
-                max={GENRE_MAX_COUNT}
-                loading={taxonomy.isLoading}
-                emptyLabel={t("profileEdit.taxonomyEmpty")}
-                onChange={setGenreCodes}
-              />
+              {taxonomy.isError ? (
+                <div role="alert" className="space-y-2">
+                  <p className="text-sm text-destructive">{typeT("taxonomyLoadFailed")}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={taxonomy.isFetching}
+                    onClick={() => void taxonomy.refetch()}
+                  >
+                    {commonT("retry")}
+                  </Button>
+                </div>
+              ) : (
+                <TaxonomyPicker
+                  items={genreOptions}
+                  selectedCodes={genreCodes}
+                  max={GENRE_MAX_COUNT}
+                  loading={taxonomy.isLoading}
+                  emptyLabel={t("profileEdit.taxonomyEmpty")}
+                  onChange={setGenreCodes}
+                />
+              )}
               <FieldDescription>
                 {t("profileEdit.taxonomyHelp", { count: genreCodes.length, max: GENRE_MAX_COUNT })}
               </FieldDescription>
