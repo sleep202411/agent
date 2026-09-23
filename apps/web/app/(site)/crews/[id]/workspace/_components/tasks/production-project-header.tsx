@@ -48,7 +48,11 @@ export function ProductionProjectHeader({
   const t = useTranslations("crewProduction");
   const updateCrew = useUpdateCrew();
 
-  const updateCrewText = async (field: "name" | "tagline", value: string) => {
+  const updateCrewText = async (
+    field: "name" | "tagline",
+    value: string,
+    expectedVersion: number
+  ) => {
     if (field === "name" && !value) {
       toast.error(t("projectInfo.nameRequired"));
       return false;
@@ -57,7 +61,7 @@ export function ProductionProjectHeader({
     try {
       await updateCrew.mutateAsync({
         id: crewId,
-        expectedVersion: crewVersion,
+        expectedVersion,
         [field]: field === "tagline" && !value ? null : value,
       });
       return true;
@@ -83,22 +87,24 @@ export function ProductionProjectHeader({
         <h2>
           <EditableProjectText
             value={crewName}
+            version={crewVersion}
             disabled={!canEditCrewInfo || updateCrew.isPending}
             maxLength={128}
             ariaLabel={t("projectInfo.nameLabel")}
             className="text-[26px] font-semibold leading-8 tracking-[-0.025em] text-[#ededee] placeholder:text-[#555960]"
-            onSave={(value) => updateCrewText("name", value)}
+            onSave={(value, version) => updateCrewText("name", value, version)}
           />
         </h2>
         <p className="mt-1 max-w-2xl">
           <EditableProjectText
             value={crewSummary}
+            version={crewVersion}
             disabled={!canEditCrewInfo || updateCrew.isPending}
             maxLength={140}
             ariaLabel={t("projectInfo.summaryLabel")}
             placeholder={t("projectInfo.summaryPlaceholder")}
             className="text-[13px] leading-5 text-[#85868c] placeholder:text-[#5e6269]"
-            onSave={(value) => updateCrewText("tagline", value)}
+            onSave={(value, version) => updateCrewText("tagline", value, version)}
           />
         </p>
       </div>
@@ -129,6 +135,7 @@ export function ProductionProjectHeader({
 
 function EditableProjectText({
   value,
+  version,
   disabled,
   maxLength,
   ariaLabel,
@@ -137,19 +144,21 @@ function EditableProjectText({
   onSave,
 }: {
   value: string;
+  version: number;
   disabled: boolean;
   maxLength: number;
   ariaLabel: string;
   placeholder?: string;
   className?: string;
-  onSave: (value: string) => Promise<boolean>;
+  onSave: (value: string, expectedVersion: number) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState(value);
+  const draftVersion = useRef<number | null>(null);
   const focused = useRef(false);
   const cancelled = useRef(false);
 
   useEffect(() => {
-    if (!focused.current) setDraft(value);
+    if (!focused.current && draftVersion.current === null) setDraft(value);
   }, [value]);
 
   const commit = async () => {
@@ -159,9 +168,15 @@ function EditableProjectText({
       return;
     }
     const next = draft.trim();
-    if (next === value) return;
+    if (next === value) {
+      draftVersion.current = null;
+      return;
+    }
     // Failed saves already surface an error; retain the draft for correction or retry.
-    await onSave(next);
+    if (await onSave(next, draftVersion.current ?? version)) {
+      draftVersion.current = null;
+      setDraft(next);
+    }
   };
 
   return (
@@ -175,7 +190,10 @@ function EditableProjectText({
       onFocus={() => {
         focused.current = true;
       }}
-      onChange={(event) => setDraft(event.target.value)}
+      onChange={(event) => {
+        draftVersion.current ??= version;
+        setDraft(event.target.value);
+      }}
       onBlur={() => void commit()}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
@@ -184,6 +202,7 @@ function EditableProjectText({
         }
         if (event.key === "Escape") {
           cancelled.current = true;
+          draftVersion.current = null;
           setDraft(value);
           event.currentTarget.blur();
         }
