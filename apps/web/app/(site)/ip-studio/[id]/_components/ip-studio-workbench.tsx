@@ -2728,7 +2728,7 @@ function UserSearchPicker({
   );
 }
 
-function MemberRow({
+export function MemberRow({
   ip,
   contributor,
   contributors,
@@ -2760,6 +2760,10 @@ function MemberRow({
 
   const commitShare = async () => {
     const nextBps = percentTextToBps(shareText);
+    if (nextBps === undefined) {
+      toast.error(t("membersPanel.invalidShare"));
+      return;
+    }
     if (nextBps === contributor.revenueShareBps) return;
     // Client guard: eligible totals must stay <= 100%.
     if (contributor.revenueEligible && eligibleSumExcludingThis + (nextBps ?? 0) > BPS_FULL) {
@@ -2864,7 +2868,7 @@ function MemberRow({
   );
 }
 
-function AddMemberDialog({
+export function AddMemberDialog({
   open,
   onOpenChange,
   ip,
@@ -2905,6 +2909,10 @@ function AddMemberDialog({
   const handleSubmit = async () => {
     if (!canSubmit) return;
     const shareBps = eligible ? percentTextToBps(shareText) : null;
+    if (shareBps === undefined) {
+      toast.error(t("membersPanel.invalidShare"));
+      return;
+    }
     if (eligible && !linkedUser) {
       toast.error(t("membersPanel.mustLinkToEarn"));
       return;
@@ -3879,11 +3887,11 @@ function bpsToPercentText(bps: number | null): string {
   return bps == null ? "" : String(bps / 100);
 }
 
-function percentTextToBps(text: string): number | null {
+function percentTextToBps(text: string): number | null | undefined {
   const trimmed = text.trim();
   if (trimmed === "") return null;
   const percent = Number(trimmed);
-  if (Number.isNaN(percent)) return null;
+  if (!Number.isFinite(percent)) return undefined;
   return Math.round(percent * 100);
 }
 
