@@ -27,10 +27,9 @@ export function IpSubmissionsPanel({ ipId }: { ipId: string }) {
   const error = actionError ?? (loading ? null : loadState.error);
   useEffect(() => {
     const controller = new AbortController();
-    requestEnvelope<{ items: Entry[]; nextCursor?: string | null }>(
-      requestUrl,
-      { signal: controller.signal }
-    )
+    requestEnvelope<{ items: Entry[]; nextCursor?: string | null }>(requestUrl, {
+      signal: controller.signal,
+    })
       .then((data) => {
         if (!controller.signal.aborted) {
           setLoadState({
@@ -110,10 +109,24 @@ export function IpSubmissionsPanel({ ipId }: { ipId: string }) {
               </li>
             ))}
           </ul>
-          {!loadState.items.length && <p className="text-sm text-slate-500">No submissions.</p>}
+          {!loadState.error && !loadState.items.length && (
+            <p className="text-sm text-slate-500">No submissions.</p>
+          )}
         </>
       )}
       <div className="flex gap-2">
+        {!loading && loadState.error && (
+          <button
+            disabled={busy}
+            onClick={() => {
+              setActionError(null);
+              setRefresh((x) => x + 1);
+            }}
+            className="text-sm underline"
+          >
+            Retry
+          </button>
+        )}
         <button
           disabled={busy || loading}
           onClick={() => {
