@@ -738,3 +738,40 @@ it.each(["trash", "restore"])(
     ).toHaveLength(2);
   }
 );
+
+it("clears checked assets when the search changes", async () => {
+  await render();
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.click()
+  );
+  const search = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]')!;
+  expect(search).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "concept"
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')?.checked
+  ).not.toBe(true);
+  expect(document.body.textContent).not.toContain("1 selected");
+});
+
+it("clears checked assets when the type filter hides them", async () => {
+  await render();
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.click()
+  );
+  const filter = document.querySelector<HTMLElement>('[aria-label="Filter by type"]')!;
+  await act(async () =>
+    filter.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  );
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent === "Video"
+  )!;
+  expect(option).toBeDefined();
+  await click(option);
+  expect(document.body.textContent).not.toContain("1 selected");
+});
