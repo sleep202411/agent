@@ -153,12 +153,12 @@ function EditableProjectText({
   onSave: (value: string, expectedVersion: number) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState(value);
-  const draftVersion = useRef<number | null>(null);
+  const draftBase = useRef<{ version: number; value: string } | null>(null);
   const focused = useRef(false);
   const cancelled = useRef(false);
 
   useEffect(() => {
-    if (!focused.current && draftVersion.current === null) setDraft(value);
+    if (!focused.current && draftBase.current === null) setDraft(value);
   }, [value]);
 
   const commit = async () => {
@@ -168,13 +168,14 @@ function EditableProjectText({
       return;
     }
     const next = draft.trim();
-    if (next === value) {
-      draftVersion.current = null;
+    if (next === value || next === draftBase.current?.value.trim()) {
+      draftBase.current = null;
+      setDraft(value);
       return;
     }
     // Failed saves already surface an error; retain the draft for correction or retry.
-    if (await onSave(next, draftVersion.current ?? version)) {
-      draftVersion.current = null;
+    if (await onSave(next, draftBase.current?.version ?? version)) {
+      draftBase.current = null;
       setDraft(next);
     }
   };
@@ -189,9 +190,10 @@ function EditableProjectText({
       placeholder={placeholder}
       onFocus={() => {
         focused.current = true;
+        draftBase.current ??= { version, value };
       }}
       onChange={(event) => {
-        draftVersion.current ??= version;
+        draftBase.current ??= { version, value };
         setDraft(event.target.value);
       }}
       onBlur={() => void commit()}
@@ -202,7 +204,7 @@ function EditableProjectText({
         }
         if (event.key === "Escape") {
           cancelled.current = true;
-          draftVersion.current = null;
+          draftBase.current = null;
           setDraft(value);
           event.currentTarget.blur();
         }

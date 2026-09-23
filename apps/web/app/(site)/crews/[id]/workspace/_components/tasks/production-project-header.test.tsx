@@ -261,3 +261,15 @@ it("preserves a header draft and its version across refresh and failed retries",
     name: "Fresh draft",
   });
 });
+
+it("does not save an untouched focused field over a background update", async () => {
+  renderHeader();
+  const input = container!.querySelector<HTMLInputElement>(
+    'input[aria-label="projectInfo.nameLabel"]'
+  )!;
+  act(() => input.focus());
+  renderHeader(true, 8, "Collaborator name");
+  await act(async () => input.blur());
+  expect(state.updateCrew).not.toHaveBeenCalled();
+  expect(input.value).toBe("Collaborator name");
+});
