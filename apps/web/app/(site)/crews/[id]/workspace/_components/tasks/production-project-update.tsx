@@ -54,7 +54,8 @@ export function ProductionActivityComposer({
   const commonT = useTranslations("common");
   const locale = useLocale();
   const createActivity = useCreateCrewProductionActivity(crewId);
-  const [mode, setMode] = useState<"comment" | "update">(canManage ? "update" : "comment");
+  const [selectedMode, setMode] = useState<"comment" | "update">(canManage ? "update" : "comment");
+  const mode = canManage ? selectedMode : "comment";
   const [health, setHealth] = useState<CrewProductionUpdateHealth>("on_track");
   const [content, setContent] = useState<CrewProductionDocument>(
     EMPTY_PRODUCTION_ACTIVITY_DOCUMENT

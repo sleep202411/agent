@@ -218,3 +218,33 @@ it("retains a rejected draft and allows retry", async () => {
   expect(state.create).toHaveBeenCalledTimes(2);
   expect(container!.querySelector("textarea")!.value).toBe("");
 });
+
+it("preserves a draft as a comment after production-management access is revoked", async () => {
+  renderComposer();
+  act(() => setTextarea("Keep this production note"));
+  act(() =>
+    root!.render(
+      <ProductionActivityComposer
+        crewId="crew-1"
+        viewerUserId="user-1"
+        canManage={false}
+        startDate="2026-09-09"
+        projectCreatedAt="2026-08-01T00:00:00.000Z"
+        latestUpdate={null}
+        progress={45}
+      />
+    )
+  );
+  expect(container!.querySelector("textarea")!.value).toBe("Keep this production note");
+  expect(container!.querySelector("textarea")!.getAttribute("placeholder")).toBe(
+    "activity.commentPlaceholder"
+  );
+  expect(container!.textContent).not.toContain("updates.post");
+  await act(async () =>
+    [...container!.querySelectorAll("button")]
+      .find((b) => b.textContent === "activity.postComment")!
+      .click()
+  );
+  expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ kind: "comment" }));
+  expect(state.create.mock.calls[0][0]).not.toHaveProperty("health");
+});
