@@ -723,6 +723,7 @@ export type SubmitCrewTaskInput = z.infer<typeof SubmitCrewTaskSchema>;
 
 export const ReviewCrewTaskSchema = z
   .object({
+    expectedSubmissionId: z.string().uuid(),
     decision: z.enum(['approve', 'request_revision']),
     note: z.string().trim().max(5000).default(''),
   })

@@ -22,7 +22,7 @@ const container = document.createElement("div");
 document.body.appendChild(container);
 let root = createRoot(container);
 const onReviewed = vi.fn();
-async function render(id = "task", crewId = "crew") {
+async function render(id = "task", crewId = "crew", submissionId = "submission-1") {
   await act(async () =>
     root.render(
       <TaskReviewForm
@@ -31,6 +31,7 @@ async function render(id = "task", crewId = "crew") {
             id,
             crewId,
             status: "submitted",
+            submissions: [{ id: submissionId }],
             revisionLimit: 2,
             revisionRoundsUsed: 0,
           } as CrewTaskDTO
@@ -82,7 +83,7 @@ it("serializes approve and revision requests and retains notes for retry", async
   await act(async () => button("requestRevision").click());
   expect(onReviewed).toHaveBeenCalledWith("request_revision");
 });
-it.each(["account", "task", "crew", "close"])(
+it.each(["account", "task", "crew", "submission", "close"])(
   "ignores review success after %s changes",
   async (change) => {
     const pending = deferred();
@@ -93,7 +94,11 @@ it.each(["account", "task", "crew", "close"])(
     if (change === "account") state.account = "bob";
     if (change === "close") await act(async () => root.render(null));
     else {
-      await render(change === "task" ? "other" : "task", change === "crew" ? "other" : "crew");
+      await render(
+        change === "task" ? "other" : "task",
+        change === "crew" ? "other" : "crew",
+        change === "submission" ? "submission-2" : "submission-1"
+      );
       expect(container.querySelector("textarea")!.value).toBe("");
       await note("new draft");
     }
@@ -111,4 +116,20 @@ it("suppresses review errors after closing", async () => {
   await act(async () => root.render(null));
   await act(async () => pending.reject(new Error("old")));
   expect(state.error).not.toHaveBeenCalled();
+});
+
+it("sends the identity of the displayed submission and resets notes for a new submission", async () => {
+  state.review.mockResolvedValue(undefined);
+  await render();
+  await note("Version 1 approved");
+  await act(async () => button("approve").click());
+  expect(state.review).toHaveBeenCalledWith({
+    taskId: "task",
+    expectedSubmissionId: "submission-1",
+    decision: "approve",
+    note: "Version 1 approved",
+  });
+  await note("Old draft");
+  await render("task", "crew", "submission-2");
+  expect(container.querySelector("textarea")!.value).toBe("");
 });

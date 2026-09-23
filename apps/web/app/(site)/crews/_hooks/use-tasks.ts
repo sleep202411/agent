@@ -879,15 +879,17 @@ export function useReviewCrewTask(crewId: string) {
     onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       taskId,
+      expectedSubmissionId,
       decision,
       note,
     }: {
       taskId: string;
+      expectedSubmissionId: string;
       decision: "approve" | "request_revision";
       note: string;
     }) =>
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/review`, {
-        body: { decision, note },
+        body: { decision, note, expectedSubmissionId },
       }),
     onSuccess: (task, _variables, origin) => {
       if (!origin?.accountUserId) return;

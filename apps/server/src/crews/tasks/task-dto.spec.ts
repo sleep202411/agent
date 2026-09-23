@@ -71,12 +71,14 @@ describe('crew task collaboration DTOs', () => {
     ).toThrow();
     expect(() =>
       ReviewCrewTaskSchema.parse({
+        expectedSubmissionId: '01910d50-4c88-7c78-92d4-16892c06a010',
         decision: 'request_revision',
         note: '',
       }),
     ).toThrow('Revision instructions are required');
     expect(
       ReviewCrewTaskSchema.parse({
+        expectedSubmissionId: '01910d50-4c88-7c78-92d4-16892c06a010',
         decision: 'approve',
         note: '',
       }),
@@ -123,4 +125,16 @@ describe('crew task collaboration DTOs', () => {
       }),
     ).toThrow('The same attachment cannot be added twice');
   });
+});
+
+it('requires the reviewed submission identity', () => {
+  expect(ReviewCrewTaskSchema.safeParse({ decision: 'approve' }).success).toBe(
+    false,
+  );
+  expect(
+    ReviewCrewTaskSchema.safeParse({
+      decision: 'approve',
+      expectedSubmissionId: 'invalid',
+    }).success,
+  ).toBe(false);
 });

@@ -187,7 +187,11 @@ suite('Task deletion on isolated PostgreSQL', () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
     await expect(
-      service.review(task.id, 'owner', { decision: 'approve', note: '' }),
+      service.review(task.id, 'owner', {
+        decision: 'approve',
+        note: '',
+        expectedSubmissionId: task.id,
+      }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(
       await db.crewEarningEntry.count({ where: { taskId: task.id } }),

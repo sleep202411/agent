@@ -304,9 +304,14 @@ it.each(["create", "update", "submit", "review"] as const)(
         await current().review.mutateAsync({
           taskId: "child",
           decision: "approve",
+          expectedSubmissionId: "submission-1",
           note: "Accepted",
         });
     });
+    if (action === "review")
+      expect(crewApi.post).toHaveBeenCalledWith("/crew-tasks/child/review", {
+        body: { decision: "approve", note: "Accepted", expectedSubmissionId: "submission-1" },
+      });
     expect(client.getQueryState(parent)?.isInvalidated).toBe(true);
     expect(client.getQueryState(other)?.isInvalidated).toBe(false);
     expect(client.getQueryData([...crewKeys.task("child"), "alice"])).toEqual(updated);

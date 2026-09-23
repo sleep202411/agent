@@ -15,10 +15,19 @@ interface Props {
 export function TaskReviewForm(props: Props) {
   const { user } = useCurrentUser();
   return (
-    <ReviewSession key={JSON.stringify([user?.id, props.task.crewId, props.task.id])} {...props} />
+    <ReviewSession
+      key={JSON.stringify([
+        user?.id,
+        props.task.crewId,
+        props.task.id,
+        props.task.submissions[0]?.id,
+      ])}
+      {...props}
+    />
   );
 }
 function ReviewSession({ task, onReviewed }: Props) {
+  const submissionId = task.submissions[0]?.id;
   const t = useTranslations("crewTasks");
   const review = useReviewCrewTask(task.crewId);
   const [reviewNote, setReviewNote] = useState("");
@@ -34,12 +43,17 @@ function ReviewSession({ task, onReviewed }: Props) {
     };
   }, []);
   const decide = async (decision: "approve" | "request_revision") => {
-    if (!alive.current || pending.current || task.status !== "submitted") return;
+    if (!submissionId || !alive.current || pending.current || task.status !== "submitted") return;
     if (decision === "request_revision" && (revisionLimitReached || !reviewNote.trim())) return;
     pending.current = true;
     setSaving(true);
     try {
-      await review.mutateAsync({ taskId: task.id, decision, note: reviewNote });
+      await review.mutateAsync({
+        taskId: task.id,
+        expectedSubmissionId: submissionId,
+        decision,
+        note: reviewNote,
+      });
       if (!alive.current) return;
       toast.success(decision === "approve" ? t("approved") : t("revisionRequested"));
       setReviewNote("");
@@ -74,14 +88,14 @@ function ReviewSession({ task, onReviewed }: Props) {
           size="sm"
           variant="outline"
           color="muted"
-          disabled={saving || revisionLimitReached || !reviewNote.trim()}
+          disabled={!submissionId || saving || revisionLimitReached || !reviewNote.trim()}
           onClick={() => void decide("request_revision")}
         >
           {t("requestRevision")}
         </Button>
         <Button
           size="sm"
-          disabled={saving}
+          disabled={!submissionId || saving}
           onClick={() => void decide("approve")}
           icon={<IconCheck />}
         >

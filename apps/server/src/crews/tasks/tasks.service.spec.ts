@@ -1218,7 +1218,11 @@ describe('CrewTasksService', () => {
         return Promise.resolve(1);
       });
       await expect(
-        t.service.review(TASK_ID, OWNER_ID, { decision, note: 'Review' }),
+        t.service.review(TASK_ID, OWNER_ID, {
+          decision,
+          note: 'Review',
+          expectedSubmissionId: 'submission-1',
+        }),
       ).rejects.toThrow(ForbiddenException);
       expect(t.tx.crewTaskSubmission.update).not.toHaveBeenCalled();
       expect(t.tx.crewTask.update).not.toHaveBeenCalled();
@@ -1238,7 +1242,11 @@ describe('CrewTasksService', () => {
         return Promise.resolve({});
       });
       await expect(
-        t.service.review(TASK_ID, OWNER_ID, { decision, note: 'Review' }),
+        t.service.review(TASK_ID, OWNER_ID, {
+          decision,
+          note: 'Review',
+          expectedSubmissionId: 'submission-1',
+        }),
       ).rejects.toThrow('Permission revoked');
       expect(t.tx.crewTask.update).toHaveBeenCalled();
       expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
@@ -1250,6 +1258,7 @@ describe('CrewTasksService', () => {
 
     await expect(
       t.service.review(TASK_ID, OWNER_ID, {
+        expectedSubmissionId: 'submission-1',
         decision: 'approve',
         note: 'Approved for delivery.',
       }),
@@ -1355,6 +1364,7 @@ describe('CrewTasksService', () => {
 
     await expect(
       t.service.review(TASK_ID, OWNER_ID, {
+        expectedSubmissionId: 'submission-1',
         decision: 'request_revision',
         note: 'Tighten the last two shots.',
       }),
@@ -1399,6 +1409,7 @@ describe('CrewTasksService', () => {
 
     await expect(
       t.service.review(TASK_ID, OWNER_ID, {
+        expectedSubmissionId: 'submission-1',
         decision: 'request_revision',
         note: 'One more adjustment.',
       }),
@@ -1519,3 +1530,31 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTaskWorkflowState.delete).not.toHaveBeenCalled();
   });
 });
+
+it.each(['approve', 'request_revision'] as const)(
+  'rejects stale %s before reviewing or rewarding an unseen submission',
+  async (decision) => {
+    const t = build();
+    const seen = task();
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(
+      task({
+        version: 3,
+        revisionRoundsUsed: 1,
+        submissions: [
+          { ...seen.submissions[0], id: 'submission-2', versionNumber: 2 },
+        ],
+      }),
+    );
+    await expect(
+      t.service.review(TASK_ID, OWNER_ID, {
+        decision,
+        note: 'Review of version 1',
+        expectedSubmissionId: 'submission-1',
+      }),
+    ).rejects.toThrow('A newer submission is available');
+    expect(t.tx.crewTaskSubmission.update).not.toHaveBeenCalled();
+    expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+    expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+    expect(t.notifications.send).not.toHaveBeenCalled();
+  },
+);
