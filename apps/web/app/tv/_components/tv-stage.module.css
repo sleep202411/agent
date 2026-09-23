@@ -12,7 +12,8 @@
 }
 
 .stage :global(.vjs-tech) {
-  object-fit: contain;
+  object-fit: cover;
+  object-position: center;
 }
 
 .stage[data-has-video="false"] :global(.vjs-control-bar),
