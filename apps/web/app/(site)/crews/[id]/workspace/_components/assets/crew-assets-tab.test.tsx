@@ -977,3 +977,34 @@ it("clears checked assets when the type filter hides them", async () => {
   await click(option);
   expect(document.body.textContent).not.toContain("1 selected");
 });
+
+it("keeps move versions through refresh and retry until the dialog is reopened", async () => {
+  const client = await render();
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+  refreshedAsset = true;
+  await act(async () => {
+    await client.invalidateQueries();
+  });
+  const submit = async () => {
+    await act(async () => {
+      document
+        .querySelector('[data-slot="dialog-content"] form')!
+        .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+  };
+  await submit();
+  expect(requests.filter((r) => r.method === "PATCH").at(-1)?.body).toMatchObject({
+    expectedUpdatedAt: ROOT_ITEMS[1].updatedAt,
+  });
+  await submit();
+  expect(requests.filter((r) => r.method === "PATCH").at(-1)?.body).toMatchObject({
+    expectedUpdatedAt: ROOT_ITEMS[1].updatedAt,
+  });
+  await click(byText("button", "Cancel"));
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+  await submit();
+  expect(requests.filter((r) => r.method === "PATCH").at(-1)?.body).toMatchObject({
+    expectedUpdatedAt: "2026-09-23T10:00:00.000Z",
+  });
+});
