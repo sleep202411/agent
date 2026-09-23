@@ -220,3 +220,64 @@ it("blocks duplicate creation and ignores completion after closing", async () =>
   });
   expect(state.close).not.toHaveBeenCalled();
 });
+
+async function numberInput(selector: string, value: string) {
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>(selector)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it.each(["1.5", "99.9"])("does not advance with fractional headcount %s", async (value) => {
+  await render();
+  await numberInput('input[max="99"]', value);
+  await next();
+  expect(container.querySelector('input[max="99"]')).not.toBeNull();
+  expect(state.save).not.toHaveBeenCalled();
+});
+it.each(["1.5", "60.9"])("does not submit fractional duration %s", async (value) => {
+  await render();
+  await next();
+  await next();
+  await numberInput('input[max="60"]', value);
+  await save();
+  expect(state.save).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("createJobDurationError");
+});
+it("preserves the values of exponent-form headcount and duration", async () => {
+  await render();
+  await numberInput('input[max="99"]', "1e1");
+  await next();
+  await next();
+  await numberInput('input[max="60"]', "2e1");
+  await save();
+  expect(state.save.mock.calls[0]?.[0]).toMatchObject({ targetCount: 10, durationMonths: 20 });
+});
+it("allows correcting fractional values and retains optional blank duration", async () => {
+  await render();
+  await numberInput('input[max="99"]', "1.5");
+  await numberInput('input[max="99"]', "2");
+  await next();
+  await next();
+  await numberInput('input[max="60"]', "1.5");
+  await numberInput('input[max="60"]', "");
+  await save();
+  expect(state.save.mock.calls[0]?.[0]).toMatchObject({ targetCount: 2, durationMonths: null });
+});
+
+it("blocks fractional headcount when creating a new position too", async () => {
+  await act(async () =>
+    root.render(<CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" />)
+  );
+  await act(async () => {
+    const select = container.querySelector("select")!;
+    select.value = "director";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await type("New position");
+  await numberInput('input[max="99"]', "1.5");
+  await next();
+  expect(container.querySelector('input[max="99"]')).not.toBeNull();
+  expect(container.textContent).toContain("createJobNumberError");
+  expect(state.create).not.toHaveBeenCalled();
+});

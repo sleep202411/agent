@@ -128,6 +128,7 @@ export function CrewAssetsTab({
   const [assetActionBusy, setAssetActionBusy] = useState(false);
   const [assetActionErrors, setAssetActionErrors] = useState<string[]>([]);
   const [actionName, setActionName] = useState("");
+  const [renameVersion, setRenameVersion] = useState("");
   const [destinationId, setDestinationId] = useState<string>("");
   const [confirmPermanentDeleteOpen, setConfirmPermanentDeleteOpen] = useState(false);
 
@@ -312,16 +313,24 @@ export function CrewAssetsTab({
     setCreatingFolder(false);
   };
 
+  const settleCheckedActions = async (ids: string[], action: (id: string) => Promise<unknown>) => {
+    const results = await Promise.allSettled(ids.map(action));
+    const succeeded = new Set(ids.filter((_, index) => results[index].status === "fulfilled"));
+    setCheckedIds((current) => new Set([...current].filter((id) => !succeeded.has(id))));
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+  };
+
   const deleteChecked = async () => {
     if (checkedIds.size === 0) return;
     if (activeSource === "trash" ? !canDeleteForever : !canTrash) return;
     const ids = [...checkedIds];
     try {
       if (activeSource === "trash") {
-        await Promise.all(ids.map((id) => permanentlyDeleteAsset.mutateAsync(id)));
+        await settleCheckedActions(ids, (id) => permanentlyDeleteAsset.mutateAsync(id));
         toast.success(t("deletedForever", { count: ids.length }));
       } else {
-        await Promise.all(ids.map((id) => trashAsset.mutateAsync(id)));
+        await settleCheckedActions(ids, (id) => trashAsset.mutateAsync(id));
         toast.success(t("movedToTrash", { count: ids.length }));
       }
       setCheckedIds(new Set());
@@ -337,7 +346,7 @@ export function CrewAssetsTab({
     if (checkedIds.size === 0 || !canRestore) return;
     const ids = [...checkedIds];
     try {
-      await Promise.all(ids.map((id) => restoreAsset.mutateAsync(id)));
+      await settleCheckedActions(ids, (id) => restoreAsset.mutateAsync(id));
       toast.success(t("restored", { count: ids.length }));
       setCheckedIds(new Set());
       setSelectedAssetId("");
@@ -390,6 +399,7 @@ export function CrewAssetsTab({
       setAssetActionTargetIds([actionableAsset.id]);
       setAssetAction("rename");
       setActionName(actionableAsset.name);
+      setRenameVersion(actionableAsset.updatedAt);
       setDestinationId(actionableAsset.parentId ?? "");
       return;
     }
@@ -417,7 +427,7 @@ export function CrewAssetsTab({
         if (!name) return;
         await updateAsset.mutateAsync({
           nodeId: target.id,
-          expectedUpdatedAt: target.updatedAt,
+          expectedUpdatedAt: renameVersion,
           name,
         });
         toast.success(t("renamed"));
@@ -619,7 +629,10 @@ export function CrewAssetsTab({
                   <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                   <input
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setCheckedIds(new Set());
+                    }}
                     placeholder={t("searchPlaceholder")}
                     className="h-8 w-full rounded-lg border border-border/70 bg-background/60 pl-8 pr-3 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60"
                   />
@@ -627,7 +640,10 @@ export function CrewAssetsTab({
                 <ToolbarSelect
                   ariaLabel={t("typeFilter")}
                   value={typeFilter}
-                  onChange={(value) => setTypeFilter(value as "all" | CrewAssetKind)}
+                  onChange={(value) => {
+                    setTypeFilter(value as "all" | CrewAssetKind);
+                    setCheckedIds(new Set());
+                  }}
                   options={[
                     ["all", t("allTypes")],
                     ["folder", t("typeFolder")],
@@ -1579,6 +1595,7 @@ function PermissionSummary({
   const actorIds = (permissionEvents.data ?? []).map((event) => event.actorUserId);
   const displays = useUserDisplays([...new Set([...memberIds, ...actorIds])]);
   const [editing, setEditing] = useState(false);
+  const savePending = useRef(false);
   const [restricted, setRestricted] = useState(false);
   const [draftGrants, setDraftGrants] = useState<
     Array<{ userId: string; permission: CrewAssetPermission }>
@@ -1598,7 +1615,8 @@ function PermissionSummary({
 
   const save = async () => {
     const current = permissions.data;
-    if (!current) return;
+    if (!current || savePending.current) return;
+    savePending.current = true;
     try {
       await setPermissions.mutateAsync({
         nodeId: asset.id,
@@ -1610,6 +1628,8 @@ function PermissionSummary({
       toast.success(t("permissionsSaved"));
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      savePending.current = false;
     }
   };
 
@@ -1684,6 +1704,7 @@ function PermissionSummary({
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border/60 p-2.5">
             <input
               type="checkbox"
+              disabled={setPermissions.isPending}
               checked={restricted}
               onChange={(event) => setRestricted(event.target.checked)}
               className="mt-0.5 size-3.5 accent-primary"
@@ -1716,6 +1737,7 @@ function PermissionSummary({
                       {displayNameOf(member.userId, displays)}
                     </span>
                     <NativeSelect
+                      disabled={setPermissions.isPending}
                       value={permission}
                       onChange={(nextValue) =>
                         updateGrant(member.userId, nextValue as CrewAssetPermission | "none")
@@ -1740,6 +1762,7 @@ function PermissionSummary({
           <div className="flex justify-end gap-2">
             <button
               type="button"
+              disabled={setPermissions.isPending}
               onClick={() => setEditing(false)}
               className="h-7 rounded-md px-2 text-[10px] font-semibold text-muted-foreground hover:bg-secondary"
             >

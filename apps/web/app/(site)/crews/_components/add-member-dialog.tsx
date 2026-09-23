@@ -240,7 +240,14 @@ function MemberInvitationForm({
                 <FieldLabel required>{t("addMemberContactLabel")}</FieldLabel>
                 <Input
                   value={queryInput}
-                  onChange={(e) => setQueryInput(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next.trim() !== queryInput.trim()) {
+                      setSignerName("");
+                      setSignerEmail("");
+                    }
+                    setQueryInput(next);
+                  }}
                   placeholder={t("addMemberContactPlaceholder")}
                   maxLength={120}
                   disabled={submitting}
