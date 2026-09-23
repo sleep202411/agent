@@ -85,6 +85,7 @@ export function NewIpCreateDialog({ open, onOpenChange }: NewIpCreateDialogProps
  */
 export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
   const t = useTranslations("newIpCreate");
+  const commonT = useTranslations("common");
   const router = useRouter();
   const pathname = usePathname() ?? "/";
   const defaultSourceLocale = localeFromPathname(pathname);
@@ -310,14 +311,28 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
           <Field>
             <FieldLabel required>{t("fieldGenres")}</FieldLabel>
-            <TaxonomyPicker
-              items={genreOptions}
-              selectedCodes={genreCodes}
-              max={8}
-              loading={taxonomy.isLoading}
-              emptyLabel={t("taxonomyEmpty")}
-              onChange={setGenreCodes}
-            />
+            {taxonomy.isError ? (
+              <div role="alert" className="space-y-2">
+                <p className="text-sm text-destructive">{t("taxonomyLoadFailed")}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={taxonomy.isFetching}
+                  onClick={() => void taxonomy.refetch()}
+                >
+                  {commonT("retry")}
+                </Button>
+              </div>
+            ) : (
+              <TaxonomyPicker
+                items={genreOptions}
+                selectedCodes={genreCodes}
+                max={8}
+                loading={taxonomy.isLoading}
+                emptyLabel={t("taxonomyEmpty")}
+                onChange={setGenreCodes}
+              />
+            )}
             <FieldDescription>
               {t("taxonomyHelp", { count: genreCodes.length, max: 8 })}
             </FieldDescription>

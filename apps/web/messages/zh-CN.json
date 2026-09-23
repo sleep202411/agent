@@ -1006,6 +1006,7 @@
     "fieldTags": "标签",
     "taxonomyHelp": "已选 {count}/{max}",
     "taxonomyEmpty": "暂无可用类型标签",
+    "taxonomyLoadFailed": "类型标签加载失败，请重试。",
     "fieldDescription": "短简介",
     "fieldDescriptionPlaceholder": "一两句话讲清楚：你的 IP 凭什么吸引人？",
     "dropzoneIdleTitle": "把剧本、提案或大纲拖到这里",

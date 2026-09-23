@@ -2,7 +2,12 @@ import { act, type PropsWithChildren } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NewIpCreateForm } from "./new-ip-create-form";
-const mocks = vi.hoisted(() => ({ analyze: vi.fn(), push: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  analyze: vi.fn(),
+  push: vi.fn(),
+  taxonomyError: false,
+  retry: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: mocks.push }),
   usePathname: () => "/en-US/ips",
@@ -11,7 +16,13 @@ vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key 
 vi.mock("posthog-js", () => ({ default: { capture: vi.fn() } }));
 vi.mock("@/src/lib/ip-commerce/hooks", () => ({
   useCreateIpCommerceIp: () => ({ isPending: false, mutate: vi.fn() }),
-  useIpCommerceTaxonomyTerms: () => ({ data: { items: [] }, isLoading: false }),
+  useIpCommerceTaxonomyTerms: () => ({
+    data: { items: [] },
+    isLoading: false,
+    isError: mocks.taxonomyError,
+    isFetching: false,
+    refetch: mocks.retry,
+  }),
 }));
 vi.mock("@/app/(site)/ip-studio/_hooks/use-new-ip-spark", () => ({
   useNewIpSparkAnalyze: () => ({ mutateAsync: mocks.analyze }),
@@ -30,6 +41,8 @@ let container: HTMLDivElement, root: Root;
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   mocks.analyze.mockReset();
+  mocks.taxonomyError = false;
+  mocks.retry.mockReset();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -105,6 +118,23 @@ it("ignores a superseded file response", async () => {
   expect(field("name").value).toBe("");
   await second();
   expect(field("name").value).toBe("AI title");
+});
+
+it("offers taxonomy retry without clearing the creator draft", async () => {
+  await edit("name", "My channel");
+  await edit("description", "My summary");
+  mocks.taxonomyError = true;
+  await act(async () => root.render(<NewIpCreateForm />));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("taxonomyLoadFailed");
+  expect(container.textContent).not.toContain("taxonomyEmpty");
+  const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "retry")!;
+  await act(async () => retry.click());
+  expect(mocks.retry).toHaveBeenCalledOnce();
+  mocks.taxonomyError = false;
+  await act(async () => root.render(<NewIpCreateForm />));
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(field("name").value).toBe("My channel");
+  expect(field("description").value).toBe("My summary");
 });
 
 it("limits AI-filled fields to the same lengths as manual entry", async () => {
