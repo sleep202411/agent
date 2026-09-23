@@ -128,6 +128,7 @@ export function CrewAssetsTab({
   const [assetActionBusy, setAssetActionBusy] = useState(false);
   const [assetActionErrors, setAssetActionErrors] = useState<string[]>([]);
   const [actionName, setActionName] = useState("");
+  const [renameVersion, setRenameVersion] = useState("");
   const [destinationId, setDestinationId] = useState<string>("");
   const [confirmPermanentDeleteOpen, setConfirmPermanentDeleteOpen] = useState(false);
 
@@ -390,6 +391,7 @@ export function CrewAssetsTab({
       setAssetActionTargetIds([actionableAsset.id]);
       setAssetAction("rename");
       setActionName(actionableAsset.name);
+      setRenameVersion(actionableAsset.updatedAt);
       setDestinationId(actionableAsset.parentId ?? "");
       return;
     }
@@ -417,7 +419,7 @@ export function CrewAssetsTab({
         if (!name) return;
         await updateAsset.mutateAsync({
           nodeId: target.id,
-          expectedUpdatedAt: target.updatedAt,
+          expectedUpdatedAt: renameVersion,
           name,
         });
         toast.success(t("renamed"));
