@@ -2173,11 +2173,11 @@ function PriceScheduleFields({
   );
 }
 
-function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
-  const { data, isLoading, error, refetch } = useMyIpContributors(ip.id);
+export function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
+  const { data, isLoading, isFetching, error, refetch } = useMyIpContributors(ip.id);
   const [addOpen, setAddOpen] = useState(false);
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
         <div className="flex items-center gap-2 rounded-xl bg-card p-6 text-sm text-muted-foreground ring-1 ring-border/65">
@@ -2188,7 +2188,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
         <div className="rounded-xl bg-card p-6 ring-1 ring-border/65">
@@ -2200,6 +2200,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
             variant="outline"
             size="sm"
             className="mt-3"
+            disabled={isFetching}
             onClick={() => void refetch()}
           >
             <IconRefresh className="size-4" />
@@ -2215,6 +2216,15 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
 
   return (
     <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
+      {error ? (
+        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+          <p>{errorMessage(error) || t("membersPanel.loadFailed")}</p>
+          <Button type="button" variant="outline" size="sm" disabled={isFetching}
+            onClick={() => void refetch()}>
+            {t("membersPanel.retry")}
+          </Button>
+        </div>
+      ) : null}
       <div className="space-y-4">
         <AccessControlPanel ip={ip} contributors={data.contributors} t={t} locale={locale} />
 
@@ -2788,13 +2798,13 @@ export function MemberRow({
   const remove = useDeleteIpCommerceContributor();
   const linked = Boolean(contributor.userId);
   const [shareText, setShareText] = useState(bpsToPercentText(contributor.revenueShareBps));
-  // Re-sync the local input when the server value changes (e.g. after a refetch
-  // following another row's edit) using React's "adjust state during render"
-  // pattern, which avoids an effect + cascading render.
+  const [shareDirty, setShareDirty] = useState(false);
+  const sharePending = useRef(false);
+  // Refresh untouched inputs without replacing an unsaved percentage draft.
   const [syncedBps, setSyncedBps] = useState(contributor.revenueShareBps);
   if (syncedBps !== contributor.revenueShareBps) {
     setSyncedBps(contributor.revenueShareBps);
-    setShareText(bpsToPercentText(contributor.revenueShareBps));
+    if (!shareDirty) setShareText(bpsToPercentText(contributor.revenueShareBps));
   }
 
   const roleLabel = contributor.customRole?.trim()
@@ -2804,28 +2814,34 @@ export function MemberRow({
   const eligibleSumExcludingThis = sumEligibleBps(contributors, contributor.id);
 
   const commitShare = async () => {
+    if (sharePending.current || update.isPending || remove.isPending) return;
     const nextBps = percentTextToBps(shareText);
     if (nextBps === undefined) {
       toast.error(t("membersPanel.invalidShare"));
       return;
     }
-    if (nextBps === contributor.revenueShareBps) return;
+    if (nextBps === contributor.revenueShareBps) {
+      setShareDirty(false);
+      return;
+    }
     // Client guard: eligible totals must stay <= 100%.
     if (contributor.revenueEligible && eligibleSumExcludingThis + (nextBps ?? 0) > BPS_FULL) {
       toast.error(t("membersPanel.overAllocated"));
-      setShareText(bpsToPercentText(contributor.revenueShareBps));
       return;
     }
+    sharePending.current = true;
     try {
       await update.mutateAsync({
         ipId: ip.id,
         contributorId: contributor.id,
         revenueShareBps: nextBps,
       });
+      setShareDirty(false);
       toast.success(t("membersPanel.toasts.updated"));
     } catch (err) {
-      setShareText(bpsToPercentText(contributor.revenueShareBps));
       toast.error(errorMessage(err) || t("membersPanel.toasts.updateFailed"));
+    } finally {
+      sharePending.current = false;
     }
   };
 
@@ -2887,7 +2903,10 @@ export function MemberRow({
       </Button>
       <Input
         value={shareText}
-        onChange={(event) => setShareText(event.target.value)}
+        onChange={(event) => {
+          setShareDirty(true);
+          setShareText(event.target.value);
+        }}
         onBlur={() => void commitShare()}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
