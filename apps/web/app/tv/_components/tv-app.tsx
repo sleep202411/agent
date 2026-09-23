@@ -251,7 +251,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                   <div
                     role="group"
                     aria-label={t("episodeSelector")}
-                    className="flex gap-3 overflow-x-auto pb-2"
+                    className="flex gap-2 overflow-x-auto pb-2"
                   >
                     {[
                       {
@@ -278,23 +278,24 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                             entry.id ? { ipId: item.id, episodeId: entry.id } : null
                           );
                         }}
-                        className="w-40 shrink-0 rounded-lg p-1 text-left text-sm text-white/70 ring-2 ring-transparent hover:bg-white/10 aria-pressed:text-white aria-pressed:ring-white"
+                        title={entry.title}
+                        className="flex w-28 shrink-0 flex-col rounded-md p-1 text-left text-xs text-white/70 ring-2 ring-transparent hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white aria-pressed:text-white aria-pressed:ring-white"
                       >
                         {entry.cover ? (
                           <Image
                             unoptimized
-                            width={160}
-                            height={90}
+                            width={112}
+                            height={63}
                             src={entry.cover}
                             alt=""
-                            className="mb-2 aspect-video w-full rounded-md object-cover"
+                            className="mb-1 aspect-video w-full rounded-md object-cover"
                           />
                         ) : (
-                          <span className="mb-2 flex aspect-video items-center justify-center rounded-md bg-white/10">
+                          <span className="mb-1 flex aspect-video items-center justify-center rounded-md bg-white/10">
                             {entry.number || t("preview")}
                           </span>
                         )}
-                        <span className="line-clamp-2">
+                        <span className="line-clamp-1">
                           {entry.number ? `${entry.number}. ` : ""}
                           {entry.title}
                         </span>

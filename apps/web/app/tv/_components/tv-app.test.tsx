@@ -511,13 +511,13 @@ describe("TV IP list", () => {
     const video = container.querySelector("video")!;
     const instance = player();
     expect(video.controls).toBe(false);
-    expect(container.querySelectorAll(".vjs-control-bar button")).toHaveLength(2);
+    expect(container.querySelectorAll(".vjs-control-bar button")).toHaveLength(3);
     expect(container.querySelector(".vjs-play-control")).not.toBeNull();
     expect(container.querySelector(".vjs-volume-panel")).not.toBeNull();
     expect(container.querySelector('.vjs-progress-control [role="slider"]')).not.toBeNull();
     expect(container.querySelector(".vjs-current-time")).not.toBeNull();
     expect(container.querySelector(".vjs-duration")).not.toBeNull();
-    expect(container.querySelector(".vjs-fullscreen-control")).toBeNull();
+    expect(container.querySelector(".vjs-fullscreen-control")).not.toBeNull();
     act(() => {
       player().muted(false);
       player().volume(0.4);

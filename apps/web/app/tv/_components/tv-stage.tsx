@@ -64,6 +64,7 @@ export function TvStage(props: TvStageProps) {
           "currentTimeDisplay",
           "progressControl",
           "durationDisplay",
+          "fullscreenToggle",
         ],
       },
     });
