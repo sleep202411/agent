@@ -433,6 +433,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         ).items,
       ).toHaveLength(0);
       await tasks.review(task.id, owner, {
+        expectedSubmissionId: (
+          await db.crewTaskSubmission.findFirstOrThrow({
+            where: { taskId: task.id },
+            orderBy: { versionNumber: 'desc' },
+          })
+        ).id,
         decision: 'request_revision',
         note: 'Adjust timing',
       });
@@ -445,6 +451,12 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         data: { dueAt: new Date('2000-01-01T00:00:00.000Z') },
       });
       await tasks.review(task.id, owner, {
+        expectedSubmissionId: (
+          await db.crewTaskSubmission.findFirstOrThrow({
+            where: { taskId: task.id },
+            orderBy: { versionNumber: 'desc' },
+          })
+        ).id,
         decision: 'approve',
         note: 'Accepted',
       });
@@ -658,7 +670,11 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       ).toHaveLength(3);
 
       await expect(
-        tasks.review(task.id, owner, { decision: 'approve', note: '' }),
+        tasks.review(task.id, owner, {
+          decision: 'approve',
+          note: '',
+          expectedSubmissionId: approvedSubmission.id,
+        }),
       ).rejects.toThrow();
       expect(
         (

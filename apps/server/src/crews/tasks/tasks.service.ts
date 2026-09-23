@@ -3377,6 +3377,13 @@ export class CrewTasksService {
         if (!latest) {
           throw new ConflictException({ message: 'No submission to review.' });
         }
+        if (latest.id !== input.expectedSubmissionId) {
+          throw new ConflictException({
+            code: 'CREW_TASK_SUBMISSION_CHANGED',
+            message:
+              'A newer submission is available. Refresh the task and review it before deciding.',
+          });
+        }
         const now = new Date();
         const approved = input.decision === 'approve';
         if (
