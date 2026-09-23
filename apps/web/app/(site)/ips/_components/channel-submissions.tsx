@@ -95,7 +95,7 @@ function ChannelContents({
     },
   });
   const data = query.data?.pages[0];
-  if (query.isError)
+  if (query.isError && !query.isFetchNextPageError)
     return (
       <p role="alert">
         {query.error.message}
@@ -153,11 +153,20 @@ function ChannelContents({
             </NativeSelect>
           </label>
           {mine.isLoading && <p>{t("loading")}</p>}
-          {mine.isError && <p role="alert">{mine.error.message}</p>}
-          {!mine.isLoading && !works.length && <p>{t("noWorks")}</p>}
+          {mine.isError && (
+            <div role="alert">
+              <p>{mine.error.message}</p>
+              {!mine.isFetchNextPageError && (
+                <Button disabled={mine.isFetching} onClick={() => mine.refetch()}>
+                  {t("retry")}
+                </Button>
+              )}
+            </div>
+          )}
+          {!mine.isLoading && !mine.isError && !works.length && <p>{t("noWorks")}</p>}
           {mine.hasNextPage && (
             <Button disabled={mine.isFetchingNextPage} onClick={() => mine.fetchNextPage()}>
-              {t("more")}
+              {t(mine.isFetchNextPageError ? "retry" : "more")}
             </Button>
           )}
           <Button
@@ -203,9 +212,10 @@ function ChannelContents({
           </li>
         ))}
       </ul>
+      {query.isFetchNextPageError && <p role="alert">{query.error.message}</p>}
       {query.hasNextPage && (
         <Button disabled={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>
-          {t("more")}
+          {t(query.isFetchNextPageError ? "retry" : "more")}
         </Button>
       )}
     </section>
