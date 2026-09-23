@@ -68,8 +68,8 @@ async function upload() {
     });
     target.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  return async () => {
-    await act(async () => resolve({ name: "AI title", description: "AI summary" }));
+  return async (draft = { name: "AI title", description: "AI summary" }) => {
+    await act(async () => resolve(draft));
   };
 }
 it("preserves name and description typed while analysis is pending", async () => {
@@ -105,4 +105,18 @@ it("ignores a superseded file response", async () => {
   expect(field("name").value).toBe("");
   await second();
   expect(field("name").value).toBe("AI title");
+});
+
+it("limits AI-filled fields to the same lengths as manual entry", async () => {
+  const finish = await upload();
+  await finish({ name: "N".repeat(100), description: "D".repeat(500) });
+  expect(field("name").value).toBe("N".repeat(80));
+  expect(field("description").value).toBe("D".repeat(280));
+});
+it("keeps creator text while limiting the remaining AI-filled field", async () => {
+  const finish = await upload();
+  await edit("description", "My own summary");
+  await finish({ name: "N".repeat(100), description: "D".repeat(500) });
+  expect(field("name").value).toBe("N".repeat(80));
+  expect(field("description").value).toBe("My own summary");
 });
