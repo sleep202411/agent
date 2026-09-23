@@ -124,6 +124,7 @@ let linkFails = false;
 let linkedWorkspaceId: string | null = null;
 let bulkMove = false;
 let movedSecond = false;
+let refreshedAsset = false;
 let trashFails = false;
 
 function installFetch() {
@@ -250,7 +251,11 @@ function installFetch() {
           items: inFolder
             ? []
             : [
-                ...ROOT_ITEMS,
+                ...ROOT_ITEMS.map((item) =>
+                  refreshedAsset && item.id === "file-1"
+                    ? { ...item, name: "Collaborator.png", updatedAt: "2026-09-23T10:00:00.000Z" }
+                    : item
+                ),
                 ...(bulkMove && !movedSecond
                   ? [{ ...ROOT_ITEMS[1], id: "file-2", name: "second.png" }]
                   : []),
@@ -350,6 +355,7 @@ beforeEach(() => {
 afterEach(() => {
   bulkMove = false;
   movedSecond = false;
+  refreshedAsset = false;
   trashFails = false;
   vi.clearAllMocks();
   act(() => root?.unmount());
@@ -737,6 +743,50 @@ it("rebuilds asset pages after a cursor rejection instead of replaying the inval
   const retried = requests.slice(before).find((request) => request.url.includes("/assets?"))!;
   expect(retried.url).not.toContain("cursor=");
   await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
+});
+
+it("keeps the original rename version when assets refresh during editing", async () => {
+  const client = await render();
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Rename"]')!);
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "My draft.png"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  refreshedAsset = true;
+  await act(async () => {
+    await client.invalidateQueries();
+  });
+  expect(input.value).toBe("My draft.png");
+  await act(async () => {
+    document
+      .querySelector('[data-slot="dialog-content"] form')!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  const update = requests.find((r) => r.method === "PATCH" && r.url.endsWith("/assets/file-1"));
+  expect(update?.body).toMatchObject({
+    name: "My draft.png",
+    expectedUpdatedAt: ROOT_ITEMS[1].updatedAt,
+  });
+  await click(byText("button", "Cancel"));
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Rename"]')!);
+  expect(document.querySelector<HTMLInputElement>('input[aria-label="Name"]')!.value).toBe(
+    "Collaborator.png"
+  );
+  await act(async () => {
+    document
+      .querySelector('[data-slot="dialog-content"] form')!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(
+    requests.filter((r) => r.method === "PATCH" && r.url.endsWith("/assets/file-1")).at(-1)?.body
+  ).toMatchObject({
+    expectedUpdatedAt: "2026-09-23T10:00:00.000Z",
+  });
 });
 
 it.each(["trash", "restore"])(
