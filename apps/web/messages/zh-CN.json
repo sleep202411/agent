@@ -1673,6 +1673,10 @@
     }
   },
   "newIpDetail": {
+    "loadFailure": {
+      "title": "暂时无法加载此 IP",
+      "retry": "重试"
+    },
     "roomNumber": "房间号 {number}",
     "loading": "正在加载 IP 详情...",
     "back": "返回 IP 广场",
