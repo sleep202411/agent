@@ -128,7 +128,7 @@ export function CrewAssetsTab({
   const [savingFolder, setSavingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [assetAction, setAssetAction] = useState<AssetAction | null>(null);
-  const [assetActionTargetIds, setAssetActionTargetIds] = useState<string[]>([]);
+  const [assetActionTargets, setAssetActionTargets] = useState<CrewAssetPreviewItem[]>([]);
   const [assetActionBusy, setAssetActionBusy] = useState(false);
   const [assetActionErrors, setAssetActionErrors] = useState<string[]>([]);
   const [actionName, setActionName] = useState("");
@@ -223,7 +223,6 @@ export function CrewAssetsTab({
     checkedIds.size > 1
       ? undefined
       : sourceItems.find((item) => item.id === (checkedAssetId ?? selectedAssetId));
-  const assetActionTargets = sourceItems.filter((item) => assetActionTargetIds.includes(item.id));
   const checkedAssets = sourceItems.filter((item) => checkedIds.has(item.id));
   const movableChecked = checkedAssets.filter((item) =>
     hasAssetPermission(item.effectivePermission, "edit")
@@ -413,7 +412,7 @@ export function CrewAssetsTab({
   const openAssetAction = (action: AssetAction, targetIds?: string[]) => {
     if (action === "rename") {
       if (!actionableAsset) return;
-      setAssetActionTargetIds([actionableAsset.id]);
+      setAssetActionTargets([actionableAsset]);
       setAssetAction("rename");
       setActionName(actionableAsset.name);
       setRenameVersion(actionableAsset.updatedAt);
@@ -425,7 +424,7 @@ export function CrewAssetsTab({
       targetIds && targetIds.length > 0 ? targetIds : actionableAsset ? [actionableAsset.id] : [];
     if (ids.length === 0) return;
     const primary = sourceItems.find((item) => item.id === ids[0]);
-    setAssetActionTargetIds(ids);
+    setAssetActionTargets(sourceItems.filter((item) => ids.includes(item.id)));
     setAssetActionErrors([]);
     setAssetAction("move");
     setActionName(primary?.name ?? "");
@@ -480,13 +479,13 @@ export function CrewAssetsTab({
               )
               .join("\n")
           );
-          setAssetActionTargetIds(failures.map(({ target }) => target.id));
+          setAssetActionTargets(failures.map(({ target }) => target));
           setCheckedIds(new Set(failures.map(({ target }) => target.id)));
           return;
         }
       }
       setAssetAction(null);
-      setAssetActionTargetIds([]);
+      setAssetActionTargets([]);
       setCheckedIds(new Set());
       setSelectedAssetId("");
       setInspectorOpen(false);
@@ -940,7 +939,7 @@ export function CrewAssetsTab({
           if (assetActionBusy) return;
           setAssetActionErrors([]);
           setAssetAction(null);
-          setAssetActionTargetIds([]);
+          setAssetActionTargets([]);
         }}
         onSubmit={() => void submitAssetAction()}
       />
