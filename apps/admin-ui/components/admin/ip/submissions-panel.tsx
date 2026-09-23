@@ -3,41 +3,60 @@ import { useEffect, useState } from "react";
 import { requestEnvelope, toErrorMessage } from "./shared";
 import { useAdminOperation } from "../use-admin-operation";
 type Entry = { workId: string; title: string; status: string; version: number };
+type LoadState = {
+  requestKey: string;
+  items: Entry[];
+  nextCursor: string | null;
+  error: string | null;
+};
 export function IpSubmissionsPanel({ ipId }: { ipId: string }) {
-  const [items, setItems] = useState<Entry[]>([]);
   const [cursor, setCursor] = useState<string | undefined>();
-  const [next, setNext] = useState<string | null>();
   const [refresh, setRefresh] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<LoadState>({
+    requestKey: "",
+    items: [],
+    nextCursor: null,
+    error: null,
+  });
   const { busy, begin } = useAdminOperation();
   const endpoint = `/api/admin/ip-commerce/ips/${encodeURIComponent(ipId)}/submissions`;
+  const requestUrl = endpoint + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
+  const requestKey = `${requestUrl}#${refresh}`;
+  const loading = loadState.requestKey !== requestKey;
+  const error = actionError ?? (loading ? null : loadState.error);
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
     requestEnvelope<{ items: Entry[]; nextCursor?: string | null }>(
-      endpoint + (cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""),
+      requestUrl,
       { signal: controller.signal }
     )
       .then((data) => {
         if (!controller.signal.aborted) {
-          setItems(data.items);
-          setNext(data.nextCursor);
+          setLoadState({
+            requestKey,
+            items: data.items,
+            nextCursor: data.nextCursor ?? null,
+            error: null,
+          });
         }
       })
       .catch((e) => {
-        if (!controller.signal.aborted) setError(toErrorMessage(e));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoadState({
+            requestKey,
+            items: [],
+            nextCursor: null,
+            error: toErrorMessage(e),
+          });
+        }
       });
     return () => controller.abort();
-  }, [endpoint, cursor, refresh]);
+  }, [requestKey, requestUrl]);
   async function decide(entry: Entry, status: "approved" | "rejected") {
     const op = begin();
     if (!op) return;
-    setError(null);
+    setActionError(null);
     try {
       await requestEnvelope(endpoint, {
         method: "PATCH",
@@ -47,7 +66,7 @@ export function IpSubmissionsPanel({ ipId }: { ipId: string }) {
       });
       if (op.current()) setRefresh((x) => x + 1);
     } catch (e) {
-      if (op.current()) setError(toErrorMessage(e));
+      if (op.current()) setActionError(toErrorMessage(e));
     } finally {
       op.finish();
     }
@@ -65,7 +84,7 @@ export function IpSubmissionsPanel({ ipId }: { ipId: string }) {
       ) : (
         <>
           <ul className="space-y-2">
-            {items.map((entry) => (
+            {loadState.items.map((entry) => (
               <li key={entry.workId} className="flex items-center gap-2 text-sm">
                 <span className="flex-1">
                   {entry.title} · {entry.status}
@@ -91,13 +110,14 @@ export function IpSubmissionsPanel({ ipId }: { ipId: string }) {
               </li>
             ))}
           </ul>
-          {!items.length && <p className="text-sm text-slate-500">No submissions.</p>}
+          {!loadState.items.length && <p className="text-sm text-slate-500">No submissions.</p>}
         </>
       )}
       <div className="flex gap-2">
         <button
           disabled={busy || loading}
           onClick={() => {
+            setActionError(null);
             setCursor(undefined);
             setRefresh((x) => x + 1);
           }}
@@ -105,10 +125,13 @@ export function IpSubmissionsPanel({ ipId }: { ipId: string }) {
         >
           Refresh
         </button>
-        {next && (
+        {loadState.nextCursor && (
           <button
             disabled={busy || loading}
-            onClick={() => setCursor(next)}
+            onClick={() => {
+              setActionError(null);
+              setCursor(loadState.nextCursor ?? undefined);
+            }}
             className="text-sm underline"
           >
             Next page
