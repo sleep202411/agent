@@ -109,3 +109,22 @@ it("surfaces a second-step conflict without retrying or reporting success", asyn
   expect(s.error).toHaveBeenCalledWith("IP changed; refresh before saving");
   expect(s.success).not.toHaveBeenCalled();
 });
+
+it.each([0, 1])("does not rewrite malformed episode price field %s", async (index) => {
+  render(false, true);
+  await click("editPrice");
+  if (index === 1)
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "pricingPanel.schedule.toggle")!
+        .click()
+    );
+  act(() => {
+    const input = host.querySelectorAll("input")[index]!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "-50");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.querySelectorAll("input")[index]!.value).toBe("-50");
+  await click("save");
+  expect(s.price).not.toHaveBeenCalled();
+});

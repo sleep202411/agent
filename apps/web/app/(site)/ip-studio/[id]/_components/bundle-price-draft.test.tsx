@@ -12,7 +12,11 @@ vi.mock("sonner", () => ({ toast: { success: s.success, error: s.error } }));
 vi.mock("@/src/env", () => ({ env: {} }));
 let root: Root, host: HTMLDivElement;
 const ip = (version: number, amount = "30") =>
-  ({ id: "ip", version, price: { amount, originalAmount: null, startsAt: null, endsAt: null } }) as IpCreatorIp;
+  ({
+    id: "ip",
+    version,
+    price: { amount, originalAmount: null, startsAt: null, endsAt: null },
+  }) as IpCreatorIp;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   host = document.createElement("div");
@@ -32,7 +36,10 @@ function edit(value: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-const save = () => [...host.querySelectorAll("button")].find((button) => button.textContent === "pricingPanel.form.save")!;
+const save = () =>
+  [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "pricingPanel.form.save"
+  )!;
 it("refreshes untouched bundle pricing", () => {
   render(ip(10));
   render(ip(11, "99"));
@@ -44,7 +51,9 @@ it("keeps a changed bundle price tied to its original version", async () => {
   render(ip(11, "99"));
   s.save.mockRejectedValueOnce(new Error("Version conflict"));
   await act(async () => save().click());
-  expect(s.save).toHaveBeenCalledWith(expect.objectContaining({ amount: "50", expectedVersion: 10 }));
+  expect(s.save).toHaveBeenCalledWith(
+    expect.objectContaining({ amount: "50", expectedVersion: 10 })
+  );
   expect(s.error).toHaveBeenCalledWith("Version conflict");
 });
 it("advances the draft version after saving", async () => {
@@ -53,5 +62,31 @@ it("advances the draft version after saving", async () => {
   await act(async () => save().click());
   edit("60");
   await act(async () => save().click());
-  expect(s.save).toHaveBeenLastCalledWith(expect.objectContaining({ amount: "60", expectedVersion: 11 }));
+  expect(s.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ amount: "60", expectedVersion: 11 })
+  );
+});
+
+it.each(["-5", "1.5", "1e2", "abc"])("does not rewrite bundle price input %s", async (value) => {
+  render(ip(10));
+  edit(value);
+  expect(host.querySelector("input")!.value).toBe(value);
+  expect(save().disabled).toBe(true);
+  await act(async () => save().click());
+  expect(s.save).not.toHaveBeenCalled();
+});
+it("does not strip malformed compare-at prices", () => {
+  render(ip(10));
+  act(() =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "pricingPanel.schedule.toggle")!
+      .click()
+  );
+  act(() => {
+    const input = host.querySelectorAll("input")[1]!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "-50");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(host.querySelectorAll("input")[1]!.value).toBe("-50");
+  expect(save().disabled).toBe(true);
 });
