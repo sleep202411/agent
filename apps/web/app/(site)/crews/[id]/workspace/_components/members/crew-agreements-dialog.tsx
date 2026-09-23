@@ -166,6 +166,7 @@ function AgreementSession({
   };
 
   const chooseMember = (userId: string) => {
+    if (userId !== memberUserId) setSignerEmail("");
     setMemberUserId(userId);
     setSignerName(displayNameOf(userId, displays));
   };
