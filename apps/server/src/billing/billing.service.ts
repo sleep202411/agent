@@ -113,6 +113,10 @@ import type {
 } from './dto';
 import { PaymentProviderRegistry } from './payment-provider-registry.service';
 import {
+  initialPriceProviderBindingStatus,
+  isWechatAmountBasedPriceProvider,
+} from './price-provider-binding-policy';
+import {
   WechatPayProvider,
   WechatRefundUnconfirmedException,
   type WechatRefundNotification,
@@ -2289,7 +2293,12 @@ export class BillingService {
               providerProductId: binding.providerProductId ?? null,
               providerPriceId: binding.providerPriceId ?? null,
               providerMode: binding.providerMode ?? null,
-              status: binding.status as BillingProviderBindingStatus,
+              status: initialPriceProviderBindingStatus({
+                provider: binding.provider as PaymentProvider,
+                currency: input.currency,
+                cell: CURRENT_CELL,
+                requestedStatus: binding.status as BillingProviderBindingStatus,
+              }),
               metadata: (binding.metadata ?? {}) as Prisma.InputJsonValue,
             })),
           },
@@ -2377,7 +2386,12 @@ export class BillingService {
         providerProductId: input.providerProductId ?? null,
         providerPriceId: input.providerPriceId ?? null,
         providerMode: input.providerMode ?? null,
-        status: input.status as BillingProviderBindingStatus,
+        status: initialPriceProviderBindingStatus({
+          provider: input.provider as PaymentProvider,
+          currency: price.currency,
+          cell: CURRENT_CELL,
+          requestedStatus: input.status as BillingProviderBindingStatus,
+        }),
         syncError: null,
         metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
       };
@@ -2408,11 +2422,17 @@ export class BillingService {
         msg: 'Billing provider binding not found.',
       });
     }
+    if (isWechatAmountBasedPriceProvider(binding.provider)) {
+      throw new ServiceUnavailableException({
+        code: 'PAYMENT_PROVIDER_CATALOG_SYNC_UNSUPPORTED',
+        msg: `Payment provider "${binding.provider}" uses internal prices and does not support catalog sync.`,
+      });
+    }
     const adapter = this.providerRegistry.get(binding.provider);
     if (!adapter.syncPrice) {
       throw new ServiceUnavailableException({
         code: 'PAYMENT_PROVIDER_CATALOG_SYNC_UNSUPPORTED',
-        msg: `Payment provider "${binding.provider}" does not support catalog sync yet.`,
+        msg: `Payment provider "${binding.provider}" does not support catalog sync.`,
       });
     }
     await this.prisma.billingProviderPriceBinding.update({
@@ -2471,6 +2491,7 @@ export class BillingService {
   async syncPendingProviderBindings() {
     const bindings = await this.prisma.billingProviderPriceBinding.findMany({
       where: {
+        provider: { not: PaymentProvider.wechat_pay },
         status: {
           in: [
             BillingProviderBindingStatus.sync_pending,

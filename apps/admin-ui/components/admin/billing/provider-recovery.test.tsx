@@ -126,3 +126,25 @@ it("cancels unfinished binding companion reads when one fails", async () => {
   expect(fetchMock.mock.calls.every((call) => call[1].signal.aborted)).toBe(true);
   expect(container.textContent).toContain("Overview failed");
 });
+
+it("does not offer provider catalog synchronization for WeChat prices", async () => {
+  const wechatOverview: AdminBillingOverviewData = {
+    ...overview,
+    providerBindings: [
+      {
+        ...overview.providerBindings[0],
+        id: "wechat-binding",
+        provider: "wechat_pay",
+        providerProductId: null,
+        providerPriceId: null,
+        lastSyncedAt: null,
+      },
+    ],
+  };
+
+  await render(
+    <BillingBindingsPanel {...props} initialOverview={wechatOverview} initialPromotions={null} />
+  );
+
+  expect(container.querySelector<HTMLButtonElement>('[aria-label="同步供应商价格"]')).toBeNull();
+});

@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ProductionActivityComposer } from "./production-project-update";
+import { ProductionActivityComposer, ProductionActivityEntry } from "./production-project-update";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -13,7 +13,8 @@ const state = vi.hoisted(() => ({ create: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, unknown>) =>
+    values ? `${key} ${Object.values(values).join(" ")}` : key,
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", async () => {
   const actual = await vi.importActual<object>("@/app/(site)/crews/_hooks/use-crew");
@@ -96,6 +97,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root?.unmount());
   container?.remove();
+  vi.restoreAllMocks();
   root = null;
   container = null;
 });
@@ -248,3 +250,48 @@ it("preserves a draft as a comment after production-management access is revoked
   expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ kind: "comment" }));
   expect(state.create.mock.calls[0][0]).not.toHaveProperty("health");
 });
+
+it.each(["America/Los_Angeles", "Asia/Shanghai", "Pacific/Kiritimati"])(
+  "preserves calendar dates in the composer and audit history in %s",
+  (timeZone) => {
+    const DateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function (locale, options) {
+      return new DateTimeFormat(locale, { timeZone, ...options });
+    });
+    renderComposer();
+    expect(container!.textContent).toContain("activity.setTo Sep 9");
+    const localTimestamp = new DateTimeFormat("en-US", {
+      timeZone,
+      month: "short",
+      day: "numeric",
+    }).format(new Date("2026-08-01T00:00:00.000Z"));
+    expect(container!.textContent).toContain(`activity.progressSince ${localTimestamp}`);
+    act(() =>
+      root!.render(
+        <ProductionActivityEntry
+          display={null}
+          activity={{
+            plainText: "",
+            id: "audit",
+            crewId: "crew-1",
+            kind: "properties_changed",
+            createdByUserId: "user-1",
+            createdAt: "2026-08-01T00:00:00.000Z",
+            content: null,
+            health: null,
+            progress: null,
+            payload: {
+              changes: [
+                { field: "start_date", from: null, to: "2026-09-09" },
+                { field: "target_date", from: null, to: "2026-10-01" },
+              ],
+            },
+          }}
+        />
+      )
+    );
+    expect(container!.textContent).toContain("activity.setStartDate Sep 9");
+    expect(container!.textContent).toContain("activity.setTargetDate Oct 1");
+    expect(container!.querySelector("time")!.textContent).toContain(localTimestamp);
+  }
+);

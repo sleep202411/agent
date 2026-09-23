@@ -448,9 +448,13 @@ function propertyChangeLabel(
 }
 
 function formatDate(value: string, locale: string) {
-  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(
-    new Date(value.length === 10 ? `${value}T00:00:00.000Z` : value)
-  );
+  const calendarDate = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    // Calendar dates have no timezone; timestamps still follow the viewer's timezone.
+    ...(calendarDate ? { timeZone: "UTC" } : {}),
+  }).format(new Date(calendarDate ? `${value}T00:00:00.000Z` : value));
 }
 
 function formatActivityDate(value: string, locale: string) {
