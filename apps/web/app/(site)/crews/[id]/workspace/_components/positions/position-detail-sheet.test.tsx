@@ -332,3 +332,20 @@ it("restarts after the server rejects a continuation cursor", async () => {
   expect(state.refetch).toHaveBeenCalledTimes(1);
   expect(state.next).not.toHaveBeenCalled();
 });
+
+it("keeps the confirmed freeze intent when another manager freezes the position", async () => {
+  await render();
+  await click("closeJob");
+  await render({ ...position, status: "frozen" });
+  await confirm();
+  expect(state.update.mock.calls[0]?.[0]).toEqual({ positionId: "position", status: "frozen" });
+  const callbacks = state.update.mock.calls[0]?.[1];
+  await act(async () => {
+    callbacks.onError(new Error("Network failure"));
+    callbacks.onSettled();
+  });
+  await confirm();
+  expect(state.update.mock.calls[1]?.[0]).toEqual({ positionId: "position", status: "frozen" });
+  await act(async () => state.update.mock.calls[1]?.[1].onSuccess());
+  expect(state.success).toHaveBeenCalledWith("closeJobSuccess");
+});
