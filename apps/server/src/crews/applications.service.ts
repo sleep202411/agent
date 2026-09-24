@@ -194,11 +194,10 @@ export class ApplicationsService {
               applicationId: app.id,
               applicantId,
             },
-            // Same applicant + same position → same key. The DB partial
-            // unique on (positionId, applicantId) WHERE status='pending'
-            // is the primary defense; this seals it on the notification
-            // side so a button-spam race produces 1 notif at most.
-            idempotencyKey: `crew.application.submitted:${positionId}:${applicantId}`,
+            // Each application is a distinct event, including reapplications
+            // after rejection. Pending-row uniqueness already blocks spam;
+            // notification deduplication must not suppress a later application.
+            idempotencyKey: `crew.application.submitted:${app.id}`,
           },
           tx,
         );
