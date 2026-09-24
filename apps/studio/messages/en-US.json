@@ -3836,14 +3836,6 @@
         "createEndingHere": "Create named ending…",
         "cancel": "Cancel",
         "endingTitle": "Title",
-        "endingKind": "Kind",
-        "endingKinds": {
-          "success": "Success",
-          "failure": "Failure",
-          "neutral": "Neutral",
-          "hidden": "Hidden",
-          "custom": "Custom"
-        },
         "noVariables": "Register a variable in State first, then attach it here.",
         "attachVisibilityEmpty": "Visibility",
         "effectsTitle": "Effects",

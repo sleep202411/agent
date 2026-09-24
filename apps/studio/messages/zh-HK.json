@@ -3836,14 +3836,6 @@
         "createEndingHere": "建立命名結局…",
         "cancel": "取消",
         "endingTitle": "標題",
-        "endingKind": "類型",
-        "endingKinds": {
-          "success": "成功",
-          "failure": "失敗",
-          "neutral": "中性",
-          "hidden": "隱藏",
-          "custom": "自訂"
-        },
         "noVariables": "先在左側「狀態」裡登記變數，再掛到這裡。",
         "attachVisibilityEmpty": "顯示條件",
         "effectsTitle": "選項效果",
