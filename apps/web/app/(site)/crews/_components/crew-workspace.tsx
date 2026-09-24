@@ -242,7 +242,9 @@ export function CrewWorkspace({
     );
   }
 
-  if (detailQuery.isError) {
+  const detailUnavailable =
+    detailQuery.error instanceof CrewApiError && [401, 403, 404].includes(detailQuery.error.status);
+  if (detailQuery.isError && (!crewDetail || detailUnavailable)) {
     return (
       <WorkspaceState
         icon={<IconAlertTriangle className="size-6 text-destructive" />}
@@ -309,7 +311,10 @@ export function CrewWorkspace({
     );
   }
 
-  if (membersQuery.isError) {
+  const membersUnavailable =
+    membersQuery.error instanceof CrewApiError &&
+    [401, 403, 404].includes(membersQuery.error.status);
+  if (membersQuery.isError && (!membersQuery.isRefetchError || membersUnavailable)) {
     return (
       <WorkspaceState
         icon={<IconAlertTriangle className="size-6 text-destructive" />}
@@ -338,6 +343,7 @@ export function CrewWorkspace({
     );
   }
 
+  const refreshErrors = [detailQuery, membersQuery].filter((query) => query.isError);
   const isChat = activeTab === "chat";
 
   return (
@@ -359,6 +365,31 @@ export function CrewWorkspace({
         onSelectChatChannel={selectChatChannel}
         onSelectTab={selectTab}
         showTeamChat
+        notice={
+          refreshErrors.length ? (
+            <div
+              role="alert"
+              className="flex shrink-0 items-center gap-3 p-3 text-sm text-destructive"
+            >
+              <p>
+                {refreshErrors
+                  .map((query) => query.error?.message || t("workspaceLoadFailedBody"))
+                  .join(" · ")}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={refreshErrors.some((query) => query.isFetching)}
+                onClick={() =>
+                  void Promise.allSettled(refreshErrors.map((query) => query.refetch()))
+                }
+              >
+                {tc("retry")}
+              </Button>
+            </div>
+          ) : null
+        }
       >
         {activeTab === "assets" ? (
           <CrewAssetsTab

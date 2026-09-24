@@ -45,6 +45,7 @@ interface CrewWorkbenchShellProps {
   activeTab: WorkspaceTabId;
   tabs: readonly WorkspaceTab[];
   children: ReactNode;
+  notice?: ReactNode;
   crewId: string;
   crewLogo?: string | null;
   crewName: string;
@@ -63,6 +64,7 @@ export function CrewWorkbenchShell({
   activeTab,
   tabs,
   children,
+  notice,
   crewId,
   crewLogo,
   crewName,
@@ -175,6 +177,7 @@ export function CrewWorkbenchShell({
           }
           showProductionActions={showTeamChat}
         />
+        {notice}
         <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </section>
     </div>
