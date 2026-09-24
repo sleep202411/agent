@@ -151,3 +151,92 @@ it("retains history after pagination failure and cancels retry on account change
     state.account = "a";
   }
 });
+
+it.each([false, true])(
+  "discards to the accepted save when the list refresh fails (existing: %s)",
+  async (existing) => {
+    vi.mocked(crewApi.post).mockReset();
+    const container = document.createElement("div"),
+      root = createRoot(container),
+      client = new QueryClient();
+    const original = {
+      id: "saved-id",
+      version: 1,
+      submissionStatus: null,
+      definition: {
+        category: "Original",
+        purpose: "Meeting",
+        occurredOn: null,
+        currency: "USD",
+        amountMinor: "1000",
+        evidenceNote: "",
+      },
+    };
+    let saved = false;
+    vi.mocked(crewApi.get).mockImplementation(async (path) => {
+      if (path === "/crews/crew/expense-drafts") {
+        if (saved) throw new Error("List offline");
+        return { items: existing ? [original] : [], nextCursor: null };
+      }
+      return { items: [], nextCursor: null };
+    });
+    const button = (text: string) =>
+      [...container.querySelectorAll("button")].find((b) => b.textContent === text)!;
+    const category = () =>
+      [...container.querySelectorAll("label")]
+        .find((el) => el.textContent?.startsWith("category"))!
+        .querySelector("input")!;
+    const edit = (value: string) =>
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+          category(),
+          value
+        );
+        category().dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    const flush = () =>
+      act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    try {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <Page />
+          </QueryClientProvider>
+        )
+      );
+      await flush();
+      if (existing)
+        await act(async () =>
+          [...container.querySelectorAll("button")]
+            .find((b) => b.textContent?.startsWith("Original"))!
+            .click()
+        );
+      edit("Saved category");
+      vi.mocked(crewApi.post).mockImplementationOnce(async () => {
+        saved = true;
+        return {
+          ...original,
+          version: 2,
+          definition: { ...original.definition, category: "Saved category" },
+        };
+      });
+      await act(async () => button("save").click());
+      await flush();
+      expect(container.textContent).toContain("List offline");
+      edit("Discard this edit");
+      await act(async () => button("discard").click());
+      expect(category().value).toBe("Saved category");
+      vi.mocked(crewApi.post).mockResolvedValueOnce({ status: "pending" });
+      await act(async () => button("submit").click());
+      expect(crewApi.post).toHaveBeenLastCalledWith(
+        "/crews/crew/expense-drafts/saved-id/submit",
+        expect.objectContaining({ body: { expectedVersion: 2 } })
+      );
+    } finally {
+      act(() => root.unmount());
+      client.clear();
+    }
+  }
+);
