@@ -898,6 +898,25 @@ export class CrewTasksService {
           taskCount,
         });
       }
+      const views = await tx.crewTaskView.findMany({
+        where: { crewId: current.crewId },
+        select: { id: true, filters: true },
+      });
+      for (const view of views) {
+        const filters = CrewTaskViewFiltersSchema.parse(view.filters);
+        if (!filters.workflowStateIds?.includes(stateId)) continue;
+        await tx.crewTaskView.update({
+          where: { id: view.id },
+          data: {
+            filters: {
+              ...filters,
+              workflowStateIds: filters.workflowStateIds.filter(
+                (id) => id !== stateId,
+              ),
+            },
+          },
+        });
+      }
       await tx.crewTaskWorkflowState.delete({ where: { id: stateId } });
       await tx.crewTaskWorkflowState.updateMany({
         where: {

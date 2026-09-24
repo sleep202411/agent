@@ -200,4 +200,30 @@ integration('Crew task configuration reference integrity', () => {
       ).options,
     ).toEqual([{ id: 'keep', label: 'Keep' }]);
   });
+  it('removes a deleted workflow column from saved filters', async () => {
+    const state = await db.crewTaskWorkflowState.create({
+      data: {
+        crewId,
+        name: 'Archived',
+        color: '#888888',
+        semantic: 'open',
+        archived: true,
+        createdByUserId: userId,
+      },
+    });
+    const view = await db.crewTaskView.create({
+      data: {
+        crewId,
+        name: 'Archived filter',
+        layout: 'board',
+        filters: { workflowStateIds: [state.id], priorities: ['high'] },
+        createdByUserId: userId,
+      },
+    });
+    await service().deleteWorkflowState(state.id, userId);
+    expect(
+      (await db.crewTaskView.findUniqueOrThrow({ where: { id: view.id } }))
+        .filters,
+    ).toEqual({ workflowStateIds: [], priorities: ['high'] });
+  });
 });
