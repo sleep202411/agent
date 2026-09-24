@@ -24,6 +24,8 @@
  *     no Apply (they're already in)
  */
 
+import { isCrewCursorError } from "../../_hooks/api";
+import { Button } from "@/components/ui/button";
 import { JoinFanCommunity } from "@/app/(site)/crews/_components/join-fan-community";
 import { useMemo, useState } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
@@ -59,10 +61,14 @@ import type { LookupUserDTO } from "@repo/shared/users";
 export function CrewDetail({ crew }: { crew: CrewDTO }) {
   const t = useTranslations("workspace");
   const tCrew = useTranslations("crew");
+  const tc = useTranslations("common");
   const locale = useLocale() as Locale;
   const id = crew.id;
 
-  const { data: positions = [] } = useCrewPositions(id);
+  const positionQuery = useCrewPositions(id);
+  const { data: positions = [] } = positionQuery;
+  const positionsIncomplete =
+    positionQuery.isPending || positionQuery.isError || positionQuery.hasNextPage;
   const { data: members = [] } = useCrewMembers(id);
 
   // Single source of truth for viewer permissions — matches the workspace
@@ -148,12 +154,12 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
           <StatItem
             icon={IconBriefcase}
             label={tCrew("openPositions")}
-            value={`${openPositionsCount}`}
+            value={positionsIncomplete ? "—" : `${openPositionsCount}`}
           />
           <StatItem
             icon={IconLayoutDashboard}
             label={t("wsSlots")}
-            value={`${slotsFilled}/${slotsTotal}`}
+            value={positionsIncomplete ? "—" : `${slotsFilled}/${slotsTotal}`}
           />
           <StatItem
             icon={IconCalendar}
@@ -191,9 +197,38 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
               <SectionHeader
                 icon={IconBriefcase}
                 eyebrow={tCrew("joinUs")}
-                title={tCrew("positionsSectionTitle", { count: openPositionsCount })}
+                title={
+                  positionsIncomplete
+                    ? tCrew("openPositions")
+                    : tCrew("positionsSectionTitle", { count: openPositionsCount })
+                }
               />
-              {visiblePositions.length === 0 ? (
+              {positionQuery.isError ? (
+                <div role="alert" className="mb-4 flex items-center gap-3 text-sm text-destructive">
+                  <span>
+                    {positionQuery.error instanceof Error
+                      ? positionQuery.error.message
+                      : tc("loadFailed")}
+                  </span>
+                  <Button
+                    variant="outline"
+                    disabled={positionQuery.isFetching}
+                    onClick={() =>
+                      void (positionQuery.isFetchNextPageError &&
+                      !isCrewCursorError(positionQuery.error, "CREW_POSITION_CURSOR_INVALID")
+                        ? positionQuery.fetchNextPage()
+                        : positionQuery.refetch())
+                    }
+                  >
+                    {tc("retry")}
+                  </Button>
+                </div>
+              ) : positionsIncomplete ? (
+                <p role="status" className="mb-4 text-sm text-muted-foreground">
+                  {tc("loading")}
+                </p>
+              ) : null}
+              {visiblePositions.length === 0 && !positionsIncomplete ? (
                 <EmptyHint>{t("noJobsYet")}</EmptyHint>
               ) : (
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
