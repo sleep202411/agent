@@ -136,6 +136,9 @@ describe("StoryEffectsEditor", () => {
     await renderEditor([{ kind: "add", key: "flag", amount: 1 }], [FLAG]);
     expect(kindTrigger(0).disabled).toBe(false);
     expect(kindTrigger(0).getAttribute("aria-invalid")).toBe("true");
+    expect(kindTrigger(0).className).toContain("border-destructive!");
+    expect(valueInput().getAttribute("aria-invalid")).toBe("true");
+    expect(valueInput().disabled).toBe(true);
     expect(container.textContent).toContain("booleanEffectInvalid");
 
     const scrollIntoView = HTMLElement.prototype.scrollIntoView;

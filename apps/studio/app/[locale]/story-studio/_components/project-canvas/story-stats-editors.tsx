@@ -465,6 +465,7 @@ export function StoryEffectsEditor({
                 effect={effect}
                 variable={variable}
                 canEdit={canEdit}
+                invalid={invalidBooleanAdd}
                 flush={table}
                 onChange={(next) =>
                   onChange(effects.map((candidate, at) => (at === index ? next : candidate)))
@@ -1093,12 +1094,14 @@ function EffectValueField({
   effect,
   variable,
   canEdit,
+  invalid,
   flush,
   onChange,
 }: {
   effect: StoryStateEffect;
   variable: StoryBibleStateVariable | undefined;
   canEdit: boolean;
+  invalid?: boolean;
   flush?: boolean;
   onChange: (effect: StoryStateEffect) => void;
 }) {
@@ -1111,13 +1114,15 @@ function EffectValueField({
       <Input
         type="number"
         value={subtract ? Math.abs(effect.amount) : effect.amount}
-        disabled={!canEdit}
+        disabled={!canEdit || invalid}
+        aria-invalid={invalid || undefined}
         onChange={(event) => {
           const next = Number(event.target.value) || 0;
           onChange({ ...effect, amount: subtract ? -Math.abs(next) || 0 : next });
         }}
         className={cn(
           "nodrag nopan nowheel h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs",
+          invalid && "border-destructive! ring-1 ring-destructive/30",
           flush && "mt-0"
         )}
       />
@@ -1209,7 +1214,11 @@ function StatsSelect({
       <SelectTrigger
         size="sm"
         aria-invalid={invalid || undefined}
-        className={cn("nodrag nopan nowheel w-full", !flush && "mt-1 h-8 px-2.5 text-xs")}
+        className={cn(
+          "nodrag nopan nowheel w-full",
+          invalid && "border-destructive! ring-1 ring-destructive/30",
+          !flush && "mt-1 h-8 px-2.5 text-xs"
+        )}
         onKeyDown={(event) => event.stopPropagation()}
       >
         <SelectValue />
