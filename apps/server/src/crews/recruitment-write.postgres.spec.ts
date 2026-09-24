@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { PrismaService } from '../infra/db/db.module';
+import { NotificationService } from '../notification/notification.service';
 import { PositionsService } from './positions.service';
 import { ApplicationsService } from './applications.service';
 import { CreatePositionSchema } from './dto';
@@ -105,6 +106,9 @@ integration(
       });
     });
     afterEach(async () => {
+      await db.notification.deleteMany({
+        where: { meta: { path: ['crewId'], equals: crewId } },
+      });
       await db.crew.delete({ where: { id: crewId } });
     });
     afterAll(async () => {
@@ -255,6 +259,61 @@ integration(
         expect(notifications.send).not.toHaveBeenCalled();
       },
     );
+    it('notifies the owner for a new application after rejection without duplicate alerts', async () => {
+      const subject = new ApplicationsService(
+        db as PrismaService,
+        new NotificationService(db as PrismaService),
+        {} as ConstructorParameters<typeof ApplicationsService>[2],
+        {} as ConstructorParameters<typeof ApplicationsService>[3],
+        new CrewAuthorizationService(db as PrismaService),
+      );
+      const original = await subject.apply(crewId, positionId, 'applicant', {
+        message: 'First application',
+      });
+      await db.crewApplication.update({
+        where: { id: original.id },
+        data: { status: 'rejected' },
+      });
+      const attempts = await Promise.allSettled([
+        subject.apply(crewId, positionId, 'applicant', {
+          message: 'New application',
+        }),
+        subject.apply(crewId, positionId, 'applicant', {
+          message: 'New application',
+        }),
+      ]);
+      expect(
+        attempts.filter((attempt) => attempt.status === 'fulfilled'),
+      ).toHaveLength(1);
+      const rows = await db.crewApplication.findMany({
+        where: { crewId },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(rows).toHaveLength(2);
+      const notices = await db.notification.findMany({
+        where: {
+          type: 'crew.application.submitted',
+          meta: { path: ['crewId'], equals: crewId },
+        },
+      });
+      expect(notices).toHaveLength(2);
+      for (const row of rows) {
+        expect(notices.map((notice) => notice.meta)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              applicationId: row.id,
+              deeplink: `/crews/${crewId}/workspace?tab=roles&application=${row.id}`,
+            }),
+          ]),
+        );
+      }
+      expect(
+        await db.notificationOutbox.count({
+          where: { notificationId: { in: notices.map((notice) => notice.id) } },
+        }),
+      ).toBe(2);
+    });
+
     it('keeps one concurrent application and blocks deletion while it remains pending', async () => {
       const results = await Promise.allSettled([
         applications.apply(crewId, positionId, 'applicant', {}),
