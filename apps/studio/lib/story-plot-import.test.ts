@@ -87,8 +87,20 @@ describe("plot JSON import", () => {
         new URL(`../public/templates/story-plot/${locale}.md`, import.meta.url),
         "utf8"
       );
-      const json = md.match(/```json\n([\s\S]+?)\n```/)![1]!;
-      const plot = parseStoryPlotImport(json);
+      const examples = [...md.matchAll(/```json\n([\s\S]+?)\n```/g)];
+      expect(examples).toHaveLength(2);
+      for (const [, json] of examples) {
+        const examplePlot = parseStoryPlotImport(json!);
+        const applied = applyStoryPlotImport(empty(), examplePlot, locale);
+        expect(
+          createLockableInteractiveStoryDraftContentSchema(locale).safeParse(applied.content)
+            .success
+        ).toBe(true);
+        expect(buildStoryCanvasModel(applied.content, locale).nodes).toHaveLength(
+          examplePlot.nodes.length
+        );
+      }
+      const plot = parseStoryPlotImport(examples[0]![1]!);
       const { content } = applyStoryPlotImport(empty(), plot, locale);
       expect(
         createLockableInteractiveStoryDraftContentSchema(locale).safeParse(content).success

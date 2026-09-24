@@ -3914,7 +3914,7 @@
         "chat": "对话"
       },
       "plotImport": {
-        "title": "导入 JSON",
+        "title": "导入情节树",
         "description": "将其他 AI 工具生成的情节 JSON，直接导入为可编辑的情节树，并写入状态、资产和分镜提示词。",
         "download": "下载 AI 模板",
         "choose": "选择 JSON 文件",

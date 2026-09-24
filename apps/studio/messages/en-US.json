@@ -3914,7 +3914,7 @@
         "chat": "Chat"
       },
       "plotImport": {
-        "title": "Import JSON",
+        "title": "Import Plot Tree",
         "description": "Turn a plot JSON file from any AI tool into an editable plot tree, including state, assets and storyboard prompts.",
         "download": "Download AI template",
         "choose": "Choose JSON file",
