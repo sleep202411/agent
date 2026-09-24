@@ -14,7 +14,7 @@ import styles from "./tv-stage.module.css";
 
 interface TvStageProps {
   item: TvItem;
-  onPlaybackChange: (playing: boolean) => void;
+  onPlaybackChange: (playing: boolean, source?: string) => void;
   onNext?: () => void;
   advancing: boolean;
   navigationError: string | null;
@@ -80,7 +80,7 @@ export function TvStage(props: TvStageProps) {
     };
     player.on("playing", () => {
       if (!visible.current || document.hidden) player.pause();
-      else latest.current.onPlaybackChange(true);
+      else latest.current.onPlaybackChange(true, player.currentSrc());
     });
     player.on(["pause", "waiting", "emptied"], paused);
     player.on("ended", () => {

@@ -18,6 +18,7 @@ vi.mock("@/components/auth/auth-dialog-provider", () => ({
 const harness = vi.hoisted(() => ({
   userId: "viewer-a",
   get: vi.fn(),
+  post: vi.fn(),
   list: vi.fn(),
   discovery: vi.fn(),
   routerPush: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock("@/src/i18n/locale-url", () => ({ localizePath: (path: string) => path }
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: harness.routerPush }) }));
 vi.mock("@/src/lib/api", () => ({
   api: {
+    post: (...args: unknown[]) => harness.post(...args),
     get: (path: string, config?: unknown) => {
       harness.get(path, config);
       if (String(path).includes("/discovery")) return harness.discovery();
@@ -148,6 +150,7 @@ describe("TV IP list", () => {
       }
     );
     harness.get.mockReset();
+    harness.post.mockReset().mockResolvedValue({ recorded: true });
     harness.list.mockReset().mockResolvedValue({ items: ips, nextCursor: null });
     harness.discovery.mockReset().mockResolvedValue({ items: [] });
     harness.routerPush.mockClear();
@@ -286,6 +289,91 @@ describe("TV IP list", () => {
   }
   const selected = () =>
     container.querySelector('nav button[aria-current="true"]')?.getAttribute("aria-label");
+
+  it("records full-episode playback once, without counting trailers or buffering", async () => {
+    const first = makeIp("ip-1", "First IP");
+    first.episodes = [1, 2].map((number) => ({
+      id: `episode-${number}`,
+      episodeNo: number,
+      title: `Episode ${number}`,
+      status: "published",
+      mediaAsset: { ...first.trailerAsset!, url: `https://cdn.test/episode-${number}.mp4` },
+    })) as typeof first.episodes;
+    harness.list.mockResolvedValue({ items: [first], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    act(() => player().trigger("playing"));
+    expect(harness.post).not.toHaveBeenCalled();
+    for (const number of [1, 2]) {
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(`[data-episode-id="episode-${number}"]`)!
+          .click();
+      });
+      await waitForSource(`episode-${number}`);
+      expect(harness.post).toHaveBeenCalledTimes(number - 1);
+      const staleSource = vi
+        .spyOn(player(), "currentSrc")
+        .mockReturnValue("https://cdn.test/old.mp4");
+      act(() => player().trigger("playing"));
+      expect(harness.post).toHaveBeenCalledTimes(number - 1);
+      staleSource.mockRestore();
+      await act(async () => {
+        player().trigger("playing");
+        player().trigger("waiting");
+        player().trigger("playing");
+      });
+      expect(harness.post).toHaveBeenCalledTimes(number);
+      expect(harness.post).toHaveBeenLastCalledWith("/aurora/ip-commerce/member-views", {
+        data: { ipId: "ip-1", episodeId: `episode-${number}` },
+      });
+    }
+  });
+
+  it.each(["failed", "ineligible"])(
+    "skips guests and retries a %s signal on later playback",
+    async (outcome) => {
+      const first = makeIp("ip-1", "First IP");
+      first.episodes = [
+        {
+          id: "episode-1",
+          episodeNo: 1,
+          title: "Episode 1",
+          status: "published",
+          mediaAsset: { ...first.trailerAsset!, url: "https://cdn.test/episode-one.mp4" },
+        },
+      ] as typeof first.episodes;
+      harness.list.mockResolvedValue({ items: [first], nextCursor: null });
+      harness.userId = "";
+      await render();
+      await waitForSource("ip-1");
+      async function selectEpisode() {
+        await act(async () => {
+          container.querySelector<HTMLButtonElement>('[data-episode-id="episode-1"]')!.click();
+        });
+        await waitForSource("episode-one");
+      }
+      await selectEpisode();
+      await act(async () => player().trigger("playing"));
+      expect(harness.post).not.toHaveBeenCalled();
+      harness.userId = "viewer-b";
+      if (outcome === "failed") harness.post.mockRejectedValueOnce(new Error("Signal unavailable"));
+      else harness.post.mockResolvedValueOnce({ recorded: false });
+      await render();
+      await waitForSource("ip-1");
+      await selectEpisode();
+      await act(async () => player().trigger("playing"));
+      expect(harness.post).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('nav [aria-label="tv.nowPlaying"]')).not.toBeNull();
+      await act(async () => {
+        player().trigger("waiting");
+        player().trigger("playing");
+      });
+      expect(harness.post).toHaveBeenCalledTimes(2);
+      await act(async () => player().trigger("playing"));
+      expect(harness.post).toHaveBeenCalledTimes(2);
+    }
+  );
 
   it("lists locked episodes without exposing their video and clears feedback on another channel", async () => {
     const first = makeIp("ip-1", "First IP");
