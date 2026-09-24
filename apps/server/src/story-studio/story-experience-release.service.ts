@@ -445,6 +445,12 @@ function preparedChapter(
     throw new UnprocessableEntityException({
       code: 'STORY_BUILD_NOT_PUBLISHABLE',
       message: `Chapter Build ${build.id} is not ready for review.`,
+      // The blocking diagnostics name the scenes at fault; the studio
+      // failure dialog turns each into a jump back onto the canvas.
+      chapterId: chapter.id,
+      issues: build.diagnostics.filter(
+        (diagnostic) => diagnostic.severity === 'error',
+      ),
     });
   }
   const parsed = ExperienceRuntimeManifestSchema.safeParse(build.runtimeJson);

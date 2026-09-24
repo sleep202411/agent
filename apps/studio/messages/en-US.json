@@ -3354,7 +3354,8 @@
         },
         "failure": {
           "title": "This version was not submitted",
-          "description": "Resolve the issue below, then try submitting again."
+          "description": "Resolve the issue below, then try submitting again.",
+          "locateScene": "Locate scene"
         },
         "offline": {
           "action": "Take offline",

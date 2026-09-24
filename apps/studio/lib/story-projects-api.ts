@@ -973,6 +973,36 @@ export function storyApiErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * Structured view of an upstream `issues` array (e.g. the blocking build
+ * diagnostics a release prepare attaches to STORY_BUILD_NOT_PUBLISHABLE).
+ * `nodeId` is present only when the server could pin the issue to a scene.
+ */
+export interface StoryApiIssue {
+  code: string | null;
+  message: string;
+  nodeId: string | null;
+}
+
+export function storyApiErrorIssues(error: unknown): StoryApiIssue[] {
+  if (!(error instanceof ApiRequestError)) return [];
+  const body = storyApiErrorBody(error);
+  const issues = Array.isArray(body?.issues) ? body.issues : [];
+  return issues.flatMap((issue) => {
+    if (!issue || typeof issue !== "object") return [];
+    const record = issue as Record<string, unknown>;
+    const message = typeof record.message === "string" ? record.message.trim() : "";
+    if (!message) return [];
+    return [
+      {
+        code: typeof record.code === "string" ? record.code : null,
+        message,
+        nodeId: typeof record.entityId === "string" ? record.entityId : null,
+      },
+    ];
+  });
+}
+
 export interface DraftRevisionConflict {
   code: "DRAFT_REVISION_CONFLICT";
   expectedRevision: number;

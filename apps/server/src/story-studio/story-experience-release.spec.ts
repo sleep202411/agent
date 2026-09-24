@@ -154,6 +154,59 @@ describe('StoryExperienceReleaseService', () => {
     );
   });
 
+  it('attaches the blocking diagnostics when a chapter build is not publishable', async () => {
+    const build = buildFixture(
+      FIRST_BUILD_ID,
+      manifestFixture(FIRST_BUILD_ID, 'production'),
+    );
+    build.diagnostics = [
+      {
+        severity: 'error',
+        code: 'STORY_BUILD_WORLD_NOT_READY',
+        message: 'Scene scene.entry world is still building.',
+        entityType: 'clip',
+        entityId: 'scene.entry',
+      },
+      {
+        severity: 'warning',
+        code: 'STORY_BUILD_SEQUENCE_REQUIRED',
+        message: 'Scene scene.entry has no storyboard sequence.',
+        entityType: 'clip',
+        entityId: 'scene.entry',
+      },
+    ] as StoryBuildDto['diagnostics'];
+    const dependencies = serviceDependencies({
+      workbench: workbenchFixture([
+        {
+          id: '019f60f4-b101-70d4-8000-000000000021',
+          title: 'Opening',
+          rank: 0,
+        },
+      ]),
+      builds: [build],
+    });
+
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        { expectedDraftRevision: 7, expectedVideoSnapshotHash: HASH },
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_BUILD_NOT_PUBLISHABLE',
+        chapterId: '019f60f4-b101-70d4-8000-000000000021',
+        // Only the blockers travel; warnings never block a release.
+        issues: [
+          expect.objectContaining({
+            severity: 'error',
+            entityId: 'scene.entry',
+          }),
+        ],
+      }) as unknown,
+    });
+  });
+
   it('rejects review submission when the project has no public cover URL', async () => {
     const dependencies = serviceDependencies({
       workbench: workbenchFixture(

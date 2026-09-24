@@ -3354,7 +3354,8 @@
         },
         "failure": {
           "title": "当前版本未提交",
-          "description": "请处理下方问题，然后重新提交。"
+          "description": "请处理下方问题，然后重新提交。",
+          "locateScene": "定位场景"
         },
         "offline": {
           "action": "下线",

@@ -12,7 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -100,6 +100,15 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     expectedVideoSnapshotHash: videoSnapshotHash,
     withSavedDraftSnapshot: draftBarrier ?? fallbackRunner,
   });
+  // A failed publish that names scenes jumps the canvas to the first blocker
+  // straight away, so closing the dialog already faces the problem.
+  const requestCanvasFocus = useStoryProjectUiStore((state) => state.requestCanvasFocus);
+  const failureState = submission.state;
+  useEffect(() => {
+    if (failureState.status !== "failed") return;
+    const first = failureState.issues.find((issue) => issue.nodeId);
+    if (first?.nodeId) requestCanvasFocus(first.nodeId);
+  }, [failureState, requestCanvasFocus]);
   const canMutate = submission.canSubmit && ready && !conflicted;
   const statusReady = !publicationQuery.isLoading && !publicationQuery.isError;
   const canSubmitStatus = status === null || status === "draft" || status === "offline";
