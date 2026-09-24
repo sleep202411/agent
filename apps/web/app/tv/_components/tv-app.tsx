@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { recordMemberView } from "@/src/lib/ip-commerce/api";
 import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
-import { IconChevronDown, IconX } from "@tabler/icons-react";
+import { IconChevronDown, IconLock, IconX } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useTvIps, useTvSelectedIp } from "../_hooks/use-tv-ips";
 import { EpisodeFeedback } from "@/app/(site)/ips/_components/episode-feedback";
+
+import { TvEpisodeUnlock } from "./tv-episode-unlock";
 
 import { TvGames } from "./tv-games";
 import { TvStage } from "./tv-stage";
@@ -312,7 +314,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                           );
                         }}
                         title={entry.title}
-                        className="flex w-28 shrink-0 flex-col rounded-md p-1 text-left text-xs text-white/70 ring-2 ring-transparent hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white aria-pressed:text-white aria-pressed:ring-white"
+                        className="flex w-28 shrink-0 flex-col rounded-md p-1 text-left text-xs text-white/70 ring-2 ring-inset ring-transparent hover:bg-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-pressed:text-white aria-pressed:ring-white"
                       >
                         {entry.cover ? (
                           <Image
@@ -333,7 +335,10 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                           {entry.title}
                         </span>
                         {entry.locked && (
-                          <span className="block text-xs">{t("lockedEpisode")}</span>
+                          <span className="inline-flex items-center gap-1 text-xs">
+                            <IconLock aria-hidden="true" className="size-3" />
+                            {t("lockedEpisode")}
+                          </span>
                         )}
                       </button>
                     ))}
@@ -348,6 +353,13 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                         {t("viewDetail")}
                       </Link>
                     </p>
+                  )}
+                  {episode?.locked && (
+                    <TvEpisodeUnlock
+                      key={`${item.id}:${episode.id}`}
+                      ipId={item.id}
+                      episodeId={episode.id}
+                    />
                   )}
                   {episode &&
                     Boolean(episode.video) &&
