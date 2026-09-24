@@ -167,6 +167,7 @@ function build(over: Partial<World> = {}) {
     {
       transferCrewOwnershipAccess: jest.fn().mockResolvedValue(undefined),
     } as never,
+    { ensureDefaultAccounts: jest.fn().mockResolvedValue([]) } as never,
   );
   return { world, prisma, delegates, conversations, joined, service };
 }
@@ -223,7 +224,11 @@ describe('CrewsController route table', () => {
 
   it('rejects a malformed crew id before touching the service', () => {
     const svc = { conversation: jest.fn() };
-    const controller = new CrewsController(svc as never, {} as never);
+    const controller = new CrewsController(
+      svc as never,
+      {} as never,
+      {} as never,
+    );
 
     expect(() =>
       controller.conversation('../../etc', { userId: MEMBER } as never),
@@ -233,7 +238,11 @@ describe('CrewsController route table', () => {
 
   it('passes the caller through as the viewer', () => {
     const svc = { conversation: jest.fn().mockResolvedValue({}) };
-    const controller = new CrewsController(svc as never, {} as never);
+    const controller = new CrewsController(
+      svc as never,
+      {} as never,
+      {} as never,
+    );
 
     void controller.conversation(CREW_ID, { userId: MEMBER } as never);
 

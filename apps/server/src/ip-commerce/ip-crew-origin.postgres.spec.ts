@@ -28,6 +28,7 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
       conversations,
       new CrewAuthorizationService(db as never),
       {} as never,
+      { ensureDefaultAccounts: jest.fn().mockResolvedValue([]) } as never,
     );
   beforeAll(async () => {
     const url = postgresFixtureUrl(databaseUrl!);

@@ -63,6 +63,8 @@ function build(
     showcaseWorks: null,
     createdByUserId: ownerUserId,
     listingStatus: 'listed',
+    productionKind: 'series',
+    studioWorkspaceId: null,
     listedAt: new Date('2026-07-01T00:00:00.000Z'),
     createdAt: new Date('2026-07-01T00:00:00.000Z'),
     updatedAt: new Date('2026-07-01T00:00:00.000Z'),
@@ -115,12 +117,24 @@ function build(
     },
     crewTaskView: { create: jest.fn().mockResolvedValue({}) },
     crewEpisode: { create: jest.fn().mockResolvedValue({}) },
-    crewTask: { createMany: jest.fn().mockResolvedValue({ count: 6 }) },
+    crewAssetNode: {
+      count: jest.fn().mockResolvedValue(0),
+      create: jest.fn().mockResolvedValue({}),
+    },
+    crewTask: {
+      count: jest.fn().mockResolvedValue(0),
+      create: jest.fn().mockResolvedValue({}),
+      createMany: jest.fn().mockResolvedValue({ count: 6 }),
+    },
     crewTaskDependency: {
       createMany: jest.fn().mockResolvedValue({ count: 5 }),
     },
     crewTaskTimelineItem: {
       createMany: jest.fn().mockResolvedValue({ count: 6 }),
+    },
+    crewTaskKindTemplate: {
+      count: jest.fn().mockResolvedValue(0),
+      createMany: jest.fn().mockResolvedValue({ count: 10 }),
     },
     crewAuthorizationEvent: { create: jest.fn().mockResolvedValue({}) },
     $executeRaw: jest.fn().mockResolvedValue(0),
@@ -207,12 +221,13 @@ function build(
       conversations as never,
       authorization as never,
       collaboration as never,
+      { ensureDefaultAccounts: jest.fn().mockResolvedValue([]) } as never,
     ),
   };
 }
 
 describe('CrewsService.create — the crew chat is born with the crew', () => {
-  it('creates the localized production foundation without automatic tasks', async () => {
+  it('creates the localized production foundation and seeds the task pipeline', async () => {
     const t = build();
 
     await t.service.create(FOUNDER_USER, {
@@ -234,6 +249,8 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
     expect(create.data.productionActivity.create.payload).toEqual({
       productionTemplateVersion: 4,
       productionTemplateLocale: 'zh-CN',
+      productionKind: 'series',
+      studioWorkspaceId: null,
     });
     expect(
       JSON.stringify(create.data.productionPage.create.document),
@@ -252,9 +269,9 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
       title: '第 1 集',
     });
 
-    expect(t.tx.crewTask.createMany).not.toHaveBeenCalled();
-    expect(t.tx.crewTaskDependency.createMany).not.toHaveBeenCalled();
-    expect(t.tx.crewTaskTimelineItem.createMany).not.toHaveBeenCalled();
+    expect(t.tx.crewAssetNode.create).toHaveBeenCalled();
+    expect(t.tx.crewTask.create).toHaveBeenCalled();
+    expect(t.tx.crewTaskKindTemplate.createMany).toHaveBeenCalled();
   });
 
   it('opens the crew conversation and joins the founder inside the create tx', async () => {

@@ -44,6 +44,7 @@ integration(
         {} as never,
         {} as never,
         {} as never,
+        {} as never,
       );
       for (let i = 0; i < 8; i++) {
         const id = randomUUID();

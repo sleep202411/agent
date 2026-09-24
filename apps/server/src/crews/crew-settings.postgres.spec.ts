@@ -44,6 +44,7 @@ integration('Crew settings permission after waits (owned PostgreSQL)', () => {
       {} as ConstructorParameters<typeof CrewsService>[1],
       new CrewAuthorizationService(db as PrismaService),
       {} as ConstructorParameters<typeof CrewsService>[3],
+      {} as ConstructorParameters<typeof CrewsService>[4],
     );
   });
   beforeEach(async () => {
@@ -250,6 +251,7 @@ integration('Crew settings permission after waits (owned PostgreSQL)', () => {
       db as PrismaService,
       conversations as never,
       new CrewAuthorizationService(db as PrismaService),
+      {} as never,
       {} as never,
     );
     await expect(

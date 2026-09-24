@@ -111,6 +111,8 @@ export function toCrewDTO(
     showcaseWorks: (c.showcaseWorks as CrewDTO['showcaseWorks'] | null) ?? [],
     ownerUserId: c.ownership.member.userId,
     listingStatus: c.listingStatus as CrewDTO['listingStatus'],
+    productionKind: c.productionKind as CrewDTO['productionKind'],
+    studioWorkspaceId: c.studioWorkspaceId ?? null,
     listedAt: iso(c.listedAt),
     version: c.version,
     createdAt: isoReq(c.createdAt),

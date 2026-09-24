@@ -30,6 +30,7 @@ import type {
   CrewTaskFieldType,
   CrewTaskLabelDTO,
   CrewTaskCycleDTO,
+  CrewTaskKindTemplateDTO,
   CrewTaskProjectDTO,
   CrewTaskSummaryDTO,
   CrewTaskViewDTO,
@@ -55,6 +56,20 @@ export function useCrewTaskProject(crewId: string, enabled = true) {
         signal,
         cache: "no-store",
       }),
+  });
+}
+
+export function useCrewTaskKindTemplates(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
+  return useQuery({
+    queryKey: [...crewKeys.taskKindTemplates(crewId), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
+    queryFn: ({ signal }) =>
+      crewApi.get<{ items: CrewTaskKindTemplateDTO[] }>(
+        `/crews/${encodeURIComponent(crewId)}/task-kind-templates`,
+        { signal, cache: "no-store" }
+      ),
   });
 }
 

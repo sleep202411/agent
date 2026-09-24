@@ -19,6 +19,7 @@ import {
   IconFolder,
   IconFolderPlus,
   IconHistory,
+  IconLink,
   IconLock,
   IconLockOpen,
   IconLayoutGrid,
@@ -82,9 +83,11 @@ import {
   useRestoreCrewAsset,
   useSetCrewAssetFavorite,
   useSetCrewAssetPermissions,
+  useSetCrewAssetStudioLink,
   useTrashCrewAsset,
   useUpdateCrewAsset,
 } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-assets";
+import { LinkStudioMediaDialog } from "./link-studio-media-dialog";
 import { useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
 import { useCrewTransfers } from "@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center";
 
@@ -139,6 +142,8 @@ export function CrewAssetsTab({
   const [renameVersion, setRenameVersion] = useState("");
   const [destinationId, setDestinationId] = useState<string>("");
   const [confirmPermanentDeleteOpen, setConfirmPermanentDeleteOpen] = useState(false);
+  const [studioDialogOpen, setStudioDialogOpen] = useState(false);
+  const [bindNodeId, setBindNodeId] = useState<string | null>(null);
 
   const activeFolderId = folderPath.at(-1)?.id ?? null;
   const contextQuery = useCrewAssetContext(crewId);
@@ -166,6 +171,7 @@ export function CrewAssetsTab({
   const restoreAsset = useRestoreCrewAsset(crewId);
   const permanentlyDeleteAsset = usePermanentlyDeleteCrewAsset(crewId);
   const setFavorite = useSetCrewAssetFavorite(crewId);
+  const setStudioLink = useSetCrewAssetStudioLink(crewId);
   const capabilities = contextQuery.data?.capabilities;
   const containerPermission: CrewAssetPermission | null =
     activeFolderId == null
@@ -623,6 +629,19 @@ export function CrewAssetsTab({
                         {t("newFolder")}
                       </button>
                     ) : null}
+                    {canUpload ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBindNodeId(null);
+                          setStudioDialogOpen(true);
+                        }}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/70 px-3 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/40"
+                      >
+                        <IconLink className="size-3.5" />
+                        {t("linkStudioAssets")}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -922,6 +941,30 @@ export function CrewAssetsTab({
                 onSelectedAssetChange?.(null);
               }}
               onToggleFavorite={() => toggleFavorite(selectedAsset.id)}
+              onBindStudio={
+                selectedAsset.kind !== "folder" &&
+                hasAssetPermission(selectedAsset.effectivePermission, "manage")
+                  ? () => {
+                      setBindNodeId(selectedAsset.id);
+                      setStudioDialogOpen(true);
+                    }
+                  : undefined
+              }
+              onUnlinkStudio={
+                selectedAsset.linkedStudio &&
+                hasAssetPermission(selectedAsset.effectivePermission, "manage")
+                  ? () => {
+                      setStudioLink.mutate(
+                        { nodeId: selectedAsset.id, mediaAssetId: null },
+                        {
+                          onSuccess: () => toast.success(t("bindStudioSaved")),
+                          onError: (error) =>
+                            toast.error(describeError(error, t("operationFailed"))),
+                        }
+                      );
+                    }
+                  : undefined
+              }
             />
           ) : null}
         </div>
@@ -952,6 +995,16 @@ export function CrewAssetsTab({
           setAssetActionTargets([]);
         }}
         onSubmit={() => void submitAssetAction()}
+      />
+      <LinkStudioMediaDialog
+        open={studioDialogOpen}
+        onOpenChange={(open) => {
+          setStudioDialogOpen(open);
+          if (!open) setBindNodeId(null);
+        }}
+        crewId={crewId}
+        parentId={activeFolderId}
+        bindNodeId={bindNodeId}
       />
       <AlertDialog open={confirmPermanentDeleteOpen} onOpenChange={setConfirmPermanentDeleteOpen}>
         <AlertDialogContent>
@@ -1295,6 +1348,11 @@ function AssetList({
             <div className="flex min-w-0 items-center gap-2 py-2">
               <AssetThumbnail item={item} compact />
               <span className="truncate font-medium text-foreground">{displayName(item, t)}</span>
+              {item.linkedStudio ? (
+                <span className="shrink-0 rounded bg-primary/12 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                  {t("linkedStudio")}
+                </span>
+              ) : null}
             </div>
             <span className="truncate text-[11px] text-muted-foreground">
               {t(item.typeLabelKey)}
@@ -1505,12 +1563,16 @@ function AssetInspector({
   t,
   onClose,
   onToggleFavorite,
+  onBindStudio,
+  onUnlinkStudio,
 }: {
   crewId: string;
   asset: CrewAssetPreviewItem;
   t: Translation;
   onClose: () => void;
   onToggleFavorite: () => void;
+  onBindStudio?: () => void;
+  onUnlinkStudio?: () => void;
 }) {
   return (
     <aside
@@ -1604,6 +1666,35 @@ function AssetInspector({
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
         <InfoPanel asset={asset} t={t} />
+        {asset.kind !== "folder" && (onBindStudio || onUnlinkStudio || asset.linkedStudio) ? (
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-foreground">{t("linkedStudio")}</p>
+            <p className="text-[10px] leading-4 text-muted-foreground">
+              {asset.linkedStudio ? t("linkedStudio") : t("linkStudioSelect")}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {onBindStudio ? (
+                <button
+                  type="button"
+                  onClick={onBindStudio}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-secondary px-2 text-[10px] font-semibold text-foreground"
+                >
+                  <IconLink className="size-3.5" />
+                  {t("linkExisting")}
+                </button>
+              ) : null}
+              {onUnlinkStudio ? (
+                <button
+                  type="button"
+                  onClick={onUnlinkStudio}
+                  className="inline-flex h-7 items-center rounded-md px-2 text-[10px] font-semibold text-muted-foreground hover:bg-secondary"
+                >
+                  {t("unlinkStudio")}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <PermissionSummary key={asset.id} crewId={crewId} asset={asset} t={t} />
       </div>
     </aside>
@@ -2317,6 +2408,7 @@ function mapAssetNode(node: CrewAssetNodeDTO, contributor: string): CrewAssetPre
     mediaUrl,
     contentType: node.media?.contentType,
     favorite: node.favorite,
+    linkedStudio: node.linkedStudio ?? null,
     accessMode: node.accessMode,
     permissionVersion: node.permissionVersion,
     effectivePermission: node.effectivePermission,

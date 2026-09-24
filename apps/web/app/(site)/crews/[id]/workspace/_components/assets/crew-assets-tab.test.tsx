@@ -235,6 +235,9 @@ function installFetch() {
           parentId: "folder-1",
         });
       }
+      if (method === "GET" && url.includes("/assets/studio-media-options")) {
+        return jsonResponse({ workspaceId: "ws-1", projects: [], items: [] });
+      }
       if (method === "GET" && url.endsWith("/assets/folders")) {
         if (folderReadFails)
           return jsonResponse({ message: "Folders unavailable" }, { status: 503 });
