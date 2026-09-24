@@ -456,10 +456,16 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
               locked={Boolean(selectedEpisode && !canWatchSelected)}
               lockedLabel={lockedMediaLabel}
               onFirstPlay={() => {
-                // Member-view signal for the revenue pool: only when a member
-                // plays the full media of a selected episode (not the trailer).
-                // The server filters to genuine member-free views + dedupes monthly.
-                if (viewerIsMember && selectedEpisode && !isTrailerSelected && canWatchSelected) {
+                // Membership can still be loading after the authorized full-media URL arrives.
+                // The server checks eligibility and dedupes monthly; exclude previews/trailers.
+                if (
+                  user?.id &&
+                  !detailIp.previewMode &&
+                  selectedEpisode &&
+                  !isTrailerSelected &&
+                  canWatchSelected &&
+                  episodeMediaUrl
+                ) {
                   void recordMemberView({
                     ipId: detailIp.id,
                     episodeId: selectedEpisode.id,
