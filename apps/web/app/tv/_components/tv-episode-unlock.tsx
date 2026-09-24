@@ -38,7 +38,9 @@ export function TvEpisodeUnlock({ ipId, episodeId }: { ipId: string; episodeId: 
     retry: false,
   });
   const entry = access.data?.episodes.find((item) => item.id === episodeId);
-  const price = entry?.price;
+  // Package-only episodes have no individual quote; the package quote is
+  // returned separately on the IP access entry.
+  const price = entry?.price ?? access.data?.ip?.price;
   const amount = price?.memberAmount ?? price?.amount;
   const pending = entry?.access.startsWith("pending_unlock");
   const granted =

@@ -26,7 +26,6 @@ import {
   IconSparkles,
   IconTicket,
   IconVideo,
-  IconWallet,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -237,20 +236,19 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const episodeCoverUrl = getAssetUrl(selectedEpisode?.coverAsset);
   const episodeMediaUrl = getAssetUrl(selectedEpisode?.mediaAsset);
 
-  const episodeTrailerUrl = getAssetUrl(selectedEpisode?.trailerAsset);
   const selectedEpisodeAccess = selectedEpisode
     ? accessQuery.data?.episodes.find((item) => item.id === selectedEpisode.id)
     : null;
   const activeAccess = selectedEpisode ? selectedEpisodeAccess : accessQuery.data?.ip;
   const activePrice = activeAccess?.price ?? selectedEpisode?.price ?? detailIp.price;
   const activeAccessCode: IpCommerceAccess =
-    activeAccess?.access ?? (detailIp.previewMode || !activePrice ? "owned" : "locked");
+    activeAccess?.access ?? (detailIp.previewMode ? "owned" : "locked");
   // Playlist header unlock is always the IP package CTA (matches「整包权益」),
   // not the currently selected free trailer / free-preview chip.
   const ipAccessEntry = accessQuery.data?.ip;
   const playlistUnlockPrice = ipAccessEntry?.price ?? detailIp.price ?? null;
   const playlistUnlockAccess: IpCommerceAccess =
-    ipAccessEntry?.access ?? (detailIp.previewMode || !playlistUnlockPrice ? "owned" : "locked");
+    ipAccessEntry?.access ?? (detailIp.previewMode ? "owned" : "locked");
   // Active members already get member pricing — don't upsell them the membership.
   const viewerIsMember = accessQuery.data?.member ?? false;
   const pendingUnlockAt = getPendingUnlockAt(
@@ -262,15 +260,16 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const canWatchSelected =
     detailIp.previewMode ||
     !selectedEpisode ||
-    selectedEpisode.isFreePreview ||
     isAccessGranted(activeAccessCode);
   const lockedMediaLabel = isAccessPending(activeAccessCode)
     ? formatPendingUnlockLabel(pendingUnlockAt, locale, t)
     : undefined;
   const mediaPosterUrl = episodeCoverUrl ?? ipCoverUrl;
-  const mediaTrailerUrl = canWatchSelected
-    ? (episodeMediaUrl ?? episodeTrailerUrl ?? ipTrailerUrl)
-    : (episodeTrailerUrl ?? ipTrailerUrl);
+  // A trailer is an explicit playlist selection. Never substitute it for a
+  // locked (or not-yet-loaded) full episode under that episode's title.
+  const mediaTrailerUrl = selectedEpisode
+    ? canWatchSelected ? episodeMediaUrl : undefined
+    : ipTrailerUrl;
   const mediaTitle = isTrailerSelected
     ? t("episodes.trailer")
     : selectedEpisode
@@ -1331,14 +1330,14 @@ function PurchasePanel({
     );
   }
 
-  const granted = selectedEpisode?.isFreePreview || isAccessGranted(access);
+  const granted = isAccessGranted(access);
   const pendingUnlock = isAccessPending(access);
   const priceLabel = price ? formatPrice(price, locale, t) : t("commerce.free");
   const balanceLabel = t("priceValue", {
     amount: formatIntegerAmount(walletBalance, locale),
     unit: t("units.communityPoint"),
   });
-  const priceAmount = price ? parseIntegerAmount(price.amount) : null;
+  const priceAmount = price ? parseIntegerAmount(price.memberAmount ?? price.amount) : null;
   const walletAmount = parseIntegerAmount(walletBalance);
   const missingAmount =
     !walletLoading && priceAmount !== null && walletAmount !== null && walletAmount < priceAmount
@@ -1418,7 +1417,6 @@ function PurchasePanel({
 /** Unlock / top-up / login CTA shared by the player bar and playlist header. */
 function PurchaseUnlockAction({
   roomNumber,
-  selectedEpisode,
   access,
   price,
   accessLoading,
@@ -1449,11 +1447,11 @@ function PurchaseUnlockAction({
   onMemberFreeUnlock: () => Promise<void>;
   onSubscribeMembership: () => void;
 }) {
-  const granted = selectedEpisode?.isFreePreview || isAccessGranted(access);
+  const granted = isAccessGranted(access);
   const pendingUnlock = isAccessPending(access);
   if (granted || pendingUnlock) return null;
 
-  const priceAmount = price ? parseIntegerAmount(price.amount) : null;
+  const priceAmount = price ? parseIntegerAmount(price.memberAmount ?? price.amount) : null;
   const walletAmount = parseIntegerAmount(walletBalance);
   const missingAmount =
     !walletLoading && priceAmount !== null && walletAmount !== null && walletAmount < priceAmount
@@ -1468,14 +1466,6 @@ function PurchaseUnlockAction({
     return (
       <Button asChild size="sm">
         <Link href={loginHref}>{t("commerce.loginToUnlock")}</Link>
-      </Button>
-    );
-  }
-  if (missingAmount !== null) {
-    return (
-      <Button type="button" size="sm" onClick={onRecharge}>
-        <IconWallet className="size-4" />
-        {t("commerce.topUpToUnlock")}
       </Button>
     );
   }
@@ -1504,9 +1494,14 @@ function PurchaseUnlockAction({
         type="button"
         size="sm"
         disabled={accessLoading || walletLoading || purchasePending}
-        onClick={() => void onPurchase()}
+        onClick={() => {
+          if (missingAmount !== null) onRecharge();
+          else void onPurchase();
+        }}
       >
-        {purchasePending ? t("commerce.purchasing") : t("commerce.purchase")}
+        {purchasePending
+          ? t("commerce.purchasing")
+          : `${t("commerce.purchase")} · ${formatPrice(price, locale, t)}`}
       </Button>
     );
   }

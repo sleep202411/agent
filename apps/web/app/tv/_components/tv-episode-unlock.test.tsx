@@ -101,7 +101,12 @@ describe("TV quick unlock", () => {
     expect(invalidation).toHaveBeenCalledWith({ queryKey: ["tv"] });
   });
   it("labels a package price and sends a package purchase without an episode ID", async () => {
-    h.get.mockResolvedValue(quote("locked_bundle", "ip"));
+    const packageQuote = quote("locked_bundle", "ip");
+    h.get.mockResolvedValue({
+      ...packageQuote,
+      ip: { price: packageQuote.episodes[0].price },
+      episodes: [{ id: "episode", access: "locked_bundle", price: null }],
+    });
     await render();
     expect(container.textContent).toContain("unlockPackagePrice");
     await click();

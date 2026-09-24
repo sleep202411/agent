@@ -7,6 +7,10 @@ const state = vi.hoisted(() => ({
   user: { id: "viewer" } as { id: string } | null,
   member: undefined as boolean | undefined,
   fullMedia: true,
+  access: "owned_ip",
+  priced: false,
+  balance: "1000",
+  purchase: vi.fn(),
   signal: vi.fn(),
   player: null as null | { src: string; onFirstPlay?: () => void },
 }));
@@ -36,7 +40,8 @@ vi.mock("@/src/lib/ip-commerce/hooks", () => ({
         listingVisibility: "public",
         sourceLocale: "en-US",
         createdById: "creator",
-        price: null,
+        trailerAsset: { url: "https://cdn.test/trailer.mp4" },
+        price: state.priced ? { id: "rule", targetType: "ip", amount: "299", currency: "community_point" } : null,
         episodes: [
           {
             id: "episode",
@@ -58,12 +63,12 @@ vi.mock("@/src/lib/ip-commerce/hooks", () => ({
       : {
           data: {
             member: state.member,
-            episodes: [{ id: "episode", access: "owned_ip" }],
+            episodes: [{ id: "episode", access: state.access }],
             entitlements: [],
           },
         },
-  useCommunityPointBalance: () => ({}),
-  usePurchaseIpContent: () => ({}),
+  useCommunityPointBalance: () => ({ balance: state.balance, isLoading: false }),
+  usePurchaseIpContent: () => ({ mutateAsync: state.purchase }),
   useIpCommerceCollection: () => ({}),
   useSaveIpCommerceCollection: () => ({}),
   useRemoveIpCommerceCollection: () => ({}),
@@ -79,7 +84,7 @@ vi.mock("../../_components/episode-feedback", () => ({ EpisodeFeedback: () => nu
 vi.mock("../../_components/ip-production-stage", () => ({ IpProductionStage: () => null }));
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ useUserDisplays: () => new Map() }));
 vi.mock("@/components/payment/community-recharge-dialog", () => ({
-  CommunityRechargeDialog: () => null,
+  CommunityRechargeDialog: ({ open }: { open: boolean }) => open ? <div data-recharge /> : null,
 }));
 vi.mock("@/components/payment/community-membership-dialog", () => ({
   CommunityMembershipDialog: () => null,
@@ -102,6 +107,10 @@ beforeEach(() => {
   state.user = { id: "viewer" };
   state.member = undefined;
   state.fullMedia = true;
+  state.access = "owned_ip";
+  state.priced = false;
+  state.balance = "1000";
+  state.purchase.mockReset().mockResolvedValue({});
   state.player = null;
   state.signal.mockReset().mockResolvedValue({ recorded: true });
 });
@@ -112,17 +121,16 @@ afterEach(() => {
 function render() {
   act(() => root.render(<IpPublicDetail ipReference="ip" />));
 }
-it("reports available full media even while the membership query is pending", async () => {
+it("withholds full media while access is pending even when no price is present", async () => {
   render();
-  expect(state.player?.src).toBe("https://cdn.test/full.mp4");
-  await act(async () => state.player?.onFirstPlay?.());
-  expect(state.signal).toHaveBeenCalledWith({ ipId: "ip", episodeId: "episode" });
+  expect(state.player).toBeNull();
+  expect(state.signal).not.toHaveBeenCalled();
 });
-it("does not report a fallback trailer as full-episode member playback", async () => {
+it("does not substitute a trailer for an unavailable full episode", async () => {
   state.member = true;
   state.fullMedia = false;
   render();
-  expect(state.player?.src).toBe("https://cdn.test/trailer.mp4");
+  expect(state.player).toBeNull();
   await act(async () => state.player?.onFirstPlay?.());
   expect(state.signal).not.toHaveBeenCalled();
 });
@@ -141,4 +149,46 @@ it("still signals normal member full playback and tolerates reporting failure", 
   await act(async () => state.player?.onFirstPlay?.());
   expect(state.signal).toHaveBeenCalledWith({ ipId: "ip", episodeId: "episode" });
   expect(host.textContent).toContain("Full episode");
+});
+
+it("keeps locked content hidden, offers a package purchase, and plays only after access is granted", async () => {
+  state.member = false;
+  state.access = "locked_bundle";
+  state.priced = true;
+  render();
+  expect(state.player).toBeNull();
+  expect(state.purchase).not.toHaveBeenCalled();
+  const button = Array.from(host.querySelectorAll("button")).find((item) => item.textContent?.startsWith("commerce.purchase ·"));
+  expect(button).toBeDefined();
+  await act(async () => button!.click());
+  expect(state.purchase).toHaveBeenCalledWith(expect.objectContaining({ ipId: "ip", targetType: "ip", priceRuleId: "rule" }));
+  expect(state.player).toBeNull();
+  state.access = "owned_ip";
+  render();
+  expect(state.player?.src).toBe("https://cdn.test/full.mp4");
+});
+it("plays the trailer only when explicitly selected while the episode is locked", () => {
+  state.member = false;
+  state.access = "locked_bundle";
+  render();
+  expect(state.player).toBeNull();
+  const trailer = Array.from(host.querySelectorAll("button")).find((item) => item.textContent?.includes("episodes.trailer"));
+  expect(trailer).toBeDefined();
+  act(() => trailer!.click());
+  expect(state.player?.src).toBe("https://cdn.test/trailer.mp4");
+  expect(state.purchase).not.toHaveBeenCalled();
+});
+
+it("keeps the purchase entry visible with low balance and opens recharge without spending", async () => {
+  state.member = false;
+  state.access = "locked_bundle";
+  state.priced = true;
+  state.balance = "0";
+  render();
+  const button = Array.from(host.querySelectorAll("button")).find((item) => item.textContent?.startsWith("commerce.purchase ·"));
+  expect(button).toBeDefined();
+  await act(async () => button!.click());
+  expect(host.querySelector("[data-recharge]")).not.toBeNull();
+  expect(state.purchase).not.toHaveBeenCalled();
+  expect(state.player).toBeNull();
 });
