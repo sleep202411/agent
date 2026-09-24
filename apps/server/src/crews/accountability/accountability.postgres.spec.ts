@@ -194,6 +194,83 @@ suite('Crew accountability on isolated PostgreSQL', () => {
       },
     });
   }
+  it.each([false, true])(
+    'requires the approved submission, not an earlier changes-requested version (approved=%s)',
+    async (approved) => {
+      const creator = randomUUID();
+      await db.crewMember.create({
+        data: {
+          id: randomUUID(),
+          crewId,
+          userId: creator,
+          joinedVia: 'invitation',
+        },
+      });
+      const t = await task(bob);
+      const now = new Date();
+      await db.crewTaskSubmission.createMany({
+        data: [
+          {
+            taskId: t.id,
+            versionNumber: 1,
+            submittedByUserId: creator,
+            reviewedByUserId: leader,
+            reviewedAt: new Date(now.getTime() - 1000),
+            reviewNote: 'Changes needed',
+          },
+          {
+            taskId: t.id,
+            versionNumber: 2,
+            submittedByUserId: approved ? creator : bob,
+            reviewedByUserId: leader,
+            reviewedAt: now,
+            reviewNote: 'Approved',
+          },
+        ],
+      });
+      await db.crewTask.update({
+        where: { id: t.id },
+        data: {
+          workflowStateId: states.get('approved')!,
+          approvedAt: now,
+          approvedByUserId: leader,
+        },
+      });
+      await db.crewProductionPage.update({
+        where: { crewId },
+        data: { status: 'completed' },
+      });
+      const send = service.feedback(crewId, creator, {
+        subjectUserId: bob,
+        rating: 5,
+        comment: 'Project feedback',
+      });
+      if (approved)
+        await expect(send).resolves.toMatchObject({ authorUserId: creator });
+      else await expect(send).rejects.toMatchObject({ status: 403 });
+      const receive = service.feedback(crewId, bob, {
+        subjectUserId: creator,
+        rating: 5,
+        comment: 'Project feedback',
+      });
+      if (approved)
+        await expect(receive).resolves.toMatchObject({
+          subjectUserId: creator,
+        });
+      else await expect(receive).rejects.toMatchObject({ status: 400 });
+      // This fixture must not alter the completed-project test's target selection.
+      await db.crewPeerFeedback.deleteMany({
+        where: {
+          crewId,
+          OR: [{ authorUserId: creator }, { subjectUserId: creator }],
+        },
+      });
+      await db.crewProductionPage.update({
+        where: { crewId },
+        data: { status: 'backlog' },
+      });
+    },
+  );
   it('serializes competing acceptances and retains the original commitment after handover', async () => {
     const t = await task(alice);
     const results = await Promise.allSettled(
