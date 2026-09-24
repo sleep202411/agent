@@ -1,3 +1,4 @@
+import { CrewApplicationAmendmentsService } from './application-amendments';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { CrewTaskFeedbackAppealsService } from './accountability/task-feedback-appeals';
 import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
@@ -226,6 +227,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         .memberId;
     });
     afterEach(async () => {
+      notifications.send.mockReset().mockResolvedValue(undefined);
       await db.$executeRaw`DELETE FROM crew_trust_appeals WHERE task_id IN (SELECT id FROM crew_tasks WHERE crew_id=${crewId})`;
       await db.$executeRaw`DELETE FROM crew_creator_trust_entries WHERE task_id IN (SELECT id FROM crew_tasks WHERE crew_id=${crewId})`;
       // Posted ledger rows are deliberately immutable. Keep the unique fixtures
@@ -2291,6 +2293,616 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         });
       });
 
+      describe('Post-approval amendment consent', () => {
+        let amendments: CrewApplicationAmendmentsService;
+        beforeEach(async () => {
+          amendments = new CrewApplicationAmendmentsService(
+            db as never,
+            authorization,
+            notifications as never,
+          );
+          await terms.propose(appId, owner, offer());
+          await terms.confirm(appId, worker, 1);
+          await applications.approve(appId, owner);
+          await assign();
+        });
+        async function proposal() {
+          return {
+            ...offer(),
+            id: randomUUID(),
+            expectedVersion: 1,
+            expectedTaskVersion: (
+              await db.crewTask.findUniqueOrThrow({ where: { id: taskId } })
+            ).version,
+            feeAmount: '15000',
+            reason: 'Additional agreed work',
+          };
+        }
+        it('pages immutable history beyond 100 with timestamp ties and private cursors', async () => {
+          const input = await proposal();
+          const ids = Array.from({ length: 105 }, () => randomUUID())
+            .sort()
+            .reverse();
+          await db.$executeRaw`
+            INSERT INTO crew_application_amendments
+              (id,application_id,task_id,proposer_id,applicant_id,proposal,baseline,status,created_at)
+            SELECT id,${appId},${taskId}::uuid,${owner},${worker},${JSON.stringify(input)}::jsonb,
+              '{}'::jsonb,'rejected','2026-09-24T00:00:00.123456Z'::timestamptz
+            FROM unnest(${ids}::uuid[]) AS id`;
+          const first = await amendments.list(appId, worker, { limit: 100 });
+          expect(first.items.map((row) => row.id)).toEqual(ids.slice(0, 100));
+          expect(first.nextCursor).toBe(ids[99]);
+          expect(first.items[0]).not.toHaveProperty('baseline');
+          expect(first.items[0]).not.toHaveProperty('settlement');
+          const other = await db.crewApplication.create({
+            data: {
+              id: randomUUID(),
+              crewId,
+              positionId,
+              applicantId: finance,
+            },
+          });
+          await expect(
+            amendments.list(other.id, finance, { limit: 20, cursor: ids[0] }),
+          ).rejects.toThrow('Invalid amendment history cursor');
+          // A newly inserted proposal must not shift the continuation page.
+          await amendments.propose(appId, owner, input);
+
+          await members.remove(crewId, workerMemberId, owner);
+          const last = await amendments.list(appId, worker, {
+            limit: 100,
+            cursor: first.nextCursor!,
+          });
+          expect(last.items.map((row) => row.id)).toEqual(ids.slice(100));
+          expect(last.nextCursor).toBeNull();
+          expect((await amendments.list(appId, owner)).items).toHaveLength(20);
+          await expect(
+            amendments.list(appId, finance, { limit: 20, cursor: ids[0] }),
+          ).rejects.toThrow();
+          await expect(
+            amendments.list(appId, worker, { limit: 20, cursor: randomUUID() }),
+          ).rejects.toThrow('Invalid amendment history cursor');
+          await expect(
+            amendments.list(appId, worker, { limit: 101 }),
+          ).rejects.toThrow();
+          await expect(
+            authorization.requireMembership(crewId, worker),
+          ).rejects.toThrow();
+        });
+        it('keeps pending offers separate and activates submitted work only with creator consent', async () => {
+          await tasks.submit(taskId, worker, {
+            note: 'Work submitted',
+            assetNodeIds: [],
+          });
+          const input = await proposal();
+          await amendments.propose(appId, owner, input);
+          expect((await terms.list(appId, worker)).currentVersion).toBe(1);
+          await expect(
+            amendments.decide(appId, input.id, owner, 'confirm'),
+          ).rejects.toThrow();
+          const results = await Promise.all([
+            amendments.decide(appId, input.id, worker, 'confirm'),
+            amendments.decide(appId, input.id, worker, 'confirm'),
+          ]);
+          expect(results.map((r) => r.status)).toEqual([
+            'effective',
+            'effective',
+          ]);
+          expect((await terms.list(appId, worker)).currentVersion).toBe(2);
+          expect(
+            (
+              await db.crewTaskAssignee.findFirstOrThrow({
+                where: { taskId, userId: worker },
+              })
+            ).rewardAmountMinor,
+          ).toBe(15000n);
+          expect(await db.crewTaskSubmission.count({ where: { taskId } })).toBe(
+            1,
+          );
+          expect(await db.crewEarningEntry.count({ where: { taskId } })).toBe(
+            0,
+          );
+          expect((await amendments.propose(appId, owner, input)).status).toBe(
+            'effective',
+          );
+        });
+        it('rejects stale confirmation and retains immutable rejected evidence', async () => {
+          const input = await proposal();
+          await amendments.propose(appId, owner, input);
+          await tasks.submit(taskId, worker, {
+            note: 'Later submission',
+            assetNodeIds: [],
+          });
+          await expect(
+            amendments.decide(appId, input.id, worker, 'confirm'),
+          ).rejects.toThrow('Settlement state changed');
+          expect(
+            (await amendments.decide(appId, input.id, worker, 'reject')).status,
+          ).toBe('rejected');
+          expect((await terms.list(appId, worker)).currentVersion).toBe(1);
+          await expect(
+            db.$executeRaw`UPDATE crew_application_amendments SET proposal='{}'::jsonb WHERE id=${input.id}::uuid`,
+          ).rejects.toThrow('immutable');
+          await expect(amendments.list(appId, finance)).rejects.toThrow();
+        });
+        it('keeps posted earnings unchanged while confirmed amendments await finance', async () => {
+          await tasks.submit(taskId, worker, {
+            note: 'Finished',
+            assetNodeIds: [],
+          });
+          const submission = await db.crewTaskSubmission.findFirstOrThrow({
+            where: { taskId },
+          });
+          await tasks.review(taskId, owner, {
+            expectedSubmissionId: submission.id,
+            decision: 'approve',
+            note: 'Accepted',
+          });
+          const before = await db.crewEarningEntry.findMany({
+            where: { taskId },
+          });
+          const input = await proposal();
+          await amendments.propose(appId, owner, input);
+          expect(
+            (await amendments.decide(appId, input.id, worker, 'confirm'))
+              .status,
+          ).toBe('awaiting_settlement');
+          expect(
+            await db.crewEarningEntry.findMany({ where: { taskId } }),
+          ).toEqual(before);
+          expect((await terms.list(appId, worker)).currentVersion).toBe(1);
+        });
+        async function completeWork() {
+          await tasks.submit(taskId, worker, {
+            note: 'Completed work',
+            assetNodeIds: [],
+          });
+          const submitted = await db.crewTaskSubmission.findFirstOrThrow({
+            where: { taskId },
+          });
+          await tasks.review(taskId, owner, {
+            expectedSubmissionId: submitted.id,
+            decision: 'approve',
+            note: 'Accepted',
+          });
+        }
+        async function agreed(amount: string) {
+          const input = {
+            ...(await proposal()),
+            expectedVersion: (await terms.list(appId, worker)).currentVersion,
+            feeAmount: amount,
+          };
+          await amendments.propose(appId, owner, input);
+          await amendments.decide(appId, input.id, worker, 'confirm');
+          return input;
+        }
+        it('exposes a private finance queue with separate manual requests and stable cursors', async () => {
+          await completeWork();
+          const input = await agreed('14000');
+          const ids = Array.from({ length: 3 }, () => randomUUID())
+            .sort()
+            .reverse();
+          await db.$executeRaw`
+            INSERT INTO crew_application_amendments
+              (id,application_id,task_id,proposer_id,applicant_id,proposal,baseline,status,created_at)
+            SELECT id,${appId},${taskId}::uuid,${owner},${worker},${JSON.stringify(input)}::jsonb,
+              '{}'::jsonb,'settlement_requested','2026-09-24T00:00:00.123456Z'::timestamptz
+            FROM unnest(${ids}::uuid[]) AS id`;
+          expect(
+            (await amendments.listSettlementQueue(crewId, finance)).items.map(
+              (r) => r.id,
+            ),
+          ).toEqual([input.id]);
+          await expect(amendments.list(appId, finance)).rejects.toThrow();
+          await expect(
+            amendments.listSettlementQueue(crewId, worker),
+          ).rejects.toThrow();
+          const first = await amendments.listSettlementQueue(crewId, finance, {
+            limit: 2,
+            status: 'settlement_requested',
+          });
+          expect(first.items.map((r) => r.id)).toEqual(ids.slice(0, 2));
+          expect(first.items[0]).not.toHaveProperty('baseline');
+          expect(first.items[0]).not.toHaveProperty('settlement');
+          const last = await amendments.listSettlementQueue(crewId, finance, {
+            limit: 2,
+            status: 'settlement_requested',
+            cursor: first.nextCursor!,
+          });
+          expect(last.items.map((r) => r.id)).toEqual(ids.slice(2));
+          expect(last.nextCursor).toBeNull();
+          await amendments.settle(appId, input.id, finance);
+          expect(
+            (
+              await amendments.listSettlementQueue(crewId, finance, {
+                limit: 20,
+                status: 'awaiting_settlement',
+                cursor: input.id,
+              })
+            ).items,
+          ).toEqual([]);
+          await expect(
+            amendments.listSettlementQueue(crewId, finance, {
+              limit: 20,
+              status: 'awaiting_settlement',
+              cursor: randomUUID(),
+            }),
+          ).rejects.toThrow('Invalid settlement queue cursor');
+          const financeMember = await authorization.requireMembership(
+            crewId,
+            finance,
+          );
+          await members.remove(crewId, financeMember.memberId, owner);
+          await expect(
+            amendments.listSettlementQueue(crewId, finance),
+          ).rejects.toThrow();
+        });
+        it('isolates foreign Crew cases and rejects settlement after finance access is revoked', async () => {
+          await completeWork();
+          const input = await agreed('14000');
+          const otherCrewId = `workflow-${randomUUID()}`;
+          await db.crew.create({
+            data: {
+              id: otherCrewId,
+              name: 'Other finance scope',
+              description: '',
+              logo: 'test.png',
+              createdByUserId: owner,
+            },
+          });
+          try {
+            const otherOwner = await db.crewMember.create({
+              data: {
+                id: randomUUID(),
+                crewId: otherCrewId,
+                userId: owner,
+                joinedVia: 'creation',
+              },
+            });
+            await db.crewOwnership.create({
+              data: { crewId: otherCrewId, memberId: otherOwner.id },
+            });
+            await collaboration.ensureCrewSpace(otherCrewId);
+            const otherTask = await tasks.create(
+              otherCrewId,
+              owner,
+              CreateCrewTaskSchema.parse({ title: 'Other Crew work' }),
+            );
+            const otherPosition = await db.crewPosition.create({
+              data: {
+                id: randomUUID(),
+                crewId: otherCrewId,
+                taskId: otherTask.id,
+                positionType: 'animator',
+                description: 'Other opening',
+                targetCount: 1,
+              },
+            });
+            const otherApp = await db.crewApplication.create({
+              data: {
+                id: randomUUID(),
+                crewId: otherCrewId,
+                positionId: otherPosition.id,
+                applicantId: worker,
+                status: 'approved',
+                termsVersion: 1,
+              },
+            });
+            await db.crewApplicationTerms.create({
+              data: {
+                id: randomUUID(),
+                applicationId: otherApp.id,
+                version: 1,
+                revenueShareBp: input.revenueShareBp,
+                shareBasis: input.shareBasis,
+                scope: input.scope,
+                feeAmount: 12345n,
+                currency: input.currency,
+                feePeriod: 'project',
+                proposedByUserId: owner,
+                confirmedAt: new Date(),
+              },
+            });
+            const foreignId = randomUUID();
+            await db.$executeRaw`
+              INSERT INTO crew_application_amendments (id,application_id,task_id,proposer_id,applicant_id,proposal,baseline,status,confirmed_at)
+              VALUES (${foreignId}::uuid,${otherApp.id},${otherTask.id}::uuid,${owner},${worker},${JSON.stringify(input)}::jsonb,'{}'::jsonb,'awaiting_settlement',now())`;
+            expect(
+              (await amendments.listSettlementQueue(crewId, finance)).items.map(
+                (r) => r.id,
+              ),
+            ).toEqual([input.id]);
+            expect(
+              (
+                await amendments.listSettlementQueue(otherCrewId, owner)
+              ).items.map((r) => r.id),
+            ).toEqual([foreignId]);
+            await expect(
+              amendments.listSettlementQueue(otherCrewId, finance),
+            ).rejects.toThrow();
+            await expect(
+              amendments.listSettlementQueue(crewId, finance, {
+                limit: 20,
+                status: 'awaiting_settlement',
+                cursor: foreignId,
+              }),
+            ).rejects.toThrow('Invalid settlement queue cursor');
+            await expect(
+              amendments.settle(otherApp.id, foreignId, finance),
+            ).rejects.toThrow();
+            await expect(
+              amendments.settle(appId, foreignId, finance),
+            ).rejects.toThrow('Amendment not found');
+            const before = await db.crewEarningEntry.findMany({
+              where: { taskId },
+            });
+            const member = await authorization.requireMembership(
+              crewId,
+              finance,
+            );
+            await members.remove(crewId, member.memberId, owner);
+            await expect(
+              amendments.settle(appId, input.id, finance),
+            ).rejects.toThrow();
+            expect(
+              await db.crewEarningEntry.findMany({ where: { taskId } }),
+            ).toEqual(before);
+            expect((await terms.list(appId, worker)).currentVersion).toBe(1);
+            expect((await amendments.list(appId, worker)).items[0].status).toBe(
+              'awaiting_settlement',
+            );
+            expect(
+              await db.crewEarningEntry.count({
+                where: { taskId: otherTask.id },
+              }),
+            ).toBe(0);
+          } finally {
+            await db.crew.update({
+              where: { id: otherCrewId },
+              data: { deletedAt: new Date() },
+            });
+          }
+        });
+        it('atomically replaces unallocated rewards repeatedly and supports zero compensation', async () => {
+          await completeWork();
+          const first = await agreed('14000');
+          await expect(
+            amendments.settle(appId, first.id, worker),
+          ).rejects.toThrow();
+          const results = await Promise.all([
+            amendments.settle(appId, first.id, finance),
+            amendments.settle(appId, first.id, finance),
+          ]);
+          expect(results.map((r) => r.status)).toEqual([
+            'effective',
+            'effective',
+          ]);
+          expect(
+            await db.crewEarningEntry.count({
+              where: { taskId, status: 'posted' },
+            }),
+          ).toBe(1);
+          expect(
+            await db.crewEarningEntry.findFirstOrThrow({
+              where: { taskId, sourceType: 'task_reward' },
+            }),
+          ).toMatchObject({ amountMinor: 12345n, status: 'reversed' });
+          const second = await agreed('15000');
+          await amendments.settle(appId, second.id, finance);
+          expect(
+            await db.crewEarningEntry.findFirstOrThrow({
+              where: { taskId, status: 'posted' },
+            }),
+          ).toMatchObject({ amountMinor: 15000n, amendmentId: second.id });
+          const zero = await agreed('0');
+          await amendments.settle(appId, zero.id, finance);
+          expect(
+            await db.crewEarningEntry.count({
+              where: { taskId, status: 'posted' },
+            }),
+          ).toBe(0);
+          expect((await terms.list(appId, worker)).items[0].feeAmount).toBe(
+            '0',
+          );
+        });
+        it('preserves partially paid earnings, supplements increases and records reductions without debits', async () => {
+          await completeWork();
+          const pending = await payouts.create(crewId, finance, {
+            crewMemberId: workerMemberId,
+            currency: crewCurrency(),
+            amountMinor: '5000',
+            withholdingAmountMinor: '0',
+            idempotencyKey: randomUUID(),
+          });
+          await payouts.pay(pending.id, finance, {
+            expectedVersion: pending.version,
+            paymentMethod: 'bank_transfer',
+            paymentReference: 'LOCAL-AMENDMENT',
+          });
+          const original = await db.crewEarningEntry.findFirstOrThrow({
+            where: { taskId },
+          });
+          const increase = await agreed('15000');
+          await amendments.settle(appId, increase.id, finance);
+          expect(
+            await db.crewEarningEntry.findUniqueOrThrow({
+              where: { id: original.id },
+            }),
+          ).toEqual(original);
+          expect(
+            await db.crewEarningEntry.findFirstOrThrow({
+              where: { amendmentId: increase.id },
+            }),
+          ).toMatchObject({ amountMinor: 2655n, status: 'posted' });
+          const reduction = await agreed('10000');
+          expect(
+            (await amendments.settle(appId, reduction.id, finance)).status,
+          ).toBe('settlement_requested');
+          expect((await terms.list(appId, worker)).items[0].feeAmount).toBe(
+            '15000',
+          );
+          expect(await db.crewEarningEntry.count({ where: { taskId } })).toBe(
+            2,
+          );
+          expect(
+            (
+              await db.crewPayout.findUniqueOrThrow({
+                where: { id: pending.id },
+              })
+            ).status,
+          ).toBe('paid');
+        });
+        it('blocks pending payouts and requires fresh consent after voiding them', async () => {
+          await completeWork();
+          const pending = await payouts.create(crewId, finance, {
+            crewMemberId: workerMemberId,
+            currency: crewCurrency(),
+            amountMinor: '5000',
+            withholdingAmountMinor: '0',
+            idempotencyKey: randomUUID(),
+          });
+          const input = await agreed('11000');
+          await expect(
+            amendments.settle(appId, input.id, finance),
+          ).rejects.toThrow('pending payouts');
+          await payouts.void(pending.id, finance, {
+            expectedVersion: pending.version,
+            reason: 'Review changed fee',
+          });
+          await expect(
+            amendments.settle(appId, input.id, finance),
+          ).rejects.toThrow('Settlement state changed');
+          await amendments.decide(appId, input.id, owner, 'withdraw');
+          const refreshed = await agreed('11000');
+          await amendments.settle(appId, refreshed.id, finance);
+          expect((await terms.list(appId, worker)).items[0].feeAmount).toBe(
+            '11000',
+          );
+        });
+        it('serializes payout reservation with a downward correction without overspending', async () => {
+          await completeWork();
+          const input = await agreed('11000');
+          const results = await Promise.allSettled([
+            amendments.settle(appId, input.id, finance),
+            payouts.create(crewId, finance, {
+              crewMemberId: workerMemberId,
+              currency: crewCurrency(),
+              amountMinor: '12000',
+              withholdingAmountMinor: '0',
+              idempotencyKey: randomUUID(),
+            }),
+          ]);
+          expect(
+            results.filter((result) => result.status === 'fulfilled'),
+          ).toHaveLength(1);
+          const rows = await db.crewEarningEntry.findMany({
+            where: { taskId, status: 'posted' },
+          });
+          const total = rows.reduce((sum, row) => sum + row.amountMinor, 0n);
+          const summary = (
+            await payouts.listMine(worker, {
+              currency: crewCurrency(),
+              limit: 50,
+            })
+          ).summary;
+          expect(BigInt(summary.availableAmountMinor)).toBeGreaterThanOrEqual(
+            0n,
+          );
+          expect(total).toBe(
+            results[0].status === 'fulfilled' ? 11000n : 12345n,
+          );
+        });
+        it('rolls settlement earnings and effective terms back when the outbox fails', async () => {
+          await completeWork();
+          const input = await agreed('11000');
+          const before = await db.crewEarningEntry.findMany({
+            where: { taskId },
+          });
+          notifications.send.mockRejectedValueOnce(
+            new Error('Settlement outbox failed'),
+          );
+          await expect(
+            amendments.settle(appId, input.id, finance),
+          ).rejects.toThrow('Settlement outbox failed');
+          expect(
+            await db.crewEarningEntry.findMany({ where: { taskId } }),
+          ).toEqual(before);
+          expect((await terms.list(appId, worker)).currentVersion).toBe(1);
+          expect((await amendments.list(appId, worker)).items[0].status).toBe(
+            'awaiting_settlement',
+          );
+          expect(
+            (await amendments.settle(appId, input.id, finance)).status,
+          ).toBe('effective');
+        });
+        it('retains departed creator consent without restoring membership or activating a fee', async () => {
+          await members.remove(crewId, workerMemberId, owner);
+          const input = await proposal();
+          await amendments.propose(appId, owner, input);
+          expect(
+            (await amendments.decide(appId, input.id, worker, 'confirm'))
+              .status,
+          ).toBe('awaiting_settlement');
+          expect((await terms.list(appId, worker)).currentVersion).toBe(1);
+          await expect(
+            authorization.requireMembership(crewId, worker),
+          ).rejects.toThrow();
+          expect(
+            (await amendments.list(appId, worker)).items[0],
+          ).not.toHaveProperty('baseline');
+        });
+        it('serializes conflicting proposals, supports withdrawal and rejects changed retry payloads', async () => {
+          const input = await proposal();
+          const results = await Promise.allSettled([
+            amendments.propose(appId, owner, input),
+            amendments.propose(appId, owner, { ...input, id: randomUUID() }),
+          ]);
+          expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(
+            1,
+          );
+          const current = (await amendments.list(appId, worker)).items[0];
+          await expect(
+            amendments.propose(appId, owner, {
+              ...current.proposal,
+              reason: 'Changed request',
+            }),
+          ).rejects.toThrow('different details');
+          expect(
+            (await amendments.decide(appId, current.id, owner, 'withdraw'))
+              .status,
+          ).toBe('withdrawn');
+          await expect(
+            amendments.decide(appId, current.id, worker, 'confirm'),
+          ).rejects.toThrow('no longer pending');
+          expect((await terms.list(appId, worker)).currentVersion).toBe(1);
+        });
+        it('rolls consent and fee activation back when notification persistence fails', async () => {
+          const input = await proposal();
+          await amendments.propose(appId, owner, input);
+          notifications.send.mockRejectedValueOnce(
+            new Error('Outbox unavailable'),
+          );
+          await expect(
+            amendments.decide(appId, input.id, worker, 'confirm'),
+          ).rejects.toThrow('Outbox unavailable');
+          expect((await amendments.list(appId, worker)).items[0].status).toBe(
+            'pending',
+          );
+          expect((await terms.list(appId, worker)).currentVersion).toBe(1);
+          expect(
+            (
+              await db.crewTaskAssignee.findFirstOrThrow({
+                where: { taskId, userId: worker },
+              })
+            ).rewardAmountMinor,
+          ).toBe(12345n);
+          expect(
+            (await amendments.decide(appId, input.id, worker, 'confirm'))
+              .status,
+          ).toBe('effective');
+        });
+      });
+
       it('requires negotiated consent and matching reward before assigning the task', async () => {
         await expect(applications.approve(appId, owner)).rejects.toThrow(
           'confirmed final terms',
@@ -2780,6 +3392,32 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           expect(current.status).toBe('pending');
           expect(current.termsVersion).toBe(2);
         }
+      });
+      it('recovers an identical proposal after approval without reopening negotiation', async () => {
+        const original = await terms.propose(appId, owner, offer());
+        const confirmed = await terms.confirm(appId, worker, 1);
+        await applications.approve(appId, owner);
+        const before = await db.crewApplication.findUniqueOrThrow({
+          where: { id: appId },
+        });
+        const recovered = await terms.propose(appId, owner, offer());
+        expect(recovered.id).toBe(original.id);
+        expect(recovered.confirmedAt).toBe(confirmed.confirmedAt);
+        await expect(
+          terms.propose(appId, owner, { ...offer(), feeAmount: '999' }),
+        ).rejects.toThrow();
+        await expect(
+          terms.propose(appId, owner, { ...offer(), expectedVersion: 1 }),
+        ).rejects.toThrow('Only pending');
+        await expect(terms.propose(appId, worker, offer())).rejects.toThrow();
+        expect(
+          await db.crewApplication.findUniqueOrThrow({ where: { id: appId } }),
+        ).toEqual(before);
+        expect(
+          await db.crewApplicationTerms.count({
+            where: { applicationId: appId },
+          }),
+        ).toBe(1);
       });
       it('protects private terms and rejects invalid money or unspecified share basis', async () => {
         await expect(terms.propose(appId, worker, offer())).rejects.toThrow();

@@ -1,4 +1,9 @@
 import {
+  CrewApplicationAmendmentsController,
+  CrewAmendmentSettlementQueueController,
+  CrewApplicationAmendmentsService,
+} from './application-amendments';
+import {
   CrewTaskFeedbackAppealsService,
   CrewTaskFeedbackAppealsController,
 } from './accountability/task-feedback-appeals';
@@ -131,6 +136,8 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewApplicationAmendmentsController,
+    CrewAmendmentSettlementQueueController,
     CrewTaskFeedbackAppealsController,
     CrewDisputeAttachmentsController,
     CrewDisputeAttachmentsAdminController,
@@ -169,6 +176,7 @@ import { CrewProductionService } from './production/production.service';
     CrewPayoutsController,
   ],
   providers: [
+    CrewApplicationAmendmentsService,
     CrewTaskFeedbackAppealsService,
     CrewTaskOverdueWorker,
     CrewDisputeAttachmentsService,

@@ -133,7 +133,7 @@ export class CrewApplicationTermsService {
         throw new ForbiddenException(
           'An applicant cannot propose their own final terms.',
         );
-      if (app.status !== 'pending')
+      if (app.status !== 'pending' && app.status !== 'approved')
         throw new ConflictException(
           'Only pending applications can negotiate terms.',
         );
@@ -175,6 +175,11 @@ export class CrewApplicationTermsService {
           'Terms changed. Read the latest version before proposing again.',
         );
       }
+      // Approval permits recovery of the identical saved offer above, never a new proposal.
+      if (app.status !== 'pending')
+        throw new ConflictException(
+          'Only pending applications can negotiate terms.',
+        );
       const row = await tx.crewApplicationTerms.create({
         data: {
           id: randomUUID(),

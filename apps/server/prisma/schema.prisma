@@ -5887,6 +5887,7 @@ model CrewTaskSubmissionAsset {
 /// Immutable Crew compensation ledger, separate from compute and wallet credits.
 /// CNY/USD amounts are integer minor units. CrewPayout records settlement evidence.
 model CrewEarningEntry {
+  amendmentId String? @unique(map: "crew_earning_amendment_unique") @map("amendment_id") @db.Uuid
   /// Required CNY/USD currency; amounts are integer minor units.
   currency         String                @db.VarChar(3)
   id               String                @id @default(uuid(7)) @db.Uuid
@@ -5921,7 +5922,8 @@ model CrewEarningEntry {
   events            CrewEarningEvent[]
   payoutAllocations CrewPayoutAllocation[]
 
-  @@unique([taskId, userId, sourceType], map: "crew_earning_entries_task_user_source_unique")
+  // Original earnings retain a partial unique index in SQL; amendment entries use amendmentId.
+  @@index([taskId, userId, sourceType], map: "crew_earning_entries_task_user_source_idx")
   @@unique([id, crewId], name: "uniq_crew_earning_id_crew", map: "crew_earning_entries_id_crew_unique")
   @@index([crewId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_crew_status_created_idx")
   @@index([crewId, sourceType, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_crew_source_created_idx")
