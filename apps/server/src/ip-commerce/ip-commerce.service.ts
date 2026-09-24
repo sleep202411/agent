@@ -2221,6 +2221,7 @@ export class IpCommerceService {
             socialLinks: [],
             showcaseWorks: [],
             productionTemplateLocale: input.sourceLocale,
+            productionKind: 'series',
           },
           'unlisted',
         );

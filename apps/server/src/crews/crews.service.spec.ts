@@ -26,6 +26,7 @@ const CREATE_INPUT = {
   description: 'We animate after dark.',
   logo: 'https://cdn.example/logo.png',
   productionTemplateLocale: 'en-US' as const,
+  productionKind: 'series' as const,
   genres: ['scifi'],
   styles: ['2d'],
   socialLinks: [],
