@@ -637,9 +637,14 @@ export class CrewAccountabilityService {
       where: { id, subjectUserId: userId, respondedAt: null },
       data: { response, respondedAt: new Date() },
     });
-    if (!updated.count && feedback.response !== response)
+    // A competing identical request may have answered after our initial read.
+    // Compare the committed winner, never the stale unanswered snapshot.
+    const saved = await this.prisma.crewPeerFeedback.findUniqueOrThrow({
+      where: { id },
+    });
+    if (!updated.count && saved.response !== response)
       throw new ConflictException('A response has already been recorded.');
-    return this.prisma.crewPeerFeedback.findUniqueOrThrow({ where: { id } });
+    return saved;
   }
 
   async recognize(crewId: string, _subjectUserId: string, userId: string) {
