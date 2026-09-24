@@ -3836,14 +3836,6 @@
         "createEndingHere": "创建命名结局…",
         "cancel": "取消",
         "endingTitle": "标题",
-        "endingKind": "类型",
-        "endingKinds": {
-          "success": "成功",
-          "failure": "失败",
-          "neutral": "中性",
-          "hidden": "隐藏",
-          "custom": "自定义"
-        },
         "noVariables": "先在左侧「状态」里登记变量，再挂到这里。",
         "attachVisibilityEmpty": "显示条件",
         "effectsTitle": "选项效果",

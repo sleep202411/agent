@@ -284,10 +284,7 @@ type StoryCanvasChoiceContextValue = {
     }
   ) => void;
   createEndingForChoice: (sourceNodeId: string, choiceId: string) => void;
-  updateEnding: (
-    endingId: string,
-    patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
-  ) => void;
+  updateEnding: (endingId: string, patch: Pick<StoryBibleEnding, "title">) => void;
   deleteEnding: (endingId: string) => void;
 };
 type StoryCanvasWorldContextValue = {
@@ -1206,10 +1203,7 @@ function StoryProjectCanvasInner({
   });
   const canEdit = editPolicy.canEditContent;
   const canMutateCanvasLayout = editPolicy.canEditLayout;
-  const updateEnding = (
-    endingId: string,
-    patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
-  ) => {
+  const updateEnding = (endingId: string, patch: Pick<StoryBibleEnding, "title">) => {
     applyGraphMutation(
       (current) => {
         const ending = (current.storyBible.endings ?? []).find(

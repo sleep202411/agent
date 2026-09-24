@@ -40,10 +40,8 @@ import {
   MAX_STORY_EXIT_ROUTES,
   MAX_STORY_STATE_EFFECTS,
   MAX_STORY_STATE_VARIABLES,
-  STORY_ENDING_KINDS,
   type StoryCompareOperator,
   type StoryCondition,
-  type StoryEndingKind,
   type StoryExitRoute,
   type StoryRouteTarget,
   type StoryStateEffect,
@@ -399,11 +397,12 @@ export function StoryEffectsEditor({
           return (
             <div
               key={`${effect.key}:${index}`}
-              className={
+              className={cn(
+                "grid gap-1.5",
                 table
-                  ? "grid min-h-11 grid-cols-[minmax(0,1fr)_4.5rem_4.25rem_2rem] items-center gap-1.5 border-t border-white/[0.055] px-3"
-                  : "grid grid-cols-[1fr_72px_1fr_28px] items-end gap-1.5"
-              }
+                  ? "min-h-11 grid-cols-[minmax(0,1fr)_4.5rem_4.25rem_28px] items-center border-t border-white/[0.055] px-2"
+                  : "grid-cols-[1fr_72px_1fr_28px] items-end"
+              )}
             >
               <StatsSelect
                 value={effect.key}
@@ -475,10 +474,10 @@ export function StoryEffectsEditor({
                 type="button"
                 disabled={!canEdit}
                 onClick={() => onChange(effects.filter((_, at) => at !== index))}
-                className="grid size-8 place-items-center rounded-md text-white/34 transition hover:bg-white/[0.08] hover:text-[#ff9b9e] disabled:opacity-40"
+                className="grid size-7 place-items-center rounded-md text-destructive transition hover:bg-destructive/10 disabled:opacity-40"
                 aria-label={t("removeEffect")}
               >
-                <IconTrash className="size-3.5" />
+                <IconTrash className="size-3" />
               </button>
               {invalidBooleanAdd ? (
                 <p className="col-span-4 pb-2 text-xs text-destructive">
@@ -612,8 +611,8 @@ export function StoryConditionEditor({
             <div
               key={`${compare.variableKey}:${index}`}
               className={cn(
-                "grid grid-cols-[1fr_88px_1fr_28px] gap-1.5",
-                table ? "min-h-11 items-center border-t border-white/[0.055] px-3" : "items-end"
+                "grid grid-cols-[repeat(3,minmax(0,1fr))_28px] gap-1.5",
+                table ? "min-h-11 items-center border-t border-white/[0.055] px-2" : "items-end"
               )}
             >
               <StatsSelect
@@ -668,10 +667,10 @@ export function StoryConditionEditor({
                     next.length ? rebuildCondition({ ...draft, compares: next }) : undefined
                   );
                 }}
-                className="grid size-7 place-items-center rounded-md text-white/34 transition hover:bg-white/[0.08] hover:text-[#ff9b9e] disabled:opacity-40"
+                className="grid size-7 place-items-center rounded-md text-destructive transition hover:bg-destructive/10 disabled:opacity-40"
                 aria-label={t("removeCondition")}
               >
-                <IconTrash className="size-3.5" />
+                <IconTrash className="size-3" />
               </button>
             </div>
           );
@@ -818,9 +817,9 @@ export function StoryAutoRoutesEditor({
   return (
     <div>
       <p className="text-xs leading-4 text-white/42">{t("routesHint")}</p>
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 divide-y divide-white/[0.055]">
         {conditionals.map((route, index) => (
-          <div key={`route-${index}`} className="rounded-xl bg-white/[0.04] p-2.5">
+          <div key={`route-${index}`} className="py-3 first:pt-0">
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-xs font-semibold tracking-[0.08em] text-white/42 uppercase">
                 {t("routeIndex", { number: index + 1 })}
@@ -893,7 +892,7 @@ export function StoryAutoRoutesEditor({
             </div>
           </div>
         ))}
-        <div className="rounded-xl bg-white/[0.04] p-2.5">
+        <div className="py-3 first:pt-0 last:pb-0">
           <p className="text-xs font-semibold tracking-[0.08em] text-white/42 uppercase">
             {t("fallbackRoute")}
           </p>
@@ -987,7 +986,7 @@ export function StoryRouteTargetPicker({
         ]}
       />
       {selectedEnding ? (
-        <div className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-end gap-2">
+        <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
           <label className="min-w-0 text-xs text-white/48">
             <span className="block">{t("endingTitle")}</span>
             <StoryCanvasTextInput
@@ -1000,20 +999,6 @@ export function StoryRouteTargetPicker({
                 })
               }
               className="mt-1 block h-8! w-full rounded-lg bg-white/[0.05] px-2.5 text-xs outline-none transition focus-visible:ring-2 focus-visible:ring-white/25"
-            />
-          </label>
-          <label className="min-w-0 text-xs text-white/48">
-            {t("endingKind")}
-            <StatsSelect
-              value={selectedEnding.kind}
-              disabled={!canEdit}
-              onChange={(kind) =>
-                onUpdateEnding(selectedEnding.endingId, { kind: kind as StoryEndingKind })
-              }
-              options={STORY_ENDING_KINDS.map((kind) => ({
-                value: kind,
-                label: t(`endingKinds.${kind}`),
-              }))}
             />
           </label>
           <AlertDialog>
@@ -1049,10 +1034,7 @@ export function StoryRouteTargetPicker({
   );
 }
 
-type EndingUpdate = (
-  endingId: string,
-  patch: Partial<Pick<StoryBibleEnding, "title" | "kind">>
-) => void;
+type EndingUpdate = (endingId: string, patch: Pick<StoryBibleEnding, "title">) => void;
 
 export function storyGraphNodePickerItems(
   nodes: readonly StoryGraphNode[],
@@ -1121,7 +1103,7 @@ function EffectValueField({
           onChange({ ...effect, amount: subtract ? -Math.abs(next) || 0 : next });
         }}
         className={cn(
-          "nodrag nopan nowheel h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs",
+          "nodrag nopan nowheel h-8! rounded-lg bg-white/[0.05] px-2 text-xs",
           invalid && "border-destructive! ring-1 ring-destructive/30",
           flush && "mt-0"
         )}
@@ -1151,7 +1133,7 @@ function EffectValueField({
         onChange({ kind: "set", key: effect.key, value: Number(event.target.value) || 0 })
       }
       className={cn(
-        "nodrag nopan nowheel h-8! rounded-lg bg-white/[0.05] px-2.5 text-xs",
+        "nodrag nopan nowheel h-8! rounded-lg bg-white/[0.05] px-2 text-xs",
         flush && "mt-0"
       )}
     />
@@ -1213,15 +1195,16 @@ function StatsSelect({
     <Select value={value} disabled={disabled} onValueChange={onChange}>
       <SelectTrigger
         size="sm"
+        title={options.find((option) => option.value === value)?.label}
         aria-invalid={invalid || undefined}
         className={cn(
-          "nodrag nopan nowheel w-full",
+          "nodrag nopan nowheel h-8! w-full min-w-0",
           invalid && "border-destructive! ring-1 ring-destructive/30",
-          !flush && "mt-1 h-8 px-2.5 text-xs"
+          !flush && "mt-1 px-2.5 text-xs"
         )}
         onKeyDown={(event) => event.stopPropagation()}
       >
-        <SelectValue />
+        <SelectValue className="min-w-0 truncate" />
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
