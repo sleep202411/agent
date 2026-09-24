@@ -705,7 +705,7 @@ describe('CrewAssetsService', () => {
     expect(t.conversations.broadcastCrewAssetChange).not.toHaveBeenCalled();
   });
 
-  it('physically deletes unshared crew media before retiring its ledger', async () => {
+  it('retires unshared crew media before physically deleting its objects', async () => {
     const t = build();
 
     await t.service.removePermanently(CREW_ID, USER_ID, NODE_ID);
@@ -715,6 +715,7 @@ describe('CrewAssetsService', () => {
       NODE_ID,
       USER_ID,
       CrewAssetPermission.manage,
+      t.prisma,
     );
     expect(t.prisma.crewAssetNode.delete).toHaveBeenCalledWith({
       where: { id: NODE_ID },

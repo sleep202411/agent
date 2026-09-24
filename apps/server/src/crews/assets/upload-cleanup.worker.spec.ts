@@ -64,7 +64,8 @@ describe('CrewAssetUploadCleanupWorker', () => {
     const mediaAsset = {
       findMany: jest
         .fn()
-        .mockResolvedValue([{ id: 'media-1' }, { id: 'media-2' }]),
+        .mockResolvedValueOnce([{ id: 'media-1' }, { id: 'media-2' }])
+        .mockResolvedValue([]),
     };
     const prisma = { mediaAsset };
     const assets = {
@@ -105,6 +106,41 @@ describe('CrewAssetUploadCleanupWorker', () => {
       'media-2',
       createdBefore,
     );
+  });
+
+  it('retries committed deletions independently of expired pending uploads', async () => {
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'deleted-1' }, { id: 'deleted-2' }]);
+    const assets = {
+      cleanupUploadReservations: jest.fn(),
+      reclaimExpiredPendingUpload: jest.fn(),
+      reclaimDeletedCrewUpload: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('retry later'))
+        .mockResolvedValue(undefined),
+    };
+    const worker = new CrewAssetUploadCleanupWorker(
+      { mediaAsset: { findMany } } as never,
+      assets as never,
+    );
+    await worker.drainOnce();
+    expect(findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'deleted',
+          deletedAt: { not: null },
+          crewAssetNodes: { none: {} },
+        }),
+        take: 50,
+      }),
+    );
+    expect(assets.reclaimDeletedCrewUpload.mock.calls).toEqual([
+      ['deleted-1'],
+      ['deleted-2'],
+    ]);
+    expect(assets.reclaimExpiredPendingUpload).not.toHaveBeenCalled();
   });
 
   it('does not overlap two drains in the same server process', async () => {
