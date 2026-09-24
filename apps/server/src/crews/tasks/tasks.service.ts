@@ -898,6 +898,25 @@ export class CrewTasksService {
           taskCount,
         });
       }
+      const views = await tx.crewTaskView.findMany({
+        where: { crewId: current.crewId },
+        select: { id: true, filters: true },
+      });
+      for (const view of views) {
+        const filters = CrewTaskViewFiltersSchema.parse(view.filters);
+        if (!filters.workflowStateIds?.includes(stateId)) continue;
+        await tx.crewTaskView.update({
+          where: { id: view.id },
+          data: {
+            filters: {
+              ...filters,
+              workflowStateIds: filters.workflowStateIds.filter(
+                (id) => id !== stateId,
+              ),
+            },
+          },
+        });
+      }
       await tx.crewTaskWorkflowState.delete({ where: { id: stateId } });
       await tx.crewTaskWorkflowState.updateMany({
         where: {
@@ -1161,11 +1180,26 @@ export class CrewTasksService {
     });
     if (!current) throw new NotFoundException('Task label not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
-    await this.manageTaskWrite(current.crewId, userId, (tx) =>
-      tx.crewTaskLabel.delete({
-        where: { id: labelId },
-      }),
-    );
+    await this.manageTaskWrite(current.crewId, userId, async (tx) => {
+      const views = await tx.crewTaskView.findMany({
+        where: { crewId: current.crewId },
+        select: { id: true, filters: true },
+      });
+      for (const view of views) {
+        const filters = CrewTaskViewFiltersSchema.parse(view.filters);
+        if (!filters.labelIds?.includes(labelId)) continue;
+        await tx.crewTaskView.update({
+          where: { id: view.id },
+          data: {
+            filters: {
+              ...filters,
+              labelIds: filters.labelIds.filter((id) => id !== labelId),
+            },
+          },
+        });
+      }
+      await tx.crewTaskLabel.delete({ where: { id: labelId } });
+    });
     await this.conversations.broadcastCrewTaskProjectChange(
       current.crewId,
       'label',
@@ -1228,45 +1262,49 @@ export class CrewTasksService {
         message: 'Only select fields can define options.',
       });
     }
-    if (input.options) {
-      const allowed = new Set(input.options.map((option) => option.id));
-      const values = await this.prisma.crewTaskFieldValue.findMany({
-        where: { fieldId },
-        select: { value: true },
-      });
-      const used = new Set(
-        values.flatMap((row) =>
-          Array.isArray(row.value)
-            ? row.value.filter(
-                (value): value is string => typeof value === 'string',
-              )
-            : typeof row.value === 'string'
-              ? [row.value]
-              : [],
-        ),
-      );
-      const removedInUse = [...used].filter(
-        (optionId) => !allowed.has(optionId),
-      );
-      if (removedInUse.length > 0) {
-        throw new ConflictException({
-          code: 'CREW_TASK_FIELD_OPTION_IN_USE',
-          message:
-            'Clear or replace values that use an option before deleting that option.',
-          optionIds: removedInUse,
+    const result = await this.manageTaskWrite(
+      current.crewId,
+      userId,
+      async (tx) => {
+        if (input.options) {
+          const allowed = new Set(input.options.map((option) => option.id));
+          const values = await tx.crewTaskFieldValue.findMany({
+            where: { fieldId },
+            select: { value: true },
+          });
+          const used = new Set(
+            values.flatMap((row) =>
+              Array.isArray(row.value)
+                ? row.value.filter(
+                    (value): value is string => typeof value === 'string',
+                  )
+                : typeof row.value === 'string'
+                  ? [row.value]
+                  : [],
+            ),
+          );
+          const removedInUse = [...used].filter(
+            (optionId) => !allowed.has(optionId),
+          );
+          if (removedInUse.length > 0) {
+            throw new ConflictException({
+              code: 'CREW_TASK_FIELD_OPTION_IN_USE',
+              message:
+                'Clear or replace values that use an option before deleting that option.',
+              optionIds: removedInUse,
+            });
+          }
+        }
+        return tx.crewTaskFieldDefinition.updateMany({
+          where: { id: fieldId, updatedAt: new Date(input.expectedUpdatedAt) },
+          data: {
+            name: input.name,
+            description: input.description,
+            options: input.options,
+            required: input.required,
+          },
         });
-      }
-    }
-    const result = await this.manageTaskWrite(current.crewId, userId, (tx) =>
-      tx.crewTaskFieldDefinition.updateMany({
-        where: { id: fieldId, updatedAt: new Date(input.expectedUpdatedAt) },
-        data: {
-          name: input.name,
-          description: input.description,
-          options: input.options,
-          required: input.required,
-        },
-      }),
+      },
     );
     if (result.count !== 1) {
       throw new ConflictException({
