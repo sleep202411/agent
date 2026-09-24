@@ -314,7 +314,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                           );
                         }}
                         title={entry.title}
-                        className="flex w-28 shrink-0 flex-col rounded-md p-1 text-left text-xs text-white/70 ring-2 ring-inset ring-transparent hover:bg-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-pressed:text-white aria-pressed:ring-white"
+                        className="flex w-28 shrink-0 flex-col rounded-md p-1 text-left text-xs text-white/70 hover:bg-primary/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
                       >
                         {entry.cover ? (
                           <Image
@@ -330,10 +330,13 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                             {entry.number || t("preview")}
                           </span>
                         )}
-                        <span className="line-clamp-1">
+                        <span className={`line-clamp-1 ${(episode?.id ?? "") === entry.id ? "text-primary" : ""}`}>
                           {entry.number ? `${entry.number}. ` : ""}
                           {entry.title}
                         </span>
+                        {isPlaying && !entry.locked && (episode?.id ?? "") === entry.id && (
+                          <span className="text-xs text-primary">{t("nowPlaying")}</span>
+                        )}
                         {entry.locked && (
                           <span className="inline-flex items-center gap-1 text-xs">
                             <IconLock aria-hidden="true" className="size-3" />
