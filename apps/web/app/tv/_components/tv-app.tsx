@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { recordMemberView } from "@/src/lib/ip-commerce/api";
 import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
 import { IconChevronDown, IconX } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -56,6 +57,8 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
 }
 
 function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
+  const { user } = useCurrentUser();
+  const signaledEpisodes = useRef(new Set<string>());
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
@@ -192,15 +195,45 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
         aria-label={t("playerTitle")}
         className="relative flex min-w-0 shrink-0 flex-col lg:flex-1 lg:overflow-hidden"
       >
-        <div className={`${stageStyles.viewport} relative aspect-video shrink-0 lg:aspect-auto lg:min-h-0 lg:flex-1`}>
+        <div
+          className={`${stageStyles.viewport} relative aspect-video shrink-0 lg:aspect-auto lg:min-h-0 lg:flex-1`}
+        >
           {item ? (
             <TvStage
               item={playbackItem!}
-              onPlaybackChange={(playing) => {
+              onPlaybackChange={(playing, source) => {
                 setIsPlaying(playing);
                 if (playing) {
                   navigationVersion.current += 1;
                   setAdvancing(false);
+                  // The API applies membership/grant eligibility and monthly deduplication.
+                  // Only report an actually playing full episode, never its trailer.
+                  if (
+                    user?.id &&
+                    episode?.video &&
+                    !episode.locked &&
+                    source &&
+                    new URL(source, window.location.href).href ===
+                      new URL(episode.video, window.location.href).href
+                  ) {
+                    const key = JSON.stringify([
+                      item.id,
+                      episode.id,
+                      new Date().toISOString().slice(0, 7),
+                    ]);
+                    if (!signaledEpisodes.current.has(key)) {
+                      signaledEpisodes.current.add(key);
+                      void recordMemberView({ ipId: item.id, episodeId: episode.id })
+                        .then((result) => {
+                          // Eligibility may change after a membership purchase or free unlock.
+                          if (!result.recorded) signaledEpisodes.current.delete(key);
+                        })
+                        .catch(() => {
+                          // A later playback/resume may retry a failed best-effort signal.
+                          signaledEpisodes.current.delete(key);
+                        });
+                    }
+                  }
                 }
               }}
               onNext={hasNext ? () => void nextChannel() : undefined}
