@@ -8,7 +8,8 @@ import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 /**
- * Entering the preview, from wherever it is offered (header button, stepper).
+ * Entering the preview, from wherever it is offered (header button, stepper,
+ * a scene card's play button).
  *
  * A preview compiles the latest SAVED draft, so this is never a plain link:
  * while the canvas is mounted it publishes a save barrier that must run first
@@ -17,6 +18,8 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
  */
 export function useStoryPreviewNavigation(projectId: string): {
   openPreview: () => Promise<void>;
+  /** Walk the chapter entering at one chosen scene (`?scene=`). */
+  openPreviewFromScene: (sceneId: string) => Promise<void>;
   pending: boolean;
 } {
   const t = useTranslations("storyStudio.canvas");
@@ -25,32 +28,39 @@ export function useStoryPreviewNavigation(projectId: string): {
   const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
   const [pending, setPending] = useState(false);
 
-  const openPreview = useCallback(async () => {
-    if (pending) return;
-    setPending(true);
-    try {
-      const navigate = () => {
-        const chapterQuery = activeChapterId
-          ? `?chapter=${encodeURIComponent(activeChapterId)}`
-          : "";
-        router.push(
-          `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
-        );
-      };
-      if (draftBarrier) {
-        await draftBarrier(async () => {
+  const open = useCallback(
+    async (sceneId?: string) => {
+      if (pending) return;
+      setPending(true);
+      try {
+        const navigate = () => {
+          const params = new URLSearchParams();
+          if (activeChapterId) params.set("chapter", activeChapterId);
+          if (sceneId) params.set("scene", sceneId);
+          const chapterQuery = params.size > 0 ? `?${params.toString()}` : "";
+          router.push(
+            `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
+          );
+        };
+        if (draftBarrier) {
+          await draftBarrier(async () => {
+            navigate();
+            return null;
+          });
+        } else {
           navigate();
-          return null;
-        });
-      } else {
-        navigate();
+        }
+      } catch (error) {
+        toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
+      } finally {
+        setPending(false);
       }
-    } catch (error) {
-      toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
-    } finally {
-      setPending(false);
-    }
-  }, [activeChapterId, draftBarrier, pending, projectId, router, t]);
+    },
+    [activeChapterId, draftBarrier, pending, projectId, router, t]
+  );
 
-  return { openPreview, pending };
+  const openPreview = useCallback(() => open(), [open]);
+  const openPreviewFromScene = useCallback((sceneId: string) => open(sceneId), [open]);
+
+  return { openPreview, openPreviewFromScene, pending };
 }

@@ -179,6 +179,53 @@ function previewSequences(draft: Draft) {
 }
 
 describe('StoryWorkingPreviewService', () => {
+  it('identifies an invalid choice effect and its canvas destination', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    draft.storyBible.stateVariables = [
+      {
+        key: 'flags.asked',
+        name: { 'zh-CN': '已询问' },
+        valueType: 'boolean',
+        initialValue: false,
+      },
+    ];
+    const node = draft.graph.nodes[0];
+    if (node.exit.kind !== 'choice') throw new Error('Choice fixture missing.');
+    node.exit.choices[1].effects = [
+      { kind: 'add', key: 'flags.asked', amount: 1 },
+    ];
+
+    const preview = await scopedService(draft).service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      uuidAt(9),
+    );
+
+    expect(preview.runtime).toBeNull();
+    const diagnostic = preview.diagnostics[0];
+    expect(diagnostic).toMatchObject({
+      code: 'STORY_WORKING_PREVIEW_EFFECT_TYPE_MISMATCH',
+      entityType: 'node',
+      entityId: node.nodeId,
+      chapterId: uuidAt(9),
+    });
+    expect(diagnostic?.details).toEqual({
+      kind: 'state-effect-type',
+      nodeTitle:
+        node.kind === 'decision'
+          ? node.exit.prompt['zh-CN']
+          : node.name || node.nodeId,
+      choiceLabel: node.exit.choices[1].label['zh-CN'],
+      effectIndex: 1,
+      variableName: '已询问',
+      operation: 'add',
+      variableType: 'boolean',
+    });
+    expect(preview.diagnostics[0]?.message).toContain(
+      'add requires a number variable',
+    );
+  });
+
   it('gives chapter and whole-story previews distinct stable build identities', async () => {
     const { service } = scopedService(
       buildInteractiveFilmTestBundle().draftContent,
