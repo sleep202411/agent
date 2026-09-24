@@ -1,6 +1,6 @@
 import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { CrewAccountabilityService } from './accountability.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
@@ -101,6 +101,57 @@ suite('Crew accountability on isolated PostgreSQL', () => {
     else process.env.CREW_COMPLETION_REWARD_APPROVER_IDS = oldApprovers;
     // Keep the dedicated test DB for inspection; no broad cleanup on shared DBs.
     await db?.$disconnect();
+  });
+  it('accepts two identical overlapping replies with a single stored response', async () => {
+    const subject = randomUUID();
+    const row = await db.crewPeerFeedback.create({
+      data: {
+        crewId,
+        authorUserId: leader,
+        subjectUserId: subject,
+        rating: 5,
+        comment: 'Great work',
+      },
+    });
+    let readers = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const replies = new CrewAccountabilityService(
+      {
+        crewPeerFeedback: {
+          findUnique: async (args: Prisma.CrewPeerFeedbackFindUniqueArgs) => {
+            const value = await db.crewPeerFeedback.findUnique(args);
+            if (++readers === 2) release();
+            await barrier;
+            return value;
+          },
+          updateMany: (args: Prisma.CrewPeerFeedbackUpdateManyArgs) =>
+            db.crewPeerFeedback.updateMany(args),
+          findUniqueOrThrow: (
+            args: Prisma.CrewPeerFeedbackFindUniqueOrThrowArgs,
+          ) => db.crewPeerFeedback.findUniqueOrThrow(args),
+        },
+      } as never,
+      authorization,
+      {} as never,
+    );
+    const results = await Promise.all([
+      replies.respond(row.id, subject, 'Thank you'),
+      replies.respond(row.id, subject, 'Thank you'),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    expect(results[0]).toMatchObject({
+      response: 'Thank you',
+      respondedAt: expect.any(Date) as unknown,
+    });
+    await expect(
+      service.respond(row.id, subject, 'Replacement'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      await db.crewPeerFeedback.findUnique({ where: { id: row.id } }),
+    ).toEqual(results[0]);
   });
   async function task(userId: string) {
     return db.crewTask.create({
@@ -307,7 +358,7 @@ suite('Crew accountability on isolated PostgreSQL', () => {
       }),
     ).toBeNull();
     const feedback = await db.crewPeerFeedback.findFirstOrThrow({
-      where: { crewId },
+      where: { crewId, authorUserId: alice, subjectUserId: bob },
     });
     await service.respond(feedback.id, bob, 'Thank you; received.');
     await expect(

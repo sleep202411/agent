@@ -370,6 +370,63 @@ describe('Crew accountability', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
+  it.each([true, false])(
+    'handles overlapping feedback replies without overwriting the first (same=%s)',
+    async (same) => {
+      const f = fixture();
+      const initial = {
+        id: 'feedback',
+        subjectUserId: 'creator',
+        response: null,
+        respondedAt: null,
+      };
+      const saved = {
+        ...initial,
+        response: 'My reply',
+        respondedAt: new Date(),
+      };
+      // Both requests observe the unanswered row before either conditional write.
+      let readers = 0;
+      let release!: () => void;
+      const readBarrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      f.tx.crewPeerFeedback.findUnique.mockImplementation(async () => {
+        if (++readers === 2) release();
+        await readBarrier;
+        return initial;
+      });
+      f.tx.crewPeerFeedback.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+      f.tx.crewPeerFeedback.findUniqueOrThrow.mockResolvedValue(saved);
+      const results = await Promise.allSettled([
+        f.service.respond('feedback', 'creator', 'My reply'),
+        f.service.respond(
+          'feedback',
+          'creator',
+          same ? 'My reply' : 'Changed reply',
+        ),
+      ]);
+      expect(results[0]).toEqual({ status: 'fulfilled', value: saved });
+      if (same)
+        expect(results[1]).toEqual({ status: 'fulfilled', value: saved });
+      else
+        expect(results[1]).toMatchObject({
+          status: 'rejected',
+          reason: expect.any(ConflictException) as unknown,
+        });
+      expect(f.tx.crewPeerFeedback.updateMany).toHaveBeenCalledTimes(2);
+      for (const [write] of f.tx.crewPeerFeedback.updateMany.mock
+        .calls as unknown as [{ where: unknown }][]) {
+        expect(write.where).toEqual({
+          id: 'feedback',
+          subjectUserId: 'creator',
+          respondedAt: null,
+        });
+      }
+    },
+  );
   it('only permits the subject to respond', async () => {
     const f = fixture();
     f.tx.crewPeerFeedback.findUnique.mockResolvedValue({
