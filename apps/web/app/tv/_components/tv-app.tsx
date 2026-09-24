@@ -312,7 +312,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                           );
                         }}
                         title={entry.title}
-                        className="flex w-28 shrink-0 flex-col rounded-md p-1 text-left text-xs text-white/70 ring-2 ring-transparent hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white aria-pressed:text-white aria-pressed:ring-white"
+                        className="flex w-28 shrink-0 flex-col rounded-md p-1 text-left text-xs text-white/70 ring-2 ring-inset ring-transparent hover:bg-white/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white aria-pressed:text-white aria-pressed:ring-white"
                       >
                         {entry.cover ? (
                           <Image
