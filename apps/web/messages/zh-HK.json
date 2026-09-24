@@ -1673,6 +1673,10 @@
     }
   },
   "newIpDetail": {
+    "loadFailure": {
+      "title": "暫時無法載入此 IP",
+      "retry": "重試"
+    },
     "roomNumber": "房間號 {number}",
     "loading": "正在載入 IP 詳情...",
     "back": "返回 IP 廣場",

@@ -203,6 +203,28 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   }
 
   if (!detailIp) {
+    const loadError = [publicQuery.error, previewReference ? creatorQuery.error : null].find(
+      (error) => error && !(error instanceof ApiRequestError && [401, 403, 404].includes(error.status))
+    );
+    if (loadError) {
+      return (
+        <div className="min-h-[calc(100vh-4rem)] bg-background px-5 py-10 text-foreground">
+          <div role="alert" className="mx-auto flex min-h-[520px] max-w-3xl flex-col items-center justify-center gap-4 text-center">
+            <h1 className="text-2xl font-semibold">{t("loadFailure.title")}</h1>
+            <p className="text-sm text-muted-foreground">{loadError.message}</p>
+            <Button
+              disabled={publicQuery.isFetching || creatorQuery.isFetching}
+              onClick={() => {
+                void publicQuery.refetch();
+                if (previewReference) void creatorQuery.refetch();
+              }}
+            >
+              {t("loadFailure.retry")}
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return <NotFoundState locale={locale} t={t} />;
   }
 

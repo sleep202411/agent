@@ -1673,6 +1673,10 @@
     }
   },
   "newIpDetail": {
+    "loadFailure": {
+      "title": "Unable to load this IP",
+      "retry": "Retry"
+    },
     "roomNumber": "Room {number}",
     "loading": "Loading IP detail...",
     "back": "Back to IP plaza",
