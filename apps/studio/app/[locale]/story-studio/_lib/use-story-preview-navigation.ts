@@ -13,10 +13,17 @@ export interface StoryPreviewTarget {
    * that know better (a batch scoped to one chapter) pass their own.
    */
   chapterId?: string;
+  /**
+   * Scene to start the walk at. The whole chapter still compiles; the player
+   * simply enters at this scene, so testing a late branch never replays what
+   * comes before it.
+   */
+  sceneId?: string;
 }
 
 /**
- * Entering the preview, from wherever it is offered (header button, stepper).
+ * Entering the preview, from wherever it is offered (header button, stepper,
+ * a scene card's play button).
  *
  * A preview compiles the latest SAVED draft, so this is never a plain link:
  * while the canvas is mounted it publishes a save barrier that must run first
@@ -26,10 +33,12 @@ export interface StoryPreviewTarget {
  * The barrier hands back the revision it persisted, which travels in the URL
  * (`?rev=`) beside the video snapshot hash: the playtest query is keyed by
  * both, so walking back and forth without edits is served from cache while
- * draft edits or media re-picks compile afresh.
+ * draft edits or media re-picks compile afresh. `?scene=` names the chosen
+ * starting scene.
  */
 export function useStoryPreviewNavigation(projectId: string): {
   openPreview: (target?: StoryPreviewTarget) => Promise<void>;
+  openPreviewFromScene: (sceneId: string) => Promise<void>;
   pending: boolean;
 } {
   const t = useTranslations("storyStudio.canvas");
@@ -48,6 +57,7 @@ export function useStoryPreviewNavigation(projectId: string): {
         const navigate = (draftRevision?: number) => {
           const params = new URLSearchParams();
           if (chapterId) params.set("chapter", chapterId);
+          if (target?.sceneId) params.set("scene", target.sceneId);
           if (typeof draftRevision === "number" && draftRevision > 0) {
             params.set("rev", String(draftRevision));
           }
@@ -76,5 +86,7 @@ export function useStoryPreviewNavigation(projectId: string): {
     [activeChapterId, draftBarrier, liveDraft, pending, projectId, router, t]
   );
 
-  return { openPreview: open, pending };
+  const openPreviewFromScene = useCallback((sceneId: string) => open({ sceneId }), [open]);
+
+  return { openPreview: open, openPreviewFromScene, pending };
 }

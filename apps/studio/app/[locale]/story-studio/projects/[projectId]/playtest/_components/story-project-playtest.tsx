@@ -41,6 +41,7 @@ export function StoryProjectPlaytest({
       projectId,
       source.kind,
       source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
+      source.kind === "draft" ? (source.sceneId ?? null) : null,
       // The freshness token from the canvas turns re-entry without edits into
       // a cache hit while draft edits or media re-picks compile afresh.
       source.kind === "draft" ? (source.revision ?? null) : null,
@@ -126,9 +127,10 @@ export function StoryProjectPlaytest({
     <main className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white">
       <div className="absolute inset-0">
         <ExperienceRuntimePlayer
-          key={parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}
+          key={`${parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}:${source.kind === "draft" ? (source.sceneId ?? "entry") : "entry"}`}
           runtime={runtime}
           locale={locale}
+          startSceneId={source.kind === "draft" ? (source.sceneId ?? null) : null}
           coverUrl={loadedRuntime.kind === "draft" ? loadedRuntime.preview.coverUrl : undefined}
           onStateChange={(state) => {
             setSessionValues(state.values.session);

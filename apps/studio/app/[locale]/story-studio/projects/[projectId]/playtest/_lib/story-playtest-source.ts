@@ -4,6 +4,9 @@
  * multi-chapter work could only ever be walked from its very first scene.
  * Omitting it still walks everything, which is what a single-chapter work wants.
  *
+ * `sceneId` names the scene the walk should enter at — a purely client-side
+ * pick; the whole chapter still compiles.
+ *
  * `revision` and `videoSnapshotHash` form the freshness token the canvas had
  * just saved when navigation started. The playtest keys its runtime query by
  * them, so unchanged round trips reuse the compiled preview while draft edits
@@ -13,6 +16,7 @@ export type StoryProjectPlaytestSource =
   | {
       kind: "draft";
       chapterId?: string;
+      sceneId?: string;
       revision?: number;
       videoSnapshotHash?: string;
     }
@@ -27,6 +31,7 @@ export type StoryProjectPlaytestSource =
 export type StoryPlaytestSearchParams = {
   buildId?: string | string[];
   chapter?: string | string[];
+  scene?: string | string[];
   rev?: string | string[];
   vsh?: string | string[];
 };
@@ -39,12 +44,14 @@ export function parseStoryPlaytestSource(
   // contradict it.
   if (buildId) return { kind: "build", buildId };
   const chapterId = firstQueryValue(query.chapter)?.trim();
+  const sceneId = firstQueryValue(query.scene)?.trim();
   const revisionValue = firstQueryValue(query.rev)?.trim();
   const revision = revisionValue ? Number.parseInt(revisionValue, 10) : undefined;
   const videoSnapshotHash = firstQueryValue(query.vsh)?.trim();
   return {
     kind: "draft",
     ...(chapterId ? { chapterId } : {}),
+    ...(sceneId ? { sceneId } : {}),
     ...(Number.isFinite(revision) && revision !== undefined && revision > 0 ? { revision } : {}),
     ...(videoSnapshotHash ? { videoSnapshotHash } : {}),
   };

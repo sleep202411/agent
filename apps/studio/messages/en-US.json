@@ -3390,7 +3390,15 @@
           "endings": "Endings: {ids}"
         }
       },
-      "validation": {},
+      "catalog": {
+        "eyebrow": "Story playtest",
+        "title": "Choose a starting scene",
+        "description": "Walk the chapter from any scene — testing a late branch no longer means replaying everything before it.",
+        "sceneLabel": "Scene {index}",
+        "sceneAria": "Start from scene {index}: {title}",
+        "entryBadge": "Entry"
+      },
+      "previewFromScene": "Playtest from this scene",
       "readOnly": "Read only",
       "addNode": "Add story node",
       "loading": "Opening the story canvas…",

@@ -3390,6 +3390,15 @@
           "endings": "结局：{ids}"
         }
       },
+      "catalog": {
+        "eyebrow": "故事试玩",
+        "title": "选择起始场景",
+        "description": "从任意场景开始试玩——测试后面的分支不必从头走一遍。",
+        "sceneLabel": "场景 {index}",
+        "sceneAria": "从场景 {index} 开始：{title}",
+        "entryBadge": "入口"
+      },
+      "previewFromScene": "从此场景开始试玩",
       "readOnly": "只读",
       "addNode": "添加故事节点",
       "loading": "正在打开故事画布…",
