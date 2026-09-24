@@ -9514,6 +9514,13 @@
     "failed": "加入失敗，請重試。"
   },
   "tv": {
+    "checkingAccess": "正在查詢劇集權限…",
+    "accessUnavailable": "無法載入劇集權限。",
+    "unlockScheduled": "可觀看時間：{date}",
+    "refreshEpisode": "重新整理已解鎖劇集",
+    "unlockPackagePrice": "解鎖全部劇集：{amount} 社區積分",
+    "unlockEpisodePrice": "解鎖本集：{amount} 社區積分",
+    "quickUnlock": "購買 / 解鎖",
     "hideDetails": "收起詳情",
     "showDetails": "展開詳情",
     "roomNumber": "房間號 {number}",

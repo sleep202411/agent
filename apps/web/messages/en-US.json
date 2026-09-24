@@ -9514,6 +9514,13 @@
     "failed": "Could not join. Try again."
   },
   "tv": {
+    "checkingAccess": "Checking episode access…",
+    "accessUnavailable": "Episode access could not be loaded.",
+    "unlockScheduled": "Available from {date}",
+    "refreshEpisode": "Refresh unlocked episode",
+    "unlockPackagePrice": "Unlock all episodes: {amount} community points",
+    "unlockEpisodePrice": "Unlock this episode: {amount} community points",
+    "quickUnlock": "Purchase / unlock",
     "hideDetails": "Hide details",
     "showDetails": "Show details",
     "roomNumber": "Room {number}",

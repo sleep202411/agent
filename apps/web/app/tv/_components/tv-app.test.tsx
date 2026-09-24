@@ -11,6 +11,12 @@ import { TvApp } from "./tv-app";
 vi.mock("@/app/(site)/ip-studio/_components/new-ip-create-form", () => ({
   NewIpCreateDialog: () => null,
 }));
+vi.mock("@/components/payment/community-recharge-dialog", () => ({
+  CommunityRechargeDialog: () => null,
+}));
+vi.mock("@/components/payment/community-membership-dialog", () => ({
+  CommunityMembershipDialog: () => null,
+}));
 vi.mock("./tv-right-rail", () => ({ TvRightRail: () => null }));
 vi.mock("@/components/auth/auth-dialog-provider", () => ({
   useAuthDialog: () => ({ open: vi.fn() }),
@@ -39,6 +45,13 @@ vi.mock("@/src/lib/api", () => ({
     get: (path: string, config?: unknown) => {
       harness.get(path, config);
       if (String(path).includes("/discovery")) return harness.discovery();
+      if (path.endsWith("/access")) {
+        return Promise.resolve({
+          episodes: [{ id: "locked", access: "locked", price: null }],
+          entitlements: [],
+          wallet: null,
+        });
+      }
       if (/\/ips\//.test(path)) return Promise.resolve({ ip: null });
       return harness.list(config);
     },
