@@ -136,11 +136,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const detailIp = publicQuery.data?.ip
     ? normalizePublicIp(publicQuery.data.ip)
     : creatorQuery.data?.ip
-      ? // The creator preview path only resolves the IP when the viewer IS the
-        // owner (getCreatorIp is scoped to createdById === current user), so the
-        // current user's id is the owner id — thread it through since the
-        // creator DTO doesn't carry createdById.
-        normalizeCreatorIp(creatorQuery.data.ip, user?.id ?? null)
+      ? normalizeCreatorIp(creatorQuery.data.ip, user?.id ?? null)
       : null;
   const accessEpisodeIds = detailIp?.episodes.map((episode) => episode.id) ?? [];
   const accessQuery = useIpAccess(
@@ -715,7 +711,7 @@ function normalizePublicIp(ip: IpCommerceIp): DetailIp {
   };
 }
 
-function normalizeCreatorIp(ip: IpCreatorIp, ownerId: string | null): DetailIp {
+export function normalizeCreatorIp(ip: IpCreatorIp, viewerId: string | null): DetailIp {
   return {
     id: ip.id,
     roomNumber: ip.roomNumber,
@@ -738,7 +734,7 @@ function normalizeCreatorIp(ip: IpCreatorIp, ownerId: string | null): DetailIp {
     genres: ip.genres ?? [],
     tags: [],
     copyrightOwner: ip.copyrightOwner ?? null,
-    createdById: ownerId,
+    createdById: ip.createdById ?? (ip.viewerAccess.owner ? viewerId : null),
     contributors: (ip.contributors ?? []).map((contributor) => ({
       ...contributor,
       displayName: contributor.displayName ?? "",
