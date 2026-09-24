@@ -1073,6 +1073,17 @@ export class CrewProductionService {
       'production.review',
     );
     await this.prisma.$transaction(async (tx) => {
+      // Task creation, reassignment and status changes use this same lock.
+      // Hold it through the decision so the incomplete-task check stays valid.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${current.crewId}`}, 0))
+      `;
+      await this.authorization.require(
+        current.crewId,
+        userId,
+        'production.review',
+        tx,
+      );
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:episode-delivery:${current.episodeId}`})::bigint)
       `;
