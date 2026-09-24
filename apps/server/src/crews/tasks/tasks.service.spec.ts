@@ -1560,3 +1560,75 @@ it.each(['approve', 'request_revision'] as const)(
     expect(t.notifications.send).not.toHaveBeenCalled();
   },
 );
+
+describe('assignment agreement quotes', () => {
+  it('requires task management before exposing any fee', async () => {
+    const f = build();
+    f.roles.require.mockRejectedValue(new ForbiddenException());
+    await expect(
+      f.service.recruitmentTerms(TASK_ID, 'outsider', ASSIGNEE_ID),
+    ).rejects.toThrow(ForbiddenException);
+  });
+  it('returns only effective confirmed project fees and excludes private terms text', async () => {
+    const f = build();
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        termsVersion: 2,
+        terms: [
+          {
+            version: 1,
+            confirmedAt: new Date(),
+            feePeriod: 'project',
+            currency: 'USD',
+            feeAmount: 100n,
+          },
+          {
+            version: 2,
+            confirmedAt: new Date(),
+            feePeriod: 'project',
+            currency: 'USD',
+            feeAmount: 250n,
+            scope: 'private',
+          },
+          {
+            version: 3,
+            confirmedAt: null,
+            feePeriod: 'project',
+            currency: 'USD',
+            feeAmount: 300n,
+          },
+        ],
+      },
+    ]);
+    Object.assign(f.prisma, {
+      crewPosition: {
+        findMany: jest.fn().mockResolvedValue([{ id: 'position' }]),
+      },
+      crewApplication: { findMany },
+    });
+    expect(
+      await f.service.recruitmentTerms(TASK_ID, OWNER_ID, ASSIGNEE_ID),
+    ).toEqual({
+      required: true,
+      items: [{ version: 2, currency: 'USD', feeAmount: '250' }],
+    });
+    const args =
+      firstCallArgument<Prisma.CrewApplicationFindManyArgs>(findMany);
+    expect(args.where).toMatchObject({
+      crewId: CREW_ID,
+      applicantId: ASSIGNEE_ID,
+      status: 'approved',
+      position: {
+        memberPositions: {
+          some: {
+            member: {
+              userId: ASSIGNEE_ID,
+              status: 'active',
+              removedAt: null,
+            },
+          },
+        },
+      },
+    });
+  });
+});

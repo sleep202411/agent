@@ -153,6 +153,7 @@ it.each(["alice", null])(
     expect(nav).not.toBeNull();
     expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
       "/en-US/crews?view=mine",
+      "/en-US/crews/applications",
       "/en-US/crews/tasks",
       "/en-US/crews/income",
       "/en-US/crews?view=crews",

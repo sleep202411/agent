@@ -184,8 +184,16 @@ describe('applicant-owned application history', () => {
   it('scopes results and counts to the authenticated applicant, with bounded pages', async () => {
     const f = fixture();
     f.db.crewApplication.findMany.mockResolvedValue([
-      application('a', 'rejected'),
-      application('b', 'rejected'),
+      {
+        ...application('a', 'rejected'),
+        crew: { name: 'Crew' },
+        position: { positionType: 'Writer', taskId: 'task' },
+      },
+      {
+        ...application('b', 'rejected'),
+        crew: { name: 'Crew' },
+        position: { positionType: 'Writer', taskId: 'task' },
+      },
     ]);
     const result = await f.service.listMine('applicant', {
       limit: 1,
@@ -193,6 +201,8 @@ describe('applicant-owned application history', () => {
     });
     expect(f.db.crewApplication.findMany).toHaveBeenCalledWith({
       include: {
+        crew: { select: { name: true } },
+        position: { select: { positionType: true, taskId: true } },
         interviewEvents: {
           orderBy: { version: 'desc' },
           take: 1,
@@ -207,6 +217,11 @@ describe('applicant-owned application history', () => {
       where: { applicantId: 'applicant', status: 'rejected' },
     });
     expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      crewName: 'Crew',
+      positionType: 'Writer',
+      taskId: 'task',
+    });
     expect(result.nextCursor).toBe('a');
   });
   it('rejects another applicant’s cursor without reading any application page', async () => {

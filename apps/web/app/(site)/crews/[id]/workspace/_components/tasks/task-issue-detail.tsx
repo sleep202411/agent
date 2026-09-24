@@ -1,5 +1,7 @@
 "use client";
 
+import { TaskAgreedFee } from "@/app/(site)/crews/_components/task-agreed-fee";
+
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { TaskCommitments } from "@/app/(site)/crews/_components/accountability/task-commitments";
 
@@ -1711,6 +1713,21 @@ function AssigneesEditor({
                     placeholder={selected?.currency ?? CREW_CURRENCY}
                     className="h-7 text-[10px]"
                   />
+                  {selected && open && (
+                    <TaskAgreedFee
+                      taskId={task.id}
+                      userId={member.userId}
+                      onUse={(currency, fee) =>
+                        setDraft((current) =>
+                          current.map((item) =>
+                            item.userId === member.userId
+                              ? { ...item, currency, rewardAmountMinor: fee === "0.00" ? "" : fee }
+                              : item
+                          )
+                        )
+                      }
+                    />
+                  )}
                 </div>
               );
             })}

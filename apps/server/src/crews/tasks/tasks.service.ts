@@ -1898,6 +1898,66 @@ export class CrewTasksService {
     );
   }
 
+  /** Minimal assignment quote; no private scope, interview or negotiation history. */
+  async recruitmentTerms(taskId: string, userId: string, applicantId: string) {
+    const task = await this.requireTask(taskId);
+    await this.authorization.require(task.crewId, userId, 'tasks.manage');
+    const positions = await this.prisma.crewPosition.findMany({
+      where: { taskId, crewId: task.crewId },
+      select: { id: true },
+    });
+    if (!positions.length) return { required: false, items: [] };
+    const applications = await this.prisma.crewApplication.findMany({
+      where: {
+        crewId: task.crewId,
+        applicantId,
+        status: 'approved',
+        termsVersion: { gt: 0 },
+        positionId: { in: positions.map((position) => position.id) },
+        position: {
+          memberPositions: {
+            some: {
+              member: {
+                userId: applicantId,
+                status: 'active',
+                removedAt: null,
+              },
+            },
+          },
+        },
+      },
+      select: {
+        termsVersion: true,
+        terms: {
+          select: {
+            version: true,
+            confirmedAt: true,
+            feePeriod: true,
+            currency: true,
+            feeAmount: true,
+          },
+        },
+      },
+    });
+    return {
+      required: true,
+      items: applications.flatMap((app) =>
+        app.terms
+          .filter(
+            (term) =>
+              term.version === app.termsVersion &&
+              term.confirmedAt &&
+              term.feePeriod === 'project',
+          )
+          .map((term) => ({
+            version: term.version,
+            currency: term.currency,
+            feeAmount: term.feeAmount.toString(),
+          })),
+      ),
+    };
+  }
+
   async get(taskId: string, userId: string) {
     const task = await this.requireTask(taskId);
     await this.authorization.require(task.crewId, userId, 'tasks.view');

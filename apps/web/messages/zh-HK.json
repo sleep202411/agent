@@ -2062,7 +2062,8 @@
     "myTasksTab": "我的任務",
     "myCrewsSignIn": "登入後查看我的劇組。",
     "myCrewsEmpty": "你還沒有建立或加入劇組。",
-    "myIncomeTab": "我的收入"
+    "myIncomeTab": "我的收入",
+    "myApplicationsTab": "我的申請"
   },
   "crewRoles": {
     "director": "導演",
@@ -9573,7 +9574,6 @@
     "exit": "退出 TV",
     "loading": "載入中…",
     "loadFailed": "IP 列表載入失敗",
-    "retry": "重試",
     "playerTitle": "TV 播放器",
     "previewUnavailable": "此 IP 暫無可用的預覽素材。",
     "videoUnavailable": "影片載入失敗。",
@@ -10108,5 +10108,40 @@
     "approve": "通過",
     "reject": "拒絕",
     "retry": "重試"
+  },
+  "crewTerms": {
+    "title": "最終條款",
+    "loading": "載入中…",
+    "refresh": "重新整理",
+    "none": "尚未提出最終條款。",
+    "version": "版本 {version}",
+    "confirmed": "已確認",
+    "awaiting": "等待申請人確認",
+    "confirm": "確認版本 {version}",
+    "propose": "提出最終條款",
+    "scope": "工作範圍",
+    "fee": "固定費用",
+    "period": "計費週期",
+    "share": "收益分成",
+    "basis": "約定分成計算依據",
+    "project": "項目",
+    "episode": "集",
+    "month": "月",
+    "invalid": "請填寫工作範圍、最多兩位小數的有效費用以及0–50%的分成。非零分成必須填寫約定依據。",
+    "failed": "無法儲存條款。",
+    "blocked": "批准前須確認目前最終條款。",
+    "interviewBlocked": "批准前請完成或取消待處理的面試。",
+    "noPayment": "確認條款不會付款，也不會授予劇組存取權限。",
+    "myApplications": "我的申請",
+    "signIn": "請登入查看申請。",
+    "empty": "暫無申請。",
+    "application": "申請 · {date}",
+    "pending": "待審核",
+    "approved": "已批准",
+    "rejected": "已拒絕",
+    "more": "載入更多",
+    "noAgreement": "暫無有效的已批准協議。請先完成招募，再分配此成員。",
+    "agreedFee": "約定費用",
+    "useFee": "使用約定費用"
   }
 }

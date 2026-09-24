@@ -2062,7 +2062,8 @@
     "myTasksTab": "My Tasks",
     "myCrewsSignIn": "Sign in to view your crews.",
     "myCrewsEmpty": "You have not founded or joined a crew yet.",
-    "myIncomeTab": "My Income"
+    "myIncomeTab": "My Income",
+    "myApplicationsTab": "My applications"
   },
   "crewRoles": {
     "director": "Director",
@@ -9573,7 +9574,6 @@
     "exit": "Exit TV",
     "loading": "Loading…",
     "loadFailed": "Could not load IPs.",
-    "retry": "Retry",
     "playerTitle": "TV player",
     "previewUnavailable": "No preview is available for this IP.",
     "videoUnavailable": "This video could not be loaded.",
@@ -10108,5 +10108,40 @@
     "approve": "Approve",
     "reject": "Reject",
     "retry": "Retry"
+  },
+  "crewTerms": {
+    "title": "Final terms",
+    "loading": "Loading…",
+    "refresh": "Refresh",
+    "none": "No final terms have been proposed.",
+    "version": "Version {version}",
+    "confirmed": "Confirmed",
+    "awaiting": "Awaiting applicant confirmation",
+    "confirm": "Confirm version {version}",
+    "propose": "Propose final terms",
+    "scope": "Work scope",
+    "fee": "Fixed fee",
+    "period": "Pay period",
+    "share": "Revenue share",
+    "basis": "Agreed revenue-share basis",
+    "project": "Project",
+    "episode": "Episode",
+    "month": "Month",
+    "invalid": "Enter a scope, a valid fee with at most two decimal places, and a share from 0–50%. A nonzero share needs an agreed basis.",
+    "failed": "Could not save terms.",
+    "blocked": "Approval requires confirmation of the current final terms.",
+    "interviewBlocked": "Complete or cancel the outstanding interview before approval.",
+    "noPayment": "Confirming terms does not make a payment or grant Crew access.",
+    "myApplications": "My applications",
+    "signIn": "Sign in to view your applications.",
+    "empty": "No applications yet.",
+    "application": "Application · {date}",
+    "pending": "Pending",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "more": "Load more",
+    "noAgreement": "No active approved agreement. Complete recruitment before assigning this member.",
+    "agreedFee": "Agreed fee",
+    "useFee": "Use agreed fee"
   }
 }

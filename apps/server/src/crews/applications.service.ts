@@ -150,7 +150,11 @@ export class ApplicationsService {
     const [rows, total] = await Promise.all([
       this.prisma.crewApplication.findMany({
         where,
-        include: INTERVIEW_PROGRESS,
+        include: {
+          ...INTERVIEW_PROGRESS,
+          crew: { select: { name: true } },
+          position: { select: { positionType: true, taskId: true } },
+        },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: query.limit + 1,
         ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
@@ -159,7 +163,12 @@ export class ApplicationsService {
     ]);
     const page = rows.slice(0, query.limit);
     return {
-      items: page.map(toApplicationDTO),
+      items: page.map((row) => ({
+        ...toApplicationDTO(row),
+        crewName: row.crew.name,
+        positionType: row.position.positionType,
+        taskId: row.position.taskId,
+      })),
       total,
       nextCursor: rows.length > query.limit ? page.at(-1)!.id : null,
     };

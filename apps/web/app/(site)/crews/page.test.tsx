@@ -142,7 +142,8 @@ it("preserves other URL filters when selecting My Crews", () => {
   )!;
   act(() => tab.click());
   expect(navigation.replace).toHaveBeenCalledWith("?from=invite&view=mine", { scroll: false });
-  expect(container.querySelector("a")?.getAttribute("href")).toBe("/en-US/crews/tasks");
+  expect(container.querySelector('a[href="/en-US/crews/tasks"]')).not.toBeNull();
+  expect(container.querySelector('a[href="/en-US/crews/applications"]')).not.toBeNull();
 });
 
 it("restarts the Crew feed when its continuation cursor is no longer visible", () => {

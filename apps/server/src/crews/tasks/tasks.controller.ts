@@ -437,6 +437,24 @@ export class CrewTasksController {
     );
   }
 
+  @Get('crew-tasks/:taskId/recruitment-terms')
+  recruitmentTerms(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Query(
+      new ZodValidationPipe(
+        z.object({ applicantId: z.string().min(1).max(128) }).strict(),
+      ),
+    )
+    query: { applicantId: string },
+  ) {
+    return this.tasks.recruitmentTerms(
+      parseIdParam(taskId, 'taskId'),
+      user.userId,
+      query.applicantId,
+    );
+  }
+
   @Get('crew-tasks/:taskId')
   get(@Param('taskId') taskId: string, @CurrentUser() user: AuthUser) {
     return this.tasks.get(parseIdParam(taskId, 'taskId'), user.userId);
