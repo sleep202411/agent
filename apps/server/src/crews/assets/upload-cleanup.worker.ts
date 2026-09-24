@@ -131,5 +131,30 @@ export class CrewAssetUploadCleanupWorker
         );
       }
     }
+    if (this.stopped) return;
+    const deleted = await this.prisma.mediaAsset.findMany({
+      where: {
+        status: MediaAssetStatus.deleted,
+        deletedAt: { not: null },
+        AND: [
+          { metadata: { path: ['uploadKind'], equals: 'crew_asset_file' } },
+          { metadata: { path: ['crewPhysicalDeletionPending'], equals: true } },
+        ],
+        crewAssetNodes: { none: {} },
+      },
+      select: { id: true },
+      orderBy: [{ deletedAt: 'asc' }, { id: 'asc' }],
+      take: this.batchSize,
+    });
+    for (const asset of deleted) {
+      if (this.stopped) return;
+      try {
+        await this.assets.reclaimDeletedCrewUpload(asset.id);
+      } catch (error) {
+        this.logger.warn(
+          `Crew deleted-media cleanup failed asset=${asset.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
 }

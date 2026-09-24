@@ -1207,89 +1207,91 @@ export class CrewAssetsService {
     userId: string,
     nodeId: string,
   ): Promise<void> {
-    const node = await this.requireNode(
-      crewId,
-      nodeId,
-      CrewAssetNodeStatus.trashed,
-    );
-    await this.access.requireNodePermission(
-      crewId,
-      nodeId,
-      userId,
-      CrewAssetPermission.manage,
-    );
-    const descendantIds =
-      node.kind === CrewAssetNodeKind.folder
-        ? await this.collectDescendantIds(this.prisma, crewId, node.id)
-        : [];
-    const subtreeIds = [node.id, ...descendantIds];
-    const linkedNodes = await this.prisma.crewAssetNode.findMany({
-      where: { id: { in: subtreeIds }, crewId },
-      select: { mediaAssetId: true },
-    });
-    const candidateMediaIds = Array.from(
-      new Set(
-        linkedNodes
+    const ownedAssets = await this.prisma.$transaction(async (tx) => {
+      await this.lockAssetTree(tx, crewId);
+      const node = await this.requireNode(
+        crewId,
+        nodeId,
+        CrewAssetNodeStatus.trashed,
+        tx,
+      );
+      await this.access.requireNodePermission(
+        crewId,
+        nodeId,
+        userId,
+        CrewAssetPermission.manage,
+        tx,
+      );
+      const descendantIds =
+        node.kind === CrewAssetNodeKind.folder
+          ? await this.collectDescendantIds(tx, crewId, node.id)
+          : [];
+      const subtreeIds = [node.id, ...descendantIds];
+      const linkedNodes = await tx.crewAssetNode.findMany({
+        where: { id: { in: subtreeIds }, crewId },
+        select: { mediaAssetId: true },
+      });
+      const candidateMediaIds = Array.from(
+        new Set(
+          linkedNodes
+            .map((linked) => linked.mediaAssetId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      const referencedElsewhere =
+        candidateMediaIds.length === 0
+          ? []
+          : await tx.crewAssetNode.findMany({
+              where: {
+                mediaAssetId: { in: candidateMediaIds },
+                id: { notIn: subtreeIds },
+              },
+              select: { mediaAssetId: true },
+            });
+      const retainedMediaIds = new Set(
+        referencedElsewhere
           .map((linked) => linked.mediaAssetId)
           .filter((id): id is string => Boolean(id)),
-      ),
-    );
-    const referencedElsewhere =
-      candidateMediaIds.length === 0
-        ? []
-        : await this.prisma.crewAssetNode.findMany({
-            where: {
-              mediaAssetId: { in: candidateMediaIds },
-              id: { notIn: subtreeIds },
-            },
-            select: { mediaAssetId: true },
-          });
-    const retainedMediaIds = new Set(
-      referencedElsewhere
-        .map((linked) => linked.mediaAssetId)
-        .filter((id): id is string => Boolean(id)),
-    );
-    const deletableMediaIds = candidateMediaIds.filter(
-      (id) => !retainedMediaIds.has(id),
-    );
-    const mediaAssets =
-      deletableMediaIds.length === 0
-        ? []
-        : await this.prisma.mediaAsset.findMany({
-            where: { id: { in: deletableMediaIds }, deletedAt: null },
-            select: {
-              id: true,
-              storageProvider: true,
-              bucket: true,
-              region: true,
-              objectKey: true,
-              externalUrl: true,
-              metadata: true,
-              placements: {
-                where: {
-                  deletedAt: null,
-                  status: { not: MediaObjectPlacementStatus.deleted },
-                },
-                select: {
-                  storageProvider: true,
-                  bucket: true,
-                  region: true,
-                  objectKey: true,
-                  externalUrl: true,
+      );
+      const deletableMediaIds = candidateMediaIds.filter(
+        (id) => !retainedMediaIds.has(id),
+      );
+      const mediaAssets =
+        deletableMediaIds.length === 0
+          ? []
+          : await tx.mediaAsset.findMany({
+              where: { id: { in: deletableMediaIds }, deletedAt: null },
+              select: {
+                id: true,
+                storageProvider: true,
+                bucket: true,
+                region: true,
+                objectKey: true,
+                externalUrl: true,
+                metadata: true,
+                placements: {
+                  where: {
+                    deletedAt: null,
+                    status: { not: MediaObjectPlacementStatus.deleted },
+                  },
+                  select: {
+                    storageProvider: true,
+                    bucket: true,
+                    region: true,
+                    objectKey: true,
+                    externalUrl: true,
+                  },
                 },
               },
-            },
-          });
-    const ownedAssets = mediaAssets.filter((asset) =>
-      this.isCrewOwnedUpload(asset.metadata, crewId),
-    );
-    await this.deletePhysicalObjects(ownedAssets);
+            });
+      const ownedAssets = mediaAssets.filter((asset) =>
+        this.isCrewOwnedUpload(asset.metadata, crewId),
+      );
 
-    const deletedAt = new Date();
-    const ownedMediaIds = ownedAssets.map((asset) => asset.id);
-    await this.prisma.$transaction(async (tx) => {
+      const deletedAt = new Date();
+      const ownedMediaIds = ownedAssets.map((asset) => asset.id);
       await tx.crewAssetNode.delete({ where: { id: node.id } });
-      if (ownedMediaIds.length === 0) return;
+      if (ownedMediaIds.length === 0) return [];
       await tx.mediaObjectPlacement.updateMany({
         where: { assetId: { in: ownedMediaIds }, deletedAt: null },
         data: {
@@ -1315,13 +1317,60 @@ export class CrewAssetsService {
           deletedAt,
         },
       });
+      await tx.$executeRaw`
+        UPDATE media_assets
+        SET metadata = jsonb_set(metadata, '{crewPhysicalDeletionPending}', 'true'::jsonb)
+        WHERE id IN (${Prisma.join(ownedMediaIds.map((id) => Prisma.sql`${id}::uuid`))})
+      `;
+      return ownedAssets;
     });
+    // Commit the locked tree decision before irreversible object-storage I/O.
+    // The durable marker lets the cleanup worker resume after failures/crashes.
+    for (const asset of ownedAssets) {
+      try {
+        await this.deletePhysicalObjects([asset]);
+        await this.clearPhysicalDeletionPending(asset.id);
+      } catch (error) {
+        this.logger.warn(
+          `Crew deleted-media cleanup deferred asset=${asset.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     await this.conversations.broadcastCrewAssetChange(
       crewId,
-      node.id,
+      nodeId,
       'deleted',
       userId,
     );
+  }
+
+  async reclaimDeletedCrewUpload(mediaAssetId: string): Promise<void> {
+    const media = await this.prisma.mediaAsset.findFirst({
+      where: {
+        id: mediaAssetId,
+        status: MediaAssetStatus.deleted,
+        deletedAt: { not: null },
+        metadata: { path: ['crewPhysicalDeletionPending'], equals: true },
+        crewAssetNodes: { none: {} },
+      },
+      select: {
+        ...PENDING_UPLOAD_SELECT,
+        // Retired placements still identify objects that need deleting.
+        placements: { select: PENDING_UPLOAD_SELECT.placements.select },
+      },
+    });
+    if (!media || !this.crewUploadMetadata(media.metadata)) return;
+    await this.deletePhysicalObjects([media]);
+    await this.clearPhysicalDeletionPending(media.id);
+  }
+
+  private async clearPhysicalDeletionPending(
+    mediaAssetId: string,
+  ): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE media_assets SET metadata = metadata - 'crewPhysicalDeletionPending'
+      WHERE id = ${mediaAssetId}::uuid AND status = 'deleted'
+    `;
   }
 
   async setPermissions(
