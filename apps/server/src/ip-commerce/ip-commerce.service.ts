@@ -2808,32 +2808,34 @@ export class IpCommerceService {
     episodeId: string,
   ) {
     const ip = await this.findCreatorIpForMutation(user, ipId);
-    const episode = await this.prisma.ipEpisode.findFirst({
-      where: { id: episodeId, ipId: ip.id, deletedAt: null },
-      include: {
-        _count: {
-          select: {
-            purchaseOrders: true,
-            entitlements: true,
-          },
-        },
-      },
-    });
-    if (!episode) {
-      throw new NotFoundException({
-        code: 'IP_EPISODE_NOT_FOUND',
-        msg: 'Episode not found.',
-      });
-    }
-    if (episode._count.purchaseOrders || episode._count.entitlements) {
-      throw new BadRequestException({
-        code: 'IP_EPISODE_HAS_ORDERS',
-        msg: 'Episode already has orders or entitlements and cannot be deleted.',
-      });
-    }
-
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Serialize deletion with grants before reading protected-use counts.
+      await tx.$queryRaw`SELECT id FROM ips WHERE id=${ip.id}::uuid FOR UPDATE`;
+      const episode = await tx.ipEpisode.findFirst({
+        where: { id: episodeId, ipId: ip.id, deletedAt: null },
+        include: {
+          _count: {
+            select: {
+              purchaseOrders: true,
+              entitlements: true,
+            },
+          },
+        },
+      });
+      if (!episode) {
+        throw new NotFoundException({
+          code: 'IP_EPISODE_NOT_FOUND',
+          msg: 'Episode not found.',
+        });
+      }
+      if (episode._count.purchaseOrders || episode._count.entitlements) {
+        throw new BadRequestException({
+          code: 'IP_EPISODE_HAS_ORDERS',
+          msg: 'Episode already has orders or entitlements and cannot be deleted.',
+        });
+      }
+
       await tx.ipPriceRule.updateMany({
         where: {
           ipId: ip.id,
@@ -3319,7 +3321,10 @@ export class IpCommerceService {
         where: { id: input.ipId, deletedAt: null },
         include: {
           episodes: {
-            where: input.episodeId ? { id: input.episodeId } : undefined,
+            where: {
+              deletedAt: null,
+              ...(input.episodeId ? { id: input.episodeId } : {}),
+            },
             include: {
               localizations: {
                 where: { archivedAt: null },
@@ -4875,6 +4880,10 @@ export class IpCommerceService {
           entitlements: existingOrder.entitlements.map(entitlementDto),
         };
       }
+
+      // Keep availability valid until the order/entitlement commits. Creator
+      // deletion and publication changes take an exclusive lock on this row.
+      await tx.$queryRaw`SELECT id FROM ips WHERE id=${input.ipId}::uuid FOR SHARE`;
 
       const ip = await tx.ip.findFirst({
         where: {
