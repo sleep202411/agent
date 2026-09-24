@@ -33,14 +33,20 @@ vi.mock("@/components/ui/native-select", () => ({
     value,
     onChange,
     children,
+    disabled,
   }: {
+    disabled?: boolean;
     value: string;
     onChange: (value: string) => void;
     children: ReactNode;
   }) =>
     createElement(
       "select",
-      { value, onChange: (e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value) },
+      {
+        value,
+        disabled,
+        onChange: (e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value),
+      },
       children
     ),
 }));
@@ -261,4 +267,34 @@ it("blocks a selected work that becomes ineligible on refresh", async () => {
   expect(button("send").disabled).toBe(true);
   await click("send");
   expect(h.post).not.toHaveBeenCalled();
+});
+
+it("locks the submitted work during a pending request and keeps it selectable for failure retry", async () => {
+  let reject!: (error: Error) => void;
+  h.post.mockImplementationOnce(
+    () =>
+      new Promise((_, fail) => {
+        reject = fail;
+      })
+  );
+  await render();
+  await click("submit");
+  await act(async () => {
+    const select = node.querySelector("select")!;
+    select.value = "work";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await click("send");
+  expect(node.querySelector("select")!.disabled).toBe(true);
+  expect(h.post).toHaveBeenCalledWith("/aurora/ip-commerce/ips/channel/submissions", {
+    data: { workId: "work" },
+  });
+  await act(async () => reject(new Error("Offline")));
+  await settle();
+  expect(node.querySelector("select")!.disabled).toBe(false);
+  expect(node.querySelector("select")!.value).toBe("work");
+  expect(node.textContent).toContain("Offline");
+  await click("send");
+  expect(h.post).toHaveBeenCalledTimes(2);
+  expect(h.post.mock.calls[1]?.[1]).toEqual({ data: { workId: "work" } });
 });
