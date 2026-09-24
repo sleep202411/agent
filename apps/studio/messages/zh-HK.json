@@ -3386,10 +3386,20 @@
         "editStory": "編輯故事",
         "unavailableTitle": "目前故事還不能試玩",
         "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。",
+        "locateScene": "定位場景",
         "stateHud": {
           "title": "本局數值",
           "endings": "結局：{ids}"
         }
+      },
+      "validation": {
+        "checkAction": "檢查故事",
+        "checkPending": "正在檢查…",
+        "checkClean": "未發現阻塞問題。",
+        "checkIssues": "阻塞問題：{errors}",
+        "checkIssuesWithWarnings": "阻塞問題：{errors} · 警告：{warnings}",
+        "checkFailed": "故事檢查未能執行。",
+        "nodeIssues": "{count} 個阻塞問題"
       },
       "readOnly": "唯讀",
       "addNode": "新增故事節點",

@@ -88,6 +88,16 @@ interface StoryProjectUIState {
   draftBarrier: SavedDraftSnapshotRunner | null;
   setDraftBarrier: (barrier: SavedDraftSnapshotRunner | null) => void;
   /**
+   * One-shot "bring this scene into view" request (publish check, release
+   * failure, playtest failure). The canvas centers and selects the node, then
+   * consumes the request. The monotonically increasing id lets the same node
+   * be requested repeatedly, mirroring composerPrefillRequest.
+   */
+  canvasFocusSequence: number;
+  canvasFocusRequest: { id: number; nodeId: string } | null;
+  requestCanvasFocus: (nodeId: string) => void;
+  consumeCanvasFocus: (id: number) => void;
+  /**
    * Story-bible writer the canvas registers while mounted. The overview dock
    * routes bible edits through it so the mounted canvas stays the draft's
    * only writer; when null (any other step), the dock saves the draft itself.
@@ -143,6 +153,26 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
       setLiveDraft: (signals) => set({ liveDraft: signals }, false, "setLiveDraft"),
       draftBarrier: null,
       setDraftBarrier: (barrier) => set({ draftBarrier: barrier }, false, "setDraftBarrier"),
+      canvasFocusSequence: 0,
+      canvasFocusRequest: null,
+      requestCanvasFocus: (nodeId) =>
+        set(
+          (state) => {
+            const id = state.canvasFocusSequence + 1;
+            return {
+              canvasFocusSequence: id,
+              canvasFocusRequest: { id, nodeId },
+            };
+          },
+          false,
+          "requestCanvasFocus"
+        ),
+      consumeCanvasFocus: (id) =>
+        set(
+          (state) => (state.canvasFocusRequest?.id === id ? { canvasFocusRequest: null } : state),
+          false,
+          "consumeCanvasFocus"
+        ),
       foundationWriter: null,
       setFoundationWriter: (writer) =>
         set({ foundationWriter: writer }, false, "setFoundationWriter"),

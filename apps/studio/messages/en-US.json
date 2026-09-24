@@ -3386,10 +3386,20 @@
         "editStory": "Edit story",
         "unavailableTitle": "The story is not playable yet",
         "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable.",
+        "locateScene": "Locate scene",
         "stateHud": {
           "title": "Session stats",
           "endings": "Endings: {ids}"
         }
+      },
+      "validation": {
+        "checkAction": "Check story",
+        "checkPending": "Checking…",
+        "checkClean": "No blocking issues found.",
+        "checkIssues": "Blocking issues: {errors}",
+        "checkIssuesWithWarnings": "Blocking issues: {errors} · warnings: {warnings}",
+        "checkFailed": "The story check could not run.",
+        "nodeIssues": "{count, plural, =1 {1 blocking issue} other {# blocking issues}}"
       },
       "readOnly": "Read only",
       "addNode": "Add story node",

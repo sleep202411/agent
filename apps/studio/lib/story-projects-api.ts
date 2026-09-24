@@ -814,11 +814,13 @@ export async function getStoryBuild(projectId: string, buildId: string): Promise
 export async function getStoryWorkingPreview(
   projectId: string,
   chapterId?: string,
-  nodeId?: string
+  nodeId?: string,
+  signal?: AbortSignal
 ): Promise<StoryWorkingPreview> {
   return api.get<StoryWorkingPreview>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/working-preview`,
     {
+      signal,
       params: {
         ...(chapterId ? { chapterId } : {}),
         ...(nodeId ? { nodeId } : {}),

@@ -7,6 +7,7 @@ import {
   IconCheck,
   IconCloudOff,
   IconCloudUpload,
+  IconListCheck,
   IconLoader2,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,6 +33,8 @@ import {
 } from "@/lib/interactive-film-api";
 import { getStoryWorkbench, storyApiErrorMessage } from "@/lib/story-projects-api";
 import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workbench";
+import { runStoryDraftCheck } from "../_lib/use-story-draft-check";
+import { firstNodeIssue } from "./project-canvas/story-canvas-validation";
 import { StoryPublicationDialog } from "./project-canvas/story-publication-dialog";
 import {
   useStoryPublication,
@@ -160,6 +163,11 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
 
   return (
     <>
+      <DraftCheckButton
+        projectId={projectId}
+        chapterId={activeChapterId}
+        draftBarrier={draftBarrier}
+      />
       {canRelease ? (
         <>
           <PublicationStatusBadge
@@ -265,6 +273,72 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
         </>
       ) : null}
     </>
+  );
+}
+
+/**
+ * Compile the saved draft through the working-preview pipeline and surface
+ * what blocks publishing: a toast summary, badges on the offending canvas
+ * scenes, and a jump straight to the first one.
+ */
+function DraftCheckButton({
+  projectId,
+  chapterId,
+  draftBarrier,
+}: {
+  projectId: string;
+  chapterId: string | null;
+  draftBarrier: SavedDraftSnapshotRunner | null;
+}) {
+  const t = useTranslations("storyStudio.canvas.validation");
+  const queryClient = useQueryClient();
+  const requestCanvasFocus = useStoryProjectUiStore((state) => state.requestCanvasFocus);
+  const [checking, setChecking] = useState(false);
+
+  const run = useCallback(async () => {
+    if (checking) return;
+    setChecking(true);
+    try {
+      // The check compiles the saved head, so flush canvas edits first; on the
+      // other steps edits are already server-side and the barrier is null.
+      if (draftBarrier) await draftBarrier(async () => null);
+      const result = await runStoryDraftCheck(queryClient, projectId, chapterId);
+      const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+      const warnings = result.diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
+      if (errors.length === 0 && warnings.length === 0) {
+        toast.success(t("checkClean"));
+        return;
+      }
+      toast.error(
+        warnings.length > 0
+          ? t("checkIssuesWithWarnings", { errors: errors.length, warnings: warnings.length })
+          : t("checkIssues", { errors: errors.length })
+      );
+      const first = firstNodeIssue(result.diagnostics);
+      if (first?.entityId) requestCanvasFocus(first.entityId);
+    } catch (error) {
+      toast.error(storyApiErrorMessage(error, t("checkFailed")));
+    } finally {
+      setChecking(false);
+    }
+  }, [chapterId, checking, draftBarrier, projectId, queryClient, requestCanvasFocus, t]);
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="lg"
+      onClick={() => void run()}
+      disabled={checking}
+      className="h-9 gap-2 rounded-[14px] px-3 font-semibold text-white/68 hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed"
+    >
+      {checking ? (
+        <IconLoader2 className="size-4 animate-spin" />
+      ) : (
+        <IconListCheck className="size-4" />
+      )}
+      <span className={LABEL_CLASS}>{checking ? t("checkPending") : t("checkAction")}</span>
+    </Button>
   );
 }
 

@@ -179,11 +179,22 @@ export class StoryWorkingPreviewService {
     if (!playableDraft.success) {
       const emptySnapshotHash = draftShape.success
         ? storyVideoSnapshotHash(
-            draftShape.data.graph.nodes.flatMap((node) =>
-              node.kind === 'clip'
-                ? [emptyVideoSnapshotEntry(node.nodeId, 0)]
-                : [],
-            ),
+            // The playable parse is what rejects duplicate node ids, so the
+            // permissive shape may still carry them; a snapshot may list each
+            // node at most once.
+            [
+              ...new Map(
+                draftShape.data.graph.nodes
+                  .filter((node) => node.kind === 'clip')
+                  .map(
+                    (node) =>
+                      [
+                        node.nodeId,
+                        emptyVideoSnapshotEntry(node.nodeId, 0),
+                      ] as const,
+                  ),
+              ).values(),
+            ],
           )
         : null;
       return {
@@ -192,15 +203,16 @@ export class StoryWorkingPreviewService {
           draft.contentHash,
           emptySnapshotHash,
         ),
-        diagnostics: playableDraft.error.issues.map((issue) =>
-          previewDiagnostic(
+        diagnostics: playableDraft.error.issues.map((issue) => {
+          const nodeId = draftIncompleteNodeId(issue.path, draft.content);
+          return previewDiagnostic(
             'error',
             'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
             `${issue.path.join('.') || 'draft'}: Complete this field before playtesting.`,
-            'revision',
-            projectId,
-          ),
-        ),
+            nodeId ? 'clip' : 'revision',
+            nodeId ?? projectId,
+          );
+        }),
       };
     }
 
@@ -603,6 +615,30 @@ function emptyWorkingPreview(
     pathReport: null,
     sources: [],
   };
+}
+
+/**
+ * Zod reports gameplay-readiness failures against array indexes
+ * (`graph.nodes.3.exit...`), which no surface can locate. Resolve the index
+ * back to the node's stable id from the saved content so a diagnostic can be
+ * pinned to the scene that caused it.
+ */
+function draftIncompleteNodeId(
+  path: readonly PropertyKey[],
+  content: unknown,
+): string | null {
+  if (
+    path[0] !== 'graph' ||
+    path[1] !== 'nodes' ||
+    typeof path[2] !== 'number'
+  ) {
+    return null;
+  }
+  const node = (content as { graph?: { nodes?: unknown[] } }).graph?.nodes?.[
+    path[2]
+  ] as { nodeId?: unknown } | undefined;
+  const nodeId = node?.nodeId;
+  return typeof nodeId === 'string' ? nodeId : null;
 }
 
 function previewDiagnostic(

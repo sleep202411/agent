@@ -255,6 +255,35 @@ describe('StoryWorkingPreviewService', () => {
     });
   });
 
+  it('pins draft-incomplete diagnostics to the scene that failed validation', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const opening = draft.graph.nodes[0];
+    if (!opening) throw new Error('Opening fixture missing.');
+    // A duplicated stable id cannot be normalized away, so the playable parse
+    // fails with a graph.nodes[index] path.
+    draft.graph.nodes.push(structuredClone(opening));
+    const { service, tx } = scopedService(draft);
+    tx.storyChapter.findMany.mockResolvedValue([
+      {
+        id: uuidAt(9),
+        rank: 0,
+        nodeIds: [...new Set(draft.graph.nodes.map((node) => node.nodeId))],
+        entryNodeId: draft.graph.entryNodeId,
+      },
+    ]);
+
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
+
+    expect(preview.runtime).toBeNull();
+    expect(preview.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: 'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
+        entityType: 'clip',
+        entityId: opening.nodeId,
+      }),
+    );
+  });
+
   it('replaces the preview identity after project presentation metadata changes', async () => {
     const { service, project } = scopedService(
       buildInteractiveFilmTestBundle().draftContent,

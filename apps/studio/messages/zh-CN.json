@@ -3386,10 +3386,20 @@
         "editStory": "编辑故事",
         "unavailableTitle": "当前故事还不能试玩",
         "unavailableDescription": "{errors} 个阻塞错误 · {warnings} 个警告。只需补齐下方列出的生产输入，画布仍可随时修改。",
+        "locateScene": "定位场景",
         "stateHud": {
           "title": "本局数值",
           "endings": "结局：{ids}"
         }
+      },
+      "validation": {
+        "checkAction": "检查故事",
+        "checkPending": "正在检查…",
+        "checkClean": "未发现阻塞问题。",
+        "checkIssues": "阻塞问题：{errors}",
+        "checkIssuesWithWarnings": "阻塞问题：{errors} · 警告：{warnings}",
+        "checkFailed": "故事检查未能运行。",
+        "nodeIssues": "{count} 个阻塞问题"
       },
       "readOnly": "只读",
       "addNode": "添加故事节点",
