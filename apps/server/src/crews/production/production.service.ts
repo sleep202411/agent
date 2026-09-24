@@ -903,11 +903,7 @@ export class CrewProductionService {
   async deleteEpisode(episodeId: string, userId: string) {
     const episode = await this.prisma.crewEpisode.findUnique({
       where: { id: episodeId },
-      include: {
-        _count: {
-          select: { tasks: true, deliveries: true },
-        },
-      },
+      select: { crewId: true },
     });
     if (!episode) throw new NotFoundException('Episode not found.');
     await this.authorization.require(
@@ -915,14 +911,32 @@ export class CrewProductionService {
       userId,
       'production.manage',
     );
-    if (episode._count.tasks > 0 || episode._count.deliveries > 0) {
-      throw new ConflictException({
-        code: 'CREW_EPISODE_NOT_EMPTY',
-        message:
-          'Move its tasks and preserve or replace its delivery history before deleting this episode.',
+    await this.prisma.$transaction(async (tx) => {
+      // The parent row lock also blocks new task/delivery foreign-key links.
+      // Read counts only after acquiring it, so committed history is preserved.
+      await tx.$executeRaw`
+        SELECT id FROM crew_episodes WHERE id = ${episodeId}::uuid FOR UPDATE
+      `;
+      const current = await tx.crewEpisode.findUnique({
+        where: { id: episodeId },
+        include: { _count: { select: { tasks: true, deliveries: true } } },
       });
-    }
-    await this.prisma.crewEpisode.delete({ where: { id: episodeId } });
+      if (!current) throw new NotFoundException('Episode not found.');
+      await this.authorization.require(
+        current.crewId,
+        userId,
+        'production.manage',
+        tx,
+      );
+      if (current._count.tasks > 0 || current._count.deliveries > 0) {
+        throw new ConflictException({
+          code: 'CREW_EPISODE_NOT_EMPTY',
+          message:
+            'Move its tasks and preserve or replace its delivery history before deleting this episode.',
+        });
+      }
+      await tx.crewEpisode.delete({ where: { id: episodeId } });
+    });
     await this.conversations.broadcastCrewTaskProjectChange(
       episode.crewId,
       'episode',
@@ -978,6 +992,24 @@ export class CrewProductionService {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:episode-delivery:${episodeId}`})::bigint)
       `;
+      await tx.$executeRaw`
+        SELECT id FROM crew_episodes WHERE id = ${episodeId}::uuid FOR UPDATE
+      `;
+      const current = await tx.crewEpisode.findUnique({
+        where: { id: episodeId },
+      });
+      if (!current) throw new NotFoundException('Episode not found.');
+      await this.authorization.require(
+        current.crewId,
+        userId,
+        'production.deliver',
+        tx,
+      );
+      if (current.status === CrewEpisodeStatus.cancelled) {
+        throw new ConflictException({
+          message: 'A cancelled episode cannot accept a delivery.',
+        });
+      }
       const aggregate = await tx.crewEpisodeDelivery.aggregate({
         where: { episodeId },
         _max: { versionNumber: true },
