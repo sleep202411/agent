@@ -589,8 +589,8 @@ function StoryProjectCanvasInner({
   // layout query remains pinned to the old chapter until the workbench read
   // finishes, extending the transition and allowing mismatched projections.
   const resolvedChapterId = requestedChapterId ?? workbenchQuery.data?.chapter.id ?? null;
-  // Blocking-issue badges read whatever the last publish check compiled for
-  // this chapter; the header check button (and failure screens) populate it.
+  // Blocking-issue badges read whatever a failed publish left for this
+  // chapter; publish failures that name scenes populate the cache.
   const draftCheckQuery = useStoryDraftCheck(projectId, resolvedChapterId);
   // Workspace ownership is legacy metadata used only by media APIs that have
   // not migrated yet. It comes from the authorized project, never ambient UI.

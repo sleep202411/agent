@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StoryBuildDiagnostic } from "@/lib/story-projects-api";
 import { storyDecisionCanvasNodeId } from "./story-project-canvas-model";
-import { firstNodeIssue, groupStoryCanvasIssues } from "./story-canvas-validation";
+import { groupStoryCanvasIssues } from "./story-canvas-validation";
 
 function diagnostic(overrides: Partial<StoryBuildDiagnostic>): StoryBuildDiagnostic {
   return {
@@ -62,23 +62,5 @@ describe("groupStoryCanvasIssues", () => {
     );
     expect(validation.issuesByNodeId.size).toBe(0);
     expect(validation.projectIssues).toEqual([]);
-  });
-});
-
-describe("firstNodeIssue", () => {
-  it("returns the first error that names an entity", () => {
-    const issues = [
-      diagnostic({ entityId: null, code: "STORY_BUILD_ENTRY_NODE_MISSING" }),
-      diagnostic({ entityId: "clip:S01", code: "STORY_BUILD_FIRST" }),
-      diagnostic({ entityId: "clip:S02", code: "STORY_BUILD_SECOND" }),
-    ];
-    expect(firstNodeIssue(issues)?.code).toBe("STORY_BUILD_FIRST");
-  });
-
-  it("returns null when nothing is node-attributable", () => {
-    expect(
-      firstNodeIssue([diagnostic({ entityId: null }), diagnostic({ severity: "warning" })])
-    ).toBeNull();
-    expect(firstNodeIssue([])).toBeNull();
   });
 });

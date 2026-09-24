@@ -3394,12 +3394,6 @@
         }
       },
       "validation": {
-        "checkAction": "Check story",
-        "checkPending": "Checking…",
-        "checkClean": "No blocking issues found.",
-        "checkIssues": "Blocking issues: {errors}",
-        "checkIssuesWithWarnings": "Blocking issues: {errors} · warnings: {warnings}",
-        "checkFailed": "The story check could not run.",
         "nodeIssues": "{count, plural, =1 {1 blocking issue} other {# blocking issues}}"
       },
       "readOnly": "Read only",

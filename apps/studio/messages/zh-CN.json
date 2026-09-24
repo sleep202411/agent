@@ -3394,12 +3394,6 @@
         }
       },
       "validation": {
-        "checkAction": "检查故事",
-        "checkPending": "正在检查…",
-        "checkClean": "未发现阻塞问题。",
-        "checkIssues": "阻塞问题：{errors}",
-        "checkIssuesWithWarnings": "阻塞问题：{errors} · 警告：{warnings}",
-        "checkFailed": "故事检查未能运行。",
         "nodeIssues": "{count} 个阻塞问题"
       },
       "readOnly": "只读",

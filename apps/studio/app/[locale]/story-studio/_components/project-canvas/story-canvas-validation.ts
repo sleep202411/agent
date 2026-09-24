@@ -63,14 +63,3 @@ export function useStoryNodeIssues(nodeId: string): readonly StoryBuildDiagnosti
   const issuesForNode = useContext(StoryCanvasValidationContext);
   return issuesForNode?.(nodeId) ?? EMPTY_ISSUES;
 }
-
-/** The first diagnostic worth jumping to, or null when none names a node. */
-export function firstNodeIssue(
-  diagnostics: readonly StoryBuildDiagnostic[]
-): StoryBuildDiagnostic | null {
-  return (
-    diagnostics.find(
-      (diagnostic) => diagnostic.severity === "error" && typeof diagnostic.entityId === "string"
-    ) ?? null
-  );
-}
