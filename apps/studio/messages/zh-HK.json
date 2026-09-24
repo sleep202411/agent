@@ -3377,6 +3377,7 @@
         "pageTitle": "故事試玩 · 影遊工作室",
         "pageDescription": "使用正式玩家執行環境試玩精確儲存的私人草稿或不可變構建。",
         "draftRevision": "草稿 r{revision}",
+        "fromChosenScene": "從所選場景開始",
         "loading": "正在準備試玩…",
         "errorFallback": "無法載入試玩。",
         "buildNumber": "構建 {number}",
@@ -3797,6 +3798,7 @@
       "inspector": {
         "eyebrow": "節點檢查器",
         "close": "關閉節點檢查器",
+        "previewFromScene": "從此場景開始試玩",
         "chapterTransitions": {
           "title": "前往其他章節",
           "continueHint": "選擇本場景結束後進入的章節開場。",

@@ -3377,6 +3377,7 @@
         "pageTitle": "Story Playtest · Interactive Film Studio",
         "pageDescription": "Play an exact private draft or immutable build with the production experience runtime.",
         "draftRevision": "Draft r{revision}",
+        "fromChosenScene": "started from the chosen scene",
         "loading": "Preparing the playtest…",
         "errorFallback": "The playtest could not be loaded.",
         "buildNumber": "Build {number}",
@@ -3797,6 +3798,7 @@
       "inspector": {
         "eyebrow": "Node inspector",
         "close": "Close node inspector",
+        "previewFromScene": "Playtest from this scene",
         "chapterTransitions": {
           "title": "Continue to another chapter",
           "continueHint": "Choose the chapter whose opening scene should follow this scene.",

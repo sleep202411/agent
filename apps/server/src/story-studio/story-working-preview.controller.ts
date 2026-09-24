@@ -4,14 +4,22 @@ import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   StoryProjectIdParamsSchema,
+  StoryStableIdSchema,
   StoryUuidSchema,
   type StoryProjectIdParams,
 } from './dto';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
 
-/** Preview the chapter the author is editing; omit to walk the whole story. */
+/**
+ * Preview the chapter the author is editing; omit to walk the whole story.
+ * `nodeId` starts the walk at one chosen scene instead — the author's shortcut
+ * for testing a late branch without replaying everything before it.
+ */
 const StoryWorkingPreviewQuerySchema = z
-  .object({ chapterId: StoryUuidSchema.optional() })
+  .object({
+    chapterId: StoryUuidSchema.optional(),
+    nodeId: StoryStableIdSchema.optional(),
+  })
   .strict();
 type StoryWorkingPreviewQuery = z.infer<typeof StoryWorkingPreviewQuerySchema>;
 
@@ -35,6 +43,7 @@ export class StoryWorkingPreviewController {
         user,
         params.projectId,
         query.chapterId,
+        query.nodeId,
       ),
     };
   }

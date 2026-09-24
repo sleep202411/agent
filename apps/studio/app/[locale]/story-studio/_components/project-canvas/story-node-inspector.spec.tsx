@@ -16,6 +16,18 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+const { openPreviewFromNode } = vi.hoisted(() => ({
+  openPreviewFromNode: vi.fn(),
+}));
+
+vi.mock("../../_lib/use-story-preview-navigation", () => ({
+  useStoryPreviewNavigation: () => ({
+    openPreview: vi.fn(),
+    openPreviewFromNode,
+    pending: false,
+  }),
+}));
+
 describe("StoryNodeInspector film authoring", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -87,6 +99,27 @@ describe("StoryNodeInspector film authoring", () => {
     });
 
     expect(container.innerHTML).toBe("");
+  });
+
+  it("starts a playtest at the inspected scene when its header button is clicked", async () => {
+    const content = linearDraft();
+    const model = buildStoryCanvasModel(content, "en-US", { clip: "Clip" });
+
+    await act(async () => {
+      root.render(
+        <StoryNodeInspector
+          {...inspectorProps(content)}
+          selectedNode={requiredNode(model.nodes, "second")}
+        />
+      );
+    });
+
+    const previewButton = requiredElement(
+      container.querySelector<HTMLButtonElement>('button[aria-label="inspector.previewFromScene"]'),
+      "preview from scene button"
+    );
+    await click(previewButton);
+    expect(openPreviewFromNode).toHaveBeenCalledWith("second");
   });
 });
 

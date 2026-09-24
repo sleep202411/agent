@@ -12,4 +12,16 @@ describe("Story playtest source", () => {
       buildId: "build-42",
     });
   });
+
+  it("carries the chosen scene so the walk starts there", () => {
+    expect(parseStoryPlaytestSource({ chapter: "chapter-9", node: " clip:S05A " })).toEqual({
+      kind: "draft",
+      chapterId: "chapter-9",
+      nodeId: "clip:S05A",
+    });
+  });
+
+  it("drops a blank scene param instead of an empty string", () => {
+    expect(parseStoryPlaytestSource({ node: "  " })).toEqual({ kind: "draft" });
+  });
 });

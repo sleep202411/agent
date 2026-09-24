@@ -14,9 +14,13 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
  * while the canvas is mounted it publishes a save barrier that must run first
  * — otherwise the creator walks a story that is one autosave behind what they
  * just edited. On the other steps it degrades to normal navigation.
+ *
+ * `openPreviewFromNode` walks the same path but starts at one chosen scene,
+ * so a late branch can be tested without replaying everything before it.
  */
 export function useStoryPreviewNavigation(projectId: string): {
   openPreview: () => Promise<void>;
+  openPreviewFromNode: (nodeId: string) => Promise<void>;
   pending: boolean;
 } {
   const t = useTranslations("storyStudio.canvas");
@@ -25,32 +29,39 @@ export function useStoryPreviewNavigation(projectId: string): {
   const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
   const [pending, setPending] = useState(false);
 
-  const openPreview = useCallback(async () => {
-    if (pending) return;
-    setPending(true);
-    try {
-      const navigate = () => {
-        const chapterQuery = activeChapterId
-          ? `?chapter=${encodeURIComponent(activeChapterId)}`
-          : "";
-        router.push(
-          `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
-        );
-      };
-      if (draftBarrier) {
-        await draftBarrier(async () => {
+  const open = useCallback(
+    async (nodeId?: string) => {
+      if (pending) return;
+      setPending(true);
+      try {
+        const navigate = () => {
+          const params = new URLSearchParams();
+          if (activeChapterId) params.set("chapter", activeChapterId);
+          if (nodeId) params.set("node", nodeId);
+          const chapterQuery = params.size > 0 ? `?${params.toString()}` : "";
+          router.push(
+            `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
+          );
+        };
+        if (draftBarrier) {
+          await draftBarrier(async () => {
+            navigate();
+            return null;
+          });
+        } else {
           navigate();
-          return null;
-        });
-      } else {
-        navigate();
+        }
+      } catch (error) {
+        toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
+      } finally {
+        setPending(false);
       }
-    } catch (error) {
-      toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
-    } finally {
-      setPending(false);
-    }
-  }, [activeChapterId, draftBarrier, pending, projectId, router, t]);
+    },
+    [activeChapterId, draftBarrier, pending, projectId, router, t]
+  );
 
-  return { openPreview, pending };
+  const openPreview = useCallback(() => open(), [open]);
+  const openPreviewFromNode = useCallback((nodeId: string) => open(nodeId), [open]);
+
+  return { openPreview, openPreviewFromNode, pending };
 }

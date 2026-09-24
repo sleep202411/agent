@@ -3377,6 +3377,7 @@
         "pageTitle": "故事试玩 · 影游工作室",
         "pageDescription": "使用正式玩家运行时试玩精确保存的私有草稿或不可变构建。",
         "draftRevision": "草稿 r{revision}",
+        "fromChosenScene": "从所选场景开始",
         "loading": "正在准备试玩…",
         "errorFallback": "无法加载试玩。",
         "buildNumber": "构建 {number}",
@@ -3797,6 +3798,7 @@
       "inspector": {
         "eyebrow": "节点检查器",
         "close": "关闭节点检查器",
+        "previewFromScene": "从此场景开始试玩",
         "chapterTransitions": {
           "title": "前往其他章节",
           "continueHint": "选择本场景结束后进入的章节开场。",

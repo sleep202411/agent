@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -91,6 +92,7 @@ export class StoryWorkingPreviewService {
     user: AuthUser,
     projectId: string,
     chapterId?: string,
+    nodeId?: string,
   ): Promise<StoryWorkingPreviewDto> {
     const access = await this.permissions.requireProject(
       user.userId,
@@ -99,7 +101,13 @@ export class StoryWorkingPreviewService {
     );
     return this.prisma.$transaction(
       (tx) =>
-        this.compileLatestSavedDraft(tx, access.project, projectId, chapterId),
+        this.compileLatestSavedDraft(
+          tx,
+          access.project,
+          projectId,
+          chapterId,
+          nodeId,
+        ),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
@@ -117,6 +125,7 @@ export class StoryWorkingPreviewService {
     },
     projectId: string,
     chapterId: string | undefined,
+    nodeId: string | undefined,
   ): Promise<StoryWorkingPreviewDto> {
     const [draft, chapters] = [
       await tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
@@ -268,11 +277,28 @@ export class StoryWorkingPreviewService {
         message: 'The selected Story chapter was not found.',
       });
     }
+    // Starting at a chosen scene outranks the chapter entry: the author picked
+    // exactly where the walk should begin, so the subgraph flows downstream
+    // from there even when it crosses into later chapters.
+    if (
+      nodeId &&
+      !playableDraft.data.graph.nodes.some((node) => node.nodeId === nodeId)
+    ) {
+      throw new BadRequestException({
+        code: 'STORY_WORKING_PREVIEW_NODE_NOT_FOUND',
+        message: 'The selected scene was not found in the saved draft.',
+        nodeId,
+      });
+    }
+    const nodeScope: StoryBuildScope | null = nodeId
+      ? { kind: 'subgraph', entryNodeId: nodeId }
+      : null;
     const chapterScope: StoryBuildScope | null = chapter?.entryNodeId
       ? { kind: 'subgraph', entryNodeId: chapter.entryNodeId }
       : null;
 
-    const scope: StoryBuildScope = chapterScope ?? { kind: 'full' };
+    const scope: StoryBuildScope = nodeScope ??
+      chapterScope ?? { kind: 'full' };
     const metadata = {
       title: project.title,
       summary: project.summary?.trim() || playableDraft.data.storyBible.logline,

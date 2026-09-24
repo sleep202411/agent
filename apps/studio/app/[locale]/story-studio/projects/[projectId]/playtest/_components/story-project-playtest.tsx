@@ -41,12 +41,13 @@ export function StoryProjectPlaytest({
       projectId,
       source.kind,
       source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
+      source.kind === "draft" ? (source.nodeId ?? null) : null,
     ],
     queryFn: async () => {
       return source.kind === "draft"
         ? {
             kind: "draft" as const,
-            preview: await getStoryWorkingPreview(projectId, source.chapterId),
+            preview: await getStoryWorkingPreview(projectId, source.chapterId, source.nodeId),
           }
         : {
             kind: "build" as const,
@@ -82,7 +83,8 @@ export function StoryProjectPlaytest({
   const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
   const sourceLabel =
     loadedRuntime.kind === "draft"
-      ? t("draftRevision", { revision: loadedRuntime.preview.draftRevision })
+      ? t("draftRevision", { revision: loadedRuntime.preview.draftRevision }) +
+        (source.kind === "draft" && source.nodeId ? ` · ${t("fromChosenScene")}` : "")
       : t("buildNumber", { number: loadedRuntime.build.number });
 
   // Only a runtime the server could not build at all stops a playtest. Clip-level
