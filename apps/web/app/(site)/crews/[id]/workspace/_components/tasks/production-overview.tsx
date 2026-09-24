@@ -47,7 +47,7 @@ export function ProductionOverview({
   const overview = overviewQuery.data;
 
   if (overviewQuery.isLoading) return <ProductionLoading label={t("loading")} />;
-  if (overviewQuery.isError || !overview) {
+  if (!overview) {
     return (
       <ProductionError
         title={t("loadFailed")}
@@ -70,7 +70,19 @@ export function ProductionOverview({
       members={members}
       displays={displays}
       overview={overview}
-      onReload={async () => (await overviewQuery.refetch()).data ?? null}
+      loadError={
+        overviewQuery.isError
+          ? overviewQuery.error instanceof Error
+            ? overviewQuery.error.message
+            : t("loadFailed")
+          : null
+      }
+      refreshing={overviewQuery.isFetching}
+      onRetry={() => void overviewQuery.refetch()}
+      onReload={async () => {
+        const result = await overviewQuery.refetch();
+        return result.isError ? null : (result.data ?? null);
+      }}
       onWriteUpdate={onWriteUpdate}
     />
   );
@@ -87,6 +99,9 @@ function ProductionDocumentEditor({
   displays,
   overview,
   onReload,
+  loadError,
+  refreshing,
+  onRetry,
   onWriteUpdate,
 }: {
   crewId: string;
@@ -99,6 +114,9 @@ function ProductionDocumentEditor({
   displays: Map<string, LookupUserDTO>;
   overview: CrewProductionOverviewDTO;
   onReload: () => Promise<CrewProductionOverviewDTO | null>;
+  loadError: string | null;
+  refreshing: boolean;
+  onRetry: () => void;
   onWriteUpdate: () => void;
 }) {
   const t = useTranslations("crewProduction");
@@ -259,6 +277,14 @@ function ProductionDocumentEditor({
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-background">
       <div className="mx-auto w-full max-w-[1060px] px-6 pb-40 pt-[75px] sm:px-8 lg:px-8">
+        {loadError && (
+          <div role="alert" className="mb-4 flex items-center gap-3 text-sm text-destructive">
+            <span>{loadError}</span>
+            <Button variant="outline" size="sm" disabled={refreshing} onClick={onRetry}>
+              {t("retry")}
+            </Button>
+          </div>
+        )}
         <ProductionProjectHeader
           crewId={crewId}
           crewName={crewName}
