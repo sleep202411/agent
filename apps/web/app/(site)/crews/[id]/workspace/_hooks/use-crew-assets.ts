@@ -25,6 +25,13 @@ export interface CrewAssetNodeDTO {
   createdAt: string;
   updatedAt: string;
   trashedAt: string | null;
+  folderKey?: string | null;
+  linkedStudio?: {
+    mediaAssetId: string;
+    projectId: string | null;
+    storyProjectId: string | null;
+    previewUrl: string;
+  } | null;
   media: {
     id: string;
     kind: "image" | "video" | "audio" | "document" | "other";
@@ -35,6 +42,21 @@ export interface CrewAssetNodeDTO {
     durationSeconds: number | null;
     previewUrl: string;
   } | null;
+}
+
+export interface CrewStudioMediaOptionDTO {
+  id: string;
+  kind: string;
+  contentType: string;
+  name: string;
+  previewUrl: string;
+  createdAt: string;
+}
+
+export interface CrewStudioMediaOptionsDTO {
+  workspaceId: string | null;
+  projects: Array<{ id: string; name: string; kind: "canvas" | "story" }>;
+  items: CrewStudioMediaOptionDTO[];
 }
 
 interface CrewAssetListResponse {
@@ -333,6 +355,57 @@ export function useSetCrewAssetFavorite(crewId: string) {
         `/crews/${encodeURIComponent(crewId)}/assets/${encodeURIComponent(nodeId)}/favorite`,
         { body: { favorite } }
       )
+  );
+}
+
+export function useCrewStudioMediaOptions(
+  crewId: string,
+  enabled = true,
+  filter?: { projectId?: string; storyProjectId?: string }
+) {
+  const { user } = useCurrentUser();
+  return useQuery({
+    queryKey: [...crewKeys.assets(crewId), "studio-media-options", filter ?? {}, user?.id ?? null],
+    enabled: enabled && Boolean(user) && Boolean(crewId),
+    queryFn: () =>
+      crewApi.get<CrewStudioMediaOptionsDTO>(
+        `/crews/${encodeURIComponent(crewId)}/assets/studio-media-options`,
+        { query: filter }
+      ),
+    retry: false,
+  });
+}
+
+export function useLinkCrewStudioMedia(crewId: string) {
+  return useAssetMutation<
+    {
+      parentId?: string | null;
+      mediaAssetIds: string[];
+      projectId?: string | null;
+      storyProjectId?: string | null;
+    },
+    { items: CrewAssetNodeDTO[] }
+  >(crewId, (input) =>
+    crewApi.post(`/crews/${encodeURIComponent(crewId)}/assets/link-studio-media`, {
+      body: input,
+    })
+  );
+}
+
+export function useSetCrewAssetStudioLink(crewId: string) {
+  return useAssetMutation<
+    {
+      nodeId: string;
+      mediaAssetId: string | null;
+      projectId?: string | null;
+      storyProjectId?: string | null;
+    },
+    CrewAssetNodeDTO
+  >(crewId, ({ nodeId, ...body }) =>
+    crewApi.patch(
+      `/crews/${encodeURIComponent(crewId)}/assets/${encodeURIComponent(nodeId)}/studio-link`,
+      { body }
+    )
   );
 }
 

@@ -1,8 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { CrewMembershipStatus, Prisma } from '@prisma/client';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  CrewMembershipStatus,
+  CrewProductionKind,
+  Prisma,
+  WorkspaceMemberRole,
+  WorkspaceMemberStatus,
+} from '@prisma/client';
 import type { ConversationsService } from '../conversations/conversations.service';
 import type { CreateCrewInput } from './dto';
 import { newCrewDomainId, newCrewId } from './id';
+import {
+  seedCrewProductionFolders,
+  seedCrewProductionTasks,
+  seedCrewTaskKindTemplates,
+} from './production/production-bootstrap';
+import { workspaceLinkableWhere } from './production/studio-workspace.service';
 import {
   CREW_PRODUCTION_TEMPLATE_VERSION,
   createDefaultProductionDocument,
@@ -24,12 +37,20 @@ export async function createCrewTx(
   const productionPlan = createDefaultProductionPlan(
     input.productionTemplateLocale,
   );
+  const productionKind = input.productionKind ?? CrewProductionKind.series;
+  const studioWorkspaceId = await resolveStudioWorkspaceId(
+    tx,
+    creatorUserId,
+    input,
+  );
   const c = await tx.crew.create({
     data: {
       id: newCrewId(),
       name: input.name,
       description: input.description,
       logo: input.logo,
+      productionKind,
+      studioWorkspaceId,
       tagline: input.tagline ?? null,
       genres: input.genres,
       styles: input.styles,
@@ -61,6 +82,8 @@ export async function createCrewTx(
           payload: {
             productionTemplateVersion: CREW_PRODUCTION_TEMPLATE_VERSION,
             productionTemplateLocale: input.productionTemplateLocale,
+            productionKind,
+            studioWorkspaceId,
           },
         },
       },
@@ -120,6 +143,29 @@ export async function createCrewTx(
   // the founder joining the crew they just created, into a chat
   // with no other reader, is not an event — the chat's existence
   // already says it. Every LATER join announces itself.
+  const openWorkflowStateId = workflowStateIds.get('open');
+  if (openWorkflowStateId) {
+    await seedCrewProductionFolders(tx, {
+      crewId: c.id,
+      userId: creatorUserId,
+      kind: productionKind,
+      locale: input.productionTemplateLocale,
+    });
+    await seedCrewProductionTasks(tx, {
+      crewId: c.id,
+      userId: creatorUserId,
+      episodeId,
+      kind: productionKind,
+      locale: input.productionTemplateLocale,
+      openWorkflowStateId,
+    });
+    await seedCrewTaskKindTemplates(tx, {
+      crewId: c.id,
+      userId: creatorUserId,
+      locale: input.productionTemplateLocale,
+    });
+  }
+
   await conversations.openCrewConversation(c.id, tx);
   await conversations.syncCrewParticipant(c.id, creatorUserId, 'join', tx);
   return tx.crew.findUniqueOrThrow({
@@ -128,4 +174,45 @@ export async function createCrewTx(
       ownership: { include: { member: { select: { userId: true } } } },
     },
   });
+}
+
+async function resolveStudioWorkspaceId(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  input: CreateCrewInput,
+): Promise<string | null> {
+  if (input.studioWorkspaceId && input.createStudioWorkspace) {
+    throw new BadRequestException(
+      'Choose an existing workspace or create a new one, not both.',
+    );
+  }
+  if (input.createStudioWorkspace) {
+    const created = await tx.workspace.create({
+      data: {
+        name: input.createStudioWorkspace.name,
+        ownerUserId: userId,
+        createdById: userId,
+      },
+    });
+    await tx.workspaceMember.create({
+      data: {
+        workspaceId: created.id,
+        userId,
+        role: WorkspaceMemberRole.owner,
+        status: WorkspaceMemberStatus.active,
+      },
+    });
+    return created.id;
+  }
+  if (!input.studioWorkspaceId) return null;
+
+  const workspace = await tx.workspace.findFirst({
+    where: {
+      id: input.studioWorkspaceId,
+      ...workspaceLinkableWhere(userId),
+    },
+    select: { id: true },
+  });
+  if (!workspace) throw new NotFoundException('Workspace not found.');
+  return workspace.id;
 }

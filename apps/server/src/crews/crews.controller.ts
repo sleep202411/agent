@@ -31,6 +31,7 @@ import { AuthService, CurrentUser, Public, ViewerCookie } from '../auth';
 import type { AuthUser } from '../auth';
 import { CURRENT_CELL } from '../common/region/current-cell';
 import { CrewsService } from './crews.service';
+import { CrewStudioWorkspaceService } from './production/studio-workspace.service';
 import {
   CreateCrewSchema,
   type CreateCrewInput,
@@ -51,6 +52,7 @@ export class CrewsController {
   constructor(
     private readonly svc: CrewsService,
     private readonly authService: AuthService,
+    private readonly studioWorkspaces: CrewStudioWorkspaceService,
   ) {}
 
   @Get('creation-eligibility')
@@ -65,7 +67,14 @@ export class CrewsController {
     const fresh = await this.authService.validateToken(cookie, {
       bypassCache: true,
     });
-    return this.svc.creationEligibility(fresh ?? user);
+    const viewer = fresh ?? user;
+    const eligibility = this.svc.creationEligibility(viewer);
+    return {
+      ...eligibility,
+      workspaces: eligibility.eligible
+        ? await this.studioWorkspaces.optionsForCreate(viewer.userId)
+        : [],
+    };
   }
 
   @Post()

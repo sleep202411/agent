@@ -99,6 +99,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         conversations,
         authorization,
         collaboration,
+        { ensureDefaultAccounts: jest.fn().mockResolvedValue([]) } as never,
       );
       applications = new ApplicationsService(
         db as never,

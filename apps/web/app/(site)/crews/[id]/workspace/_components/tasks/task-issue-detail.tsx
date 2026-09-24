@@ -31,6 +31,7 @@ import {
   IconAt,
   IconBan,
   IconCalendar,
+  IconCategory,
   IconCheck,
   IconChevronDown,
   IconCircle,
@@ -65,6 +66,8 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  CREW_TASK_KIND_MESSAGE_KEYS,
+  CREW_TASK_KINDS,
   useCreateCrewTaskComment,
   useDeleteCrewTaskComment,
   useCrewTaskOptions,
@@ -77,6 +80,7 @@ import {
   type CrewTaskCommentAttachmentInput,
   type CrewTaskCustomValue,
   type CrewTaskDTO,
+  type CrewTaskKind,
   type CrewTaskFieldDTO,
   type CrewTaskLabelDTO,
   type CrewTaskPriority,
@@ -472,13 +476,15 @@ export function TaskIssueDetail({
               <TaskReviewForm task={task} onReviewed={onReviewed} />
             ) : null}
 
-            {canComment && <CommentComposer
-              key={task.id}
-              task={task}
-              members={members}
-              viewerUserId={viewerUserId}
-              displays={displays}
-            />}
+            {canComment && (
+              <CommentComposer
+                key={task.id}
+                task={task}
+                members={members}
+                viewerUserId={viewerUserId}
+                displays={displays}
+              />
+            )}
           </div>
         </main>
 
@@ -518,6 +524,29 @@ export function TaskIssueDetail({
                 />
               ) : (
                 <span>{t(`priority.${task.priority}`)}</span>
+              )}
+            </RailRow>
+            <RailRow icon={<IconCategory className="size-4" />}>
+              {isOwner ? (
+                <InlinePropertySelect
+                  value={task.taskKind ?? ""}
+                  onChange={(value) =>
+                    void quickPatch({ taskKind: (value || null) as CrewTaskKind | null })
+                  }
+                  options={[
+                    { value: "", label: t("taskKindUnset") },
+                    ...CREW_TASK_KINDS.map((kind) => ({
+                      value: kind,
+                      label: t(CREW_TASK_KIND_MESSAGE_KEYS[kind]),
+                    })),
+                  ]}
+                />
+              ) : (
+                <span>
+                  {task.taskKind
+                    ? t(CREW_TASK_KIND_MESSAGE_KEYS[task.taskKind])
+                    : t("taskKindUnset")}
+                </span>
               )}
             </RailRow>
             <RailRow icon={<IconUserCircle className="size-4" />} align="start">

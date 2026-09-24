@@ -51,6 +51,8 @@ import {
 } from '../conversations/conversations.service';
 import { toConversationDTO } from '../conversations/mappers';
 import { PrismaService } from '../infra/db/db.module';
+import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
+import { WalletOwnerType } from '@prisma/client';
 import { CrewAuthorizationService } from './crew-authorization.service';
 import type {
   CreateCrewInput,
@@ -75,6 +77,7 @@ export class CrewsService {
     private readonly conversations: ConversationsService,
     private readonly authorization: CrewAuthorizationService,
     private readonly collaboration: CrewCollaborationService,
+    private readonly wallets: WalletLedgerService,
   ) {}
 
   creationEligibility(user: AuthUser) {
@@ -93,6 +96,12 @@ export class CrewsService {
     const crew = await this.prisma.$transaction(async (tx) => {
       return createCrewTx(tx, this.conversations, creatorUserId, input);
     });
+    if (crew.studioWorkspaceId) {
+      await this.wallets.ensureDefaultAccounts(
+        WalletOwnerType.workspace,
+        crew.studioWorkspaceId,
+      );
+    }
     return toCrewDTO(crew, {
       memberCount: 1,
       openPositionCount: 0,

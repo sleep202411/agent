@@ -68,7 +68,20 @@ export const CreateCrewSchema = CrewProfileSchema.extend({
   productionTemplateLocale: z
     .enum(['en-US', 'zh-CN', 'zh-HK'])
     .default('en-US'),
-});
+  productionKind: z.enum(['interactive_film', 'series']).default('series'),
+  studioWorkspaceId: z.string().uuid().nullable().optional(),
+  createStudioWorkspace: z
+    .object({
+      name: z.string().trim().min(1).max(120),
+    })
+    .optional(),
+}).refine(
+  (input) => !(input.studioWorkspaceId && input.createStudioWorkspace),
+  {
+    message: 'Choose an existing workspace or create a new one, not both.',
+    path: ['studioWorkspaceId'],
+  },
+);
 export type CreateCrewInput = z.infer<typeof CreateCrewSchema>;
 
 export const UpdateCrewSchema = CrewProfileSchema.partial().extend({
@@ -522,6 +535,21 @@ export const CreateCrewTaskSchema = z
     customFieldValues: z.array(TaskCustomFieldValueSchema).max(50).default([]),
     labelIds: z.array(z.string().uuid()).max(20).default([]),
     assignees: z.array(TaskAssigneeSchema).max(30).default([]),
+    taskKind: z
+      .enum([
+        'script',
+        'gameplay',
+        'plot_tree',
+        'art',
+        'storyboard',
+        'voice',
+        'music',
+        'edit',
+        'qa',
+        'other',
+      ])
+      .nullable()
+      .optional(),
   })
   .refine(
     (input) =>
@@ -610,6 +638,21 @@ export const UpdateCrewTaskSchema = z
     labelIds: z.array(z.string().uuid()).max(20).optional(),
     workflowStateId: z.string().uuid().optional(),
     assignees: z.array(TaskAssigneeSchema).max(30).optional(),
+    taskKind: z
+      .enum([
+        'script',
+        'gameplay',
+        'plot_tree',
+        'art',
+        'storyboard',
+        'voice',
+        'music',
+        'edit',
+        'qa',
+        'other',
+      ])
+      .nullable()
+      .optional(),
   })
   .strict()
   .refine(
@@ -732,6 +775,52 @@ export const ReviewCrewTaskSchema = z
     message: 'Revision instructions are required when requesting changes',
   });
 export type ReviewCrewTaskInput = z.infer<typeof ReviewCrewTaskSchema>;
+
+export const CreateCrewTaskKindTemplateSchema = z
+  .object({
+    kind: z.enum([
+      'script',
+      'gameplay',
+      'plot_tree',
+      'art',
+      'storyboard',
+      'voice',
+      'music',
+      'edit',
+      'qa',
+      'other',
+    ]),
+    name: z.string().trim().min(1).max(80),
+    title: z.string().trim().min(1).max(180),
+    description: z.string().trim().max(10_000).default(''),
+  })
+  .strict();
+export type CreateCrewTaskKindTemplateInput = z.infer<
+  typeof CreateCrewTaskKindTemplateSchema
+>;
+
+export const LinkCrewStudioMediaSchema = z
+  .object({
+    parentId: z.string().uuid().nullable().optional(),
+    mediaAssetIds: z.array(z.string().uuid()).min(1).max(40),
+    projectId: z.string().uuid().nullable().optional(),
+    storyProjectId: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+export type LinkCrewStudioMediaInput = z.infer<
+  typeof LinkCrewStudioMediaSchema
+>;
+
+export const SetCrewAssetStudioLinkSchema = z
+  .object({
+    mediaAssetId: z.string().uuid().nullable(),
+    projectId: z.string().uuid().nullable().optional(),
+    storyProjectId: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+export type SetCrewAssetStudioLinkInput = z.infer<
+  typeof SetCrewAssetStudioLinkSchema
+>;
 
 // ─── Viewer moderation ──────────────────────────────────────
 

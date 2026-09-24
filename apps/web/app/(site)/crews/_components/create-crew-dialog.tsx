@@ -39,6 +39,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -96,7 +97,11 @@ function CrewDialogSession(
   const t = useTranslations("crew.creationRequirements");
   const eligibility = useQuery({
     queryKey: ["crew-creation-eligibility", props.accountId],
-    queryFn: () => crewApi.get<{ eligible: boolean }>("/crews/creation-eligibility"),
+    queryFn: () =>
+      crewApi.get<{
+        eligible: boolean;
+        workspaces?: Array<{ id: string; name: string }>;
+      }>("/crews/creation-eligibility"),
     enabled: props.open && !props.initial && !props.accountLoading,
     staleTime: 0,
     gcTime: 0,
@@ -122,15 +127,25 @@ function CrewDialogSession(
   }
   if (eligibility.data?.eligible !== true)
     return <CrewEligibilityNotice open={props.open} onOpenChange={props.onOpenChange} />;
-  return <CrewFormDialog {...props} onCertificationRequired={() => void eligibility.refetch()} />;
+  return (
+    <CrewFormDialog
+      {...props}
+      workspaces={eligibility.data.workspaces ?? []}
+      onCertificationRequired={() => void eligibility.refetch()}
+    />
+  );
 }
 
 function CrewFormDialog({
   open,
   onOpenChange,
   initial,
+  workspaces = [],
   onCertificationRequired,
-}: CreateCrewDialogProps & { onCertificationRequired?: () => void }) {
+}: CreateCrewDialogProps & {
+  workspaces?: Array<{ id: string; name: string }>;
+  onCertificationRequired?: () => void;
+}) {
   const t = useTranslations("crew");
   const tc = useTranslations("common");
   const router = useRouter();
@@ -145,6 +160,12 @@ function CrewFormDialog({
   // raw key (sent on submit) and rely on env.BANNER_BASE_URL to render
   // the local preview.
   const [logoPath, setLogoPath] = useState(initial?.logo ?? "");
+  const [productionKind, setProductionKind] = useState<"interactive_film" | "series">("series");
+  const [workspaceMode, setWorkspaceMode] = useState<"link" | "create">(
+    workspaces.length > 0 ? "link" : "create"
+  );
+  const [studioWorkspaceId, setStudioWorkspaceId] = useState(workspaces[0]?.id ?? "");
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -216,6 +237,12 @@ function CrewFormDialog({
   const handleSubmit = () => {
     if (!alive.current || operation.current || !name.trim() || !description.trim() || !logoPath)
       return;
+    if (
+      !isEdit &&
+      ((workspaceMode === "link" && !studioWorkspaceId) ||
+        (workspaceMode === "create" && !newWorkspaceName.trim() && !name.trim()))
+    )
+      return;
     operation.current = "save";
     setCreating(true);
 
@@ -248,6 +275,10 @@ function CrewFormDialog({
         logo: logoPath,
         description: description.trim(),
         productionTemplateLocale: locale,
+        productionKind,
+        ...(workspaceMode === "create"
+          ? { createStudioWorkspace: { name: newWorkspaceName.trim() || name.trim() } }
+          : { studioWorkspaceId }),
       },
       {
         onSuccess: (crew) => {
@@ -375,6 +406,78 @@ function CrewFormDialog({
                 rows={3}
               />
             </Field>
+
+            {!isEdit ? (
+              <>
+                <Field>
+                  <FieldLabel required>{t("createProductionKindLabel")}</FieldLabel>
+                  <NativeSelect
+                    aria-label={t("createProductionKindLabel")}
+                    disabled={creating}
+                    value={productionKind}
+                    onChange={(value) => setProductionKind(value as "interactive_film" | "series")}
+                    className="h-9 w-full"
+                  >
+                    <option value="series">{t("createProductionKindSeries")}</option>
+                    <option value="interactive_film">{t("createProductionKindFilm")}</option>
+                  </NativeSelect>
+                </Field>
+                <Field>
+                  <FieldLabel required>{t("createWorkspaceLabel")}</FieldLabel>
+                  <p className="mb-2 text-[11px] text-muted-foreground">
+                    {t("createWorkspaceHelp")}
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="workspace-mode"
+                        checked={workspaceMode === "link"}
+                        onChange={() => setWorkspaceMode("link")}
+                      />
+                      {t("createWorkspaceLink")}
+                    </label>
+                    {workspaceMode === "link" ? (
+                      workspaces.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">{t("createWorkspaceEmpty")}</p>
+                      ) : (
+                        <NativeSelect
+                          aria-label={t("createWorkspacePick")}
+                          disabled={creating}
+                          value={studioWorkspaceId}
+                          onChange={setStudioWorkspaceId}
+                          placeholder={t("createWorkspacePick")}
+                          className="h-9 w-full"
+                        >
+                          {workspaces.map((workspace) => (
+                            <option key={workspace.id} value={workspace.id}>
+                              {workspace.name}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                      )
+                    ) : null}
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="workspace-mode"
+                        checked={workspaceMode === "create"}
+                        onChange={() => setWorkspaceMode("create")}
+                      />
+                      {t("createWorkspaceNew")}
+                    </label>
+                    {workspaceMode === "create" ? (
+                      <Input
+                        value={newWorkspaceName}
+                        onChange={(event) => setNewWorkspaceName(event.target.value)}
+                        placeholder={t("createWorkspaceNamePlaceholder")}
+                        disabled={creating}
+                      />
+                    ) : null}
+                  </div>
+                </Field>
+              </>
+            ) : null}
           </FieldGroup>
         </DialogBody>
 
@@ -391,7 +494,17 @@ function CrewFormDialog({
           <Button
             type="button"
             onClick={handleSubmit}
-            disabled={!name.trim() || !description.trim() || !logoPath || uploadingLogo || creating}
+            disabled={
+              !name.trim() ||
+              !description.trim() ||
+              !logoPath ||
+              uploadingLogo ||
+              creating ||
+              (!isEdit &&
+                (workspaceMode === "link"
+                  ? !studioWorkspaceId
+                  : !newWorkspaceName.trim() && !name.trim()))
+            }
           >
             {creating ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {isEdit

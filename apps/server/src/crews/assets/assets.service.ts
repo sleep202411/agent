@@ -55,6 +55,9 @@ const NODE_INCLUDE = {
       metadata: true,
     },
   },
+  linkedStudioMediaAsset: {
+    select: { id: true, kind: true },
+  },
   favorites: {
     select: { userId: true },
   },
@@ -695,7 +698,7 @@ export class CrewAssetsService {
           kind: CrewAssetNodeKind.folder,
           status: CrewAssetNodeStatus.active,
         },
-        select: { id: true, parentId: true, name: true },
+        select: { id: true, parentId: true, name: true, folderKey: true },
       });
       if (!parent) {
         throw new NotFoundException('Asset folder path is unavailable');
@@ -1557,6 +1560,243 @@ export class CrewAssetsService {
     return false;
   }
 
+  async listStudioMediaOptions(
+    crewId: string,
+    userId: string,
+    query: { projectId?: string; storyProjectId?: string },
+  ) {
+    await this.authorization.require(crewId, userId, 'assets.view');
+    const crew = await this.prisma.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { studioWorkspaceId: true },
+    });
+    if (!crew?.studioWorkspaceId) {
+      return { workspaceId: null, projects: [], items: [] };
+    }
+    const workspaceId = crew.studioWorkspaceId;
+    const [projects, storyProjects] = await Promise.all([
+      this.prisma.platformProject.findMany({
+        where: { workspaceId, deletedAt: null, status: 'active' },
+        select: { id: true, name: true },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+        take: 100,
+      }),
+      this.prisma.storyProject.findMany({
+        where: { workspaceId, archivedAt: null },
+        select: { id: true, title: true },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+        take: 100,
+      }),
+    ]);
+    const mediaWhere: Prisma.MediaAssetWhereInput = {
+      workspaceId,
+      deletedAt: null,
+      status: 'ready',
+      kind: { in: ['image', 'video', 'audio'] },
+      moderationStatus: { not: 'blocked' },
+    };
+    if (query.projectId) {
+      mediaWhere.usages = {
+        some: { projectId: query.projectId, deletedAt: null },
+      };
+    } else if (query.storyProjectId) {
+      mediaWhere.storyCandidateAssets = {
+        some: { storyProjectId: query.storyProjectId },
+      };
+    }
+    const media = await this.prisma.mediaAsset.findMany({
+      where: mediaWhere,
+      select: {
+        id: true,
+        kind: true,
+        contentType: true,
+        createdAt: true,
+        objectKey: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return {
+      workspaceId,
+      projects: [
+        ...projects.map((project) => ({
+          id: project.id,
+          name: project.name,
+          kind: 'canvas' as const,
+        })),
+        ...storyProjects.map((project) => ({
+          id: project.id,
+          name: project.title,
+          kind: 'story' as const,
+        })),
+      ],
+      items: media.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        contentType: row.contentType,
+        name: row.objectKey?.split('/').pop() || row.id,
+        previewUrl: `/aurora/media/assets/${row.id}/content`,
+        createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async linkStudioMedia(
+    crewId: string,
+    userId: string,
+    input: {
+      parentId?: string | null;
+      mediaAssetIds: string[];
+      projectId?: string | null;
+      storyProjectId?: string | null;
+    },
+  ) {
+    const parentId = input.parentId ?? null;
+    const created = await this.prisma.$transaction(async (tx) => {
+      await this.lockAssetTree(tx, crewId);
+      await this.access.requireContainerPermission(
+        crewId,
+        parentId,
+        userId,
+        CrewAssetPermission.upload,
+        tx,
+      );
+      const crew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { studioWorkspaceId: true },
+      });
+      if (!crew?.studioWorkspaceId) {
+        throw new ConflictException('Link a Studio workspace first.');
+      }
+      const items: ReturnType<CrewAssetsService['toDto']>[] = [];
+      for (const mediaAssetId of [...new Set(input.mediaAssetIds)]) {
+        const media = await tx.mediaAsset.findFirst({
+          where: {
+            id: mediaAssetId,
+            workspaceId: crew.studioWorkspaceId,
+            deletedAt: null,
+            status: 'ready',
+            kind: { in: ['image', 'video', 'audio'] },
+          },
+          select: { id: true, objectKey: true },
+        });
+        if (!media) {
+          throw new ForbiddenException(
+            'Only ready workspace media can be linked.',
+          );
+        }
+        const existing = await tx.crewAssetNode.findFirst({
+          where: {
+            crewId,
+            parentId,
+            mediaAssetId,
+            status: CrewAssetNodeStatus.active,
+          },
+        });
+        if (existing) continue;
+        const names = await tx.crewAssetNode.findMany({
+          where: { crewId, parentId, status: CrewAssetNodeStatus.active },
+          select: { name: true },
+        });
+        const node = await tx.crewAssetNode.create({
+          data: {
+            crewId,
+            parentId,
+            kind: CrewAssetNodeKind.file,
+            sharedFromStudio: true,
+            mediaAssetId,
+            linkedStudioMediaAssetId: mediaAssetId,
+            linkedProjectId: input.projectId ?? null,
+            linkedStoryProjectId: input.storyProjectId ?? null,
+            name: availableCrewAssetName(
+              media.objectKey?.split('/').pop() || 'Studio asset',
+              new Set(names.map((n) => n.name.toLowerCase())),
+            ),
+            createdByUserId: userId,
+            updatedByUserId: userId,
+          },
+          include: NODE_INCLUDE,
+        });
+        items.push(this.toDto(node, userId, CrewAssetPermission.upload));
+      }
+      return items;
+    });
+    return { items: created };
+  }
+
+  async setStudioLink(
+    crewId: string,
+    userId: string,
+    nodeId: string,
+    input: {
+      mediaAssetId: string | null;
+      projectId?: string | null;
+      storyProjectId?: string | null;
+    },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockAssetTree(tx, crewId);
+      await this.access.requireNodePermission(
+        crewId,
+        nodeId,
+        userId,
+        CrewAssetPermission.manage,
+        tx,
+      );
+      const node = await tx.crewAssetNode.findFirst({
+        where: { id: nodeId, crewId, status: CrewAssetNodeStatus.active },
+      });
+      if (!node || node.kind !== CrewAssetNodeKind.file) {
+        throw new NotFoundException('Asset file not found.');
+      }
+      if (!input.mediaAssetId) {
+        const updated = await tx.crewAssetNode.update({
+          where: { id: nodeId },
+          data: {
+            linkedStudioMediaAssetId: null,
+            linkedProjectId: null,
+            linkedStoryProjectId: null,
+            updatedByUserId: userId,
+          },
+          include: NODE_INCLUDE,
+        });
+        return this.toDto(updated, userId, CrewAssetPermission.manage);
+      }
+      const crew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { studioWorkspaceId: true },
+      });
+      if (!crew?.studioWorkspaceId) {
+        throw new ConflictException('Link a Studio workspace first.');
+      }
+      const media = await tx.mediaAsset.findFirst({
+        where: {
+          id: input.mediaAssetId,
+          workspaceId: crew.studioWorkspaceId,
+          deletedAt: null,
+          status: 'ready',
+        },
+        select: { id: true },
+      });
+      if (!media) {
+        throw new ForbiddenException(
+          'Only ready workspace media can be linked.',
+        );
+      }
+      const updated = await tx.crewAssetNode.update({
+        where: { id: nodeId },
+        data: {
+          linkedStudioMediaAssetId: input.mediaAssetId,
+          linkedProjectId: input.projectId ?? null,
+          linkedStoryProjectId: input.storyProjectId ?? null,
+          updatedByUserId: userId,
+        },
+        include: NODE_INCLUDE,
+      });
+      return this.toDto(updated, userId, CrewAssetPermission.manage);
+    });
+  }
+
   private toDto(
     node: AssetNode,
     userId: string,
@@ -1571,6 +1811,15 @@ export class CrewAssetsService {
       accessMode: node.accessMode,
       permissionVersion: node.permissionVersion,
       effectivePermission,
+      folderKey: node.folderKey ?? null,
+      linkedStudio: node.linkedStudioMediaAsset
+        ? {
+            mediaAssetId: node.linkedStudioMediaAsset.id,
+            projectId: node.linkedProjectId,
+            storyProjectId: node.linkedStoryProjectId,
+            previewUrl: `/aurora/media/assets/${node.linkedStudioMediaAsset.id}/content`,
+          }
+        : null,
       favorite: node.favorites.some((favorite) => favorite.userId === userId),
       createdByUserId: node.createdByUserId,
       updatedByUserId: node.updatedByUserId,

@@ -21,6 +21,8 @@ import { z } from 'zod';
 import {
   CreateCrewTaskSchema,
   type CreateCrewTaskInput,
+  CreateCrewTaskKindTemplateSchema,
+  type CreateCrewTaskKindTemplateInput,
   DraftCrewTaskSchema,
   type DraftCrewTaskInput,
   CreateCrewTaskCommentSchema,
@@ -94,6 +96,46 @@ export class CrewTasksController {
   @Get('crews/:crewId/task-project')
   project(@Param('crewId') crewId: string, @CurrentUser() user: AuthUser) {
     return this.tasks.getProject(parseIdParam(crewId, 'crewId'), user.userId);
+  }
+
+  @Get('crews/:crewId/task-kind-templates')
+  listTaskKindTemplates(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.listTaskKindTemplates(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+    );
+  }
+
+  @Post('crews/:crewId/task-kind-templates')
+  @HttpCode(HttpStatus.CREATED)
+  createTaskKindTemplate(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(CreateCrewTaskKindTemplateSchema))
+    body: CreateCrewTaskKindTemplateInput,
+  ) {
+    return this.tasks.createTaskKindTemplate(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+      body,
+    );
+  }
+
+  @Delete('crews/:crewId/task-kind-templates/:templateId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteTaskKindTemplate(
+    @Param('crewId') crewId: string,
+    @Param('templateId') templateId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.tasks.deleteTaskKindTemplate(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+      parseIdParam(templateId, 'templateId'),
+    );
   }
 
   @Post('crews/:crewId/task-views')

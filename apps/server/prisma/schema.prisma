@@ -992,6 +992,7 @@ model WorkspaceInvite {
 model PlatformProject {
   actorUses AiActorUse[]
   crewAssetFolders CrewAssetNode[] @relation("CrewCanvasAssetFolder")
+  linkedCrewAssetNodes CrewAssetNode[] @relation("CrewAssetLinkedStudioProject")
   id           String                @id @default(uuid(7)) @db.Uuid
   workspaceId  String                @map("workspace_id") @db.Uuid
   name         String                @db.VarChar(160)
@@ -4652,6 +4653,24 @@ enum CrewAssetPermission {
   manage
 }
 
+enum CrewProductionKind {
+  interactive_film
+  series
+}
+
+enum CrewTaskKind {
+  script
+  gameplay
+  plot_tree
+  art
+  storyboard
+  voice
+  music
+  edit
+  qa
+  other
+}
+
 enum CrewInvitationStatus {
   pending
   accepted
@@ -4869,6 +4888,8 @@ model Crew {
   studioWorkspace     Workspace?                 @relation("CrewStudioWorkspace", fields: [studioWorkspaceId], references: [id], onDelete: SetNull)
   /// Historical single-project link, cleared when a workspace is explicitly selected.
   studioProjectId     String?                    @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
+  /// Production template selected at create time. Existing crews default to series.
+  productionKind      CrewProductionKind         @default(series) @map("production_kind")
   /// Optimistic concurrency control. Bumped on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// crewsService.update(id, patch, expectedVersion).
@@ -4887,6 +4908,7 @@ model Crew {
   invitations          CrewInvitation[]
   inviteLinks          CrewInviteLink[]
   tasks                CrewTask[]
+  taskKindTemplates    CrewTaskKindTemplate[]
   taskViews            CrewTaskView[]
   taskCycles           CrewTaskCycle[]
   taskLabels           CrewTaskLabel[]
@@ -4927,6 +4949,12 @@ model CrewAssetNode {
   sharedFromStudio  Boolean             @default(false) @map("shared_from_studio")
   sourceCanvasProjectId String?         @map("source_canvas_project_id") @db.Uuid
   sourceCanvasProject PlatformProject?  @relation("CrewCanvasAssetFolder", fields: [sourceCanvasProjectId], references: [id], onDelete: SetNull)
+  /// Stable seed key so renamed folders still map to production templates.
+  folderKey         String?             @map("folder_key") @db.VarChar(64)
+  /// Optional user-chosen Studio counterpart; does not replace mediaAssetId.
+  linkedStudioMediaAssetId String?      @map("linked_studio_media_asset_id") @db.Uuid
+  linkedProjectId   String?             @map("linked_project_id") @db.Uuid
+  linkedStoryProjectId String?          @map("linked_story_project_id") @db.Uuid
   permissionVersion Int                 @default(1) @map("permission_version")
   name              String              @db.VarChar(256)
   mediaAssetId      String?             @map("media_asset_id") @db.Uuid
@@ -4941,6 +4969,9 @@ model CrewAssetNode {
   parent               CrewAssetNode?            @relation("CrewAssetHierarchy", fields: [parentId, crewId], references: [id, crewId], onDelete: Cascade)
   children             CrewAssetNode[]           @relation("CrewAssetHierarchy")
   mediaAsset           MediaAsset?               @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  linkedStudioMediaAsset MediaAsset?             @relation("CrewAssetLinkedStudioMedia", fields: [linkedStudioMediaAssetId], references: [id], onDelete: SetNull)
+  linkedProject        PlatformProject?          @relation("CrewAssetLinkedStudioProject", fields: [linkedProjectId], references: [id], onDelete: SetNull)
+  linkedStoryProject   StoryProject?             @relation("CrewAssetLinkedStoryProject", fields: [linkedStoryProjectId], references: [id], onDelete: SetNull)
   favorites            CrewAssetFavorite[]
   grants               CrewAssetGrant[]
   taskDeliveryAssets   CrewTaskDeliveryAsset[]
@@ -4953,7 +4984,9 @@ model CrewAssetNode {
   agreementAuditTrails CrewAgreement[]           @relation("CrewAgreementAuditAsset")
 
   @@unique([crewId, sourceCanvasProjectId], map: "crew_asset_canvas_folder_unique")
+  @@unique([crewId, folderKey], map: "crew_asset_nodes_folder_key_unique")
   @@unique([id, crewId], name: "uniq_crew_asset_node_id_crew", map: "crew_asset_nodes_id_crew_unique")
+  @@index([linkedStudioMediaAssetId], map: "crew_asset_nodes_linked_studio_media_idx")
   @@index([crewId, parentId, status, updatedAt(sort: Desc)], map: "crew_asset_nodes_folder_listing_idx")
   @@index([crewId, status, updatedAt(sort: Desc)], map: "crew_asset_nodes_source_listing_idx")
   @@index([mediaAssetId], map: "crew_asset_nodes_media_asset_idx")
@@ -5352,6 +5385,7 @@ model CrewTask {
   /// Optimistic concurrency token. Every mutable task-field/assignee write
   /// increments it; clients send the version they edited.
   version             Int                       @default(1)
+  taskKind            CrewTaskKind?             @map("task_kind")
   /// Optional focused Studio branch. Ordinary issues stay lightweight and
   /// acquire a branch only when somebody explicitly starts canvas work.
   canvasProjectId     String?                   @unique(map: "crew_tasks_canvas_project_unique") @map("canvas_project_id") @db.Uuid
@@ -5393,7 +5427,26 @@ model CrewTask {
   @@index([crewId, priority, rank, id], map: "crew_tasks_crew_priority_rank_idx")
   @@index([crewId, updatedAt(sort: Desc), id(sort: Desc)], map: "crew_tasks_crew_updated_idx")
   @@index([crewId, dueAt], map: "crew_tasks_crew_due_idx")
+  @@index([crewId, taskKind], map: "crew_tasks_crew_kind_idx")
   @@map("crew_tasks")
+}
+
+/// Crew-owned assignment templates. System kinds stay in code; these are extras.
+model CrewTaskKindTemplate {
+  id              String       @id @default(uuid(7)) @db.Uuid
+  crewId          String       @map("crew_id")
+  kind            CrewTaskKind
+  name            String       @db.VarChar(80)
+  title           String       @db.VarChar(180)
+  description     String       @default("") @db.Text
+  createdByUserId String       @map("created_by_user_id") @db.VarChar(64)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  crew Crew @relation(fields: [crewId], references: [id], onDelete: Cascade)
+
+  @@index([crewId, kind], map: "crew_task_kind_templates_crew_kind_idx")
+  @@map("crew_task_kind_templates")
 }
 
 /// The crew's editable production home. `document` is the canonical Tiptap
@@ -7648,6 +7701,7 @@ model MediaAsset {
   moderationActions            MediaModerationAction[]
   processingJobs               MediaProcessingJob[]
   crewAssetNodes               CrewAssetNode[]
+  linkedCrewAssetNodes         CrewAssetNode[]               @relation("CrewAssetLinkedStudioMedia")
   contentReviewRecords         ContentReviewRecord[]
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
@@ -8484,6 +8538,7 @@ model StoryProject {
   updatedAt                  DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace               Workspace                         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  linkedCrewAssetNodes    CrewAssetNode[]                   @relation("CrewAssetLinkedStoryProject")
   cover                   MediaAsset?                       @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
   members                 StoryProjectMember[]
   invites                 StoryProjectInvite[]

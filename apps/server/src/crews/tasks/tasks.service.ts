@@ -45,6 +45,7 @@ import { NotificationService } from '../../notification';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import type {
   CreateCrewTaskCommentInput,
+  CreateCrewTaskKindTemplateInput,
   CreateCrewTaskInput,
   ListCrewTaskTimelineQuery,
   ReviewCrewTaskInput,
@@ -1980,6 +1981,7 @@ export class CrewTasksService {
           revisionLimit: input.revisionLimit,
           cycleId: input.cycleId,
           episodeId: input.episodeId,
+          taskKind: input.taskKind ?? null,
           rank: (planningSequence._max.rank ?? new Prisma.Decimal(0)).plus(
             1024,
           ),
@@ -2501,6 +2503,7 @@ export class CrewTasksService {
             revisionLimit: input.revisionLimit,
             cycleId: input.cycleId,
             episodeId: input.episodeId,
+            taskKind: input.taskKind,
             parentId: input.parentId,
             workflowStateId: nextWorkflowState?.id,
             cancelledAt:
@@ -4449,6 +4452,63 @@ export class CrewTasksService {
     });
     return taskDto(task, usage._sum.internalCredits ?? 0);
   }
+
+  async listTaskKindTemplates(crewId: string, userId: string) {
+    await this.authorization.require(crewId, userId, 'tasks.view');
+    const items = await this.prisma.crewTaskKindTemplate.findMany({
+      where: { crewId },
+      orderBy: [{ kind: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+    });
+    return {
+      items: items.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        name: row.name,
+        title: row.title,
+        description: row.description,
+      })),
+    };
+  }
+
+  async createTaskKindTemplate(
+    crewId: string,
+    userId: string,
+    input: CreateCrewTaskKindTemplateInput,
+  ) {
+    await this.authorization.require(crewId, userId, 'tasks.manage');
+    const row = await this.prisma.crewTaskKindTemplate.create({
+      data: {
+        crewId,
+        kind: input.kind,
+        name: input.name,
+        title: input.title,
+        description: input.description,
+        createdByUserId: userId,
+      },
+    });
+    return {
+      id: row.id,
+      kind: row.kind,
+      name: row.name,
+      title: row.title,
+      description: row.description,
+    };
+  }
+
+  async deleteTaskKindTemplate(
+    crewId: string,
+    userId: string,
+    templateId: string,
+  ) {
+    await this.authorization.require(crewId, userId, 'tasks.manage');
+    const existing = await this.prisma.crewTaskKindTemplate.findFirst({
+      where: { id: templateId, crewId },
+    });
+    if (!existing) throw new NotFoundException('Task template not found.');
+    await this.prisma.crewTaskKindTemplate.delete({
+      where: { id: templateId },
+    });
+  }
 }
 
 function taskViewWhere(
@@ -4611,6 +4671,7 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     number: task.number,
     title: task.title,
     description: task.description,
+    taskKind: task.taskKind,
     status: task.workflowState.semantic,
     workflowStateId: task.workflowStateId,
     workflowState: taskWorkflowStateDto(task.workflowState),

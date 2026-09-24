@@ -407,12 +407,18 @@ const url = workspaceTestDatabase(process.env);
           where: { id: workspaceId },
           data: { ownerUserId: reader },
         });
+        await tx.workspaceMember.updateMany({
+          where: { workspaceId, userId: owner },
+          data: { role: 'editor' },
+        });
         locked();
         await gate;
       });
       await ready;
       const attempted = links.link(crewId, owner, workspaceId);
-      const rejected = expect(attempted).rejects.toThrow('must own');
+      const rejected = expect(attempted).rejects.toThrow(
+        'Workspace not found.',
+      );
       release();
       try {
         await transfer;
@@ -421,6 +427,10 @@ const url = workspaceTestDatabase(process.env);
         await db.workspace.update({
           where: { id: workspaceId },
           data: { ownerUserId: owner },
+        });
+        await db.workspaceMember.updateMany({
+          where: { workspaceId, userId: owner },
+          data: { role: 'owner' },
         });
       }
     });

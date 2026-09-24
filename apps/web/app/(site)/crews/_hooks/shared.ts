@@ -22,6 +22,7 @@ export const crewKeys = {
   assets: (crewId: string) => ["crew", "assets", crewId] as const,
   taskCenter: ["crew", "task-center"] as const,
   taskProject: (crewId: string) => ["crew", "task-project", crewId] as const,
+  taskKindTemplates: (crewId: string) => ["crew", "task-kind-templates", crewId] as const,
   tasks: (crewId: string) => ["crew", "tasks", crewId] as const,
   taskView: (crewId: string, input: { viewId: string; query?: string; priority?: string }) =>
     ["crew", "tasks", crewId, "view", input] as const,

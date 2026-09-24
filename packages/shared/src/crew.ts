@@ -297,6 +297,8 @@ export interface CrewDTO {
   ownerUserId: string;
   /** User-controlled Crew Hall visibility. */
   listingStatus: CrewListingStatus;
+  productionKind?: "interactive_film" | "series";
+  studioWorkspaceId?: string | null;
   /** Last time the owner made the crew visible in Crew Hall. */
   listedAt: string | null;
   /** Optimistic concurrency token for crew-level edits. */

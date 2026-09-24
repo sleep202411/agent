@@ -20,6 +20,7 @@ import {
   Position,
   ReactFlowProvider,
   useEdgesState,
+  useNodesInitialized,
   useNodesState,
   useReactFlow,
   useStore,
@@ -42,6 +43,7 @@ import {
   IconGitBranch,
   IconLoader2,
   IconMovie,
+  IconPlayerPlay,
   IconPlus,
   IconRefresh,
   IconTrash,
@@ -54,6 +56,7 @@ import { toast } from "sonner";
 import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
 import { storyChapterWorkbenchQueryKey } from "../../_lib/use-story-chapter-workbench";
+import { useStoryPreviewNavigation } from "../../_lib/use-story-preview-navigation";
 import { StoryProjectSidePanelShell } from "../story-project-side-panel";
 import { StoryProjectWorkState } from "../story-project-work-state";
 import {
@@ -337,6 +340,8 @@ const STORY_CANVAS_TIDY_LAYOUT = {
 const MAX_PLAYER_CHOICES = 6;
 
 const StoryCanvasFocusContext = createContext<string | null>(null);
+/** Scene-card play buttons call back into the canvas's preview navigation. */
+const StoryCanvasPreviewContext = createContext<((nodeId: string) => void) | null>(null);
 const StoryCanvasChoiceContext = createContext<StoryCanvasChoiceContextValue | null>(null);
 const StoryCanvasWorldContext = createContext<StoryCanvasWorldContextValue | null>(null);
 
@@ -356,9 +361,11 @@ function StoryCanvasReactFlow({
 export function StoryProjectCanvas({
   projectId,
   requestedChapterId,
+  requestedFocusNodeId,
 }: {
   projectId: string;
   requestedChapterId?: string;
+  requestedFocusNodeId?: string;
 }) {
   // The XYFlow store belongs to the project shell, not to an individual
   // chapter. Chapter projections are swapped inside the mounted shell so a
@@ -369,7 +376,11 @@ export function StoryProjectCanvas({
 
   return (
     <ReactFlowProvider key={scopeKey}>
-      <StoryProjectCanvasInner projectId={projectId} requestedChapterId={requestedChapterId} />
+      <StoryProjectCanvasInner
+        projectId={projectId}
+        requestedChapterId={requestedChapterId}
+        requestedFocusNodeId={requestedFocusNodeId}
+      />
     </ReactFlowProvider>
   );
 }
@@ -377,9 +388,11 @@ export function StoryProjectCanvas({
 function StoryProjectCanvasInner({
   projectId,
   requestedChapterId,
+  requestedFocusNodeId,
 }: {
   projectId: string;
   requestedChapterId?: string;
+  requestedFocusNodeId?: string;
 }) {
   const { user } = useAuth();
   const interfaceLocale = useLocale();
@@ -387,7 +400,13 @@ function StoryProjectCanvasInner({
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
   const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
+  const nodesInitialized = useNodesInitialized();
   const queryClient = useQueryClient();
+  const { openPreviewFromScene } = useStoryPreviewNavigation(projectId);
+  const previewFromScene = useCallback(
+    (nodeId: string) => void openPreviewFromScene(nodeId),
+    [openPreviewFromScene]
+  );
   const [content, setContent] = useState<InteractiveStoryDraftContent | null>(null);
   const [contentChapterId, setContentChapterId] = useState<string | null>(null);
   // Inspector + share live in the shared store so the layout rail's World and
@@ -464,6 +483,7 @@ function StoryProjectCanvasInner({
   const canvasNodesRef = useRef<StoryCanvasNode[]>([]);
   const canvasSectionRef = useRef<HTMLElement>(null);
   const hasFittedInitialCanvasRef = useRef(false);
+  const appliedFocusRef = useRef<string | null>(null);
   const pendingCanvasSelectionRef = useRef<string | null>(null);
   const requestedCanvasFocusRef = useRef<string | null>(null);
   const marqueeSelectionActiveRef = useRef(false);
@@ -1807,6 +1827,39 @@ function StoryProjectCanvasInner({
     return () => window.clearTimeout(timer);
   }, [canvasNodes.length, fitView]);
 
+  useEffect(() => {
+    if (
+      !requestedFocusNodeId ||
+      !resolvedChapterId ||
+      contentChapterId !== resolvedChapterId ||
+      !nodesInitialized
+    ) {
+      return;
+    }
+    const focusKey = `${resolvedChapterId}:${requestedFocusNodeId}`;
+    if (appliedFocusRef.current === focusKey) return;
+    if (!canvasNodes.some((node) => node.id === requestedFocusNodeId)) return;
+    appliedFocusRef.current = focusKey;
+    hasFittedInitialCanvasRef.current = true;
+    setSidePanel(null);
+    selectCanvasNodeExclusively(requestedFocusNodeId);
+    void fitView({
+      nodes: [{ id: requestedFocusNodeId }],
+      padding: 0.45,
+      duration: 450,
+      maxZoom: 0.85,
+    });
+  }, [
+    canvasNodes,
+    contentChapterId,
+    fitView,
+    nodesInitialized,
+    requestedFocusNodeId,
+    resolvedChapterId,
+    selectCanvasNodeExclusively,
+    setSidePanel,
+  ]);
+
   const closeCreatorMenu = useCallback(() => setCreatorMenu(null), []);
 
   const refreshHistoryState = useCallback(() => {
@@ -2670,149 +2723,153 @@ function StoryProjectCanvasInner({
               <MediaHoverPreviewProvider>
                 <StoryCanvasChoiceContext.Provider value={choiceContext}>
                   <StoryCanvasWorldContext.Provider value={worldContext}>
-                    <StoryCanvasFocusContext.Provider value={focusedNodeId}>
-                      <StoryCanvasReactFlow
-                        nodes={layeredCanvasNodes}
-                        edges={canvasEdges.map((edge) =>
-                          edge.selected
-                            ? {
-                                ...edge,
-                                animated: true,
-                                className: "story-flow-edge-selected",
-                                style: {
-                                  ...edge.style,
-                                  opacity: 1,
-                                  stroke: "var(--brand-blue)",
-                                  strokeWidth: 2.5,
-                                },
-                              }
-                            : edge
-                        )}
-                        onNodesChange={onCanvasNodesChange}
-                        onEdgesChange={(changes) =>
-                          onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
-                        }
-                        onConnect={connectStoryNodes}
-                        onConnectEnd={finishConnectionOnBlankCanvas}
-                        onInteractionStart={closeCreatorMenu}
-                        isValidConnection={isValidStoryConnection}
-                        onDelete={deleteStoryElements}
-                        onSelectionChange={onCanvasSelectionChange}
-                        onSelectionStart={onCanvasSelectionStart}
-                        onSelectionEnd={onCanvasSelectionEnd}
-                        onNodeDragStart={() => {
-                          didDragNodeRef.current = false;
-                          dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
-                            ? readHistorySnapshot()
-                            : null;
-                        }}
-                        onNodeDrag={() => {
-                          // A real move occurred: the following pointer-up is a drag, not
-                          // a click, so it must not open the inspector.
-                          didDragNodeRef.current = true;
-                        }}
-                        onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                          const beforeDrag = dragStartHistorySnapshotRef.current;
-                          dragStartHistorySnapshotRef.current = null;
-                          const movedNodes = new Map(
-                            [...draggedNodes, draggedNode].map((node) => [node.id, node])
-                          );
-                          commitCanvasLayout(
-                            canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
-                            beforeDrag
-                          );
-                        }}
-                        onNodeClick={(event, node) => {
-                          // Connecting ports must not open an inspector over the destination.
-                          if (
-                            event.target instanceof Element &&
-                            event.target.closest(".react-flow__handle")
-                          ) {
-                            return;
-                          }
-                          closeCreatorMenu();
-                          const outcome = resolveStoryCanvasNodeClick({
-                            nodeId: node.id,
-                            nodeSelected: Boolean(node.selected),
-                            shiftKey: event.shiftKey,
-                            didDrag: didDragNodeRef.current,
-                            currentSelection: latestCanvasSelectionRef.current,
-                          });
-                          didDragNodeRef.current = false;
-                          // A pointer-up that ended a drag never opens the inspector.
-                          if (outcome.kind === "drag-suppressed") return;
-                          if (outcome.kind === "toggle-off") {
-                            requestedCanvasFocusRef.current = null;
-                            latestCanvasSelectionRef.current = outcome.remainingNodeIds;
-                            reconcileCanvasFocus(outcome.remainingNodeIds);
-                            return;
-                          }
-                          // An explicit click is the only path that may open a node
-                          // inspector. Player-choice projections deliberately resolve
-                          // to "closed" because their editor lives on the card.
-                          requestedCanvasFocusRef.current = outcome.nodeId;
-                          setSidePanel(null);
-                          setInspectorTarget(
-                            node.data.kind === "decision"
-                              ? CLOSED_STORY_CANVAS_INSPECTOR
-                              : storyNodeInspectorTarget(outcome.nodeId)
-                          );
-                        }}
-                        onPaneClick={() => {
-                          selectCanvasNodeExclusively(null);
-                          closeCreatorMenu();
-                        }}
-                        onPaneContextMenu={(event) => {
-                          if (!mutationBarrier.permits("layout")) return;
-                          event.preventDefault();
-                          openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
-                        }}
-                        onMoveStart={closeCreatorMenu}
-                        nodeTypes={NODE_TYPES}
-                        defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-                        colorMode="dark"
-                        proOptions={{ hideAttribution: true }}
-                        minZoom={0.16}
-                        maxZoom={1.4}
-                        defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-                        nodesDraggable={canMutateCanvasLayout}
-                        nodesConnectable={canMutateCanvasLayout}
-                        edgesReconnectable={false}
-                        edgesFocusable={canMutateCanvasLayout}
-                        deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
-                        selectNodesOnDrag
-                        zoomOnDoubleClick={false}
-                        fitView={canvasNodes.length > 0}
-                        fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
-                        className="relative z-10"
-                        style={{ backgroundColor: "transparent" }}
-                      >
-                        {model.nodes.length > 0 ? (
-                          <MiniMap
-                            pannable
-                            position="bottom-left"
-                            className={cn(
-                              "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
-                              // Clear the full-width canvas's left inspector overlay.
-                              inspectorOpen ? "left-[452px]!" : "left-20!"
-                            )}
-                            bgColor="oklch(0.24 0 0 / 0.82)"
-                            maskColor="rgba(0,0,0,0.46)"
-                            nodeColor="rgba(255,255,255,0.42)"
-                            nodeStrokeWidth={0}
-                          />
-                        ) : null}
-                        <CanvasControls
-                          position="bottom-left"
-                          onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
-                          className={cn(
-                            "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
-                            // Clear the full-width canvas's left inspector overlay.
-                            inspectorOpen ? "left-[392px]!" : "left-5!"
+                    <StoryCanvasPreviewContext.Provider value={previewFromScene}>
+                      <StoryCanvasFocusContext.Provider value={focusedNodeId}>
+                        <StoryCanvasReactFlow
+                          nodes={layeredCanvasNodes}
+                          edges={canvasEdges.map((edge) =>
+                            edge.selected
+                              ? {
+                                  ...edge,
+                                  animated: true,
+                                  className: "story-flow-edge-selected",
+                                  style: {
+                                    ...edge.style,
+                                    opacity: 1,
+                                    stroke: "var(--brand-blue)",
+                                    strokeWidth: 2.5,
+                                  },
+                                }
+                              : edge
                           )}
-                        />
-                      </StoryCanvasReactFlow>
-                    </StoryCanvasFocusContext.Provider>
+                          onNodesChange={onCanvasNodesChange}
+                          onEdgesChange={(changes) =>
+                            onCanvasEdgesChange(
+                              changes.filter((change) => change.type === "select")
+                            )
+                          }
+                          onConnect={connectStoryNodes}
+                          onConnectEnd={finishConnectionOnBlankCanvas}
+                          onInteractionStart={closeCreatorMenu}
+                          isValidConnection={isValidStoryConnection}
+                          onDelete={deleteStoryElements}
+                          onSelectionChange={onCanvasSelectionChange}
+                          onSelectionStart={onCanvasSelectionStart}
+                          onSelectionEnd={onCanvasSelectionEnd}
+                          onNodeDragStart={() => {
+                            didDragNodeRef.current = false;
+                            dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
+                              ? readHistorySnapshot()
+                              : null;
+                          }}
+                          onNodeDrag={() => {
+                            // A real move occurred: the following pointer-up is a drag, not
+                            // a click, so it must not open the inspector.
+                            didDragNodeRef.current = true;
+                          }}
+                          onNodeDragStop={(_event, draggedNode, draggedNodes) => {
+                            const beforeDrag = dragStartHistorySnapshotRef.current;
+                            dragStartHistorySnapshotRef.current = null;
+                            const movedNodes = new Map(
+                              [...draggedNodes, draggedNode].map((node) => [node.id, node])
+                            );
+                            commitCanvasLayout(
+                              canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
+                              beforeDrag
+                            );
+                          }}
+                          onNodeClick={(event, node) => {
+                            // Connecting ports must not open an inspector over the destination.
+                            if (
+                              event.target instanceof Element &&
+                              event.target.closest(".react-flow__handle")
+                            ) {
+                              return;
+                            }
+                            closeCreatorMenu();
+                            const outcome = resolveStoryCanvasNodeClick({
+                              nodeId: node.id,
+                              nodeSelected: Boolean(node.selected),
+                              shiftKey: event.shiftKey,
+                              didDrag: didDragNodeRef.current,
+                              currentSelection: latestCanvasSelectionRef.current,
+                            });
+                            didDragNodeRef.current = false;
+                            // A pointer-up that ended a drag never opens the inspector.
+                            if (outcome.kind === "drag-suppressed") return;
+                            if (outcome.kind === "toggle-off") {
+                              requestedCanvasFocusRef.current = null;
+                              latestCanvasSelectionRef.current = outcome.remainingNodeIds;
+                              reconcileCanvasFocus(outcome.remainingNodeIds);
+                              return;
+                            }
+                            // An explicit click is the only path that may open a node
+                            // inspector. Player-choice projections deliberately resolve
+                            // to "closed" because their editor lives on the card.
+                            requestedCanvasFocusRef.current = outcome.nodeId;
+                            setSidePanel(null);
+                            setInspectorTarget(
+                              node.data.kind === "decision"
+                                ? CLOSED_STORY_CANVAS_INSPECTOR
+                                : storyNodeInspectorTarget(outcome.nodeId)
+                            );
+                          }}
+                          onPaneClick={() => {
+                            selectCanvasNodeExclusively(null);
+                            closeCreatorMenu();
+                          }}
+                          onPaneContextMenu={(event) => {
+                            if (!mutationBarrier.permits("layout")) return;
+                            event.preventDefault();
+                            openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+                          }}
+                          onMoveStart={closeCreatorMenu}
+                          nodeTypes={NODE_TYPES}
+                          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+                          colorMode="dark"
+                          proOptions={{ hideAttribution: true }}
+                          minZoom={0.16}
+                          maxZoom={1.4}
+                          defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+                          nodesDraggable={canMutateCanvasLayout}
+                          nodesConnectable={canMutateCanvasLayout}
+                          edgesReconnectable={false}
+                          edgesFocusable={canMutateCanvasLayout}
+                          deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
+                          selectNodesOnDrag
+                          zoomOnDoubleClick={false}
+                          fitView={canvasNodes.length > 0}
+                          fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+                          className="relative z-10"
+                          style={{ backgroundColor: "transparent" }}
+                        >
+                          {model.nodes.length > 0 ? (
+                            <MiniMap
+                              pannable
+                              position="bottom-left"
+                              className={cn(
+                                "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
+                                // Clear the full-width canvas's left inspector overlay.
+                                inspectorOpen ? "left-[452px]!" : "left-20!"
+                              )}
+                              bgColor="oklch(0.24 0 0 / 0.82)"
+                              maskColor="rgba(0,0,0,0.46)"
+                              nodeColor="rgba(255,255,255,0.42)"
+                              nodeStrokeWidth={0}
+                            />
+                          ) : null}
+                          <CanvasControls
+                            position="bottom-left"
+                            onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
+                            className={cn(
+                              "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
+                              // Clear the full-width canvas's left inspector overlay.
+                              inspectorOpen ? "left-[392px]!" : "left-5!"
+                            )}
+                          />
+                        </StoryCanvasReactFlow>
+                      </StoryCanvasFocusContext.Provider>
+                    </StoryCanvasPreviewContext.Provider>
                   </StoryCanvasWorldContext.Provider>
                 </StoryCanvasChoiceContext.Provider>
               </MediaHoverPreviewProvider>
@@ -3207,6 +3264,7 @@ function ChoiceOptionRow({
 function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<StoryCanvasNode>) {
   const t = useTranslations("storyStudio.canvas");
   const focusedNodeId = useContext(StoryCanvasFocusContext);
+  const previewFromScene = useContext(StoryCanvasPreviewContext);
   const choiceContext = useContext(StoryCanvasChoiceContext);
   const worldContext = useContext(StoryCanvasWorldContext);
   const [worldEditorOpen, setWorldEditorOpen] = useState(false);
@@ -3256,14 +3314,31 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         </span>
         {t(`nodeKinds.${data.kind}`)}
       </FrostedPanel>
-      {choiceContext && data.kind !== "decision" ? (
-        <div className="absolute top-0 right-0 z-10">
-          <StoryCommunityPriceButton
-            title={data.title}
-            price={data.communityPointPrice}
-            disabled={!choiceContext.canEditContent}
-            onSave={(price) => choiceContext.setCommunityPointPrice(data.nodeId, price)}
-          />
+      {data.kind === "clip" || (choiceContext && data.kind !== "decision") ? (
+        <div className="absolute top-0 right-0 z-10 flex items-start gap-1.5">
+          {data.kind === "clip" && previewFromScene ? (
+            <button
+              type="button"
+              aria-label={t("previewFromScene")}
+              title={t("previewFromScene")}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                previewFromScene(data.nodeId);
+              }}
+              className="nodrag nopan grid size-7 cursor-default place-items-center rounded-full bg-white/[0.14] text-white/85 shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl transition hover:bg-white/[0.24] hover:text-white disabled:opacity-50"
+            >
+              <IconPlayerPlay className="size-3.5" stroke={2} />
+            </button>
+          ) : null}
+          {choiceContext ? (
+            <StoryCommunityPriceButton
+              title={data.title}
+              price={data.communityPointPrice}
+              disabled={!choiceContext.canEditContent}
+              onSave={(price) => choiceContext.setCommunityPointPrice(data.nodeId, price)}
+            />
+          ) : null}
         </div>
       ) : null}
       <article

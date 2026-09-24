@@ -49,7 +49,32 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     isPending: false,
   }),
   useCrewEpisodes: () => ({ data: [], isLoading: false }),
+  useCrewTaskKindTemplates: () => ({ data: { items: [] }, isLoading: false }),
   useCrewTaskOptions: () => ({ data: [] }),
+  CREW_TASK_KINDS: [
+    "script",
+    "gameplay",
+    "plot_tree",
+    "art",
+    "storyboard",
+    "voice",
+    "music",
+    "edit",
+    "qa",
+    "other",
+  ],
+  CREW_TASK_KIND_MESSAGE_KEYS: {
+    script: "taskKindScript",
+    gameplay: "taskKindGameplay",
+    plot_tree: "taskKindPlotTree",
+    art: "taskKindArt",
+    storyboard: "taskKindStoryboard",
+    voice: "taskKindVoice",
+    music: "taskKindMusic",
+    edit: "taskKindEdit",
+    qa: "taskKindQa",
+    other: "taskKindOther",
+  },
 }));
 
 const member = {

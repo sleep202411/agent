@@ -4,9 +4,46 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  Prisma,
+  WorkspaceMemberRole,
+  WorkspaceMemberStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
 import { CrewAuthorizationService } from '../crew-authorization.service';
+
+/** Workspaces the user can bind to a Crew: owner field or owner/admin membership. */
+export function workspaceLinkableWhere(
+  userId: string,
+  crewId?: string,
+): Prisma.WorkspaceWhereInput {
+  return {
+    deletedAt: null,
+    status: 'active',
+    AND: [
+      {
+        OR: [
+          { ownerUserId: userId },
+          {
+            members: {
+              some: {
+                userId,
+                role: {
+                  in: [WorkspaceMemberRole.owner, WorkspaceMemberRole.admin],
+                },
+                status: WorkspaceMemberStatus.active,
+                removedAt: null,
+              },
+            },
+          },
+        ],
+      },
+      crewId
+        ? { OR: [{ studioCrew: null }, { studioCrew: { id: crewId } }] }
+        : { studioCrew: null },
+    ],
+  };
+}
 
 @Injectable()
 export class CrewStudioWorkspaceService {
@@ -33,15 +70,18 @@ export class CrewStudioWorkspaceService {
     }
   }
 
+  async optionsForCreate(userId: string) {
+    return this.prisma.workspace.findMany({
+      where: workspaceLinkableWhere(userId),
+      select: { id: true, name: true },
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
   async options(crewId: string, userId: string) {
     await this.requireAdmin(crewId, userId);
     return this.prisma.workspace.findMany({
-      where: {
-        ownerUserId: userId,
-        status: 'active',
-        deletedAt: null,
-        OR: [{ studioCrew: null }, { studioCrew: { id: crewId } }],
-      },
+      where: workspaceLinkableWhere(userId, crewId),
       select: { id: true, name: true },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
     });
@@ -59,16 +99,15 @@ export class CrewStudioWorkspaceService {
         }
         const workspace = workspaceId
           ? await tx.workspace.findFirst({
-              where: { id: workspaceId, deletedAt: null, status: 'active' },
-              select: { id: true, name: true, ownerUserId: true },
+              where: {
+                id: workspaceId,
+                ...workspaceLinkableWhere(userId, crewId),
+              },
+              select: { id: true, name: true },
             })
           : null;
         if (workspaceId && !workspace)
           throw new NotFoundException('Workspace not found.');
-        if (workspace && workspace.ownerUserId !== userId)
-          throw new ForbiddenException(
-            'You must own the Studio workspace to link it.',
-          );
         const crew = await tx.crew.findUniqueOrThrow({
           where: { id: crewId },
           select: { studioWorkspaceId: true, studioProjectId: true },

@@ -33,6 +33,30 @@ const state = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
+  CREW_TASK_KINDS: [
+    "script",
+    "gameplay",
+    "plot_tree",
+    "art",
+    "storyboard",
+    "voice",
+    "music",
+    "edit",
+    "qa",
+    "other",
+  ],
+  CREW_TASK_KIND_MESSAGE_KEYS: {
+    script: "taskKindScript",
+    gameplay: "taskKindGameplay",
+    plot_tree: "taskKindPlotTree",
+    art: "taskKindArt",
+    storyboard: "taskKindStoryboard",
+    voice: "taskKindVoice",
+    music: "taskKindMusic",
+    edit: "taskKindEdit",
+    qa: "taskKindQa",
+    other: "taskKindOther",
+  },
   useUpdateCrewTaskComment: () => ({ mutateAsync: state.update, isPending: false }),
   useDeleteCrewTaskComment: () => ({ mutateAsync: state.remove, isPending: false }),
   useCreateCrewTaskComment: () => ({ mutateAsync: state.create, isPending: false }),
@@ -82,7 +106,9 @@ vi.mock("@/app/(site)/crews/_hooks/use-position-label", () => ({
 }));
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./delete-task-button", () => ({ DeleteTaskButton: () => null }));
-vi.mock("./task-review-form", () => ({ TaskReviewForm: () => <div data-testid="task-review-form" /> }));
+vi.mock("./task-review-form", () => ({
+  TaskReviewForm: () => <div data-testid="task-review-form" />,
+}));
 vi.mock("sonner", () => ({ toast: { success: state.success, error: state.error } }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 state.discard.mockResolvedValue(undefined);
@@ -584,20 +610,22 @@ vi.mock("@/app/(site)/crews/_components/accountability/task-commitments", () => 
 }));
 vi.mock("./task-delivery-template", () => ({ TaskDeliveryTemplatePanel: () => null }));
 
-
 it.each([
   [false, true, "submitted", true],
   [true, false, "submitted", false],
   [true, true, "submitted", true],
   [false, false, "submitted", false],
   [false, true, "open", false],
-] as const)("review visibility with manage=%s review=%s status=%s", async (manage, review, status, visible) => {
-  state.owner = manage;
-  state.canReview = review;
-  state.status = status;
-  await render();
-  expect(!!container.querySelector('[data-testid="task-review-form"]')).toBe(visible);
-});
+] as const)(
+  "review visibility with manage=%s review=%s status=%s",
+  async (manage, review, status, visible) => {
+    state.owner = manage;
+    state.canReview = review;
+    state.status = status;
+    await render();
+    expect(!!container.querySelector('[data-testid="task-review-form"]')).toBe(visible);
+  }
+);
 
 it("removes the review form when review permission is revoked in the same session", async () => {
   state.owner = true;
@@ -610,24 +638,31 @@ it("removes the review form when review permission is revoked in the same sessio
   expect(container.querySelector('[data-testid="task-review-form"]')).toBeNull();
 });
 
-
 it.each([
   [true, true, "open", true],
   [true, false, "open", false],
   [false, true, "open", false],
   [true, true, "submitted", false],
-] as const)("submission visibility with work=%s submit=%s status=%s", async (work, submit, status, visible) => {
-  state.canWork = work;
-  state.canSubmitAssigned = submit;
-  state.status = status;
-  await render();
-  const button = Array.from(container.querySelectorAll("button")).find((item) => item.textContent?.trim() === "submit");
-  expect(!!button).toBe(visible);
-});
+] as const)(
+  "submission visibility with work=%s submit=%s status=%s",
+  async (work, submit, status, visible) => {
+    state.canWork = work;
+    state.canSubmitAssigned = submit;
+    state.status = status;
+    await render();
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (item) => item.textContent?.trim() === "submit"
+    );
+    expect(!!button).toBe(visible);
+  }
+);
 
 it("removes submission when permission is revoked without changing task access", async () => {
   await render();
-  const hasSubmit = () => Array.from(container.querySelectorAll("button")).some((item) => item.textContent?.trim() === "submit");
+  const hasSubmit = () =>
+    Array.from(container.querySelectorAll("button")).some(
+      (item) => item.textContent?.trim() === "submit"
+    );
   expect(hasSubmit()).toBe(true);
   state.canSubmitAssigned = false;
   await render();
@@ -635,23 +670,25 @@ it("removes submission when permission is revoked without changing task access",
   expect(field()).not.toBeNull();
 });
 
-
 it.each([
   [false, false, "alice", false],
   [true, false, "bob", false],
   [false, true, "alice", true],
   [true, true, "bob", true],
   [false, true, "bob", false],
-] as const)("comment controls with manage=%s comment=%s viewer=%s", async (manage, allowed, viewer, canEdit) => {
-  comment();
-  state.owner = manage;
-  state.canComment = allowed;
-  await render("task", viewer);
-  expect(!!field()).toBe(allowed);
-  expect(row().textContent).toContain("original");
-  expect(!!row().querySelector('[aria-label="editComment"]')).toBe(canEdit);
-  expect(!!row().querySelector('[aria-label="deleteComment"]')).toBe(canEdit);
-});
+] as const)(
+  "comment controls with manage=%s comment=%s viewer=%s",
+  async (manage, allowed, viewer, canEdit) => {
+    comment();
+    state.owner = manage;
+    state.canComment = allowed;
+    await render("task", viewer);
+    expect(!!field()).toBe(allowed);
+    expect(row().textContent).toContain("original");
+    expect(!!row().querySelector('[aria-label="editComment"]')).toBe(canEdit);
+    expect(!!row().querySelector('[aria-label="deleteComment"]')).toBe(canEdit);
+  }
+);
 
 it("removes open comment editors and composer when permission is revoked", async () => {
   comment();

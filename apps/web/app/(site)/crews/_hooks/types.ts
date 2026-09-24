@@ -86,6 +86,9 @@ export interface CreateCrewInput {
   socialLinks?: SocialLink[];
   showcaseWorks?: ShowcaseWork[];
   productionTemplateLocale?: "en-US" | "zh-CN" | "zh-HK";
+  productionKind?: "interactive_film" | "series";
+  studioWorkspaceId?: string | null;
+  createStudioWorkspace?: { name: string };
 }
 
 export interface UpdateCrewInput extends Partial<
@@ -165,6 +168,41 @@ export type CrewTaskStatus =
   | "revision_requested"
   | "approved"
   | "cancelled";
+export type CrewTaskKind =
+  | "script"
+  | "gameplay"
+  | "plot_tree"
+  | "art"
+  | "storyboard"
+  | "voice"
+  | "music"
+  | "edit"
+  | "qa"
+  | "other";
+export const CREW_TASK_KINDS: CrewTaskKind[] = [
+  "script",
+  "gameplay",
+  "plot_tree",
+  "art",
+  "storyboard",
+  "voice",
+  "music",
+  "edit",
+  "qa",
+  "other",
+];
+export const CREW_TASK_KIND_MESSAGE_KEYS: Record<CrewTaskKind, string> = {
+  script: "taskKindScript",
+  gameplay: "taskKindGameplay",
+  plot_tree: "taskKindPlotTree",
+  art: "taskKindArt",
+  storyboard: "taskKindStoryboard",
+  voice: "taskKindVoice",
+  music: "taskKindMusic",
+  edit: "taskKindEdit",
+  qa: "taskKindQa",
+  other: "taskKindOther",
+};
 export type CrewTaskPriority = "low" | "normal" | "high" | "urgent";
 export type CrewTaskViewLayout = "list" | "board";
 export type CrewTaskCompletedMode = "all" | "recent" | "hidden";
@@ -263,6 +301,14 @@ export interface CrewTaskViewDTO {
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CrewTaskKindTemplateDTO {
+  id: string;
+  kind: CrewTaskKind;
+  name: string;
+  title: string;
+  description: string;
 }
 
 export interface CrewTaskProjectDTO {
@@ -445,6 +491,7 @@ export interface CrewTaskDTO {
   number: number;
   title: string;
   description: string;
+  taskKind?: CrewTaskKind | null;
   status: CrewTaskStatus;
   workflowStateId: string;
   workflowState: CrewTaskWorkflowStateDTO;
@@ -604,6 +651,7 @@ export interface UpdateCrewTaskInput {
   customFieldValues?: Array<{ fieldId: string; value: CrewTaskCustomValue }>;
   labelIds?: string[];
   workflowStateId?: string;
+  taskKind?: CrewTaskKind | null;
   assignees?: CreateCrewTaskInput["assignees"];
 }
 
@@ -641,6 +689,7 @@ export interface CreateCrewTaskInput {
   blockedByTaskIds?: string[];
   customFieldValues?: Array<{ fieldId: string; value: CrewTaskCustomValue }>;
   labelIds?: string[];
+  taskKind?: CrewTaskKind | null;
   assignees: Array<{
     userId: string;
     currency: "CNY" | "USD";
