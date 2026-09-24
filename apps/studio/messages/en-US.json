@@ -3384,7 +3384,7 @@
         "refresh": "Refresh preview",
         "editStory": "Edit story",
         "unavailableTitle": "The story is not playable yet",
-        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable.",
+        "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Open an error below to find its story node and correct the setting.",
         "stateHud": {
           "title": "Session stats",
           "endings": "Endings: {ids}"

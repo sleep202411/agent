@@ -42,10 +42,6 @@ export function StoryProjectPlaytest({
       source.kind,
       source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
       source.kind === "draft" ? (source.sceneId ?? null) : null,
-      // The freshness token from the canvas turns re-entry without edits into
-      // a cache hit while draft edits or media re-picks compile afresh.
-      source.kind === "draft" ? (source.revision ?? null) : null,
-      source.kind === "draft" ? (source.videoSnapshotHash ?? null) : null,
     ],
     queryFn: async () => {
       return source.kind === "draft"
@@ -58,9 +54,7 @@ export function StoryProjectPlaytest({
             build: await getStoryBuild(projectId, source.buildId),
           };
     },
-    // One retry absorbs a transient network hiccup instead of parking the
-    // creator on the failure screen.
-    retry: 1,
+    retry: false,
   });
 
   const loading = runtimeQuery.isLoading;

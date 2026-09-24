@@ -360,9 +360,11 @@ function StoryCanvasReactFlow({
 export function StoryProjectCanvas({
   projectId,
   requestedChapterId,
+  requestedFocusNodeId,
 }: {
   projectId: string;
   requestedChapterId?: string;
+  requestedFocusNodeId?: string;
 }) {
   // The XYFlow store belongs to the project shell, not to an individual
   // chapter. Chapter projections are swapped inside the mounted shell so a
@@ -373,7 +375,11 @@ export function StoryProjectCanvas({
 
   return (
     <ReactFlowProvider key={scopeKey}>
-      <StoryProjectCanvasInner projectId={projectId} requestedChapterId={requestedChapterId} />
+      <StoryProjectCanvasInner
+        projectId={projectId}
+        requestedChapterId={requestedChapterId}
+        requestedFocusNodeId={requestedFocusNodeId}
+      />
     </ReactFlowProvider>
   );
 }
@@ -381,9 +387,11 @@ export function StoryProjectCanvas({
 function StoryProjectCanvasInner({
   projectId,
   requestedChapterId,
+  requestedFocusNodeId,
 }: {
   projectId: string;
   requestedChapterId?: string;
+  requestedFocusNodeId?: string;
 }) {
   const { user } = useAuth();
   const interfaceLocale = useLocale();
@@ -473,6 +481,7 @@ function StoryProjectCanvasInner({
   const canvasNodesRef = useRef<StoryCanvasNode[]>([]);
   const canvasSectionRef = useRef<HTMLElement>(null);
   const hasFittedInitialCanvasRef = useRef(false);
+  const appliedFocusRef = useRef<string | null>(null);
   const pendingCanvasSelectionRef = useRef<string | null>(null);
   const requestedCanvasFocusRef = useRef<string | null>(null);
   const marqueeSelectionActiveRef = useRef(false);
@@ -1815,6 +1824,33 @@ function StoryProjectCanvasInner({
     }, 80);
     return () => window.clearTimeout(timer);
   }, [canvasNodes.length, fitView]);
+
+  useEffect(() => {
+    if (!requestedFocusNodeId || !resolvedChapterId || contentChapterId !== resolvedChapterId) {
+      return;
+    }
+    const focusKey = `${resolvedChapterId}:${requestedFocusNodeId}`;
+    if (appliedFocusRef.current === focusKey) return;
+    if (!canvasNodes.some((node) => node.id === requestedFocusNodeId)) return;
+    appliedFocusRef.current = focusKey;
+    hasFittedInitialCanvasRef.current = true;
+    setSidePanel(null);
+    selectCanvasNodeExclusively(requestedFocusNodeId);
+    void fitView({
+      nodes: [{ id: requestedFocusNodeId }],
+      padding: 0.45,
+      duration: 450,
+      maxZoom: 0.85,
+    });
+  }, [
+    canvasNodes,
+    contentChapterId,
+    fitView,
+    requestedFocusNodeId,
+    resolvedChapterId,
+    selectCanvasNodeExclusively,
+    setSidePanel,
+  ]);
 
   const closeCreatorMenu = useCallback(() => setCreatorMenu(null), []);
 

@@ -3384,7 +3384,7 @@
         "refresh": "重新整理試玩",
         "editStory": "編輯故事",
         "unavailableTitle": "目前故事還不能試玩",
-        "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。",
+        "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。點擊下方錯誤可定位到對應故事節點並修正設定。",
         "stateHud": {
           "title": "本局數值",
           "endings": "結局：{ids}"

@@ -170,22 +170,11 @@ export class StoryWorkingPreviewService {
     if (!playableDraft.success) {
       const emptySnapshotHash = draftShape.success
         ? storyVideoSnapshotHash(
-            // The playable parse is what rejects duplicate node ids, so the
-            // permissive shape may still carry them; a snapshot may list each
-            // node at most once.
-            [
-              ...new Map(
-                draftShape.data.graph.nodes
-                  .filter((node) => node.kind === 'clip')
-                  .map(
-                    (node) =>
-                      [
-                        node.nodeId,
-                        emptyVideoSnapshotEntry(node.nodeId, 0),
-                      ] as const,
-                  ),
-              ).values(),
-            ],
+            draftShape.data.graph.nodes.flatMap((node) =>
+              node.kind === 'clip'
+                ? [emptyVideoSnapshotEntry(node.nodeId, 0)]
+                : [],
+            ),
           )
         : null;
       return {
