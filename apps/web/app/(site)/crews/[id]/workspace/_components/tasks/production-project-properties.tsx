@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import type { LookupUserDTO } from "@repo/shared/users";
 import {
@@ -89,12 +89,15 @@ export function ProductionProjectProperties({
   const disabled = !overview.capabilities.manage || updateProject.isPending;
 
   const updateProperty = async (
-    input: Omit<UpdateCrewProductionProjectInput, "expectedVersion">
+    input: Omit<UpdateCrewProductionProjectInput, "expectedVersion">,
+    expectedVersion = overview.project.version
   ) => {
     try {
-      await updateProject.mutateAsync({ expectedVersion: overview.project.version, ...input });
+      await updateProject.mutateAsync({ expectedVersion, ...input });
+      return true;
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("properties.saveFailed"));
+      return false;
     }
   };
 
@@ -119,26 +122,28 @@ export function ProductionProjectProperties({
           onChange={(leadMemberId) => void updateProperty({ leadMemberId })}
         />
         <ProjectDatePicker
+          version={overview.project.version}
           kind="start"
           value={overview.project.startDate}
           granularity={overview.project.startDateGranularity}
           boundary={overview.project.targetDate}
           boundaryGranularity={overview.project.targetDateGranularity}
           disabled={disabled}
-          onChange={(startDate, startDateGranularity) =>
-            void updateProperty({ startDate, startDateGranularity })
+          onChange={(startDate, startDateGranularity, version) =>
+            updateProperty({ startDate, startDateGranularity }, version)
           }
         />
         {overview.project.startDate ? <IconArrowRight className="size-3 text-[#5f646d]" /> : null}
         <ProjectDatePicker
+          version={overview.project.version}
           kind="target"
           value={overview.project.targetDate}
           granularity={overview.project.targetDateGranularity}
           boundary={overview.project.startDate}
           boundaryGranularity={overview.project.startDateGranularity}
           disabled={disabled}
-          onChange={(targetDate, targetDateGranularity) =>
-            void updateProperty({ targetDate, targetDateGranularity })
+          onChange={(targetDate, targetDateGranularity, version) =>
+            updateProperty({ targetDate, targetDateGranularity }, version)
           }
         />
         <Link
@@ -343,6 +348,7 @@ function LeadPicker({
 }
 
 function ProjectDatePicker({
+  version,
   kind,
   value,
   granularity,
@@ -351,17 +357,25 @@ function ProjectDatePicker({
   disabled,
   onChange,
 }: {
+  version: number;
   kind: "start" | "target";
   value: string | null;
   granularity: CrewProductionDateGranularity;
   boundary: string | null;
   boundaryGranularity: CrewProductionDateGranularity;
   disabled: boolean;
-  onChange: (value: string | null, granularity: CrewProductionDateGranularity) => void;
+  onChange: (
+    value: string | null,
+    granularity: CrewProductionDateGranularity,
+    version: number
+  ) => Promise<boolean>;
 }) {
   const t = useTranslations("crewProduction");
   const locale = useLocale();
   const [open, setOpen] = useState(false);
+  const [draftVersion, setDraftVersion] = useState(version);
+  const [saving, setSaving] = useState(false);
+  const pending = useRef(false);
   const [activeGranularity, setActiveGranularity] =
     useState<CrewProductionDateGranularity>(granularity);
   const [inputValue, setInputValue] = useState("");
@@ -378,6 +392,18 @@ function ProjectDatePicker({
     "year",
   ];
 
+  const save = async (date: string | null, precision: CrewProductionDateGranularity) => {
+    if (disabled || pending.current) return;
+    pending.current = true;
+    setSaving(true);
+    try {
+      if (await onChange(date, precision, draftVersion)) setOpen(false);
+    } finally {
+      pending.current = false;
+      setSaving(false);
+    }
+  };
+
   const choose = (date: Date, nextGranularity = activeGranularity) => {
     const canonical = canonicalProjectDate(date, nextGranularity);
     if (
@@ -386,15 +412,13 @@ function ProjectDatePicker({
       setInputError(true);
       return;
     }
-    onChange(toDateKey(canonical), nextGranularity);
-    setOpen(false);
+    void save(toDateKey(canonical), nextGranularity);
   };
 
   const submitDirectDate = (event: FormEvent) => {
     event.preventDefault();
     if (!inputValue.trim()) {
-      onChange(null, activeGranularity);
-      setOpen(false);
+      void save(null, activeGranularity);
       return;
     }
     const parsed = parseProjectDateInput(inputValue, activeGranularity);
@@ -409,7 +433,9 @@ function ProjectDatePicker({
     <Popover
       open={open}
       onOpenChange={(nextOpen) => {
+        if (pending.current) return;
         if (nextOpen) {
+          setDraftVersion(version);
           setActiveGranularity(granularity);
           setInputValue(value ? formatProjectDateInput(value, granularity) : "");
           setInputError(false);
@@ -427,77 +453,79 @@ function ProjectDatePicker({
         align="start"
         className="w-[300px] gap-0 overflow-hidden rounded-lg border border-white/[0.1] bg-[#17181c] p-0 shadow-[0_22px_70px_rgba(0,0,0,.58)]"
       >
-        <div className="flex items-center justify-between border-b border-white/[0.07] px-3 py-2 text-[11px] font-medium text-[#c8cbd0]">
-          <span>{label}</span>
-          <kbd className="font-sans font-normal text-[#626872]">Ctrl ⌥ S</kbd>
-        </div>
-        <form onSubmit={submitDirectDate} className="px-3 pt-2.5">
-          <input
-            autoFocus
-            value={inputValue}
-            onChange={(event) => {
-              setInputValue(event.target.value);
-              setInputError(false);
-            }}
-            aria-label={t("properties.dateInput")}
-            aria-invalid={inputError}
-            placeholder={t("properties.dateInputPlaceholder")}
-            className={cn(
-              "h-8 w-full rounded-md border bg-[#111216] px-2.5 text-[12px] text-[#d9dce1] outline-none placeholder:text-[#5f646e] focus:border-[#7b85ff] focus:ring-1 focus:ring-[#7b85ff]/30",
-              inputError ? "border-[#e35d5d]" : "border-white/[0.1]"
-            )}
-          />
-        </form>
-        <div role="tablist" className="flex gap-1 px-3 py-2">
-          {granularities.map((item) => (
-            <button
-              key={item}
-              type="button"
-              role="tab"
-              aria-selected={activeGranularity === item}
-              onClick={() => {
-                setActiveGranularity(item);
-                setInputValue(value ? formatProjectDateInput(value, item) : "");
+        <fieldset disabled={saving || disabled} className="contents">
+          <div className="flex items-center justify-between border-b border-white/[0.07] px-3 py-2 text-[11px] font-medium text-[#c8cbd0]">
+            <span>{label}</span>
+            <kbd className="font-sans font-normal text-[#626872]">Ctrl ⌥ S</kbd>
+          </div>
+          <form onSubmit={submitDirectDate} className="px-3 pt-2.5">
+            <input
+              autoFocus
+              value={inputValue}
+              onChange={(event) => {
+                setInputValue(event.target.value);
                 setInputError(false);
               }}
+              aria-label={t("properties.dateInput")}
+              aria-invalid={inputError}
+              placeholder={t("properties.dateInputPlaceholder")}
               className={cn(
-                "h-6 flex-1 rounded-md px-1 text-[10px] text-[#80858e] transition-colors hover:bg-white/[0.045] hover:text-[#c9ccd2]",
-                activeGranularity === item && "bg-white/[0.07] text-[#e3e5e8]"
+                "h-8 w-full rounded-md border bg-[#111216] px-2.5 text-[12px] text-[#d9dce1] outline-none placeholder:text-[#5f646e] focus:border-[#7b85ff] focus:ring-1 focus:ring-[#7b85ff]/30",
+                inputError ? "border-[#e35d5d]" : "border-white/[0.1]"
               )}
-            >
-              {t(`properties.dateGranularity.${item}`)}
-            </button>
-          ))}
-        </div>
-        {activeGranularity === "day" ? (
-          <Calendar
-            mode="single"
-            locale={calendarLocale}
-            selected={granularity === "day" ? selected : undefined}
-            defaultMonth={selected ?? boundaryDate ?? undefined}
-            disabled={(date) =>
-              !isProjectDateAllowed(date, "day", kind, boundaryDate, boundaryGranularity)
-            }
-            onSelect={(date) => date && choose(date, "day")}
-          />
-        ) : (
-          <ProjectPeriodGrid
-            granularity={activeGranularity}
-            selected={selected}
-            selectedGranularity={granularity}
-            locale={locale}
-            disabled={(date) =>
-              !isProjectDateAllowed(
-                date,
-                activeGranularity,
-                kind,
-                boundaryDate,
-                boundaryGranularity
-              )
-            }
-            onSelect={(date) => choose(date)}
-          />
-        )}
+            />
+          </form>
+          <div role="tablist" className="flex gap-1 px-3 py-2">
+            {granularities.map((item) => (
+              <button
+                key={item}
+                type="button"
+                role="tab"
+                aria-selected={activeGranularity === item}
+                onClick={() => {
+                  setActiveGranularity(item);
+                  setInputValue(value ? formatProjectDateInput(value, item) : "");
+                  setInputError(false);
+                }}
+                className={cn(
+                  "h-6 flex-1 rounded-md px-1 text-[10px] text-[#80858e] transition-colors hover:bg-white/[0.045] hover:text-[#c9ccd2]",
+                  activeGranularity === item && "bg-white/[0.07] text-[#e3e5e8]"
+                )}
+              >
+                {t(`properties.dateGranularity.${item}`)}
+              </button>
+            ))}
+          </div>
+          {activeGranularity === "day" ? (
+            <Calendar
+              mode="single"
+              locale={calendarLocale}
+              selected={granularity === "day" ? selected : undefined}
+              defaultMonth={selected ?? boundaryDate ?? undefined}
+              disabled={(date) =>
+                !isProjectDateAllowed(date, "day", kind, boundaryDate, boundaryGranularity)
+              }
+              onSelect={(date) => date && choose(date, "day")}
+            />
+          ) : (
+            <ProjectPeriodGrid
+              granularity={activeGranularity}
+              selected={selected}
+              selectedGranularity={granularity}
+              locale={locale}
+              disabled={(date) =>
+                !isProjectDateAllowed(
+                  date,
+                  activeGranularity,
+                  kind,
+                  boundaryDate,
+                  boundaryGranularity
+                )
+              }
+              onSelect={(date) => choose(date)}
+            />
+          )}
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
