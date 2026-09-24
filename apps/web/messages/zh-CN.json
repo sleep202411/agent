@@ -9551,6 +9551,14 @@
     "failed": "加入失败，请重试。"
   },
   "tv": {
+    "checkingAccess": "正在查询剧集权限…",
+    "accessUnavailable": "无法加载剧集权限。",
+    "retry": "重试",
+    "unlockScheduled": "可观看时间：{date}",
+    "refreshEpisode": "刷新已解锁剧集",
+    "unlockPackagePrice": "解锁全部剧集：{amount} 社区积分",
+    "unlockEpisodePrice": "解锁本集：{amount} 社区积分",
+    "quickUnlock": "购买 / 解锁",
     "hideDetails": "收起详情",
     "showDetails": "展开详情",
     "roomNumber": "房间号 {number}",

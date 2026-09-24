@@ -134,6 +134,18 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
           where: { id: linked.crewId! },
           include: { ownership: { include: { member: true } } },
         });
+        expect(crew.studioWorkspaceId).toBeTruthy();
+        expect(
+          await db.workspaceMember.findFirst({
+            where: {
+              workspaceId: crew.studioWorkspaceId!,
+              userId: owner,
+              role: 'owner',
+              status: 'active',
+            },
+          }),
+        ).not.toBeNull();
+        expect(crew.productionKind).toBe('series');
         expect(crew.listingStatus).toBe('unlisted');
         expect(crew.listedAt).toBeNull();
         expect(crew.ownership?.member.userId).toBe(owner);
@@ -175,6 +187,128 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
       }
     },
   );
+  it('creates one project for concurrent retries and rejects changed or deleted requests', async () => {
+    const genre = await db.ipTaxonomyTerm.findFirstOrThrow({
+      where: { type: 'genre', status: 'active', archivedAt: null },
+    });
+    const input = {
+      title: 'Retry-safe project',
+      sourceLocale: 'en-US' as const,
+      genreCodes: [genre.code],
+      tagCodes: [],
+      idempotencyKey: randomUUID(),
+    };
+    const user = { userId: owner, levelIds: [13] };
+    const [first, retry] = await Promise.all([
+      ips.createCreatorIp(user, input),
+      ips.createCreatorIp(user, input),
+    ]);
+    try {
+      expect(retry.ip.id).toBe(first.ip.id);
+      expect(await db.crew.count({ where: { createdByUserId: owner } })).toBe(
+        2,
+      );
+      expect(await db.workspace.count({ where: { createdById: owner } })).toBe(
+        1,
+      );
+      await expect(
+        ips.createCreatorIp(user, { ...input, title: 'Changed scope' }),
+      ).rejects.toThrow('different inputs');
+      await db.ip.update({
+        where: { id: first.ip.id },
+        data: { deletedAt: new Date() },
+      });
+      await expect(ips.createCreatorIp(user, input)).rejects.toThrow('deleted');
+      expect(await db.ip.count({ where: { createdById: owner } })).toBe(2);
+    } finally {
+      await db.ip.delete({ where: { id: first.ip.id } });
+      await db.crew.updateMany({
+        where: { createdByUserId: owner },
+        data: { deletedAt: new Date() },
+      });
+    }
+  });
+  it('scopes creation request keys to their creator', async () => {
+    const genre = await db.ipTaxonomyTerm.findFirstOrThrow({
+      where: { type: 'genre', status: 'active', archivedAt: null },
+    });
+    const input = {
+      title: 'Separate creators',
+      sourceLocale: 'en-US' as const,
+      genreCodes: [genre.code],
+      tagCodes: [],
+      idempotencyKey: randomUUID(),
+    };
+    const [a, b] = await Promise.all([
+      ips.createCreatorIp({ userId: owner, levelIds: [] }, input),
+      ips.createCreatorIp({ userId: `other-${owner}`, levelIds: [] }, input),
+    ]);
+    expect(a.ip.id).not.toBe(b.ip.id);
+    await db.ip.deleteMany({ where: { id: { in: [a.ip.id, b.ip.id] } } });
+  });
+  it('uses the selected interactive production type and an authorized existing workspace', async () => {
+    const genre = await db.ipTaxonomyTerm.findFirstOrThrow({
+      where: { type: 'genre', status: 'active', archivedAt: null },
+    });
+    const workspace = await db.workspace.create({
+      data: {
+        name: 'Interactive project',
+        ownerUserId: owner,
+        createdById: owner,
+        members: { create: { userId: owner, role: 'owner' } },
+      },
+    });
+    const result = await ips.createCreatorIp(
+      { userId: owner, levelIds: [13] },
+      {
+        title: 'Interactive IP',
+        sourceLocale: 'en-US',
+        genreCodes: [genre.code],
+        tagCodes: [],
+        productionKind: 'interactive_film',
+        studioWorkspaceId: workspace.id,
+      },
+    );
+    const linked = await origins.own(result.ip.id, { userId: owner });
+    const crew = await db.crew.findUniqueOrThrow({
+      where: { id: linked.crewId! },
+    });
+    expect(crew.productionKind).toBe('interactive_film');
+    expect(crew.studioWorkspaceId).toBe(workspace.id);
+    expect(
+      await db.crewTask.count({
+        where: { crewId: crew.id, taskKind: 'gameplay' },
+      }),
+    ).toBe(1);
+    await db.ip.delete({ where: { id: result.ip.id } });
+    await db.crew.update({
+      where: { id: crew.id },
+      data: { deletedAt: new Date() },
+    });
+  });
+  it('rolls back the IP when its requested workspace is not authorized', async () => {
+    const genre = await db.ipTaxonomyTerm.findFirstOrThrow({
+      where: { type: 'genre', status: 'active', archivedAt: null },
+    });
+    const workspace = await db.workspace.create({
+      data: { name: 'Private', ownerUserId: 'other', createdById: 'other' },
+    });
+    const before = await db.ip.count({ where: { createdById: owner } });
+    await expect(
+      ips.createCreatorIp(
+        { userId: owner, levelIds: [13] },
+        {
+          title: 'Unauthorized setup',
+          sourceLocale: 'en-US',
+          genreCodes: [genre.code],
+          tagCodes: [],
+          studioWorkspaceId: workspace.id,
+        },
+      ),
+    ).rejects.toThrow('Workspace not found');
+    expect(await db.ip.count({ where: { createdById: owner } })).toBe(before);
+    await db.workspace.delete({ where: { id: workspace.id } });
+  });
   it('keeps uncertified IP creation without granting Crew creation', async () => {
     const genre = await db.ipTaxonomyTerm.findFirstOrThrow({
       where: { type: 'genre', status: 'active', archivedAt: null },

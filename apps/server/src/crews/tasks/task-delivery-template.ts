@@ -98,3 +98,20 @@ export function validateProfessionalDelivery(
     answers: input.answers,
   };
 }
+
+/** Do not silently replace the acceptance standard after work has started. */
+export function assertDeliveryTemplateEditable(input: {
+  status: string;
+  hasSubmission: boolean;
+  hasAcceptedCommitment: boolean;
+}) {
+  if (
+    input.status !== 'open' ||
+    input.hasSubmission ||
+    input.hasAcceptedCommitment
+  ) {
+    throw new ConflictException(
+      'Delivery requirements are locked after work starts. Keep the agreed template for this task.',
+    );
+  }
+}

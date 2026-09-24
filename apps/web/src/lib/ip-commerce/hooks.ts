@@ -1,4 +1,11 @@
 "use client";
+
+import {
+  recoverIpCreationIntent,
+  completeIpCreationIntent,
+  type IpCreationIntent,
+} from "./create-ip-intent";
+import { useRef } from "react";
 import { collectIpPages } from "./collect-ip-pages";
 import { useCurrentUser } from "@/src/hooks/use-user";
 
@@ -429,8 +436,23 @@ export function useMyIpCommerceAssets(
 
 export function useCreateIpCommerceIp() {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const request = useRef<{ signature: string; intent: Promise<IpCreationIntent> } | null>(null);
   return useMutation({
-    mutationFn: (input: CreateIpDraftInput) => createIpCommerceIp(input),
+    mutationFn: async (input: CreateIpDraftInput) => {
+      if (input.idempotencyKey) return createIpCommerceIp(input);
+      if (!user?.id) throw new Error("Sign in before creating a project.");
+      const signature = JSON.stringify([user.id, input]);
+      if (request.current?.signature !== signature) {
+        request.current = { signature, intent: recoverIpCreationIntent(String(user.id), input) };
+      }
+      const intent = await request.current.intent;
+      const result = await createIpCommerceIp({ ...input, idempotencyKey: intent.key });
+      completeIpCreationIntent(intent);
+      // Keep the mounted form's identity for repeated clicks, but allow a new
+      // form after confirmed success to represent an intentional new project.
+      return result;
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpsRoot });
     },

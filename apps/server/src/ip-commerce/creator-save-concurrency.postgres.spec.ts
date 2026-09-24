@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { randomUUID } from 'node:crypto';
 import { ConflictException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
@@ -123,7 +124,7 @@ integration(
           release = resolve;
         });
         let reads = 0;
-        const client = db.$extends({
+        const client = extendPrismaQueries(db, {
           query: {
             ip: {
               async findFirst({ args, query }) {

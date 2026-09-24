@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../../common/__tests__/prisma-query-extension';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -109,7 +110,7 @@ integration(
     it('rejects deletion when a final cut commits after the opening read', async () => {
       let openingRead = true;
       // Another editor commits their delivery after deletion has read an empty episode.
-      const concurrentClient = db.$extends({
+      const concurrentClient = extendPrismaQueries(db, {
         query: {
           crewEpisode: {
             async findUnique({ args, query }) {

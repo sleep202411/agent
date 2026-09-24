@@ -1,3 +1,4 @@
+import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
 import { TaskDeliveryTemplateInput } from './task-delivery-template';
 import {
   Body,
@@ -83,6 +84,15 @@ export class CrewTasksController {
     private readonly tasks: CrewTasksService,
     private readonly taskDrafts: CrewTaskDraftService,
   ) {}
+
+  @Post('crew-tasks/:taskId/close')
+  close(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(CloseCrewTaskSchema)) body: CloseCrewTaskInput,
+  ) {
+    return this.tasks.close(parseIdParam(taskId, 'taskId'), user.userId, body);
+  }
 
   @Get('crew-task-center')
   taskCenter(

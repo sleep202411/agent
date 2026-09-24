@@ -76,6 +76,7 @@ export class CrewEarningsService {
       {
         userId,
         currency: query.currency,
+        ...(query.crewId ? { crewId: query.crewId } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.sourceType ? { sourceType: query.sourceType } : {}),
       },

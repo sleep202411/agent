@@ -542,6 +542,7 @@ export interface CreateIpPurchaseInput {
 }
 
 export interface CreateIpDraftInput {
+  idempotencyKey?: string;
   title: string;
   summary?: string;
   genreCodes: string[];

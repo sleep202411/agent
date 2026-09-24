@@ -235,7 +235,10 @@ const PositionBaseSchema = z.object({
     .optional(),
 });
 
-export const CreatePositionSchema = PositionBaseSchema.refine(
+export const CreatePositionSchema = PositionBaseSchema.extend({
+  taskId: z.string().uuid().optional(),
+  recruitmentVisibility: z.enum(['public', 'private']).optional(),
+}).refine(
   (p) =>
     p.workMode === 'remote' || (p.location != null && p.location.length > 0),
   {
@@ -279,6 +282,9 @@ function commaSeparatedEnum<const T extends readonly [string, ...string[]]>(
 }
 
 export const ListPublicPositionsQuerySchema = z.object({
+  q: z.string().trim().min(1).max(120).optional(),
+  crewId: z.string().trim().min(1).max(100).optional(),
+  skill: z.string().trim().min(1).max(80).optional(),
   limit: z.coerce.number().int().min(1).max(60).default(36),
   cursor: z
     .string()
@@ -607,6 +613,15 @@ export interface CrewTaskDraft {
   questions: string[];
 }
 
+export const CloseCrewTaskSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    expectedVersion: z.number().int().positive(),
+    reason: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+export type CloseCrewTaskInput = z.infer<typeof CloseCrewTaskSchema>;
+
 export const UpdateCrewTaskSchema = z
   .object({
     expectedVersion: z.number().int().positive(),
@@ -768,12 +783,22 @@ export const ReviewCrewTaskSchema = z
   .object({
     expectedSubmissionId: z.string().uuid(),
     decision: z.enum(['approve', 'request_revision']),
+    revisionDueAt: z.string().datetime({ offset: true }).optional(),
     note: z.string().trim().max(5000).default(''),
   })
   .refine((input) => input.decision === 'approve' || input.note.length > 0, {
     path: ['note'],
     message: 'Revision instructions are required when requesting changes',
-  });
+  })
+  .refine(
+    (input) =>
+      input.revisionDueAt === undefined ||
+      input.decision === 'request_revision',
+    {
+      path: ['revisionDueAt'],
+      message: 'Only a revision request can extend the deadline.',
+    },
+  );
 export type ReviewCrewTaskInput = z.infer<typeof ReviewCrewTaskSchema>;
 
 export const CreateCrewTaskKindTemplateSchema = z

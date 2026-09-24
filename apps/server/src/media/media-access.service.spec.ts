@@ -47,12 +47,16 @@ function allowCrewAssetAccess() {
 }
 
 describe('MediaAccessService', () => {
-  it.each(['user-1', 'user-2', null])(
-    'rejects receipt media access for %s before canvas or visibility grants',
-    async (userId) => {
+  it.each(
+    ['crew_expense_receipt', 'crew_dispute_evidence'].flatMap((uploadKind) =>
+      ['user-1', 'user-2', null].map((userId) => ({ uploadKind, userId })),
+    ),
+  )(
+    'rejects $uploadKind access for $userId before canvas or visibility grants',
+    async ({ userId, uploadKind }) => {
       const asset = readyAsset({
         visibility: MediaAssetVisibility.public,
-        metadata: { uploadKind: 'crew_expense_receipt', draftId: 'draft' },
+        metadata: { uploadKind, draftId: 'draft' },
       });
       const prisma = {
         mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
@@ -81,29 +85,30 @@ describe('MediaAccessService', () => {
     },
   );
 
-  it('rejects generic administrator receipt access before signing', async () => {
-    const prisma = {
-      mediaAsset: {
-        findFirst: jest
-          .fn()
-          .mockResolvedValue(
-            readyAsset({ metadata: { uploadKind: 'crew_expense_receipt' } }),
-          ),
-      },
-    };
-    const storage = { createReadUrl: jest.fn() };
-    const service = new MediaAccessService(
-      prisma as never,
-      storage as never,
-      {} as never,
-      allowCrewAssetAccess() as never,
-      {} as never,
-    );
-    await expect(
-      service.issueAdminAccessUrl('receipt', { variantKey: 'original' }),
-    ).rejects.toThrow(ForbiddenException);
-    expect(storage.createReadUrl).not.toHaveBeenCalled();
-  });
+  it.each(['crew_expense_receipt', 'crew_dispute_evidence'])(
+    'rejects generic administrator %s access before signing',
+    async (uploadKind) => {
+      const prisma = {
+        mediaAsset: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue(readyAsset({ metadata: { uploadKind } })),
+        },
+      };
+      const storage = { createReadUrl: jest.fn() };
+      const service = new MediaAccessService(
+        prisma as never,
+        storage as never,
+        {} as never,
+        allowCrewAssetAccess() as never,
+        {} as never,
+      );
+      await expect(
+        service.issueAdminAccessUrl('receipt', { variantKey: 'original' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(storage.createReadUrl).not.toHaveBeenCalled();
+    },
+  );
 
   it('issues an access URL for the owner', async () => {
     const prisma = {

@@ -11,6 +11,12 @@ import { TvApp } from "./tv-app";
 vi.mock("@/app/(site)/ip-studio/_components/new-ip-create-form", () => ({
   NewIpCreateDialog: () => null,
 }));
+vi.mock("@/components/payment/community-recharge-dialog", () => ({
+  CommunityRechargeDialog: () => null,
+}));
+vi.mock("@/components/payment/community-membership-dialog", () => ({
+  CommunityMembershipDialog: () => null,
+}));
 vi.mock("./tv-right-rail", () => ({ TvRightRail: () => null }));
 vi.mock("@/components/auth/auth-dialog-provider", () => ({
   useAuthDialog: () => ({ open: vi.fn() }),

@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -117,7 +118,7 @@ integration(
     );
     it('rolls back moderation when the report update fails', async () => {
       const before = await snapshot();
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           ipContentReport: {
             update() {

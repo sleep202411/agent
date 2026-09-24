@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
@@ -162,7 +163,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
     ).not.toBeNull();
   });
   it('rolls back a new credit when its item marker fails', async () => {
-    const failing = db.$extends({
+    const failing = extendPrismaQueries(db, {
       query: {
         referralRewardItem: {
           updateMany() {
@@ -225,7 +226,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
         where: { id: itemId },
         data: { payoutType, currency: payoutType === 'cash' ? 'USD' : null },
       });
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           walletTransaction: {
             create() {
@@ -245,7 +246,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
   );
   it('retries a unique marker race through recorded credit instead of assuming the bundle completed', async () => {
     let failures = 0;
-    const client = db.$extends({
+    const client = extendPrismaQueries(db, {
       query: {
         referralRewardItem: {
           updateMany({ args, query }) {
@@ -270,7 +271,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
     ).not.toBeNull();
   });
   it('propagates persistent unique failures without claiming the item was granted', async () => {
-    const client = db.$extends({
+    const client = extendPrismaQueries(db, {
       query: {
         walletTransaction: {
           create() {
@@ -338,7 +339,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
       await makeAccruedBundle();
       const before = await bundleSnapshot();
       let markers = 0;
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           referralRewardItem: {
             updateMany({ args, query }) {
@@ -374,7 +375,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
     const ready = new Promise<void>((r) => (entered = r));
     const gate = new Promise<void>((r) => (release = r));
     let once = true;
-    const delayed = db.$extends({
+    const delayed = extendPrismaQueries(db, {
       query: {
         referralRewardItem: {
           async updateMany({ args, query }) {
@@ -415,7 +416,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
       const ready = new Promise<void>((r) => (entered = r));
       const gate = new Promise<void>((r) => (release = r));
       let once = true;
-      const delayed = db.$extends({
+      const delayed = extendPrismaQueries(db, {
         query: {
           referralRewardItem: {
             async updateMany({ args, query }) {
@@ -502,7 +503,7 @@ integration('Referral wallet recovery (owned PostgreSQL)', () => {
       const third = await db.referralRewardItem.findFirstOrThrow({
         where: { rewardId, rank: 2 },
       });
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           referralRewardItem: {
             updateMany({ args, query }) {

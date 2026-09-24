@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, type Prisma } from '@prisma/client';
@@ -200,7 +201,7 @@ const url =
       const bothReady = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const concurrentDb = db.$extends({
+      const concurrentDb = extendPrismaQueries(db, {
         query: {
           walletAccount: {
             async createMany({ args, query }) {

@@ -188,6 +188,7 @@ function build() {
         .fn()
         .mockResolvedValue([{ id: 'crew-member-1', userId: ASSIGNEE_ID }]),
     },
+    crewPosition: { findMany: jest.fn().mockResolvedValue([]) },
     crewTaskAssignee: {
       deleteMany: jest.fn(),
       update: jest.fn(),
@@ -471,6 +472,7 @@ describe('CrewTasksService', () => {
         {
           id: 'page-end',
           status: 'open',
+          deadlineRisk: null,
           workflowState: {
             semantic: 'open',
             name: 'Planning',

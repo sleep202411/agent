@@ -27,6 +27,7 @@ interface SyncCall {
 function build() {
   const applicationRow = {
     id: APPLICATION_ID,
+    termsVersion: 0,
     crewId: CREW_ID,
     positionId: POSITION_ID,
     applicantId: APPLICANT,
@@ -44,16 +45,26 @@ function build() {
   };
 
   const tx = {
+    crewApplicationInterviewEvent: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     crewApplication: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUniqueOrThrow: jest.fn().mockResolvedValue(applicationRow),
     },
     crewMember: {
       create: jest.fn().mockResolvedValue({ id: 'member-applicant' }),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     crewMemberPosition: { create: jest.fn().mockResolvedValue({}) },
+    crewPosition: {
+      findUniqueOrThrow: jest
+        .fn()
+        .mockResolvedValue({ experienceLevel: 'any', requiredSkills: [] }),
+    },
     crewAuthorizationEvent: { create: jest.fn().mockResolvedValue({}) },
     $queryRaw: jest.fn().mockResolvedValue([{ id: POSITION_ID }]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
   };
 
   const prisma = {
@@ -71,6 +82,8 @@ function build() {
           positionType: 'animator',
           targetCount: 2,
           recruitedCount: 0,
+          experienceLevel: 'any',
+          requiredSkills: [],
         },
       }),
     },
@@ -144,6 +157,40 @@ function build() {
 }
 
 describe('ApplicationsService.approve — approval is a chat join', () => {
+  it('adds a secondary role to an active member without duplicating access or join messages', async () => {
+    const t = build();
+    t.tx.crewMember.findFirst.mockResolvedValue({
+      id: 'existing',
+      status: 'active',
+      positions: [],
+    });
+    await t.service.approve(APPLICATION_ID, OWNER);
+    expect(t.tx.crewMember.create).not.toHaveBeenCalled();
+    expect(t.tx.crewMemberPosition.create).toHaveBeenCalledWith({
+      data: {
+        crewId: CREW_ID,
+        memberId: 'existing',
+        categoryKey: 'animator',
+        isPrimary: false,
+        sourcePositionId: POSITION_ID,
+      },
+    });
+    expect(t.syncCalls).toEqual([]);
+    expect(t.systemCalls).toEqual([]);
+    expect(t.collaboration.addCrewMemberAccess).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { id: 'existing', status: 'suspended', positions: [] },
+    { id: 'existing', status: 'active', positions: [{ id: 'already-held' }] },
+  ])('rejects unavailable or duplicate role membership', async (member) => {
+    const t = build();
+    t.tx.crewMember.findFirst.mockResolvedValue(member);
+    await expect(
+      t.service.approve(APPLICATION_ID, OWNER),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(t.tx.crewMemberPosition.create).not.toHaveBeenCalled();
+  });
   it('syncs the applicant into the chat inside the approval transaction', async () => {
     const t = build();
 

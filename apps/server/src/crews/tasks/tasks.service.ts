@@ -1,3 +1,11 @@
+import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
+import { assertRecruitedTaskAssignees } from '../task-recruitment';
+import { assertDeliveryTemplateEditable } from './task-delivery-template';
+import {
+  overdueTaskPredicate,
+  revisionDeadline,
+  taskDeadlineRisk,
+} from './task-deadline';
 import { isDeepStrictEqual } from 'node:util';
 import {
   readTaskDeliveryTemplate,
@@ -1643,12 +1651,18 @@ export class CrewTasksService {
       },
     });
     const more = rows.length > query.limit;
+    const evaluatedAt = new Date();
     const items = rows
       .slice(0, query.limit)
       .map(({ workflowState, ...task }) => ({
         ...task,
         workflowState,
         status: workflowState.semantic,
+        deadlineRisk: taskDeadlineRisk(
+          workflowState.semantic,
+          task.dueAt,
+          evaluatedAt,
+        ),
       }));
     return { items, nextCursor: more ? items.at(-1)!.id : null };
   }
@@ -1784,7 +1798,8 @@ export class CrewTasksService {
 
   async summary(crewId: string, userId: string) {
     await this.authorization.require(crewId, userId, 'tasks.view');
-    const [statusGroups, myActive] = await Promise.all([
+    const overdueWhere = { crewId, deletedAt: null, ...overdueTaskPredicate() };
+    const [statusGroups, myActive, overdue, myOverdue] = await Promise.all([
       this.prisma.crewTaskWorkflowState.findMany({
         where: { crewId },
         select: {
@@ -1804,6 +1819,10 @@ export class CrewTasksService {
           assignees: { some: { userId } },
         },
       }),
+      this.prisma.crewTask.count({ where: overdueWhere }),
+      this.prisma.crewTask.count({
+        where: { ...overdueWhere, assignees: { some: { userId } } },
+      }),
     ]);
     const byStatus = Object.fromEntries(
       Object.values(CrewTaskStatus).map((status) => [status, 0]),
@@ -1819,6 +1838,8 @@ export class CrewTasksService {
         byStatus.submitted +
         byStatus.revision_requested,
       myActive,
+      overdue,
+      myOverdue,
       pendingReview: byStatus.submitted,
       completed: byStatus.approved,
       byStatus,
@@ -2061,12 +2082,45 @@ export class CrewTasksService {
     return this.toDtoWithUsage(task);
   }
 
-  async update(taskId: string, userId: string, input: UpdateCrewTaskInput) {
+  async close(taskId: string, userId: string, raw: CloseCrewTaskInput) {
+    const input = CloseCrewTaskSchema.parse(raw);
+    const task = await this.requireTask(taskId);
+    await this.authorization.require(task.crewId, userId, 'tasks.manage');
+    const state =
+      task.workflowState.semantic === CrewTaskStatus.cancelled
+        ? task.workflowState
+        : await this.prisma.crewTaskWorkflowState.findFirst({
+            where: {
+              crewId: task.crewId,
+              semantic: CrewTaskStatus.cancelled,
+              archived: false,
+            },
+            orderBy: { id: 'asc' },
+          });
+    if (!state)
+      throw new ConflictException(
+        'An active cancellation workflow column is required.',
+      );
+    return this.update(
+      taskId,
+      userId,
+      { expectedVersion: input.expectedVersion, workflowStateId: state.id },
+      input,
+    );
+  }
+
+  async update(
+    taskId: string,
+    userId: string,
+    input: UpdateCrewTaskInput,
+    closure?: CloseCrewTaskInput,
+  ) {
     const current = await this.requireTask(taskId);
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
     if (
-      current.workflowState.semantic === CrewTaskStatus.approved ||
-      current.workflowState.semantic === CrewTaskStatus.cancelled
+      !closure &&
+      (current.workflowState.semantic === CrewTaskStatus.approved ||
+        current.workflowState.semantic === CrewTaskStatus.cancelled)
     ) {
       throw new ConflictException({
         message: 'Completed or cancelled tasks cannot be edited.',
@@ -2093,6 +2147,29 @@ export class CrewTasksService {
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-update:${taskId}`})::bigint)
       `;
         const locked = await this.requireActiveTaskTx(tx, taskId);
+        if (closure) {
+          const retry = await tx.crewTaskTimelineItem.findFirst({
+            where: {
+              taskId,
+              kind: 'task.updated',
+              payload: {
+                path: ['closure', 'requestId'],
+                equals: closure.requestId,
+              },
+            },
+          });
+          if (retry) {
+            const payload = retry.payload as Record<string, unknown>;
+            if (
+              retry.actorUserId !== userId ||
+              !isDeepStrictEqual(payload.closure, closure)
+            )
+              throw new ConflictException(
+                'The closure request ID was already used with different details.',
+              );
+            return locked;
+          }
+        }
         // Membership projections and canvas metadata share the document writer's
         // project boundary. Acquire it before changing either projection.
         if (
@@ -2145,6 +2222,14 @@ export class CrewTasksService {
               },
             })
           : null;
+        if (
+          closure &&
+          nextWorkflowState?.semantic !== CrewTaskStatus.cancelled
+        ) {
+          throw new ConflictException(
+            'The cancellation workflow column changed. Refresh and retry.',
+          );
+        }
         if (input.workflowStateId && !nextWorkflowState) {
           throw new BadRequestException({
             message: 'The selected workflow column is unavailable.',
@@ -2213,6 +2298,7 @@ export class CrewTasksService {
         const addedAssigneeIds: string[] = [];
         const removedAssigneeIds: string[] = [];
         if (uniqueAssigneeIds) {
+          await assertRecruitedTaskAssignees(tx, taskId, input.assignees!);
           const crewMembers = await tx.crewMember.findMany({
             where: {
               crewId: locked.crewId,
@@ -2520,6 +2606,12 @@ export class CrewTasksService {
           changedFields,
           addedAssigneeUserIds: addedAssigneeIds,
           removedAssigneeUserIds: removedAssigneeIds,
+          ...(closure
+            ? {
+                closure,
+                closureOutcome: 'cancelled_without_financial_settlement',
+              }
+            : {}),
         });
 
         for (const assigneeId of addedAssigneeIds) {
@@ -3081,6 +3173,15 @@ export class CrewTasksService {
           throw new ConflictException(
             'The task is not accepting delivery-template changes.',
           );
+        const acceptedCommitment = await tx.crewTaskCommitment.findFirst({
+          where: { taskId, acceptedAt: { not: null } },
+          select: { id: true },
+        });
+        assertDeliveryTemplateEditable({
+          status: current.workflowState.semantic,
+          hasSubmission: current.submissions.length > 0,
+          hasAcceptedCommitment: Boolean(acceptedCommitment),
+        });
         const before = await readTaskDeliveryTemplate(tx, taskId);
         if (input.category) {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:delivery-catalog:${input.category.id}`},0))`;
@@ -3427,6 +3528,15 @@ export class CrewTasksService {
         }
         const now = new Date();
         const approved = input.decision === 'approve';
+        if (approved && input.revisionDueAt !== undefined)
+          throw new BadRequestException(
+            'Only a revision request can extend the deadline.',
+          );
+        const nextDueAt = revisionDeadline(
+          locked.dueAt,
+          input.revisionDueAt,
+          now,
+        );
         if (
           !approved &&
           locked.revisionLimit != null &&
@@ -3510,6 +3620,7 @@ export class CrewTasksService {
                 workflowStateId: targetWorkflowState.id,
                 submittedAt: null,
                 revisionRoundsUsed: { increment: 1 },
+                ...(nextDueAt ? { dueAt: nextDueAt } : {}),
                 version: { increment: 1 },
               },
           include: taskInclude,
@@ -3523,6 +3634,14 @@ export class CrewTasksService {
             submissionId: latest.id,
             versionNumber: latest.versionNumber,
             note: input.note,
+            ...(nextDueAt
+              ? {
+                  deadlineChange: {
+                    from: locked.dueAt?.toISOString() ?? null,
+                    to: nextDueAt.toISOString(),
+                  },
+                }
+              : {}),
             revisionRound: approved ? undefined : locked.revisionRoundsUsed + 1,
             revisionLimit: locked.revisionLimit,
             productionVersionId: productionVersion?.id,
@@ -4574,16 +4693,7 @@ function taskViewWhere(
     });
   }
   if (filters.unassigned) clauses.push({ assignees: { none: {} } });
-  if (filters.overdue) {
-    clauses.push({
-      dueAt: { lt: new Date() },
-      workflowState: {
-        semantic: {
-          notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
-        },
-      },
-    });
-  }
+  if (filters.overdue) clauses.push(overdueTaskPredicate());
   return {
     crewId,
     ...(clauses.length ? { AND: clauses } : {}),
@@ -4678,6 +4788,7 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     priority: task.priority,
     startAt: task.startAt?.toISOString() ?? null,
     dueAt: task.dueAt?.toISOString() ?? null,
+    deadlineRisk: taskDeadlineRisk(task.workflowState.semantic, task.dueAt),
     estimatePoints: task.estimatePoints,
     computeBudgetPoints: task.computeBudgetPoints,
     computeUsedPoints,
