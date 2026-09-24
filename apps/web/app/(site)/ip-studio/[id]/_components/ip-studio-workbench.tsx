@@ -2181,11 +2181,11 @@ function PriceScheduleFields({
   );
 }
 
-function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
-  const { data, isLoading, error, refetch } = useMyIpContributors(ip.id);
+export function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
+  const { data, isLoading, isFetching, error, refetch } = useMyIpContributors(ip.id);
   const [addOpen, setAddOpen] = useState(false);
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
         <div className="flex items-center gap-2 rounded-xl bg-card p-6 text-sm text-muted-foreground ring-1 ring-border/65">
@@ -2196,7 +2196,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
         <div className="rounded-xl bg-card p-6 ring-1 ring-border/65">
@@ -2208,6 +2208,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
             variant="outline"
             size="sm"
             className="mt-3"
+            disabled={isFetching}
             onClick={() => void refetch()}
           >
             <IconRefresh className="size-4" />
@@ -2223,6 +2224,15 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
 
   return (
     <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
+      {error ? (
+        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+          <p>{errorMessage(error) || t("membersPanel.loadFailed")}</p>
+          <Button type="button" variant="outline" size="sm" disabled={isFetching}
+            onClick={() => void refetch()}>
+            {t("membersPanel.retry")}
+          </Button>
+        </div>
+      ) : null}
       <div className="space-y-4">
         <AccessControlPanel ip={ip} contributors={data.contributors} t={t} locale={locale} />
 
@@ -2796,13 +2806,13 @@ export function MemberRow({
   const remove = useDeleteIpCommerceContributor();
   const linked = Boolean(contributor.userId);
   const [shareText, setShareText] = useState(bpsToPercentText(contributor.revenueShareBps));
-  // Re-sync the local input when the server value changes (e.g. after a refetch
-  // following another row's edit) using React's "adjust state during render"
-  // pattern, which avoids an effect + cascading render.
+  const [shareDirty, setShareDirty] = useState(false);
+  const sharePending = useRef(false);
+  // Refresh untouched inputs without replacing an unsaved percentage draft.
   const [syncedBps, setSyncedBps] = useState(contributor.revenueShareBps);
   if (syncedBps !== contributor.revenueShareBps) {
     setSyncedBps(contributor.revenueShareBps);
-    setShareText(bpsToPercentText(contributor.revenueShareBps));
+    if (!shareDirty) setShareText(bpsToPercentText(contributor.revenueShareBps));
   }
 
   const roleLabel = contributor.customRole?.trim()
@@ -2812,28 +2822,34 @@ export function MemberRow({
   const eligibleSumExcludingThis = sumEligibleBps(contributors, contributor.id);
 
   const commitShare = async () => {
+    if (sharePending.current || update.isPending || remove.isPending) return;
     const nextBps = percentTextToBps(shareText);
     if (nextBps === undefined) {
       toast.error(t("membersPanel.invalidShare"));
       return;
     }
-    if (nextBps === contributor.revenueShareBps) return;
+    if (nextBps === contributor.revenueShareBps) {
+      setShareDirty(false);
+      return;
+    }
     // Client guard: eligible totals must stay <= 100%.
     if (contributor.revenueEligible && eligibleSumExcludingThis + (nextBps ?? 0) > BPS_FULL) {
       toast.error(t("membersPanel.overAllocated"));
-      setShareText(bpsToPercentText(contributor.revenueShareBps));
       return;
     }
+    sharePending.current = true;
     try {
       await update.mutateAsync({
         ipId: ip.id,
         contributorId: contributor.id,
         revenueShareBps: nextBps,
       });
+      setShareDirty(false);
       toast.success(t("membersPanel.toasts.updated"));
     } catch (err) {
-      setShareText(bpsToPercentText(contributor.revenueShareBps));
       toast.error(errorMessage(err) || t("membersPanel.toasts.updateFailed"));
+    } finally {
+      sharePending.current = false;
     }
   };
 
@@ -2895,7 +2911,10 @@ export function MemberRow({
       </Button>
       <Input
         value={shareText}
-        onChange={(event) => setShareText(event.target.value)}
+        onChange={(event) => {
+          setShareDirty(true);
+          setShareText(event.target.value);
+        }}
         onBlur={() => void commitShare()}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
@@ -2992,91 +3011,98 @@ export function AddMemberDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!create.isPending) onOpenChange(next);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t("membersPanel.addTitle")}</DialogTitle>
           <DialogDescription>{t("membersPanel.addBody")}</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <FieldGroup>
-            <Field>
-              <FieldLabel required>{t("membersPanel.displayNameLabel")}</FieldLabel>
-              <Input
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value.slice(0, 120))}
-                placeholder={t("membersPanel.displayNamePlaceholder")}
-                maxLength={120}
-              />
-            </Field>
-
-            <div className="grid gap-4 sm:grid-cols-2">
+          <fieldset disabled={create.isPending} className="min-w-0">
+            <FieldGroup>
               <Field>
-                <FieldLabel>{t("membersPanel.roleLabel")}</FieldLabel>
-                <Select value={role} onValueChange={(value) => setRole(value as IpContributorRole)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CONTRIBUTOR_ROLE_OPTIONS.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {t(`roles.${value}`)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel>{t("membersPanel.customRoleLabel")}</FieldLabel>
+                <FieldLabel required>{t("membersPanel.displayNameLabel")}</FieldLabel>
                 <Input
-                  value={customRole}
-                  onChange={(event) => setCustomRole(event.target.value.slice(0, 80))}
-                  placeholder={t("membersPanel.customRolePlaceholder")}
-                  maxLength={80}
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value.slice(0, 120))}
+                  placeholder={t("membersPanel.displayNamePlaceholder")}
+                  maxLength={120}
                 />
               </Field>
-            </div>
 
-            <Field>
-              <FieldLabel>{t("membersPanel.linkUserLabel")}</FieldLabel>
-              <UserSearchPicker
-                t={t}
-                selectedUser={linkedUser}
-                onSelect={pickUser}
-                onClear={unlink}
-                placeholder={t("membersPanel.linkUserPlaceholder")}
-                selectedLabel={(user) => t("membersPanel.lookupFound", { name: user.name })}
-                description={t("membersPanel.eligibleHint")}
-              />
-            </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel>{t("membersPanel.roleLabel")}</FieldLabel>
+                  <Select value={role} onValueChange={(value) => setRole(value as IpContributorRole)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONTRIBUTOR_ROLE_OPTIONS.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {t(`roles.${value}`)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field>
+                  <FieldLabel>{t("membersPanel.customRoleLabel")}</FieldLabel>
+                  <Input
+                    value={customRole}
+                    onChange={(event) => setCustomRole(event.target.value.slice(0, 80))}
+                    placeholder={t("membersPanel.customRolePlaceholder")}
+                    maxLength={80}
+                  />
+                </Field>
+              </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
-              <label
-                className={cn(
-                  "inline-flex items-center gap-2 text-sm",
-                  linkedUser ? "text-foreground" : "cursor-not-allowed text-muted-foreground"
-                )}
-                title={linkedUser ? undefined : t("membersPanel.cannotEarn")}
-              >
-                <input
-                  type="checkbox"
-                  checked={eligible}
-                  disabled={!linkedUser}
-                  onChange={(event) => setEligible(event.target.checked)}
-                  className="size-4 accent-primary"
+              <Field>
+                <FieldLabel>{t("membersPanel.linkUserLabel")}</FieldLabel>
+                <UserSearchPicker
+                  t={t}
+                  selectedUser={linkedUser}
+                  onSelect={pickUser}
+                  onClear={unlink}
+                  placeholder={t("membersPanel.linkUserPlaceholder")}
+                  selectedLabel={(user) => t("membersPanel.lookupFound", { name: user.name })}
+                  description={t("membersPanel.eligibleHint")}
                 />
-                {t("membersPanel.eligible")}
-              </label>
-              <Input
-                value={shareText}
-                onChange={(event) => setShareText(event.target.value)}
-                disabled={!linkedUser || !eligible}
-                placeholder={t("membersPanel.sharePlaceholder")}
-                aria-label={t("membersPanel.shareAriaLabel")}
-                className="h-9 w-24"
-              />
-            </div>
-          </FieldGroup>
+              </Field>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
+                <label
+                  className={cn(
+                    "inline-flex items-center gap-2 text-sm",
+                    linkedUser ? "text-foreground" : "cursor-not-allowed text-muted-foreground"
+                  )}
+                  title={linkedUser ? undefined : t("membersPanel.cannotEarn")}
+                >
+                  <input
+                    type="checkbox"
+                    checked={eligible}
+                    disabled={!linkedUser}
+                    onChange={(event) => setEligible(event.target.checked)}
+                    className="size-4 accent-primary"
+                  />
+                  {t("membersPanel.eligible")}
+                </label>
+                <Input
+                  value={shareText}
+                  onChange={(event) => setShareText(event.target.value)}
+                  disabled={!linkedUser || !eligible}
+                  placeholder={t("membersPanel.sharePlaceholder")}
+                  aria-label={t("membersPanel.shareAriaLabel")}
+                  className="h-9 w-24"
+                />
+              </div>
+            </FieldGroup>
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button
