@@ -3383,20 +3383,14 @@
         "retry": "重試",
         "refresh": "重新整理試玩",
         "editStory": "編輯故事",
+        "locateNode": "在畫布中定位此節點",
+        "booleanEffectError": "「{node}」的選項「{choice}」第 {effect} 條效果：變數「{variable}」是布林值，不能使用「增加」。若要記錄是否發生，請改用「設為」並選擇「是」或「否」；若要累計次數，請將變數改為數字類型。",
         "unavailableTitle": "目前故事還不能試玩",
-        "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。點擊下方錯誤可定位到對應故事節點並修正設定。",
+        "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。點擊附有定位入口的錯誤，可在畫布中找到對應節點並修正設定。",
         "stateHud": {
           "title": "本局數值",
           "endings": "結局：{ids}"
         }
-      },
-      "catalog": {
-        "eyebrow": "故事試玩",
-        "title": "選擇起始場景",
-        "description": "從任意場景開始試玩——測試後面的分支不必從頭走一遍。",
-        "sceneLabel": "場景 {index}",
-        "sceneAria": "從場景 {index} 開始：{title}",
-        "entryBadge": "入口"
       },
       "previewFromScene": "從此場景開始試玩",
       "readOnly": "唯讀",

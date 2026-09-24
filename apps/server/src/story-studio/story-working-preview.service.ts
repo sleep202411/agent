@@ -183,15 +183,102 @@ export class StoryWorkingPreviewService {
           draft.contentHash,
           emptySnapshotHash,
         ),
-        diagnostics: playableDraft.error.issues.map((issue) =>
-          previewDiagnostic(
+        diagnostics: playableDraft.error.issues.map((issue) => {
+          const nodeIndex =
+            issue.path[0] === 'graph' &&
+            issue.path[1] === 'nodes' &&
+            typeof issue.path[2] === 'number'
+              ? issue.path[2]
+              : null;
+          const node =
+            draftShape.success && nodeIndex !== null
+              ? draftShape.data.graph.nodes[nodeIndex]
+              : undefined;
+          const choiceIndex =
+            issue.path[3] === 'exit' &&
+            issue.path[4] === 'choices' &&
+            typeof issue.path[5] === 'number'
+              ? issue.path[5]
+              : null;
+          const choice =
+            node?.exit.kind === 'choice' && choiceIndex !== null
+              ? node.exit.choices[choiceIndex]
+              : undefined;
+          const effectIndex =
+            choice &&
+            issue.path[6] === 'effects' &&
+            typeof issue.path[7] === 'number'
+              ? issue.path[7]
+              : null;
+          const effect =
+            effectIndex !== null ? choice?.effects?.[effectIndex] : undefined;
+          const variable =
+            effect && draftShape.success
+              ? draftShape.data.storyBible.stateVariables?.find(
+                  (candidate) => candidate.key === effect.key,
+                )
+              : undefined;
+          const nodeTitle = node
+            ? node.kind === 'decision'
+              ? localizedDraftText(
+                  node.exit.kind === 'choice' ? node.exit.prompt : {},
+                  project.defaultLocale,
+                ) || node.nodeId
+              : node.name || node.nodeId
+            : null;
+          const choiceLabel = choice
+            ? localizedDraftText(choice.label, project.defaultLocale) ||
+              choice.choiceId
+            : null;
+          const variableName = variable
+            ? localizedDraftText(variable.name, project.defaultLocale) ||
+              variable.key
+            : null;
+          const location = [
+            nodeTitle,
+            choiceLabel ? `choice ${choiceIndex! + 1} "${choiceLabel}"` : null,
+            effectIndex !== null
+              ? `effect ${effectIndex + 1}${variableName ? ` "${variableName}"` : ''}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          const diagnostic = previewDiagnostic(
             'error',
-            'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
-            `${issue.path.join('.') || 'draft'}: Complete this field before playtesting.`,
-            'revision',
-            projectId,
-          ),
-        ),
+            effect && variable
+              ? 'STORY_WORKING_PREVIEW_EFFECT_TYPE_MISMATCH'
+              : 'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
+            `${location || issue.path.join('.') || 'draft'}: ${issue.message}`,
+            node ? 'node' : 'revision',
+            node?.nodeId ?? projectId,
+          );
+          if (node) {
+            const chapter = chapters.find(
+              (candidate) =>
+                Array.isArray(candidate.nodeIds) &&
+                candidate.nodeIds.includes(node.nodeId),
+            );
+            if (chapter) diagnostic.chapterId = chapter.id;
+          }
+          if (
+            nodeTitle &&
+            variable &&
+            variableName &&
+            effect &&
+            effectIndex !== null
+          ) {
+            diagnostic.details = {
+              kind: 'state-effect-type',
+              nodeTitle,
+              choiceLabel,
+              effectIndex: effectIndex + 1,
+              variableName,
+              operation: effect.kind,
+              variableType: variable.valueType,
+            };
+          }
+          return diagnostic;
+        }),
       };
     }
 
@@ -587,4 +674,17 @@ function previewDiagnostic(
   entityId: string | null,
 ): StoryBuildDiagnosticDto {
   return { severity, code, message, entityType, entityId };
+}
+
+function localizedDraftText(
+  value: Record<string, string>,
+  locale: string,
+): string {
+  return (
+    value[locale]?.trim() ||
+    Object.values(value)
+      .find((text) => text.trim())
+      ?.trim() ||
+    ''
+  );
 }

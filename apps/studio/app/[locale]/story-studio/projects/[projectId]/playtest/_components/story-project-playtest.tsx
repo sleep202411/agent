@@ -41,7 +41,6 @@ export function StoryProjectPlaytest({
       projectId,
       source.kind,
       source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
-      source.kind === "draft" ? (source.sceneId ?? null) : null,
     ],
     queryFn: async () => {
       return source.kind === "draft"
@@ -95,6 +94,7 @@ export function StoryProjectPlaytest({
     return (
       <PlaytestFailure
         projectId={projectId}
+        chapterId={source.kind === "draft" ? source.chapterId : undefined}
         message={t("unavailableDescription", {
           errors: errors.length,
           warnings: warnings.length,
@@ -199,11 +199,13 @@ function PlaytestLoading() {
 
 function PlaytestFailure({
   projectId,
+  chapterId,
   message,
   diagnostics = [],
   onRetry,
 }: {
   projectId: string;
+  chapterId?: string;
   message: string;
   diagnostics?: StoryBuildDiagnostic[];
   onRetry?: () => void;
@@ -217,15 +219,54 @@ function PlaytestFailure({
         <p className="mt-2 text-sm leading-6 text-white/54">{message}</p>
         {diagnostics.length > 0 ? (
           <ul className="mt-6 max-h-[48vh] space-y-2 overflow-y-auto">
-            {diagnostics.map((diagnostic, index) => (
-              <li
-                key={`${diagnostic.code}:${diagnostic.entityId ?? "project"}:${index}`}
-                className="rounded-2xl bg-black/28 px-4 py-3"
-              >
-                <p className="text-[10px] font-semibold text-white/42">{diagnostic.code}</p>
-                <p className="mt-1 text-xs leading-5 text-white/68">{diagnostic.message}</p>
-              </li>
-            ))}
+            {diagnostics.map((diagnostic, index) => {
+              const details = diagnostic.details;
+              const description =
+                details?.kind === "state-effect-type" &&
+                details.operation === "add" &&
+                details.variableType === "boolean" &&
+                details.choiceLabel
+                  ? t("booleanEffectError", {
+                      node: details.nodeTitle,
+                      choice: details.choiceLabel,
+                      effect: details.effectIndex,
+                      variable: details.variableName,
+                    })
+                  : diagnostic.message;
+              const content = (
+                <>
+                  <p className="text-[10px] font-semibold text-white/42">{diagnostic.code}</p>
+                  <p className="mt-1 text-xs leading-5 text-white/78">{description}</p>
+                  {diagnostic.entityType === "node" && diagnostic.entityId ? (
+                    <p className="mt-2 text-xs font-semibold text-brand-blue">
+                      {t("locateNode")} →
+                    </p>
+                  ) : null}
+                </>
+              );
+              const key = `${diagnostic.code}:${diagnostic.entityId ?? "project"}:${index}`;
+              if (diagnostic.entityType === "node" && diagnostic.entityId) {
+                const params = new URLSearchParams();
+                const targetChapterId = diagnostic.chapterId ?? chapterId;
+                if (targetChapterId) params.set("chapter", targetChapterId);
+                params.set("focus", diagnostic.entityId);
+                return (
+                  <li key={key}>
+                    <Link
+                      href={`/story-studio/projects/${encodeURIComponent(projectId)}/canvas?${params}`}
+                      className="block rounded-2xl bg-black/28 px-4 py-3 transition hover:bg-white/[0.09] focus-visible:outline-2 focus-visible:outline-brand-blue"
+                    >
+                      {content}
+                    </Link>
+                  </li>
+                );
+              }
+              return (
+                <li key={key} className="rounded-2xl bg-black/28 px-4 py-3">
+                  {content}
+                </li>
+              );
+            })}
           </ul>
         ) : null}
         <div className="mt-7 flex flex-wrap gap-2">

@@ -20,6 +20,7 @@ import {
   Position,
   ReactFlowProvider,
   useEdgesState,
+  useNodesInitialized,
   useNodesState,
   useReactFlow,
   useStore,
@@ -399,6 +400,7 @@ function StoryProjectCanvasInner({
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
   const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
+  const nodesInitialized = useNodesInitialized();
   const queryClient = useQueryClient();
   const { openPreviewFromScene } = useStoryPreviewNavigation(projectId);
   const previewFromScene = useCallback(
@@ -1826,7 +1828,12 @@ function StoryProjectCanvasInner({
   }, [canvasNodes.length, fitView]);
 
   useEffect(() => {
-    if (!requestedFocusNodeId || !resolvedChapterId || contentChapterId !== resolvedChapterId) {
+    if (
+      !requestedFocusNodeId ||
+      !resolvedChapterId ||
+      contentChapterId !== resolvedChapterId ||
+      !nodesInitialized
+    ) {
       return;
     }
     const focusKey = `${resolvedChapterId}:${requestedFocusNodeId}`;
@@ -1846,6 +1853,7 @@ function StoryProjectCanvasInner({
     canvasNodes,
     contentChapterId,
     fitView,
+    nodesInitialized,
     requestedFocusNodeId,
     resolvedChapterId,
     selectCanvasNodeExclusively,
