@@ -129,11 +129,32 @@ describe("StoryEffectsEditor", () => {
   it("disables the kind select for boolean variables", async () => {
     await renderEditor([{ kind: "set", key: "flag", value: true }], [FLAG]);
     expect(kindTrigger(0).disabled).toBe(true);
+    expect(kindTrigger(0).getAttribute("aria-invalid")).toBeNull();
   });
 
   it("lets an old numeric effect be repaired after its variable becomes boolean", async () => {
     await renderEditor([{ kind: "add", key: "flag", amount: 1 }], [FLAG]);
     expect(kindTrigger(0).disabled).toBe(false);
+    expect(kindTrigger(0).getAttribute("aria-invalid")).toBe("true");
+    expect(container.textContent).toContain("booleanEffectInvalid");
+
+    const scrollIntoView = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    try {
+      await act(async () => {
+        kindTrigger(0).focus();
+        kindTrigger(0).dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      });
+      const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
+      expect(options.map((option) => option.textContent)).toEqual(["effectAdd", "effectSet"]);
+      expect(options[0]?.getAttribute("data-disabled")).toBe("");
+      await act(async () => options[1]?.click());
+      expect(effects).toEqual([{ kind: "set", key: "flag", value: true }]);
+      expect(container.textContent).not.toContain("booleanEffectInvalid");
+    } finally {
+      if (scrollIntoView) HTMLElement.prototype.scrollIntoView = scrollIntoView;
+      else delete (HTMLElement.prototype as { scrollIntoView?: () => void }).scrollIntoView;
+    }
   });
 });
 

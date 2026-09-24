@@ -3851,6 +3851,7 @@
         "effectAdd": "增加",
         "effectSubtract": "扣减",
         "effectSet": "设为",
+        "booleanEffectInvalid": "布尔变量不能增加或扣减。请将效果改为“设为”，并选择“是”或“否”。",
         "addEffect": "添加效果",
         "removeEffect": "删除效果",
         "visibleWhenTitle": "显示条件",

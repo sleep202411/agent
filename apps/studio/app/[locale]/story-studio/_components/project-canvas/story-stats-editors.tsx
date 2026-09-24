@@ -395,6 +395,7 @@ export function StoryEffectsEditor({
       <div className={table ? "flex flex-col" : "space-y-1.5"}>
         {effects.map((effect, index) => {
           const variable = variables.find((candidate) => candidate.key === effect.key);
+          const invalidBooleanAdd = variable?.valueType === "boolean" && effect.kind === "add";
           return (
             <div
               key={`${effect.key}:${index}`}
@@ -424,6 +425,7 @@ export function StoryEffectsEditor({
               <StatsSelect
                 value={storyEffectKindOption(effect)}
                 disabled={!canEdit || (variable?.valueType === "boolean" && effect.kind === "set")}
+                invalid={invalidBooleanAdd}
                 flush={table}
                 onChange={(kind) =>
                   onChange(
@@ -438,13 +440,26 @@ export function StoryEffectsEditor({
                     )
                   )
                 }
-                options={[
-                  { value: "add", label: t("effectAdd") },
-                  ...(variable?.valueType !== "boolean"
-                    ? [{ value: "subtract", label: t("effectSubtract") }]
-                    : []),
-                  { value: "set", label: t("effectSet") },
-                ]}
+                options={
+                  variable?.valueType === "boolean"
+                    ? [
+                        ...(invalidBooleanAdd
+                          ? [
+                              {
+                                value: storyEffectKindOption(effect),
+                                label: t(effect.amount < 0 ? "effectSubtract" : "effectAdd"),
+                                disabled: true,
+                              },
+                            ]
+                          : []),
+                        { value: "set", label: t("effectSet") },
+                      ]
+                    : [
+                        { value: "add", label: t("effectAdd") },
+                        { value: "subtract", label: t("effectSubtract") },
+                        { value: "set", label: t("effectSet") },
+                      ]
+                }
               />
               <EffectValueField
                 effect={effect}
@@ -464,6 +479,11 @@ export function StoryEffectsEditor({
               >
                 <IconTrash className="size-3.5" />
               </button>
+              {invalidBooleanAdd ? (
+                <p className="col-span-4 pb-2 text-xs text-destructive">
+                  {t("booleanEffectInvalid")}
+                </p>
+              ) : null}
             </div>
           );
         })}
@@ -1172,20 +1192,23 @@ function CompareValueField({
 function StatsSelect({
   value,
   disabled,
+  invalid,
   onChange,
   options,
   flush,
 }: {
   value: string;
   disabled: boolean;
+  invalid?: boolean;
   onChange: (value: string) => void;
-  options: ReadonlyArray<{ value: string; label: string }>;
+  options: ReadonlyArray<{ value: string; label: string; disabled?: boolean }>;
   flush?: boolean;
 }) {
   return (
     <Select value={value} disabled={disabled} onValueChange={onChange}>
       <SelectTrigger
         size="sm"
+        aria-invalid={invalid || undefined}
         className={cn("nodrag nopan nowheel w-full", !flush && "mt-1 h-8 px-2.5 text-xs")}
         onKeyDown={(event) => event.stopPropagation()}
       >
@@ -1193,7 +1216,7 @@ function StatsSelect({
       </SelectTrigger>
       <SelectContent>
         {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
+          <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </SelectItem>
         ))}

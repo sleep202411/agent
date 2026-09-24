@@ -3851,6 +3851,7 @@
         "effectAdd": "Add",
         "effectSubtract": "Subtract",
         "effectSet": "Set",
+        "booleanEffectInvalid": "This yes/no variable cannot be increased or decreased. Change the effect to Set and choose Yes or No.",
         "addEffect": "Add effect",
         "removeEffect": "Remove effect",
         "visibleWhenTitle": "Visibility",

@@ -3851,6 +3851,7 @@
         "effectAdd": "增加",
         "effectSubtract": "扣減",
         "effectSet": "設為",
+        "booleanEffectInvalid": "布林變數不能增加或扣減。請將效果改為「設為」，並選擇「是」或「否」。",
         "addEffect": "新增效果",
         "removeEffect": "刪除效果",
         "visibleWhenTitle": "顯示條件",
