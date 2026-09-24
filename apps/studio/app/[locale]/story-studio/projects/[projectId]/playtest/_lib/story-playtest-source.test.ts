@@ -24,4 +24,16 @@ describe("Story playtest source", () => {
   it("drops a blank scene param instead of an empty string", () => {
     expect(parseStoryPlaytestSource({ node: "  " })).toEqual({ kind: "draft" });
   });
+
+  it("carries the saved-revision freshness token", () => {
+    expect(parseStoryPlaytestSource({ rev: "12", vsh: "a".repeat(64) })).toEqual({
+      kind: "draft",
+      revision: 12,
+      videoSnapshotHash: "a".repeat(64),
+    });
+  });
+
+  it("ignores a non-numeric revision instead of caching on NaN", () => {
+    expect(parseStoryPlaytestSource({ rev: "latest" })).toEqual({ kind: "draft" });
+  });
 });

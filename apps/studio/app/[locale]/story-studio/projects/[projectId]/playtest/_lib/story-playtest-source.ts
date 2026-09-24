@@ -6,15 +6,35 @@
  *
  * `nodeId` narrows the walk further: the author picked one scene to start
  * from, so the subgraph flows downstream from it instead of the chapter entry.
+ *
+ * `revision` and `videoSnapshotHash` form the freshness token the canvas had
+ * just saved when navigation started. The playtest keys its runtime query by
+ * them, so unchanged round trips reuse the compiled preview while draft edits
+ * or media re-picks compile afresh.
  */
 export type StoryProjectPlaytestSource =
-  | { kind: "draft"; chapterId?: string; nodeId?: string }
-  | { kind: "build"; buildId: string; chapterId?: undefined; nodeId?: undefined };
+  | {
+      kind: "draft";
+      chapterId?: string;
+      nodeId?: string;
+      revision?: number;
+      videoSnapshotHash?: string;
+    }
+  | {
+      kind: "build";
+      buildId: string;
+      chapterId?: undefined;
+      nodeId?: undefined;
+      revision?: undefined;
+      videoSnapshotHash?: undefined;
+    };
 
 export type StoryPlaytestSearchParams = {
   buildId?: string | string[];
   chapter?: string | string[];
   node?: string | string[];
+  rev?: string | string[];
+  vsh?: string | string[];
 };
 
 export function parseStoryPlaytestSource(
@@ -26,10 +46,15 @@ export function parseStoryPlaytestSource(
   if (buildId) return { kind: "build", buildId };
   const chapterId = firstQueryValue(query.chapter)?.trim();
   const nodeId = firstQueryValue(query.node)?.trim();
+  const revisionValue = firstQueryValue(query.rev)?.trim();
+  const revision = revisionValue ? Number.parseInt(revisionValue, 10) : undefined;
+  const videoSnapshotHash = firstQueryValue(query.vsh)?.trim();
   return {
     kind: "draft",
     ...(chapterId ? { chapterId } : {}),
     ...(nodeId ? { nodeId } : {}),
+    ...(Number.isFinite(revision) && revision !== undefined && revision > 0 ? { revision } : {}),
+    ...(videoSnapshotHash ? { videoSnapshotHash } : {}),
   };
 }
 

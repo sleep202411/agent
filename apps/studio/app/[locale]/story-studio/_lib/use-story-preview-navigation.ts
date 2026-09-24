@@ -7,6 +7,16 @@ import { useRouter } from "@/i18n/navigation";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
+export interface StoryPreviewTarget {
+  /** Scene to start the walk at; omit for the chapter/story entry. */
+  nodeId?: string;
+  /**
+   * Chapter to walk. Defaults to the chapter the canvas is editing — callers
+   * that know better (a batch scoped to one chapter) pass their own.
+   */
+  chapterId?: string;
+}
+
 /**
  * Entering the preview, from wherever it is offered (header button, stepper).
  *
@@ -15,37 +25,50 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
  * — otherwise the creator walks a story that is one autosave behind what they
  * just edited. On the other steps it degrades to normal navigation.
  *
- * `openPreviewFromNode` walks the same path but starts at one chosen scene,
- * so a late branch can be tested without replaying everything before it.
+ * The barrier hands back the revision it persisted, which travels in the URL
+ * (`?rev=`) beside the video snapshot hash: the playtest query is keyed by
+ * both, so walking back and forth without edits is served from cache while
+ * draft edits or media re-picks compile afresh.
  */
 export function useStoryPreviewNavigation(projectId: string): {
-  openPreview: () => Promise<void>;
-  openPreviewFromNode: (nodeId: string) => Promise<void>;
+  openPreview: (target?: StoryPreviewTarget) => Promise<void>;
+  openPreviewFromNode: (
+    nodeId: string,
+    target?: Omit<StoryPreviewTarget, "nodeId">
+  ) => Promise<void>;
   pending: boolean;
 } {
   const t = useTranslations("storyStudio.canvas");
   const router = useRouter();
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
+  const liveDraft = useStoryProjectUiStore((state) => state.liveDraft);
   const [pending, setPending] = useState(false);
 
   const open = useCallback(
-    async (nodeId?: string) => {
+    async (target?: StoryPreviewTarget) => {
       if (pending) return;
       setPending(true);
       try {
-        const navigate = () => {
+        const chapterId = target?.chapterId ?? activeChapterId;
+        const navigate = (draftRevision?: number) => {
           const params = new URLSearchParams();
-          if (activeChapterId) params.set("chapter", activeChapterId);
-          if (nodeId) params.set("node", nodeId);
-          const chapterQuery = params.size > 0 ? `?${params.toString()}` : "";
-          router.push(
-            `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
-          );
+          if (chapterId) params.set("chapter", chapterId);
+          if (target?.nodeId) params.set("node", target.nodeId);
+          if (typeof draftRevision === "number" && draftRevision > 0) {
+            params.set("rev", String(draftRevision));
+          }
+          // Media re-picks do not bump the draft revision, so the video
+          // snapshot hash completes the freshness token.
+          if (liveDraft?.videoSnapshotHash) {
+            params.set("vsh", liveDraft.videoSnapshotHash);
+          }
+          const query = params.size > 0 ? `?${params.toString()}` : "";
+          router.push(`/story-studio/projects/${encodeURIComponent(projectId)}/playtest${query}`);
         };
         if (draftBarrier) {
-          await draftBarrier(async () => {
-            navigate();
+          await draftBarrier(async (draftRevision) => {
+            navigate(draftRevision);
             return null;
           });
         } else {
@@ -57,11 +80,14 @@ export function useStoryPreviewNavigation(projectId: string): {
         setPending(false);
       }
     },
-    [activeChapterId, draftBarrier, pending, projectId, router, t]
+    [activeChapterId, draftBarrier, liveDraft, pending, projectId, router, t]
   );
 
-  const openPreview = useCallback(() => open(), [open]);
-  const openPreviewFromNode = useCallback((nodeId: string) => open(nodeId), [open]);
+  const openPreview = useCallback((target?: StoryPreviewTarget) => open(target), [open]);
+  const openPreviewFromNode = useCallback(
+    (nodeId: string, target?: Omit<StoryPreviewTarget, "nodeId">) => open({ ...target, nodeId }),
+    [open]
+  );
 
   return { openPreview, openPreviewFromNode, pending };
 }

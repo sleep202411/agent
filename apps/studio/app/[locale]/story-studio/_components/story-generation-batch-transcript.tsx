@@ -17,8 +17,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
-import Link from "next/link";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useState } from "react";
 import { ComputeRechargeDialog } from "@/app/_components/compute-recharge-dialog";
 import type { AgentOsStoryGenerationBatchArtifactReference } from "@/components/agent-os/agent-os-timeline";
@@ -40,6 +39,7 @@ import {
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
+import { useStoryPreviewNavigation } from "../_lib/use-story-preview-navigation";
 
 const ACTIVE_BATCH_STATUSES = new Set(["queued", "running", "cancelling"]);
 const CANCELLABLE_BATCH_STATUSES = new Set([
@@ -59,10 +59,12 @@ export function StoryGenerationBatchTranscript({
 }) {
   const t = useTranslations("storyStudio.generationBatchTranscript");
   const tGenerationError = useTranslations("studioModes.error");
-  const locale = useLocale();
   const queryClient = useQueryClient();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const { storyProjectId, storyChapterId, generationBatchId } = reference;
+  // Play through the shared preview navigation so the save barrier runs first;
+  // a bare link would walk a story one autosave behind the batch it offers.
+  const previewNavigation = useStoryPreviewNavigation(storyProjectId);
   const batchKey = useMemo(
     () => storyProductionKeys.batch(storyProjectId, storyChapterId, generationBatchId),
     [generationBatchId, storyChapterId, storyProjectId]
@@ -361,13 +363,14 @@ export function StoryGenerationBatchTranscript({
         </p>
       ) : null}
       {compactMobile && targetKind === "storyboard_clip" && batch.status === "completed" ? (
-        <Button asChild type="button" className="mt-3 w-full">
-          <Link
-            href={`/${locale}/story-studio/projects/${storyProjectId}/playtest?chapter=${storyChapterId}`}
-          >
-            <IconPlayerPlay aria-hidden="true" />
-            {t("mobileStoryboard.play")}
-          </Link>
+        <Button
+          type="button"
+          className="mt-3 w-full"
+          loading={previewNavigation.pending}
+          onClick={() => void previewNavigation.openPreview({ chapterId: storyChapterId })}
+        >
+          <IconPlayerPlay aria-hidden="true" />
+          {t("mobileStoryboard.play")}
         </Button>
       ) : null}
       {cancelMutation.isError ? (

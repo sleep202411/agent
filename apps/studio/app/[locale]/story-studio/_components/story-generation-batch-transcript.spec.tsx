@@ -34,6 +34,15 @@ vi.mock("next/image", () => ({
   default: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} />,
 }));
 
+const previewNavigation = vi.hoisted(() => ({
+  openPreview: vi.fn(),
+  openPreviewFromNode: vi.fn(),
+}));
+
+vi.mock("../_lib/use-story-preview-navigation", () => ({
+  useStoryPreviewNavigation: () => ({ ...previewNavigation, pending: false }),
+}));
+
 vi.mock("@/lib/story-production-api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/story-production-api")>();
   return {
@@ -437,7 +446,19 @@ describe("StoryGenerationBatchTranscript", () => {
     expect(container.querySelectorAll("[data-generation-item]")).toHaveLength(2);
     expect(container.textContent).toContain("The awakening");
     expect(container.textContent).toContain("mobileStoryboard.play");
-    expect(container.querySelector("a")?.getAttribute("href")).toContain("/playtest?chapter=");
+    // The play button routes through the preview navigation (save barrier
+    // included) scoped to the batch's chapter, not a bare link.
+    const play = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("mobileStoryboard.play")
+    );
+    if (!play) throw new Error("play button missing");
+    await act(async () => {
+      play.click();
+      await Promise.resolve();
+    });
+    expect(previewNavigation.openPreview).toHaveBeenCalledWith({
+      chapterId: expect.any(String),
+    });
   });
 });
 
