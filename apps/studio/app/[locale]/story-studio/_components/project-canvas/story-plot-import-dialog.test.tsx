@@ -67,7 +67,7 @@ describe("plot import dialog", () => {
     document.body.append(container);
     root = createRoot(container);
     await render();
-    await act(async () => button("Import JSON").click());
+    await act(async () => button("Import Plot Tree").click());
   });
   afterEach(async () => {
     await act(async () => root.unmount());
@@ -110,7 +110,7 @@ describe("plot import dialog", () => {
     await act(async () => button("Import plot tree").click());
     await settle();
     expect(onImport).toHaveBeenCalledWith(expect.any(Object), "replace");
-    await act(async () => button("Import JSON").click());
+    await act(async () => button("Import Plot Tree").click());
     expect(document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
   });
   it("omits replacement for an empty chapter", () => {
@@ -171,7 +171,7 @@ describe("plot import dialog", () => {
       })
     );
     await act(async () => button("Cancel").click());
-    await act(async () => button("Import JSON").click());
+    await act(async () => button("Import Plot Tree").click());
     await act(async () => finish(valid));
     expect(button("Import plot tree").disabled).toBe(true);
     expect(onImport).not.toHaveBeenCalled();

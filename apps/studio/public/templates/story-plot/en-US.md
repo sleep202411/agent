@@ -1,6 +1,6 @@
 # FizzDragon plot tree — instructions for your AI
 
-Send this file together with your screenplay and your creative requirements to your AI tool. Ask it to return `plot.json`, then use **Import JSON** in the FizzDragon plot tree. One file imports into the current chapter. By default, it adds a separate group which you can connect manually. Select “Replace the current chapter’s plot tree” to replace that chapter’s nodes and connections. In replacement mode or an empty chapter, `entryNodeId` becomes the start. Existing chapter assets are kept; assets in this file are added.
+Send this file together with your screenplay and your creative requirements to your AI tool. Ask it to return `plot.json`, then use **Import Plot Tree** in the FizzDragon plot tree. One file imports into the current chapter. By default, it adds a separate group which you can connect manually. Select “Replace the current chapter’s plot tree” to replace that chapter’s nodes and connections. In replacement mode or an empty chapter, `entryNodeId` becomes the start. Existing chapter assets are kept; assets in this file are added.
 
 ## Task
 

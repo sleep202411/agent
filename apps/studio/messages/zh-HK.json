@@ -3914,7 +3914,7 @@
         "chat": "對話"
       },
       "plotImport": {
-        "title": "匯入 JSON",
+        "title": "匯入情節樹",
         "description": "將其他 AI 工具生成的情節 JSON，直接匯入為可編輯的情節樹，並寫入狀態、資產和分鏡提示詞。",
         "download": "下載 AI 範本",
         "choose": "選擇 JSON 檔案",
