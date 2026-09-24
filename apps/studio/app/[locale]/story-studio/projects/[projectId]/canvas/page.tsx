@@ -11,16 +11,9 @@ export default async function StoryProjectCanvasPage({
   searchParams,
 }: {
   params: Promise<{ projectId: string }>;
-  searchParams: Promise<{ chapter?: string | string[]; focus?: string | string[] }>;
+  searchParams: Promise<{ chapter?: string | string[] }>;
 }) {
   const [{ projectId }, query] = await Promise.all([params, searchParams]);
   const requestedChapterId = typeof query.chapter === "string" ? query.chapter : undefined;
-  const requestedFocusNodeId = typeof query.focus === "string" ? query.focus : undefined;
-  return (
-    <StoryProjectCanvas
-      projectId={projectId}
-      requestedChapterId={requestedChapterId}
-      requestedFocusNodeId={requestedFocusNodeId}
-    />
-  );
+  return <StoryProjectCanvas projectId={projectId} requestedChapterId={requestedChapterId} />;
 }

@@ -3354,8 +3354,7 @@
         },
         "failure": {
           "title": "目前版本未提交",
-          "description": "請處理下方問題，然後重新提交。",
-          "locateScene": "定位場景"
+          "description": "請處理下方問題，然後重新提交。"
         },
         "offline": {
           "action": "下線",
@@ -3378,7 +3377,6 @@
         "pageTitle": "故事試玩 · 影遊工作室",
         "pageDescription": "使用正式玩家執行環境試玩精確儲存的私人草稿或不可變構建。",
         "draftRevision": "草稿 r{revision}",
-        "fromChosenScene": "從所選場景開始",
         "loading": "正在準備試玩…",
         "errorFallback": "無法載入試玩。",
         "buildNumber": "構建 {number}",
@@ -3387,14 +3385,10 @@
         "editStory": "編輯故事",
         "unavailableTitle": "目前故事還不能試玩",
         "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，畫布仍可隨時修改。",
-        "locateScene": "定位場景",
         "stateHud": {
           "title": "本局數值",
           "endings": "結局：{ids}"
         }
-      },
-      "validation": {
-        "nodeIssues": "{count} 個阻塞問題"
       },
       "readOnly": "唯讀",
       "addNode": "新增故事節點",
@@ -3803,7 +3797,6 @@
       "inspector": {
         "eyebrow": "節點檢查器",
         "close": "關閉節點檢查器",
-        "previewFromScene": "從此場景開始試玩",
         "chapterTransitions": {
           "title": "前往其他章節",
           "continueHint": "選擇本場景結束後進入的章節開場。",

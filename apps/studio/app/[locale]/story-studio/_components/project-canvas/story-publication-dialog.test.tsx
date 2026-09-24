@@ -4,7 +4,6 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
 import { StoryPublicationDialog } from "./story-publication-dialog";
 import type { StoryPublicationState } from "./use-story-publication";
 
@@ -44,7 +43,6 @@ const messages = {
         failure: {
           title: "This version was not submitted",
           description: "Resolve the issue below, then try again.",
-          locateScene: "Locate scene",
         },
       },
     },
@@ -86,7 +84,6 @@ describe("StoryPublicationDialog", () => {
         phase: "preparing",
         code: "PREPARE_FAILED",
         message: "Add a current video to the entrance clip.",
-        issues: [],
       },
       { onRetry }
     );
@@ -94,44 +91,6 @@ describe("StoryPublicationDialog", () => {
     expect(document.body.textContent).toContain("Add a current video to the entrance clip.");
     await click(buttonByText("Try again"));
     expect(onRetry).toHaveBeenCalledOnce();
-  });
-
-  it("lists blocking issues and closes onto the offending scene on locate", async () => {
-    const onClose = vi.fn();
-    useStoryProjectUiStore.setState({ canvasFocusRequest: null, canvasFocusSequence: 0 });
-    await renderDialog(
-      {
-        status: "failed",
-        phase: "preparing",
-        code: "PREPARE_FAILED",
-        message: "Chapter Build build-1 is not ready for review.",
-        issues: [
-          {
-            code: "STORY_BUILD_WORLD_NOT_READY",
-            message: "Scene scene.entry world is still building.",
-            nodeId: "scene.entry",
-          },
-          {
-            code: "STORY_BUILD_TIMELINE_DUPLICATE",
-            message: "Timeline repeats.",
-            nodeId: null,
-          },
-        ],
-      },
-      { onClose }
-    );
-
-    expect(document.body.textContent).toContain("STORY_BUILD_WORLD_NOT_READY");
-    expect(document.body.textContent).toContain("Timeline repeats.");
-    const locateButtons = [...document.querySelectorAll("button")].filter(
-      (button) => button.textContent?.trim() === "Locate scene"
-    );
-    expect(locateButtons).toHaveLength(1);
-    await click(locateButtons[0] as HTMLButtonElement);
-    expect(onClose).toHaveBeenCalledOnce();
-    expect(useStoryProjectUiStore.getState().canvasFocusRequest).toMatchObject({
-      nodeId: "scene.entry",
-    });
   });
 
   it("cannot be dismissed while publication is active", async () => {

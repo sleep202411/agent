@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -92,7 +91,6 @@ export class StoryWorkingPreviewService {
     user: AuthUser,
     projectId: string,
     chapterId?: string,
-    nodeId?: string,
   ): Promise<StoryWorkingPreviewDto> {
     const access = await this.permissions.requireProject(
       user.userId,
@@ -101,13 +99,7 @@ export class StoryWorkingPreviewService {
     );
     return this.prisma.$transaction(
       (tx) =>
-        this.compileLatestSavedDraft(
-          tx,
-          access.project,
-          projectId,
-          chapterId,
-          nodeId,
-        ),
+        this.compileLatestSavedDraft(tx, access.project, projectId, chapterId),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
@@ -125,7 +117,6 @@ export class StoryWorkingPreviewService {
     },
     projectId: string,
     chapterId: string | undefined,
-    nodeId: string | undefined,
   ): Promise<StoryWorkingPreviewDto> {
     const [draft, chapters] = [
       await tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
@@ -203,16 +194,15 @@ export class StoryWorkingPreviewService {
           draft.contentHash,
           emptySnapshotHash,
         ),
-        diagnostics: playableDraft.error.issues.map((issue) => {
-          const nodeId = draftIncompleteNodeId(issue.path, draft.content);
-          return previewDiagnostic(
+        diagnostics: playableDraft.error.issues.map((issue) =>
+          previewDiagnostic(
             'error',
             'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
             `${issue.path.join('.') || 'draft'}: Complete this field before playtesting.`,
-            nodeId ? 'clip' : 'revision',
-            nodeId ?? projectId,
-          );
-        }),
+            'revision',
+            projectId,
+          ),
+        ),
       };
     }
 
@@ -289,28 +279,11 @@ export class StoryWorkingPreviewService {
         message: 'The selected Story chapter was not found.',
       });
     }
-    // Starting at a chosen scene outranks the chapter entry: the author picked
-    // exactly where the walk should begin, so the subgraph flows downstream
-    // from there even when it crosses into later chapters.
-    if (
-      nodeId &&
-      !playableDraft.data.graph.nodes.some((node) => node.nodeId === nodeId)
-    ) {
-      throw new BadRequestException({
-        code: 'STORY_WORKING_PREVIEW_NODE_NOT_FOUND',
-        message: 'The selected scene was not found in the saved draft.',
-        nodeId,
-      });
-    }
-    const nodeScope: StoryBuildScope | null = nodeId
-      ? { kind: 'subgraph', entryNodeId: nodeId }
-      : null;
     const chapterScope: StoryBuildScope | null = chapter?.entryNodeId
       ? { kind: 'subgraph', entryNodeId: chapter.entryNodeId }
       : null;
 
-    const scope: StoryBuildScope = nodeScope ??
-      chapterScope ?? { kind: 'full' };
+    const scope: StoryBuildScope = chapterScope ?? { kind: 'full' };
     const metadata = {
       title: project.title,
       summary: project.summary?.trim() || playableDraft.data.storyBible.logline,
@@ -615,30 +588,6 @@ function emptyWorkingPreview(
     pathReport: null,
     sources: [],
   };
-}
-
-/**
- * Zod reports gameplay-readiness failures against array indexes
- * (`graph.nodes.3.exit...`), which no surface can locate. Resolve the index
- * back to the node's stable id from the saved content so a diagnostic can be
- * pinned to the scene that caused it.
- */
-function draftIncompleteNodeId(
-  path: readonly PropertyKey[],
-  content: unknown,
-): string | null {
-  if (
-    path[0] !== 'graph' ||
-    path[1] !== 'nodes' ||
-    typeof path[2] !== 'number'
-  ) {
-    return null;
-  }
-  const node = (content as { graph?: { nodes?: unknown[] } }).graph?.nodes?.[
-    path[2]
-  ] as { nodeId?: unknown } | undefined;
-  const nodeId = node?.nodeId;
-  return typeof nodeId === 'string' ? nodeId : null;
 }
 
 function previewDiagnostic(

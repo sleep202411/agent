@@ -199,91 +199,6 @@ describe('StoryWorkingPreviewService', () => {
     expect(repeated.runtime?.buildId).toBe(chapter.runtime?.buildId);
   });
 
-  it('starts the walk at a chosen scene and drops everything upstream of it', async () => {
-    const draft = buildInteractiveFilmTestBundle().draftContent;
-    const { service } = scopedService(draft);
-
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      PROJECT_ID,
-      undefined,
-      'clip:S05A',
-    );
-    const whole = await service.getWorkingPreview(USER as never, PROJECT_ID);
-
-    const runtime = ExperienceRuntimeManifestSchema.parse(preview.runtime);
-    expect(runtime.graph.entrySceneId).toBe('clip:S05A');
-    // The story entry is upstream of the chosen scene, so it must not be
-    // playable in this walk even though it exists in the draft.
-    expect(
-      runtime.graph.nodes.some((node) => node.sceneId === 'clip:S00'),
-    ).toBe(false);
-    expect(preview.runtime?.buildId).not.toBe(whole.runtime?.buildId);
-  });
-
-  it('outranks the chapter entry when a scene is chosen', async () => {
-    const draft = buildInteractiveFilmTestBundle().draftContent;
-    const { service } = scopedService(draft);
-
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      PROJECT_ID,
-      uuidAt(9),
-      'clip:S05A',
-    );
-
-    const runtime = ExperienceRuntimeManifestSchema.parse(preview.runtime);
-    expect(runtime.graph.entrySceneId).toBe('clip:S05A');
-  });
-
-  it('rejects a chosen scene the saved draft does not contain', async () => {
-    const draft = buildInteractiveFilmTestBundle().draftContent;
-    const { service } = scopedService(draft);
-
-    await expect(
-      service.getWorkingPreview(
-        USER as never,
-        PROJECT_ID,
-        undefined,
-        'clip:NOPE',
-      ),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({
-        code: 'STORY_WORKING_PREVIEW_NODE_NOT_FOUND',
-        nodeId: 'clip:NOPE',
-      }) as unknown,
-    });
-  });
-
-  it('pins draft-incomplete diagnostics to the scene that failed validation', async () => {
-    const draft = buildInteractiveFilmTestBundle().draftContent;
-    const opening = draft.graph.nodes[0];
-    if (!opening) throw new Error('Opening fixture missing.');
-    // A duplicated stable id cannot be normalized away, so the playable parse
-    // fails with a graph.nodes[index] path.
-    draft.graph.nodes.push(structuredClone(opening));
-    const { service, tx } = scopedService(draft);
-    tx.storyChapter.findMany.mockResolvedValue([
-      {
-        id: uuidAt(9),
-        rank: 0,
-        nodeIds: [...new Set(draft.graph.nodes.map((node) => node.nodeId))],
-        entryNodeId: draft.graph.entryNodeId,
-      },
-    ]);
-
-    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
-
-    expect(preview.runtime).toBeNull();
-    expect(preview.diagnostics).toContainEqual(
-      expect.objectContaining({
-        code: 'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
-        entityType: 'clip',
-        entityId: opening.nodeId,
-      }),
-    );
-  });
-
   it('replaces the preview identity after project presentation metadata changes', async () => {
     const { service, project } = scopedService(
       buildInteractiveFilmTestBundle().draftContent,
@@ -802,7 +717,6 @@ describe('StoryWorkingPreviewController', () => {
       USER,
       PROJECT_ID,
       undefined,
-      undefined,
     );
   });
 
@@ -823,25 +737,6 @@ describe('StoryWorkingPreviewController', () => {
       USER,
       PROJECT_ID,
       chapterId,
-      undefined,
-    );
-  });
-
-  it('forwards a chosen scene so the walk starts there', () => {
-    const service = { getWorkingPreview: jest.fn().mockResolvedValue(null) };
-    const controller = new StoryWorkingPreviewController(service as never);
-
-    void controller.getWorkingPreview(
-      USER as never,
-      { projectId: PROJECT_ID },
-      { nodeId: 'clip:S05A' },
-    );
-
-    expect(service.getWorkingPreview).toHaveBeenCalledWith(
-      USER,
-      PROJECT_ID,
-      undefined,
-      'clip:S05A',
     );
   });
 });

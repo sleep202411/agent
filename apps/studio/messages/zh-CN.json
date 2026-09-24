@@ -3354,8 +3354,7 @@
         },
         "failure": {
           "title": "当前版本未提交",
-          "description": "请处理下方问题，然后重新提交。",
-          "locateScene": "定位场景"
+          "description": "请处理下方问题，然后重新提交。"
         },
         "offline": {
           "action": "下线",
@@ -3378,7 +3377,6 @@
         "pageTitle": "故事试玩 · 影游工作室",
         "pageDescription": "使用正式玩家运行时试玩精确保存的私有草稿或不可变构建。",
         "draftRevision": "草稿 r{revision}",
-        "fromChosenScene": "从所选场景开始",
         "loading": "正在准备试玩…",
         "errorFallback": "无法加载试玩。",
         "buildNumber": "构建 {number}",
@@ -3387,14 +3385,10 @@
         "editStory": "编辑故事",
         "unavailableTitle": "当前故事还不能试玩",
         "unavailableDescription": "{errors} 个阻塞错误 · {warnings} 个警告。只需补齐下方列出的生产输入，画布仍可随时修改。",
-        "locateScene": "定位场景",
         "stateHud": {
           "title": "本局数值",
           "endings": "结局：{ids}"
         }
-      },
-      "validation": {
-        "nodeIssues": "{count} 个阻塞问题"
       },
       "readOnly": "只读",
       "addNode": "添加故事节点",
@@ -3803,7 +3797,6 @@
       "inspector": {
         "eyebrow": "节点检查器",
         "close": "关闭节点检查器",
-        "previewFromScene": "从此场景开始试玩",
         "chapterTransitions": {
           "title": "前往其他章节",
           "continueHint": "选择本场景结束后进入的章节开场。",

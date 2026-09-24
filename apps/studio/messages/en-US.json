@@ -3354,8 +3354,7 @@
         },
         "failure": {
           "title": "This version was not submitted",
-          "description": "Resolve the issue below, then try submitting again.",
-          "locateScene": "Locate scene"
+          "description": "Resolve the issue below, then try submitting again."
         },
         "offline": {
           "action": "Take offline",
@@ -3378,7 +3377,6 @@
         "pageTitle": "Story Playtest · Interactive Film Studio",
         "pageDescription": "Play an exact private draft or immutable build with the production experience runtime.",
         "draftRevision": "Draft r{revision}",
-        "fromChosenScene": "started from the chosen scene",
         "loading": "Preparing the playtest…",
         "errorFallback": "The playtest could not be loaded.",
         "buildNumber": "Build {number}",
@@ -3387,15 +3385,12 @@
         "editStory": "Edit story",
         "unavailableTitle": "The story is not playable yet",
         "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete only the missing production inputs listed below; the canvas remains editable.",
-        "locateScene": "Locate scene",
         "stateHud": {
           "title": "Session stats",
           "endings": "Endings: {ids}"
         }
       },
-      "validation": {
-        "nodeIssues": "{count, plural, =1 {1 blocking issue} other {# blocking issues}}"
-      },
+      "validation": {},
       "readOnly": "Read only",
       "addNode": "Add story node",
       "loading": "Opening the story canvas…",
@@ -3803,7 +3798,6 @@
       "inspector": {
         "eyebrow": "Node inspector",
         "close": "Close node inspector",
-        "previewFromScene": "Playtest from this scene",
         "chapterTransitions": {
           "title": "Continue to another chapter",
           "continueHint": "Choose the chapter whose opening scene should follow this scene.",

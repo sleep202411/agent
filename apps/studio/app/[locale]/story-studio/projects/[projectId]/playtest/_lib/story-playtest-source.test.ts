@@ -13,18 +13,6 @@ describe("Story playtest source", () => {
     });
   });
 
-  it("carries the chosen scene so the walk starts there", () => {
-    expect(parseStoryPlaytestSource({ chapter: "chapter-9", node: " clip:S05A " })).toEqual({
-      kind: "draft",
-      chapterId: "chapter-9",
-      nodeId: "clip:S05A",
-    });
-  });
-
-  it("drops a blank scene param instead of an empty string", () => {
-    expect(parseStoryPlaytestSource({ node: "  " })).toEqual({ kind: "draft" });
-  });
-
   it("carries the saved-revision freshness token", () => {
     expect(parseStoryPlaytestSource({ rev: "12", vsh: "a".repeat(64) })).toEqual({
       kind: "draft",

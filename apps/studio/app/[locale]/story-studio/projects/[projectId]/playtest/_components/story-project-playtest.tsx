@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  IconAlertTriangle,
-  IconArrowLeft,
-  IconFocusCentered,
-  IconLoader2,
-  IconRefresh,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconLoader2, IconRefresh } from "@tabler/icons-react";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -47,7 +41,6 @@ export function StoryProjectPlaytest({
       projectId,
       source.kind,
       source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
-      source.kind === "draft" ? (source.nodeId ?? null) : null,
       // The freshness token from the canvas turns re-entry without edits into
       // a cache hit while draft edits or media re-picks compile afresh.
       source.kind === "draft" ? (source.revision ?? null) : null,
@@ -57,7 +50,7 @@ export function StoryProjectPlaytest({
       return source.kind === "draft"
         ? {
             kind: "draft" as const,
-            preview: await getStoryWorkingPreview(projectId, source.chapterId, source.nodeId),
+            preview: await getStoryWorkingPreview(projectId, source.chapterId),
           }
         : {
             kind: "build" as const,
@@ -76,7 +69,6 @@ export function StoryProjectPlaytest({
     return (
       <PlaytestFailure
         projectId={projectId}
-        chapterId={source.kind === "draft" ? (source.chapterId ?? null) : null}
         message={storyApiErrorMessage(loadError, t("errorFallback"))}
         onRetry={() => void runtimeQuery.refetch()}
       />
@@ -96,8 +88,7 @@ export function StoryProjectPlaytest({
   const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
   const sourceLabel =
     loadedRuntime.kind === "draft"
-      ? t("draftRevision", { revision: loadedRuntime.preview.draftRevision }) +
-        (source.kind === "draft" && source.nodeId ? ` · ${t("fromChosenScene")}` : "")
+      ? t("draftRevision", { revision: loadedRuntime.preview.draftRevision })
       : t("buildNumber", { number: loadedRuntime.build.number });
 
   // Only a runtime the server could not build at all stops a playtest. Clip-level
@@ -109,7 +100,6 @@ export function StoryProjectPlaytest({
     return (
       <PlaytestFailure
         projectId={projectId}
-        chapterId={source.kind === "draft" ? (source.chapterId ?? null) : null}
         message={t("unavailableDescription", {
           errors: errors.length,
           warnings: warnings.length,
@@ -213,25 +203,16 @@ function PlaytestLoading() {
 
 function PlaytestFailure({
   projectId,
-  chapterId,
   message,
   diagnostics = [],
   onRetry,
 }: {
   projectId: string;
-  chapterId: string | null;
   message: string;
   diagnostics?: StoryBuildDiagnostic[];
   onRetry?: () => void;
 }) {
   const t = useTranslations("storyStudio.canvas.workingPreview");
-  const canvasHref = (focusNodeId?: string | null) => {
-    const params = new URLSearchParams();
-    if (chapterId) params.set("chapter", chapterId);
-    if (focusNodeId) params.set("focus", focusNodeId);
-    const query = params.size > 0 ? `?${params.toString()}` : "";
-    return `/story-studio/projects/${projectId}/canvas${query}`;
-  };
   return (
     <main className="grid min-h-dvh place-items-center bg-black px-5 py-16 text-white">
       <section className="w-full max-w-3xl rounded-[28px] bg-white/[0.055] p-6 shadow-[0_30px_100px_rgb(0_0_0/0.6)] sm:p-8">
@@ -245,32 +226,15 @@ function PlaytestFailure({
                 key={`${diagnostic.code}:${diagnostic.entityId ?? "project"}:${index}`}
                 className="rounded-2xl bg-black/28 px-4 py-3"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[10px] font-semibold text-white/42">{diagnostic.code}</p>
-                    <p className="mt-1 text-xs leading-5 text-white/68">{diagnostic.message}</p>
-                  </div>
-                  {diagnostic.entityId ? (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      asChild
-                      className="h-7 shrink-0 rounded-lg px-2 text-[10px]"
-                    >
-                      <Link href={canvasHref(diagnostic.entityId)}>
-                        <IconFocusCentered className="size-3.5" />
-                        {t("locateScene")}
-                      </Link>
-                    </Button>
-                  ) : null}
-                </div>
+                <p className="text-[10px] font-semibold text-white/42">{diagnostic.code}</p>
+                <p className="mt-1 text-xs leading-5 text-white/68">{diagnostic.message}</p>
               </li>
             ))}
           </ul>
         ) : null}
         <div className="mt-7 flex flex-wrap gap-2">
           <Button variant="secondary" asChild>
-            <Link href={canvasHref()}>
+            <Link href={`/story-studio/projects/${projectId}/canvas`}>
               <IconArrowLeft className="size-4" />
               {t("editStory")}
             </Link>

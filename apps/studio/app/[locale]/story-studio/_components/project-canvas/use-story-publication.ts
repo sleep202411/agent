@@ -8,12 +8,7 @@ import {
   prepareInteractiveFilmRelease,
   submitInteractiveFilmRelease,
 } from "@/lib/interactive-film-api";
-import {
-  storyApiErrorMessage,
-  storyApiErrorIssues,
-  type StoryApiIssue,
-  type StoryCapability,
-} from "@/lib/story-projects-api";
+import { storyApiErrorMessage, type StoryCapability } from "@/lib/story-projects-api";
 import {
   runStoryPublication,
   StoryPublicationFlowError,
@@ -41,8 +36,6 @@ export type StoryPublicationState =
       phase: StoryPublicationActivePhase | "permission";
       code: StoryPublicationFailureCode;
       message: string;
-      /** Structured blockers the server attached to the failure, if any. */
-      issues: StoryApiIssue[];
     };
 
 export interface UseStoryPublicationOptions {
@@ -84,7 +77,6 @@ export function useStoryPublication({
         phase: "permission",
         code: "PERMISSION_DENIED",
         message: t("errors.permissionDenied"),
-        issues: [],
       });
       return;
     }
@@ -107,7 +99,6 @@ export function useStoryPublication({
         phase: "permission",
         code: "UNEXPECTED",
         message: t("errors.unexpected"),
-        issues: [],
       });
       return;
     }
@@ -183,7 +174,6 @@ function toPublicationFailure(
       phase: currentPhase,
       code: "UNEXPECTED",
       message: storyApiErrorMessage(error, t("errors.unexpected")),
-      issues: storyApiErrorIssues(error),
     };
   }
   const fallback = publicationErrorFallback(error.code, t);
@@ -195,7 +185,6 @@ function toPublicationFailure(
       error.upstreamError === undefined
         ? fallback
         : storyApiErrorMessage(error.upstreamError, fallback),
-    issues: storyApiErrorIssues(error.upstreamError),
   };
 }
 

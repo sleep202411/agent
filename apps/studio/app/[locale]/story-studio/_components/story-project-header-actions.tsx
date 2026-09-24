@@ -11,7 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,10 +32,6 @@ import {
 } from "@/lib/interactive-film-api";
 import { getStoryWorkbench, storyApiErrorMessage } from "@/lib/story-projects-api";
 import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workbench";
-import {
-  storyDraftCheckFromPublishIssues,
-  storyDraftCheckQueryKey,
-} from "../_lib/use-story-draft-check";
 import { StoryPublicationDialog } from "./project-canvas/story-publication-dialog";
 import {
   useStoryPublication,
@@ -101,29 +97,6 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     expectedVideoSnapshotHash: videoSnapshotHash,
     withSavedDraftSnapshot: draftBarrier ?? fallbackRunner,
   });
-  // A failed publish that names scenes is the moment the blockers must become
-  // visible: the canvas badge cache picks up the issues and the viewport jumps
-  // to the first one, so closing the dialog already faces the problem. A later
-  // success clears the badges.
-  const requestCanvasFocus = useStoryProjectUiStore((state) => state.requestCanvasFocus);
-  const failureState = submission.state;
-  useEffect(() => {
-    if (failureState.status === "succeeded") {
-      void queryClient.removeQueries({
-        queryKey: ["story-studio", "story-draft-check", projectId],
-      });
-      return;
-    }
-    if (failureState.status !== "failed" || failureState.issues.length === 0) return;
-    if (draftRevision != null) {
-      queryClient.setQueryData(
-        storyDraftCheckQueryKey(projectId, activeChapterId),
-        storyDraftCheckFromPublishIssues(draftRevision, failureState.issues)
-      );
-    }
-    const first = failureState.issues.find((issue) => issue.nodeId);
-    if (first?.nodeId) requestCanvasFocus(first.nodeId);
-  }, [activeChapterId, draftRevision, failureState, projectId, queryClient, requestCanvasFocus]);
   const canMutate = submission.canSubmit && ready && !conflicted;
   const statusReady = !publicationQuery.isLoading && !publicationQuery.isError;
   const canSubmitStatus = status === null || status === "draft" || status === "offline";

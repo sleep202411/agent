@@ -8,8 +8,6 @@ import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 export interface StoryPreviewTarget {
-  /** Scene to start the walk at; omit for the chapter/story entry. */
-  nodeId?: string;
   /**
    * Chapter to walk. Defaults to the chapter the canvas is editing — callers
    * that know better (a batch scoped to one chapter) pass their own.
@@ -32,10 +30,6 @@ export interface StoryPreviewTarget {
  */
 export function useStoryPreviewNavigation(projectId: string): {
   openPreview: (target?: StoryPreviewTarget) => Promise<void>;
-  openPreviewFromNode: (
-    nodeId: string,
-    target?: Omit<StoryPreviewTarget, "nodeId">
-  ) => Promise<void>;
   pending: boolean;
 } {
   const t = useTranslations("storyStudio.canvas");
@@ -54,7 +48,6 @@ export function useStoryPreviewNavigation(projectId: string): {
         const navigate = (draftRevision?: number) => {
           const params = new URLSearchParams();
           if (chapterId) params.set("chapter", chapterId);
-          if (target?.nodeId) params.set("node", target.nodeId);
           if (typeof draftRevision === "number" && draftRevision > 0) {
             params.set("rev", String(draftRevision));
           }
@@ -83,11 +76,5 @@ export function useStoryPreviewNavigation(projectId: string): {
     [activeChapterId, draftBarrier, liveDraft, pending, projectId, router, t]
   );
 
-  const openPreview = useCallback((target?: StoryPreviewTarget) => open(target), [open]);
-  const openPreviewFromNode = useCallback(
-    (nodeId: string, target?: Omit<StoryPreviewTarget, "nodeId">) => open({ ...target, nodeId }),
-    [open]
-  );
-
-  return { openPreview, openPreviewFromNode, pending };
+  return { openPreview: open, pending };
 }

@@ -813,18 +813,12 @@ export async function getStoryBuild(projectId: string, buildId: string): Promise
 
 export async function getStoryWorkingPreview(
   projectId: string,
-  chapterId?: string,
-  nodeId?: string,
-  signal?: AbortSignal
+  chapterId?: string
 ): Promise<StoryWorkingPreview> {
   return api.get<StoryWorkingPreview>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/working-preview`,
     {
-      signal,
-      params: {
-        ...(chapterId ? { chapterId } : {}),
-        ...(nodeId ? { nodeId } : {}),
-      },
+      ...(chapterId ? { params: { chapterId } } : {}),
       requestScope: "project",
     }
   );
@@ -971,36 +965,6 @@ export function storyApiErrorMessage(error: unknown, fallback: string): string {
   }
   if (error instanceof Error && error.message.trim()) return error.message;
   return fallback;
-}
-
-/**
- * Structured view of an upstream `issues` array (e.g. the blocking build
- * diagnostics a release prepare attaches to STORY_BUILD_NOT_PUBLISHABLE).
- * `nodeId` is present only when the server could pin the issue to a scene.
- */
-export interface StoryApiIssue {
-  code: string | null;
-  message: string;
-  nodeId: string | null;
-}
-
-export function storyApiErrorIssues(error: unknown): StoryApiIssue[] {
-  if (!(error instanceof ApiRequestError)) return [];
-  const body = storyApiErrorBody(error);
-  const issues = Array.isArray(body?.issues) ? body.issues : [];
-  return issues.flatMap((issue) => {
-    if (!issue || typeof issue !== "object") return [];
-    const record = issue as Record<string, unknown>;
-    const message = typeof record.message === "string" ? record.message.trim() : "";
-    if (!message) return [];
-    return [
-      {
-        code: typeof record.code === "string" ? record.code : null,
-        message,
-        nodeId: typeof record.entityId === "string" ? record.entityId : null,
-      },
-    ];
-  });
 }
 
 export interface DraftRevisionConflict {

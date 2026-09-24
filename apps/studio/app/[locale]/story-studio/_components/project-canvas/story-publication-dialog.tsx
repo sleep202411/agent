@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  IconAlertTriangle,
-  IconCheck,
-  IconCloudUpload,
-  IconFocusCentered,
-  IconLoader2,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconCheck, IconCloudUpload, IconLoader2 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,9 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { StoryApiIssue } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
-import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
 import { isStoryPublicationPending, type StoryPublicationState } from "./use-story-publication";
 import type { StoryPublicationActivePhase } from "./story-publication-flow";
 
@@ -101,9 +93,7 @@ export function StoryPublicationDialog({
             <PublicationProgress phase={state.status} />
           ) : null}
 
-          {state.status === "failed" ? (
-            <PublicationFailure message={state.message} issues={state.issues} onClose={onClose} />
-          ) : null}
+          {state.status === "failed" ? <PublicationFailure message={state.message} /> : null}
 
           {state.status === "succeeded" ? (
             <div className="rounded-2xl bg-white/[0.055] p-4">
@@ -224,55 +214,11 @@ function PublicationProgress({ phase }: { phase: StoryPublicationActivePhase }) 
   );
 }
 
-function PublicationFailure({
-  message,
-  issues,
-  onClose,
-}: {
-  message: string;
-  issues: StoryApiIssue[];
-  onClose: () => void;
-}) {
-  const t = useTranslations("storyStudio.canvas.publish");
-  const requestCanvasFocus = useStoryProjectUiStore((state) => state.requestCanvasFocus);
+function PublicationFailure({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl bg-destructive/10 p-4 text-destructive">
-      <div className="flex items-start gap-3">
-        <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
-        <p className="min-w-0 text-xs leading-5">{message}</p>
-      </div>
-      {issues.length > 0 ? (
-        <ul className="mt-3 max-h-[36vh] space-y-1.5 overflow-y-auto">
-          {issues.map((issue, index) => (
-            <li
-              key={`${issue.code ?? "issue"}:${issue.nodeId ?? "project"}:${index}`}
-              className="flex items-start justify-between gap-3 rounded-xl bg-black/25 px-3 py-2"
-            >
-              <div className="min-w-0">
-                {issue.code ? (
-                  <p className="text-[10px] font-semibold text-destructive/70">{issue.code}</p>
-                ) : null}
-                <p className="mt-0.5 text-xs leading-5 text-destructive/90">{issue.message}</p>
-              </div>
-              {issue.nodeId ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-7 shrink-0 rounded-lg px-2 text-[10px]"
-                  onClick={() => {
-                    requestCanvasFocus(issue.nodeId as string);
-                    onClose();
-                  }}
-                >
-                  <IconFocusCentered className="size-3.5" />
-                  {t("failure.locateScene")}
-                </Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+    <div className="flex items-start gap-3 rounded-2xl bg-destructive/10 p-4 text-destructive">
+      <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <p className="min-w-0 text-xs leading-5">{message}</p>
     </div>
   );
 }
