@@ -6,6 +6,53 @@ import { CommunityGrantSchema } from './internal-points.dto';
 import { InternalPointsService } from './internal-points.service';
 
 describe('Java points bridge compatibility contract', () => {
+  it('pauses registration bonus credits without failing Java registration', async () => {
+    const previous = process.env.REGISTRATION_COMPUTE_BONUS_PAUSED;
+    process.env.REGISTRATION_COMPUTE_BONUS_PAUSED = 'true';
+    try {
+      const ledger = { postEntry: jest.fn() };
+      const service = new InternalPointsService(
+        {} as never,
+        ledger as never,
+        {} as never,
+      );
+      jest.spyOn(service, 'getBalance').mockResolvedValue({
+        userId: '17473',
+        migrated: true,
+        balance: '0',
+      });
+
+      for (const input of [
+        {
+          userId: '17473',
+          amount: 500,
+          reason: 'register_bonus',
+          idempotencyKey: 'unexpected-key',
+        },
+        {
+          userId: '17473',
+          amount: 500,
+          reason: undefined,
+          idempotencyKey: 'register_bonus:17473',
+        },
+      ]) {
+        await expect(service.grant(input)).resolves.toEqual({
+          userId: '17473',
+          granted: '0',
+          balance: '0',
+          deduped: true,
+        });
+      }
+      expect(ledger.postEntry).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) {
+        delete process.env.REGISTRATION_COMPUTE_BONUS_PAUSED;
+      } else {
+        process.env.REGISTRATION_COMPUTE_BONUS_PAUSED = previous;
+      }
+    }
+  });
+
   it('keeps POST /internal/points/migrate and /deduct machine endpoints', () => {
     expect(Reflect.getMetadata(PATH_METADATA, InternalPointsController)).toBe(
       'internal/points',

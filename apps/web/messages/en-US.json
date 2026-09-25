@@ -9493,7 +9493,12 @@
     "valuePointsCommunity": "+{count} community points",
     "valueMembershipCompute": "{days}d Studio membership",
     "valueMembershipCommunity": "{days}d community membership",
-    "valueMembershipBoth": "{days}d Studio + community membership"
+    "valueMembershipBoth": "{days}d Studio + community membership",
+    "incomeSources": "Income sources",
+    "referralIncome": "Referral income and rewards",
+    "crewIncome": "Crew income",
+    "workIncome": "Film and story income",
+    "incomeSourcesHint": "Each income source shows its own records and units. These amounts are not added together."
   },
   "crewCommunityChat": {
     "qrAlt": "Community invitation QR code",
@@ -9651,7 +9656,12 @@
       "previous": "Previous",
       "next": "Next",
       "page": "Page {page}"
-    }
+    },
+    "incomeSources": "Income sources",
+    "referralIncome": "Referral income and rewards",
+    "crewIncome": "Crew income",
+    "workIncome": "Film and story income",
+    "incomeSourcesHint": "Each income source shows its own records and units. These amounts are not added together."
   },
   "crewTaskCenter": {
     "signInRequired": "Sign in to view your Crew tasks.",
@@ -9846,7 +9856,12 @@
     "references": "Source references",
     "crew": "Crew",
     "task": "Task",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "incomeSources": "Income sources",
+    "referralIncome": "Referral income and rewards",
+    "crewIncome": "Crew income",
+    "workIncome": "Film and story income",
+    "incomeSourcesHint": "Each income source shows its own records and units. These amounts are not added together."
   },
   "crewPersonalPayouts": {
     "title": "Payout history",

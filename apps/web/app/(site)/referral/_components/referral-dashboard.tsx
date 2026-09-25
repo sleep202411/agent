@@ -6,6 +6,9 @@
  * is the typed reward VALUE (cash / points / membership-days), handled by an
  * exhaustive switch — no prefix matching, no fabricated units.
  */
+import Link from "next/link";
+import type { Locale } from "@/src/i18n/config";
+import { localizePath } from "@/src/i18n/locale-url";
 import {
   IconCheck,
   IconCircleDashed,
@@ -88,7 +91,7 @@ const STATUS_KEY: Record<ReferralRewardStatus, string> = {
 
 export function ReferralDashboardPage() {
   const t = useTranslations("referral");
-  const locale = useLocale();
+  const locale = useLocale() as Locale;
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
@@ -178,6 +181,16 @@ export function ReferralDashboardPage() {
         <h1 className="text-3xl font-semibold text-foreground">{t("title")}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{t("subtitle")}</p>
       </header>
+
+      <nav aria-label={t("incomeSources")} className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+        <Link href={localizePath("/profile/earnings", locale)} className="text-primary hover:underline">
+          {t("workIncome")}
+        </Link>
+        <Link href={localizePath("/crews/income", locale)} className="text-primary hover:underline">
+          {t("crewIncome")}
+        </Link>
+      </nav>
+      <p className="mt-2 text-xs text-muted-foreground">{t("incomeSourcesHint")}</p>
 
       {!dashboard.programAvailable ? (
         <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4">

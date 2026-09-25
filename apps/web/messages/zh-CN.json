@@ -9493,7 +9493,12 @@
     "valuePointsCommunity": "+{count} 社区积分",
     "valueMembershipCompute": "{days} 天 Studio 会员",
     "valueMembershipCommunity": "{days} 天社区会员",
-    "valueMembershipBoth": "{days} 天 Studio+社区会员"
+    "valueMembershipBoth": "{days} 天 Studio+社区会员",
+    "incomeSources": "收入来源",
+    "referralIncome": "引荐收入与奖励",
+    "crewIncome": "剧组收入",
+    "workIncome": "影视与故事收入",
+    "incomeSourcesHint": "各收入来源分别显示记录和计价单位，此处不合并计算。"
   },
   "crewCommunityChat": {
     "qrAlt": "社区邀请二维码",
@@ -9651,7 +9656,12 @@
       "previous": "上一页",
       "next": "下一页",
       "page": "第 {page} 页"
-    }
+    },
+    "incomeSources": "收入来源",
+    "referralIncome": "引荐收入与奖励",
+    "crewIncome": "剧组收入",
+    "workIncome": "影视与故事收入",
+    "incomeSourcesHint": "各收入来源分别显示记录和计价单位，此处不合并计算。"
   },
   "crewTaskCenter": {
     "signInRequired": "登录后查看你的剧组任务。",
@@ -9846,7 +9856,12 @@
     "references": "来源记录",
     "crew": "剧组",
     "task": "任务",
-    "loadMore": "加载更多"
+    "loadMore": "加载更多",
+    "incomeSources": "收入来源",
+    "referralIncome": "引荐收入与奖励",
+    "crewIncome": "剧组收入",
+    "workIncome": "影视与故事收入",
+    "incomeSourcesHint": "各收入来源分别显示记录和计价单位，此处不合并计算。"
   },
   "crewPersonalPayouts": {
     "title": "付款记录",

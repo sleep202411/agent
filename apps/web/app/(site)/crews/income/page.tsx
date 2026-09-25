@@ -36,6 +36,15 @@ export default function PersonalCrewIncome() {
           <h1 className="text-2xl font-semibold">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">{t("description")}</p>
         </header>
+        <nav aria-label={t("incomeSources")} className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+          <Link href={localizePath("/referral", locale)} className="text-primary hover:underline">
+            {t("referralIncome")}
+          </Link>
+          <Link href={localizePath("/profile/earnings", locale)} className="text-primary hover:underline">
+            {t("workIncome")}
+          </Link>
+        </nav>
+        <p className="text-xs text-muted-foreground">{t("incomeSourcesHint")}</p>
         {isLoading ? (
           <p role="status">{t("loading")}</p>
         ) : !user ? (
