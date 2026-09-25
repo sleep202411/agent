@@ -10,6 +10,7 @@ import { get as httpsGet } from 'node:https';
 import { describeUnknown, isRecord, scalarString } from '../common/values';
 import { parseJavaLevelIds } from '../integrations/java/user-level-gates';
 import type { AuthUser } from './auth.types';
+import { EmergencyAccessBlockService } from './emergency-access-block.service';
 
 type JavaAuthResponse = {
   success?: boolean;
@@ -124,7 +125,9 @@ export class AuthService {
     });
   }
 
-  constructor() {
+  constructor(
+    private readonly emergencyAccessBlock: EmergencyAccessBlockService,
+  ) {
     // Prune expired entries every 60 seconds
     this.pruneTimer = setInterval(() => this.pruneCache(), 60_000);
   }
@@ -182,7 +185,10 @@ export class AuthService {
     if (!bypassCache) {
       for (const candidate of candidates) {
         const cached = this.cachedUser(candidate.cacheKey);
-        if (cached) return cached;
+        if (cached) {
+          await this.emergencyAccessBlock.assertAllowed(cached);
+          return cached;
+        }
       }
     }
 
@@ -190,6 +196,7 @@ export class AuthService {
       const user = await this.validateCandidate(candidate, bypassCache);
       if (this.stopping) return null;
       if (!user) continue;
+      await this.emergencyAccessBlock.assertAllowed(user);
       if (satokenValues.length > 1) {
         this.logger.log(
           `Auth validated via 1 of ${satokenValues.length} satoken candidates (stale-cookie skip) tokenFingerprint=${candidate.fingerprint}`,

@@ -1,5 +1,12 @@
 import { AuthService } from './auth.service';
+import { ForbiddenException } from '@nestjs/common';
 import type { AuthUser } from './auth.types';
+import type { EmergencyAccessBlockService } from './emergency-access-block.service';
+
+const allowAll = () =>
+  ({
+    assertAllowed: () => Promise.resolve(),
+  }) as unknown as EmergencyAccessBlockService;
 
 /**
  * Regression guard for the prod login-loop fix: a browser can carry a stale
@@ -12,7 +19,7 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
   let calls: string[];
 
   beforeEach(() => {
-    svc = new AuthService();
+    svc = new AuthService(allowAll());
     calls = [];
     // Stub the per-token Java check: only a token containing FRESH resolves.
     jest
@@ -110,6 +117,31 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
   });
 });
 
+it('checks the emergency blocklist even when Java authentication is cached', async () => {
+  const block = { assertAllowed: jest.fn().mockResolvedValue(undefined) };
+  const service = new AuthService(
+    block as unknown as EmergencyAccessBlockService,
+  );
+  const java = jest.spyOn(
+    service as unknown as {
+      validateSatoken: () => Promise<AuthUser | null>;
+    },
+    'validateSatoken',
+  );
+  java.mockResolvedValue({ userId: '16591' });
+  try {
+    await service.validateToken('satoken=fixture');
+    block.assertAllowed.mockRejectedValue(new ForbiddenException());
+    await expect(
+      service.validateToken('satoken=fixture'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(java).toHaveBeenCalledTimes(1);
+    expect(block.assertAllowed).toHaveBeenCalledTimes(2);
+  } finally {
+    service.onModuleDestroy();
+  }
+});
+
 describe('Auth refresh snapshot ownership', () => {
   let service: AuthService;
   const oldUser = { userId: '42', levelIds: [13] };
@@ -122,7 +154,7 @@ describe('Auth refresh snapshot ownership', () => {
     return { promise, resolve };
   }
   beforeEach(() => {
-    service = new AuthService();
+    service = new AuthService(allowAll());
   });
   afterEach(() => service.onModuleDestroy());
   function remote() {
@@ -194,7 +226,7 @@ describe('Auth verification status parsing', () => {
   const originalUrl = process.env.JAVA_CONTENT_URL;
   beforeEach(() => {
     process.env.JAVA_CONTENT_URL = 'http://fixture';
-    service = new AuthService();
+    service = new AuthService(allowAll());
   });
   afterEach(() => {
     service.onModuleDestroy();

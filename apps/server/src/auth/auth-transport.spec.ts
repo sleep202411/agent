@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { get } from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { AuthService } from './auth.service';
+import type { EmergencyAccessBlockService } from './emergency-access-block.service';
 
 jest.mock('node:http', () => ({ get: jest.fn() }));
 
@@ -42,7 +43,9 @@ describe('Auth transport completion and shutdown', () => {
         respond = args[2] as typeof respond;
         return request as never;
       });
-    service = new AuthService();
+    service = new AuthService({
+      assertAllowed: () => Promise.resolve(),
+    } as unknown as EmergencyAccessBlockService);
   });
   afterEach(() => {
     service.onModuleDestroy();

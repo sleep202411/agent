@@ -805,7 +805,8 @@ function MediaFrame({
       {videoUrl ? (
         <VideoPlayer
           src={videoUrl}
-          className="size-full"
+          className="absolute inset-0 size-full [&_.vjs-tech]:object-contain"
+          fillParent
           autoplay={false}
           onFirstPlay={onFirstPlay}
         />
