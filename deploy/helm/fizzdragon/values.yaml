@@ -511,6 +511,11 @@ server:
     REALTIME_TRANSPORT: self-hosted
     DISABLE_CONTENT_MODERATION: "false"
     AUTH_DISABLED: "false"
+    # Incident 2026-09-25: consult the shared Redis user-ID blocklist on every
+    # authenticated request, including a Java session served from Nest's cache.
+    # Also blocks the exact bulk-signup email shape while new IDs are discovered.
+    # Turn off after the incident has been resolved and reviewed.
+    EMERGENCY_USER_BLOCKLIST_ENABLED: "true"
     PAYMENT_PROVIDER: airwallex
     AIRWALLEX_API_BASE_URL: https://api.airwallex.com
     # AppLovin (Axon) server-side Conversions API. AXON_PIXEL_ID is the
