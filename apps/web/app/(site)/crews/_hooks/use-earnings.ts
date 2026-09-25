@@ -20,10 +20,10 @@ import type {
   CrewEarningStatus,
 } from "./types";
 
-export function useMyCrewEarnings(currency: CrewLedgerCurrency) {
+export function useMyCrewEarnings(currency: CrewLedgerCurrency, crewId?: string) {
   const { user } = useCurrentUser();
   return useInfiniteQuery({
-    queryKey: ["crew-personal-earnings", user?.id ?? null, currency],
+    queryKey: ["crew-personal-earnings", user?.id ?? null, currency, ...(crewId ? [crewId] : [])],
     enabled: Boolean(user?.id),
     refetchInterval: 60_000,
     initialPageParam: undefined as string | undefined,
@@ -31,7 +31,7 @@ export function useMyCrewEarnings(currency: CrewLedgerCurrency) {
       crewApi.get<CrewEarningPageDTO>("/me/crew-earnings", {
         signal,
         cache: "no-store",
-        query: { currency, cursor: pageParam, limit: 50 },
+        query: { currency, cursor: pageParam, limit: 50, ...(crewId ? { crewId } : {}) },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });

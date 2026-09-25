@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -195,7 +196,7 @@ suite('Task update authorization during PostgreSQL waits', () => {
             payload: {},
           },
         });
-        const client = db.$extends({
+        const client = extendPrismaQueries(db, {
           query: {
             crewTaskTimelineItem: {
               async $allOperations({ operation, args, query }) {
@@ -254,7 +255,7 @@ suite('Task update authorization during PostgreSQL waits', () => {
         return;
       }
       if (['label', 'view', 'field', 'cycle', 'workflow'].includes(mode)) {
-        const client = db.$extends({
+        const client = extendPrismaQueries(db, {
           query: {
             $allModels: {
               async $allOperations({ operation, args, query }) {

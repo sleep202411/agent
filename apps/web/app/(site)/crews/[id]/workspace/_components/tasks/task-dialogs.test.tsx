@@ -6,6 +6,9 @@ import type { CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { SubmitTaskDialog } from "./task-dialogs";
 
 const submit = vi.hoisted(() => vi.fn());
+const delivery = vi.hoisted(() => ({
+  data: null as import("@/app/(site)/crews/_hooks/types").CrewDeliveryTemplateDTO | null,
+}));
 const assetQuery = vi.hoisted(() => ({
   data: { items: [{ id: "asset-1", name: "Output" }] },
   isLoading: false,
@@ -62,6 +65,7 @@ afterEach(() => {
   root = undefined;
   host?.remove();
   vi.resetAllMocks();
+  delivery.data = null;
   assetQuery.error = null;
   assetQuery.isLoading = false;
   assetQuery.hasNextPage = false;
@@ -171,9 +175,9 @@ it("keeps loaded attachments and exposes a failed refresh for retry", async () =
   expect(assetQuery.refetch).toHaveBeenCalledTimes(1);
 });
 
-vi.mock("./task-delivery-template", () => ({
-  useTaskDeliveryTemplate: () => ({ data: null, isPending: false, isError: false }),
-  TaskDeliveryFields: () => null,
+vi.mock("./task-delivery-template", async (original) => ({
+  ...(await original<typeof import("./task-delivery-template")>()),
+  useTaskDeliveryTemplate: () => ({ data: delivery.data, isPending: false, isError: false }),
 }));
 
 it("loads and submits attachments beyond the first page without losing earlier selections", async () => {
@@ -251,4 +255,53 @@ it("restarts expired asset pagination without losing the delivery draft", async 
   expect(assetQuery.fetchNextPage).not.toHaveBeenCalled();
   expect(document.querySelector("textarea")!.value).toBe("Delivery draft");
   expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
+});
+
+it("requires nonblank text and a still-attached file, preserving answers after validation failures", async () => {
+  delivery.data = {
+    categoryId: "cat",
+    version: 1,
+    definition: {
+      name: "Delivery",
+      fields: [
+        { key: "summary", instructions: "", label: "Summary", type: "text", required: true },
+        { key: "files", instructions: "", label: "Files", type: "attachment", required: true },
+        { key: "extra", instructions: "", label: "Optional", type: "text", required: false },
+      ],
+    },
+  };
+  render("task-1");
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("missingRequiredFields");
+  const answer = (text: string) => {
+    const input = document.querySelector('textarea[aria-label="Summary"]')!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  act(() => answer("   "));
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  act(() => answer("Complete storyboard"));
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  const boxes = document.querySelectorAll<HTMLButtonElement>('[role="checkbox"]');
+  act(() => boxes[1]!.click());
+  act(() => boxes[0]!.click()); // Removing the file invalidates its required answer.
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  submit.mockResolvedValue({ id: "task-1" });
+  await act(async () => clickSubmit());
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      assetNodeIds: ["asset-1"],
+      professionalDelivery: {
+        categoryId: "cat",
+        version: 1,
+        answers: { summary: "Complete storyboard", files: ["asset-1"] },
+      },
+    })
+  );
 });

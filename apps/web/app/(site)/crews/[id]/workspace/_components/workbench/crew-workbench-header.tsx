@@ -56,7 +56,7 @@ export function CrewWorkbenchHeader({
             crewId={crewId}
             value={overview.data?.studioWorkspace ?? null}
             legacyProject={overview.data?.studioProject ?? null}
-            disabled={!overview.data?.capabilities.linkWorkspace}
+            disabled={overview.isError || !overview.data?.capabilities.linkWorkspace}
           />
         ) : null}
         <Button

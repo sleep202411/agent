@@ -349,3 +349,5 @@ it("keeps the confirmed freeze intent when another manager freezes the position"
   await act(async () => state.update.mock.calls[1]?.[1].onSuccess());
   expect(state.success).toHaveBeenCalledWith("closeJobSuccess");
 });
+
+vi.mock("@/app/(site)/crews/_components/position-invitations-panel", () => ({ PositionInvitationsPanel: () => null }));

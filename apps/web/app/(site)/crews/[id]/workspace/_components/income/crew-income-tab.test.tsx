@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
   account: "alice",
   failure: null as Error | null,
   failed: false,
+  summary: undefined as unknown,
   pageFailed: false,
   fetching: false,
   refetch: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     ].map((name) => [name, () => ({ mutateAsync: state.create, isPending: false })])
   ),
   useCrewEarnings: () => ({
+    summary: state.summary,
     data: state.earning
       ? [
           {
@@ -69,6 +71,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     error: state.failure ?? new Error("Ledger unavailable"),
   }),
   useCrewPayouts: () => ({
+    summary: state.summary,
     data: state.payout
       ? [
           {
@@ -134,7 +137,7 @@ vi.mock("@/components/ui/select", () => ({
 const container = document.createElement("div");
 document.body.appendChild(container);
 let root = createRoot(container);
-async function render(crewId = "crew") {
+async function render(crewId = "crew", canApprove = true) {
   await act(async () =>
     root.render(
       <CrewIncomeTab
@@ -143,7 +146,7 @@ async function render(crewId = "crew") {
         members={[{ id: "member", userId: "user", status: "active" }] as never[]}
         canViewCrewLedger
         canCreateEarning
-        canApproveEarning
+        canApproveEarning={canApprove}
         canReverseEarning
         canCreatePayout
         canManagePayout
@@ -192,6 +195,7 @@ afterEach(async () => {
   vi.clearAllMocks();
   state.account = "alice";
   state.failed = false;
+  state.summary = undefined;
   state.failure = null;
   state.pageFailed = false;
   state.fetching = false;
@@ -393,3 +397,53 @@ it.each(["earnings", "payouts"])(
     expect(state.nextPage).not.toHaveBeenCalled();
   }
 );
+
+vi.mock("@/app/(site)/crews/_components/amendment-finance-panel", () => ({
+  AmendmentFinancePanel: () => <div>finance-amendment-panel</div>,
+}));
+
+it("shows the amendment queue only for earnings approvers", async () => {
+  await render("crew", true);
+  expect(container.textContent).toContain("finance-amendment-panel");
+  await render("crew", false);
+  expect(container.textContent).not.toContain("finance-amendment-panel");
+});
+
+function metric(label: string) {
+  return [...container.querySelectorAll("p")].find((p) => p.textContent === label)?.parentElement?.textContent ?? "";
+}
+function summary(value: unknown) {
+  return { byStatus: { posted: { amountMinor: value }, pending: { amountMinor: value } },
+    postedThisMonthAmountMinor: value, availableAmountMinor: value, reservedAmountMinor: value, paidAmountMinor: value };
+}
+it.each(["earnings", "payouts"])("does not fabricate zero %s totals before a snapshot exists", async (view) => {
+  await render(); if (view === "payouts") await act(async () => button("views.payouts").click());
+  expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+});
+it.each(["earnings", "payouts"])("hides failed %s totals and restores genuine zero after recovery", async (view) => {
+  state.summary = summary("12345"); await render();
+  if (view === "payouts") await act(async () => button("views.payouts").click());
+  const label = view === "payouts" ? "metrics.availableAmount" : "metrics.confirmedAmount";
+  expect(metric(label)).toContain("123.45");
+  state.failed = true; await render();
+  expect(metric(label)).toContain("metrics.unavailable"); expect(metric(label)).not.toContain("123.45");
+  state.failed = false; state.summary = summary("0"); await render();
+  expect(metric(label)).toContain("0.00"); expect(metric(label)).not.toContain("metrics.unavailable");
+});
+it.each([null, "", "1.5", "oops", 100])("handles malformed monetary summary %s without crashing or reporting zero", async (value) => {
+  state.summary = summary(value); await render();
+  expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+  await act(async () => button("views.payouts").click());
+  expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+});
+it("handles incomplete earning summary groups", async () => {
+  state.summary = { byStatus: {} }; await render();
+  expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+});
+it("preserves exact large and negative payout totals", async () => {
+  state.summary = { availableAmountMinor: "-123", reservedAmountMinor: "0", paidAmountMinor: "9007199254740993123" };
+  await render(); await act(async () => button("views.payouts").click());
+  expect(metric("metrics.availableAmount")).toContain("-1.23");
+  expect(metric("metrics.reservedAmount")).toContain("0.00");
+  expect(metric("metrics.paidAmount")).toContain("90,071,992,547,409,931.23");
+});

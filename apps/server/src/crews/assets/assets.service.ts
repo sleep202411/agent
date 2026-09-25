@@ -292,17 +292,7 @@ export class CrewAssetsService {
         throw new ConflictException(
           'The canvas changed. Refresh and try again.',
         );
-      const metadata =
-        media.metadata &&
-        typeof media.metadata === 'object' &&
-        !Array.isArray(media.metadata)
-          ? media.metadata
-          : {};
-      if (
-        metadata.crewId ||
-        metadata.uploadKind === 'crew_expense_receipt' ||
-        metadata.uploadKind === 'crew_agreement_archive'
-      )
+      if (isPrivateStudioMedia(media.metadata))
         throw new ForbiddenException(
           'Private or Crew-managed media cannot be shared through this action.',
         );
@@ -1560,6 +1550,66 @@ export class CrewAssetsService {
     return false;
   }
 
+  private async studioMediaScope(
+    tx: Prisma.TransactionClient,
+    workspaceId: string,
+    userId: string,
+    source: { projectId?: string | null; storyProjectId?: string | null },
+  ): Promise<Prisma.MediaAssetWhereInput> {
+    if (source.projectId && source.storyProjectId) {
+      throw new BadRequestException('Select one Studio source project.');
+    }
+    // Crew membership alone must not expose the entire linked workspace.
+    await this.workspacePermissions.requireWorkspaceRole(
+      userId,
+      workspaceId,
+      WorkspaceMemberRole.viewer,
+      tx,
+    );
+    if (source.projectId) {
+      const project = await tx.platformProject.findFirst({
+        where: {
+          id: source.projectId,
+          workspaceId,
+          deletedAt: null,
+          status: 'active',
+        },
+        select: { id: true },
+      });
+      if (!project)
+        throw new NotFoundException(
+          'Studio project not found in the linked workspace.',
+        );
+    }
+    if (source.storyProjectId) {
+      const project = await tx.storyProject.findFirst({
+        where: { id: source.storyProjectId, workspaceId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!project)
+        throw new NotFoundException(
+          'Story project not found in the linked workspace.',
+        );
+    }
+    return {
+      workspaceId,
+      deletedAt: null,
+      status: 'ready',
+      kind: { in: ['image', 'video', 'audio'] },
+      moderationStatus: { not: 'blocked' },
+      ...(source.projectId
+        ? { usages: { some: { projectId: source.projectId, deletedAt: null } } }
+        : {}),
+      ...(source.storyProjectId
+        ? {
+            storyCandidateAssets: {
+              some: { storyProjectId: source.storyProjectId },
+            },
+          }
+        : {}),
+    };
+  }
+
   async listStudioMediaOptions(
     crewId: string,
     userId: string,
@@ -1574,6 +1624,12 @@ export class CrewAssetsService {
       return { workspaceId: null, projects: [], items: [] };
     }
     const workspaceId = crew.studioWorkspaceId;
+    const mediaWhere = await this.studioMediaScope(
+      this.prisma,
+      workspaceId,
+      userId,
+      query,
+    );
     const [projects, storyProjects] = await Promise.all([
       this.prisma.platformProject.findMany({
         where: { workspaceId, deletedAt: null, status: 'active' },
@@ -1588,22 +1644,6 @@ export class CrewAssetsService {
         take: 100,
       }),
     ]);
-    const mediaWhere: Prisma.MediaAssetWhereInput = {
-      workspaceId,
-      deletedAt: null,
-      status: 'ready',
-      kind: { in: ['image', 'video', 'audio'] },
-      moderationStatus: { not: 'blocked' },
-    };
-    if (query.projectId) {
-      mediaWhere.usages = {
-        some: { projectId: query.projectId, deletedAt: null },
-      };
-    } else if (query.storyProjectId) {
-      mediaWhere.storyCandidateAssets = {
-        some: { storyProjectId: query.storyProjectId },
-      };
-    }
     const media = await this.prisma.mediaAsset.findMany({
       where: mediaWhere,
       select: {
@@ -1612,6 +1652,7 @@ export class CrewAssetsService {
         contentType: true,
         createdAt: true,
         objectKey: true,
+        metadata: true,
       },
       orderBy: { createdAt: 'desc' },
       take: 200,
@@ -1630,14 +1671,16 @@ export class CrewAssetsService {
           kind: 'story' as const,
         })),
       ],
-      items: media.map((row) => ({
-        id: row.id,
-        kind: row.kind,
-        contentType: row.contentType,
-        name: row.objectKey?.split('/').pop() || row.id,
-        previewUrl: `/aurora/media/assets/${row.id}/content`,
-        createdAt: row.createdAt.toISOString(),
-      })),
+      items: media
+        .filter((row) => !isPrivateStudioMedia(row.metadata))
+        .map((row) => ({
+          id: row.id,
+          kind: row.kind,
+          contentType: row.contentType,
+          name: row.objectKey?.split('/').pop() || row.id,
+          previewUrl: `/aurora/media/assets/${row.id}/content`,
+          createdAt: row.createdAt.toISOString(),
+        })),
     };
   }
 
@@ -1668,19 +1711,22 @@ export class CrewAssetsService {
       if (!crew?.studioWorkspaceId) {
         throw new ConflictException('Link a Studio workspace first.');
       }
+      const mediaWhere = await this.studioMediaScope(
+        tx,
+        crew.studioWorkspaceId,
+        userId,
+        input,
+      );
       const items: ReturnType<CrewAssetsService['toDto']>[] = [];
       for (const mediaAssetId of [...new Set(input.mediaAssetIds)]) {
         const media = await tx.mediaAsset.findFirst({
           where: {
             id: mediaAssetId,
-            workspaceId: crew.studioWorkspaceId,
-            deletedAt: null,
-            status: 'ready',
-            kind: { in: ['image', 'video', 'audio'] },
+            ...mediaWhere,
           },
-          select: { id: true, objectKey: true },
+          select: { id: true, objectKey: true, metadata: true },
         });
-        if (!media) {
+        if (!media || isPrivateStudioMedia(media.metadata)) {
           throw new ForbiddenException(
             'Only ready workspace media can be linked.',
           );
@@ -1769,16 +1815,17 @@ export class CrewAssetsService {
       if (!crew?.studioWorkspaceId) {
         throw new ConflictException('Link a Studio workspace first.');
       }
+      const mediaWhere = await this.studioMediaScope(
+        tx,
+        crew.studioWorkspaceId,
+        userId,
+        input,
+      );
       const media = await tx.mediaAsset.findFirst({
-        where: {
-          id: input.mediaAssetId,
-          workspaceId: crew.studioWorkspaceId,
-          deletedAt: null,
-          status: 'ready',
-        },
-        select: { id: true },
+        where: { id: input.mediaAssetId, ...mediaWhere },
+        select: { id: true, metadata: true },
       });
-      if (!media) {
+      if (!media || isPrivateStudioMedia(media.metadata)) {
         throw new ForbiddenException(
           'Only ready workspace media can be linked.',
         );
@@ -1855,4 +1902,20 @@ export class CrewAssetsService {
     }
     return error instanceof Error ? error : new Error(String(error));
   }
+}
+
+/** Studio sharing is not an alternative authorization route for private evidence. */
+function isPrivateStudioMedia(metadata: Prisma.JsonValue | undefined): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))
+    return false;
+  return (
+    Boolean(metadata.crewId) ||
+    [
+      'crew_expense_receipt',
+      'crew_dispute_evidence',
+      'crew_agreement_archive',
+    ].includes(
+      typeof metadata.uploadKind === 'string' ? metadata.uploadKind : '',
+    )
+  );
 }

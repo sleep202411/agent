@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -173,7 +174,7 @@ suite('Studio linking authorization on PostgreSQL', () => {
         }
         const client =
           mode === 'after-write'
-            ? db.$extends({
+            ? extendPrismaQueries(db, {
                 query: {
                   crew: {
                     async update({ args, query }) {

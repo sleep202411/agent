@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -21,15 +22,17 @@ integration(
       const url = postgresFixtureUrl(databaseUrl!);
       if (
         !['localhost', '127.0.0.1'].includes(url.hostname) ||
-        url.port !== '5433' ||
-        url.pathname !== '/fizzdragon_outbox_test'
+        !(
+          (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+          (url.port === '55439' && url.pathname === '/task01')
+        )
       )
         throw new Error('Owned loopback fixture required');
       db = new PrismaClient({
         adapter: new PrismaPg({ connectionString: databaseUrl }),
       });
       // Narrow the fixture dataset without changing real ordering or cursor behavior.
-      const fixtureDb = db.$extends({
+      const fixtureDb = extendPrismaQueries(db, {
         query: {
           crew: {
             findMany({ args, query }) {

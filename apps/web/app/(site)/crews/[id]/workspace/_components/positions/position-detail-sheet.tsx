@@ -66,6 +66,7 @@ import {
   type CurrencyCode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
+import { PositionInvitationsPanel } from "@/app/(site)/crews/_components/position-invitations-panel";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import type { LookupUserDTO } from "@repo/shared/users";
@@ -163,7 +164,9 @@ function PositionDetailSession({
         onSettled,
         onSuccess: () => {
           if (!alive.current) return;
-          toast.success(status === "open" ? t("unfreezeSuccess") : t("closeJobSuccess", { name: label }));
+          toast.success(
+            status === "open" ? t("unfreezeSuccess") : t("closeJobSuccess", { name: label })
+          );
           setConfirmFreeze(false);
         },
         onError: (err) => {
@@ -376,6 +379,7 @@ function PositionDetailSession({
                 ) : null}
               </Section>
             ) : null}
+            {canManage && position.taskId && <PositionInvitationsPanel positionId={position.id} />}
           </SheetBody>
 
           {canManage ? (

@@ -13,7 +13,9 @@ import {
   Param,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ApplicationsService } from './applications.service';
@@ -37,13 +39,24 @@ export class ApplicationsController {
     @Param('positionId') positionIdRaw: string,
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(ApplySchema)) body: ApplyInput,
+    @Req() request: Request,
   ) {
     return this.svc.apply(
       parseIdParam(crewIdRaw, 'crewId'),
       parseIdParam(positionIdRaw, 'positionId'),
       user.userId,
       body,
+      request.headers.cookie,
     );
+  }
+
+  @Get('me/crew-applications')
+  mine(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListCrewApplicationsQuerySchema))
+    query: ListCrewApplicationsQuery,
+  ) {
+    return this.svc.listMine(user.userId, query);
   }
 
   @Get('crews/:crewId/applications')
@@ -78,8 +91,13 @@ export class ApplicationsController {
   approve(
     @Param('applicationId') idRaw: string,
     @CurrentUser() user: AuthUser,
+    @Req() request: Request,
   ) {
-    return this.svc.approve(parseIdParam(idRaw, 'applicationId'), user.userId);
+    return this.svc.approve(
+      parseIdParam(idRaw, 'applicationId'),
+      user.userId,
+      request.headers.cookie,
+    );
   }
 
   @Post('applications/:applicationId/reject')

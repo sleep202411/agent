@@ -119,6 +119,7 @@ export function useCrewTaskOptions(
   input: {
     query?: string;
     excludeTaskId?: string;
+    recruitmentOnly?: boolean;
     activeOnly?: boolean;
     limit?: number;
   } = {},
@@ -136,6 +137,7 @@ export function useCrewTaskOptions(
         cache: "no-store",
         query: {
           ...input,
+          recruitmentOnly: input.recruitmentOnly ? "true" : undefined,
           activeOnly: input.activeOnly ? "true" : undefined,
           cursor: pageParam,
           limit: input.limit ?? 30,
@@ -897,14 +899,16 @@ export function useReviewCrewTask(crewId: string) {
       expectedSubmissionId,
       decision,
       note,
+      revisionDueAt,
     }: {
       taskId: string;
       expectedSubmissionId: string;
       decision: "approve" | "request_revision";
       note: string;
+      revisionDueAt?: string;
     }) =>
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/review`, {
-        body: { decision, note, expectedSubmissionId },
+        body: { decision, note, expectedSubmissionId, ...(revisionDueAt !== undefined ? { revisionDueAt } : {}) },
       }),
     onSuccess: (task, _variables, origin) => {
       if (!origin?.accountUserId) return;

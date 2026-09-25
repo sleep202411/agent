@@ -126,7 +126,7 @@ const url = workspaceTestDatabase(process.env);
         await db.$disconnect();
       }
     });
-    it('allows only a Crew admin who owns the workspace and audits the link', async () => {
+    it('rejects a Crew admin with only editor workspace access and audits an authorized link', async () => {
       await expect(links.link(crewId, reader, workspaceId)).rejects.toThrow();
       const member = await db.crewMember.create({
         data: {
@@ -137,10 +137,13 @@ const url = workspaceTestDatabase(process.env);
           policies: { create: { policyKey: 'admin', assignedByUserId: owner } },
         },
       });
-      await expect(links.link(crewId, reader, workspaceId)).rejects.toThrow(
-        'must own',
-      );
-      await db.crewMember.delete({ where: { id: member.id } });
+      try {
+        await expect(links.link(crewId, reader, workspaceId)).rejects.toThrow(
+          'Workspace not found.',
+        );
+      } finally {
+        await db.crewMember.delete({ where: { id: member.id } });
+      }
       await links.link(crewId, owner, workspaceId);
       expect(await db.crewProductionActivity.count({ where: { crewId } })).toBe(
         1,
@@ -458,6 +461,62 @@ const url = workspaceTestDatabase(process.env);
       ).toBeNull();
       await links.link(crewId, owner, workspaceId);
     });
+    it('keeps private evidence out of explicit Studio browsing, import and counterpart replacement', async () => {
+      const file = await db.crewAssetNode.findFirstOrThrow({
+        where: { crewId, mediaAssetId: mediaId },
+      });
+      expect(
+        (await assets.listStudioMediaOptions(crewId, owner, {})).items.map(
+          (row: { id: string }) => row.id,
+        ),
+      ).toContain(mediaId);
+      try {
+        for (const uploadKind of [
+          'crew_expense_receipt',
+          'crew_dispute_evidence',
+          'crew_agreement_archive',
+        ]) {
+          await db.mediaAsset.update({
+            where: { id: mediaId },
+            data: { metadata: { uploadKind } },
+          });
+          expect(
+            (await assets.listStudioMediaOptions(crewId, owner, {})).items.map(
+              (row: { id: string }) => row.id,
+            ),
+          ).not.toContain(mediaId);
+          await expect(
+            assets.linkStudioMedia(crewId, owner, { mediaAssetIds: [mediaId] }),
+          ).rejects.toThrow();
+          await expect(
+            assets.setStudioLink(crewId, owner, file.id, {
+              mediaAssetId: mediaId,
+            }),
+          ).rejects.toThrow();
+          await expect(
+            assets.saveFromCanvas(documentId, owner, mediaId),
+          ).rejects.toThrow('Private');
+          expect(
+            (
+              await db.crewAssetNode.findUniqueOrThrow({
+                where: { id: file.id },
+              })
+            ).linkedStudioMediaAssetId,
+          ).toBe(file.linkedStudioMediaAssetId);
+        }
+      } finally {
+        await db.mediaAsset.update({
+          where: { id: mediaId },
+          data: { metadata: {} },
+        });
+      }
+      expect(
+        (await assets.listStudioMediaOptions(crewId, owner, {})).items.map(
+          (row: { id: string }) => row.id,
+        ),
+      ).toContain(mediaId);
+    });
+
     it('rejects blocked media, private receipts, non-canvas documents and ended documents', async () => {
       await db.mediaAsset.update({
         where: { id: mediaId },
@@ -521,6 +580,111 @@ const url = workspaceTestDatabase(process.env);
       expect(
         (await assets.projectContext(otherProjectId, owner)).crew?.id,
       ).toBe(crewId);
+    });
+    it('serializes explicit import retries and preserves original media when counterparts change', async () => {
+      const folder = await db.crewAssetNode.create({
+        data: {
+          crewId,
+          kind: 'folder',
+          name: 'Explicit import recovery',
+          createdByUserId: owner,
+          updatedByUserId: owner,
+        },
+      });
+      const counterpart = await db.mediaAsset.create({
+        data: {
+          workspaceId,
+          kind: 'image',
+          storageProvider: 'external_url',
+          externalUrl: 'https://example.invalid/counterpart.png',
+          contentType: 'image/png',
+          createdByUserId: owner,
+          visibility: 'private',
+        },
+      });
+      try {
+        const input = {
+          parentId: folder.id,
+          mediaAssetIds: [mediaId, mediaId],
+        };
+        const attempts = await Promise.all(
+          Array.from({ length: 4 }, () =>
+            assets.linkStudioMedia(crewId, owner, input),
+          ),
+        );
+        expect(
+          attempts.reduce((count, result) => count + result.items.length, 0),
+        ).toBe(1);
+        expect(
+          await db.crewAssetNode.count({
+            where: { crewId, parentId: folder.id },
+          }),
+        ).toBe(1);
+        const imported = await db.crewAssetNode.findFirstOrThrow({
+          where: { crewId, parentId: folder.id },
+        });
+        expect(imported).toMatchObject({
+          mediaAssetId: mediaId,
+          linkedStudioMediaAssetId: mediaId,
+          sharedFromStudio: true,
+        });
+        await assets.setStudioLink(crewId, owner, imported.id, {
+          mediaAssetId: counterpart.id,
+        });
+        expect(
+          await db.crewAssetNode.findUniqueOrThrow({
+            where: { id: imported.id },
+          }),
+        ).toMatchObject({
+          mediaAssetId: mediaId,
+          linkedStudioMediaAssetId: counterpart.id,
+        });
+        await assets.setStudioLink(crewId, owner, imported.id, {
+          mediaAssetId: null,
+        });
+        expect(
+          await db.crewAssetNode.findUniqueOrThrow({
+            where: { id: imported.id },
+          }),
+        ).toMatchObject({
+          mediaAssetId: mediaId,
+          linkedStudioMediaAssetId: null,
+        });
+        expect(
+          (await assets.linkStudioMedia(crewId, owner, input)).items,
+        ).toEqual([]);
+        expect(
+          await db.crewAssetNode.findUniqueOrThrow({
+            where: { id: imported.id },
+          }),
+        ).toMatchObject({
+          mediaAssetId: mediaId,
+          linkedStudioMediaAssetId: null,
+        });
+        await expect(
+          assets.linkStudioMedia(crewId, owner, {
+            parentId: folder.id,
+            mediaAssetIds: [counterpart.id, randomUUID()],
+          }),
+        ).rejects.toThrow('Only ready workspace media');
+        expect(
+          await db.crewAssetNode.count({
+            where: { crewId, parentId: folder.id },
+          }),
+        ).toBe(1);
+        expect(
+          (
+            await assets.linkStudioMedia(crewId, owner, {
+              parentId: folder.id,
+              mediaAssetIds: [counterpart.id],
+            })
+          ).items,
+        ).toHaveLength(1);
+      } finally {
+        await db.crewAssetNode.deleteMany({ where: { parentId: folder.id } });
+        await db.crewAssetNode.delete({ where: { id: folder.id } });
+        await db.mediaAsset.delete({ where: { id: counterpart.id } });
+      }
     });
     it('removes a Crew reference without deleting its original Studio media', async () => {
       const node = await db.crewAssetNode.findFirstOrThrow({
