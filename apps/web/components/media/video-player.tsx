@@ -11,6 +11,8 @@ interface VideoPlayerProps {
   type?: "video" | "audio";
   className?: string;
   autoplay?: boolean;
+  /** Fill a parent with an explicit size instead of adopting the source ratio. */
+  fillParent?: boolean;
   /** Fired once on the first play of the current src (e.g. a view signal). */
   onFirstPlay?: () => void;
 }
@@ -20,6 +22,7 @@ export function VideoPlayer({
   type = "video",
   className,
   autoplay = true,
+  fillParent = false,
   onFirstPlay,
 }: VideoPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,7 +51,8 @@ export function VideoPlayer({
     playerRef.current = videojs(videoEl, {
       controls: true,
       autoplay,
-      fluid: !isAudio,
+      fluid: !isAudio && !fillParent,
+      fill: !isAudio && fillParent,
       audioOnlyMode: isAudio,
       sources: [{ src, type: mimeType }],
     });
@@ -66,7 +70,7 @@ export function VideoPlayer({
         playerRef.current = null;
       }
     };
-  }, [src, type, autoplay]);
+  }, [src, type, autoplay, fillParent]);
 
   return <div ref={containerRef} className={className} />;
 }
