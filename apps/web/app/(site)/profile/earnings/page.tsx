@@ -132,6 +132,15 @@ function Earnings({ userId }: { userId: string }) {
           {t("unit")}
         </span>
       </header>
+      <nav aria-label={t("incomeSources")} className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+        <Link href={localizePath("/referral", locale)} className="text-primary hover:underline">
+          {t("referralIncome")}
+        </Link>
+        <Link href={localizePath("/crews/income", locale)} className="text-primary hover:underline">
+          {t("crewIncome")}
+        </Link>
+      </nav>
+      <p className="mt-2 text-xs text-muted-foreground">{t("incomeSourcesHint")}</p>
       <section
         aria-label={t("overview")}
         className="mt-7 grid grid-cols-2 rounded-2xl bg-card px-5 py-6 sm:px-7 sm:py-7"

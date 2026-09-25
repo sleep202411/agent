@@ -9493,7 +9493,12 @@
     "valuePointsCommunity": "+{count} 社區積分",
     "valueMembershipCompute": "{days} 天 Studio 會員",
     "valueMembershipCommunity": "{days} 天社區會員",
-    "valueMembershipBoth": "{days} 天 Studio+社區會員"
+    "valueMembershipBoth": "{days} 天 Studio+社區會員",
+    "incomeSources": "收入來源",
+    "referralIncome": "引薦收入與獎勵",
+    "crewIncome": "劇組收入",
+    "workIncome": "影視與故事收入",
+    "incomeSourcesHint": "各收入來源分別顯示記錄和計價單位，此處不合併計算。"
   },
   "crewCommunityChat": {
     "qrAlt": "社區邀請二維碼",
@@ -9651,7 +9656,12 @@
       "previous": "上一頁",
       "next": "下一頁",
       "page": "第 {page} 頁"
-    }
+    },
+    "incomeSources": "收入來源",
+    "referralIncome": "引薦收入與獎勵",
+    "crewIncome": "劇組收入",
+    "workIncome": "影視與故事收入",
+    "incomeSourcesHint": "各收入來源分別顯示記錄和計價單位，此處不合併計算。"
   },
   "crewTaskCenter": {
     "signInRequired": "登入後查看你的劇組任務。",
@@ -9846,7 +9856,12 @@
     "references": "來源記錄",
     "crew": "劇組",
     "task": "任務",
-    "loadMore": "載入更多"
+    "loadMore": "載入更多",
+    "incomeSources": "收入來源",
+    "referralIncome": "引薦收入與獎勵",
+    "crewIncome": "劇組收入",
+    "workIncome": "影視與故事收入",
+    "incomeSourcesHint": "各收入來源分別顯示記錄和計價單位，此處不合併計算。"
   },
   "crewPersonalPayouts": {
     "title": "付款記錄",
