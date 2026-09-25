@@ -1,4 +1,4 @@
-import IconLoader2 from "@tabler/icons-react-native/icons/IconLoader2";
+import IconLoader2 from "@tabler/icons-react-native/IconLoader2";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";

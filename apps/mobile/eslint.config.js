@@ -14,7 +14,9 @@ module.exports = defineConfig([
       "import/no-unresolved": [
         "error",
         {
-          ignore: ["^@tabler/icons-react-native/icons/"],
+          // The ESLint resolver does not support Tabler wildcard package exports.
+          // TypeScript and the runtime resolve these public per-icon entry points.
+          ignore: ["^@tabler/icons-react-native/Icon[A-Za-z0-9]+$"],
         },
       ],
     },

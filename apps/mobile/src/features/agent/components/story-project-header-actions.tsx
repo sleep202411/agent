@@ -1,9 +1,9 @@
-import IconAlertTriangle from "@tabler/icons-react-native/icons/IconAlertTriangle";
-import IconBolt from "@tabler/icons-react-native/icons/IconBolt";
-import IconCheck from "@tabler/icons-react-native/icons/IconCheck";
-import IconCloudOff from "@tabler/icons-react-native/icons/IconCloudOff";
-import IconCloudUpload from "@tabler/icons-react-native/icons/IconCloudUpload";
-import IconLoader2 from "@tabler/icons-react-native/icons/IconLoader2";
+import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
+import IconBolt from "@tabler/icons-react-native/IconBolt";
+import IconCheck from "@tabler/icons-react-native/IconCheck";
+import IconCloudOff from "@tabler/icons-react-native/IconCloudOff";
+import IconCloudUpload from "@tabler/icons-react-native/IconCloudUpload";
+import IconLoader2 from "@tabler/icons-react-native/IconLoader2";
 import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import {

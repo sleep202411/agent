@@ -1,6 +1,6 @@
-import IconClockPause from "@tabler/icons-react-native/icons/IconClockPause";
-import IconPaperclip from "@tabler/icons-react-native/icons/IconPaperclip";
-import IconX from "@tabler/icons-react-native/icons/IconX";
+import IconClockPause from "@tabler/icons-react-native/IconClockPause";
+import IconPaperclip from "@tabler/icons-react-native/IconPaperclip";
+import IconX from "@tabler/icons-react-native/IconX";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef } from "react";
 import {
