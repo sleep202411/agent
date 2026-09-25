@@ -1,6 +1,6 @@
-import IconHandStop from "@tabler/icons-react-native/icons/IconHandStop";
-import IconShieldCheck from "@tabler/icons-react-native/icons/IconShieldCheck";
-import IconShieldExclamation from "@tabler/icons-react-native/icons/IconShieldExclamation";
+import IconHandStop from "@tabler/icons-react-native/IconHandStop";
+import IconShieldCheck from "@tabler/icons-react-native/IconShieldCheck";
+import IconShieldExclamation from "@tabler/icons-react-native/IconShieldExclamation";
 import { useState, type ComponentType } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 

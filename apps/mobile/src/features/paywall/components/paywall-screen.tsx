@@ -1,8 +1,8 @@
-import IconBolt from "@tabler/icons-react-native/icons/IconBolt";
-import IconCheck from "@tabler/icons-react-native/icons/IconCheck";
-import IconCoins from "@tabler/icons-react-native/icons/IconCoins";
-import IconCrown from "@tabler/icons-react-native/icons/IconCrown";
-import IconSparkles from "@tabler/icons-react-native/icons/IconSparkles";
+import IconBolt from "@tabler/icons-react-native/IconBolt";
+import IconCheck from "@tabler/icons-react-native/IconCheck";
+import IconCoins from "@tabler/icons-react-native/IconCoins";
+import IconCrown from "@tabler/icons-react-native/IconCrown";
+import IconSparkles from "@tabler/icons-react-native/IconSparkles";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useMemo, type ComponentType } from "react";
 import {
