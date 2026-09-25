@@ -424,6 +424,9 @@ server:
       provider: aks-com
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
+    # Emergency pause: Java still calls register_bonus after disabling its
+    # legacy 500-point grant. Nest answers successfully without minting points.
+    REGISTRATION_COMPUTE_BONUS_PAUSED: "true"
     # V8 heap in a 1Gi cgroup sits around ~476Mi and OOMs the API+WS+outbox
     # process under collab load (P2028 follows: Prisma maxWait cannot start a
     # transaction while GC is thrashing). 1536 leaves ~500Mi of the 2Gi limit

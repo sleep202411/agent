@@ -164,6 +164,23 @@ export class InternalPointsService {
 
   /** Credit a migrated user's wallet (post-migration bonuses/refunds). */
   async grant(input: GrantPointsInput) {
+    // Java may still call the registration bonus bridge after its own legacy
+    // balance grant is disabled. A successful no-op keeps registration open and
+    // prevents Java's error fallback from crediting the legacy balance instead.
+    if (
+      process.env.REGISTRATION_COMPUTE_BONUS_PAUSED === 'true' &&
+      (input.reason?.trim().toLowerCase() === 'register_bonus' ||
+        input.idempotencyKey.trim().toLowerCase().startsWith('register_bonus:'))
+    ) {
+      const current = await this.getBalance(input.userId);
+      return {
+        userId: input.userId,
+        granted: '0',
+        balance: current.balance,
+        deduped: true,
+      };
+    }
+
     const workspaceId = await this.defaultWorkspaceId(input.userId);
     const account = await this.account(workspaceId);
     const amount = BigInt(input.amount);
