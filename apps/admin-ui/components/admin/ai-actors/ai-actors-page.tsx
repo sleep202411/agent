@@ -73,7 +73,7 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
             <IconMasksTheater />
-            AI Actors
+            AI演员
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Curate original performers and see where teams use them.
