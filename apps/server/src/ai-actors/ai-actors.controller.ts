@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -20,6 +21,7 @@ import {
 } from '../admin-auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import { AiActorsService } from './ai-actors.service';
+import { AI_ACTOR_CATEGORIES } from './ai-actors.types';
 const page = z.coerce.number().int().min(1).max(100000).default(1);
 const idSchema = z.object({ id: z.string().uuid() });
 const listSchema = z.object({ workspaceId: z.string().uuid(), page });
@@ -34,6 +36,7 @@ const saveSchema = z
     name: z.string().trim().min(1).max(64),
     photoAssetId: z.string().uuid(),
     active: z.boolean(),
+    category: z.enum(AI_ACTOR_CATEGORIES).default('ai_actor'),
   })
   .strict();
 @Controller('ai-actors')
@@ -88,9 +91,23 @@ export class AdminAiActorsController {
   @Header('Cache-Control', 'private, no-store')
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaRead)
   async list(
-    @Query(new ZodValidationPipe(z.object({ page }))) query: { page: number },
+    @Query(
+      new ZodValidationPipe(
+        z.object({
+          page,
+          category: z.enum(AI_ACTOR_CATEGORIES).optional(),
+        }),
+      ),
+    )
+    query: {
+      page: number;
+      category?: (typeof AI_ACTOR_CATEGORIES)[number];
+    },
   ) {
-    return { code: 200, data: await this.service.adminList(query.page) };
+    return {
+      code: 200,
+      data: await this.service.adminList(query.page, query.category),
+    };
   }
   @Post()
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
@@ -108,5 +125,13 @@ export class AdminAiActorsController {
     @Query(new ZodValidationPipe(z.object({ page }))) query: { page: number },
   ) {
     return { code: 200, data: await this.service.usage(params.id, query.page) };
+  }
+
+  @Delete(':id')
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
+  async archive(
+    @Param(new ZodValidationPipe(idSchema)) params: { id: string },
+  ) {
+    return { code: 200, data: await this.service.archive(params.id) };
   }
 }

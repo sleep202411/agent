@@ -22,6 +22,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
   return forward(request, context, "POST");
 }
 
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  return forward(request, context, "DELETE");
+}
+
 async function forward(request: NextRequest, context: RouteContext, method: string) {
   try {
     const path = await adminActorPath(context);

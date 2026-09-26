@@ -98,7 +98,7 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
   {
     key: "/ai-actors",
     href: "/ai-actors",
-    label: "AI Actors",
+    label: "AI演员",
     icon: IconMasksTheater,
     permission: "media.read",
   },
@@ -483,13 +483,13 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
         },
         {
           href: "/crews/expenses",
-          label: "Expense submissions",
+          label: "报销审核",
           icon: IconChecklist,
           permission: "crew.manage",
         },
         {
           href: "/crews/delivery-catalog",
-          label: "Delivery catalog",
+          label: "交付标准",
           icon: IconChecklist,
           permission: "crew.manage",
         },

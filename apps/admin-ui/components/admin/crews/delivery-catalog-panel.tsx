@@ -136,7 +136,7 @@ export function DeliveryCatalogPanel() {
   const inputClass = "w-full rounded border border-slate-300 bg-transparent p-2 text-sm";
   return (
     <main className="space-y-4 p-5">
-      <h1 className="text-xl font-semibold">Professional delivery catalog</h1>
+      <h1 className="text-xl font-semibold">交付标准</h1>
       <p className="text-sm text-slate-500">
         Reference prices and delivery requirements. Changes do not rewrite agreed task compensation.
       </p>

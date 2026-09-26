@@ -10,6 +10,7 @@ import { WorkspacePermissionService } from '../workspaces/workspace-permission.s
 import { writeAdminAudit } from '../admin-auth/admin-audit';
 import type { AdminActor } from '../admin-auth/admin-auth.types';
 import { requireNonReceiptAsset } from '../media/media-receipt-policy';
+import { AI_ACTOR_CATEGORIES, type AiActorCategory } from './ai-actors.types';
 
 const photoWhere = {
   kind: 'image',
@@ -34,7 +35,7 @@ export class AiActorsService {
       WorkspaceMemberRole.viewer,
     );
     const rows = await this.db.aiActor.findMany({
-      where: { active: true, photo: photoWhere },
+      where: { active: true, archivedAt: null, photo: photoWhere },
       include: { unlocks: { where: { workspaceId }, take: 1 } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * 24,
@@ -44,6 +45,7 @@ export class AiActorsService {
       items: rows.slice(0, 24).map((r) => ({
         id: r.id,
         name: r.name,
+        category: r.category,
         photoUrl: contentUrl(r.photoAssetId),
         unlocked: r.unlocks.length > 0,
       })),
@@ -152,10 +154,15 @@ export class AiActorsService {
     });
   }
 
-  async adminList(page: number) {
+  async adminList(page: number, category?: AiActorCategory) {
+    const where: Prisma.AiActorWhereInput = {
+      archivedAt: null,
+      ...(category ? { category } : {}),
+    };
     const [total, items] = await this.db.$transaction([
-      this.db.aiActor.count(),
+      this.db.aiActor.count({ where }),
       this.db.aiActor.findMany({
+        where,
         include: { _count: { select: { unlocks: true, uses: true } } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * 24,
@@ -164,13 +171,39 @@ export class AiActorsService {
     ]);
     return {
       total,
-      items: items.map((r) => ({ ...r, photoUrl: contentUrl(r.photoAssetId) })),
+      items: items.map((r) => ({
+        ...r,
+        category: r.category,
+        photoUrl: contentUrl(r.photoAssetId),
+      })),
     };
+  }
+
+  async archive(id: string) {
+    return this.db.$transaction(async (tx) => {
+      const actor = await tx.aiActor.findUnique({ where: { id } });
+      if (!actor || actor.archivedAt !== null) {
+        throw new NotFoundException('Actor not found.');
+      }
+      return tx.aiActor.update({
+        where: { id },
+        data: {
+          archivedAt: new Date(),
+          active: false,
+        },
+      });
+    });
   }
 
   async save(
     admin: AdminActor,
-    input: { id?: string; name: string; photoAssetId: string; active: boolean },
+    input: {
+      id?: string;
+      name: string;
+      photoAssetId: string;
+      active: boolean;
+      category?: string;
+    },
   ) {
     return this.db.$transaction(async (tx) => {
       if (input.id)
@@ -207,10 +240,15 @@ export class AiActorsService {
         where: { id: photo.id },
         data: { visibility: 'public' },
       });
+      const category = input.category ?? 'ai_actor';
+      if (!AI_ACTOR_CATEGORIES.includes(category as AiActorCategory)) {
+        throw new BadRequestException('Invalid actor category.');
+      }
       const data = {
         name: input.name,
         photoAssetId: input.photoAssetId,
         active: input.active,
+        category,
       };
       const actor = input.id
         ? await tx.aiActor.update({ where: { id: input.id }, data })
@@ -223,6 +261,7 @@ export class AiActorsService {
         metadata: {
           name: actor.name,
           active: actor.active,
+          category: actor.category,
           photoAssetId: actor.photoAssetId,
         },
       });

@@ -11,11 +11,20 @@ import {
 } from "@tabler/icons-react";
 import { adminUiApiPath } from "@/lib/admin-api";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
+
+const CATEGORY_LABELS: Record<string, string> = {
+  ai_actor: "AI演员",
+  influencer: "网红",
+  real_actor: "真实演员",
+  other: "其他",
+};
 
 type Actor = {
   id: string;
   name: string;
+  category: string;
   photoAssetId: string;
   active: boolean;
   _count: { unlocks: number; uses: number };
@@ -29,9 +38,14 @@ type Usage = {
   project: { name: string };
   createdAt: string;
 };
-async function request<T>(path: string, signal: AbortSignal, body?: unknown): Promise<T> {
+async function request<T>(
+  path: string,
+  signal: AbortSignal,
+  body?: unknown,
+  method?: string
+): Promise<T> {
   const response = await fetch(adminUiApiPath(`/api/admin/${path}`), {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     signal,
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
@@ -64,6 +78,8 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
   const [refresh, setRefresh] = useState(0);
   const [editing, setEditing] = useState<Actor | "new" | null>(null);
   const [usage, setUsage] = useState<Actor | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Actor | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const result = useAdminRead<{ items: Actor[]; total: number }>(`ai-actors?page=${page}`, refresh);
   const data = result?.data;
   const error = result?.error;
@@ -73,7 +89,7 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold">
             <IconMasksTheater />
-            AI Actors
+            AI演员
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Curate original performers and see where teams use them.
@@ -104,13 +120,18 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
           <table className="w-full text-left text-sm">
             <thead className="border-b text-muted-foreground">
               <tr>
-                {["Actor", "Availability", "Workspaces unlocked", "Reference uses", "Actions"].map(
-                  (s) => (
-                    <th className="p-3 font-medium" key={s}>
-                      {s}
-                    </th>
-                  )
-                )}
+                {[
+                  "Actor",
+                  "类型",
+                  "Availability",
+                  "Workspaces unlocked",
+                  "Reference uses",
+                  "Actions",
+                ].map((s) => (
+                  <th className="p-3 font-medium" key={s}>
+                    {s}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -129,6 +150,7 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
                       <span className="font-medium">{actor.name}</span>
                     </div>
                   </td>
+                  <td className="p-3">{CATEGORY_LABELS[actor.category] ?? actor.category}</td>
                   <td className="p-3">{actor.active ? "Available" : "Hidden"}</td>
                   <td className="p-3 tabular-nums">{actor._count.unlocks}</td>
                   <td className="p-3 tabular-nums">{actor._count.uses}</td>
@@ -145,6 +167,15 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => setUsage(actor)}>
                         Usage
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={!canWrite}
+                        onClick={() => setDeleteTarget(actor)}
+                      >
+                        Delete
                       </Button>
                     </div>
                   </td>
@@ -177,6 +208,14 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
           </Button>
         </div>
       </div>
+      {toastMessage && (
+        <div
+          role="status"
+          className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800"
+        >
+          {toastMessage}
+        </div>
+      )}
       {editing && (
         <ActorEditor
           key={typeof editing === "string" ? editing : editing.id}
@@ -189,6 +228,30 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
         />
       )}
       {usage && <UsageDialog key={usage.id} actor={usage} onClose={() => setUsage(null)} />}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="删除演员"
+        description={
+          deleteTarget
+            ? `确定删除「${deleteTarget.name}」吗？删除后将从演员库下架，已有项目引用不受影响。`
+            : undefined
+        }
+        confirmLabel="删除"
+        cancelLabel="取消"
+        destructive
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          const controller = new AbortController();
+          await request(`ai-actors/${deleteTarget.id}`, controller.signal, undefined, "DELETE");
+          setDeleteTarget(null);
+          setToastMessage("已删除");
+          setRefresh((v) => v + 1);
+          setTimeout(() => setToastMessage(null), 3000);
+        }}
+      />
     </main>
   );
 }
@@ -232,6 +295,7 @@ function ActorEditor({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(actor?.name ?? "");
+  const [category, setCategory] = useState(actor?.category ?? "ai_actor");
   const [active, setActive] = useState(actor?.active ?? false);
   const [photo, setPhoto] = useState(actor?.photoAssetId ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -294,6 +358,7 @@ function ActorEditor({
             await request("ai-actors", signal, {
               ...(actor ? { id: actor.id } : {}),
               name: name.trim(),
+              category,
               photoAssetId: photo,
               active,
             });
@@ -311,6 +376,21 @@ function ActorEditor({
             disabled={busy}
             onChange={(e) => setName(e.target.value)}
           />
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">类型</span>
+          <select
+            className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            value={category}
+            disabled={busy}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="flex items-center gap-5">
           {/* Authenticated media redirects use the browser cookie. */}

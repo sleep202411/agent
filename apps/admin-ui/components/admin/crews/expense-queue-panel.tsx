@@ -89,7 +89,7 @@ export function ExpenseQueuePanel() {
   return (
     <section className="space-y-4">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold">Expense submissions</h1>
+        <h1 className="text-xl font-semibold">报销审核</h1>
         <Button disabled={pending} onClick={() => void load()}>
           Refresh
         </Button>

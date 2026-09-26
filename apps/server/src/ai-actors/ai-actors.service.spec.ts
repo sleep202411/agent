@@ -27,6 +27,7 @@ function makeTransaction() {
     aiActor: {
       findUnique: jest.fn().mockResolvedValue(actor),
       findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue(actor),
       update: jest.fn().mockResolvedValue(actor),
     },
@@ -59,7 +60,8 @@ beforeEach(() => {
   service = new AiActorsService(
     {
       ...tx,
-      $transaction: (fn: (value: typeof tx) => Promise<unknown>) => fn(tx),
+      $transaction: (fnOrArray: any) =>
+        Array.isArray(fnOrArray) ? Promise.all(fnOrArray) : fnOrArray(tx),
     } as unknown as PrismaService,
     permission as unknown as WorkspacePermissionService,
   );
@@ -202,4 +204,62 @@ it('rejects stale retry after the actor photo was replaced', async () => {
     },
   });
   expect(tx.aiActorUse.create).not.toHaveBeenCalled();
+});
+
+it('defaults to ai_actor category when creating without category', async () => {
+  await service.save({ id: 'admin' } as AdminActor, {
+    name: 'Mira',
+    photoAssetId,
+    active: true,
+  });
+  expect(tx.aiActor.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({ category: 'ai_actor' }),
+    }),
+  );
+});
+
+it('persists a valid category when provided on create', async () => {
+  await service.save({ id: 'admin' } as AdminActor, {
+    name: 'Mira',
+    photoAssetId,
+    active: true,
+    category: 'influencer',
+  });
+  expect(tx.aiActor.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      data: expect.objectContaining({ category: 'influencer' }),
+    }),
+  );
+});
+
+it('rejects an invalid category on create', async () => {
+  await expect(
+    service.save({ id: 'admin' } as AdminActor, {
+      name: 'Mira',
+      photoAssetId,
+      active: true,
+      category: 'alien' as any,
+    }),
+  ).rejects.toThrow('Invalid actor category.');
+  expect(tx.aiActor.create).not.toHaveBeenCalled();
+});
+
+it('includes category in list and adminList return shapes', async () => {
+  tx.aiActor.findMany.mockResolvedValue([
+    {
+      id: actorId,
+      name: 'Mira',
+      category: 'influencer',
+      photoAssetId,
+      active: true,
+      unlocks: [],
+      _count: { unlocks: 1, uses: 2 },
+    },
+  ]);
+  const listResult = await service.list('member', workspaceId, 1);
+  expect(listResult.items[0]).toHaveProperty('category', 'influencer');
+
+  const adminListResult = await service.adminList(1);
+  expect(adminListResult.items[0]).toHaveProperty('category', 'influencer');
 });
