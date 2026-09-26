@@ -48,6 +48,8 @@ import {
   IpKnowledgeService,
 } from './ip-knowledge.controller';
 import { IpGenerationTemplatesController } from './ip-generation-templates.controller';
+import { IpGenerationJobsController } from './ip-generation-jobs.controller';
+import { IpGenerationJobsService } from './ip-generation-jobs.service';
 import { IpGenerationTemplatesService } from './ip-generation-templates.service';
 import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { IpCommerceService } from './ip-commerce.service';
@@ -81,6 +83,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpCommerceController,
     IpKnowledgeController,
     IpGenerationTemplatesController,
+    IpGenerationJobsController,
     IpCommerceAdminController,
     CreatorEarningsController,
     CreatorTrustController,
@@ -97,6 +100,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpCommerceService,
     IpKnowledgeService,
     IpGenerationTemplatesService,
+    IpGenerationJobsService,
     LegacyCnVideoResolverService,
     CreatorEarningsService,
   ],
