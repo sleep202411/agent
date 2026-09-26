@@ -10160,5 +10160,36 @@
     "completedLabel": "创作已完成！",
     "downloadButton": "下载作品",
     "errorGeneric": "生成请求失败，请稍后重试。"
+  },
+  "ipGenerationAdmin": {
+    "title": "影迷生成模板配置",
+    "subtitle": "配置IP Room中向观众开放的AI海报、纪念照与定制短片生成模板",
+    "addTemplate": "添加模板",
+    "saveChanges": "保存更改",
+    "saving": "保存中...",
+    "saved": "生成模板已成功保存",
+    "saveFailed": "保存模板失败",
+    "conflictError": "该作品已被其他操作更新。请刷新后重试。",
+    "refresh": "刷新",
+    "deleteTemplate": "删除",
+    "deleteConfirm": "确定要删除该生成模板吗？",
+    "fieldName": "模板名称",
+    "fieldDescription": "模板描述",
+    "fieldModel": "AI模型",
+    "fieldPromptPrefix": "基础提示词（前缀）",
+    "fieldPromptSuffix": "补充提示词（后缀）",
+    "fieldRequireReference": "必须上传参考照片",
+    "fieldReferenceHint": "参考照片提示文案",
+    "fieldAspectRatio": "输出画幅比例",
+    "fieldLogo": "品牌水印/贴纸资源",
+    "fieldEnabled": "启用该模板",
+    "fieldOrder": "排序权重",
+    "emptyState": "暂未配置任何影迷生成模板。添加模板后观众可在IP Room进行体验。",
+    "templateLabel": "模板 #{index}"
+  },
+  "ipStudio": {
+    "tabs": {
+      "generation": "影迷AI共创"
+    }
   }
 }

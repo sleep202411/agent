@@ -10160,5 +10160,36 @@
     "completedLabel": "Creation completed!",
     "downloadButton": "Download",
     "errorGeneric": "Generation request failed. Please try again later."
+  },
+  "ipGenerationAdmin": {
+    "title": "Audience Generation Templates",
+    "subtitle": "Configure photo and video generation templates available to viewers in the IP Room",
+    "addTemplate": "Add Template",
+    "saveChanges": "Save Changes",
+    "saving": "Saving...",
+    "saved": "Templates saved successfully",
+    "saveFailed": "Failed to save templates",
+    "conflictError": "This film was updated elsewhere. Refresh to try again.",
+    "refresh": "Refresh",
+    "deleteTemplate": "Delete",
+    "deleteConfirm": "Are you sure you want to delete this template?",
+    "fieldName": "Template Name",
+    "fieldDescription": "Description",
+    "fieldModel": "AI Model",
+    "fieldPromptPrefix": "Prompt Prefix",
+    "fieldPromptSuffix": "Prompt Suffix",
+    "fieldRequireReference": "Require Reference Photo",
+    "fieldReferenceHint": "Reference Photo Prompt/Hint",
+    "fieldAspectRatio": "Output Aspect Ratio",
+    "fieldLogo": "Brand Logo/Asset",
+    "fieldEnabled": "Enabled",
+    "fieldOrder": "Display Order",
+    "emptyState": "No generation templates configured yet. Add a template to let audience create memorabilia.",
+    "templateLabel": "Template #{index}"
+  },
+  "ipStudio": {
+    "tabs": {
+      "generation": "Audience Generation"
+    }
   }
 }

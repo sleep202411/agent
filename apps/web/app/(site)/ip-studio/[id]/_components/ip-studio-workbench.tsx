@@ -2,6 +2,7 @@
 
 import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
 import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
+import { AudienceGenerationTemplatesEditor } from "./audience-generation-templates-editor";
 import { IpGameAssociations } from "@/app/(site)/ips/_components/ip-game-associations";
 import { IpStageApplications } from "@/app/(site)/ips/_components/ip-stage-applications";
 import { useEffect, useRef, useState } from "react";
@@ -120,6 +121,7 @@ const STUDIO_TABS = [
   { key: "rights", icon: IconFileText },
   { key: "pricing", icon: IconCoin },
   { key: "orders", icon: IconReceipt },
+  { key: "generation", icon: IconPhoto },
 ] as const;
 
 type StudioTabKey = (typeof STUDIO_TABS)[number]["key"];
@@ -197,9 +199,18 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
       {error && (
-        <div role="alert" className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 text-sm text-destructive">
+        <div
+          role="alert"
+          className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 text-sm text-destructive"
+        >
           <span>{errorMessage(error) || t("notFoundBody")}</span>
-          <Button type="button" variant="outline" size="sm" disabled={isFetching} onClick={() => void refetch()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
             {t("retry")}
           </Button>
         </div>
@@ -266,13 +277,14 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
         {activeTab === "rights" ? <RightsPanel ip={ip} t={t} /> : null}
         {activeTab === "pricing" ? <PricingPanel ip={ip} t={t} /> : null}
         {activeTab === "orders" ? <OrdersPanel ip={ip} t={t} locale={locale} /> : null}
+        {activeTab === "generation" ? (
+          <Section title={t("tabs.generation", { defaultValue: "Audience Generation" })}>
+            <AudienceGenerationTemplatesEditor ipId={ip.id} />
+          </Section>
+        ) : null}
       </div>
 
-      <IpProfileEditDialog
-        ip={ip}
-        open={profileEditOpen}
-        onOpenChange={setProfileEditOpen}
-      />
+      <IpProfileEditDialog ip={ip} open={profileEditOpen} onOpenChange={setProfileEditOpen} />
     </main>
   );
 }
@@ -2227,8 +2239,13 @@ export function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate;
       {error ? (
         <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
           <p>{errorMessage(error) || t("membersPanel.loadFailed")}</p>
-          <Button type="button" variant="outline" size="sm" disabled={isFetching}
-            onClick={() => void refetch()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
             {t("membersPanel.retry")}
           </Button>
         </div>
@@ -3038,7 +3055,10 @@ export function AddMemberDialog({
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field>
                   <FieldLabel>{t("membersPanel.roleLabel")}</FieldLabel>
-                  <Select value={role} onValueChange={(value) => setRole(value as IpContributorRole)}>
+                  <Select
+                    value={role}
+                    onValueChange={(value) => setRole(value as IpContributorRole)}
+                  >
                     <SelectTrigger className="w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -3408,18 +3428,11 @@ type IpProfileEditDialogProps = {
 
 export function IpProfileEditDialog(props: IpProfileEditDialogProps) {
   return (
-    <IpProfileEditSession
-      key={`${props.ip.id}:${props.open ? "open" : "closed"}`}
-      {...props}
-    />
+    <IpProfileEditSession key={`${props.ip.id}:${props.open ? "open" : "closed"}`} {...props} />
   );
 }
 
-function IpProfileEditSession({
-  ip: currentIp,
-  open,
-  onOpenChange,
-}: IpProfileEditDialogProps) {
+function IpProfileEditSession({ ip: currentIp, open, onOpenChange }: IpProfileEditDialogProps) {
   // An open editing session owns both its initial fields and their server version.
   const [ip] = useState(currentIp);
   const t = useTranslations("newIpWorkbench");
