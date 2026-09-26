@@ -18,6 +18,7 @@ import {
   STORY_CHAPTER_WORKBENCH_QUERY_PREFIX,
   useStoryChapterWorkbench,
 } from "../_lib/use-story-chapter-workbench";
+import { STORY_CHAPTER_SCOPE_QUERY_KEY } from "./story-project-chapter-scope";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryChaptersPanel } from "./project-canvas/story-chapters-panel";
 
@@ -44,6 +45,7 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
   const refreshChapterProjections = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: STORY_CHAPTER_WORKBENCH_QUERY_PREFIX }),
+      queryClient.invalidateQueries({ queryKey: [...STORY_CHAPTER_SCOPE_QUERY_KEY, projectId] }),
       queryClient.invalidateQueries({ queryKey: ["story-studio", "workbench"] }),
       queryClient.invalidateQueries({ queryKey: ["story-studio", "projects"] }),
     ]);
