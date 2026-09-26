@@ -10134,5 +10134,31 @@
     "sources": "引用公開資料",
     "unanswered": "目前已發佈的公開資料中暫未收錄該問題的相關解答。",
     "empty": "該影片目前暫未發佈可供檢索的公開參考資料。"
+  },
+  "ipGeneration": {
+    "title": "觀眾AI共創",
+    "subtitle": "使用官方影片範本，生成專屬的共創海報與影片片段",
+    "templateLabel": "選擇範本",
+    "templateSelectPrompt": "請挑選一種視覺範本進行生成",
+    "referenceImageLabel": "上傳參考照片",
+    "referenceImageHint": "請上傳清晰正面人像照片以獲得最佳效果",
+    "uploadButton": "選擇照片",
+    "uploading": "正在上傳照片...",
+    "uploadFailed": "照片上傳失敗，請重試。",
+    "removePhoto": "移除照片",
+    "costLabel": "預估消耗",
+    "costFree": "限時免費（活動特權）",
+    "costPoints": "{count} 算力點",
+    "balanceLabel": "當前可用算力：{count} 點",
+    "previewLoading": "正在計算消耗...",
+    "previewFailed": "預估消耗計算失敗",
+    "generateButton": "開始生成",
+    "generating": "正在生成中...",
+    "progressLabel": "正在全力生成中（{percent}%）",
+    "cancel": "取消",
+    "retry": "重新生成",
+    "completedLabel": "創作已完成！",
+    "downloadButton": "下載作品",
+    "errorGeneric": "生成請求失敗，請稍後重試。"
   }
 }

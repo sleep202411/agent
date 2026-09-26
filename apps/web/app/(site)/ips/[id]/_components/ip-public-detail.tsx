@@ -2,6 +2,7 @@
 import { ChannelSubmissions } from "../../_components/channel-submissions";
 import { IpFanCommunity } from "../../_components/ip-fan-community";
 import { IpKnowledgeChat } from "../../_components/ip-knowledge-chat";
+import { IpGenerationPanel } from "../../_components/ip-generation-panel";
 
 import { useReportSubmission } from "../_hooks/use-report-submission";
 
@@ -574,6 +575,11 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                 {!detailIp.previewMode && (
                   <div className="mt-4">
                     <IpKnowledgeChat ipId={detailIp.id} ipTitle={detailIp.title} />
+                  </div>
+                )}
+                {!detailIp.previewMode && (
+                  <div className="mt-4">
+                    <IpGenerationPanel ipId={detailIp.id} />
                   </div>
                 )}
                 {!detailIp.previewMode && <ChannelSubmissions ipId={detailIp.id} />}

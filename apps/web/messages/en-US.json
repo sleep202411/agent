@@ -10134,5 +10134,31 @@
     "sources": "Cited published sources",
     "unanswered": "The published film archives do not contain enough information to answer this question.",
     "empty": "No published reference documents are currently available for this film."
+  },
+  "ipGeneration": {
+    "title": "Audience AI Creation",
+    "subtitle": "Create personalized photos and video clips using official film templates",
+    "templateLabel": "Select Template",
+    "templateSelectPrompt": "Choose a visual style to generate with",
+    "referenceImageLabel": "Upload Reference Photo",
+    "referenceImageHint": "Upload a clear portrait photo for best generation results",
+    "uploadButton": "Choose Photo",
+    "uploading": "Uploading photo...",
+    "uploadFailed": "Photo upload failed. Please try again.",
+    "removePhoto": "Remove",
+    "costLabel": "Estimated Cost",
+    "costFree": "Free (Campaign Benefit)",
+    "costPoints": "{count} compute points",
+    "balanceLabel": "Your balance: {count} compute points",
+    "previewLoading": "Calculating cost...",
+    "previewFailed": "Failed to estimate cost",
+    "generateButton": "Generate",
+    "generating": "Generating...",
+    "progressLabel": "Generation in progress ({percent}%)",
+    "cancel": "Cancel",
+    "retry": "Try Again",
+    "completedLabel": "Creation completed!",
+    "downloadButton": "Download",
+    "errorGeneric": "Generation request failed. Please try again later."
   }
 }

@@ -10134,5 +10134,31 @@
     "sources": "引用公开资料",
     "unanswered": "目前已发布的公开资料中暂未收录该问题的相关解答。",
     "empty": "该影片目前暂未发布可供检索的公开参考资料。"
+  },
+  "ipGeneration": {
+    "title": "观众AI共创",
+    "subtitle": "使用官方影片模板，生成专属的共创海报与视频片段",
+    "templateLabel": "选择模版",
+    "templateSelectPrompt": "请挑选一种视觉模版进行生成",
+    "referenceImageLabel": "上传参考照片",
+    "referenceImageHint": "请上传清晰正面人像照片以获得最佳效果",
+    "uploadButton": "选择照片",
+    "uploading": "正在上传照片...",
+    "uploadFailed": "照片上传失败，请重试。",
+    "removePhoto": "移除照片",
+    "costLabel": "预估消耗",
+    "costFree": "限时免费（活动特权）",
+    "costPoints": "{count} 算力点",
+    "balanceLabel": "当前可用算力：{count} 点",
+    "previewLoading": "正在计算消耗...",
+    "previewFailed": "预估消耗计算失败",
+    "generateButton": "开始生成",
+    "generating": "正在生成中...",
+    "progressLabel": "正在全力生成中（{percent}%）",
+    "cancel": "取消",
+    "retry": "重新生成",
+    "completedLabel": "创作已完成！",
+    "downloadButton": "下载作品",
+    "errorGeneric": "生成请求失败，请稍后重试。"
   }
 }
