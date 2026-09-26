@@ -113,14 +113,7 @@ describe("film-only story canvas projection", () => {
       }),
     ]);
 
-    const localizedModel = buildStoryCanvasModel(
-      content,
-      "en-US",
-      undefined,
-      undefined,
-      undefined,
-      "zh-CN"
-    );
+    const localizedModel = buildStoryCanvasModel(content, "en-US", undefined, undefined, "zh-CN");
     expect(localizedModel.edges.find((edge) => edge.source === "clip:b")?.label).toBe("小林 ≥ 80");
     expect(
       localizedModel.nodes.find((node) => node.id === storyDecisionCanvasNodeId("clip:a"))?.data

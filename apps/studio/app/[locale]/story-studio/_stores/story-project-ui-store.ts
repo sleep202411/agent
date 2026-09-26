@@ -4,6 +4,7 @@ import {
   CLOSED_STORY_CANVAS_INSPECTOR,
   type StoryCanvasInspectorTarget,
 } from "../_components/project-canvas/story-canvas-inspector-target";
+import type { StoryCanvasViewState } from "../_components/project-canvas/story-canvas-view-state";
 import type { StoryBibleWriterPatch } from "@/lib/story-projects-api";
 import type { SavedDraftSnapshotRunner } from "../_components/project-canvas/use-story-publication";
 
@@ -69,6 +70,14 @@ interface StoryProjectUIState {
    * is a docked side panel now (see `sidePanel`), no longer an inspector kind.
    */
   inspectorTarget: StoryCanvasInspectorTarget;
+  /**
+   * Plot-tree camera, selection, and inspector, keyed by `projectId:chapterId`.
+   * Production steps are routes, so the canvas unmounts with its React Flow
+   * instance. Node positions stay in the layout projection; this is only the
+   * view state required to open the same chapter on the same camera.
+   */
+  canvasViews: Record<string, StoryCanvasViewState>;
+  saveCanvasView: (key: string, view: StoryCanvasViewState) => void;
   setInspectorTarget: (
     next:
       | StoryCanvasInspectorTarget
@@ -129,6 +138,13 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
       setActiveChapterId: (chapterId) =>
         set({ activeChapterId: chapterId }, false, "setActiveChapterId"),
       inspectorTarget: CLOSED_STORY_CANVAS_INSPECTOR,
+      canvasViews: {},
+      saveCanvasView: (key, view) =>
+        set(
+          (state) => ({ canvasViews: { ...state.canvasViews, [key]: view } }),
+          false,
+          "saveCanvasView"
+        ),
       setInspectorTarget: (next) =>
         set(
           (state) => ({

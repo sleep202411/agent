@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
-import { removeWorldExperienceNodes } from "./story-world-feature-policy";
+import { stripRetiredStoryWorldNodes } from "./strip-retired-story-world-nodes";
 
-describe("world experience feature policy", () => {
+describe("stripRetiredStoryWorldNodes", () => {
   it("removes world nodes and preserves clip continuations", () => {
-    const content = draft();
-    const normalized = removeWorldExperienceNodes(content);
+    const normalized = stripRetiredStoryWorldNodes(draft());
 
     expect(normalized.graph.entryNodeId).toBe("clip:a");
     expect(normalized.graph.nodes.map((node) => node.nodeId)).toEqual(["clip:a", "clip:b"]);
@@ -21,32 +19,21 @@ describe("world experience feature policy", () => {
     if (!source || source.kind !== "clip") throw new Error("Expected clip fixture.");
     source.interactions = [
       {
-        kind: "hotspot",
-        interactionId: "branch",
-        label: { "en-US": "Branch" },
-        trigger: { kind: "tap" },
-        rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
-        startMs: 0,
-        endMs: 1_000,
         outcomes: { success: { kind: "goto", target: { kind: "node", nodeId: "world:a" } } },
       },
     ];
     source.exit = {
       kind: "choice",
-      decisionId: "choice:a",
-      prompt: { "en-US": "Continue?" },
-      choices: [
-        { choiceId: "yes", label: { "en-US": "Yes" }, target: { kind: "node", nodeId: "world:a" } },
-      ],
+      choices: [{ target: { kind: "node", nodeId: "world:a" } }],
     };
 
-    const normalized = removeWorldExperienceNodes(content);
+    const normalized = stripRetiredStoryWorldNodes(content);
     const normalizedSource = normalized.graph.nodes[0];
     if (!normalizedSource || normalizedSource.kind !== "clip") {
       throw new Error("Expected normalized clip.");
     }
 
-    expect(normalizedSource.interactions[0]?.outcomes.success).toEqual({
+    expect(normalizedSource.interactions?.[0]?.outcomes.success).toEqual({
       kind: "goto",
       target: { kind: "node", nodeId: "clip:b" },
     });
@@ -67,46 +54,61 @@ describe("world experience feature policy", () => {
       };
     }
 
-    expect(removeWorldExperienceNodes(content)).toBe(content);
+    expect(stripRetiredStoryWorldNodes(content)).toBe(content);
   });
 });
 
-function draft(): InteractiveStoryDraftContent {
+function draft() {
   return {
-    storyBible: { logline: "", synopsis: "", characters: [] },
     graph: {
-      entryNodeId: "clip:a",
+      entryNodeId: "clip:a" as string | null,
       nodes: [
         {
           kind: "clip",
           nodeId: "clip:a",
-          clipKey: "A",
-          interactions: [],
-          exit: { kind: "auto", routes: [{ target: { kind: "node", nodeId: "world:a" } }] },
+          interactions: [] as Array<{
+            outcomes: {
+              success: { kind: string; target?: { kind: string; nodeId: string } | null };
+            };
+          }>,
+          exit: {
+            kind: "auto",
+            routes: [
+              {
+                target: { kind: "node", nodeId: "world:a" } as {
+                  kind: string;
+                  nodeId: string;
+                } | null,
+              },
+            ],
+            choices: undefined as
+              | Array<{ target: { kind: string; nodeId: string } | null }>
+              | undefined,
+          },
         },
         {
           kind: "world",
           nodeId: "world:a",
-          worldId: null,
-          maxExperienceSeconds: 60,
-          exit: { kind: "auto", routes: [{ target: { kind: "node", nodeId: "world:b" } }] },
+          exit: {
+            kind: "auto",
+            routes: [{ target: { kind: "node", nodeId: "world:b" } }],
+          },
         },
         {
           kind: "world",
           nodeId: "world:b",
-          worldId: null,
-          maxExperienceSeconds: 60,
-          exit: { kind: "auto", routes: [{ target: { kind: "node", nodeId: "clip:b" } }] },
+          exit: {
+            kind: "auto",
+            routes: [{ target: { kind: "node", nodeId: "clip:b" } }],
+          },
         },
         {
           kind: "clip",
           nodeId: "clip:b",
-          clipKey: "B",
           interactions: [],
           exit: { kind: "auto", routes: [{ target: null }] },
         },
       ],
     },
-    productionNotes: [],
   };
 }

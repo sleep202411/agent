@@ -419,17 +419,17 @@ describe("agent-tools registry", () => {
             {
               choiceId: "explore",
               label: { "en-US": "Explore" },
-              target: { kind: "node", nodeId: "world" },
+              target: { kind: "node", nodeId: "after" },
               effects: [{ kind: "add", key: "courage", amount: 1 }],
             },
           ],
         },
       },
       {
-        kind: "world",
-        nodeId: "world",
-        worldId: null,
-        maxExperienceSeconds: 60,
+        kind: "clip",
+        nodeId: "after",
+        clipKey: "AFTER",
+        interactions: [],
         exit: { kind: "auto", routes: [{ target: null }] },
       },
     ];

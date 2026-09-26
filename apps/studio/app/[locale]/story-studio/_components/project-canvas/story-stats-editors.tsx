@@ -1064,9 +1064,7 @@ export function storyGraphNodePickerTitles(
       const fallback =
         node.kind === "clip"
           ? `${clipLabel} ${++clipOrdinal}`
-          : node.kind === "decision"
-            ? `${decisionLabel} ${++decisionOrdinal}`
-            : node.nodeId;
+          : `${decisionLabel} ${++decisionOrdinal}`;
       return [node.nodeId, (node.kind === "decision" ? "" : node.name?.trim()) || fallback];
     })
   );

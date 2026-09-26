@@ -57,37 +57,6 @@ describe("StoryNodeInspector film authoring", () => {
     await click(editInteractions);
     expect(onEditInteractions).toHaveBeenCalledWith("second");
   });
-
-  it("does not render a side inspector for a world node", async () => {
-    const content: InteractiveStoryDraftContent = {
-      storyBible: { logline: "", synopsis: "", characters: [] },
-      graph: {
-        entryNodeId: "world:one",
-        nodes: [
-          {
-            kind: "world",
-            nodeId: "world:one",
-            worldId: null,
-            maxExperienceSeconds: 60,
-            exit: { kind: "auto", routes: [{ target: null }] },
-          },
-        ],
-      },
-      productionNotes: [],
-    };
-    const model = buildStoryCanvasModel(content, "en-US", { world: "World" });
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector
-          {...inspectorProps(content)}
-          selectedNode={requiredNode(model.nodes, "world:one")}
-        />
-      );
-    });
-
-    expect(container.innerHTML).toBe("");
-  });
 });
 
 function linearDraft(): InteractiveStoryDraftContent {

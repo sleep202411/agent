@@ -3,7 +3,7 @@ export interface StoryNodeCreationPoint {
   y: number;
 }
 
-export type StoryNodeCreationKind = "clip" | "world" | "decision";
+export type StoryNodeCreationKind = "clip" | "decision";
 
 export interface StoryNodeCreationMenuPlacement {
   left: number;

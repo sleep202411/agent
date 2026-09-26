@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { CLOSED_STORY_CANVAS_INSPECTOR } from "../_components/project-canvas/story-canvas-inspector-target";
+import type { StoryCanvasViewState } from "../_components/project-canvas/story-canvas-view-state";
 import { useStoryProjectUiStore } from "./story-project-ui-store";
 
 describe("Story project FizzAgent composer bridge", () => {
@@ -33,5 +35,34 @@ describe("Story project FizzAgent composer bridge", () => {
       id: 2,
       text: "Second",
     });
+  });
+});
+
+describe("Story canvas view state", () => {
+  beforeEach(() => {
+    useStoryProjectUiStore.setState({ canvasViews: {} });
+  });
+
+  it("keeps each chapter camera without overwriting the others", () => {
+    const chapterA: StoryCanvasViewState = {
+      viewport: { x: 10, y: 20, zoom: 0.5 },
+      selectedNodeIds: ["clip:scene-1"],
+      inspectorTarget: { kind: "node", nodeId: "clip:scene-1" },
+    };
+    const chapterB: StoryCanvasViewState = {
+      viewport: { x: 30, y: 40, zoom: 0.8 },
+      selectedNodeIds: [],
+      inspectorTarget: CLOSED_STORY_CANVAS_INSPECTOR,
+    };
+
+    useStoryProjectUiStore.getState().saveCanvasView("project:chapter-a", chapterA);
+    useStoryProjectUiStore.getState().saveCanvasView("project:chapter-b", chapterB);
+    useStoryProjectUiStore.getState().saveCanvasView("project:chapter-a", {
+      ...chapterA,
+      viewport: { x: 99, y: 20, zoom: 0.5 },
+    });
+
+    expect(useStoryProjectUiStore.getState().canvasViews["project:chapter-a"]?.viewport.x).toBe(99);
+    expect(useStoryProjectUiStore.getState().canvasViews["project:chapter-b"]).toEqual(chapterB);
   });
 });

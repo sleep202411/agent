@@ -62,7 +62,6 @@ import {
   type FrozenStoryVideoAsset,
   type StoryBuildNodeTimelineInput,
   type StoryBuildSegmentInput,
-  type StoryBuildWorldInput,
 } from './story-build-compiler';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
@@ -210,7 +209,6 @@ interface ValidatedBuildSnapshot {
   videoSnapshotHash: string;
   entries: StoryVideoSnapshotEntry[];
   timelines: StoryBuildNodeTimelineInput[];
-  worlds: StoryBuildWorldInput[];
 }
 
 @Injectable()
@@ -310,7 +308,6 @@ export class StoryBuildService {
               },
               draft: snapshot.draft.content,
               timelines: snapshot.timelines,
-              worlds: snapshot.worlds,
             });
             if (
               !compilation.runtime &&
@@ -925,14 +922,6 @@ async function loadValidatedBuildSnapshot(
   const clipNodes = lockable.data.graph.nodes.filter(
     (node) => node.kind === 'clip',
   );
-  const worldNodes = lockable.data.graph.nodes.filter(
-    (
-      node,
-    ): node is Extract<
-      (typeof lockable.data.graph.nodes)[number],
-      { kind: 'world' }
-    > => node.kind === 'world' && node.worldId !== null,
-  );
   const sequences =
     clipNodes.length === 0
       ? []
@@ -975,26 +964,6 @@ async function loadValidatedBuildSnapshot(
     });
   }
 
-  const worldRows =
-    worldNodes.length === 0
-      ? []
-      : await tx.worldModelWorld.findMany({
-          where: {
-            storyProjectId: projectId,
-            workspaceId,
-            id: { in: worldNodes.map((node) => node.worldId as string) },
-          },
-          select: { id: true, status: true },
-        });
-  const worldStatusById = new Map(
-    worldRows.map((world) => [world.id, world.status]),
-  );
-  const worlds: StoryBuildWorldInput[] = worldNodes.flatMap((node) => {
-    const status = worldStatusById.get(node.worldId as string);
-    return status
-      ? [{ graphNodeId: node.nodeId, worldId: node.worldId as string, status }]
-      : [];
-  });
   return {
     project: {
       ...project,
@@ -1008,7 +977,6 @@ async function loadValidatedBuildSnapshot(
     videoSnapshotHash,
     entries,
     timelines,
-    worlds,
   };
 }
 

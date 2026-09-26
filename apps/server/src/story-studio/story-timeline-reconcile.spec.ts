@@ -19,7 +19,6 @@ describe('reconcileStoryTimelinesWithDraft', () => {
       nodes: [
         { kind: 'clip', nodeId: 'clip:one' },
         { kind: 'clip', nodeId: 'clip:two' },
-        { kind: 'world', nodeId: 'world:one' },
       ],
     },
   };
@@ -28,7 +27,7 @@ describe('reconcileStoryTimelinesWithDraft', () => {
     const tx = transaction();
     await reconcileStoryTimelinesWithDraft(tx, 'project-1', content, {
       storyChapterId: 'chapter-1',
-      chapterNodeIds: ['clip:one', 'clip:two', 'world:one'],
+      chapterNodeIds: ['clip:one', 'clip:two'],
       actorUserId: 'user-1',
     });
 

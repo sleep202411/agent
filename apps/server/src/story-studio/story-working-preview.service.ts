@@ -28,7 +28,6 @@ import {
   type FrozenStoryVideoAsset,
   type StoryBuildNodeTimelineInput,
   type StoryBuildSegmentInput,
-  type StoryBuildWorldInput,
 } from './story-build-compiler';
 import { resolveStoryCoverUrl } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
@@ -285,14 +284,6 @@ export class StoryWorkingPreviewService {
     const clipNodes = playableDraft.data.graph.nodes.filter(
       (node) => node.kind === 'clip',
     );
-    const worldNodes = playableDraft.data.graph.nodes.filter(
-      (
-        node,
-      ): node is Extract<
-        (typeof playableDraft.data.graph.nodes)[number],
-        { kind: 'world' }
-      > => node.kind === 'world' && node.worldId !== null,
-    );
     const sequences =
       clipNodes.length === 0
         ? []
@@ -314,32 +305,6 @@ export class StoryWorkingPreviewService {
         this.assetUrls,
       ),
     );
-    const worldRows =
-      worldNodes.length === 0
-        ? []
-        : await tx.worldModelWorld.findMany({
-            where: {
-              storyProjectId: projectId,
-              workspaceId: project.workspaceId,
-              id: { in: worldNodes.map((node) => node.worldId as string) },
-            },
-            select: { id: true, status: true },
-          });
-    const worldStatusById = new Map(
-      worldRows.map((world) => [world.id, world.status]),
-    );
-    const worlds: StoryBuildWorldInput[] = worldNodes.flatMap((node) => {
-      const status = worldStatusById.get(node.worldId as string);
-      return status
-        ? [
-            {
-              graphNodeId: node.nodeId,
-              worldId: node.worldId as string,
-              status,
-            },
-          ]
-        : [];
-    });
 
     const snapshotEntries = prepared.flatMap((item) => item.snapshotEntries);
     const videoSnapshotHash = storyVideoSnapshotHash(snapshotEntries);
@@ -391,7 +356,6 @@ export class StoryWorkingPreviewService {
       metadata,
       draft: playableDraft.data,
       timelines: prepared.map((item) => item.timeline),
-      worlds,
     });
 
     return {

@@ -25,6 +25,7 @@ import {
   type StoryStateEffect,
   type StoryStateVariableLookup,
 } from '@repo/shared/story-stats';
+import { stripRetiredStoryWorldNodes } from '@repo/shared/strip-retired-story-world-nodes';
 import { storyPlaybackCopy } from './story-playback-copy';
 
 /**
@@ -203,6 +204,12 @@ export const StoryInteractionActionSchema = z.discriminatedUnion('kind', [
     .strict(),
   z
     .object({
+      kind: z.literal('pause'),
+      effects: StoryStateEffectsSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal('seek'),
       timeMs: z.number().int().nonnegative(),
       effects: StoryStateEffectsSchema.optional(),
@@ -288,6 +295,8 @@ export const StoryHotspotInteractionSchema = z
      * pose never jumps. Defaults to the input window end when omitted.
      */
     branchAtMs: z.number().int().positive().optional(),
+    /** `window` plays through the range. `hold` pauses at the start until the gesture resolves. */
+    timing: z.enum(['window', 'hold']).default('window'),
     outcomes: StoryInteractionOutcomesSchema,
   })
   .strict()
@@ -349,30 +358,6 @@ const StoryClipGraphNodeSchema = z
   })
   .strict();
 
-/**
- * A durable, provider-neutral world-model experience embedded in the film
- * graph. The provider and realtime credentials remain properties of the
- * referenced World resource; graph documents only bind that resource and
- * author the transition into and out of it.
- */
-const StoryWorldGraphNodeSchema = z
-  .object({
-    kind: z.literal('world'),
-    nodeId: StoryStableIdSchema,
-    communityPointPrice: StoryCommunityPointPriceSchema,
-    worldId: StoryUuidSchema.nullable(),
-    name: z.string().trim().max(120).optional(),
-    entryInstruction: z.string().trim().max(4_000).optional(),
-    maxExperienceSeconds: z.union([
-      z.literal(60),
-      z.literal(90),
-      z.literal(120),
-    ]),
-    onEnterEffects: StoryStateEffectsSchema.optional(),
-    exit: StoryClipAutoExitSchema,
-  })
-  .strict();
-
 const StoryDecisionGraphNodeSchema = z
   .object({
     kind: z.literal('decision'),
@@ -389,17 +374,41 @@ const StoryDecisionGraphNodeSchema = z
 
 export const StoryGraphNodeSchema = z.discriminatedUnion('kind', [
   StoryClipGraphNodeSchema,
-  StoryWorldGraphNodeSchema,
   StoryDecisionGraphNodeSchema,
 ]);
 
-/** Mutable graph shape. Referential and completeness checks run on lock. */
-export const InteractiveStoryGraphSchema = z
-  .object({
-    entryNodeId: StoryStableIdSchema.nullable(),
-    nodes: z.array(StoryGraphNodeSchema).max(MAX_STORY_PROJECT_NODES),
-  })
-  .strict();
+/**
+ * Mutable graph shape. Referential and completeness checks run on lock.
+ * Nodes saved while world cards existed are removed before validation, and
+ * the surrounding film is reconnected.
+ */
+export const InteractiveStoryGraphSchema = z.preprocess(
+  (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value))
+      return value;
+    const graph = value as { nodes?: unknown };
+    if (
+      !Array.isArray(graph.nodes) ||
+      !graph.nodes.some(
+        (node) =>
+          !!node &&
+          typeof node === 'object' &&
+          (node as { kind?: unknown }).kind === 'world',
+      )
+    ) {
+      return value;
+    }
+    return stripRetiredStoryWorldNodes({
+      graph: value as { entryNodeId: string | null; nodes: [] },
+    }).graph;
+  },
+  z
+    .object({
+      entryNodeId: StoryStableIdSchema.nullable(),
+      nodes: z.array(StoryGraphNodeSchema).max(MAX_STORY_PROJECT_NODES),
+    })
+    .strict(),
+);
 
 const InteractiveStoryDraftContentBaseSchema = z
   .object({
@@ -1011,9 +1020,8 @@ function validateInteractiveStoryGameplayReadiness(
         });
       });
     }
-    if (node.kind === 'world' || node.exit.kind === 'auto') {
-      if (node.exit.kind === 'auto')
-        requireRoutes(node.exit.routes, [...exitPath, 'routes']);
+    if (node.exit.kind === 'auto') {
+      requireRoutes(node.exit.routes, [...exitPath, 'routes']);
       return;
     }
     requireLocalizedText(node.exit.prompt, [...exitPath, 'prompt']);
@@ -1285,8 +1293,8 @@ function normalizeInteractiveFilmRuntimeDraft(
     };
 
     if (
-      normalizedNode.kind !== 'world' &&
       options.preserveUnfinishedChoices &&
+      normalizedNode.exit.kind === 'choice' &&
       normalizedNode.exit.choices.length > 0
     ) {
       return {
@@ -1363,11 +1371,7 @@ function normalizeInteractiveFilmRuntimeDraft(
   );
   let generatedDecisionIndex = 1;
   const runtimeNodes = normalizedNodes.map((node) => {
-    if (
-      node.kind === 'world' ||
-      node.exit.kind !== 'choice' ||
-      !conflictNodeIds.has(node.nodeId)
-    ) {
+    if (node.exit.kind !== 'choice' || !conflictNodeIds.has(node.nodeId)) {
       return node;
     }
     let decisionId = `decision-${generatedDecisionIndex++}`;

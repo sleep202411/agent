@@ -170,6 +170,7 @@ export interface StoryGraphChoice {
 
 export type StoryInteractionAction =
   | { kind: "continue"; effects?: StoryStateEffect[] }
+  | { kind: "pause"; effects?: StoryStateEffect[] }
   | { kind: "seek"; timeMs: number; effects?: StoryStateEffect[] }
   | { kind: "goto"; target: StoryRouteTarget; effects?: StoryStateEffect[] };
 
@@ -208,6 +209,8 @@ export interface StoryHotspotInteraction {
    * window end (legacy cut-on-resolution behavior).
    */
   branchAtMs?: number;
+  /** Omitted means the clip keeps playing through the window. */
+  timing?: "window" | "hold";
   outcomes: StoryInteractionOutcomes;
 }
 
@@ -232,19 +235,6 @@ export interface StoryClipGraphNode {
   exit: { kind: "auto"; routes: StoryExitRoute[] } | StoryChoiceExit;
 }
 
-export interface StoryWorldGraphNode {
-  /** Authoring price; omitted means free. Currency is community_point. */
-  communityPointPrice?: number;
-  kind: "world";
-  nodeId: string;
-  worldId: string | null;
-  name?: string;
-  entryInstruction?: string;
-  maxExperienceSeconds: 60 | 90 | 120;
-  onEnterEffects?: StoryStateEffect[];
-  exit: { kind: "auto"; routes: StoryExitRoute[] };
-}
-
 export interface StoryDecisionGraphNode {
   kind: "decision";
   nodeId: string;
@@ -252,7 +242,7 @@ export interface StoryDecisionGraphNode {
   exit: StoryChoiceExit;
 }
 
-export type StoryGraphNode = StoryClipGraphNode | StoryWorldGraphNode | StoryDecisionGraphNode;
+export type StoryGraphNode = StoryClipGraphNode | StoryDecisionGraphNode;
 
 export interface InteractiveStoryDraftContent {
   storyBible: {

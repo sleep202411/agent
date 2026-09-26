@@ -127,8 +127,7 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
 
 function nodeTitle(node: StoryGraphNode, choiceLabel: string): string {
   if (node.kind === "decision") return choiceLabel;
-  if (node.kind === "clip") return node.name?.trim() || node.clipKey;
-  return node.name?.trim() || node.worldId || node.nodeId;
+  return node.name?.trim() || node.clipKey;
 }
 
 function localized(values: Record<string, string> | undefined, locale: string): string {
