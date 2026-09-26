@@ -4383,6 +4383,13 @@
     "readOnly": "Editing access is required to unlock or use an actor.",
     "previous": "Previous",
     "next": "Next",
-    "page": "Page {page}"
+    "page": "Page {page}",
+    "categoryFieldLabel": "Type",
+    "categoryLabels": {
+      "ai_actor": "AI Actor",
+      "influencer": "Influencer",
+      "real_actor": "Professional Actor",
+      "other": "Other"
+    }
   }
 }

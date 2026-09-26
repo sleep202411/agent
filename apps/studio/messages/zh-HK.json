@@ -4383,6 +4383,13 @@
     "readOnly": "解鎖或調用演員需要編輯權限。",
     "previous": "上一頁",
     "next": "下一頁",
-    "page": "第 {page} 頁"
+    "page": "第 {page} 頁",
+    "categoryFieldLabel": "類型",
+    "categoryLabels": {
+      "ai_actor": "AI演員",
+      "influencer": "網紅",
+      "real_actor": "真實演員",
+      "other": "其他"
+    }
   }
 }

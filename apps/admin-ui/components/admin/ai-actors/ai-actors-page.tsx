@@ -14,9 +14,17 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 
+const CATEGORY_LABELS: Record<string, string> = {
+  ai_actor: "AI演员",
+  influencer: "网红",
+  real_actor: "真实演员",
+  other: "其他",
+};
+
 type Actor = {
   id: string;
   name: string;
+  category: string;
   photoAssetId: string;
   active: boolean;
   _count: { unlocks: number; uses: number };
@@ -112,13 +120,18 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
           <table className="w-full text-left text-sm">
             <thead className="border-b text-muted-foreground">
               <tr>
-                {["Actor", "Availability", "Workspaces unlocked", "Reference uses", "Actions"].map(
-                  (s) => (
-                    <th className="p-3 font-medium" key={s}>
-                      {s}
-                    </th>
-                  )
-                )}
+                {[
+                  "Actor",
+                  "类型",
+                  "Availability",
+                  "Workspaces unlocked",
+                  "Reference uses",
+                  "Actions",
+                ].map((s) => (
+                  <th className="p-3 font-medium" key={s}>
+                    {s}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -137,6 +150,7 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
                       <span className="font-medium">{actor.name}</span>
                     </div>
                   </td>
+                  <td className="p-3">{CATEGORY_LABELS[actor.category] ?? actor.category}</td>
                   <td className="p-3">{actor.active ? "Available" : "Hidden"}</td>
                   <td className="p-3 tabular-nums">{actor._count.unlocks}</td>
                   <td className="p-3 tabular-nums">{actor._count.uses}</td>
@@ -281,6 +295,7 @@ function ActorEditor({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(actor?.name ?? "");
+  const [category, setCategory] = useState(actor?.category ?? "ai_actor");
   const [active, setActive] = useState(actor?.active ?? false);
   const [photo, setPhoto] = useState(actor?.photoAssetId ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -343,6 +358,7 @@ function ActorEditor({
             await request("ai-actors", signal, {
               ...(actor ? { id: actor.id } : {}),
               name: name.trim(),
+              category,
               photoAssetId: photo,
               active,
             });
@@ -360,6 +376,21 @@ function ActorEditor({
             disabled={busy}
             onChange={(e) => setName(e.target.value)}
           />
+        </label>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">类型</span>
+          <select
+            className="w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-xs focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            value={category}
+            disabled={busy}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
         </label>
         <div className="flex items-center gap-5">
           {/* Authenticated media redirects use the browser cookie. */}
