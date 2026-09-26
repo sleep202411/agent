@@ -203,6 +203,12 @@ const RuntimeInteractionActionSchema = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
+      kind: z.literal("pause"),
+      effects: StoryStateEffectsSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("seek"),
       timeMs: z.number().int().nonnegative(),
       effects: StoryStateEffectsSchema.optional(),
@@ -263,6 +269,8 @@ const RuntimeHotspotInteractionSchema = z
      * input window end when omitted.
      */
     branchAtMs: z.number().int().positive().optional(),
+    /** `window` keeps playing through the range. `hold` pauses at the start until the gesture resolves. */
+    timing: z.enum(["window", "hold"]).default("window"),
     outcomes: RuntimeInteractionOutcomesSchema,
   })
   .strict()

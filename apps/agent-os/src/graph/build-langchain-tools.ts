@@ -412,6 +412,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
   });
   const storyInteractionAction = z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("continue"), effects: storyStateEffects.optional() }),
+    z.object({ kind: z.literal("pause"), effects: storyStateEffects.optional() }),
     z.object({
       kind: z.literal("seek"),
       timeMs: z.number().int().min(0),
@@ -448,6 +449,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     startMs: z.number().int().min(0),
     endMs: z.number().int().min(1),
     branchAtMs: z.number().int().min(1).optional(),
+    timing: z.enum(["window", "hold"]).optional(),
     outcomes: z.object({
       success: storyInteractionAction,
       failure: storyInteractionAction.optional(),

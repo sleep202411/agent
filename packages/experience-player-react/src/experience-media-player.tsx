@@ -166,6 +166,7 @@ export function ExperienceMediaPlayer({
   onPlaybackError,
   onPlaybackHandle,
   onSoundBlocked,
+  onContentSize,
   playbackIdentity,
   copy,
 }: {
@@ -185,6 +186,8 @@ export function ExperienceMediaPlayer({
   /** Called once when the browser refused audible playback and the clip had to
    *  fall back to muted, so the host can offer to turn sound on. */
   onSoundBlocked?: () => void;
+  /** Decoded frame size, used when the manifest omits technical dimensions. */
+  onContentSize?: (size: { width: number; height: number }) => void;
   playbackIdentity: string;
   copy: ExperiencePlayerVideoCopy;
 }) {
@@ -315,6 +318,7 @@ export function ExperienceMediaPlayer({
         readinessRef.current?.markReady(readinessKey);
         const player = playerRef.current;
         if (player) synchronizePlayerContract(player, renderedDuration, mutedRef.current);
+        reportDecodedContentSize(playerRef.current, onContentSize);
       }}
       // Takes the still frame down, and the reason none of this is on a timer.
       // `playing` is the earliest event that means the element is presenting the
@@ -323,7 +327,10 @@ export function ExperienceMediaPlayer({
       // can uncover a cut that has not been composited yet.
       onPlaying={() => setStillFrameHeld(false)}
       onEnd={onEnd}
-      onTimeUpdate={(detail) => emitValidTimeUpdate(onTimeUpdate, detail.currentTime)}
+      onTimeUpdate={(detail) => {
+        reportDecodedContentSize(playerRef.current, onContentSize);
+        emitValidTimeUpdate(onTimeUpdate, detail.currentTime);
+      }}
       // The element's own decode/source failure. Always fatal, never routine:
       // `MediaErrorDetail` is not a DOM exception and carries no `name` to
       // classify, so it goes straight to the host.
@@ -481,6 +488,15 @@ function holdsStillFrame(capture: StillFrameCapture, held: boolean): boolean {
 /** The `<video>` the provider drives, when the provider has a frame to give.
  *  Audio and the embedded providers do not, and this player only loads `video/*`
  *  anyway, so anything else is treated as nothing to copy. */
+function reportDecodedContentSize(
+  player: MediaPlayerInstance | null,
+  onContentSize: ((size: { width: number; height: number }) => void) | undefined
+): void {
+  const media = providerVideo(player);
+  if (!onContentSize || !media || media.videoWidth <= 0 || media.videoHeight <= 0) return;
+  onContentSize({ width: media.videoWidth, height: media.videoHeight });
+}
+
 function providerVideo(player: MediaPlayerInstance | null): HTMLVideoElement | null {
   const provider = player?.provider;
   if (provider?.type === "video" || provider?.type === "hls" || provider?.type === "dash") {

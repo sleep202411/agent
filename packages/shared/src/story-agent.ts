@@ -401,6 +401,12 @@ export const StoryAgentInteractionActionSchema = z.union([
     .strict(),
   z
     .object({
+      kind: z.literal("pause"),
+      effects: StoryAgentStateEffectsSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("goto"),
       target: StoryAgentRouteTargetSchema,
       effects: StoryAgentStateEffectsSchema.optional(),
@@ -468,6 +474,7 @@ export const StoryAgentHotspotInteractionSchema = z
      * draft/runtime schemas; defaults to the window end when omitted.
      */
     branchAtMs: z.number().int().min(1).optional(),
+    timing: z.enum(["window", "hold"]).default("window"),
     outcomes: StoryAgentInteractionOutcomesSchema,
   })
   .strict();

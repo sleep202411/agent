@@ -129,6 +129,13 @@ const GestureCommonShape = {
    * legacy cut-on-resolution behavior.
    */
   branchAtMs: z.number().int().positive().optional(),
+  /**
+   * Pause the scene when the window ends and keep the gesture available
+   * until it resolves. The media clock stops on the hotspot's last frame, so
+   * the window end is not a timeout. Hosts route the outcome immediately
+   * instead of waiting for a later branch frame.
+   */
+  holdFrame: z.boolean().optional(),
   feedbackRendererInstanceId: ExperienceStableIdSchema.optional(),
   accessibleAlternativeActionId: ExperienceStableIdSchema.optional(),
 };

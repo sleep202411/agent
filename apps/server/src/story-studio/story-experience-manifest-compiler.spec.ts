@@ -258,6 +258,46 @@ describe('Story Runtime Manifest v2 compiler', () => {
     expect(swipe && 'branchAtMs' in swipe).toBe(false);
   });
 
+  it('pauses a hold hotspot at its start and drops the timeout route', () => {
+    const value = release();
+    value.nodes[0].interactions = [
+      {
+        kind: 'hotspot',
+        interactionId: 'wait',
+        label: { 'en-US': 'Wait' },
+        trigger: { kind: 'tap' },
+        rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+        startMs: 1_000,
+        endMs: 2_000,
+        timing: 'hold',
+        outcomes: {
+          success: { kind: 'continue' },
+          timeout: { kind: 'continue' },
+        },
+      },
+    ];
+    const result = compile(value);
+    const scene = result.manifest?.graph.nodes.find(
+      (node) => node.kind === 'scene' && node.sceneId === 'clip.start',
+    );
+    if (!scene || scene.kind !== 'scene') {
+      throw new Error(
+        `Scene is missing: ${JSON.stringify(result.diagnostics)}`,
+      );
+    }
+    expect(scene.gestures[0]).toMatchObject({
+      kind: 'tap',
+      holdFrame: true,
+      activeWindow: { startMs: 1_000, endMs: 2_000 },
+    });
+    expect(scene.gestures[0]).not.toHaveProperty('branchAtMs');
+    expect(
+      scene.eventBindings.some(
+        (binding) => binding.on.type === 'gesture.timed-out',
+      ),
+    ).toBe(false);
+  });
+
   it('lowers hotspot triggers and outcome routes without fake scene branches', () => {
     const value = release();
     value.nodes[0].interactions = [

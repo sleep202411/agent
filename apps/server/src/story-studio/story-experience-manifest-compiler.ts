@@ -661,6 +661,7 @@ function compileGraphNode(
     );
     interactionOutcomeEntries(interaction.outcomes).forEach(
       ([outcome, action]) => {
+        if (outcome === 'timeout' && interaction.timing === 'hold') return;
         eventBindings.push({
           bindingId: `binding:${node.nodeId}:interaction:${interaction.interactionId}:${outcome}`,
           on: {
@@ -793,9 +794,10 @@ function compileInteractionGesture(
       startMs: interaction.startMs,
       endMs: interaction.endMs,
     },
-    ...(interaction.branchAtMs !== undefined
+    ...(interaction.branchAtMs !== undefined && interaction.timing !== 'hold'
       ? { branchAtMs: interaction.branchAtMs }
       : {}),
+    ...(interaction.timing === 'hold' ? { holdFrame: true } : {}),
   };
   if (interaction.trigger.kind === 'swipe') {
     return {
@@ -813,7 +815,10 @@ function compileInteractionGesture(
       durationMs: interaction.trigger.durationMs,
       releaseBehavior: 'reset',
       cancelOnPointerExit: true,
-      timelineControl: interaction.trigger.controlTimeline,
+      timelineControl:
+        interaction.timing === 'hold'
+          ? false
+          : interaction.trigger.controlTimeline,
     };
   }
   return { ...common, kind: 'tap', maxDurationMs: 500 };
@@ -857,6 +862,17 @@ function compileInteractionAction(
         kind: 'renderer.command',
         instanceId: primaryInstanceId,
         commandType: 'play',
+        payload: {},
+      },
+    ];
+  }
+  if (action.kind === 'pause') {
+    return [
+      ...effects,
+      {
+        kind: 'renderer.command',
+        instanceId: primaryInstanceId,
+        commandType: 'pause',
         payload: {},
       },
     ];
