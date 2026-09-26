@@ -67,6 +67,12 @@ describe('EmergencyAccessBlockService', () => {
     expect(isEmergencyBulkSignupEmail('mue7i8qwa5id@example.com')).toBe(false);
     expect(isEmergencyBulkSignupEmail('mue7i8qwa5id@ve0ai.com')).toBe(true);
     expect(isEmergencyBulkSignupEmail('mufn87itujir@animatimg.com')).toBe(true);
+    expect(
+      isEmergencyBulkSignupEmail('mugt7bljh7gr@wanaivideogenerator.com'),
+    ).toBe(true);
+    expect(isEmergencyBulkSignupEmail('mugtqmun6f5l@imageeditgpt.com')).toBe(
+      true,
+    );
   });
 
   it('can be disabled without changing the Redis set', async () => {
