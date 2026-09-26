@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Header,
   Param,
@@ -108,5 +109,13 @@ export class AdminAiActorsController {
     @Query(new ZodValidationPipe(z.object({ page }))) query: { page: number },
   ) {
     return { code: 200, data: await this.service.usage(params.id, query.page) };
+  }
+
+  @Delete(':id')
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.MediaWrite)
+  async archive(
+    @Param(new ZodValidationPipe(idSchema)) params: { id: string },
+  ) {
+    return { code: 200, data: await this.service.archive(params.id) };
   }
 }

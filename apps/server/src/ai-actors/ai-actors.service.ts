@@ -34,7 +34,7 @@ export class AiActorsService {
       WorkspaceMemberRole.viewer,
     );
     const rows = await this.db.aiActor.findMany({
-      where: { active: true, photo: photoWhere },
+      where: { active: true, archivedAt: null, photo: photoWhere },
       include: { unlocks: { where: { workspaceId }, take: 1 } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * 24,
@@ -153,9 +153,11 @@ export class AiActorsService {
   }
 
   async adminList(page: number) {
+    const where: Prisma.AiActorWhereInput = { archivedAt: null };
     const [total, items] = await this.db.$transaction([
-      this.db.aiActor.count(),
+      this.db.aiActor.count({ where }),
       this.db.aiActor.findMany({
+        where,
         include: { _count: { select: { unlocks: true, uses: true } } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (page - 1) * 24,
@@ -166,6 +168,22 @@ export class AiActorsService {
       total,
       items: items.map((r) => ({ ...r, photoUrl: contentUrl(r.photoAssetId) })),
     };
+  }
+
+  async archive(id: string) {
+    return this.db.$transaction(async (tx) => {
+      const actor = await tx.aiActor.findUnique({ where: { id } });
+      if (!actor || actor.archivedAt !== null) {
+        throw new NotFoundException('Actor not found.');
+      }
+      return tx.aiActor.update({
+        where: { id },
+        data: {
+          archivedAt: new Date(),
+          active: false,
+        },
+      });
+    });
   }
 
   async save(

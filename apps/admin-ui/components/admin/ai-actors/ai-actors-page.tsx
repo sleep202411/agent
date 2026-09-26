@@ -11,6 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { adminUiApiPath } from "@/lib/admin-api";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 
 type Actor = {
@@ -29,9 +30,14 @@ type Usage = {
   project: { name: string };
   createdAt: string;
 };
-async function request<T>(path: string, signal: AbortSignal, body?: unknown): Promise<T> {
+async function request<T>(
+  path: string,
+  signal: AbortSignal,
+  body?: unknown,
+  method?: string
+): Promise<T> {
   const response = await fetch(adminUiApiPath(`/api/admin/${path}`), {
-    method: body === undefined ? "GET" : "POST",
+    method: method ?? (body === undefined ? "GET" : "POST"),
     signal,
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
@@ -64,6 +70,8 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
   const [refresh, setRefresh] = useState(0);
   const [editing, setEditing] = useState<Actor | "new" | null>(null);
   const [usage, setUsage] = useState<Actor | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Actor | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const result = useAdminRead<{ items: Actor[]; total: number }>(`ai-actors?page=${page}`, refresh);
   const data = result?.data;
   const error = result?.error;
@@ -146,6 +154,15 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
                       <Button variant="ghost" size="sm" onClick={() => setUsage(actor)}>
                         Usage
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={!canWrite}
+                        onClick={() => setDeleteTarget(actor)}
+                      >
+                        Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -177,6 +194,14 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
           </Button>
         </div>
       </div>
+      {toastMessage && (
+        <div
+          role="status"
+          className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800"
+        >
+          {toastMessage}
+        </div>
+      )}
       {editing && (
         <ActorEditor
           key={typeof editing === "string" ? editing : editing.id}
@@ -189,6 +214,30 @@ export function AiActorsPage({ canWrite }: { canWrite: boolean }) {
         />
       )}
       {usage && <UsageDialog key={usage.id} actor={usage} onClose={() => setUsage(null)} />}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="删除演员"
+        description={
+          deleteTarget
+            ? `确定删除「${deleteTarget.name}」吗？删除后将从演员库下架，已有项目引用不受影响。`
+            : undefined
+        }
+        confirmLabel="删除"
+        cancelLabel="取消"
+        destructive
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          const controller = new AbortController();
+          await request(`ai-actors/${deleteTarget.id}`, controller.signal, undefined, "DELETE");
+          setDeleteTarget(null);
+          setToastMessage("已删除");
+          setRefresh((v) => v + 1);
+          setTimeout(() => setToastMessage(null), 3000);
+        }}
+      />
     </main>
   );
 }
