@@ -866,5 +866,15 @@
   "episodeFeedback.dislike": "不喜欢",
   "episodeFeedback.loading": "正在加载反馈…",
   "episodeFeedback.failed": "反馈保存失败。",
-  "episodeFeedback.retry": "重试"
+  "episodeFeedback.retry": "重试",
+  "ipKnowledge.title": "影片知识助手",
+  "ipKnowledge.subtitle": "基于官方已发布的影片资料为您解答疑问",
+  "ipKnowledge.placeholder": "向影片助手提问角色设定、背景世界观或剧情...",
+  "ipKnowledge.ask": "提问",
+  "ipKnowledge.cancel": "取消",
+  "ipKnowledge.loading": "正在查阅影片公开档案...",
+  "ipKnowledge.error": "问答请求失败，请稍后重试。",
+  "ipKnowledge.sources": "引用公开资料",
+  "ipKnowledge.unanswered": "目前已发布的公开资料中暂未收录该问题的相关解答。",
+  "ipKnowledge.empty": "该影片目前暂未发布可供检索的公开参考资料。"
 }

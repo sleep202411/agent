@@ -9619,9 +9619,9 @@
     "selectedWork": "Selected story",
     "unknownWork": "Untitled work",
     "period": {
-      "all": "All time",
       "30": "Last 30 days",
-      "90": "Last 90 days"
+      "90": "Last 90 days",
+      "all": "All time"
     },
     "work": "Work / content",
     "sale": "Community points paid",
@@ -10122,5 +10122,17 @@
     "approve": "Approve",
     "reject": "Reject",
     "retry": "Retry"
+  },
+  "ipKnowledge": {
+    "title": "Film Knowledge Assistant",
+    "subtitle": "Ask questions based on officially published materials for this film",
+    "placeholder": "Ask a question about the film lore, characters, or story...",
+    "ask": "Ask",
+    "cancel": "Cancel",
+    "loading": "Consulting published film archives...",
+    "error": "Failed to consult film knowledge. Please try again.",
+    "sources": "Cited published sources",
+    "unanswered": "The published film archives do not contain enough information to answer this question.",
+    "empty": "No published reference documents are currently available for this film."
   }
 }

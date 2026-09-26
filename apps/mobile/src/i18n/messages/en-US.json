@@ -866,5 +866,15 @@
   "episodeFeedback.dislike": "Dislike",
   "episodeFeedback.loading": "Loading feedback…",
   "episodeFeedback.failed": "Feedback could not be saved.",
-  "episodeFeedback.retry": "Retry"
+  "episodeFeedback.retry": "Retry",
+  "ipKnowledge.title": "Film Knowledge Assistant",
+  "ipKnowledge.subtitle": "Ask questions based on officially published materials for this film",
+  "ipKnowledge.placeholder": "Ask a question about the film lore, characters, or story...",
+  "ipKnowledge.ask": "Ask",
+  "ipKnowledge.cancel": "Cancel",
+  "ipKnowledge.loading": "Consulting published film archives...",
+  "ipKnowledge.error": "Failed to consult film knowledge. Please try again.",
+  "ipKnowledge.sources": "Cited published sources",
+  "ipKnowledge.unanswered": "The published film archives do not contain enough information to answer this question.",
+  "ipKnowledge.empty": "No published reference documents are currently available for this film."
 }
