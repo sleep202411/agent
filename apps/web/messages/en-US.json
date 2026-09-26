@@ -9619,9 +9619,9 @@
     "selectedWork": "Selected story",
     "unknownWork": "Untitled work",
     "period": {
-      "all": "All time",
       "30": "Last 30 days",
-      "90": "Last 90 days"
+      "90": "Last 90 days",
+      "all": "All time"
     },
     "work": "Work / content",
     "sale": "Community points paid",
@@ -10122,5 +10122,74 @@
     "approve": "Approve",
     "reject": "Reject",
     "retry": "Retry"
+  },
+  "ipKnowledge": {
+    "title": "Film Knowledge Assistant",
+    "subtitle": "Ask questions based on officially published materials for this film",
+    "placeholder": "Ask a question about the film lore, characters, or story...",
+    "ask": "Ask",
+    "cancel": "Cancel",
+    "loading": "Consulting published film archives...",
+    "error": "Failed to consult film knowledge. Please try again.",
+    "sources": "Cited published sources",
+    "unanswered": "The published film archives do not contain enough information to answer this question.",
+    "empty": "No published reference documents are currently available for this film."
+  },
+  "ipGeneration": {
+    "title": "Audience AI Creation",
+    "subtitle": "Create personalized photos and video clips using official film templates",
+    "templateLabel": "Select Template",
+    "templateSelectPrompt": "Choose a visual style to generate with",
+    "referenceImageLabel": "Upload Reference Photo",
+    "referenceImageHint": "Upload a clear portrait photo for best generation results",
+    "uploadButton": "Choose Photo",
+    "uploading": "Uploading photo...",
+    "uploadFailed": "Photo upload failed. Please try again.",
+    "removePhoto": "Remove",
+    "costLabel": "Estimated Cost",
+    "costFree": "Free (Campaign Benefit)",
+    "costPoints": "{count} compute points",
+    "balanceLabel": "Your balance: {count} compute points",
+    "previewLoading": "Calculating cost...",
+    "previewFailed": "Failed to estimate cost",
+    "generateButton": "Generate",
+    "generating": "Generating...",
+    "progressLabel": "Generation in progress ({percent}%)",
+    "cancel": "Cancel",
+    "retry": "Try Again",
+    "completedLabel": "Creation completed!",
+    "downloadButton": "Download",
+    "errorGeneric": "Generation request failed. Please try again later."
+  },
+  "ipGenerationAdmin": {
+    "title": "Audience Generation Templates",
+    "subtitle": "Configure photo and video generation templates available to viewers in the IP Room",
+    "addTemplate": "Add Template",
+    "saveChanges": "Save Changes",
+    "saving": "Saving...",
+    "saved": "Templates saved successfully",
+    "saveFailed": "Failed to save templates",
+    "conflictError": "This film was updated elsewhere. Refresh to try again.",
+    "refresh": "Refresh",
+    "deleteTemplate": "Delete",
+    "deleteConfirm": "Are you sure you want to delete this template?",
+    "fieldName": "Template Name",
+    "fieldDescription": "Description",
+    "fieldModel": "AI Model",
+    "fieldPromptPrefix": "Prompt Prefix",
+    "fieldPromptSuffix": "Prompt Suffix",
+    "fieldRequireReference": "Require Reference Photo",
+    "fieldReferenceHint": "Reference Photo Prompt/Hint",
+    "fieldAspectRatio": "Output Aspect Ratio",
+    "fieldLogo": "Brand Logo/Asset",
+    "fieldEnabled": "Enabled",
+    "fieldOrder": "Display Order",
+    "emptyState": "No generation templates configured yet. Add a template to let audience create memorabilia.",
+    "templateLabel": "Template #{index}"
+  },
+  "ipStudio": {
+    "tabs": {
+      "generation": "Audience Generation"
+    }
   }
 }

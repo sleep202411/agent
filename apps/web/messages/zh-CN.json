@@ -9619,9 +9619,9 @@
     "selectedWork": "当前影游",
     "unknownWork": "未命名作品",
     "period": {
-      "all": "全部时间",
       "30": "近 30 天",
-      "90": "近 90 天"
+      "90": "近 90 天",
+      "all": "全部时间"
     },
     "work": "作品 / 内容",
     "sale": "支付社区积分",
@@ -10122,5 +10122,74 @@
     "approve": "通过",
     "reject": "拒绝",
     "retry": "重试"
+  },
+  "ipKnowledge": {
+    "title": "影片知识助手",
+    "subtitle": "基于官方已发布的影片资料为您解答疑问",
+    "placeholder": "向影片助手提问角色设定、背景世界观或剧情...",
+    "ask": "提问",
+    "cancel": "取消",
+    "loading": "正在查阅影片公开档案...",
+    "error": "问答请求失败，请稍后重试。",
+    "sources": "引用公开资料",
+    "unanswered": "目前已发布的公开资料中暂未收录该问题的相关解答。",
+    "empty": "该影片目前暂未发布可供检索的公开参考资料。"
+  },
+  "ipGeneration": {
+    "title": "观众AI共创",
+    "subtitle": "使用官方影片模板，生成专属的共创海报与视频片段",
+    "templateLabel": "选择模版",
+    "templateSelectPrompt": "请挑选一种视觉模版进行生成",
+    "referenceImageLabel": "上传参考照片",
+    "referenceImageHint": "请上传清晰正面人像照片以获得最佳效果",
+    "uploadButton": "选择照片",
+    "uploading": "正在上传照片...",
+    "uploadFailed": "照片上传失败，请重试。",
+    "removePhoto": "移除照片",
+    "costLabel": "预估消耗",
+    "costFree": "限时免费（活动特权）",
+    "costPoints": "{count} 算力点",
+    "balanceLabel": "当前可用算力：{count} 点",
+    "previewLoading": "正在计算消耗...",
+    "previewFailed": "预估消耗计算失败",
+    "generateButton": "开始生成",
+    "generating": "正在生成中...",
+    "progressLabel": "正在全力生成中（{percent}%）",
+    "cancel": "取消",
+    "retry": "重新生成",
+    "completedLabel": "创作已完成！",
+    "downloadButton": "下载作品",
+    "errorGeneric": "生成请求失败，请稍后重试。"
+  },
+  "ipGenerationAdmin": {
+    "title": "影迷生成模板配置",
+    "subtitle": "配置IP Room中向观众开放的AI海报、纪念照与定制短片生成模板",
+    "addTemplate": "添加模板",
+    "saveChanges": "保存更改",
+    "saving": "保存中...",
+    "saved": "生成模板已成功保存",
+    "saveFailed": "保存模板失败",
+    "conflictError": "该作品已被其他操作更新。请刷新后重试。",
+    "refresh": "刷新",
+    "deleteTemplate": "删除",
+    "deleteConfirm": "确定要删除该生成模板吗？",
+    "fieldName": "模板名称",
+    "fieldDescription": "模板描述",
+    "fieldModel": "AI模型",
+    "fieldPromptPrefix": "基础提示词（前缀）",
+    "fieldPromptSuffix": "补充提示词（后缀）",
+    "fieldRequireReference": "必须上传参考照片",
+    "fieldReferenceHint": "参考照片提示文案",
+    "fieldAspectRatio": "输出画幅比例",
+    "fieldLogo": "品牌水印/贴纸资源",
+    "fieldEnabled": "启用该模板",
+    "fieldOrder": "排序权重",
+    "emptyState": "暂未配置任何影迷生成模板。添加模板后观众可在IP Room进行体验。",
+    "templateLabel": "模板 #{index}"
+  },
+  "ipStudio": {
+    "tabs": {
+      "generation": "影迷AI共创"
+    }
   }
 }

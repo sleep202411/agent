@@ -18,7 +18,7 @@ const CHECK_TIMEOUT_MS = 750;
 // shape. Keep this secondary rule during containment so newly registered IDs
 // cannot outrun the explicit Redis user-ID blocklist.
 const BULK_SIGNUP_EMAIL =
-  /^mu[ef][a-z0-9]{9}@(imgfx\.art|imageeditgpt\.com|animateany\.com|theeditai\.com|aniimate\.net|animatimg\.com|ve0ai\.com|wanaivideogenerator\.com)$/i;
+  /^mu[efg][a-z0-9]{9}@(imgfx\.art|imageeditgpt\.com|animateany\.com|theeditai\.com|aniimate\.net|animatimg\.com|ve0ai\.com|wanaivideogenerator\.com)$/i;
 
 export function isEmergencyBulkSignupEmail(email: string | undefined): boolean {
   return BULK_SIGNUP_EMAIL.test(email?.trim() ?? '');

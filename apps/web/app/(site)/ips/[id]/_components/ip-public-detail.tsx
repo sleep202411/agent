@@ -1,6 +1,8 @@
 "use client";
 import { ChannelSubmissions } from "../../_components/channel-submissions";
 import { IpFanCommunity } from "../../_components/ip-fan-community";
+import { IpKnowledgeChat } from "../../_components/ip-knowledge-chat";
+import { IpGenerationPanel } from "../../_components/ip-generation-panel";
 
 import { useReportSubmission } from "../_hooks/use-report-submission";
 
@@ -199,12 +201,16 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
 
   if (!detailIp) {
     const loadError = [publicQuery.error, previewReference ? creatorQuery.error : null].find(
-      (error) => error && !(error instanceof ApiRequestError && [401, 403, 404].includes(error.status))
+      (error) =>
+        error && !(error instanceof ApiRequestError && [401, 403, 404].includes(error.status))
     );
     if (loadError) {
       return (
         <div className="min-h-[calc(100vh-4rem)] bg-background px-5 py-10 text-foreground">
-          <div role="alert" className="mx-auto flex min-h-[520px] max-w-3xl flex-col items-center justify-center gap-4 text-center">
+          <div
+            role="alert"
+            className="mx-auto flex min-h-[520px] max-w-3xl flex-col items-center justify-center gap-4 text-center"
+          >
             <h1 className="text-2xl font-semibold">{t("loadFailure.title")}</h1>
             <p className="text-sm text-muted-foreground">{loadError.message}</p>
             <Button
@@ -258,9 +264,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
       : { targetType: "ip", episodeId: null }
   );
   const canWatchSelected =
-    detailIp.previewMode ||
-    !selectedEpisode ||
-    isAccessGranted(activeAccessCode);
+    detailIp.previewMode || !selectedEpisode || isAccessGranted(activeAccessCode);
   const lockedMediaLabel = isAccessPending(activeAccessCode)
     ? formatPendingUnlockLabel(pendingUnlockAt, locale, t)
     : undefined;
@@ -268,7 +272,9 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   // A trailer is an explicit playlist selection. Never substitute it for a
   // locked (or not-yet-loaded) full episode under that episode's title.
   const mediaTrailerUrl = selectedEpisode
-    ? canWatchSelected ? episodeMediaUrl : undefined
+    ? canWatchSelected
+      ? episodeMediaUrl
+      : undefined
     : ipTrailerUrl;
   const mediaTitle = isTrailerSelected
     ? t("episodes.trailer")
@@ -558,9 +564,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                     {activeCollectionItem ? t("actions.collected") : t("actions.collect")}
                   </ActionButton>
                   <ActionButton
-                    disabled={
-                      detailIp.previewMode || reportSubmission.isPending
-                    }
+                    disabled={detailIp.previewMode || reportSubmission.isPending}
                     onClick={() => (user ? setReportOpen(true) : router.push(loginHref))}
                     icon={IconFlag}
                   >
@@ -568,6 +572,16 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   </ActionButton>
                 </IpEngagementActions>
                 {!detailIp.previewMode && <IpFanCommunity ipId={detailIp.id} />}
+                {!detailIp.previewMode && (
+                  <div className="mt-4">
+                    <IpKnowledgeChat ipId={detailIp.id} ipTitle={detailIp.title} />
+                  </div>
+                )}
+                {!detailIp.previewMode && (
+                  <div className="mt-4">
+                    <IpGenerationPanel ipId={detailIp.id} />
+                  </div>
+                )}
                 {!detailIp.previewMode && <ChannelSubmissions ipId={detailIp.id} />}
               </div>
 
