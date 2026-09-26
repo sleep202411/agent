@@ -2960,7 +2960,9 @@
         "cancelled": "Generation cancelled",
         "expired": "Generation expired",
         "materializationFailed": "Media was generated but could not be attached"
-      }
+      },
+      "play": "Play",
+      "pause": "Pause"
     },
     "assetsPage": {
       "pageTitle": "Asset Specs · Interactive Film Studio",
@@ -3165,6 +3167,7 @@
       "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
       "seconds": "{value}s",
       "options": "Options",
+      "choiceLabel": "Option {index}",
       "addNode": "Add storyboard node",
       "newNodeTitle": "Untitled scene",
       "nodeAdded": "The node was added to both the Storyboard and Plot Tree.",
@@ -3175,7 +3178,14 @@
         "image": "Image",
         "video": "Video"
       },
-      "editTimeline": "Edit"
+      "editTimeline": "Edit",
+      "uploadVideo": "Upload clip",
+      "replaceVideo": "Replace video",
+      "replaceVideoAction": "Replace",
+      "uploadVideoSuccess": "Video added to this scene.",
+      "replaceVideoSuccess": "Video replaced.",
+      "uploadVideoTitle": "Uploaded video",
+      "uploadVideoPrompt": "Uploaded video."
     },
     "editorPage": {
       "pageTitle": "Edit · Interactive Film Studio",
@@ -3187,7 +3197,7 @@
       "retry": "Try again",
       "emptyTitle": "No storyboard timelines yet",
       "emptyDescription": "Prepare a storyboard before opening the editor.",
-      "backToStoryboard": "Back to Storyboard",
+      "back": "Back",
       "saved": "Saved",
       "saving": "Saving…",
       "seconds": "{value}s",
@@ -3406,8 +3416,7 @@
       },
       "nodeKinds": {
         "clip": "Film clip",
-        "decision": "Player decision",
-        "world": "World experience"
+        "decision": "Player decision"
       },
       "ports": {
         "input": "Incoming story flow",
@@ -3431,9 +3440,11 @@
         "choiceType": "Choice",
         "hotspotType": "Hotspot",
         "continueCurrent": "Continue clip",
+        "stayOnFrame": "Stay on this frame",
         "seekCurrent": "Seek to {time}",
         "gotoTarget": "Go to {target}",
         "triggerTap": "Tap",
+        "timingHold": "Pause the picture",
         "triggerSwipe": "Swipe {direction}",
         "triggerPressHold": "Hold {duration}",
         "directions": {
@@ -3455,8 +3466,6 @@
         "description": "Create an element in the interactive story structure.",
         "clip": "Film clip",
         "clipDescription": "A generated video segment with a defined next step.",
-        "world": "World experience",
-        "worldDescription": "Enter a realtime generated world with a defined completion path.",
         "character": "Character",
         "characterDescription": "A reusable character card for this story project.",
         "choice": "Player choice",
@@ -3474,66 +3483,9 @@
       },
       "projection": {
         "clip": "Clip",
-        "decision": "Player decision",
-        "world": "World"
+        "decision": "Player decision"
       },
-      "worldNode": {
-        "untitled": "Untitled world",
-        "bindingTitle": "World binding",
-        "bindingDescription": "Bind an existing world or build one directly for this story node.",
-        "change": "Change world",
-        "chooseExisting": "Existing",
-        "chooseAnother": "Choose another world",
-        "boundWorldUnavailable": "The bound world is no longer available.",
-        "retry": "Retry",
-        "loading": "Loading worlds…",
-        "select": "Select a world",
-        "unbound": "No world selected",
-        "noWorlds": "No reusable worlds exist in this project yet. Build one here.",
-        "providerUnavailable": "No available world-model provider is configured.",
-        "providerLoadError": "World-model providers could not be loaded.",
-        "generationUnavailable": "Your current project role cannot build worlds.",
-        "createError": "The world could not be created.",
-        "buildFailed": "The world could not be built.",
-        "buildTimeout": "World generation did not finish within 10 minutes. Check the provider status and try again.",
-        "worldPrompt": "World description",
-        "worldPromptTooltip": "Sent to the model when the world is built. It defines the persistent setting, atmosphere, characters, spatial rules, and opening moment.",
-        "worldPromptPlaceholder": "Describe the world, atmosphere, characters, spatial rules, and opening moment…",
-        "firstFrame": "Opening frame",
-        "firstFrameTooltip": "An optional project image sent to the model when the world is built to anchor its composition and visual identity.",
-        "firstFrameHint": "Choose an existing project image or upload a new one.",
-        "chooseFirstFrame": "Choose opening frame",
-        "replaceFirstFrame": "Replace opening frame",
-        "clearFirstFrame": "Remove opening frame",
-        "firstFramePreviewAlt": "Selected world opening frame",
-        "firstFrameUnavailable": "This image cannot be used as a world opening frame.",
-        "firstFrameDisabled": "You cannot change this world's opening frame.",
-        "firstFrameCandidateLoadError": "Project images could not be loaded.",
-        "perspective": "Perspective",
-        "perspectiveTooltip": "Sets the player's camera viewpoint when exploring the generated world.",
-        "build": "Build and bind world",
-        "rebuild": "Apply changes and replace world",
-        "expandEditor": "Expand world settings",
-        "collapseEditor": "Collapse world settings",
-        "run": "Run",
-        "runError": "The world session could not start.",
-        "exitRun": "Exit world",
-        "entryInstruction": "Initial instruction",
-        "entryInstructionTooltip": "Sent to the running world once, immediately after the session starts. It directs the first event or objective without rebuilding the world.",
-        "entryInstructionPlaceholder": "Describe the first event or objective after the player enters the world.",
-        "maxDuration": "Experience limit",
-        "maxDurationTooltip": "The maximum duration of a single world session. The experience ends when this limit is reached.",
-        "duration": "{seconds} seconds",
-        "perspectiveValue": {
-          "first_person": "First person",
-          "third_person": "Third person"
-        },
-        "status": {
-          "generating": "Generating",
-          "ready": "Ready",
-          "failed": "Failed"
-        }
-      },
+
       "foundation": {
         "description": "Define the dramatic promise before expanding the branch graph. Changes autosave to the mutable draft.",
         "logline": "Logline",
@@ -3741,6 +3693,7 @@
         "copyName": "{name} copy",
         "previewAction": "Interaction triggered · Go to {target}",
         "previewContinue": "Interaction triggered · Continue current video",
+        "previewPause": "Interaction triggered · Stay on this frame",
         "previewSeek": "Interaction triggered · Jump to {time}",
         "previewMissingTarget": "No destination is assigned to this hotspot.",
         "noVideo": "No current video",
@@ -3763,6 +3716,12 @@
         "start": "Start",
         "end": "End",
         "timingHint": "The hotspot is visible and clickable only inside this time range.",
+        "timingMode": "If they don't act",
+        "timingModeHint": "Keep playing: the hotspot is only available for a while, then the film continues. Pause the picture: the film pauses on the hotspot's last frame until the viewer completes the gesture.",
+        "timingWindow": "Keep playing",
+        "timingHold": "Pause the picture",
+        "timingHoldHint": "The film pauses on the hotspot's last frame until the viewer completes the gesture. There is no timeout.",
+        "holdAt": "Wait at",
         "position": "Position and size",
         "x": "X",
         "y": "Y",
@@ -3787,6 +3746,7 @@
         "removeOutcome": "Remove",
         "goToScene": "Go to scene",
         "continueCurrent": "Continue current video",
+        "stayOnFrame": "Stay on this frame",
         "seekCurrent": "Jump within current video",
         "seekTime": "Target time",
         "destination": "Destination",

@@ -12,8 +12,11 @@ import {
   shouldRetryStoryProjectAccess,
   storyProjectAccessFailure,
 } from "./story-project-access-error";
-import { resolveStoryChapterId } from "./story-project-chapter-scope-state";
 import { StoryProjectLoadState } from "./story-project-load-state";
+import { resolveStoryChapterId } from "./story-project-chapter-scope-state";
+
+/** Prefix for the shell's chapter catalogue. Chapter mutations must invalidate it. */
+export const STORY_CHAPTER_SCOPE_QUERY_KEY = ["story-studio", "chapter-scope"] as const;
 
 /**
  * Makes the active chapter a route-level invariant for the whole project shell.
@@ -36,7 +39,7 @@ export function StoryProjectChapterScope({
   const requestedChapterId = searchParams.get("chapter");
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "chapter-scope", projectId, user?.id ?? null],
+    queryKey: [...STORY_CHAPTER_SCOPE_QUERY_KEY, projectId, user?.id ?? null],
     queryFn: ({ signal }) => getStoryWorkbench(projectId, undefined, signal),
     retry: shouldRetryStoryProjectAccess,
   });

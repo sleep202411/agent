@@ -67,10 +67,15 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
   );
   const choiceOptionsByNode = useMemo(() => {
     const byId = new Map<string, StoryGraphNode>(nodes.map((node) => [node.nodeId, node]));
+    const ordinalById = new Map(sceneNodes.map((node, index) => [node.nodeId, index + 1]));
     const titleOf = (nodeId: string | null): string => {
       if (!nodeId) return "";
       const node = byId.get(nodeId);
-      return (node && "name" in node && node.name?.trim()) || nodeId;
+      if (!node || node.kind !== "clip") return "";
+      const name = node.name?.trim();
+      if (name && name !== node.clipKey) return name;
+      const ordinal = ordinalById.get(node.nodeId);
+      return ordinal ? t("plotNode", { index: ordinal }) : "";
     };
     const options = new Map<string, StorySequenceChoiceOptions>();
     for (const node of nodes) {
@@ -88,15 +93,20 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
       if (!exit) continue;
       options.set(node.nodeId, {
         prompt: localizedText(exit.prompt, locale, ""),
-        choices: exit.choices.map((choice) => ({
+        choices: exit.choices.map((choice, index) => ({
           id: choice.choiceId,
-          label: localizedText(choice.label, locale, choice.choiceId),
+          label: readableChoiceLabel(
+            localizedText(choice.label, locale, ""),
+            choice.choiceId,
+            index,
+            (choiceIndex) => t("choiceLabel", { index: choiceIndex })
+          ),
           target: titleOf(storyRouteNodeId(choice.target)),
         })),
       });
     }
     return options;
-  }, [nodes, locale]);
+  }, [nodes, sceneNodes, locale, t]);
 
   const sequenceByNode = useMemo(
     () => new Map((storyboardQuery.data ?? []).map((sequence) => [sequence.plotNodeId, sequence])),
@@ -252,11 +262,17 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
               <StoryStoryboardSequenceSection
                 sequence={sequence}
                 title={node.name?.trim() || node.clipKey}
+                clipKey={node.clipKey}
                 description={node.description ?? ""}
                 index={index}
                 projectId={projectId}
                 chapterId={chapterId}
                 allowGeneration={generationAllowed}
+                aspectRatio={
+                  workbenchQuery.data?.project.frameProfile === "portrait_9_16"
+                    ? "9 / 16"
+                    : "16 / 9"
+                }
               />
               {choiceOptions ? <StoryStoryboardChoiceCard options={choiceOptions} /> : null}
             </div>
@@ -265,4 +281,20 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
       </div>
     </main>
   );
+}
+
+function readableChoiceLabel(
+  label: string,
+  choiceId: string,
+  index: number,
+  format: (index: number) => string
+): string {
+  const trimmed = label.trim();
+  const fromLabel = trimmed.match(/^option[\s:_-]*(\d+)$/i);
+  if (!trimmed || fromLabel) {
+    const fromId = choiceId.match(/(\d+)\s*$/);
+    const choiceIndex = Number(fromLabel?.[1] ?? fromId?.[1] ?? index + 1);
+    return format(choiceIndex);
+  }
+  return trimmed;
 }

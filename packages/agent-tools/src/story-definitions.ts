@@ -10,11 +10,7 @@ import {
   StoryAgentStateVariableSchema,
   StoryPatchOperationsSchema,
 } from "@repo/shared/story-agent";
-import {
-  MAX_STORY_STATE_VARIABLES,
-  StoryAutoRoutesSchema,
-  StoryStateKeySchema,
-} from "@repo/shared/story-stats";
+import { MAX_STORY_STATE_VARIABLES, StoryStateKeySchema } from "@repo/shared/story-stats";
 import { z } from "zod";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 
@@ -33,24 +29,6 @@ const StoryReadGraphNodeSchema = z.discriminatedUnion("kind", [
       communityPointPrice: z.number().int().min(0).max(2_147_483_647).optional(),
       onEnterEffects: StoryAgentGraphNodeSchema.shape.onEnterEffects,
       exit: StoryAgentGraphNodeSchema.shape.exit,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("world"),
-      nodeId: StoryAgentStableIdSchema,
-      communityPointPrice: z.number().int().min(0).max(2_147_483_647).optional(),
-      worldId: z.string().uuid().nullable(),
-      name: z.string().trim().max(120).optional(),
-      entryInstruction: z.string().trim().max(4_000).optional(),
-      maxExperienceSeconds: z.union([z.literal(60), z.literal(90), z.literal(120)]),
-      onEnterEffects: StoryAgentGraphNodeSchema.shape.onEnterEffects,
-      exit: z.union([
-        z.object({ kind: z.literal("auto"), routes: StoryAutoRoutesSchema }).strict(),
-        z
-          .object({ kind: z.literal("auto"), nextNodeId: StoryAgentStableIdSchema.nullable() })
-          .strict(),
-      ]),
     })
     .strict(),
 ]);

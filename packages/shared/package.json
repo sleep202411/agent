@@ -117,6 +117,10 @@
     "./world-model-protocol": {
       "types": "./dist/world-model-protocol.d.ts",
       "default": "./dist/world-model-protocol.js"
+    },
+    "./strip-retired-story-world-nodes": {
+      "types": "./dist/strip-retired-story-world-nodes.d.ts",
+      "default": "./dist/strip-retired-story-world-nodes.js"
     }
   },
   "scripts": {

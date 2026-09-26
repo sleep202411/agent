@@ -212,7 +212,7 @@ function GraphNodeEditor({
         />
       </label>
 
-      <StoryNodeStoryboardPanel projectId={projectId} nodeId={node.nodeId} />
+      <StoryNodeStoryboardPanel projectId={projectId} nodeId={node.nodeId} canEdit={canEdit} />
 
       <button
         type="button"

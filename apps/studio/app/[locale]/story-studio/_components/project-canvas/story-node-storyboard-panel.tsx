@@ -1,27 +1,54 @@
 "use client";
 
-import { IconArrowRight, IconLoader2, IconMovie, IconPhoto, IconVideo } from "@tabler/icons-react";
+import { IconArrowRight, IconLoader2, IconMovie, IconPhoto } from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Link, useRouter } from "@/i18n/navigation";
+import { useRouter } from "@/i18n/navigation";
 import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
+import { StoryClipVideoReplace } from "../story-clip-video-replace";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
 
+const VIDEO_FILE = /\.(m4v|mov|mp4|webm)(\?|$)/i;
+
+/** A real image when one exists. Video files stay a silent cover, never a player. */
+function clipCover(
+  media: {
+    thumbnailUrl: string | null;
+    previewUrl: string | null;
+    mediaKind: string;
+    mimeType: string | null;
+  } | null
+): { kind: "image" | "video"; url: string } | null {
+  if (!media) return null;
+  const image = [media.thumbnailUrl, media.previewUrl].find((url) => url && !VIDEO_FILE.test(url));
+  if (image) return { kind: "image", url: image };
+  const videoFile = media.previewUrl ?? media.thumbnailUrl;
+  const video = Boolean(
+    videoFile &&
+    (media.mediaKind === "video" ||
+      media.mimeType?.startsWith("video/") ||
+      VIDEO_FILE.test(videoFile))
+  );
+  return video && videoFile ? { kind: "video", url: videoFile } : null;
+}
+
 /**
- * The node's production filling, read straight from its storyboard sequence —
- * the single source of the scene's playable content. Display + deep link
- * only: generation and prompts live on the storyboard page.
+ * The node's production filling, read straight from its storyboard sequence.
+ * Editors can upload a new clip or replace an existing one here; the timeline
+ * editor remains the place for ordering, prompts, and generation.
  */
 export function StoryNodeStoryboardPanel({
   projectId,
   nodeId,
+  canEdit = false,
 }: {
   projectId: string;
   nodeId: string;
+  canEdit?: boolean;
 }) {
   const t = useTranslations("storyStudio.canvas.inspector.storyboard");
   const router = useRouter();
@@ -91,63 +118,69 @@ export function StoryNodeStoryboardPanel({
         </span>
       </button>
 
-      {clips.length > 0 ? (
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+      {clips.length > 0 || (sequence && chapterId) ? (
+        <div className="mt-3 -mx-0.5 flex gap-2 overflow-x-auto px-0.5 py-0.5">
           {clips.map((clip) => {
-            const media = clip.selectedMediaVersion;
-            const video = Boolean(
-              clip.kind === "video" ||
-              media?.mediaKind === "video" ||
-              media?.mimeType?.startsWith("video/")
-            );
-            const imageSource = video ? null : (media?.thumbnailUrl ?? media?.previewUrl ?? null);
-            const KindIcon = video ? IconVideo : IconPhoto;
+            const cover = clipCover(clip.selectedMediaVersion);
             return (
-              <Link
+              <div
                 key={clip.id}
-                href={editorHref}
-                title={clip.title}
-                className="group relative h-14 w-24 shrink-0 overflow-hidden rounded-lg bg-black/30 ring-1 ring-white/[0.06] transition hover:ring-white/25"
+                className="group relative h-14 w-24 shrink-0 overflow-hidden rounded-lg border border-white/[0.08] bg-black/30"
               >
-                {video && media?.previewUrl ? (
+                {cover?.kind === "image" ? (
+                  <Image
+                    src={cover.url}
+                    alt=""
+                    fill
+                    sizes="96px"
+                    className="pointer-events-none object-cover"
+                    unoptimized
+                  />
+                ) : cover?.kind === "video" ? (
                   <video
-                    src={media.previewUrl}
+                    src={cover.url}
                     muted
                     playsInline
                     preload="metadata"
                     aria-hidden="true"
                     disablePictureInPicture
+                    className="pointer-events-none absolute inset-0 size-full object-cover"
                     onLoadedMetadata={(event) => {
                       const element = event.currentTarget;
                       if (Number.isFinite(element.duration) && element.duration > 0) {
                         element.currentTime = Math.min(0.05, element.duration / 2);
                       }
                     }}
-                    className="absolute inset-0 size-full object-cover"
-                  />
-                ) : imageSource ? (
-                  <Image
-                    src={imageSource}
-                    alt={clip.title}
-                    fill
-                    sizes="96px"
-                    className="object-cover"
-                    unoptimized
                   />
                 ) : (
                   <span className="grid size-full place-items-center text-white/28">
-                    <KindIcon className="size-4" stroke={1.6} />
+                    <IconPhoto className="size-4" stroke={1.6} />
                   </span>
                 )}
-                <span className="absolute right-1 bottom-1 rounded bg-black/55 px-1 text-[9px] tabular-nums text-white/78">
-                  {Number((clip.durationMs / 1000).toFixed(1))}s
-                </span>
-                <span className="absolute top-1 left-1 grid size-4 place-items-center rounded bg-black/55 text-white/70">
-                  <KindIcon className="size-2.5" stroke={2} />
-                </span>
-              </Link>
+                <span className="pointer-events-none absolute inset-0 bg-black/50 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100" />
+                {sequence && chapterId ? (
+                  <StoryClipVideoReplace
+                    projectId={projectId}
+                    chapterId={chapterId}
+                    sequence={sequence}
+                    clip={clip}
+                    enabled={canEdit}
+                    placement="center"
+                  />
+                ) : null}
+              </div>
             );
           })}
+          {sequence && chapterId ? (
+            <StoryClipVideoReplace
+              projectId={projectId}
+              chapterId={chapterId}
+              sequence={sequence}
+              enabled={canEdit}
+              placement="placeholder"
+              density="thumb"
+            />
+          ) : null}
         </div>
       ) : null}
     </section>

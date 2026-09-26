@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeStageRect } from "./story-hotspot-stage";
+import { hotspotLabelWidth, normalizeStageRect, rectFromPointer } from "./story-hotspot-stage";
 
 describe("story hotspot stage coordinates", () => {
   it("converts a transformed Konva rectangle back to normalized video coordinates", () => {
@@ -15,5 +15,19 @@ describe("story hotspot stage coordinates", () => {
       width: 0.035,
       height: 0.035,
     });
+  });
+
+  it("builds a dragged rectangle from the pointer without leaving the frame", () => {
+    expect(rectFromPointer({ x: 0.25, y: 0.25 }, { x: 0.75, y: 0.5 }, 0.035)).toEqual({
+      x: 0.25,
+      y: 0.25,
+      width: 0.5,
+      height: 0.25,
+    });
+  });
+
+  it("sizes the name pill to the text and only clips it at the hotspot edge", () => {
+    expect(hotspotLabelWidth(48, 400)).toBe(89);
+    expect(hotspotLabelWidth(200, 80)).toBe(66);
   });
 });

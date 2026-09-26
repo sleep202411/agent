@@ -98,6 +98,11 @@ function pointer(type: string, id: number, x = 0) {
   act(() => container.querySelector("button")!.dispatchEvent(event));
 }
 
+it("shows a swipe cue with the action label", () => {
+  expect(container.querySelector("svg")).not.toBeNull();
+  expect(container.textContent).toContain("swipe");
+});
+
 it("keeps the first pointer when another finger touches the swipe", () => {
   pointer("pointerdown", 1);
   pointer("pointerdown", 2);

@@ -19,7 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MediaTimelineTrack, timelineSecondsToPixels } from "@/components/media-timeline";
 import { toast } from "sonner";
@@ -45,7 +45,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Link } from "@/i18n/navigation";
 import {
   defaultMode,
   defaultSettingsForModel,
@@ -105,6 +104,7 @@ import { useStoryProductionGenerationDefaults } from "./use-story-production-gen
  */
 export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.editorPage");
+  const router = useRouter();
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -292,12 +292,8 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
           <IconTimeline className="mx-auto size-7 text-white/45" aria-hidden="true" />
           <h1 className="mt-3 text-base font-semibold text-white/92">{t("emptyTitle")}</h1>
           <p className="mt-1.5 text-sm text-white/60">{t("emptyDescription")}</p>
-          <Button asChild variant="secondary" className="mt-5">
-            <Link
-              href={`/story-studio/projects/${projectId}/storyboard${chapterId ? `?chapter=${encodeURIComponent(chapterId)}` : ""}`}
-            >
-              {t("backToStoryboard")}
-            </Link>
+          <Button variant="secondary" className="mt-5" onClick={() => router.back()}>
+            {t("back")}
           </Button>
         </div>
       </main>
@@ -354,14 +350,15 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     <main className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--canvas-background)]">
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-[oklch(0.185_0_0)] px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-3">
-          <Link
-            href={`/story-studio/projects/${projectId}/storyboard?chapter=${encodeURIComponent(chapterId)}`}
-            aria-label={t("backToStoryboard")}
+          <button
+            type="button"
+            onClick={() => router.back()}
+            aria-label={t("back")}
             className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 text-xs font-medium text-white/68 transition-colors hover:bg-white/[0.12] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
           >
             <IconArrowLeft className="size-4" aria-hidden="true" />
-            <span className="hidden sm:inline">{t("backToStoryboard")}</span>
-          </Link>
+            <span className="hidden sm:inline">{t("back")}</span>
+          </button>
           <span className="h-5 w-px bg-white/10" aria-hidden="true" />
           <div className="min-w-0">
             <div className="flex min-w-0 items-baseline gap-2">

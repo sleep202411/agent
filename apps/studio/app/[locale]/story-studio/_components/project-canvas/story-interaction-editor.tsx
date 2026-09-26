@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   IconArrowLeft,
-  IconArrowsMove,
   IconChevronDown,
   IconClick,
   IconClock,
   IconCopy,
   IconFocusCentered,
+  IconInfoCircle,
   IconPlayerPause,
   IconPlayerPlay,
   IconPlus,
@@ -28,6 +28,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { MediaTimelineRange, MediaTimelineTrack } from "@/components/media-timeline";
 import { cn } from "@/lib/utils";
 import type {
@@ -161,6 +162,12 @@ export function StoryInteractionEditor({
     },
     [commitDrafts]
   );
+  const changeHotspotRect = useCallback(
+    (id: string, rect: NormalizedHotspotRect) => {
+      updateDraft(id, (draft) => ({ ...draft, rect }));
+    },
+    [updateDraft]
+  );
 
   const createHotspot = useCallback(
     (rect: NormalizedHotspotRect): string => {
@@ -179,6 +186,7 @@ export function StoryInteractionEditor({
         startSeconds,
         endSeconds,
         branchAtSeconds: null,
+        timing: "hold",
         trigger: { kind: "tap" },
         outcomes: { success: { kind: "continue" } },
       };
@@ -242,6 +250,19 @@ export function StoryInteractionEditor({
     [duration]
   );
 
+  const selectHotspot = useCallback(
+    (id: string | null) => {
+      setSelectedId(id);
+      if (!id) return;
+      const draft = draftsRef.current.find((item) => item.id === id);
+      if (!draft) return;
+      if (currentTime < draft.startSeconds || currentTime > draft.endSeconds) {
+        seek(draft.startSeconds);
+      }
+    },
+    [currentTime, seek]
+  );
+
   const scrubTimeline = useCallback(
     (seconds: number) => {
       const video = videoRef.current;
@@ -293,6 +314,8 @@ export function StoryInteractionEditor({
     const action = draft.outcomes.success;
     if (action.kind === "continue") {
       setPreviewMessage(t("previewContinue"));
+    } else if (action.kind === "pause") {
+      setPreviewMessage(t("previewPause"));
     } else if (action.kind === "seek") {
       setPreviewMessage(t("previewSeek", { time: formatTime(action.timeSeconds) }));
     } else {
@@ -309,7 +332,6 @@ export function StoryInteractionEditor({
   const activeDrafts = drafts.filter(
     (draft) => currentTime >= draft.startSeconds && currentTime <= draft.endSeconds
   );
-  const presentedDrafts = mode === "preview" ? activeDrafts : drafts;
   const tickCount = duration <= 12 ? Math.ceil(duration) : 10;
   const timelineTicks = Array.from(
     { length: tickCount + 1 },
@@ -497,15 +519,14 @@ export function StoryInteractionEditor({
                 <StoryHotspotStage
                   width={stageSize.width}
                   height={stageSize.height}
-                  drafts={presentedDrafts}
+                  drafts={activeDrafts}
                   selectedId={selectedId}
-                  currentTime={currentTime}
                   mode={mode}
                   tool={tool}
                   minimumSize={MIN_RECT_SIZE}
                   onCreate={createHotspot}
-                  onRectChange={(id, rect) => updateDraft(id, (draft) => ({ ...draft, rect }))}
-                  onSelect={setSelectedId}
+                  onRectChange={changeHotspotRect}
+                  onSelect={selectHotspot}
                   onPreview={showPreviewAction}
                   onDrawComplete={() => setTool("select")}
                 />
@@ -647,7 +668,7 @@ export function StoryInteractionEditor({
                           minDurationSeconds={MIN_WINDOW_SECONDS}
                           selected={isSelected}
                           disabled={mode === "preview"}
-                          onSelect={() => setSelectedId(draft.id)}
+                          onSelect={() => selectHotspot(draft.id)}
                           onScrub={scrubTimeline}
                           onChange={({ startSeconds, endSeconds }) =>
                             updateDraft(draft.id, (current) => ({
@@ -707,7 +728,7 @@ export function StoryInteractionEditor({
                       key={draft.id}
                       type="button"
                       data-hotspot-list-id={draft.id}
-                      onClick={() => setSelectedId(draft.id)}
+                      onClick={() => selectHotspot(draft.id)}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition",
                         draft.id === selectedId
@@ -729,7 +750,7 @@ export function StoryInteractionEditor({
                         {draft.label}
                       </span>
                       <span className="text-xs tabular-nums text-white/32">
-                        {formatTime(draft.startSeconds)}–{formatTime(draft.endSeconds)}
+                        {`${formatTime(draft.startSeconds)}–${formatTime(draft.endSeconds)}`}
                       </span>
                     </button>
                   ))}
@@ -761,6 +782,55 @@ export function StoryInteractionEditor({
                   </PropertySection>
 
                   <PropertySection icon={<IconClock className="size-3.5" />} title={t("timing")}>
+                    <div className="mb-3">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-xs font-semibold text-white/38">
+                          {t("timingMode")}
+                        </span>
+                        <TooltipProvider delayDuration={200}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={t("timingModeHint")}
+                                className="grid size-4 place-items-center text-white/28 transition hover:text-white/62"
+                              >
+                                <IconInfoCircle className="size-3.5" stroke={1.7} />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              sideOffset={8}
+                              className="z-[80] max-w-64 text-left leading-5"
+                            >
+                              {t("timingModeHint")}
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </span>
+                      <div className="relative mt-1.5">
+                        <select
+                          aria-label={t("timingMode")}
+                          value={selected.timing}
+                          disabled={mode === "preview"}
+                          onChange={(event) =>
+                            updateDraft(selected.id, (draft) => ({
+                              ...draft,
+                              timing: event.target.value === "hold" ? "hold" : "window",
+                              outcomes:
+                                event.target.value === "hold"
+                                  ? { ...draft.outcomes, timeout: undefined }
+                                  : draft.outcomes,
+                            }))
+                          }
+                          className="h-9 w-full appearance-none rounded-xl border border-white/[0.07] bg-white/[0.045] px-3 pr-8 text-sm text-white/72 outline-none transition focus:border-white/20 disabled:cursor-default disabled:opacity-45"
+                        >
+                          <option value="window">{t("timingWindow")}</option>
+                          <option value="hold">{t("timingHold")}</option>
+                        </select>
+                        <IconChevronDown className="pointer-events-none absolute top-1/2 right-3 size-3.5 -translate-y-1/2 text-white/30" />
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <TimeField
                         label={t("start")}
@@ -791,71 +861,42 @@ export function StoryInteractionEditor({
                         }
                       />
                     </div>
-                    <p className="mt-2 text-xs leading-5 text-white/34">{t("timingHint")}</p>
-                    <label className="mt-3 block">
-                      <span className="text-xs font-semibold text-white/38">{t("branchAt")}</span>
-                      <div className="relative mt-1.5">
-                        <input
-                          type="number"
-                          data-branch-at
-                          disabled={mode === "preview"}
-                          min={selected.endSeconds}
-                          max={duration}
-                          step={0.1}
-                          value={(selected.branchAtSeconds ?? selected.endSeconds).toFixed(1)}
-                          onChange={(event) =>
-                            updateDraft(selected.id, (draft) => ({
-                              ...draft,
-                              branchAtSeconds: clamp(
-                                Number(event.target.value),
-                                draft.endSeconds,
-                                duration >= draft.endSeconds ? duration : draft.endSeconds
-                              ),
-                            }))
-                          }
-                          className="h-9 w-full rounded-lg border border-white/[0.06] bg-white/[0.04] px-2.5 pr-7 text-xs tabular-nums text-white/72 outline-none focus:border-white/18 disabled:cursor-default disabled:opacity-45"
-                        />
-                        <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-white/30">
-                          s
-                        </span>
-                      </div>
-                      <p className="mt-1.5 text-xs leading-5 text-white/34">{t("branchAtHint")}</p>
-                    </label>
-                  </PropertySection>
-
-                  <PropertySection
-                    icon={<IconArrowsMove className="size-3.5" />}
-                    title={t("position")}
-                  >
-                    <div className="grid grid-cols-2 gap-2">
-                      {(["x", "y", "width", "height"] as const).map((field) => (
-                        <label key={field} className="block">
-                          <span className="text-xs font-semibold text-white/38">{t(field)}</span>
-                          <div className="relative mt-1.5">
-                            <input
-                              type="number"
-                              data-position-field={field}
-                              disabled={mode === "preview"}
-                              min={0}
-                              max={100}
-                              step={0.1}
-                              value={(selected.rect[field] * 100).toFixed(1)}
-                              onChange={(event) => {
-                                const ratio = Number(event.target.value) / 100;
-                                updateDraft(selected.id, (draft) => ({
-                                  ...draft,
-                                  rect: normalizeEditedRect(draft.rect, field, ratio),
-                                }));
-                              }}
-                              className="h-9 w-full rounded-lg border border-white/[0.06] bg-white/[0.04] px-2.5 pr-7 text-xs tabular-nums text-white/72 outline-none focus:border-white/18 disabled:cursor-default disabled:opacity-45"
-                            />
-                            <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-white/30">
-                              %
-                            </span>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
+                    <p className="mt-2 text-xs leading-5 text-white/34">
+                      {t(selected.timing === "hold" ? "timingHoldHint" : "timingHint")}
+                    </p>
+                    {selected.timing === "window" ? (
+                      <label className="mt-3 block">
+                        <span className="text-xs font-semibold text-white/38">{t("branchAt")}</span>
+                        <div className="relative mt-1.5">
+                          <input
+                            type="number"
+                            data-branch-at
+                            disabled={mode === "preview"}
+                            min={selected.endSeconds}
+                            max={duration}
+                            step={0.1}
+                            value={(selected.branchAtSeconds ?? selected.endSeconds).toFixed(1)}
+                            onChange={(event) =>
+                              updateDraft(selected.id, (draft) => ({
+                                ...draft,
+                                branchAtSeconds: clamp(
+                                  Number(event.target.value),
+                                  draft.endSeconds,
+                                  duration >= draft.endSeconds ? duration : draft.endSeconds
+                                ),
+                              }))
+                            }
+                            className="h-9 w-full rounded-lg border border-white/[0.06] bg-white/[0.04] px-2.5 pr-7 text-xs tabular-nums text-white/72 outline-none focus:border-white/18 disabled:cursor-default disabled:opacity-45"
+                          />
+                          <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-white/30">
+                            s
+                          </span>
+                        </div>
+                        <p className="mt-1.5 text-xs leading-5 text-white/34">
+                          {t("branchAtHint")}
+                        </p>
+                      </label>
+                    ) : null}
                   </PropertySection>
 
                   <PropertySection icon={<IconClick className="size-3.5" />} title={t("trigger")}>
@@ -959,7 +1000,7 @@ export function StoryInteractionEditor({
                         </div>
                       </label>
                     ) : null}
-                    {selected.trigger.kind === "press-hold" ? (
+                    {selected.trigger.kind === "press-hold" && selected.timing === "window" ? (
                       <label className="mt-3 flex cursor-pointer items-start gap-2.5">
                         <input
                           type="checkbox"
@@ -1024,19 +1065,21 @@ export function StoryInteractionEditor({
                           }
                         />
                       ) : null}
-                      <OptionalActionField
-                        label={t("timeoutOutcome")}
-                        action={selected.outcomes.timeout}
-                        targets={targets}
-                        duration={duration}
-                        disabled={mode === "preview"}
-                        onChange={(action) =>
-                          updateDraft(selected.id, (draft) => ({
-                            ...draft,
-                            outcomes: { ...draft.outcomes, timeout: action },
-                          }))
-                        }
-                      />
+                      {selected.timing === "window" ? (
+                        <OptionalActionField
+                          label={t("timeoutOutcome")}
+                          action={selected.outcomes.timeout}
+                          targets={targets}
+                          duration={duration}
+                          disabled={mode === "preview"}
+                          onChange={(action) =>
+                            updateDraft(selected.id, (draft) => ({
+                              ...draft,
+                              outcomes: { ...draft.outcomes, timeout: action },
+                            }))
+                          }
+                        />
+                      ) : null}
                     </div>
                   </PropertySection>
                 </div>
@@ -1084,7 +1127,7 @@ export function StoryInteractionEditor({
 
 function storyNodeLabel(node: StoryGraphNode): string {
   if (node.kind === "decision") return "Player choice";
-  return node.name?.trim() || (node.kind === "clip" ? node.clipKey : (node.worldId ?? node.nodeId));
+  return node.name?.trim() || node.clipKey;
 }
 
 function ToolButton({
@@ -1105,29 +1148,37 @@ function ToolButton({
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      title={shortcut ? `${label} (${shortcut})` : label}
-      aria-label={label}
-      aria-pressed={active}
-      className={cn(
-        "relative grid size-9 place-items-center rounded-xl outline-none transition focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:opacity-25",
-        active
-          ? "bg-white/[0.13] text-white"
-          : danger
-            ? "text-destructive/70 hover:bg-destructive/[0.1] hover:text-destructive"
-            : "text-white/42 hover:bg-white/[0.075] hover:text-white/78"
-      )}
-    >
-      {children}
-      {shortcut ? (
-        <span className="absolute right-0.5 bottom-0 text-xs leading-none font-semibold text-white/28">
-          {shortcut}
+    <Tooltip delayDuration={0}>
+      <TooltipTrigger asChild>
+        <span className="inline-flex">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onClick}
+            aria-label={label}
+            aria-pressed={active}
+            className={cn(
+              "relative grid size-9 place-items-center rounded-xl outline-none transition focus-visible:ring-2 focus-visible:ring-white/35 disabled:pointer-events-none disabled:opacity-25",
+              active
+                ? "bg-white/[0.13] text-white"
+                : danger
+                  ? "text-destructive/70 hover:bg-destructive/[0.1] hover:text-destructive"
+                  : "text-white/42 hover:bg-white/[0.075] hover:text-white/78"
+            )}
+          >
+            {children}
+            {shortcut ? (
+              <span className="absolute right-0.5 bottom-0 text-xs leading-none font-semibold text-white/28">
+                {shortcut}
+              </span>
+            ) : null}
+          </button>
         </span>
-      ) : null}
-    </button>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8} className="z-[80]">
+        {label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -1238,6 +1289,10 @@ function ActionField({
               if (targetNodeId) onChange({ kind: "goto", targetNodeId });
               return;
             }
+            if (kind === "pause") {
+              onChange({ kind: "pause" });
+              return;
+            }
             onChange(
               kind === "seek" ? { kind: "seek", timeSeconds: duration } : { kind: "continue" }
             );
@@ -1245,6 +1300,7 @@ function ActionField({
           className="h-9 w-full appearance-none rounded-xl border border-white/[0.07] bg-white/[0.045] px-3 pr-8 text-sm text-white/72 outline-none transition focus:border-white/20 disabled:cursor-default disabled:opacity-45"
         >
           <option value="continue">{t("continueCurrent")}</option>
+          <option value="pause">{t("stayOnFrame")}</option>
           <option value="seek">{t("seekCurrent")}</option>
           <option value="goto" disabled={targets.length === 0}>
             {t("goToScene")}
@@ -1316,6 +1372,8 @@ function TimeField({
   disabled: boolean;
   onChange: (value: number) => void;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
+
   return (
     <label className="block">
       <span className="text-xs font-semibold text-white/38">{label}</span>
@@ -1326,8 +1384,23 @@ function TimeField({
           min={0}
           max={max}
           step={0.1}
-          value={value.toFixed(1)}
-          onChange={(event) => onChange(Number(event.target.value))}
+          value={draft ?? value.toFixed(1)}
+          onFocus={(event) => {
+            setDraft(value.toFixed(1));
+            event.currentTarget.select();
+          }}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={() => {
+            const raw = draft;
+            setDraft(null);
+            if (raw === null || raw.trim() === "") return;
+            const parsed = Number(raw);
+            if (!Number.isFinite(parsed)) return;
+            onChange(clamp(parsed, 0, max));
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.currentTarget.blur();
+          }}
           className="h-9 w-full rounded-lg border border-white/[0.06] bg-white/[0.04] px-2.5 pr-7 text-xs tabular-nums text-white/72 outline-none focus:border-white/18 disabled:cursor-default disabled:opacity-45"
         />
         <span className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-xs text-white/30">
@@ -1336,20 +1409,6 @@ function TimeField({
       </div>
     </label>
   );
-}
-
-function normalizeEditedRect(
-  rect: StoryInteractionDraft["rect"],
-  field: keyof StoryInteractionDraft["rect"],
-  value: number
-): StoryInteractionDraft["rect"] {
-  if (!Number.isFinite(value)) return rect;
-  if (field === "x") return { ...rect, x: clamp(value, 0, 1 - rect.width) };
-  if (field === "y") return { ...rect, y: clamp(value, 0, 1 - rect.height) };
-  if (field === "width") {
-    return { ...rect, width: clamp(value, MIN_RECT_SIZE, 1 - rect.x) };
-  }
-  return { ...rect, height: clamp(value, MIN_RECT_SIZE, 1 - rect.y) };
 }
 
 function fitDraftsToDuration(

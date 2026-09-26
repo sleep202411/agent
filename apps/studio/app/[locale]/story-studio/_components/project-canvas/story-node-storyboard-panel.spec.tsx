@@ -93,4 +93,47 @@ describe("StoryNodeStoryboardPanel", () => {
       "/story-studio/projects/project-1/edit?chapter=chapter-1&node=node-1"
     );
   });
+
+  it("keeps upload beside an existing clip and replace on that clip", async () => {
+    vi.mocked(getStoryStoryboard).mockResolvedValue([
+      {
+        id: "sequence-1",
+        plotNodeId: "node-1",
+        clips: [
+          {
+            id: "clip-1",
+            title: "SCENE_1",
+            kind: "video",
+            durationMs: 111_000,
+            selectedMediaVersion: {
+              mediaKind: "video",
+              previewUrl: "https://example.test/clip.mp4",
+              thumbnailUrl: null,
+              mimeType: "video/mp4",
+            },
+          },
+        ],
+      } as never,
+    ]);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <StoryNodeStoryboardPanel projectId="project-1" nodeId="node-1" canEdit />
+        </QueryClientProvider>
+      );
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const labels = [...container.querySelectorAll("button")].map((button) => button.textContent);
+    expect(labels).toContain("replaceVideoAction");
+    expect(labels).toContain("uploadVideo");
+    expect(labels[0]).toContain("open");
+    const cover = container.querySelector("video");
+    expect(cover?.hasAttribute("controls")).toBe(false);
+    expect(container.querySelector('a[href*="/edit"]')).toBeNull();
+    expect(container.textContent).not.toContain("111");
+  });
 });

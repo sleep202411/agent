@@ -7,7 +7,6 @@ import type {
   StoryDecisionGraphNode,
   StoryGraphChoice,
   StoryGraphNode,
-  StoryWorldGraphNode,
 } from "@/lib/story-projects-api";
 import {
   MAX_STORY_EXIT_ROUTES,
@@ -30,7 +29,7 @@ import {
 } from "@repo/shared/story-stats";
 
 type ClipGraphNode = StoryClipGraphNode;
-type FlowGraphNode = (StoryClipGraphNode | StoryWorldGraphNode) & {
+type FlowGraphNode = StoryClipGraphNode & {
   exit: Extract<StoryClipGraphNode["exit"], { kind: "auto" }>;
 };
 type ChoiceClipNode = (ClipGraphNode | StoryDecisionGraphNode) & {
@@ -85,13 +84,6 @@ export interface CreateClipNodeOptions {
   name?: string;
 }
 
-export interface CreateWorldNodeOptions {
-  nodeId?: string;
-  worldId?: string | null;
-  name?: string;
-  maxExperienceSeconds?: 60 | 90 | 120;
-}
-
 export interface StoryNodeCreationResult<T> {
   content: InteractiveStoryDraftContent;
   created: T;
@@ -120,28 +112,6 @@ export function createClipNode(
     clipKey,
     ...(options.name?.trim() ? { name: options.name.trim() } : {}),
     interactions: [],
-    exit: storyAutoExit(null),
-  };
-  return { content: appendGraphNode(content, created), created };
-}
-
-export function createWorldNode(
-  content: InteractiveStoryDraftContent,
-  options: CreateWorldNodeOptions = {}
-): StoryNodeCreationResult<StoryWorldGraphNode> {
-  const ordinal = content.graph.nodes.filter((node) => node.kind === "world").length + 1;
-  const nodeId = options.nodeId
-    ? assertAvailableNodeId(content, options.nodeId)
-    : allocateStableId(
-        content.graph.nodes.map((node) => node.nodeId),
-        `world:experience-${ordinal}`
-      );
-  const created: StoryWorldGraphNode = {
-    kind: "world",
-    nodeId,
-    worldId: options.worldId ?? null,
-    ...(options.name ? { name: options.name } : {}),
-    maxExperienceSeconds: options.maxExperienceSeconds ?? 60,
     exit: storyAutoExit(null),
   };
   return { content: appendGraphNode(content, created), created };
@@ -214,17 +184,6 @@ export function updateStoryClipMeta(
   });
   if (!found) throw error("CLIP_NOT_FOUND", `Unknown clip node ${nodeId}.`);
   return { ...content, graph: { ...content.graph, nodes } };
-}
-
-export function updateStoryWorldNode(
-  content: InteractiveStoryDraftContent,
-  nodeId: string,
-  patch: Partial<
-    Pick<StoryWorldGraphNode, "worldId" | "name" | "entryInstruction" | "maxExperienceSeconds">
-  >
-): InteractiveStoryDraftContent {
-  const source = requireWorld(content, nodeId);
-  return replaceGraphNode(content, nodeId, { ...source, ...patch });
 }
 
 export function replaceStoryNodeInteractions(
@@ -758,15 +717,6 @@ function routesWithoutDeletedNode(
 }
 
 function removeNodeReferences(node: StoryGraphNode, deletedNodeId: string): StoryGraphNode {
-  if (node.kind === "world") {
-    return {
-      ...node,
-      exit: {
-        kind: "auto",
-        routes: routesWithoutDeletedNode(node.exit.routes, deletedNodeId),
-      },
-    };
-  }
   const interactions = (node.kind === "clip" ? node.interactions : []).map((interaction) => ({
     ...interaction,
     outcomes: removeDeletedInteractionTargets(interaction.outcomes, deletedNodeId),
@@ -848,19 +798,12 @@ function requireClip(content: InteractiveStoryDraftContent, nodeId: string): Cli
   return node;
 }
 
-function requireWorld(content: InteractiveStoryDraftContent, nodeId: string): StoryWorldGraphNode {
-  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-  if (!node || node.kind !== "world")
-    throw error("NODE_NOT_FOUND", `Unknown world node ${nodeId}.`);
-  return node;
-}
-
 function requireFlowNode(content: InteractiveStoryDraftContent, nodeId: string): FlowGraphNode {
   const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-  if (!node || node.exit.kind !== "auto") {
+  if (!node || !isAutoFlowNode(node)) {
     throw error("SOURCE_EXIT_KIND_MISMATCH", `Node ${nodeId} is not an automatic flow node.`);
   }
-  return node as FlowGraphNode;
+  return node;
 }
 
 function requireChoiceClip(content: InteractiveStoryDraftContent, nodeId: string): ChoiceClipNode {
@@ -1111,7 +1054,7 @@ function stripStateKeyFromContent(
 }
 
 function isAutoFlowNode(node: StoryGraphNode): node is FlowGraphNode {
-  return node.kind === "world" || (node.kind === "clip" && node.exit.kind === "auto");
+  return node.kind === "clip" && node.exit.kind === "auto";
 }
 
 function isChoiceNode(node: StoryGraphNode): node is ChoiceClipNode {

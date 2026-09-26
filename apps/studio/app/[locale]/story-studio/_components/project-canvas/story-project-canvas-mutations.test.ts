@@ -8,7 +8,6 @@ import {
   createClipNode,
   createStoryEndingForAutoRoute,
   createStoryEndingForChoice,
-  createWorldNode,
   deleteGraphNode,
   moveChoiceOption,
   putStoryEnding,
@@ -68,24 +67,6 @@ describe("story canvas mutations", () => {
     content = connectSceneContinuation(content, "clip:a", "clip:b");
     content = deleteGraphNode(content, "clip:b");
     expect(content.graph.nodes[0]?.exit).toEqual({ kind: "auto", routes: [{ target: null }] });
-  });
-
-  it("connects world experiences into the same story-flow graph in both directions", () => {
-    let content = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" }).content;
-    content = createWorldNode(content, { nodeId: "world:a" }).content;
-    content = createClipNode(content, { nodeId: "clip:b", clipKey: "B" }).content;
-
-    content = connectSceneContinuation(content, "clip:a", "world:a");
-    content = connectSceneContinuation(content, "world:a", "clip:b");
-
-    expect(content.graph.nodes.find((node) => node.nodeId === "clip:a")?.exit).toEqual({
-      kind: "auto",
-      routes: [{ target: { kind: "node", nodeId: "world:a" } }],
-    });
-    expect(content.graph.nodes.find((node) => node.nodeId === "world:a")?.exit).toEqual({
-      kind: "auto",
-      routes: [{ target: { kind: "node", nodeId: "clip:b" } }],
-    });
   });
 
   it("authors ordered choices", () => {

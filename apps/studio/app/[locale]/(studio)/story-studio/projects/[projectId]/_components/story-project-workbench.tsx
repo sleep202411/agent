@@ -574,7 +574,7 @@ interface AuthoredDecision {
 function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecision[] {
   const decisions = new Map<string, AuthoredDecision>();
   for (const node of content.graph.nodes) {
-    if (node.kind === "world" || node.exit.kind !== "choice") continue;
+    if (node.exit.kind !== "choice") continue;
     const sourceLabel = node.kind === "clip" ? node.name?.trim() || node.clipKey : node.nodeId;
     const existing = decisions.get(node.exit.decisionId);
     if (existing) {

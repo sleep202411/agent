@@ -59,12 +59,6 @@ export interface StoryBuildNodeTimelineInput {
   segments: StoryBuildSegmentInput[];
 }
 
-export interface StoryBuildWorldInput {
-  graphNodeId: string;
-  worldId: string;
-  status: 'generating' | 'ready' | 'failed';
-}
-
 type FrozenStoryBuildSegment = StoryBuildSegmentInput & {
   asset: FrozenStoryVideoAsset;
 };
@@ -85,7 +79,6 @@ export interface StoryBuildCompilerInput {
   metadata: { title: string; summary: string | null };
   draft: InteractiveStoryDraftContent;
   timelines: StoryBuildNodeTimelineInput[];
-  worlds?: StoryBuildWorldInput[];
   /**
    * Playable URL per bound music MediaAsset id — a plain public media URL, not
    * a frozen build asset. A binding missing from this map simply gets no music,
@@ -131,22 +124,6 @@ export function compileStoryBuild(
     }
     timelines.set(timeline.graphNodeId, timeline);
   });
-  const worlds = new Map<string, StoryBuildWorldInput>();
-  (input.worlds ?? []).forEach((world) => {
-    if (worlds.has(world.graphNodeId)) {
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_WORLD_BINDING_DUPLICATE',
-          `Graph node ${world.graphNodeId} has more than one world binding.`,
-          'revision',
-          world.graphNodeId,
-        ),
-      );
-      return;
-    }
-    worlds.set(world.graphNodeId, world);
-  });
 
   const entryNodeId = resolveEntryNodeId(input, nodes, diagnostics);
   const selection = selectGraphNodes(
@@ -176,7 +153,6 @@ export function compileStoryBuild(
   // not part of this playable cut. Compiling it into the runtime would make the
   // manifest invalid even though the connected film itself is ready.
   const runtimeSelection = reachable;
-  validateWorldBindings(runtimeSelection, nodes, worlds, diagnostics);
   const requiredGraphNodeIds = requiredVideoNodeIds(runtimeSelection, nodes);
   // Missing footage never stops a compile, on either channel. A creator may
   // ship a work in progress on purpose; the release reports what is unfilled
@@ -345,45 +321,6 @@ export function compileStoryBuild(
       .filter((timeline) => timeline.segments.length > 0)
       .map((timeline) => timeline.graphNodeId),
   };
-}
-
-function validateWorldBindings(
-  selection: ReadonlySet<string>,
-  nodes: ReadonlyMap<
-    string,
-    InteractiveStoryDraftContent['graph']['nodes'][number]
-  >,
-  worlds: ReadonlyMap<string, StoryBuildWorldInput>,
-  diagnostics: StoryBuildDiagnosticDto[],
-) {
-  [...selection].sort().forEach((nodeId) => {
-    const node = nodes.get(nodeId);
-    if (!node || node.kind !== 'world') return;
-    const binding = worlds.get(nodeId);
-    if (!node.worldId || !binding || binding.worldId !== node.worldId) {
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_WORLD_UNAVAILABLE',
-          `World node ${nodeId} does not resolve to a world in this project.`,
-          'revision',
-          nodeId,
-        ),
-      );
-      return;
-    }
-    if (binding.status !== 'ready') {
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_WORLD_NOT_READY',
-          `World node ${nodeId} is ${binding.status}; wait until the world is ready before playtesting or publishing.`,
-          'revision',
-          nodeId,
-        ),
-      );
-    }
-  });
 }
 
 function resolveEntryNodeId(
@@ -721,14 +658,10 @@ function analyzePaths(
 
     onStack.add(nodeId);
     const selfMs =
-      node.kind === 'world'
-        ? node.maxExperienceSeconds * 1_000
-        : (timelines
-            .get(node.nodeId)
-            ?.segments.reduce(
-              (total, segment) => total + segment.durationMs,
-              0,
-            ) ?? 0);
+      timelines
+        .get(node.nodeId)
+        ?.segments.reduce((total, segment) => total + segment.durationMs, 0) ??
+      0;
 
     let facts: NodePathFacts = DEAD_END;
     if (
@@ -833,32 +766,6 @@ function compileIntermediateRelease(
   [...selection].sort().forEach((nodeId) => {
     const node = nodes.get(nodeId);
     if (!node) return;
-    if (node.kind === 'world') {
-      if (!node.worldId) return;
-      runtimeNodes.push({
-        nodeId: node.nodeId,
-        communityPointPrice: node.communityPointPrice,
-        title: Object.fromEntries(
-          locales.map((locale) => [
-            locale,
-            storyNodeTitle(node, locale, input.defaultLocale),
-          ]),
-        ),
-        presentation: {
-          kind: 'world',
-          worldId: node.worldId,
-          ...(node.entryInstruction
-            ? { entryInstruction: node.entryInstruction }
-            : {}),
-          maxExperienceSeconds: node.maxExperienceSeconds,
-        },
-        overlays: [],
-        interactions: [],
-        ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
-        exit: compileExit(node),
-      });
-      return;
-    }
     if (node.kind === 'decision') {
       runtimeNodes.push({
         nodeId: node.nodeId,
@@ -916,7 +823,7 @@ function compileIntermediateRelease(
                   ),
                 } as const),
         })),
-        fit: 'cover',
+        fit: 'contain',
       },
       overlays: [],
       interactions: node.interactions,
@@ -1047,6 +954,19 @@ function diagnostic(
   return { severity, code, message, entityType, entityId };
 }
 
+function storyNodeTitle(
+  node: InteractiveStoryDraftContent['graph']['nodes'][number],
+  locale: string,
+  defaultLocale: string,
+): string {
+  if (node.kind !== 'decision') return node.name || node.nodeId;
+  return (
+    (node.exit.kind === 'choice' &&
+      (node.exit.prompt[locale] || node.exit.prompt[defaultLocale])) ||
+    node.nodeId
+  );
+}
+
 function sortAndDedupeDiagnostics(
   diagnostics: StoryBuildDiagnosticDto[],
 ): StoryBuildDiagnosticDto[] {
@@ -1070,18 +990,5 @@ function sortAndDedupeDiagnostics(
       left.code.localeCompare(right.code) ||
       (left.entityId ?? '').localeCompare(right.entityId ?? '') ||
       left.message.localeCompare(right.message),
-  );
-}
-
-function storyNodeTitle(
-  node: InteractiveStoryDraftContent['graph']['nodes'][number],
-  locale: string,
-  defaultLocale: string,
-): string {
-  if (node.kind !== 'decision') return node.name || node.nodeId;
-  return (
-    (node.exit.kind === 'choice' &&
-      (node.exit.prompt[locale] || node.exit.prompt[defaultLocale])) ||
-    node.nodeId
   );
 }
