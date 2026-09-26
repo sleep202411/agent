@@ -42,6 +42,7 @@ export function StoryClipVideoReplace({
   clip,
   enabled,
   placement,
+  density = "card",
   aspectRatio = "16 / 9",
 }: {
   projectId: string;
@@ -50,7 +51,9 @@ export function StoryClipVideoReplace({
   clip?: StoryStoryboardClip;
   enabled: boolean;
   /** Empty scenes use a media-sized slot. A clip shows replace on the picture. */
-  placement: "placeholder" | "corner";
+  placement: "placeholder" | "corner" | "center";
+  /** `thumb` matches the inspector's small storyboard stills. */
+  density?: "card" | "thumb";
   /** Matches the project frame. Callers default this to 16:9. */
   aspectRatio?: string;
 }) {
@@ -127,32 +130,36 @@ export function StoryClipVideoReplace({
 
   const triggerClassName =
     placement === "placeholder"
-      ? "relative flex w-[min(68vw,184px)] flex-col items-center justify-center gap-2 rounded-xl bg-muted text-muted-foreground [--upload-stroke:var(--border)] transition hover:bg-primary/[0.08] hover:text-primary hover:[--upload-stroke:var(--primary)] focus-visible:bg-primary/[0.08] focus-visible:text-primary focus-visible:[--upload-stroke:var(--primary)] focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none disabled:opacity-60 sm:w-[184px]"
-      : "absolute top-2 right-2 z-20 text-[12px] font-medium text-primary underline-offset-4 transition hover:underline focus-visible:underline focus-visible:outline-none";
+      ? density === "thumb"
+        ? "relative flex h-14 w-24 shrink-0 flex-col items-center justify-center gap-0.5 rounded-lg bg-muted text-muted-foreground [--upload-stroke:var(--border)] transition hover:bg-primary/[0.08] hover:text-primary hover:[--upload-stroke:var(--primary)] focus-visible:bg-primary/[0.08] focus-visible:text-primary focus-visible:[--upload-stroke:var(--primary)] focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none disabled:opacity-60"
+        : "relative flex w-[min(68vw,184px)] flex-col items-center justify-center gap-2 rounded-xl bg-muted text-muted-foreground [--upload-stroke:var(--border)] transition hover:bg-primary/[0.08] hover:text-primary hover:[--upload-stroke:var(--primary)] focus-visible:bg-primary/[0.08] focus-visible:text-primary focus-visible:[--upload-stroke:var(--primary)] focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:outline-none disabled:opacity-60 sm:w-[184px]"
+      : placement === "center"
+        ? "pointer-events-none absolute top-1/2 left-1/2 z-20 -translate-x-1/2 -translate-y-1/2 text-[12px] font-medium whitespace-nowrap text-primary underline-offset-4 opacity-0 transition group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:underline focus-visible:pointer-events-auto focus-visible:opacity-100 focus-visible:underline focus-visible:outline-none"
+        : "absolute top-2 right-2 z-20 text-[12px] font-medium text-primary underline-offset-4 transition hover:underline focus-visible:underline focus-visible:outline-none";
 
   return (
     <>
       <button
         type="button"
-        disabled={pending}
+        disabled={pending || !enabled}
         onClick={() => setOpen(true)}
         className={triggerClassName}
-        style={placement === "placeholder" ? { aspectRatio } : undefined}
+        style={placement === "placeholder" && density === "card" ? { aspectRatio } : undefined}
       >
         {placement === "placeholder" ? (
           <>
             <svg
               className="pointer-events-none absolute inset-0 size-full"
-              viewBox="0 0 184 184"
+              viewBox={density === "thumb" ? "0 0 96 56" : "0 0 184 184"}
               preserveAspectRatio="none"
               aria-hidden="true"
             >
               <rect
-                x="1.25"
-                y="1.25"
-                width="181.5"
-                height="181.5"
-                rx="14"
+                x={density === "thumb" ? "1" : "1.25"}
+                y={density === "thumb" ? "1" : "1.25"}
+                width={density === "thumb" ? "94" : "181.5"}
+                height={density === "thumb" ? "54" : "181.5"}
+                rx={density === "thumb" ? "7" : "14"}
                 fill="none"
                 stroke="var(--upload-stroke)"
                 strokeWidth="1.5"
@@ -160,8 +167,16 @@ export function StoryClipVideoReplace({
                 vectorEffect="non-scaling-stroke"
               />
             </svg>
-            <IconUpload className="size-5" stroke={1.8} aria-hidden="true" />
-            <span className="text-xs font-medium">{t("uploadVideo")}</span>
+            <IconUpload
+              className={density === "thumb" ? "size-3.5" : "size-5"}
+              stroke={1.8}
+              aria-hidden="true"
+            />
+            <span
+              className={density === "thumb" ? "text-[9px] font-medium" : "text-xs font-medium"}
+            >
+              {t("uploadVideo")}
+            </span>
           </>
         ) : hasMedia ? (
           t("replaceVideoAction")
