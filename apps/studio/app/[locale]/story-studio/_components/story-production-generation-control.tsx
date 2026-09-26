@@ -6,6 +6,8 @@ import {
   IconArrowUp,
   IconLoader2,
   IconPhotoOff,
+  IconPlayerPause,
+  IconPlayerPlay,
   IconRefresh,
   IconSparkles,
   IconX,
@@ -93,10 +95,12 @@ function StoryProductionGenerationControlContent({
   label,
   selectedMedia,
   aspect = "square",
+  aspectRatio,
   secondaryAction,
   outputKind = "image",
   allowGeneration = true,
   mediaLoading = "lazy",
+  playback = "native",
   layout = "stage",
   purpose = "primary",
   modelSelection,
@@ -112,12 +116,16 @@ function StoryProductionGenerationControlContent({
   selectedMedia: StoryCreativeMediaVersion | null;
   /** Media-slot shape; character cards use portrait (3:4), scene cards landscape (16:9). */
   aspect?: "square" | "portrait" | "landscape";
+  /** Project frame ratio, e.g. "16 / 9". Overrides `aspect` when set. */
+  aspectRatio?: string;
   /** Extra card-owned action stacked directly under the primary action. */
   secondaryAction?: React.ReactNode;
   /** Which modality this target generates; picks the page-header default. */
   outputKind?: ProductionModality;
   /** Keep below-the-fold generation cards lazy while allowing the gallery's first row to be eager. */
   mediaLoading?: "eager" | "lazy";
+  /** Storyboard slots play in place. Other cards keep the browser controls. */
+  playback?: "native" | "inline";
   /** The compact form places the action beside per-asset model settings. */
   layout?: "stage" | "inline";
   /** Asset generations can create either the canonical image or its three-view sheet. */
@@ -473,16 +481,24 @@ function StoryProductionGenerationControlContent({
       <section
         className={cn(
           "relative overflow-hidden rounded-xl bg-black/24",
-          aspect === "portrait"
-            ? "aspect-[3/4]"
-            : aspect === "landscape"
-              ? "aspect-video"
-              : "aspect-square"
+          aspectRatio
+            ? undefined
+            : aspect === "portrait"
+              ? "aspect-[3/4]"
+              : aspect === "landscape"
+                ? "aspect-video"
+                : "aspect-square"
         )}
+        style={aspectRatio ? { aspectRatio } : undefined}
         aria-label={t("controlsAria", { name: label })}
       >
         {previewMedia ? (
-          <MediaPreview media={previewMedia} label={label} loading={mediaLoading} />
+          <MediaPreview
+            media={previewMedia}
+            label={label}
+            loading={mediaLoading}
+            playback={playback}
+          />
         ) : actionButton || secondaryAction ? null : (
           <div className="grid size-full place-items-center">
             <IconPhotoOff className="size-6 text-white/40" aria-hidden="true" />
@@ -544,10 +560,12 @@ function MediaPreview({
   media,
   label,
   loading,
+  playback,
 }: {
   media: StoryCreativeMediaVersion;
   label: string;
   loading: "eager" | "lazy";
+  playback: "native" | "inline";
 }) {
   const video = media.mediaKind === "video" || media.mimeType?.startsWith("video/") === true;
   const source = video
@@ -558,15 +576,19 @@ function MediaPreview({
   return (
     <div className="absolute inset-0 overflow-hidden bg-black/40">
       {video && media.previewUrl ? (
-        <video
-          src={media.previewUrl}
-          poster={media.thumbnailUrl ?? undefined}
-          controls
-          preload="metadata"
-          playsInline
-          aria-label={label}
-          className="size-full object-cover"
-        />
+        playback === "inline" ? (
+          <InlineClipVideo src={media.previewUrl} poster={media.thumbnailUrl} label={label} />
+        ) : (
+          <video
+            src={media.previewUrl}
+            poster={media.thumbnailUrl ?? undefined}
+            controls
+            preload="metadata"
+            playsInline
+            aria-label={label}
+            className="size-full object-cover"
+          />
+        )
       ) : (
         <Image
           src={source}
@@ -579,6 +601,61 @@ function MediaPreview({
         />
       )}
     </div>
+  );
+}
+
+function InlineClipVideo({
+  src,
+  poster,
+  label,
+}: {
+  src: string;
+  poster: string | null;
+  label: string;
+}) {
+  const t = useTranslations("storyStudio.productionGeneration");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const toggle = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  };
+  return (
+    <>
+      <video
+        ref={videoRef}
+        src={src}
+        poster={poster ?? undefined}
+        preload="metadata"
+        playsInline
+        aria-label={label}
+        className="size-full object-cover"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+      />
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={playing ? t("pause") : t("play")}
+        className="group absolute inset-0 grid place-items-center focus-visible:outline-none"
+      >
+        <span
+          className={cn(
+            "grid size-8 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm transition",
+            playing && "opacity-0 group-hover:opacity-100"
+          )}
+        >
+          {playing ? (
+            <IconPlayerPause className="size-4" aria-hidden="true" />
+          ) : (
+            <IconPlayerPlay className="ml-0.5 size-4" aria-hidden="true" />
+          )}
+        </span>
+      </button>
+    </>
   );
 }
 

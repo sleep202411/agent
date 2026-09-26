@@ -2960,7 +2960,9 @@
         "cancelled": "生成已取消",
         "expired": "生成已過期",
         "materializationFailed": "媒體已生成，但無法附加到此目標"
-      }
+      },
+      "play": "播放",
+      "pause": "暫停"
     },
     "assetsPage": {
       "pageTitle": "資產規格 · 影遊工作室",
@@ -3165,6 +3167,7 @@
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。準備好後，可在已儲存的片段上選取「生成」。",
       "seconds": "{value} 秒",
       "options": "選項",
+      "choiceLabel": "選項 {index}",
       "addNode": "新增分鏡節點",
       "newNodeTitle": "未命名場景",
       "nodeAdded": "節點已同時新增到分鏡和情節樹。",
@@ -3175,7 +3178,14 @@
         "image": "圖片",
         "video": "影片"
       },
-      "editTimeline": "編輯"
+      "editTimeline": "編輯",
+      "uploadVideo": "上傳片段",
+      "replaceVideo": "替換影片",
+      "replaceVideoAction": "替換",
+      "uploadVideoSuccess": "影片已新增到此分鏡。",
+      "replaceVideoSuccess": "影片已替換。",
+      "uploadVideoTitle": "上傳的影片",
+      "uploadVideoPrompt": "上傳的影片。"
     },
     "editorPage": {
       "pageTitle": "剪輯 · 影遊工作室",
@@ -3187,7 +3197,7 @@
       "retry": "重試",
       "emptyTitle": "還沒有可剪輯的分鏡時間軸",
       "emptyDescription": "請先準備分鏡，再進入剪輯器。",
-      "backToStoryboard": "返回分鏡",
+      "back": "返回",
       "saved": "已儲存",
       "saving": "正在儲存…",
       "seconds": "{value} 秒",
@@ -3406,8 +3416,7 @@
       },
       "nodeKinds": {
         "clip": "影像鏡頭",
-        "decision": "玩家選擇",
-        "world": "世界體驗"
+        "decision": "玩家選擇"
       },
       "ports": {
         "input": "故事流入",
@@ -3431,9 +3440,11 @@
         "choiceType": "選擇",
         "hotspotType": "熱點",
         "continueCurrent": "繼續本片",
+        "stayOnFrame": "停在當前畫面",
         "seekCurrent": "跳至 {time}",
         "gotoTarget": "進入 {target}",
         "triggerTap": "點擊",
+        "timingHold": "暫停畫面",
         "triggerSwipe": "向{direction}滑動",
         "triggerPressHold": "長按 {duration}",
         "directions": {
@@ -3455,8 +3466,6 @@
         "description": "建立互動故事結構中的圖元素。",
         "clip": "影像鏡頭",
         "clipDescription": "一段帶有明確後續走向的生成影片。",
-        "world": "世界體驗",
-        "worldDescription": "進入一個帶有明確完成出口的即時生成世界。",
         "character": "角色",
         "characterDescription": "屬於目前故事專案的可重用角色卡。",
         "choice": "玩家選擇",
@@ -3474,66 +3483,9 @@
       },
       "projection": {
         "clip": "鏡頭",
-        "decision": "玩家選擇",
-        "world": "世界"
+        "decision": "玩家選擇"
       },
-      "worldNode": {
-        "untitled": "未命名世界",
-        "bindingTitle": "綁定世界",
-        "bindingDescription": "綁定已有世界，或直接為目前故事節點構建新世界。",
-        "change": "更換世界",
-        "chooseExisting": "選擇已有",
-        "chooseAnother": "選擇其他世界",
-        "boundWorldUnavailable": "目前綁定的世界已不可用。",
-        "retry": "重試",
-        "loading": "正在載入世界…",
-        "select": "選擇世界",
-        "unbound": "尚未選擇世界",
-        "noWorlds": "目前專案還沒有可重用的世界，可直接在這裡構建。",
-        "providerUnavailable": "尚未設定可用的世界模型服務。",
-        "providerLoadError": "無法載入世界模型服務。",
-        "generationUnavailable": "目前專案角色不能構建世界。",
-        "createError": "無法建立世界。",
-        "buildFailed": "無法構建世界。",
-        "buildTimeout": "世界生成在 10 分鐘內未完成，請檢查服務狀態後重試。",
-        "worldPrompt": "世界描述",
-        "worldPromptTooltip": "構建世界時傳送給模型，用於定義持續存在的場景、氛圍、角色、空間規則與開場時刻。",
-        "worldPromptPlaceholder": "描述世界、氛圍、角色、空間規則和開場時刻…",
-        "firstFrame": "開場畫面",
-        "firstFrameTooltip": "構建世界時傳送給模型的可選項目圖片，用於約束構圖和視覺身份。",
-        "firstFrameHint": "從目前項目選擇圖片，或上傳新圖片。",
-        "chooseFirstFrame": "選擇開場畫面",
-        "replaceFirstFrame": "更換開場畫面",
-        "clearFirstFrame": "移除開場畫面",
-        "firstFramePreviewAlt": "已選擇的世界開場畫面",
-        "firstFrameUnavailable": "這張圖片不能作為世界開場畫面。",
-        "firstFrameDisabled": "你不能修改這個世界的開場畫面。",
-        "firstFrameCandidateLoadError": "無法載入項目圖片。",
-        "perspective": "視角",
-        "perspectiveTooltip": "設定玩家探索生成世界時使用的鏡頭視角。",
-        "build": "構建並綁定世界",
-        "rebuild": "套用修改並取代世界",
-        "expandEditor": "展開世界設定",
-        "collapseEditor": "收起世界設定",
-        "run": "運行",
-        "runError": "無法啟動世界工作階段。",
-        "exitRun": "退出世界",
-        "entryInstruction": "初始指令",
-        "entryInstructionTooltip": "世界工作階段啟動後立即向運行中的模型傳送一次，用於指示首個事件或目標，不會重新構建世界。",
-        "entryInstructionPlaceholder": "描述玩家進入世界後的首個事件或目標。",
-        "maxDuration": "體驗時長上限",
-        "maxDurationTooltip": "單次世界體驗允許持續的最長時間；達到上限後，本次體驗結束。",
-        "duration": "{seconds} 秒",
-        "perspectiveValue": {
-          "first_person": "第一人稱",
-          "third_person": "第三人稱"
-        },
-        "status": {
-          "generating": "生成中",
-          "ready": "已就緒",
-          "failed": "失敗"
-        }
-      },
+
       "foundation": {
         "description": "先固定戲劇承諾，再展開分支圖；修改會自動儲存到可編輯草稿。",
         "logline": "一句話梗概",
@@ -3741,6 +3693,7 @@
         "copyName": "{name} 副本",
         "previewAction": "已觸發互動 · 前往{target}",
         "previewContinue": "已觸發互動 · 繼續播放本片",
+        "previewPause": "已觸發互動 · 停在當前畫面",
         "previewSeek": "已觸發互動 · 跳轉至 {time}",
         "previewMissingTarget": "這個熱點尚未指定前往目標。",
         "noVideo": "暫無目前影片",
@@ -3759,10 +3712,16 @@
         "hotspotCount": "{count} 個互動",
         "identity": "熱點",
         "name": "名稱",
-        "timing": "時間範圍",
+        "timing": "時機",
         "start": "開始",
         "end": "結束",
         "timingHint": "熱點只會在此時間範圍內顯示及可點擊。",
+        "timingMode": "觀眾不操作時",
+        "timingModeHint": "繼續播放：熱點只在一段時間內可操作，到點後片子接著播。暫停畫面：播到這個熱點的結束時間就暫停，直到觀眾完成操作。",
+        "timingWindow": "繼續播放",
+        "timingHold": "暫停畫面",
+        "timingHoldHint": "播到這個熱點的結束時間就暫停畫面，直到觀眾完成操作。這裡沒有超時。",
+        "holdAt": "停在",
         "position": "位置與尺寸",
         "x": "X",
         "y": "Y",
@@ -3787,6 +3746,7 @@
         "removeOutcome": "移除",
         "goToScene": "前往場景",
         "continueCurrent": "繼續播放本片",
+        "stayOnFrame": "停在當前畫面",
         "seekCurrent": "跳轉到本片時間",
         "seekTime": "目標時間",
         "destination": "目標場景",
