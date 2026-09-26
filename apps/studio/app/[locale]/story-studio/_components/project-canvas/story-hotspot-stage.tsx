@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useMemo, useRef } from "react";
-import type Konva from "konva";
+import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { Group, Layer, Rect, Stage, Text, Transformer } from "react-konva";
 import type { NormalizedHotspotRect, StoryInteractionDraft } from "./story-interaction-types";
