@@ -5,3 +5,4 @@ export * from "./run.js";
 export * from "./events.js";
 export * from "./hitl.js";
 export * from "./viewer-assistance.js";
+export * from "./film-knowledge.js";
