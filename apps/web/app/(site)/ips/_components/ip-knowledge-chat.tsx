@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { IconSparkles, IconSend, IconX, IconFileText, IconAlertCircle } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { api } from "@/src/lib/api";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
@@ -14,13 +14,14 @@ interface IpKnowledgeChatProps {
 
 export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
   const t = useTranslations("ipKnowledge");
+  const rawLocale = useLocale();
+  const locale = rawLocale === "en-US" || rawLocale === "zh-HK" ? rawLocale : "zh-CN";
   const { user } = useCurrentUser();
   const { open } = useAuthDialog();
 
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
   const [citedIds, setCitedIds] = useState<string[]>([]);
-  const [unanswered, setUnanswered] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,7 +48,6 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
     setError(null);
     setAnswer(null);
     setCitedIds([]);
-    setUnanswered(false);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -60,7 +60,7 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
       }>(`/aurora/ip-commerce/ips/${ipId}/knowledge/ask`, {
         data: {
           question: question.trim(),
-          locale: "zh-CN",
+          locale,
         },
         signal: controller.signal,
         timeout: 45_000,
@@ -69,7 +69,6 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
       if (!controller.signal.aborted) {
         setAnswer(reply.answer);
         setCitedIds(reply.citedDocumentIds || []);
-        setUnanswered(reply.unanswered || false);
       }
     } catch (err: any) {
       if (err.name !== "AbortError") {
