@@ -81,20 +81,38 @@ describe("StoryInteractionEditor", () => {
     requiredElement(
       document.body.querySelector<HTMLButtonElement>('button[aria-label="newHotspot"]')
     );
-    expect(
-      requiredElement(document.body.querySelector<HTMLInputElement>('[data-position-field="x"]'))
-        .value
-    ).toBe("35.0");
-    expect(
-      requiredElement(document.body.querySelector<HTMLInputElement>('[data-position-field="y"]'))
-        .value
-    ).toBe("31.0");
+    expect(document.body.querySelector("[data-position-field]")).toBeNull();
     expect(document.body.textContent).toContain("0:00.0–0:02.0");
 
     const action = requiredElement(
       document.body.querySelector<HTMLSelectElement>('select[aria-label="successOutcome"]')
     );
     expect(action.value).toBe("continue");
+  });
+
+  it("holds the frame and drops the timed-window controls", async () => {
+    await renderEditor(root);
+    await click(requiredElement(document.body.querySelector('button[aria-label="addHotspot"]')));
+
+    const timing = requiredElement(
+      document.body.querySelector<HTMLSelectElement>('select[aria-label="timingMode"]')
+    );
+    expect(timing.value).toBe("hold");
+    expect(document.body.querySelector("[data-branch-at]")).toBeNull();
+
+    await act(async () => {
+      timing.value = "window";
+      timing.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    expect(timing.value).toBe("window");
+    expect(document.body.querySelector("[data-branch-at]")).not.toBeNull();
+    expect(document.body.textContent).toContain("0:00.0–0:02.0");
+    expect(
+      requiredElement(
+        document.body.querySelector<HTMLSelectElement>('select[aria-label="successOutcome"]')
+      ).value
+    ).toBe("continue");
   });
 
   it("portals the modal workspace outside the canvas container", async () => {
@@ -248,6 +266,7 @@ function draft(overrides: Partial<StoryInteractionDraft> = {}): StoryInteraction
     startSeconds: 0,
     endSeconds: 2,
     branchAtSeconds: null,
+    timing: "window",
     trigger: { kind: "tap" },
     outcomes: { success: { kind: "goto", targetNodeId: "second" } },
     ...overrides,

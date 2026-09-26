@@ -7,6 +7,7 @@ export interface NormalizedHotspotRect {
 
 export type StoryInteractionActionDraft =
   | { kind: "continue" }
+  | { kind: "pause" }
   | { kind: "seek"; timeSeconds: number }
   | { kind: "goto"; targetNodeId: string };
 
@@ -41,6 +42,8 @@ export interface StoryInteractionDraft {
    * the branch cut lands when the window closes (legacy behavior).
    */
   branchAtSeconds: number | null;
+  /** `window` plays through the range. `hold` pauses at the start until the gesture resolves. */
+  timing: "window" | "hold";
   trigger: StoryInteractionTriggerDraft;
   outcomes: StoryInteractionOutcomesDraft;
 }

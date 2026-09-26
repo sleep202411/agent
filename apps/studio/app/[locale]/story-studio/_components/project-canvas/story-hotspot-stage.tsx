@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { Group, Layer, Rect, Stage, Text, Transformer } from "react-konva";
@@ -14,7 +14,6 @@ interface StoryHotspotStageProps {
   height: number;
   drafts: StoryInteractionDraft[];
   selectedId: string | null;
-  currentTime: number;
   mode: EditorMode;
   tool: EditorTool;
   minimumSize: number;
@@ -27,10 +26,30 @@ interface StoryHotspotStageProps {
 
 type DrawOperation = {
   pointerId: number;
-  hotspotId: string;
   origin: { x: number; y: number };
 };
 
+const LABEL_FONT_SIZE = 12;
+const LABEL_TEXT_X = 31;
+const LABEL_PAD_RIGHT = 10;
+
+/** Pill width for the index badge plus the full name, limited to the hotspot box. */
+export function hotspotLabelWidth(textWidth: number, hotspotWidth: number): number {
+  const contentWidth = LABEL_TEXT_X + Math.ceil(textWidth) + LABEL_PAD_RIGHT;
+  const maxWidth = Math.max(LABEL_TEXT_X + LABEL_PAD_RIGHT, hotspotWidth - 14);
+  return Math.min(contentWidth, maxWidth);
+}
+
+function measureHotspotLabel(label: string): number {
+  const probe = new Konva.Text({
+    text: label,
+    fontSize: LABEL_FONT_SIZE,
+    fontStyle: "bold",
+  });
+  const width = probe.getTextWidth();
+  probe.destroy();
+  return width;
+}
 const BRAND_BLUE = "#4D8DFF";
 const CORNER_ANCHORS = ["top-left", "top-right", "bottom-left", "bottom-right"];
 
@@ -39,7 +58,6 @@ export function StoryHotspotStage({
   height,
   drafts,
   selectedId,
-  currentTime,
   mode,
   tool,
   minimumSize,
@@ -50,7 +68,21 @@ export function StoryHotspotStage({
   onDrawComplete,
 }: StoryHotspotStageProps) {
   const drawOperationRef = useRef<DrawOperation | null>(null);
+  const previewRef = useRef<Konva.Rect | null>(null);
   const cursor = mode === "edit" && tool === "rectangle" ? "crosshair" : "default";
+
+  const paintPreview = (rect: NormalizedHotspotRect | null) => {
+    const node = previewRef.current;
+    if (!node) return;
+    if (!rect) {
+      node.visible(false);
+    } else {
+      node.visible(true);
+      node.position({ x: rect.x * width, y: rect.y * height });
+      node.size({ width: rect.width * width, height: rect.height * height });
+    }
+    node.getLayer()?.batchDraw();
+  };
 
   const stagePoint = (stage: Konva.Stage): { x: number; y: number } | null => {
     const position = stage.getPointerPosition();
@@ -76,13 +108,8 @@ export function StoryHotspotStage({
     event.evt.preventDefault();
     const pointerId = event.evt.pointerId;
     stage.container().setPointerCapture?.(pointerId);
-    const hotspotId = onCreate({
-      x: point.x,
-      y: point.y,
-      width: minimumSize,
-      height: minimumSize,
-    });
-    drawOperationRef.current = { pointerId, hotspotId, origin: point };
+    drawOperationRef.current = { pointerId, origin: point };
+    paintPreview(rectFromPointer(point, point, minimumSize));
   };
 
   const updatePointerOperation = (event: KonvaEventObject<PointerEvent>) => {
@@ -92,14 +119,7 @@ export function StoryHotspotStage({
     if (!stage) return;
     const point = stagePoint(stage);
     if (!point) return;
-    const x = Math.min(operation.origin.x, point.x);
-    const y = Math.min(operation.origin.y, point.y);
-    onRectChange(operation.hotspotId, {
-      x: clamp(x, 0, 1 - minimumSize),
-      y: clamp(y, 0, 1 - minimumSize),
-      width: Math.min(Math.max(minimumSize, Math.abs(point.x - operation.origin.x)), 1 - x),
-      height: Math.min(Math.max(minimumSize, Math.abs(point.y - operation.origin.y)), 1 - y),
-    });
+    paintPreview(rectFromPointer(operation.origin, point, minimumSize));
   };
 
   const endPointerOperation = (event: KonvaEventObject<PointerEvent>) => {
@@ -107,9 +127,12 @@ export function StoryHotspotStage({
     if (!operation || operation.pointerId !== event.evt.pointerId) return;
     drawOperationRef.current = null;
     const stage = event.target.getStage();
+    const point = stage ? stagePoint(stage) : null;
     if (stage?.container().hasPointerCapture?.(operation.pointerId)) {
       stage.container().releasePointerCapture(operation.pointerId);
     }
+    paintPreview(null);
+    onCreate(rectFromPointer(operation.origin, point ?? operation.origin, minimumSize));
     onDrawComplete();
   };
 
@@ -135,7 +158,6 @@ export function StoryHotspotStage({
               stageHeight={height}
               minimumSize={minimumSize}
               selected={mode === "edit" && draft.id === selectedId}
-              active={currentTime >= draft.startSeconds && currentTime <= draft.endSeconds}
               mode={mode}
               tool={tool}
               onSelect={() => onSelect(draft.id)}
@@ -143,6 +165,15 @@ export function StoryHotspotStage({
               onRectChange={(rect) => onRectChange(draft.id, rect)}
             />
           ))}
+          <Rect
+            ref={previewRef}
+            visible={false}
+            listening={false}
+            perfectDrawEnabled={false}
+            fill="rgba(77, 141, 255, 0.12)"
+            stroke={BRAND_BLUE}
+            strokeWidth={1}
+          />
         </Layer>
       </Stage>
     </div>
@@ -156,7 +187,6 @@ interface HotspotShapeProps {
   stageHeight: number;
   minimumSize: number;
   selected: boolean;
-  active: boolean;
   mode: EditorMode;
   tool: EditorTool;
   onSelect: () => void;
@@ -164,14 +194,13 @@ interface HotspotShapeProps {
   onRectChange: (rect: NormalizedHotspotRect) => void;
 }
 
-function HotspotShape({
+const HotspotShape = memo(function HotspotShape({
   draft,
   index,
   stageWidth,
   stageHeight,
   minimumSize,
   selected,
-  active,
   mode,
   tool,
   onSelect,
@@ -179,6 +208,7 @@ function HotspotShape({
   onRectChange,
 }: HotspotShapeProps) {
   const shapeRef = useRef<Konva.Rect | null>(null);
+  const labelRef = useRef<Konva.Group | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const stageRect = useMemo(
     () => ({
@@ -204,10 +234,11 @@ function HotspotShape({
   };
 
   const commitNodeRect = (node: Konva.Rect) => {
+    const origin = node.getAbsolutePosition();
     const nextRect = normalizeStageRect(
       {
-        x: node.x(),
-        y: node.y(),
+        x: origin.x,
+        y: origin.y,
         width: node.width() * node.scaleX(),
         height: node.height() * node.scaleY(),
       },
@@ -215,31 +246,25 @@ function HotspotShape({
       stageHeight,
       minimumSize
     );
+    const group = node.getParent();
     node.scale({ x: 1, y: 1 });
-    node.position({ x: nextRect.x * stageWidth, y: nextRect.y * stageHeight });
+    node.position({ x: 0, y: 0 });
     node.size({ width: nextRect.width * stageWidth, height: nextRect.height * stageHeight });
+    group?.position({ x: nextRect.x * stageWidth, y: nextRect.y * stageHeight });
+    labelRef.current?.position({ x: 7, y: 7 });
     onRectChange(nextRect);
   };
 
-  const labelWidth = Math.min(184, Math.max(76, 42 + Math.min(draft.label.length, 18) * 7));
+  const labelWidth = hotspotLabelWidth(measureHotspotLabel(draft.label), stageRect.width);
   const canEdit = mode === "edit" && tool === "select";
 
   return (
-    <Group opacity={mode === "edit" && !active ? 0.45 : 1}>
-      <Rect
-        ref={shapeRef}
+    <Group>
+      <Group
         x={stageRect.x}
         y={stageRect.y}
-        width={stageRect.width}
-        height={stageRect.height}
-        fill={selected ? "rgba(77, 141, 255, 0.12)" : "rgba(0, 0, 0, 0.15)"}
-        stroke={selected ? BRAND_BLUE : "rgba(255, 255, 255, 0.58)"}
-        strokeWidth={1}
-        strokeScaleEnabled={false}
-        shadowColor={selected ? BRAND_BLUE : "black"}
-        shadowOpacity={selected ? 0.26 : 0}
-        shadowBlur={selected ? 12 : 0}
         draggable={canEdit}
+        transformsEnabled="position"
         dragBoundFunc={(position) => ({
           x: clamp(position.x, 0, stageWidth - stageRect.width),
           y: clamp(position.y, 0, stageHeight - stageRect.height),
@@ -257,17 +282,12 @@ function HotspotShape({
           if (mode === "preview") onPreview();
           else onSelect();
         }}
-        onDragMove={(event) => {
-          const node = event.target;
+        onDragEnd={(event) => {
           onRectChange({
             ...draft.rect,
-            x: clamp(node.x() / stageWidth, 0, 1 - draft.rect.width),
-            y: clamp(node.y() / stageHeight, 0, 1 - draft.rect.height),
+            x: clamp(event.target.x() / stageWidth, 0, 1 - draft.rect.width),
+            y: clamp(event.target.y() / stageHeight, 0, 1 - draft.rect.height),
           });
-        }}
-        onTransformEnd={() => {
-          const node = shapeRef.current;
-          if (node) commitNodeRect(node);
         }}
         onMouseEnter={() =>
           setStageCursor(mode === "preview" ? "pointer" : canEdit ? "move" : "default")
@@ -275,47 +295,69 @@ function HotspotShape({
         onMouseLeave={() =>
           setStageCursor(mode === "edit" && tool === "rectangle" ? "crosshair" : "default")
         }
-      />
-
-      <Group
-        x={stageRect.x + 7}
-        y={stageRect.y + 7}
-        width={labelWidth}
-        height={28}
-        listening={false}
       >
         <Rect
-          width={labelWidth}
-          height={28}
-          cornerRadius={7}
-          fill={selected ? BRAND_BLUE : "rgba(0, 0, 0, 0.76)"}
-          shadowColor="black"
-          shadowOpacity={0.28}
-          shadowBlur={12}
-          shadowOffsetY={4}
+          ref={shapeRef}
+          width={stageRect.width}
+          height={stageRect.height}
+          fill={selected ? "rgba(77, 141, 255, 0.12)" : "rgba(0, 0, 0, 0.15)"}
+          stroke={selected ? BRAND_BLUE : "rgba(255, 255, 255, 0.58)"}
+          strokeWidth={1}
+          strokeScaleEnabled={false}
+          perfectDrawEnabled={false}
+          shadowForStrokeEnabled={false}
+          shadowColor={selected ? BRAND_BLUE : "black"}
+          shadowOpacity={selected ? 0.26 : 0}
+          shadowBlur={selected ? 12 : 0}
+          onTransform={() => {
+            const node = shapeRef.current;
+            if (!node) return;
+            labelRef.current?.position({ x: node.x() + 7, y: node.y() + 7 });
+          }}
+          onTransformEnd={() => {
+            const node = shapeRef.current;
+            if (node) commitNodeRect(node);
+          }}
         />
-        <Rect x={5} y={4} width={20} height={20} cornerRadius={4} fill="rgba(255,255,255,0.14)" />
-        <Text
-          x={5}
-          y={7}
-          width={20}
-          align="center"
-          text={String(index + 1)}
-          fontSize={12}
-          fontStyle="bold"
-          fill="white"
-        />
-        <Text
-          x={31}
-          y={7}
-          width={labelWidth - 37}
-          text={draft.label}
-          fontSize={12}
-          fontStyle="bold"
-          fill="white"
-          ellipsis
-          wrap="none"
-        />
+
+        <Group ref={labelRef} x={7} y={7} width={labelWidth} height={28} listening={false}>
+          <Rect
+            width={labelWidth}
+            height={28}
+            cornerRadius={7}
+            fill={selected ? BRAND_BLUE : "rgba(0, 0, 0, 0.76)"}
+            perfectDrawEnabled={false}
+            shadowForStrokeEnabled={false}
+            shadowColor="black"
+            shadowOpacity={0.28}
+            shadowBlur={12}
+            shadowOffsetY={4}
+          />
+          <Rect x={5} y={4} width={20} height={20} cornerRadius={4} fill="rgba(255,255,255,0.14)" />
+          <Text
+            x={5}
+            y={7}
+            width={20}
+            align="center"
+            text={String(index + 1)}
+            fontSize={12}
+            fontStyle="bold"
+            fill="white"
+            listening={false}
+          />
+          <Text
+            x={LABEL_TEXT_X}
+            y={7}
+            width={Math.max(0, labelWidth - LABEL_TEXT_X - LABEL_PAD_RIGHT)}
+            text={draft.label}
+            fontSize={LABEL_FONT_SIZE}
+            fontStyle="bold"
+            fill="white"
+            ellipsis
+            wrap="none"
+            listening={false}
+          />
+        </Group>
       </Group>
 
       {selected ? (
@@ -353,6 +395,23 @@ function HotspotShape({
       ) : null}
     </Group>
   );
+});
+
+export function rectFromPointer(
+  origin: { x: number; y: number },
+  point: { x: number; y: number },
+  minimumSize: number
+): NormalizedHotspotRect {
+  const x = Math.min(origin.x, point.x);
+  const y = Math.min(origin.y, point.y);
+  const clampedX = clamp(x, 0, 1 - minimumSize);
+  const clampedY = clamp(y, 0, 1 - minimumSize);
+  return {
+    x: clampedX,
+    y: clampedY,
+    width: Math.min(Math.max(minimumSize, Math.abs(point.x - origin.x)), 1 - clampedX),
+    height: Math.min(Math.max(minimumSize, Math.abs(point.y - origin.y)), 1 - clampedY),
+  };
 }
 
 export function normalizeStageRect(
