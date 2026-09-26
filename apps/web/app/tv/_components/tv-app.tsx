@@ -64,7 +64,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
-  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -330,7 +330,9 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
                             {entry.number || t("preview")}
                           </span>
                         )}
-                        <span className={`line-clamp-1 ${(episode?.id ?? "") === entry.id ? "text-primary" : ""}`}>
+                        <span
+                          className={`line-clamp-1 ${(episode?.id ?? "") === entry.id ? "text-primary" : ""}`}
+                        >
                           {entry.number ? `${entry.number}. ` : ""}
                           {entry.title}
                         </span>
