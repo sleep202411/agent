@@ -43,6 +43,13 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { WorkspacesModule } from '../workspaces';
 import { IpCommerceAdminController } from './ip-commerce-admin.controller';
 import { IpCommerceController } from './ip-commerce.controller';
+import {
+  IpKnowledgeController,
+  IpKnowledgeService,
+} from './ip-knowledge.controller';
+import { IpGenerationTemplatesController } from './ip-generation-templates.controller';
+import { IpGenerationTemplatesService } from './ip-generation-templates.service';
+import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { IpCommerceService } from './ip-commerce.service';
 import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
 
@@ -54,6 +61,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     WorkspacesModule,
     EntitlementsModule,
     LegacyMysqlModule,
+    AiGenerationModule,
   ],
   controllers: [
     ChannelSubmissionsAdminController,
@@ -71,6 +79,8 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpEpisodeFeedbackController,
     IpCommentsAdminController,
     IpCommerceController,
+    IpKnowledgeController,
+    IpGenerationTemplatesController,
     IpCommerceAdminController,
     CreatorEarningsController,
     CreatorTrustController,
@@ -85,9 +95,15 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpCommentsService,
     IpEpisodeFeedbackService,
     IpCommerceService,
+    IpKnowledgeService,
+    IpGenerationTemplatesService,
     LegacyCnVideoResolverService,
     CreatorEarningsService,
   ],
-  exports: [IpCommerceService],
+  exports: [
+    IpCommerceService,
+    IpGenerationTemplatesService,
+    IpKnowledgeService,
+  ],
 })
 export class IpCommerceModule {}
