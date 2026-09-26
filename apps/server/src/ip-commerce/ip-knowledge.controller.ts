@@ -172,7 +172,7 @@ export class IpKnowledgeService {
     const response = await worker.answerFilmKnowledge(
       {
         ipId,
-        ipTitle: ip.title,
+        ipTitle: ip.ip.title,
         question: input.question,
         locale: input.locale,
         sources,
