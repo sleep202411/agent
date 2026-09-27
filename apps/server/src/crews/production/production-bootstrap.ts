@@ -305,6 +305,251 @@ export async function seedCrewProductionTasks(
   const existing = await tx.crewTask.count({ where: { crewId: input.crewId } });
   if (existing > 0) return;
 
+  if (input.kind === CrewProductionKind.interactive_film) {
+    let rank = new Prisma.Decimal(1024);
+    let number = 1;
+
+    const titles = {
+      script: {
+        'en-US': 'Script upload',
+        'zh-CN': '剧本上传',
+        'zh-HK': '劇本上傳',
+      },
+      plot_tree: { 'en-US': 'Plot tree', 'zh-CN': '情节树', 'zh-HK': '情節樹' },
+      artParent: {
+        'en-US': 'Art assets',
+        'zh-CN': '美术资产',
+        'zh-HK': '美術資產',
+      },
+      artCharacter: { 'en-US': 'Characters', 'zh-CN': '人物', 'zh-HK': '人物' },
+      artScene: { 'en-US': 'Scenes', 'zh-CN': '场景', 'zh-HK': '場景' },
+      artProp: { 'en-US': 'Props', 'zh-CN': '道具', 'zh-HK': '道具' },
+      musicParent: { 'en-US': 'Music', 'zh-CN': '音乐', 'zh-HK': '音樂' },
+      musicBgm: {
+        'en-US': 'Background music',
+        'zh-CN': '背景音乐',
+        'zh-HK': '背景音樂',
+      },
+      musicVoice: {
+        'en-US': 'Character voices',
+        'zh-CN': '人物音色',
+        'zh-HK': '人物音色',
+      },
+      prodParent: {
+        'en-US': 'Production tasks',
+        'zh-CN': '制作任务',
+        'zh-HK': '制作任務',
+      },
+      otherParent: {
+        'en-US': 'Other tasks',
+        'zh-CN': '其他任务',
+        'zh-HK': '其他任務',
+      },
+    };
+
+    // 1. 剧本上传 (top-level)
+    await tx.crewTask.create({
+      data: {
+        id: randomUUID(),
+        crewId: input.crewId,
+        number: number++,
+        title: titles.script[input.locale],
+        description: '',
+        workflowStateId: input.openWorkflowStateId,
+        taskKind: CrewTaskKind.script,
+        episodeId: input.episodeId,
+        rank: rank,
+        createdByUserId: input.userId,
+      },
+    });
+    rank = rank.plus(1024);
+
+    // 2. 情节树 (top-level)
+    await tx.crewTask.create({
+      data: {
+        id: randomUUID(),
+        crewId: input.crewId,
+        number: number++,
+        title: titles.plot_tree[input.locale],
+        description: '',
+        workflowStateId: input.openWorkflowStateId,
+        taskKind: CrewTaskKind.plot_tree,
+        episodeId: input.episodeId,
+        rank: rank,
+        createdByUserId: input.userId,
+      },
+    });
+    rank = rank.plus(1024);
+
+    // 3. 美术资产 (parent) -> 人物, 场景, 道具 (children)
+    const artParentId = randomUUID();
+    await tx.crewTask.create({
+      data: {
+        id: artParentId,
+        crewId: input.crewId,
+        number: number++,
+        title: titles.artParent[input.locale],
+        description: '',
+        workflowStateId: input.openWorkflowStateId,
+        taskKind: CrewTaskKind.art,
+        episodeId: input.episodeId,
+        rank: rank,
+        createdByUserId: input.userId,
+      },
+    });
+    rank = rank.plus(1024);
+
+    for (const childTitle of [
+      titles.artCharacter[input.locale],
+      titles.artScene[input.locale],
+      titles.artProp[input.locale],
+    ]) {
+      await tx.crewTask.create({
+        data: {
+          id: randomUUID(),
+          crewId: input.crewId,
+          parentId: artParentId,
+          number: number++,
+          title: childTitle,
+          description: '',
+          workflowStateId: input.openWorkflowStateId,
+          taskKind: CrewTaskKind.art,
+          episodeId: input.episodeId,
+          rank: rank,
+          createdByUserId: input.userId,
+        },
+      });
+      rank = rank.plus(1024);
+    }
+
+    // 4. 音乐 (parent) -> 背景音乐, 人物音色 (children)
+    const musicParentId = randomUUID();
+    await tx.crewTask.create({
+      data: {
+        id: musicParentId,
+        crewId: input.crewId,
+        number: number++,
+        title: titles.musicParent[input.locale],
+        description: '',
+        workflowStateId: input.openWorkflowStateId,
+        taskKind: CrewTaskKind.music,
+        episodeId: input.episodeId,
+        rank: rank,
+        createdByUserId: input.userId,
+      },
+    });
+    rank = rank.plus(1024);
+
+    for (const childTitle of [
+      titles.musicBgm[input.locale],
+      titles.musicVoice[input.locale],
+    ]) {
+      await tx.crewTask.create({
+        data: {
+          id: randomUUID(),
+          crewId: input.crewId,
+          parentId: musicParentId,
+          number: number++,
+          title: childTitle,
+          description: '',
+          workflowStateId: input.openWorkflowStateId,
+          taskKind: CrewTaskKind.music,
+          episodeId: input.episodeId,
+          rank: rank,
+          createdByUserId: input.userId,
+        },
+      });
+      rank = rank.plus(1024);
+    }
+
+    // 5. 制作任务 (parent) -> per-episode children
+    const prodParentId = randomUUID();
+    await tx.crewTask.create({
+      data: {
+        id: prodParentId,
+        crewId: input.crewId,
+        number: number++,
+        title: titles.prodParent[input.locale],
+        description: '',
+        workflowStateId: input.openWorkflowStateId,
+        taskKind: CrewTaskKind.storyboard,
+        episodeId: input.episodeId,
+        rank: rank,
+        createdByUserId: input.userId,
+      },
+    });
+    rank = rank.plus(1024);
+
+    const episodes = await tx.crewEpisode.findMany({
+      where: { crewId: input.crewId },
+      orderBy: { number: 'asc' },
+    });
+
+    if (episodes.length > 0) {
+      for (const ep of episodes) {
+        const epTitle = ep.title?.trim()
+          ? ep.title
+          : input.locale === 'en-US'
+            ? `Episode ${ep.number}`
+            : `第 ${ep.number} 集`;
+        await tx.crewTask.create({
+          data: {
+            id: randomUUID(),
+            crewId: input.crewId,
+            parentId: prodParentId,
+            number: number++,
+            title: epTitle,
+            description: '',
+            workflowStateId: input.openWorkflowStateId,
+            taskKind: CrewTaskKind.storyboard,
+            episodeId: ep.id,
+            rank: rank,
+            createdByUserId: input.userId,
+          },
+        });
+        rank = rank.plus(1024);
+      }
+    } else {
+      // Fallback to input.episodeId if no episodes query found
+      const fallbackTitle = input.locale === 'en-US' ? 'Episode 1' : '第 1 集';
+      await tx.crewTask.create({
+        data: {
+          id: randomUUID(),
+          crewId: input.crewId,
+          parentId: prodParentId,
+          number: number++,
+          title: fallbackTitle,
+          description: '',
+          workflowStateId: input.openWorkflowStateId,
+          taskKind: CrewTaskKind.storyboard,
+          episodeId: input.episodeId,
+          rank: rank,
+          createdByUserId: input.userId,
+        },
+      });
+      rank = rank.plus(1024);
+    }
+
+    // 6. 其他任务 (top-level)
+    await tx.crewTask.create({
+      data: {
+        id: randomUUID(),
+        crewId: input.crewId,
+        number: number++,
+        title: titles.otherParent[input.locale],
+        description: '',
+        workflowStateId: input.openWorkflowStateId,
+        taskKind: CrewTaskKind.other,
+        episodeId: input.episodeId,
+        rank: rank,
+        createdByUserId: input.userId,
+      },
+    });
+
+    return;
+  }
+
+  // CrewProductionKind.series (or default) - unchanged
   const pipeline = productionTaskPipeline(input.kind);
   let previousId: string | null = null;
   let rank = new Prisma.Decimal(1024);

@@ -127,7 +127,7 @@ export class StoryboardChildrenService {
               equals: 'storyboard',
             },
           },
-          { taskKind: CrewTaskKind.storyboard },
+          { taskKind: CrewTaskKind.storyboard, parentId: { not: null } },
         ],
       },
       select: { id: true, crewId: true, workflowStateId: true },
