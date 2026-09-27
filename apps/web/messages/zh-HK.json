@@ -10588,5 +10588,19 @@
     "tabs": {
       "generation": "影迷AI共創"
     }
+  },
+  "playSessionReport": {
+    "title": "本局報告",
+    "loading": "載入本局報告…",
+    "error": "本局報告載入失敗",
+    "retry": "重試",
+    "status_playing": "進行中",
+    "status_completed": "已完成",
+    "status_abandoned": "已中斷",
+    "duration": "{minutes} 分 {seconds} 秒",
+    "pathCount": "經過 {count} 個場景",
+    "choicesHeading": "關鍵選擇",
+    "endingReachCount": "該結局累計 {count} 人到達",
+    "completedAt": "完成時間：{time}"
   }
 }

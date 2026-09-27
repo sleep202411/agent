@@ -10588,5 +10588,19 @@
     "tabs": {
       "generation": "Audience Generation"
     }
+  },
+  "playSessionReport": {
+    "title": "Session Report",
+    "loading": "Loading session report…",
+    "error": "Failed to load session report",
+    "retry": "Retry",
+    "status_playing": "In progress",
+    "status_completed": "Completed",
+    "status_abandoned": "Abandoned",
+    "duration": "{minutes}m {seconds}s",
+    "pathCount": "Traversed {count} scenes",
+    "choicesHeading": "Key Choices",
+    "endingReachCount": "Reached by {count} players",
+    "completedAt": "Completed at: {time}"
   }
 }

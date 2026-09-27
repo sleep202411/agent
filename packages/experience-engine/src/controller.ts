@@ -45,6 +45,10 @@ export class ExperienceRuntimeController {
   #playSessionId: string | null = null;
   #visitedNodeIds = new Set<string>();
 
+  get playSessionId(): string | null {
+    return this.#playSessionId;
+  }
+
   constructor(manifest: ExperienceRuntimeManifest, options: ExperienceRuntimeControllerOptions) {
     assertExperienceRuntimeCompatibility(manifest, options.compatibility);
     options.rendererRegistry.assertManifest(manifest);

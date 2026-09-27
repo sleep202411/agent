@@ -79,3 +79,39 @@ export function createHttpPlaySessionReporter(
     },
   };
 }
+
+export interface PlaySessionReport {
+  sessionId: string;
+  gameId: string;
+  gameTitle: string;
+  experienceType: "text" | "film";
+  contentVersion: string;
+  status: "playing" | "completed" | "abandoned";
+  endingId: string | null;
+  endingReachCount: string | number;
+  activePlayMs: string | number;
+  turnCount: number;
+  freeActionCount: number;
+  currentChapter: string;
+  currentNode: string;
+  path: Array<{
+    chapter: string;
+    node: string;
+    firstTurnIndex?: number;
+    lastTurnIndex?: number;
+  }>;
+  choices: Array<{
+    optionId: string;
+    label: string;
+    decisionId: string;
+    chapter: string;
+    node: string;
+  }>;
+  startedAt: string;
+  completedAt: string | null;
+}
+
+export async function fetchPlaySessionReport(sessionId: string): Promise<PlaySessionReport> {
+  const url = `/api/player/play/sessions/${encodeURIComponent(sessionId)}/report`;
+  return api.get<PlaySessionReport>(url);
+}

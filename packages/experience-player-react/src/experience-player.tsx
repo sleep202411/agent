@@ -116,6 +116,7 @@ export interface ExperiencePlayerProps {
   /** Authoring hosts may observe session state without changing playback. */
   onStateChange?: (state: ExperienceRuntimeState) => void;
   playSessionReporter?: PlaySessionReporter;
+  endingExtra?: (sessionId: string | null) => ReactNode;
 }
 
 const PRIMARY_BUTTON =
@@ -138,6 +139,7 @@ export function ExperiencePlayer({
   onAccessCheckpoint,
   onStateChange,
   playSessionReporter,
+  endingExtra,
 }: ExperiencePlayerProps) {
   const hydrationSeedId = useId();
   const [restartEpoch, setRestartEpoch] = useState(0);
@@ -210,6 +212,7 @@ export function ExperiencePlayer({
       frameProfile={frameProfile}
       loadTheme={loadTheme}
       renderWorldModel={renderWorldModel}
+      endingExtra={endingExtra}
       onRestart={() => {
         setRandomSeed(globalThis.crypto.randomUUID());
         setRestartEpoch((value) => value + 1);
@@ -233,10 +236,12 @@ function ActiveExperienceRuntimePlayer({
   accessCheckpoint,
   onAccessCheckpoint,
   onStateChange,
+  endingExtra,
 }: {
   accessCheckpoint?: ExperienceAccessCheckpoint;
   onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
   onStateChange?: (state: ExperienceRuntimeState) => void;
+  endingExtra?: (sessionId: string | null) => ReactNode;
   access?: ExperiencePlayerAccess;
   previewAccess: boolean;
   manifest: ExperienceRuntimeManifest;
@@ -910,6 +915,9 @@ function ActiveExperienceRuntimePlayer({
               <IconRefresh className="size-4" />
               {copy.playAgain}
             </button>
+            {endingExtra ? (
+              <div className="mt-6 w-full text-left">{endingExtra(controller.playSessionId)}</div>
+            ) : null}
           </div>
         </div>
       ) : null}

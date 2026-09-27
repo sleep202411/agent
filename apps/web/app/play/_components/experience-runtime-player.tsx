@@ -1,4 +1,5 @@
-"use client";
+import { PlaySessionReportView } from "../interactive-film/_components/play-session-report";
+("use client");
 
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useStoryCommunityAccess } from "./story-community-access";
@@ -96,6 +97,9 @@ export function ExperienceRuntimePlayer({
         copy={copy}
         coverUrl={coverUrl}
         playSessionReporter={playSessionReporter}
+        endingExtra={(sessionId) =>
+          sessionId ? <PlaySessionReportView sessionId={sessionId} /> : null
+        }
       />
       {commerce.dialog}
     </>
