@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CrewProductionKind, CrewTaskStatus, Prisma } from '@prisma/client';
+import {
+  CrewProductionKind,
+  CrewTaskKind,
+  CrewTaskStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
 import { StoryPermissionService } from '../../story-studio/story-permission.service';
 import { WorkspacePermissionService } from '../../workspaces';
@@ -115,10 +120,15 @@ export class StoryboardChildrenService {
       where: {
         crewId,
         deletedAt: null,
-        metadata: {
-          path: ['templateKey'],
-          equals: 'storyboard',
-        },
+        OR: [
+          {
+            metadata: {
+              path: ['templateKey'],
+              equals: 'storyboard',
+            },
+          },
+          { taskKind: CrewTaskKind.storyboard },
+        ],
       },
       select: { id: true, crewId: true, workflowStateId: true },
     });
