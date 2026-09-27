@@ -5129,6 +5129,10 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
           name: task.deliveryFolder.folder.name,
         }
       : null,
+    deliveryFields:
+      ((task.metadata as Record<string, unknown> | null)?.deliveryFields as
+        | Array<{ type: string; required: boolean }>
+        | undefined) ?? null,
     labels: task.labels
       .map(({ label }) => taskLabelDto(label))
       .sort((a, b) => a.name.localeCompare(b.name)),

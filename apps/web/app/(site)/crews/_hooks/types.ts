@@ -535,6 +535,7 @@ export interface CrewTaskDTO {
   episodeId: string | null;
   episode: Pick<CrewEpisodeDTO, "id" | "number" | "title" | "status"> | null;
   deliveryFolder: { id: string; name: string } | null;
+  deliveryFields?: Array<{ type: string; required: boolean }> | null;
   labels: CrewTaskLabelDTO[];
   version: number;
   canvasProjectId: string | null;
