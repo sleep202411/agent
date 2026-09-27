@@ -5626,7 +5626,8 @@
     "slot_client_signoff": "Client sign-off",
     "slot_prompt_or_script": "Prompt or script",
     "clipPrimaryAsset": "Clip primary asset",
-    "clipPrimaryAssetHint": "Which delivered video becomes the clip’s active media"
+    "clipPrimaryAssetHint": "Which delivered video becomes the clip’s active media",
+    "rewardSuggestedHint": "Suggested from task template"
   },
   "crewInvitations": {
     "signIn": "Sign in",

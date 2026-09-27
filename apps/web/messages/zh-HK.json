@@ -5626,7 +5626,8 @@
     "slot_client_signoff": "客戶簽字",
     "slot_prompt_or_script": "提示詞/劇本",
     "clipPrimaryAsset": "分鏡主素材",
-    "clipPrimaryAssetHint": "哪個交付影片作為該分鏡的主素材"
+    "clipPrimaryAssetHint": "哪個交付影片作為該分鏡的主素材",
+    "rewardSuggestedHint": "來自任務模板的建議值"
   },
   "crewInvitations": {
     "signIn": "登入",
