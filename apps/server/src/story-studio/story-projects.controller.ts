@@ -315,6 +315,18 @@ export class StoryProjectsController {
     };
   }
 
+  @Get(':projectId/plot-tree')
+  async getPlotTree(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
+    params: StoryProjectIdParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.storyProjects.getPlotTree(user, params.projectId),
+    };
+  }
+
   @Get(':projectId/revisions')
   async listRevisions(
     @CurrentUser() user: AuthUser,

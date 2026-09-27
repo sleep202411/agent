@@ -34,10 +34,18 @@ afterEach(() => {
   else process.env.CREW_QUALIFICATION_CATALOG_JSON = original;
 });
 describe('Current Java qualification admission', () => {
-  it('requires a valid regional catalog at server initialization', () => {
+  it('boots without a regional catalog but fails closed on qualified recruiting', async () => {
+    // Catalog present: init succeeds.
     expect(() => service.onModuleInit()).not.toThrow();
+
+    // Catalog removed: init still succeeds (deployment unblock, see onModuleInit).
     delete process.env.CREW_QUALIFICATION_CATALOG_JSON;
-    expect(() => service.onModuleInit()).toThrow('Configure this site');
+    expect(() => service.onModuleInit()).not.toThrow();
+
+    // But recruiting for a qualified role still fails closed via assertEligible.
+    await expect(
+      service.assertEligible('42', 'fixture-session', requirement),
+    ).rejects.toThrow('Configure this site');
   });
   it('requires FD and every skill, permitting explicitly configured equivalent certificates', async () => {
     await service.assertEligible('42', 'fixture-session', requirement);

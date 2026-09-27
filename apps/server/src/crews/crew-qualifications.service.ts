@@ -66,8 +66,13 @@ export function qualificationRequirementsKey(
 @Injectable()
 export class CrewQualificationsService {
   onModuleInit() {
-    // Required regional policy must fail deployment readiness, not the first creator.
-    readCatalog();
+    // Deployment unblock: allow missing CREW_QUALIFICATION_CATALOG_JSON so the
+    // server can boot without the regional Java catalog. Validation still runs
+    // in assertEligible() -> readCatalog(), so recruiting for qualified roles
+    // fails clearly at call time rather than at boot.
+    //
+    // TODO(#557): restore the fail-fast check once the regional Java Admin
+    // catalog value is provisioned. See thread with Isaac 2026-09-27.
   }
 
   async assertEligible(
