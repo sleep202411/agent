@@ -88,6 +88,15 @@ it("cancels old project access and ignores a late chapter selection", async () =
   expect(state.replace).not.toHaveBeenCalled();
   expect(host.querySelector('[data-testid="shell"]')).toBeNull();
 });
+it("syncs the chapter into the URL once while the selection settles", async () => {
+  state.get.mockResolvedValue(projection);
+  await render();
+  expect(state.replace).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(state.replace).toHaveBeenCalledTimes(1);
+});
 it("keeps the existing sign-in response reachable for a signed-out visitor", async () => {
   state.userId = "";
   state.get.mockRejectedValue(new ApiRequestError("HTTP_401", "Sign in", 401));
@@ -97,4 +106,10 @@ it("keeps the existing sign-in response reachable for a signed-out visitor", asy
   expect(host.querySelector("button")).not.toBeNull();
   await act(async () => host.querySelector("button")!.click());
   expect(state.signIn).toHaveBeenCalledTimes(1);
+});
+it("shows an unexpected read failure in place instead of crashing the route", async () => {
+  state.get.mockRejectedValue(new ApiRequestError("HTTP_400", "bad request", 400));
+  await render();
+  expect(host.querySelector("button")?.textContent).toBe("unexpected");
+  expect(host.querySelector('[data-testid="shell"]')).toBeNull();
 });
