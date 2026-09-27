@@ -50,6 +50,7 @@ import {
   type ExperienceRuntimeEvent,
   type ExperienceRuntimeState,
   type ExperienceTimelineCursor,
+  type PlaySessionReporter,
 } from "@repo/experience-engine";
 import {
   IconAlertTriangle,
@@ -114,6 +115,7 @@ export interface ExperiencePlayerProps {
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
   /** Authoring hosts may observe session state without changing playback. */
   onStateChange?: (state: ExperienceRuntimeState) => void;
+  playSessionReporter?: PlaySessionReporter;
 }
 
 const PRIMARY_BUTTON =
@@ -135,6 +137,7 @@ export function ExperiencePlayer({
   accessCheckpoint,
   onAccessCheckpoint,
   onStateChange,
+  playSessionReporter,
 }: ExperiencePlayerProps) {
   const hydrationSeedId = useId();
   const [restartEpoch, setRestartEpoch] = useState(0);
@@ -162,6 +165,7 @@ export function ExperiencePlayer({
           canAccess: access?.canAccess,
           previewAccess,
           restore: restartEpoch === 0 ? accessCheckpoint?.state : undefined,
+          playSessionReporter,
         }),
       };
     } catch (error) {

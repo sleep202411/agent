@@ -1,9 +1,10 @@
-"use client";
+import { createNoopPlaySessionReporter } from "../_lib/play-session-reporter.noop";
+("use client");
 
 import { IconAlertTriangle, IconArrowLeft, IconLoader2, IconRefresh } from "@tabler/icons-react";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experience-runtime-player";
 import { StoryPlaytestStateHud } from "./story-playtest-state-hud";
@@ -117,6 +118,8 @@ export function StoryProjectPlaytest({
       )
     : t("pageTitle");
 
+  const playSessionReporter = useMemo(createNoopPlaySessionReporter, []);
+
   return (
     <main className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white">
       <div className="absolute inset-0">
@@ -130,6 +133,7 @@ export function StoryProjectPlaytest({
             setSessionValues(state.values.session);
             setCompletedEndingIds(state.completedEndingIds);
           }}
+          playSessionReporter={playSessionReporter}
         />
       </div>
 

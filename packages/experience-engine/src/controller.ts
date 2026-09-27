@@ -19,6 +19,7 @@ import {
   type ExperienceRuntimeRestoreInput,
   type ExperienceRuntimeState,
 } from "./runtime.js";
+import type { PlaySessionReporter } from "./play-session-reporter.js";
 
 export interface ExperienceRuntimeControllerOptions {
   compatibility: ExperienceRuntimeHostCompatibility;
@@ -26,6 +27,7 @@ export interface ExperienceRuntimeControllerOptions {
   randomSeed?: string;
   restore?: ExperienceRuntimeRestoreInput;
   canAccess?: ExperienceAccessCheck;
+  playSessionReporter?: PlaySessionReporter;
 }
 
 /**
@@ -39,6 +41,8 @@ export class ExperienceRuntimeController {
   #state: ExperienceRuntimeState;
   #started: boolean;
   readonly #canAccess?: ExperienceAccessCheck;
+  readonly #reporter?: PlaySessionReporter;
+  #playSessionId: string | null = null;
 
   constructor(manifest: ExperienceRuntimeManifest, options: ExperienceRuntimeControllerOptions) {
     assertExperienceRuntimeCompatibility(manifest, options.compatibility);
@@ -46,6 +50,7 @@ export class ExperienceRuntimeController {
     this.#manifest = manifest;
     this.#canAccess = options.canAccess;
     this.#rendererRegistry = options.rendererRegistry;
+    this.#reporter = options.playSessionReporter;
     this.#state = options.restore
       ? restoreExperienceRuntime(manifest, options.restore)
       : initializeExperienceRuntime(manifest, { randomSeed: options.randomSeed });
@@ -69,6 +74,27 @@ export class ExperienceRuntimeController {
       );
     }
     this.#started = true;
+
+    // Fire-and-forget session start
+    if (this.#reporter) {
+      void (async () => {
+        try {
+          const res = await this.#reporter!.onStart({
+            gameId: this.#manifest.gameId,
+            contentVersion: this.#manifest.contentVersion,
+            buildId: this.#manifest.buildId,
+            locale: this.#manifest.localization?.defaultLocale,
+            experienceType: "film",
+          });
+          if (res?.sessionId) {
+            this.#playSessionId = res.sessionId;
+          }
+        } catch (err) {
+          console.warn("[ExperienceRuntimeController] Play session onStart failed:", err);
+        }
+      })();
+    }
+
     try {
       return this.dispatch([
         {
@@ -100,19 +126,48 @@ export class ExperienceRuntimeController {
       throw error;
     }
     result.effects.forEach((effect) => {
-      if (effect.kind !== "renderer.command") return;
-      const instance = this.#manifest.graph.nodes
-        .flatMap((node) => (node.kind === "scene" ? node.renderers : []))
-        .find((candidate) => candidate.instanceId === effect.instanceId);
-      if (!instance) {
-        throw new ExperienceRuntimeInvariantError(
-          "RENDERER_INSTANCE_UNKNOWN",
-          `Renderer command targets unknown instance ${effect.instanceId}`
-        );
+      if (effect.kind === "scene.changed") {
+        if (this.#reporter && this.#playSessionId) {
+          const sessionId = this.#playSessionId;
+          const currentNode = effect.toSceneId;
+          void Promise.resolve().then(async () => {
+            try {
+              await this.#reporter!.onProgress(sessionId, { currentNode });
+            } catch (err) {
+              console.warn(
+                "[ExperienceRuntimeController] Play session onProgress (scene.changed) failed:",
+                err
+              );
+            }
+          });
+        }
+      } else if (effect.kind === "ending.completed") {
+        if (this.#reporter && this.#playSessionId) {
+          const sessionId = this.#playSessionId;
+          const endingId = effect.endingId;
+          const currentNode = this.#state.currentSceneId;
+          void Promise.resolve().then(async () => {
+            try {
+              await this.#reporter!.onComplete(sessionId, { endingId, currentNode });
+            } catch (err) {
+              console.warn("[ExperienceRuntimeController] Play session onComplete failed:", err);
+            }
+          });
+        }
+      } else if (effect.kind === "renderer.command") {
+        const instance = this.#manifest.graph.nodes
+          .flatMap((node) => (node.kind === "scene" ? node.renderers : []))
+          .find((candidate) => candidate.instanceId === effect.instanceId);
+        if (!instance) {
+          throw new ExperienceRuntimeInvariantError(
+            "RENDERER_INSTANCE_UNKNOWN",
+            `Renderer command targets unknown instance ${effect.instanceId}`
+          );
+        }
+        this.#rendererRegistry
+          .require(instance.rendererId)
+          .assertCommand(effect.commandType, effect.payload);
       }
-      this.#rendererRegistry
-        .require(instance.rendererId)
-        .assertCommand(effect.commandType, effect.payload);
     });
     this.#state = result.state;
     return {
@@ -155,6 +210,48 @@ export class ExperienceRuntimeController {
     }
     const payload = structuredClone(input.payload ?? {});
     this.#rendererRegistry.require(instance.rendererId).assertOutcome(input.outcomeType, payload);
+
+    if (input.outcomeType === "choice-selected" && this.#reporter && this.#playSessionId) {
+      const choiceId = (payload as any)?.choiceId;
+      if (choiceId && typeof choiceId === "string") {
+        const config = instance.config as any;
+        const choices = Array.isArray(config?.choices) ? config.choices : [];
+        const matchedChoice = choices.find((c: any) => c.choiceId === choiceId);
+        const decisionId = config?.decisionId || instance.instanceId;
+        if (matchedChoice) {
+          const rawLabel = matchedChoice.label;
+          const defaultLoc = this.#manifest.localization?.defaultLocale ?? "zh-CN";
+          const label =
+            typeof rawLabel === "string"
+              ? rawLabel
+              : rawLabel?.[defaultLoc] || Object.values(rawLabel || {})[0] || choiceId;
+          const sessionId = this.#playSessionId;
+          const currentNode = this.#state.currentSceneId;
+          void Promise.resolve().then(async () => {
+            try {
+              await this.#reporter!.onProgress(sessionId, {
+                currentNode,
+                choice: {
+                  optionId: choiceId,
+                  label: String(label),
+                  decisionId: String(decisionId),
+                },
+              });
+            } catch (err) {
+              console.warn(
+                "[ExperienceRuntimeController] Play session onProgress (choice) failed:",
+                err
+              );
+            }
+          });
+        } else {
+          console.warn(
+            `[ExperienceRuntimeController] Choice ${choiceId} not found in instance ${instance.instanceId}`
+          );
+        }
+      }
+    }
+
     return this.dispatch([
       {
         type: "renderer.outcome",

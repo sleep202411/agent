@@ -7,7 +7,7 @@ import {
   type ExperiencePlayerCopy,
   type ExperiencePlayerProps,
 } from "@repo/experience-player-react";
-import { initializeExperienceRuntime } from "@repo/experience-engine";
+import { initializeExperienceRuntime, type PlaySessionReporter } from "@repo/experience-engine";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useTranslations } from "next-intl";
 import type { StoryFrameProfile } from "@/lib/story-projects-api";
@@ -21,6 +21,7 @@ export function ExperienceRuntimePlayer({
   coverUrl,
   startSceneId,
   onStateChange,
+  playSessionReporter,
 }: {
   runtime: Record<string, unknown>;
   locale: string;
@@ -33,6 +34,7 @@ export function ExperienceRuntimePlayer({
    */
   startSceneId?: string | null;
   onStateChange?: ExperiencePlayerProps["onStateChange"];
+  playSessionReporter?: PlaySessionReporter;
 }) {
   const t = useTranslations("experiencePlayer");
   const { access, dialog } = useStoryPreviewAccess(locale);
@@ -97,6 +99,7 @@ export function ExperienceRuntimePlayer({
         renderWorldModel={(props) => <WorldModelExperienceRenderer {...props} />}
         accessCheckpoint={accessCheckpoint}
         onStateChange={onStateChange}
+        playSessionReporter={playSessionReporter}
       />
       {dialog}
     </>
