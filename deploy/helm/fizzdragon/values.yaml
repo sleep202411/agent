@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: f922c3cd526d9a13af14d68818933226ccdda7bd
+    tag: 626627f6fab65105aff621ef7562ad3dd94f1ede
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -492,10 +492,6 @@ server:
     MEDIA_ASSET_AIGC_REGISTRATION_ENABLED: "true"
     BYTEPLUS_ACR_EXPIRES_AT: "2027-06-29T16:59:59+08:00"
     PORT: "3001"
-    # International Java /api/admin/user-levels/levels. Type 1 FD-I..FD-V map to
-    # ranks 1..5 (ids 1, 2, 3, 7, 8). Type 4 is the profession certificate
-    # AI制片人 (id 13). Other level types are not FD ranks or skill certificates.
-    CREW_QUALIFICATION_CATALOG_JSON: '{"fdLevels":[{"id":1,"rank":1},{"id":2,"rank":2},{"id":3,"rank":3},{"id":7,"rank":4},{"id":8,"rank":5}],"skills":{"AI制片人":[13]}}'
     AI_PROVIDER: alibaba
     # Agent User runner. First trial: ON + run-a-cycle-on-boot for observability.
     # Model MUST be a non-reasoning model — the default qwen3.6-plus (reasoning)
