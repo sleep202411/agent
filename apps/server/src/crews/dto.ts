@@ -1,3 +1,4 @@
+import { PlotTreeSchema } from './templates/project-task-template.types';
 import { ProfessionalDeliveryInput } from './tasks/task-delivery-template';
 /**
  * Zod schemas for every crew controller body. Co-located in one file
@@ -74,6 +75,20 @@ export const CreateCrewSchema = CrewProfileSchema.extend({
     .object({
       name: z.string().trim().min(1).max(120),
     })
+    .optional(),
+  plotTree: PlotTreeSchema.optional(),
+  storyboardClipsByNode: z
+    .record(
+      z.string(),
+      z.array(
+        z.object({
+          clipId: z.string(),
+          title: z.string(),
+          order: z.number(),
+          durationSeconds: z.number().nullable(),
+        }),
+      ),
+    )
     .optional(),
 }).refine(
   (input) => !(input.studioWorkspaceId && input.createStudioWorkspace),

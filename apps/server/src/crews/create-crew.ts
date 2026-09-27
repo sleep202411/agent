@@ -1,3 +1,5 @@
+import { CrewTaskKind } from '@prisma/client';
+import { availableCrewAssetName } from './assets/asset-name';
 import { ProjectTaskTemplateService } from './templates/project-task-template.service';
 import { createCrewStudioWorkspaceTx } from './production/create-studio-workspace';
 import { randomUUID } from 'node:crypto';
@@ -180,6 +182,172 @@ export async function createCrewTx(
       userId: creatorUserId,
       locale: input.productionTemplateLocale,
     });
+
+    if (
+      productionKind === CrewProductionKind.interactive_film &&
+      input.storyboardClipsByNode &&
+      Object.keys(input.storyboardClipsByNode).length > 0
+    ) {
+      const plotNodeTasks = await tx.crewTask.findMany({
+        where: {
+          crewId: c.id,
+          parentId: { not: null },
+          metadata: { path: ['plotTreeNodeId'], not: Prisma.DbNull },
+          deletedAt: null,
+        },
+      });
+
+      const plotNodeTaskMap = new Map<string, (typeof plotNodeTasks)[0]>();
+      for (const t of plotNodeTasks) {
+        const meta = t.metadata as Record<string, unknown> | null;
+        if (meta && typeof meta.plotTreeNodeId === 'string') {
+          plotNodeTaskMap.set(meta.plotTreeNodeId, t);
+        }
+      }
+
+      // If plotNodeTasks are empty but an episode storyboard task exists,
+      // resolve the episode storyboard task
+      const episodeTask = await tx.crewTask.findFirst({
+        where: {
+          crewId: c.id,
+          deletedAt: null,
+          taskKind: CrewTaskKind.storyboard,
+          parentId: { not: null },
+        },
+      });
+
+      const maxNumberRow = await tx.crewTask.findFirst({
+        where: { crewId: c.id },
+        orderBy: { number: 'desc' },
+        select: { number: true },
+      });
+      let nextNumber = (maxNumberRow?.number ?? 0) + 1;
+
+      const maxRankRow = await tx.crewTask.findFirst({
+        where: { crewId: c.id },
+        orderBy: { rank: 'desc' },
+        select: { rank: true },
+      });
+      let currentRank = maxRankRow?.rank
+        ? new Prisma.Decimal(maxRankRow.rank).plus(1024)
+        : new Prisma.Decimal(1024);
+
+      for (const [nodeId, clips] of Object.entries(
+        input.storyboardClipsByNode,
+      )) {
+        let parentTask = plotNodeTaskMap.get(nodeId);
+
+        if (!parentTask && episodeTask) {
+          // If the plot-node child task doesn't exist yet, lazily create it under the episode task
+          const existingNodeChild = await tx.crewTask.findFirst({
+            where: {
+              crewId: c.id,
+              deletedAt: null,
+              metadata: { path: ['plotTreeNodeId'], equals: nodeId },
+            },
+          });
+          if (existingNodeChild) {
+            parentTask = existingNodeChild;
+            plotNodeTaskMap.set(nodeId, existingNodeChild);
+          } else {
+            const nodeTitle = 'Node: ' + nodeId;
+            parentTask = await tx.crewTask.create({
+              data: {
+                id: randomUUID(),
+                crewId: c.id,
+                parentId: episodeTask.id,
+                number: nextNumber++,
+                title: nodeTitle,
+                description: '',
+                workflowStateId: openWorkflowStateId,
+                taskKind: CrewTaskKind.storyboard,
+                episodeId: episodeTask.episodeId,
+                rank: currentRank,
+                createdByUserId: creatorUserId,
+                metadata: { plotTreeNodeId: nodeId },
+              },
+            });
+            currentRank = currentRank.plus(1024);
+            plotNodeTaskMap.set(nodeId, parentTask);
+          }
+        }
+
+        if (!parentTask) continue;
+
+        const sortedClips = [...clips].sort((a, b) => a.order - b.order);
+
+        for (const clip of sortedClips) {
+          const existingShot = await tx.crewTask.findFirst({
+            where: {
+              crewId: c.id,
+              deletedAt: null,
+              metadata: { path: ['clipId'], equals: clip.clipId },
+            },
+          });
+          if (existingShot) continue;
+
+          const shotTitle = clip.title?.trim()
+            ? clip.title
+            : input.productionTemplateLocale === 'en-US'
+              ? 'Shot ' + (clip.order + 1)
+              : '第 ' + (clip.order + 1) + ' 镜';
+
+          const taskId = randomUUID();
+
+          // Create a delivery folder for the shot task
+          const existingFolders = await tx.crewAssetNode.findMany({
+            where: { crewId: c.id, parentId: null, status: 'active' },
+            select: { name: true },
+          });
+          const folderName = availableCrewAssetName(
+            shotTitle,
+            new Set(existingFolders.map((f) => f.name.toLowerCase())),
+          );
+          const deliveryFolder = await tx.crewAssetNode.create({
+            data: {
+              id: randomUUID(),
+              crewId: c.id,
+              kind: 'folder',
+              name: folderName,
+              createdByUserId: creatorUserId,
+              updatedByUserId: creatorUserId,
+            },
+          });
+
+          const shotTask = await tx.crewTask.create({
+            data: {
+              id: taskId,
+              crewId: c.id,
+              parentId: parentTask.id,
+              number: nextNumber++,
+              title: shotTitle,
+              description: '',
+              workflowStateId: openWorkflowStateId,
+              taskKind: CrewTaskKind.storyboard,
+              episodeId: parentTask.episodeId,
+              rank: currentRank,
+              createdByUserId: creatorUserId,
+              metadata: {
+                clipId: clip.clipId,
+                plotTreeNodeId: nodeId,
+                order: clip.order,
+                durationSeconds: clip.durationSeconds,
+              },
+            },
+          });
+          currentRank = currentRank.plus(1024);
+
+          await tx.crewTaskDeliveryFolder.create({
+            data: {
+              taskId: shotTask.id,
+              crewId: c.id,
+              folderId: deliveryFolder.id,
+              createdByUserId: creatorUserId,
+            },
+          });
+        }
+      }
+    }
   }
 
   await conversations.openCrewConversation(c.id, tx);
