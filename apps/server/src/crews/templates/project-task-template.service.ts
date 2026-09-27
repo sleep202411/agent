@@ -245,4 +245,47 @@ export class ProjectTaskTemplateService {
 
     return createdTasks;
   }
+  async listAllAdmin(filter?: {
+    projectType?: CrewProductionKind;
+    includeInactive?: boolean;
+  }): Promise<ProjectTaskTemplate[]> {
+    const where: any = {};
+    if (filter?.projectType) where.projectType = filter.projectType;
+    if (!filter?.includeInactive) where.active = true;
+    return this.prisma.projectTaskTemplate.findMany({
+      where,
+      orderBy: [{ projectType: 'asc' }, { version: 'desc' }],
+    });
+  }
+
+  async saveAdmin(input: {
+    projectType: CrewProductionKind;
+    name: string;
+    definition: unknown;
+  }): Promise<ProjectTaskTemplate> {
+    // Determine next version number for this projectType
+    const latest = await this.prisma.projectTaskTemplate.findFirst({
+      where: { projectType: input.projectType },
+      orderBy: { version: 'desc' },
+      select: { version: true },
+    });
+    const nextVersion = (latest?.version ?? 0) + 1;
+
+    // Deactivate prior versions of the same projectType (only one active version at a time)
+    await this.prisma.projectTaskTemplate.updateMany({
+      where: { projectType: input.projectType, active: true },
+      data: { active: false },
+    });
+
+    // Create the new version
+    return this.prisma.projectTaskTemplate.create({
+      data: {
+        projectType: input.projectType,
+        name: input.name,
+        version: nextVersion,
+        active: true,
+        definition: input.definition as any,
+      },
+    });
+  }
 }

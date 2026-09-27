@@ -1,4 +1,5 @@
 import { ProjectTaskTemplateService } from './templates/project-task-template.service';
+import { ProjectTaskTemplatesAdminController } from './templates/project-task-templates-admin.controller';
 import {
   CrewApplicationAmendmentsController,
   CrewAmendmentSettlementQueueController,
@@ -175,6 +176,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAgreementsController,
     CrewEarningsController,
     CrewPayoutsController,
+    ProjectTaskTemplatesAdminController,
   ],
   providers: [
     CrewApplicationAmendmentsService,
