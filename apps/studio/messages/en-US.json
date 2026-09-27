@@ -3612,6 +3612,7 @@
           "videoPreview": "Current video preview",
           "noMedia": "No media yet",
           "noSequence": "No storyboard yet",
+          "videoIdle": "Hover to preview",
           "clipCoverage": "{ready}/{total} clips with media"
         }
       },

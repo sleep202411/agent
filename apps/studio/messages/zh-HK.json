@@ -3612,6 +3612,7 @@
           "videoPreview": "目前影片預覽",
           "noMedia": "尚無媒體",
           "noSequence": "尚無分鏡",
+          "videoIdle": "懸停預覽",
           "clipCoverage": "{ready}/{total} 片段已有媒體"
         }
       },

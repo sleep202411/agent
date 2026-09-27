@@ -16,6 +16,9 @@ import {
 } from "react";
 import {
   applyNodeChanges,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
   Handle,
   MiniMap,
   Position,
@@ -27,6 +30,7 @@ import {
   useStore,
   type Connection,
   type Edge,
+  type EdgeProps,
   type FinalConnectionState,
   type NodeChange,
   type NodeProps,
@@ -58,8 +62,10 @@ import { useStoryPreviewNavigation } from "../../_lib/use-story-preview-navigati
 import { StoryProjectSidePanelShell } from "../story-project-side-panel";
 import { StoryProjectWorkState } from "../story-project-work-state";
 import {
+  StoryboardCoverageStore,
   StoryCanvasStoryboardCoverageContext,
   storyboardCoverageByNode,
+  storyboardStillUrl,
   useStoryboardNodeCoverage,
 } from "./story-canvas-storyboard-coverage";
 import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
@@ -87,7 +93,6 @@ import type { MediaManualPlaybackLease } from "@/components/media/media-preview-
 import { StudioVideoPlayer, type StudioVideoSource } from "@/components/media/studio-video-player";
 import { resolveCanvasVideoControlDensity } from "@/components/media/studio-video-player-model";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
-import { GlassRim } from "@/components/ui/glass-rim";
 import { Link } from "@/i18n/navigation";
 import { canonicalJsonString } from "@/lib/canonical-json";
 import { cn } from "@/lib/utils";
@@ -277,8 +282,61 @@ type StoryCanvasChoiceContextValue = {
 };
 
 const NODE_TYPES = { storyCanvas: memo(StoryGraphNodeCard) };
+
+/**
+ * HTML labels instead of React Flow's SVG `EdgeText`. That path measures
+ * every label with `getBBox` when edges mount during a pan.
+ */
+function StoryCanvasFlowEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  label,
+  style,
+  markerEnd,
+  markerStart,
+  interactionWidth,
+}: EdgeProps<StoryCanvasEdge>) {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+  const text = typeof label === "string" && label.trim() ? label : null;
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={style}
+        markerEnd={markerEnd}
+        markerStart={markerStart}
+        interactionWidth={interactionWidth}
+      />
+      {text ? (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan pointer-events-none absolute rounded-md bg-[oklch(0.24_0_0)] px-1.5 py-0.5 text-[10px] font-semibold text-white/70"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          >
+            {text}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
+}
+
+const EDGE_TYPES = { storyCanvas: StoryCanvasFlowEdge };
 const DEFAULT_EDGE_OPTIONS = {
-  type: "default",
+  type: "storyCanvas",
   interactionWidth: 28,
   style: { stroke: "rgba(255,255,255,0.25)", strokeWidth: 1.5 },
 };
@@ -292,6 +350,8 @@ const STORY_CANVAS_TIDY_LAYOUT = {
   lanes: [],
 } satisfies CanvasTidyLayoutOptions<StoryCanvasNode>;
 const MAX_PLAYER_CHOICES = 6;
+const NO_STORY_VARIABLES: StoryCanvasChoiceContextValue["stateVariables"] = [];
+const NO_STORY_ENDINGS: StoryBibleEnding[] = [];
 
 const StoryCanvasFocusContext = createContext<string | null>(null);
 /** Scene-card play buttons call back into the canvas's preview navigation. */
@@ -1131,6 +1191,10 @@ function StoryProjectCanvasInner({
     () => storyboardCoverageByNode(storyboardQuery.data ?? []),
     [storyboardQuery.data]
   );
+  const coverageStore = useRef(new StoryboardCoverageStore()).current;
+  useLayoutEffect(() => {
+    coverageStore.replace(storyboardCoverage);
+  }, [coverageStore, storyboardCoverage]);
 
   const model = useMemo(
     () =>
@@ -1191,7 +1255,25 @@ function StoryProjectCanvasInner({
   const deleteEnding = (endingId: string) => {
     applyGraphMutation((current) => removeStoryEnding(current, endingId));
   };
-  const choiceContext: StoryCanvasChoiceContextValue = {
+  const choicePickerNodes = useMemo(
+    () =>
+      content
+        ? storyGraphNodePickerItems(
+            content.graph.nodes,
+            "",
+            storyGraphNodePickerTitles(
+              content.graph.nodes,
+              t("nodeKinds.clip"),
+              t("nodeKinds.decision")
+            )
+          )
+        : [],
+    [content, t]
+  );
+  const choiceStateVariables = content?.storyBible.stateVariables ?? NO_STORY_VARIABLES;
+  const choiceEndings = content?.storyBible.endings ?? NO_STORY_ENDINGS;
+  const choiceRuntimeRef = useRef<StoryCanvasChoiceContextValue>(null!);
+  choiceRuntimeRef.current = {
     setCommunityPointPrice: async (nodeId, price) => {
       if (!mutationBarrier.permits("content")) throw new Error(t("communityPrice.unavailable"));
       const current = latestContentRef.current;
@@ -1235,19 +1317,9 @@ function StoryProjectCanvasInner({
     removeChoice: (sourceNodeId, choiceId) => {
       applyGraphMutation((current) => removeChoiceOption(current, sourceNodeId, choiceId));
     },
-    stateVariables: content?.storyBible.stateVariables ?? [],
-    endings: content?.storyBible.endings ?? [],
-    nodes: content
-      ? storyGraphNodePickerItems(
-          content.graph.nodes,
-          "",
-          storyGraphNodePickerTitles(
-            content.graph.nodes,
-            t("nodeKinds.clip"),
-            t("nodeKinds.decision")
-          )
-        )
-      : [],
+    stateVariables: choiceStateVariables,
+    endings: choiceEndings,
+    nodes: choicePickerNodes,
     locale: authoringLocale,
     patchChoice: (sourceNodeId, choiceId, patch) => {
       applyGraphMutation((current) => updateChoiceStats(current, sourceNodeId, choiceId, patch), {
@@ -1268,6 +1340,43 @@ function StoryProjectCanvasInner({
     updateEnding,
     deleteEnding,
   };
+  // The facade stays stable across storyboard refetches. Methods read the ref,
+  // so an upload does not rebuild every visible card.
+  const choiceContext = useMemo<StoryCanvasChoiceContextValue>(
+    () => ({
+      setCommunityPointPrice: (nodeId, price) =>
+        choiceRuntimeRef.current.setCommunityPointPrice(nodeId, price),
+      canEditContent: canEdit,
+      canCreateOption: canMutateCanvasLayout,
+      start: (sourceNodeId) => choiceRuntimeRef.current.start(sourceNodeId),
+      updatePrompt: (sourceNodeId, prompt) =>
+        choiceRuntimeRef.current.updatePrompt(sourceNodeId, prompt),
+      updateChoice: (sourceNodeId, choiceId, label) =>
+        choiceRuntimeRef.current.updateChoice(sourceNodeId, choiceId, label),
+      moveChoice: (sourceNodeId, choiceId, direction) =>
+        choiceRuntimeRef.current.moveChoice(sourceNodeId, choiceId, direction),
+      removeChoice: (sourceNodeId, choiceId) =>
+        choiceRuntimeRef.current.removeChoice(sourceNodeId, choiceId),
+      stateVariables: choiceStateVariables,
+      endings: choiceEndings,
+      nodes: choicePickerNodes,
+      locale: authoringLocale,
+      patchChoice: (sourceNodeId, choiceId, patch) =>
+        choiceRuntimeRef.current.patchChoice(sourceNodeId, choiceId, patch),
+      createEndingForChoice: (sourceNodeId, choiceId) =>
+        choiceRuntimeRef.current.createEndingForChoice(sourceNodeId, choiceId),
+      updateEnding: (endingId, patch) => choiceRuntimeRef.current.updateEnding(endingId, patch),
+      deleteEnding: (endingId) => choiceRuntimeRef.current.deleteEnding(endingId),
+    }),
+    [
+      authoringLocale,
+      canEdit,
+      canMutateCanvasLayout,
+      choiceEndings,
+      choicePickerNodes,
+      choiceStateVariables,
+    ]
+  );
 
   useLayoutEffect(() => {
     mutationBarrier.update({
@@ -1742,6 +1851,7 @@ function StoryProjectCanvasInner({
           !focusedNodeId || edge.source === focusedNodeId || edge.target === focusedNodeId;
         return {
           ...edge,
+          type: "storyCanvas" as const,
           zIndex: related ? 2 : 0,
           style: {
             ...DEFAULT_EDGE_OPTIONS.style,
@@ -2549,7 +2659,7 @@ function StoryProjectCanvasInner({
     canvasViewKey ? (useStoryProjectUiStore.getState().canvasViews[canvasViewKey] ?? null) : null
   );
   return (
-    <StoryCanvasStoryboardCoverageContext.Provider value={storyboardCoverage}>
+    <StoryCanvasStoryboardCoverageContext.Provider value={coverageStore}>
       <main className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--canvas-background)] text-white">
         {inspectorOpen ? (
           <StoryProjectSidePanelShell label={t("inspector.eyebrow")}>
@@ -2732,6 +2842,7 @@ function StoryProjectCanvasInner({
                           if (viewKey) writeCanvasView(viewKey, viewport);
                         }}
                         nodeTypes={NODE_TYPES}
+                        edgeTypes={EDGE_TYPES}
                         defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
                         colorMode="dark"
                         proOptions={{ hideAttribution: true }}
@@ -3186,25 +3297,28 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
     data.kind === "clip" && coverage?.previewVideoUrl
       ? { src: coverage.previewVideoUrl, type: "video/mp4" }
       : undefined;
-  const previewSource = currentVideoSource;
+  const stillUrl = data.kind === "clip" ? storyboardStillUrl(coverage) : null;
   const mediaPreview = useMediaHoverPreview({
     ownerId: id,
-    enabled: Boolean(previewSource),
+    enabled: Boolean(currentVideoSource),
     canActivate: canActivateCanvasMediaPreview,
     canClaimManual: canClaimCanvasManualPlayback,
   });
   const previewFocused = focusedNodeId === id;
+  const playVideo =
+    Boolean(currentVideoSource) && (previewFocused || mediaPreview.isAutoPreviewActive);
   const geometry = canvasNodeGeometry({ type: "storyCanvas", data });
   return (
     <div className="relative pt-10" data-story-node-id={id}>
       <FrostedPanel
         rim={false}
+        blur={false}
         className={cn(
-          "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-1.5 rounded-full py-1 pr-2.5 pl-1 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl",
-          data.chapterStart && "shadow-[0_10px_28px_rgba(143,101,255,0.38)]"
+          "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-1.5 rounded-full py-1 pr-2.5 pl-1 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.28)]",
+          data.chapterStart && "shadow-[0_8px_18px_rgba(143,101,255,0.38)]"
         )}
         style={{
-          backgroundColor: data.chapterStart ? "#8f65ff" : "rgba(255,255,255,0.14)",
+          backgroundColor: data.chapterStart ? "#8f65ff" : "oklch(0.32 0 0)",
         }}
       >
         <span
@@ -3240,7 +3354,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                 event.stopPropagation();
                 previewFromScene(data.nodeId);
               }}
-              className="nodrag nopan grid size-7 cursor-default place-items-center rounded-full bg-white/[0.14] text-white/85 shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl transition hover:bg-white/[0.24] hover:text-white disabled:opacity-50"
+              className="nodrag nopan grid size-7 cursor-default place-items-center rounded-full bg-[oklch(0.32_0_0)] text-white/85 shadow-[0_8px_18px_rgba(0,0,0,0.28)] transition hover:bg-[oklch(0.38_0_0)] hover:text-white disabled:opacity-50"
             >
               <IconPlayerPlay className="size-3.5" stroke={2} />
             </button>
@@ -3258,14 +3372,11 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
       <article
         {...mediaPreview.hoverProps}
         className={cn(
-          "relative isolate overflow-visible rounded-[22px] bg-popover/95 shadow-[0_24px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl backdrop-saturate-150 transition-[background-color,box-shadow] duration-200",
-          selected
-            ? "bg-accent/95 shadow-[0_30px_100px_rgba(0,0,0,0.62)]"
-            : "hover:bg-muted/95 hover:shadow-[0_28px_90px_rgba(0,0,0,0.56)]"
+          "relative overflow-visible rounded-[22px] bg-[oklch(0.215_0_0)] shadow-[0_12px_28px_rgba(0,0,0,0.38)] [contain:layout_style]",
+          selected ? "bg-accent" : "hover:bg-[oklch(0.235_0_0)]"
         )}
         style={{ width: geometry.width, minHeight: geometry.minHeight }}
       >
-        <GlassRim width={selected ? "1.5px" : "1px"} className="z-20" />
         <StoryPortHandle
           id="in"
           type="target"
@@ -3287,28 +3398,49 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           />
         ) : null}
         {data.kind === "clip" ? (
-          coverage?.thumbnailUrl && !currentVideoSource ? (
-            <div
-              className="relative overflow-hidden rounded-t-[22px] bg-black/15"
-              style={{ aspectRatio: data.frameAspectRatio }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- storyboard media thumbnail */}
-              <img
-                src={coverage.thumbnailUrl}
-                alt=""
-                draggable={false}
-                className="size-full select-none object-cover"
-              />
-            </div>
-          ) : (
+          playVideo ? (
             <StoryVideoPreview
               source={currentVideoSource}
+              poster={stillUrl}
               interactive={previewFocused}
               frameAspectRatio={data.frameAspectRatio}
               ariaLabel={t("production.node.videoPreview")}
               emptyLabel={t(coverage ? "production.node.noMedia" : "production.node.noSequence")}
               autoPreviewActive={mediaPreview.isAutoPreviewActive}
               manualPlaybackOwned={mediaPreview.isManualPlaybackOwner}
+              onManualPlaybackStart={mediaPreview.acquireManualPlayback}
+              onManualPlaybackStop={mediaPreview.releaseManualPlayback}
+              className="rounded-t-[22px]"
+            />
+          ) : stillUrl ? (
+            <div
+              className="relative overflow-hidden rounded-t-[22px] bg-black/15"
+              style={{ aspectRatio: data.frameAspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- storyboard media thumbnail */}
+              <img
+                src={stillUrl}
+                alt=""
+                draggable={false}
+                decoding="async"
+                fetchPriority="low"
+                className="size-full select-none object-cover"
+              />
+            </div>
+          ) : (
+            <StoryVideoPreview
+              interactive={false}
+              frameAspectRatio={data.frameAspectRatio}
+              ariaLabel={t("production.node.videoPreview")}
+              emptyLabel={t(
+                !coverage
+                  ? "production.node.noSequence"
+                  : currentVideoSource
+                    ? "production.node.videoIdle"
+                    : "production.node.noMedia"
+              )}
+              autoPreviewActive={false}
+              manualPlaybackOwned={false}
               onManualPlaybackStart={mediaPreview.acquireManualPlayback}
               onManualPlaybackStop={mediaPreview.releaseManualPlayback}
               className="rounded-t-[22px]"
@@ -3518,6 +3650,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
 
 function StoryVideoPreview({
   source,
+  poster,
   interactive,
   frameAspectRatio,
   ariaLabel,
@@ -3529,6 +3662,7 @@ function StoryVideoPreview({
   className,
 }: {
   source?: StudioVideoSource;
+  poster?: string | null;
   interactive: boolean;
   frameAspectRatio?: string;
   ariaLabel: string;
@@ -3548,6 +3682,7 @@ function StoryVideoPreview({
         interactive ? (
           <StoryInteractiveVideoPreview
             source={source}
+            poster={poster}
             ariaLabel={ariaLabel}
             autoPreviewActive={autoPreviewActive}
             manualPlaybackOwned={manualPlaybackOwned}
@@ -3555,7 +3690,7 @@ function StoryVideoPreview({
             onManualPlaybackStop={onManualPlaybackStop}
           />
         ) : (
-          <StoryPassiveVideoPreview source={source} active={autoPreviewActive} />
+          <StoryPassiveVideoPreview source={source} poster={poster} active={autoPreviewActive} />
         )
       ) : (
         <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
@@ -3574,6 +3709,7 @@ function StoryVideoPreview({
 
 function StoryInteractiveVideoPreview({
   source,
+  poster,
   ariaLabel,
   autoPreviewActive,
   manualPlaybackOwned,
@@ -3581,6 +3717,7 @@ function StoryInteractiveVideoPreview({
   onManualPlaybackStop,
 }: {
   source: StudioVideoSource;
+  poster?: string | null;
   ariaLabel: string;
   autoPreviewActive: boolean;
   manualPlaybackOwned: boolean;
@@ -3596,6 +3733,7 @@ function StoryInteractiveVideoPreview({
     >
       <StudioVideoPlayer
         source={source}
+        poster={poster ?? undefined}
         ariaLabel={ariaLabel}
         controlDensity={controlDensity}
         autoPreviewActive={autoPreviewActive}
@@ -3611,9 +3749,11 @@ function StoryInteractiveVideoPreview({
 
 function StoryPassiveVideoPreview({
   source,
+  poster,
   active,
 }: {
   source: StudioVideoSource;
+  poster?: string | null;
   active: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -3651,10 +3791,11 @@ function StoryPassiveVideoPreview({
     <video
       ref={videoRef}
       src={source.src}
+      poster={poster ?? undefined}
       muted
       draggable={false}
       playsInline
-      preload="metadata"
+      preload="none"
       tabIndex={-1}
       aria-hidden="true"
       data-auto-preview={active ? "true" : undefined}
