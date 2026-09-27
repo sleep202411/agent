@@ -3399,6 +3399,8 @@
         "unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。點擊附有定位入口的錯誤，可在畫布中找到對應節點並修正設定。",
         "stateHud": {
           "title": "本局數值",
+          "yes": "是",
+          "no": "否",
           "endings": "結局：{ids}"
         }
       },

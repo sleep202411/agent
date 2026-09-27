@@ -58,6 +58,7 @@ export function StoryProjectPlaytest({
     },
     retry: false,
   });
+  const playSessionReporter = useMemo(createNoopPlaySessionReporter, []);
 
   const loading = runtimeQuery.isLoading;
   const loadError = runtimeQuery.error;
@@ -109,8 +110,16 @@ export function StoryProjectPlaytest({
   }
 
   const parsedRuntime = ExperienceRuntimeManifestSchema.safeParse(runtime);
-  const stateKeys = parsedRuntime.success
-    ? parsedRuntime.data.stateDefinitions.map((definition) => definition.key)
+  const stateRows = parsedRuntime.success
+    ? parsedRuntime.data.stateDefinitions.map((definition) => {
+        const label = definition.name
+          ? localizedText(definition.name, locale, parsedRuntime.data.localization.defaultLocale)
+          : "";
+        return {
+          key: definition.key,
+          label: label || definition.key,
+        };
+      })
     : [];
   const runtimeTitle = parsedRuntime.success
     ? localizedText(
@@ -119,8 +128,6 @@ export function StoryProjectPlaytest({
         parsedRuntime.data.localization.defaultLocale
       )
     : t("pageTitle");
-
-  const playSessionReporter = useMemo(createNoopPlaySessionReporter, []);
 
   return (
     <main className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white">
@@ -155,10 +162,10 @@ export function StoryProjectPlaytest({
         </div>
 
         <div className="pointer-events-auto flex items-start gap-2">
-          {stateKeys.length > 0 ? (
+          {stateRows.length > 0 ? (
             <StoryPlaytestStateHud
               values={sessionValues}
-              keys={stateKeys}
+              rows={stateRows}
               completedEndingIds={completedEndingIds}
             />
           ) : null}

@@ -3399,6 +3399,8 @@
         "unavailableDescription": "{errors} blocking errors · {warnings} warnings. Open a linked error below to find its story node and correct the setting.",
         "stateHud": {
           "title": "Session stats",
+          "yes": "Yes",
+          "no": "No",
           "endings": "Endings: {ids}"
         }
       },

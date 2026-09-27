@@ -4,15 +4,15 @@ import { useTranslations } from "next-intl";
 
 export function StoryPlaytestStateHud({
   values,
-  keys,
+  rows,
   completedEndingIds,
 }: {
   values: Record<string, unknown>;
-  keys: readonly string[];
+  rows: readonly { key: string; label: string }[];
   completedEndingIds: readonly string[];
 }) {
   const t = useTranslations("storyStudio.canvas.workingPreview.stateHud");
-  if (keys.length === 0) return null;
+  if (rows.length === 0) return null;
 
   return (
     <aside
@@ -23,14 +23,16 @@ export function StoryPlaytestStateHud({
         {t("title")}
       </p>
       <dl className="mt-2 space-y-1.5">
-        {keys.map((key) => {
-          const formatted = formatHudValue(values[key]);
+        {rows.map((row) => {
+          const formatted = formatHudValue(values[row.key], t);
           return (
-            <div key={key} className="flex items-baseline justify-between gap-3">
-              <dt className="min-w-0 truncate font-mono text-[10px] text-white/52">{key}</dt>
+            <div key={row.key} className="flex items-baseline justify-between gap-3">
+              <dt className="min-w-0 truncate text-[11px] text-white/72" title={row.key}>
+                {row.label}
+              </dt>
               <dd
-                key={`${key}:${formatted}`}
-                className="font-mono text-[11px] text-white/82 motion-safe:[animation:story-hud-flash_900ms_ease-out]"
+                key={`${row.key}:${formatted}`}
+                className="shrink-0 text-[11px] text-white/88 motion-safe:[animation:story-hud-flash_900ms_ease-out]"
               >
                 {formatted}
               </dd>
@@ -53,8 +55,8 @@ export function StoryPlaytestStateHud({
   );
 }
 
-function formatHudValue(value: unknown): string {
-  if (typeof value === "boolean") return value ? "true" : "false";
+function formatHudValue(value: unknown, t: (key: "yes" | "no") => string): string {
+  if (typeof value === "boolean") return value ? t("yes") : t("no");
   if (typeof value === "number") return String(value);
   if (value == null) return "—";
   return String(value);
