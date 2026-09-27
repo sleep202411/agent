@@ -3756,6 +3756,7 @@ export class CrewTasksService {
               submission: latest,
               userId,
               clipId,
+              preferredAssetNodeId: input.bindAssetNodeId,
             });
           }
           for (const assignee of locked.assignees.filter(
@@ -4001,9 +4002,10 @@ export class CrewTasksService {
       submission: TaskRow['submissions'][number];
       userId: string;
       clipId: string;
+      preferredAssetNodeId?: string;
     },
   ) {
-    const { task, submission, userId, clipId } = params;
+    const { task, submission, userId, clipId, preferredAssetNodeId } = params;
 
     // 1. Resolve StoryStoryboardClip
     const clip = await tx.storyStoryboardClip.findFirst({
@@ -4029,29 +4031,59 @@ export class CrewTasksService {
       include: { mediaAsset: true },
     });
 
-    // 3. Pick primary asset in priority order:
-    // a. asset tagged slot video_with_subtitle
-    // b. asset tagged slot final_video
-    // c. asset tagged slot video_without_subtitle
+    // 3. Pick primary asset:
+    // If preferredAssetNodeId is provided and exists in delivered set, use it.
+    // Otherwise fallback to priority order from professionalDelivery.answers:
+    // a. answer to video_with_subtitle
+    // b. answer to final_video
+    // c. answer to video_without_subtitle
     // d. first asset whose MediaAsset.contentType starts with "video/"
-    const assetSlotEntries: Record<string, string> =
-      (submission.professionalDelivery as any)?.assetSlots ?? {};
+    let chosenAssetNode: (typeof assetNodes)[number] | undefined;
 
-    const findBySlot = (slotName: string) =>
-      assetNodes.find(
-        (node) =>
-          assetSlotEntries[node.id] === slotName && node.mediaAssetId != null,
+    if (preferredAssetNodeId) {
+      chosenAssetNode = assetNodes.find(
+        (node) => node.id === preferredAssetNodeId && node.mediaAssetId != null,
       );
+      if (!chosenAssetNode) {
+        console.warn(
+          `Preferred assetNode ${preferredAssetNodeId} not found among delivered assets; falling back to default priority.`,
+        );
+      }
+    }
 
-    let chosenAssetNode =
-      findBySlot('video_with_subtitle') ??
-      findBySlot('final_video') ??
-      findBySlot('video_without_subtitle') ??
-      assetNodes.find(
-        (node) =>
-          node.mediaAsset?.contentType?.startsWith('video/') &&
-          node.mediaAssetId != null,
-      );
+    if (!chosenAssetNode) {
+      const answers =
+        (
+          submission.professionalDelivery as {
+            answers?: Record<string, string | string[]>;
+          } | null
+        )?.answers ?? {};
+
+      const assetIdForSlot = (slot: string): string | undefined => {
+        const v = answers[slot];
+        if (Array.isArray(v)) return v[0];
+        return typeof v === 'string' ? v : undefined;
+      };
+
+      const findBySlotKey = (slotKey: string) => {
+        const id = assetIdForSlot(slotKey);
+        return id
+          ? assetNodes.find(
+              (node) => node.id === id && node.mediaAssetId != null,
+            )
+          : undefined;
+      };
+
+      chosenAssetNode =
+        findBySlotKey('video_with_subtitle') ??
+        findBySlotKey('final_video') ??
+        findBySlotKey('video_without_subtitle') ??
+        assetNodes.find(
+          (node) =>
+            node.mediaAsset?.contentType?.startsWith('video/') &&
+            node.mediaAssetId != null,
+        );
+    }
 
     if (!chosenAssetNode || !chosenAssetNode.mediaAssetId) return;
 

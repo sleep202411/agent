@@ -932,12 +932,14 @@ export function useReviewCrewTask(crewId: string) {
       decision,
       note,
       revisionDueAt,
+      bindAssetNodeId,
     }: {
       taskId: string;
       expectedSubmissionId: string;
       decision: "approve" | "request_revision";
       note: string;
       revisionDueAt?: string;
+      bindAssetNodeId?: string;
     }) =>
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/review`, {
         body: {
@@ -945,6 +947,7 @@ export function useReviewCrewTask(crewId: string) {
           note,
           expectedSubmissionId,
           ...(revisionDueAt !== undefined ? { revisionDueAt } : {}),
+          ...(bindAssetNodeId !== undefined ? { bindAssetNodeId } : {}),
         },
       }),
     onSuccess: (task, _variables, origin) => {

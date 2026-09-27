@@ -5624,7 +5624,9 @@
     "slot_cost_sheet": "成本表",
     "slot_review_sheet": "评审表",
     "slot_client_signoff": "客户签字",
-    "slot_prompt_or_script": "提示词/剧本"
+    "slot_prompt_or_script": "提示词/剧本",
+    "clipPrimaryAsset": "分镜主素材",
+    "clipPrimaryAssetHint": "哪个交付视频作为该分镜的主素材"
   },
   "crewInvitations": {
     "signIn": "登录",

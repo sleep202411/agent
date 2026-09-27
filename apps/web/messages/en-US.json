@@ -5624,7 +5624,9 @@
     "slot_cost_sheet": "Cost sheet",
     "slot_review_sheet": "Review sheet",
     "slot_client_signoff": "Client sign-off",
-    "slot_prompt_or_script": "Prompt or script"
+    "slot_prompt_or_script": "Prompt or script",
+    "clipPrimaryAsset": "Clip primary asset",
+    "clipPrimaryAssetHint": "Which delivered video becomes the clip’s active media"
   },
   "crewInvitations": {
     "signIn": "Sign in",

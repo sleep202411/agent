@@ -808,6 +808,7 @@ export const ReviewCrewTaskSchema = z
     expectedSubmissionId: z.string().uuid(),
     decision: z.enum(['approve', 'request_revision']),
     revisionDueAt: z.string().datetime({ offset: true }).optional(),
+    bindAssetNodeId: z.string().uuid().optional(),
     note: z.string().trim().max(5000).default(''),
   })
   .refine((input) => input.decision === 'approve' || input.note.length > 0, {
