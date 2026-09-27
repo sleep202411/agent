@@ -43,6 +43,7 @@ export class ExperienceRuntimeController {
   readonly #canAccess?: ExperienceAccessCheck;
   readonly #reporter?: PlaySessionReporter;
   #playSessionId: string | null = null;
+  #visitedNodeIds = new Set<string>();
 
   constructor(manifest: ExperienceRuntimeManifest, options: ExperienceRuntimeControllerOptions) {
     assertExperienceRuntimeCompatibility(manifest, options.compatibility);
@@ -61,6 +62,16 @@ export class ExperienceRuntimeController {
       if (typeof sessionStorage !== "undefined") {
         const stored = sessionStorage.getItem(this.#sessionStorageKey());
         if (stored) this.#playSessionId = stored;
+
+        const storedVisited = sessionStorage.getItem(this.#visitedStorageKey());
+        if (storedVisited) {
+          const parsed = JSON.parse(storedVisited);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((id) => {
+              if (typeof id === "string") this.#visitedNodeIds.add(id);
+            });
+          }
+        }
       }
     } catch {
       // SSR or private mode — ignore.
@@ -79,6 +90,10 @@ export class ExperienceRuntimeController {
     return `play_session:${this.#manifest.gameId}:${this.#manifest.buildId}`;
   }
 
+  #visitedStorageKey(): string {
+    return `play_session_visited:${this.#manifest.gameId}:${this.#manifest.buildId}`;
+  }
+
   /**
    * Phase 1b: on reporter failure, clear the persisted sessionId when the
    * backend reports the session is gone (404/410), so the next start() will
@@ -94,9 +109,11 @@ export class ExperienceRuntimeController {
     const status = e?.status ?? e?.statusCode ?? e?.response?.status;
     if (status === 404 || status === 410) {
       this.#playSessionId = null;
+      this.#visitedNodeIds.clear();
       try {
         if (typeof sessionStorage !== "undefined") {
           sessionStorage.removeItem(this.#sessionStorageKey());
+          sessionStorage.removeItem(this.#visitedStorageKey());
         }
       } catch {
         // ignore
@@ -181,15 +198,28 @@ export class ExperienceRuntimeController {
     result.effects.forEach((effect) => {
       if (effect.kind === "scene.changed") {
         if (this.#reporter && this.#playSessionId) {
-          const sessionId = this.#playSessionId;
-          const currentNode = effect.toSceneId;
-          void Promise.resolve().then(async () => {
+          if (!this.#visitedNodeIds.has(effect.toSceneId)) {
+            this.#visitedNodeIds.add(effect.toSceneId);
             try {
-              await this.#reporter!.onProgress(sessionId, { currentNode });
-            } catch (err) {
-              this.#handleReporterFailure(err, "onProgress (scene.changed)");
+              if (typeof sessionStorage !== "undefined") {
+                sessionStorage.setItem(
+                  this.#visitedStorageKey(),
+                  JSON.stringify([...this.#visitedNodeIds])
+                );
+              }
+            } catch {
+              // ignore
             }
-          });
+            const sessionId = this.#playSessionId;
+            const currentNode = effect.toSceneId;
+            void Promise.resolve().then(async () => {
+              try {
+                await this.#reporter!.onProgress(sessionId, { currentNode });
+              } catch (err) {
+                this.#handleReporterFailure(err, "onProgress (scene.changed)");
+              }
+            });
+          }
         }
       } else if (effect.kind === "ending.completed") {
         if (this.#reporter && this.#playSessionId) {
