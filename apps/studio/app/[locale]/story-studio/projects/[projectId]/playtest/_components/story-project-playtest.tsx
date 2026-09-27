@@ -1,6 +1,6 @@
-import { createNoopPlaySessionReporter } from "../_lib/play-session-reporter.noop";
-("use client");
+"use client";
 
+import { createNoopPlaySessionReporter } from "../_lib/play-session-reporter.noop";
 import { IconAlertTriangle, IconArrowLeft, IconLoader2, IconRefresh } from "@tabler/icons-react";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
