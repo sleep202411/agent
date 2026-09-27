@@ -15,6 +15,7 @@ import {
   removeStoryEnding,
   removeStoryStateVariable,
   setAutoRoutes,
+  setEntryNode,
   setNodeOnEnterEffects,
   updateChoiceStats,
   updateStoryClipMeta,
@@ -59,6 +60,16 @@ describe("story canvas mutations", () => {
       name: "Opening",
       description: "Rain over Jinling.",
     });
+  });
+
+  it("moves the chapter start without changing connections", () => {
+    let content = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" }).content;
+    content = createClipNode(content, { nodeId: "clip:b", clipKey: "B" }).content;
+    content = connectSceneContinuation(content, "clip:a", "clip:b");
+    const next = setEntryNode(content, "clip:b");
+
+    expect(next.graph.entryNodeId).toBe("clip:b");
+    expect(next.graph.nodes).toEqual(content.graph.nodes);
   });
 
   it("connects clips and removes inbound references when a clip is deleted", () => {

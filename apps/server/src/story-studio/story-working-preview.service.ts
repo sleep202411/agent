@@ -90,6 +90,7 @@ export class StoryWorkingPreviewService {
     user: AuthUser,
     projectId: string,
     chapterId?: string,
+    sceneId?: string,
   ): Promise<StoryWorkingPreviewDto> {
     const access = await this.permissions.requireProject(
       user.userId,
@@ -98,7 +99,13 @@ export class StoryWorkingPreviewService {
     );
     return this.prisma.$transaction(
       (tx) =>
-        this.compileLatestSavedDraft(tx, access.project, projectId, chapterId),
+        this.compileLatestSavedDraft(
+          tx,
+          access.project,
+          projectId,
+          chapterId,
+          sceneId,
+        ),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
@@ -116,6 +123,7 @@ export class StoryWorkingPreviewService {
     },
     projectId: string,
     chapterId: string | undefined,
+    sceneId: string | undefined,
   ): Promise<StoryWorkingPreviewDto> {
     const [draft, chapters] = [
       await tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
@@ -308,9 +316,6 @@ export class StoryWorkingPreviewService {
 
     const snapshotEntries = prepared.flatMap((item) => item.snapshotEntries);
     const videoSnapshotHash = storyVideoSnapshotHash(snapshotEntries);
-    // A chapter owns its own entry scene; the story-level entry belongs to the
-    // first chapter only. Preview validates the complete saved projection
-    // before compiling a chapter-scoped subgraph.
     const chapter = chapterId
       ? chapters.find((candidate) => candidate.id === chapterId)
       : null;
@@ -320,11 +325,34 @@ export class StoryWorkingPreviewService {
         message: 'The selected Story chapter was not found.',
       });
     }
-    const chapterScope: StoryBuildScope | null = chapter?.entryNodeId
-      ? { kind: 'subgraph', entryNodeId: chapter.entryNodeId }
+    const graphNodeIds = new Set(
+      playableDraft.data.graph.nodes.map((node) => node.nodeId),
+    );
+    const chapterStart = chapter
+      ? chapterPlayStart(chapter, graphNodeIds, sceneId)
       : null;
-
-    const scope: StoryBuildScope = chapterScope ?? { kind: 'full' };
+    if (chapter && !chapterStart) {
+      return emptyWorkingPreview(
+        draft.revision,
+        draft.contentHash,
+        videoSnapshotHash,
+        previewDiagnostic(
+          'error',
+          'STORY_WORKING_PREVIEW_CHAPTER_EMPTY',
+          'This chapter has no scene to play.',
+          'revision',
+          chapter.id,
+        ),
+      );
+    }
+    // A clicked scene is the start of this play. An empty chapter entry stays
+    // inside that chapter. Neither case may borrow another chapter's node.
+    const scope: StoryBuildScope =
+      chapter && chapterStart
+        ? { kind: 'subgraph', entryNodeId: chapterStart }
+        : sceneId && graphNodeIds.has(sceneId)
+          ? { kind: 'subgraph', entryNodeId: sceneId }
+          : { kind: 'full' };
     const metadata = {
       title: project.title,
       summary: project.summary?.trim() || playableDraft.data.storyBible.logline,
@@ -347,9 +375,8 @@ export class StoryWorkingPreviewService {
       buildId: previewBuildId,
       sourceDraftRevision: draft.revision,
       channel: 'preview',
-      // Previewing a chapter starts at that chapter, not at the story's first
-      // scene. Without this a multi-chapter work could only ever be walked from
-      // the top, which is why the canvas play-test entry was closed off.
+      // Playing a node starts at that node. Playing a chapter starts at its
+      // own entry, or its own first scene when the entry was never saved.
       scope,
       frameProfile: project.frameProfile,
       defaultLocale: project.defaultLocale,
@@ -609,6 +636,31 @@ function workingPreviewBuildId(
     videoSnapshotHash,
     presentation,
   })}`;
+}
+
+/**
+ * Where a chapter preview starts. The pressed play button wins. Otherwise the
+ * chapter's own entry, then its own first scene. Never a node from elsewhere.
+ */
+function chapterPlayStart(
+  chapter: { nodeIds: Prisma.JsonValue; entryNodeId: string | null },
+  graphNodeIds: ReadonlySet<string>,
+  sceneId: string | undefined,
+): string | null {
+  const owned = jsonStringIds(chapter.nodeIds).filter((id) =>
+    graphNodeIds.has(id),
+  );
+  if (sceneId && owned.includes(sceneId)) return sceneId;
+  if (chapter.entryNodeId && owned.includes(chapter.entryNodeId)) {
+    return chapter.entryNodeId;
+  }
+  return owned[0] ?? null;
+}
+
+function jsonStringIds(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function emptyWorkingPreview(

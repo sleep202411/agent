@@ -57,6 +57,32 @@ describe("StoryNodeInspector film authoring", () => {
     await click(editInteractions);
     expect(onEditInteractions).toHaveBeenCalledWith("second");
   });
+
+  it("sets the inspected clip as this chapter's start without being the start already", async () => {
+    const content = linearDraft();
+    const model = buildStoryCanvasModel(content, "en-US", { clip: "Clip" });
+    const onSetChapterStart = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <StoryNodeInspector
+          {...inspectorProps(content)}
+          onSetChapterStart={onSetChapterStart}
+          selectedNode={requiredNode(model.nodes, "second")}
+        />
+      );
+    });
+
+    const setStart = requiredElement(
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("chapterStart.set")
+      ) ?? null,
+      "set chapter start button"
+    );
+    await click(setStart);
+    expect(onSetChapterStart).toHaveBeenCalledWith("second");
+    expect(container.textContent).not.toContain("chapterStart.current");
+  });
 });
 
 function linearDraft(): InteractiveStoryDraftContent {
@@ -93,6 +119,7 @@ function inspectorProps(
     onCloseNode: vi.fn(),
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
+    onSetChapterStart: vi.fn(),
     onEditInteractions: vi.fn(),
     locale: "en-US",
     onSetOnEnterEffects: vi.fn(),

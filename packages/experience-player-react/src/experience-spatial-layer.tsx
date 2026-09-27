@@ -643,7 +643,10 @@ function TapControl({
     >
       <button
         type="button"
-        className="pointer-events-auto absolute inset-0 touch-manipulation bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+        className={classNames(
+          "absolute inset-0 touch-manipulation bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-white/80",
+          presentation.available ? "pointer-events-auto" : "pointer-events-none"
+        )}
         style={{ clipPath }}
         aria-label={presentation.description ?? presentation.label}
         aria-disabled={!presentation.available}
@@ -759,7 +762,10 @@ function SwipeControl({
     >
       <button
         type="button"
-        className="pointer-events-auto absolute inset-0 touch-none bg-transparent select-none outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+        className={classNames(
+          "absolute inset-0 touch-none bg-transparent select-none outline-none focus-visible:ring-2 focus-visible:ring-white/80",
+          presentation.available ? "pointer-events-auto" : "pointer-events-none"
+        )}
         style={{ clipPath }}
         aria-label={presentation.description ?? presentation.label}
         aria-disabled={!presentation.available}
@@ -1097,7 +1103,10 @@ function PressHoldControl({
     >
       <button
         type="button"
-        className="pointer-events-auto absolute inset-0 touch-none bg-transparent select-none outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+        className={classNames(
+          "absolute inset-0 touch-none bg-transparent select-none outline-none focus-visible:ring-2 focus-visible:ring-white/80",
+          presentation.available ? "pointer-events-auto" : "pointer-events-none"
+        )}
         style={{ clipPath }}
         aria-label={presentation.description ?? presentation.label}
         aria-pressed={displayPressing}

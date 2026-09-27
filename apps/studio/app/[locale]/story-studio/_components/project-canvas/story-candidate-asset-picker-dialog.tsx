@@ -39,6 +39,12 @@ import {
   type StoryCandidateAsset,
 } from "@/lib/story-projects-api";
 
+const REFERENCE_VIDEO_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+
+function isVideoUpload(file: File): boolean {
+  return file.type.startsWith("video/") || /\.(mp4|mov)$/i.test(file.name);
+}
+
 export type StoryCandidatePickerKind = Extract<MediaAssetSummary["kind"], "image" | "video">;
 type StoryCandidatePickerFilter = "all" | StoryCandidatePickerKind;
 export type StoryCandidateAssetUploadState =
@@ -317,6 +323,10 @@ function CandidateDialog({
       setUploadError(t("upload.unsupported"));
       return;
     }
+    if (isVideoUpload(file) && file.size > REFERENCE_VIDEO_MAX_BYTES) {
+      setUploadError(t("upload.tooLarge"));
+      return;
+    }
 
     const controller = new AbortController();
     operationAbortRef.current = controller;
@@ -485,7 +495,9 @@ function CandidateDialog({
                       ? t("upload.uploading", { progress: uploadState.progress })
                       : t("upload.prompt")}
               </p>
-              <p className="mt-1 truncate text-[9px] text-white/30">{t("upload.hint")}</p>
+              <p className="mt-1 truncate text-[9px] text-white/30">
+                {normalizedKinds.includes("video") ? t("upload.videoLimit") : t("upload.hint")}
+              </p>
               {uploadState?.stage === "uploading" ? (
                 <div
                   className="mt-2 h-1 max-w-64 overflow-hidden rounded-full bg-white/[0.07]"

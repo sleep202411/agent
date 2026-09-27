@@ -1,6 +1,6 @@
 "use client";
 
-import { IconArrowRight, IconFocusCentered, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowRight, IconFlag, IconFocusCentered, IconTrash, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,7 @@ interface StoryNodeInspectorProps {
   onConnectChapter?: (nodeId: string, targetNodeId: string, title: string) => void;
   onDeleteSelected: () => void;
   onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
+  onSetChapterStart: (nodeId: string) => void;
   onEditInteractions: (nodeId: string) => void;
   locale: string;
   onSetOnEnterEffects: (nodeId: string, effects: StoryStateEffect[] | null) => void;
@@ -66,6 +67,7 @@ export function StoryNodeInspector({
   onConnectChapter = () => undefined,
   onDeleteSelected,
   onUpdateClipMeta,
+  onSetChapterStart,
   onEditInteractions,
   locale,
   onSetOnEnterEffects,
@@ -82,7 +84,7 @@ export function StoryNodeInspector({
 
   const editableGraphNode = graphNode?.kind === "clip" ? graphNode : null;
 
-  if (!editableGraphNode || !canvasData) return null;
+  if (!graphNode || !canvasData) return null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -106,22 +108,32 @@ export function StoryNodeInspector({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5">
         <StorySourceReviewNotes notes={content.productionNotes} />
-        <GraphNodeEditor
-          projectId={projectId}
-          node={editableGraphNode}
-          canEdit={canEdit}
-          onUpdateClipMeta={onUpdateClipMeta}
-          chapterTargets={chapterTargets}
-          onConnectChapter={onConnectChapter}
-          onEditInteractions={onEditInteractions}
-          content={content}
-          locale={locale}
-          onSetOnEnterEffects={onSetOnEnterEffects}
-          onSetAutoRoutes={onSetAutoRoutes}
-          onCreateEndingForRoute={onCreateEndingForRoute}
-          onUpdateEnding={onUpdateEnding}
-          onDeleteEnding={onDeleteEnding}
-        />
+        {editableGraphNode ? (
+          <GraphNodeEditor
+            projectId={projectId}
+            node={editableGraphNode}
+            canEdit={canEdit}
+            chapterStart={canvasData.chapterStart === true}
+            onSetChapterStart={() => onSetChapterStart(graphNode.nodeId)}
+            onUpdateClipMeta={onUpdateClipMeta}
+            chapterTargets={chapterTargets}
+            onConnectChapter={onConnectChapter}
+            onEditInteractions={onEditInteractions}
+            content={content}
+            locale={locale}
+            onSetOnEnterEffects={onSetOnEnterEffects}
+            onSetAutoRoutes={onSetAutoRoutes}
+            onCreateEndingForRoute={onCreateEndingForRoute}
+            onUpdateEnding={onUpdateEnding}
+            onDeleteEnding={onDeleteEnding}
+          />
+        ) : (
+          <ChapterStartControl
+            active={canvasData.chapterStart === true}
+            canEdit={canEdit}
+            onSet={() => onSetChapterStart(graphNode.nodeId)}
+          />
+        )}
       </div>
 
       <div className="shrink-0 grid gap-2 border-t border-white/[0.06] px-4 py-4">
@@ -140,10 +152,63 @@ export function StoryNodeInspector({
   );
 }
 
+function ChapterStartControl({
+  active,
+  canEdit,
+  onSet,
+}: {
+  active: boolean;
+  canEdit: boolean;
+  onSet: () => void;
+}) {
+  const t = useTranslations("storyStudio.canvas");
+  const body = (
+    <>
+      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#8f65ff]/10 text-[#8f65ff]">
+        <IconFlag className="size-4" stroke={1.7} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          className={
+            active
+              ? "block text-[11px] font-semibold text-[#8f65ff]"
+              : "block text-[11px] font-semibold text-white/82"
+          }
+        >
+          {t(active ? "chapterStart.current" : "chapterStart.set")}
+        </span>
+        <span className="mt-0.5 block text-[9px] leading-4 text-white/34">
+          {t("chapterStart.hint")}
+        </span>
+      </span>
+    </>
+  );
+  if (active) {
+    return (
+      <div className="mt-4 flex w-full items-center gap-3 rounded-[18px] bg-white/[0.045] p-3">
+        {body}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={!canEdit}
+      onClick={onSet}
+      className="group mt-4 flex w-full items-center gap-3 rounded-[18px] bg-white/[0.045] p-3 text-left transition hover:bg-white/[0.075] disabled:pointer-events-none disabled:opacity-40"
+    >
+      {body}
+      <IconArrowRight className="size-4 shrink-0 text-white/22 transition group-hover:translate-x-0.5 group-hover:text-white/48" />
+    </button>
+  );
+}
+
 function GraphNodeEditor({
   projectId,
   node,
   canEdit,
+  chapterStart,
+  onSetChapterStart,
   onUpdateClipMeta,
   chapterTargets,
   onConnectChapter,
@@ -159,6 +224,8 @@ function GraphNodeEditor({
   projectId: string;
   node: StoryClipGraphNode;
   canEdit: boolean;
+  chapterStart: boolean;
+  onSetChapterStart: () => void;
   onUpdateClipMeta: StoryNodeInspectorProps["onUpdateClipMeta"];
   chapterTargets: StoryChapterTarget[];
   onConnectChapter: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
@@ -213,6 +280,8 @@ function GraphNodeEditor({
       </label>
 
       <StoryNodeStoryboardPanel projectId={projectId} nodeId={node.nodeId} canEdit={canEdit} />
+
+      <ChapterStartControl active={chapterStart} canEdit={canEdit} onSet={onSetChapterStart} />
 
       <button
         type="button"

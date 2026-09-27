@@ -174,6 +174,7 @@ import {
   removeStoryEnding,
   replaceStoryNodeInteractions,
   setAutoRoutes,
+  setEntryNode,
   setNodeOnEnterEffects,
   updateChoiceStats,
   updateStoryClipMeta,
@@ -2561,6 +2562,11 @@ function StoryProjectCanvasInner({
                   mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
                 })
               }
+              onSetChapterStart={(nodeId) =>
+                applyGraphMutation((current) => setEntryNode(current, nodeId), {
+                  mergeKey: `chapter-start:${nodeId}`,
+                })
+              }
               canEdit={canMutateCanvasLayout}
               onCloseNode={() => selectCanvasNodeExclusively(null)}
               chapterTargets={workbenchProjection.chapters
@@ -3194,24 +3200,33 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
       <FrostedPanel
         rim={false}
         className={cn(
-          "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+          "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-1.5 rounded-full py-1 pr-2.5 pl-1 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl",
+          data.chapterStart && "shadow-[0_10px_28px_rgba(143,101,255,0.38)]"
         )}
-        style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+        style={{
+          backgroundColor: data.chapterStart ? "#8f65ff" : "rgba(255,255,255,0.14)",
+        }}
       >
         <span
           className={cn(
-            "grid size-6 place-items-center rounded-full",
-            data.kind === "decision" && "text-[#a9ceff]"
+            "grid size-6 shrink-0 place-items-center rounded-full",
+            !data.chapterStart && data.kind === "decision" && "text-[#a9ceff]"
           )}
           style={{
-            backgroundColor:
-              data.kind === "decision" ? "rgba(91,157,255,0.2)" : "rgba(255,255,255,0.22)",
+            backgroundColor: data.chapterStart
+              ? "rgba(255,255,255,0.22)"
+              : data.kind === "decision"
+                ? "rgba(91,157,255,0.2)"
+                : "rgba(255,255,255,0.22)",
           }}
         >
           {data.kind === "clip" ? <IconMovie className="size-3.5" stroke={2} /> : null}
           {data.kind === "decision" ? <IconGitBranch className="size-3.5" stroke={2} /> : null}
         </span>
         {t(`nodeKinds.${data.kind}`)}
+        {data.chapterStart ? (
+          <span className="text-[11px] font-semibold text-white/88">{t("chapterStart.badge")}</span>
+        ) : null}
       </FrostedPanel>
       {data.kind === "clip" || (choiceContext && data.kind !== "decision") ? (
         <div className="absolute top-0 right-0 z-10 flex items-start gap-1.5">

@@ -3418,6 +3418,12 @@
         "clip": "影像鏡頭",
         "decision": "玩家選擇"
       },
+      "chapterStart": {
+        "badge": "起點",
+        "current": "本章起點",
+        "set": "設為本章起點",
+        "hint": "播放呢章時由呢度開始。唔會改變連線。"
+      },
       "ports": {
         "input": "故事流入",
         "completion": "場景的下一步",
@@ -3646,6 +3652,8 @@
         "upload": {
           "prompt": "拖放檔案到這裡，或從本機選擇。",
           "hint": "可上載的檔案類型由目前素材位置決定。",
+          "videoLimit": "影片不超過 2 GB。",
+          "tooLarge": "這條影片超過 2 GB，無法上載。",
           "release": "放開即可上載",
           "action": "上載素材",
           "uploading": "正在上載 · {progress}%",

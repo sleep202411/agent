@@ -41,13 +41,15 @@ export function StoryProjectPlaytest({
       "playtest-runtime",
       projectId,
       source.kind,
-      source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
+      source.kind === "build"
+        ? source.buildId
+        : `${source.chapterId ?? "current-draft"}:${source.sceneId ?? "chapter"}`,
     ],
     queryFn: async () => {
       return source.kind === "draft"
         ? {
             kind: "draft" as const,
-            preview: await getStoryWorkingPreview(projectId, source.chapterId),
+            preview: await getStoryWorkingPreview(projectId, source.chapterId, source.sceneId),
           }
         : {
             kind: "build" as const,

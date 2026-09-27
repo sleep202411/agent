@@ -1,11 +1,8 @@
 /**
- * A draft play-test walks the chapter the author is editing, not the whole
- * story: a chapter owns its own entry scene, so without `chapterId` a
- * multi-chapter work could only ever be walked from its very first scene.
- * Omitting it still walks everything, which is what a single-chapter work wants.
+ * A draft play-test stays inside the chapter being edited.
  *
- * `sceneId` names the scene the walk should enter at — a purely client-side
- * pick; the whole chapter still compiles.
+ * `sceneId` is the node whose play button was pressed. The server compiles
+ * from that node; the chapter entry is not consulted for this start.
  */
 export type StoryProjectPlaytestSource =
   | { kind: "draft"; chapterId?: string; sceneId?: string }

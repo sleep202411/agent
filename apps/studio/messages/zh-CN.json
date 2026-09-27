@@ -3418,6 +3418,12 @@
         "clip": "影像镜头",
         "decision": "玩家选择"
       },
+      "chapterStart": {
+        "badge": "起点",
+        "current": "本章起点",
+        "set": "设为本章起点",
+        "hint": "播放这一章时从这里开始。不会改变连线。"
+      },
       "ports": {
         "input": "故事流入",
         "completion": "场景的下一步",
@@ -3646,6 +3652,8 @@
         "upload": {
           "prompt": "拖拽文件到这里，或从本地选择。",
           "hint": "可上传的文件类型由当前素材位置决定。",
+          "videoLimit": "视频不超过 2 GB。",
+          "tooLarge": "这个视频超过 2 GB，无法上传。",
           "release": "松开即可上传",
           "action": "上传素材",
           "uploading": "正在上传 · {progress}%",

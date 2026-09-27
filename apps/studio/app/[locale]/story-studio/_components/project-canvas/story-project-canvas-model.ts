@@ -74,6 +74,8 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   interactions?: StoryCanvasInteractionData[];
   frameAspectRatio?: "16:9" | "9:16";
   summary?: string;
+  /** This chapter's playback start. Not a connection. */
+  chapterStart?: boolean;
 }
 
 export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;
@@ -114,6 +116,15 @@ const DEFAULT_COPY: StoryCanvasCopy = {
   clip: "Clip",
   decision: "Player decision",
 };
+
+/** The node chapter playback starts from. A saved start wins; otherwise the chapter's first node. */
+export function chapterStartNodeId(content: InteractiveStoryDraftContent): string | null {
+  const nodeIds = content.graph.nodes.map((node) => node.nodeId);
+  if (content.graph.entryNodeId && nodeIds.includes(content.graph.entryNodeId)) {
+    return content.graph.entryNodeId;
+  }
+  return nodeIds[0] ?? null;
+}
 
 /**
  * Stable canvas id for legacy choices attached to a clip. Standalone decision
@@ -184,6 +195,7 @@ export function buildStoryCanvasModel(
     };
   };
   let clipOrdinal = 0;
+  const startNodeId = chapterStartNodeId(content);
 
   const projections: CanvasProjection[] = content.graph.nodes.flatMap<CanvasProjection>(
     (node, index) => {
@@ -202,6 +214,7 @@ export function buildStoryCanvasModel(
               exitKind: "choice",
               summary: localizedDraftText(node.exit.prompt, locale),
               choices: node.exit.choices.map(mapChoice),
+              chapterStart: node.nodeId === startNodeId,
             },
           },
         ];
@@ -250,6 +263,7 @@ export function buildStoryCanvasModel(
               ? (storyAutoFallbackNodeId(node.exit) ?? undefined)
               : storyDecisionCanvasNodeId(node.nodeId),
           frameAspectRatio: frameAspectRatioOf(frameProfile),
+          chapterStart: node.nodeId === startNodeId,
         },
       };
       if (node.exit.kind !== "choice") return [clipProjection];
@@ -281,7 +295,7 @@ export function buildStoryCanvasModel(
   const storyEdges = connections
     .sort((left, right) => left.order - right.order || left.edge.id.localeCompare(right.edge.id))
     .map(({ edge }) => edge);
-  const layoutSeedNodeId = content.graph.entryNodeId;
+  const layoutSeedNodeId = startNodeId;
   const positions = buildLayeredPositions(projections, storyEdges, layoutSeedNodeId);
 
   const edges = storyEdges;

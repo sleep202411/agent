@@ -300,11 +300,11 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
   },
   ai_reference_video: {
     contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
-    // Seedance 2.5 accepts each MP4/MOV reference up to 200 MB. Older models
-    // retain their smaller catalog-driven per-file/combined limits at submit.
-    maxBytes: 200 * MiB,
+    // Library and story-clip uploads accept a 2 GiB master. Generation submit
+    // still enforces each model's own reference-size contract.
+    maxBytes: 2 * 1024 * MiB,
     assetKind: MediaAssetKind.video,
-    ttlSeconds: 900,
+    ttlSeconds: 3600,
     keySegment: 'ai-reference-video',
   },
   // Finished-cut review masters, not generation inputs. Capped at the

@@ -2183,14 +2183,23 @@ export class StoryProjectsService {
       row.content,
       'STORY_DRAFT_CORRUPT',
     );
-    const chapterNodeIds = new Set(stringArray(chapter.nodeIds));
+    const membership = stringArray(chapter.nodeIds);
+    const chapterNodeIds = new Set(membership);
+    const nodes = projectContent.graph.nodes.filter((node) =>
+      chapterNodeIds.has(node.nodeId),
+    );
+    const entryNodeId =
+      chapter.entryNodeId &&
+      nodes.some((node) => node.nodeId === chapter.entryNodeId)
+        ? chapter.entryNodeId
+        : (membership.find((nodeId) =>
+            nodes.some((node) => node.nodeId === nodeId),
+          ) ?? null);
     const content = {
       ...projectContent,
       graph: {
-        entryNodeId: chapter.entryNodeId,
-        nodes: projectContent.graph.nodes.filter((node) =>
-          chapterNodeIds.has(node.nodeId),
-        ),
+        entryNodeId,
+        nodes,
       },
     };
     return {

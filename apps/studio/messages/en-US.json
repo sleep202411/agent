@@ -3418,6 +3418,12 @@
         "clip": "Film clip",
         "decision": "Player decision"
       },
+      "chapterStart": {
+        "badge": "Start",
+        "current": "Start of this chapter",
+        "set": "Set as chapter start",
+        "hint": "Chapter playback begins here. Connections stay unchanged."
+      },
       "ports": {
         "input": "Incoming story flow",
         "completion": "Next step from this scene",
@@ -3646,6 +3652,8 @@
         "upload": {
           "prompt": "Drag a file here, or choose one from your device.",
           "hint": "The current media type determines which files are accepted.",
+          "videoLimit": "Videos can be up to 2 GB.",
+          "tooLarge": "This video is larger than 2 GB.",
           "release": "Release to upload",
           "action": "Upload",
           "uploading": "Uploading · {progress}%",

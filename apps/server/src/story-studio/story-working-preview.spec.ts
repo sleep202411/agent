@@ -460,6 +460,59 @@ describe('StoryWorkingPreviewService', () => {
     expect(tx.storyStoryboardSequence.findMany).toHaveBeenCalledTimes(1);
   });
 
+  it('starts a clicked scene in that chapter even when the chapter entry is empty', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const foreignNodeId = draft.graph.nodes[0]?.nodeId;
+    const chapterNodeIds = draft.graph.nodes
+      .map((node) => node.nodeId)
+      .filter((nodeId) => nodeId !== foreignNodeId);
+    const clickedNodeId = chapterNodeIds[1];
+    if (!foreignNodeId || !clickedNodeId)
+      throw new Error('Fixture nodes missing.');
+    draft.graph.entryNodeId = null;
+    const chapterId = uuidAt(9);
+    const { service, tx } = scopedService(draft);
+    tx.storyChapter.findMany.mockResolvedValue([
+      {
+        id: chapterId,
+        rank: 0,
+        nodeIds: chapterNodeIds,
+        entryNodeId: null,
+      },
+      {
+        id: uuidAt(10),
+        rank: 1,
+        nodeIds: [foreignNodeId],
+        entryNodeId: foreignNodeId,
+      },
+    ]);
+
+    const fromClick = await service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      chapterId,
+      clickedNodeId,
+    );
+    const fromChapter = await service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      chapterId,
+    );
+
+    expect(fromClick.runtime).toMatchObject({
+      graph: { entrySceneId: clickedNodeId },
+    });
+    expect(fromChapter.runtime).toMatchObject({
+      graph: { entrySceneId: chapterNodeIds[0] },
+    });
+    expect(fromClick.runtime).not.toMatchObject({
+      graph: { entrySceneId: foreignNodeId },
+    });
+    expect(fromChapter.runtime).not.toMatchObject({
+      graph: { entrySceneId: foreignNodeId },
+    });
+  });
+
   it('does not block Preview on an unfinished player choice', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const choiceNode = draft.graph.nodes.find(
@@ -764,6 +817,7 @@ describe('StoryWorkingPreviewController', () => {
       USER,
       PROJECT_ID,
       undefined,
+      undefined,
     );
   });
 
@@ -784,6 +838,26 @@ describe('StoryWorkingPreviewController', () => {
       USER,
       PROJECT_ID,
       chapterId,
+      undefined,
+    );
+  });
+
+  it('forwards the scene whose play button was pressed', () => {
+    const service = { getWorkingPreview: jest.fn().mockResolvedValue(null) };
+    const controller = new StoryWorkingPreviewController(service as never);
+    const chapterId = uuidAt(9);
+
+    void controller.getWorkingPreview(
+      USER as never,
+      { projectId: PROJECT_ID },
+      { chapterId, sceneId: 'clip:S01A' },
+    );
+
+    expect(service.getWorkingPreview).toHaveBeenCalledWith(
+      USER,
+      PROJECT_ID,
+      chapterId,
+      'clip:S01A',
     );
   });
 });
