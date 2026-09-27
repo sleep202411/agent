@@ -3,6 +3,23 @@ import { CrewTaskKind } from '@prisma/client';
 
 export type TaskCategory = 'creative' | 'production';
 
+export const DeliveryFieldTypeSchema = z.enum([
+  'document_or_link',
+  'image',
+  'music_asset',
+  'music_final',
+  'video_with_subtitle',
+  'video_without_subtitle',
+  'audio_track',
+  'raw_image_assets',
+  'raw_video_assets',
+  'final_video',
+  'cost_sheet',
+  'review_sheet',
+  'client_signoff',
+  'prompt_or_script',
+]);
+
 export type DeliveryFieldType =
   | 'document_or_link' // 附件文稿或者链接
   | 'image' // 图片

@@ -10,6 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   readTaskDeliveryTemplate,
   validateProfessionalDelivery,
+  validateTaskDelivery,
   TaskDeliveryTemplateInput,
 } from './task-delivery-template';
 import type { z } from 'zod';
@@ -44,6 +45,7 @@ import {
   Prisma,
   ProjectMemberRole,
   ProjectMemberStatus,
+  StoryProductionSpecStatus,
 } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { DocumentStateBuilder } from '../../documents/document-crdt';
@@ -3513,11 +3515,21 @@ export class CrewTasksService {
           );
         }
 
-        const professionalDelivery = validateProfessionalDelivery(
-          await readTaskDeliveryTemplate(tx, taskId),
-          input.professionalDelivery,
-          input.assetNodeIds,
-        );
+        const taskMeta = locked.metadata as Record<string, unknown> | null;
+        const metadataDeliveryFields = Array.isArray(taskMeta?.deliveryFields)
+          ? (taskMeta?.deliveryFields as Array<{
+              type: string;
+              required: boolean;
+            }>)
+          : null;
+
+        const professionalDelivery = validateTaskDelivery({
+          template: await readTaskDeliveryTemplate(tx, taskId),
+          professionalDelivery: input.professionalDelivery,
+          metadataDeliveryFields,
+          assetSlots: input.assetSlots,
+          assetNodeIds: input.assetNodeIds,
+        });
         let canvasVersionId: string | null = null;
         if (locked.canvasDocumentId) {
           const document = await this.materializeCanvasDocumentTx(
@@ -3566,6 +3578,13 @@ export class CrewTasksService {
           userId,
           input.deliveryFolderId,
         );
+        const deliveryPayload =
+          professionalDelivery || input.assetSlots
+            ? {
+                ...(professionalDelivery ?? {}),
+                ...(input.assetSlots ? { assetSlots: input.assetSlots } : {}),
+              }
+            : null;
         const submission = await tx.crewTaskSubmission.create({
           data: {
             taskId,
@@ -3573,7 +3592,9 @@ export class CrewTasksService {
             submittedByUserId: userId,
             note: input.note,
             canvasVersionId,
-            ...(professionalDelivery ? { professionalDelivery } : {}),
+            ...(deliveryPayload
+              ? { professionalDelivery: deliveryPayload }
+              : {}),
             assets: {
               create: [...new Set(input.assetNodeIds)].map((assetNodeId) => ({
                 assetNodeId,
@@ -3742,6 +3763,18 @@ export class CrewTasksService {
             userId,
             latest.assets.map((asset) => asset.assetNodeId),
           );
+
+          const taskMeta = locked.metadata as Record<string, unknown> | null;
+          const clipId =
+            typeof taskMeta?.clipId === 'string' ? taskMeta.clipId : null;
+          if (clipId) {
+            await this.bindDeliveredMediaToClip(tx, {
+              task: locked,
+              submission: latest,
+              userId,
+              clipId,
+            });
+          }
           for (const assignee of locked.assignees.filter(
             (candidate) =>
               candidate.rewardAmountMinor != null &&
@@ -3978,6 +4011,102 @@ export class CrewTasksService {
    * independent changes from other approved task branches; replacing the
    * production JSON snapshot would lose those changes.
    */
+  private async bindDeliveredMediaToClip(
+    tx: Prisma.TransactionClient,
+    params: {
+      task: TaskRow;
+      submission: TaskRow['submissions'][number];
+      userId: string;
+      clipId: string;
+    },
+  ) {
+    const { task, submission, userId, clipId } = params;
+
+    // 1. Resolve StoryStoryboardClip
+    const clip = await tx.storyStoryboardClip.findFirst({
+      where: {
+        id: clipId,
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      include: {
+        project: { select: { id: true, archivedAt: true } },
+      },
+    });
+
+    if (!clip || clip.project.archivedAt != null) {
+      return;
+    }
+
+    // 2. Resolve delivered assets with their MediaAsset details
+    const assetNodeIds = submission.assets.map((a) => a.assetNode.id);
+    if (!assetNodeIds.length) return;
+
+    const assetNodes = await tx.crewAssetNode.findMany({
+      where: { id: { in: assetNodeIds }, status: 'active', kind: 'file' },
+      include: { mediaAsset: true },
+    });
+
+    // 3. Pick primary asset in priority order:
+    // a. asset tagged slot video_with_subtitle
+    // b. asset tagged slot final_video
+    // c. asset tagged slot video_without_subtitle
+    // d. first asset whose MediaAsset.contentType starts with "video/"
+    const assetSlotEntries: Record<string, string> =
+      (submission.professionalDelivery as any)?.assetSlots ?? {};
+
+    const findBySlot = (slotName: string) =>
+      assetNodes.find(
+        (node) =>
+          assetSlotEntries[node.id] === slotName && node.mediaAssetId != null,
+      );
+
+    let chosenAssetNode =
+      findBySlot('video_with_subtitle') ??
+      findBySlot('final_video') ??
+      findBySlot('video_without_subtitle') ??
+      assetNodes.find(
+        (node) =>
+          node.mediaAsset?.contentType?.startsWith('video/') &&
+          node.mediaAssetId != null,
+      );
+
+    if (!chosenAssetNode || !chosenAssetNode.mediaAssetId) return;
+
+    const latest = await tx.storyStoryboardClipMediaVersion.findFirst({
+      where: { storyboardClipId: clip.id },
+      orderBy: { versionNumber: 'desc' },
+      select: { versionNumber: true },
+    });
+
+    const newVersionNumber = (latest?.versionNumber ?? 0) + 1;
+
+    const mediaVersion = await tx.storyStoryboardClipMediaVersion.create({
+      data: {
+        storyProjectId: clip.storyProjectId,
+        storyChapterId: clip.storyChapterId,
+        storyboardClipId: clip.id,
+        versionNumber: newVersionNumber,
+        mediaAssetId: chosenAssetNode.mediaAssetId,
+        sourceFingerprint: clip.sourceFingerprint,
+        generationSnapshot: {
+          version: 1,
+          source: 'crew_task_delivery',
+          taskId: task.id,
+          taskNumber: task.number,
+          submissionId: submission.id,
+          assetNodeId: chosenAssetNode.id,
+        },
+        createdByUserId: userId,
+      },
+      select: { id: true },
+    });
+
+    await tx.storyStoryboardClip.update({
+      where: { id: clip.id },
+      data: { selectedMediaVersionId: mediaVersion.id },
+    });
+  }
+
   private async mergeSubmissionIntoProductionTx(
     tx: Prisma.TransactionClient,
     task: TaskRow,
@@ -5000,6 +5129,10 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
           name: task.deliveryFolder.folder.name,
         }
       : null,
+    deliveryFields:
+      ((task.metadata as Record<string, unknown> | null)?.deliveryFields as
+        | Array<{ type: string; required: boolean }>
+        | undefined) ?? null,
     labels: task.labels
       .map(({ label }) => taskLabelDto(label))
       .sort((a, b) => a.name.localeCompare(b.name)),
