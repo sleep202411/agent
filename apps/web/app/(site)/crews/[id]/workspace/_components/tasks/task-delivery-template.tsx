@@ -302,7 +302,7 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
       ) : null}
       {selectedDefinition ? <DeliveryReferencePrices definition={selectedDefinition} /> : null}
       {task.submissions
-        .filter((submission) => submission.professionalDelivery)
+        .filter((submission) => submission.professionalDelivery?.categoryId)
         .map((submission) => {
           const form = submission.professionalDelivery!;
           return (
