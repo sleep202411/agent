@@ -65,6 +65,7 @@ export interface TaskTemplateItem {
   taskKind: CrewTaskKind;
   priority: 'normal' | 'urgent' | 'critical';
   requiresPlotTree: boolean;
+  deliveryCategoryKey?: string;
 }
 
 export interface TaskTemplateDefinition {
@@ -419,6 +420,7 @@ export const DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE: TaskTemplateDefinition = {
   items: [
     {
       templateKey: 'script',
+      deliveryCategoryKey: 'script_delivery',
       title: '剧本与分支设定',
       category: 'creative',
       roleRequirement: '编剧',
@@ -445,6 +447,7 @@ export const DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE: TaskTemplateDefinition = {
     },
     {
       templateKey: 'character_art',
+      deliveryCategoryKey: 'character_art_delivery',
       title: '互动人物设定',
       category: 'creative',
       roleRequirement: '美术设定-角色',
@@ -459,6 +462,7 @@ export const DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE: TaskTemplateDefinition = {
     },
     {
       templateKey: 'scene_art',
+      deliveryCategoryKey: 'scene_art_delivery',
       title: '场景分支概念图',
       category: 'creative',
       roleRequirement: '美术设定-场景',
@@ -473,6 +477,7 @@ export const DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE: TaskTemplateDefinition = {
     },
     {
       templateKey: 'storyboard',
+      deliveryCategoryKey: 'storyboard_delivery',
       title: '互动分镜设计',
       category: 'creative',
       roleRequirement: '互动分镜师',
@@ -485,6 +490,7 @@ export const DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE: TaskTemplateDefinition = {
     },
     {
       templateKey: 'assembly',
+      deliveryCategoryKey: 'assembly_delivery',
       title: '互动引擎集成与剪辑',
       category: 'production',
       roleRequirement: '互动视频剪辑与打包',
@@ -503,6 +509,7 @@ export const DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE: TaskTemplateDefinition = {
     },
     {
       templateKey: 'qa',
+      deliveryCategoryKey: 'qa_delivery',
       title: '互动体验与全分支测试',
       category: 'production',
       roleRequirement: 'QA测试',

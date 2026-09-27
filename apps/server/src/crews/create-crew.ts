@@ -1,3 +1,4 @@
+import { bindTaskDeliveryCategoryKey } from './production/production-bootstrap';
 import { CrewTaskKind } from '@prisma/client';
 import { availableCrewAssetName } from './assets/asset-name';
 import { ProjectTaskTemplateService } from './templates/project-task-template.service';
@@ -345,6 +346,7 @@ export async function createCrewTx(
               createdByUserId: creatorUserId,
             },
           });
+          await bindTaskDeliveryCategoryKey(tx, shotTask.id, 'shot_delivery');
         }
       }
     }

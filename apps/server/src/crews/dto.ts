@@ -1,7 +1,4 @@
-import {
-  PlotTreeSchema,
-  DeliveryFieldTypeSchema,
-} from './templates/project-task-template.types';
+import { PlotTreeSchema } from './templates/project-task-template.types';
 import { ProfessionalDeliveryInput } from './tasks/task-delivery-template';
 /**
  * Zod schemas for every crew controller body. Co-located in one file
@@ -801,7 +798,6 @@ export type SetTaskDeliveryFolderInput = z.infer<
 export const SubmitCrewTaskSchema = z.object({
   professionalDelivery: ProfessionalDeliveryInput.optional(),
   deliveryFolderId: z.string().uuid().optional(),
-  assetSlots: z.record(z.string().uuid(), DeliveryFieldTypeSchema).optional(),
   note: z.string().trim().max(5000).default(''),
   assetNodeIds: z.array(z.string().uuid()).max(100).default([]),
 });

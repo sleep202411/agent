@@ -10,7 +10,6 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   readTaskDeliveryTemplate,
   validateProfessionalDelivery,
-  validateTaskDelivery,
   TaskDeliveryTemplateInput,
 } from './task-delivery-template';
 import type { z } from 'zod';
@@ -3515,21 +3514,11 @@ export class CrewTasksService {
           );
         }
 
-        const taskMeta = locked.metadata as Record<string, unknown> | null;
-        const metadataDeliveryFields = Array.isArray(taskMeta?.deliveryFields)
-          ? (taskMeta?.deliveryFields as Array<{
-              type: string;
-              required: boolean;
-            }>)
-          : null;
-
-        const professionalDelivery = validateTaskDelivery({
-          template: await readTaskDeliveryTemplate(tx, taskId),
-          professionalDelivery: input.professionalDelivery,
-          metadataDeliveryFields,
-          assetSlots: input.assetSlots,
-          assetNodeIds: input.assetNodeIds,
-        });
+        const professionalDelivery = validateProfessionalDelivery(
+          await readTaskDeliveryTemplate(tx, taskId),
+          input.professionalDelivery,
+          input.assetNodeIds,
+        );
         let canvasVersionId: string | null = null;
         if (locked.canvasDocumentId) {
           const document = await this.materializeCanvasDocumentTx(
@@ -3578,13 +3567,7 @@ export class CrewTasksService {
           userId,
           input.deliveryFolderId,
         );
-        const deliveryPayload =
-          professionalDelivery || input.assetSlots
-            ? {
-                ...(professionalDelivery ?? {}),
-                ...(input.assetSlots ? { assetSlots: input.assetSlots } : {}),
-              }
-            : null;
+        const deliveryPayload = professionalDelivery ?? null;
         const submission = await tx.crewTaskSubmission.create({
           data: {
             taskId,

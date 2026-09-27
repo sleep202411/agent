@@ -10,6 +10,7 @@ type Field = {
   required: boolean;
 };
 type Definition = {
+  categoryKey?: string;
   name: string;
   description: string;
   status: "active" | "archived";
@@ -109,6 +110,11 @@ export function DeliveryCatalogPanel() {
   }
   async function save() {
     if (active.current || !draft) return;
+    const catKey = draft.definition.categoryKey?.trim();
+    if (catKey && !/^[a-z][a-z0-9_]{0,47}$/.test(catKey)) {
+      setError("Category key must be lowercase snake_case.");
+      return;
+    }
     const controller = new AbortController();
     active.current = controller;
     setPending(true);
@@ -213,6 +219,23 @@ export function DeliveryCatalogPanel() {
             {draft.version ? `Edit revision ${draft.version}` : "New category"}
           </h2>
           <fieldset disabled={pending} className="space-y-3">
+            <div className="space-y-1">
+              <label className="block">
+                Category key
+                <input
+                  className={inputClass}
+                  placeholder="e.g. storyboard_delivery"
+                  value={draft.definition.categoryKey ?? ""}
+                  maxLength={48}
+                  onChange={(e) => change({ categoryKey: e.target.value.trim() || undefined })}
+                />
+              </label>
+              {!draft.definition.categoryKey && (
+                <p className="text-xs text-amber-500">
+                  Set a category key to enable task binding for this category.
+                </p>
+              )}
+            </div>
             <label className="block">
               Category name
               <input

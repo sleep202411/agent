@@ -348,9 +348,10 @@ export async function seedCrewProductionTasks(
     };
 
     // 1. 剧本上传 (top-level)
+    const scriptTaskId = randomUUID();
     await tx.crewTask.create({
       data: {
-        id: randomUUID(),
+        id: scriptTaskId,
         crewId: input.crewId,
         number: number++,
         title: titles.script[input.locale],
@@ -362,6 +363,7 @@ export async function seedCrewProductionTasks(
         createdByUserId: input.userId,
       },
     });
+    await bindTaskDeliveryCategoryKey(tx, scriptTaskId, 'script_delivery');
     rank = rank.plus(1024);
 
     // 2. 情节树 (top-level)
@@ -647,3 +649,23 @@ export async function seedCrewTaskKindTemplates(
 }
 
 export { CrewTaskStatus };
+
+export async function bindTaskDeliveryCategoryKey(
+  tx: Prisma.TransactionClient,
+  taskId: string,
+  deliveryCategoryKey?: string,
+) {
+  if (!deliveryCategoryKey) return;
+  const [row] = await tx.$queryRaw<
+    Array<{ category_id: string; version: number }>
+  >`SELECT category_id, version
+    FROM crew_delivery_catalog_revisions
+    WHERE definition->>'status' = 'active'
+      AND definition->>'categoryKey' = ${deliveryCategoryKey}
+    ORDER BY version DESC LIMIT 1`;
+  if (row) {
+    await tx.$executeRaw`INSERT INTO crew_task_delivery_templates(task_id, category_id, category_version)
+      VALUES (${taskId}::uuid, ${row.category_id}::uuid, ${row.version})
+      ON CONFLICT DO NOTHING`;
+  }
+}
