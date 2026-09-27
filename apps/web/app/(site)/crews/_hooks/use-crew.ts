@@ -200,6 +200,7 @@ export {
   useCreateCrewTaskComment,
   useUpdateCrewTaskComment,
   useDeleteCrewTaskComment,
+  useSetTaskDeliveryFolder,
   useSubmitCrewTask,
   useReviewCrewTask,
   useCreateCrewTaskView,

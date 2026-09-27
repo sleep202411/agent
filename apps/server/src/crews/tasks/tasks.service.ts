@@ -57,6 +57,7 @@ import type {
   CreateCrewTaskInput,
   ListCrewTaskTimelineQuery,
   ReviewCrewTaskInput,
+  SetTaskDeliveryFolderInput,
   SubmitCrewTaskInput,
   UpdateCrewTaskInput,
   UpdateCrewTaskCommentInput,
@@ -122,6 +123,11 @@ const taskInclude = {
   },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
+  deliveryFolder: {
+    include: {
+      folder: { select: { id: true, name: true } },
+    },
+  },
   submissions: {
     include: {
       canvasVersion: {
@@ -167,6 +173,11 @@ const taskCardInclude = {
   },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
+  deliveryFolder: {
+    include: {
+      folder: { select: { id: true, name: true } },
+    },
+  },
   dependenciesAsBlocked: {
     where: { blockingTask: { deletedAt: null } },
     include: { blockingTask: { select: taskReferenceSelect } },
@@ -3305,6 +3316,80 @@ export class CrewTasksService {
     return result;
   }
 
+  async setDeliveryFolder(
+    taskId: string,
+    userId: string,
+    input: SetTaskDeliveryFolderInput,
+  ) {
+    const task = await this.requireTask(taskId);
+    const context = await this.authorization.requireMembership(
+      task.crewId,
+      userId,
+    );
+    const isAssignee = task.assignees.some((a) => a.userId === userId);
+    const canSubmit = context.permissions.includes('tasks.submit_assigned');
+    const canManage = context.permissions.includes('tasks.manage');
+    if (!canSubmit || (!isAssignee && !canManage)) {
+      throw new ForbiddenException({
+        message:
+          'Only a task assignee or crew manager can set the delivery folder.',
+      });
+    }
+
+    let resolvedFolderId: string;
+    const updated = await this.authorizedTaskWrite(
+      task.crewId,
+      async (tx) => {
+        const currentTask = await this.requireActiveTaskTx(tx, taskId);
+        const currentContext = await this.authorization.requireMembership(
+          currentTask.crewId,
+          userId,
+          tx,
+        );
+        if (
+          !currentContext.permissions.includes('tasks.submit_assigned') ||
+          (!currentTask.assignees.some((a) => a.userId === userId) &&
+            !currentContext.permissions.includes('tasks.manage'))
+        ) {
+          throw new ForbiddenException({
+            message:
+              'Only a task assignee or crew manager can set the delivery folder.',
+          });
+        }
+      },
+      async (tx) => {
+        const locked = await this.requireActiveTaskTx(tx, taskId);
+        resolvedFolderId = await taskDeliveryFolderTx(
+          tx,
+          this.assetAccess,
+          locked,
+          userId,
+          input.deliveryFolderId ?? undefined,
+        );
+        return tx.crewTask.findUniqueOrThrow({
+          where: { id: taskId },
+          include: taskInclude,
+        });
+      },
+    );
+
+    await this.conversations.broadcastCrewTaskChange(
+      updated.crewId,
+      updated.id,
+      'updated',
+      userId,
+    );
+    if (resolvedFolderId!) {
+      await this.conversations.broadcastCrewAssetChange(
+        updated.crewId,
+        resolvedFolderId,
+        'updated',
+        userId,
+      );
+    }
+    return this.toDtoWithUsage(updated);
+  }
+
   async submit(taskId: string, userId: string, input: SubmitCrewTaskInput) {
     const task = await this.requireTask(taskId);
     const context = await this.authorization.requireMembership(
@@ -4907,6 +4992,12 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
           number: task.episode.number,
           title: task.episode.title,
           status: task.episode.status,
+        }
+      : null,
+    deliveryFolder: task.deliveryFolder?.folder
+      ? {
+          id: task.deliveryFolder.folder.id,
+          name: task.deliveryFolder.folder.name,
         }
       : null,
     labels: task.labels

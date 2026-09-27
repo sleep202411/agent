@@ -786,6 +786,15 @@ export type UpdateCrewTaskCommentInput = z.infer<
   typeof UpdateCrewTaskCommentSchema
 >;
 
+export const SetTaskDeliveryFolderSchema = z
+  .object({
+    deliveryFolderId: z.string().uuid().nullable(),
+  })
+  .strict();
+export type SetTaskDeliveryFolderInput = z.infer<
+  typeof SetTaskDeliveryFolderSchema
+>;
+
 export const SubmitCrewTaskSchema = z.object({
   professionalDelivery: ProfessionalDeliveryInput.optional(),
   deliveryFolderId: z.string().uuid().optional(),

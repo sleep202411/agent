@@ -482,6 +482,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
     expect(result.manifest?.stateDefinitions).toEqual([
       {
         key: 'favorability.lin',
+        name: { 'en-US': 'Lin' },
         valueType: 'number',
         scope: 'session',
         initialValue: 0,

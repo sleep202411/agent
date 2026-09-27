@@ -261,6 +261,7 @@ export function compileStoryExperienceManifest(
     },
     stateDefinitions: (input.release.stateVariables ?? []).map((variable) => ({
       key: variable.key,
+      name: variable.name,
       valueType: variable.valueType,
       scope: 'session' as const,
       initialValue: variable.initialValue,

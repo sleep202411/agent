@@ -5604,7 +5604,10 @@
     "revisionDeadlineLabel": "修改截止時間（可選，{timezone}）",
     "revisionDeadlineHelp": "僅用於要求修改。留空將保留目前截止時間；批准時忽略此欄位。",
     "revisionDeadlineCurrent": "目前截止時間：{date}（{timezone}）",
-    "revisionDeadlineInvalid": "請選擇有效的未來時間，且晚於目前截止時間。"
+    "revisionDeadlineInvalid": "請選擇有效的未來時間，且晚於目前截止時間。",
+    "linkFolder": "連結資料夾",
+    "linkFolderAuto": "自動（提交時建立）",
+    "linkFolderClear": "清除"
   },
   "crewInvitations": {
     "signIn": "登入",

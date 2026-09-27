@@ -45,6 +45,7 @@ import {
   IconEdit,
   IconFile,
   IconFlag3,
+  IconFolder,
   IconGitBranch,
   IconLoader2,
   IconMessage,
@@ -78,6 +79,7 @@ import {
   useCrewEpisodes,
   useCrewTaskProject,
   useUpdateCrewTask,
+  useSetTaskDeliveryFolder,
   useUpdateCrewTaskComment,
   useCrewTaskTimeline,
   type CrewMemberDTO,
@@ -101,6 +103,7 @@ import {
   discardPendingCrewAssetUpload,
   useCrewAssetContext,
   useCrewAssets,
+  useCrewAssetFolders,
 } from "../../_hooks/use-crew-assets";
 import { TaskQuickCreate } from "./task-quick-create";
 import { TaskSelect } from "./task-select";
@@ -139,6 +142,8 @@ export function TaskIssueDetail({
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
   const updateTask = useUpdateCrewTask(task.crewId);
+  const setDeliveryFolderMutation = useSetTaskDeliveryFolder(task.crewId);
+  const assetFolders = useCrewAssetFolders(task.crewId, true);
   const timeline = useCrewTaskTimeline(task.id);
   const project = useCrewTaskProject(task.crewId).data;
   const episodes = useCrewEpisodes(task.crewId).data ?? [];
@@ -696,6 +701,90 @@ export function TaskIssueDetail({
                 </Link>
               </RailRow>
             ) : null}
+            <RailRow icon={<IconFolder className="size-4" />}>
+              <div className="flex w-full min-w-0 items-center justify-between gap-2">
+                <span
+                  className="truncate text-[#8b8d94]"
+                  title={task.deliveryFolder?.name ?? t("linkFolderAuto")}
+                >
+                  {task.deliveryFolder?.name ?? t("linkFolderAuto")}
+                </span>
+                {isOwner || (canSubmitAssigned && canWork) ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={setDeliveryFolderMutation.isPending || assetFolders.isLoading}
+                        className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-[#c5c6cb] hover:bg-white/[0.045] hover:text-white"
+                      >
+                        {t("linkFolder")}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-60 p-2 space-y-2">
+                      <p className="text-xs font-medium text-[#d7d9de]">{t("deliveryFolder")}</p>
+                      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                        <button
+                          type="button"
+                          disabled={setDeliveryFolderMutation.isPending}
+                          onClick={() => {
+                            setDeliveryFolderMutation.mutate(
+                              { taskId: task.id, deliveryFolderId: null },
+                              {
+                                onSuccess: () => toast.success(t("taskUpdated")),
+                                onError: (err) =>
+                                  toast.error(
+                                    err instanceof Error ? err.message : t("actionFailed")
+                                  ),
+                              }
+                            );
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded px-2 py-1.5 text-xs text-left transition-colors hover:bg-white/[0.08]",
+                            !task.deliveryFolder && "bg-white/[0.04] font-medium text-[#e12b32]"
+                          )}
+                        >
+                          <span>{t("linkFolderClear")}</span>
+                          {!task.deliveryFolder ? <IconCheck className="size-3.5" /> : null}
+                        </button>
+                        {(assetFolders.data ?? [])
+                          .filter((folder) =>
+                            ["upload", "edit", "manage"].includes(folder.effectivePermission ?? "")
+                          )
+                          .map((folder) => {
+                            const isSelected = task.deliveryFolder?.id === folder.id;
+                            return (
+                              <button
+                                key={folder.id}
+                                type="button"
+                                disabled={setDeliveryFolderMutation.isPending}
+                                onClick={() => {
+                                  setDeliveryFolderMutation.mutate(
+                                    { taskId: task.id, deliveryFolderId: folder.id },
+                                    {
+                                      onSuccess: () => toast.success(t("taskUpdated")),
+                                      onError: (err) =>
+                                        toast.error(
+                                          err instanceof Error ? err.message : t("actionFailed")
+                                        ),
+                                    }
+                                  );
+                                }}
+                                className={cn(
+                                  "flex w-full items-center justify-between rounded px-2 py-1.5 text-xs text-left transition-colors hover:bg-white/[0.08]",
+                                  isSelected && "bg-white/[0.04] font-medium text-[#e12b32]"
+                                )}
+                              >
+                                <span className="truncate">{folder.name}</span>
+                                {isSelected ? <IconCheck className="size-3.5 shrink-0" /> : null}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : null}
+              </div>
+            </RailRow>
             <RailRow icon={<IconClock className="size-4" />}>
               <span className="text-[#8b8d94]">{new Date(task.updatedAt).toLocaleString()}</span>
             </RailRow>
