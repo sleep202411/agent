@@ -1086,14 +1086,26 @@ export class CrewsService {
       }),
       this.prisma.crewPosition.groupBy({
         by: ['crewId'],
-        where: { crewId: { in: ids }, status: 'open', deletedAt: null },
+        where: {
+          crewId: { in: ids },
+          status: 'open',
+          deletedAt: null,
+          recruitmentVisibility: 'public',
+          moderationStatus: 'ok',
+        },
         _count: { _all: true },
       }),
       // Preview names for the plaza card — newest 3 open positions
       // per crew, ordered by createdAt desc. Cheap to fetch
       // alongside the counts: server-paginates to ≤3 × N rows.
       this.prisma.crewPosition.findMany({
-        where: { crewId: { in: ids }, status: 'open', deletedAt: null },
+        where: {
+          crewId: { in: ids },
+          status: 'open',
+          deletedAt: null,
+          recruitmentVisibility: 'public',
+          moderationStatus: 'ok',
+        },
         orderBy: { createdAt: 'desc' },
         select: { crewId: true, positionType: true, createdAt: true },
       }),

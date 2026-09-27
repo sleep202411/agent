@@ -315,6 +315,9 @@ export interface CrewDTO {
 }
 
 export interface CrewPositionDTO {
+  recruitmentVisibility?: "public" | "private";
+  /** Immutable recruitment target; absent on older clients. */
+  taskId?: string | null;
   id: string;
   crewId: string;
   positionType: string;
@@ -399,6 +402,11 @@ export interface CrewMembershipDTO {
 }
 
 export interface CrewApplicationDTO {
+  interview?: {
+    state: "not_started" | "proposed" | "confirmed" | "completed" | "cancelled";
+    version: number;
+    scheduledAt: string | null;
+  };
   id: string;
   crewId: string;
   positionId: string;

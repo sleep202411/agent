@@ -1,5 +1,8 @@
 "use client";
 
+import { ApplicationAmendmentsPanel } from "./application-amendments-panel";
+import { ApplicationInterviewPanel } from "./application-interview-panel";
+import { ApplicationTermsPanel } from "./application-terms-panel";
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 
 /**
@@ -164,6 +167,11 @@ function ApplicationReviewSession({
     };
   }, []);
   const busy = decision !== null;
+  const [termsReady, setTermsReady] = useState(false);
+  const [interviewReady, setInterviewReady] = useState(false);
+  const termsText = useTranslations("crewTerms");
+  const interviewBlocked =
+    application?.interview?.state === "proposed" || application?.interview?.state === "confirmed";
 
   const handleDecision = (next: "approve" | "reject") => {
     if (
@@ -171,7 +179,8 @@ function ApplicationReviewSession({
       pending.current ||
       application?.status !== "pending" ||
       !position ||
-      loadErrors.length > 0
+      loadErrors.length > 0 ||
+      (next === "approve" && (!termsReady || !interviewReady || interviewBlocked))
     )
       return;
     pending.current = true;
@@ -413,6 +422,40 @@ function ApplicationReviewSession({
           </div>
         ))}
         {body}
+        {application && position && loadErrors.length === 0 && (
+          <ApplicationTermsPanel
+            applicationId={application.id}
+            applicantId={application.applicantId}
+            status={application.status}
+            taskLinked={Boolean(position.taskId)}
+            reviewer
+            onReady={setTermsReady}
+          />
+        )}
+        {application && position && loadErrors.length === 0 && (
+          <ApplicationInterviewPanel
+            applicationId={application.id}
+            applicantId={application.applicantId}
+            reviewer
+            onReady={setInterviewReady}
+            onUpdated={() => {
+              void applicationQuery.refetch();
+            }}
+          />
+        )}
+        {application && position && loadErrors.length === 0 && (
+          <ApplicationAmendmentsPanel
+            applicationId={application.id}
+            applicantId={application.applicantId}
+            crewId={crewId}
+            taskId={position.taskId ?? null}
+            status={application.status}
+            reviewer
+          />
+        )}
+        {interviewBlocked && (
+          <p className="px-4 text-sm text-muted-foreground">{termsText("interviewBlocked")}</p>
+        )}
         <DialogFooter>
           {showActions ? (
             <>
@@ -435,7 +478,13 @@ function ApplicationReviewSession({
                 variant="solid"
                 color="primary"
                 onClick={() => handleDecision("approve")}
-                disabled={busy || loadErrors.length > 0}
+                disabled={
+                  busy ||
+                  loadErrors.length > 0 ||
+                  !termsReady ||
+                  !interviewReady ||
+                  interviewBlocked
+                }
               >
                 {decision === "approve" ? (
                   <IconLoader2 className="size-3.5 animate-spin" />

@@ -140,6 +140,7 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
     void qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(task.id), user.id));
   };
   const current = useTaskDeliveryTemplate(task.id);
+  const requirementsLocked = task.status !== "open" || task.submissions.length > 0;
   type Category = {
     id: string;
     version: number;
@@ -172,11 +173,21 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
   const categories = catalog.data?.pages.flatMap((page) => page.items) ?? [];
   const currentKey = current.data ? `${current.data.categoryId}:${current.data.version}` : "";
   const selectedDefinition =
-    choice === null
+    requirementsLocked || choice === null
       ? current.data?.definition
       : categories.find((row) => `${row.id}:${row.version}` === choice)?.definition;
   async function save() {
-    if (active.current || !draft || !canManage) return;
+    if (
+      active.current ||
+      !draft ||
+      !canManage ||
+      requirementsLocked ||
+      current.isError ||
+      catalog.isError ||
+      current.isPending ||
+      catalog.isPending
+    )
+      return;
     const controller = new AbortController();
     active.current = controller;
     setPending(true);
@@ -236,9 +247,10 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
           </Button>
         </div>
       ) : null}
-      {canManage &&
-      !["submitted", "approved", "cancelled"].includes(task.status) &&
-      (categories.length > 0 || current.data) ? (
+      {canManage && requirementsLocked ? (
+        <p className="text-xs text-muted-foreground">{t("requirementsLocked")}</p>
+      ) : null}
+      {canManage && !requirementsLocked && (categories.length > 0 || current.data) ? (
         <div className="flex flex-wrap items-center gap-2">
           <NativeSelect
             className="min-w-0 flex-1 basis-52"

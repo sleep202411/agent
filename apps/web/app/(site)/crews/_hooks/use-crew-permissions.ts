@@ -21,10 +21,10 @@ function result(input: Omit<UserCrewPermissions, "can">): UserCrewPermissions {
 
 export function useCrewPermissions(crewId: string): UserCrewPermissions {
   const { data: userInfo } = useUserInfo();
-  const { data: membership } = useCrewMembership(crewId);
+  const { data: membership, isError } = useCrewMembership(crewId);
   const realName = userInfo?.nickName || userInfo?.userName || undefined;
 
-  if (!membership) {
+  if (!membership || isError) {
     return result({
       isMember: false,
       isOwner: false,

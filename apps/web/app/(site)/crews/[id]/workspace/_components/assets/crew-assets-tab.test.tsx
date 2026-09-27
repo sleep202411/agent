@@ -120,6 +120,7 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 let legacyProject: { id: string; name: string } | null = null;
 let canLink = true;
+let overviewReadFails = false;
 let permissionReadFails = false;
 let linkFails = false;
 let linkedWorkspaceId: string | null = null;
@@ -143,6 +144,8 @@ function installFetch() {
         body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
       });
       if (method === "GET" && url.endsWith("/production-overview")) {
+        if (overviewReadFails)
+          return jsonResponse({ message: "Overview unavailable" }, { status: 403 });
         return jsonResponse({
           studioProject: legacyProject
             ? { ...legacyProject, workspace: { id: "legacy-workspace", name: "Legacy workspace" } }
@@ -352,6 +355,7 @@ beforeEach(() => {
   cursorRejected = false;
   assetListFails = false;
   canLink = true;
+  overviewReadFails = false;
   linkFails = false;
   linkedWorkspaceId = null;
   legacyProject = null;
@@ -649,7 +653,13 @@ describe("crew asset center", () => {
 
 describe("Link workspace", () => {
   it("links a workspace from the shared header and updates the trigger", async () => {
-    await render();
+    const client = await render();
+    const sourceKey = ["crew", "assets", "crew_1", "studio-media-options", {}, "user-1"];
+    const otherAccount = [...sourceKey.slice(0, -1), "other-user"];
+    const otherCrew = ["crew", "assets", "crew_2", "studio-media-options", {}, "user-1"];
+    for (const key of [sourceKey, otherAccount, otherCrew]) {
+      client.setQueryData(key, { workspaceId: "old-workspace", projects: [], items: [] });
+    }
     const trigger = byText("button", "Link workspace");
     const header = document.querySelector('header[aria-label="Crew header"]');
     expect(header?.contains(trigger)).toBe(true);
@@ -671,10 +681,13 @@ describe("Link workspace", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      expect(trigger.textContent).toBe("Studio");
+      expect(byText("button", "Studio")?.textContent).toBe("Studio");
     });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.body.textContent).toContain("Open in Studio");
+    expect(client.getQueryState(sourceKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(otherAccount)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(otherCrew)?.isInvalidated).toBe(false);
   });
   it("keeps the action disabled without the workspace-link capability", async () => {
     canLink = false;
@@ -684,7 +697,9 @@ describe("Link workspace", () => {
   });
   it("keeps the picker open and reports a rejected link", async () => {
     linkFails = true;
-    await render();
+    const client = await render();
+    const sourceKey = ["crew", "assets", "crew_1", "studio-media-options", {}, "user-1"];
+    client.setQueryData(sourceKey, { workspaceId: "old-workspace", projects: [], items: [] });
     await click(byText("button", "Link workspace"));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
@@ -696,6 +711,7 @@ describe("Link workspace", () => {
       );
     });
     expect(byText("span", "Studio")).toBeTruthy();
+    expect(client.getQueryState(sourceKey)?.isInvalidated).toBe(false);
   });
 });
 
@@ -765,7 +781,9 @@ describe("Legacy project link", () => {
   });
   it("allows explicit legacy disconnect without choosing a workspace", async () => {
     legacyProject = { id: "old-project", name: "Old canvas" };
-    await render();
+    const client = await render();
+    const sourceKey = ["crew", "assets", "crew_1", "studio-media-options", {}, "user-1"];
+    client.setQueryData(sourceKey, { workspaceId: "old-workspace", projects: [], items: [] });
     await click(byText("button", "Project: Old canvas"));
     await vi.waitFor(() => expect(byText('[role="option"]', "Disconnect project")).toBeTruthy());
     await click(byText('[role="option"]', "Disconnect project"));
@@ -773,6 +791,7 @@ describe("Legacy project link", () => {
       expect.objectContaining({ method: "PATCH", body: { workspaceId: null } })
     );
     await vi.waitFor(() => expect(byText("button", "Link workspace")).toBeTruthy());
+    expect(client.getQueryState(sourceKey)?.isInvalidated).toBe(true);
   });
   it("keeps a legacy link visible but disabled for non-admins", async () => {
     legacyProject = { id: "old-project", name: "Old canvas" };
@@ -1135,3 +1154,24 @@ it.each(["trash", "restore"])(
     expect(preview()?.textContent).toContain("concept.png");
   }
 );
+
+it("disables cached workspace authority after an overview refresh fails", async () => {
+  const client = await render();
+  expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(false);
+  const key = ["crew", "production", "crew_1", "overview", "user-1"];
+  client.setQueryDefaults(key, { retry: false });
+  overviewReadFails = true;
+  await act(async () => {
+    await client.refetchQueries({ queryKey: key });
+  });
+  await vi.waitFor(() =>
+    expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(true)
+  );
+  overviewReadFails = false;
+  await act(async () => {
+    await client.refetchQueries({ queryKey: key });
+  });
+  await vi.waitFor(() =>
+    expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(false)
+  );
+});

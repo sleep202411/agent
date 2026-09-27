@@ -1,0 +1,17 @@
+# Task-dispute creation UI
+
+Ric approved this #553 extension on 25 September 2026. Implemented locally on `feat/crew-workflows-current-develop`; no commit, deployment or completed acceptance is claimed.
+
+Task details now include a collapsible Open task dispute control. A signed-in participant selects another recorded participant, supplies a title (1–180 trimmed characters) and message (1–4,000), and optionally selects up to 20 existing submissions. The list derives from the task creator, recorded approver, Crew owner, assignees, and all supplied submission authors/reviewers; it excludes the caller and duplicates. It does not equate task-management permission with participation. The current Crew detail read supplies the owner, and unavailable reads block new creation. The backend rechecks both parties and every reference.
+
+Successful creation links to the existing My cases page. Existing-case conflicts display the server error and an existing-cases link; no automatic second case or discussion message is created. Opening a case does not cancel a task, settle money, change ratings or grant file access. Operations resolution controls remain outside this slice. Private case attachments were subsequently approved and implemented in the [evidence extension](crew-dispute-evidence-ui.md). English, Simplified Chinese and Traditional Chinese copy is included.
+
+Duplicate writes are guarded. Uncertain responses preserve the generated UUID and exact payload for explicit retry while the account/task session remains mounted, including through collapse/reopen and changed task/participant data. The server supports replaying the original successful request before new-case eligibility checks. New submissions recheck the currently displayed participant/evidence choices. Removed evidence requires explicit clearing, and removed respondents require reselection. Switching account or task clears the draft; late responses do not affect the replacement session. No recovery across reloads or navigation is promised.
+
+The new entry point requires access to task details. Former participants can continue existing cases from My cases without Crew access; this slice does not add a separate general-dispute creation surface for former participants unable to open task details. Feedback appeals retain their previously implemented personal-history entry point.
+
+Verification: 85 tests passed across task-dispute creation, private cases and task-detail regression suites. Coverage includes each participant source, unrelated viewers, self-exclusion, title/message constraints, submission selection/limits, removed participants/evidence, conflicts, exact uncertain retries, duplicate clicks, account/task switching and failed Crew reads. The earlier 84-test run overlaps. Full web typecheck, changed-file lint, translation/placeholder parity and diff checks passed after final edits. Full server checking remains skipped at Ric's request. No backend/schema changes.
+
+Isaac/Yuanzheng should verify a real task case from creation through participant discussion and operations review, with and without submission references; test unrelated viewers, Crew ownership changes, both regional deployments and all three languages. Confirm no extra task/file permissions or financial effects. Record revision/environment and result. Operations owner/response targets and regional private attachment verification remain outstanding.
+
+[Backend contract](crew-task-disputes.md) · [Private case UI](crew-private-cases-ui.md).

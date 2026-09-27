@@ -367,10 +367,10 @@ export function useCrewStudioMediaOptions(
   return useQuery({
     queryKey: [...crewKeys.assets(crewId), "studio-media-options", filter ?? {}, user?.id ?? null],
     enabled: enabled && Boolean(user) && Boolean(crewId),
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       crewApi.get<CrewStudioMediaOptionsDTO>(
         `/crews/${encodeURIComponent(crewId)}/assets/studio-media-options`,
-        { query: filter }
+        { query: filter, signal }
       ),
     retry: false,
   });

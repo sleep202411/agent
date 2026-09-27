@@ -1,3 +1,4 @@
+import { createCrewStudioWorkspaceTx } from './create-studio-workspace';
 import {
   ConflictException,
   ForbiddenException,
@@ -84,6 +85,62 @@ export class CrewStudioWorkspaceService {
       where: workspaceLinkableWhere(userId, crewId),
       select: { id: true, name: true },
       orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+  }
+
+  /** Repair missing setup on an existing Crew without replacing an existing link. */
+  async initialize(crewId: string, userId: string) {
+    await this.requireAdmin(crewId, userId);
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-workspace:${crewId}`})::bigint)`;
+      await this.requireAdmin(crewId, userId, tx);
+      const crew = await tx.crew.findUniqueOrThrow({
+        where: { id: crewId, deletedAt: null },
+        select: { name: true, studioWorkspaceId: true, studioProjectId: true },
+      });
+      if (crew.studioWorkspaceId) {
+        const workspace = await tx.workspace.findFirst({
+          where: {
+            id: crew.studioWorkspaceId,
+            deletedAt: null,
+            status: 'active',
+          },
+          select: { id: true, name: true },
+        });
+        if (!workspace)
+          throw new ConflictException(
+            'The linked workspace is unavailable. Review its link before initializing.',
+          );
+        return { studioWorkspace: workspace, created: false };
+      }
+      if (crew.studioProjectId) {
+        throw new ConflictException(
+          'This Crew has a legacy Studio project. Select its workspace explicitly before initializing.',
+        );
+      }
+      const workspace = await createCrewStudioWorkspaceTx(
+        tx,
+        userId,
+        crew.name,
+      );
+      await tx.crew.update({
+        where: { id: crewId },
+        data: { studioWorkspaceId: workspace.id },
+      });
+      await tx.crewProductionActivity.create({
+        data: {
+          crewId,
+          kind: 'properties_changed',
+          createdByUserId: userId,
+          payload: {
+            changes: [
+              { field: 'studio_workspace_id', from: null, to: workspace.id },
+            ],
+          },
+        },
+      });
+      await this.requireAdmin(crewId, userId, tx);
+      return { studioWorkspace: workspace, created: true };
     });
   }
 

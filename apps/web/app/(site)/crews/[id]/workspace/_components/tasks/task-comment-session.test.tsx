@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   nextPage: vi.fn(),
   patch: vi.fn(),
   owner: false,
+  quoteFee: null as string | null,
   canReview: false,
   canSubmitAssigned: true,
   canComment: true,
@@ -104,6 +105,11 @@ vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ displayNameOf: (id: stri
 vi.mock("@/app/(site)/crews/_hooks/use-position-label", () => ({
   useCrewMemberPositionLabel: () => () => "member",
 }));
+vi.mock("@/app/(site)/crews/_components/task-agreed-fee", () => ({
+  TaskAgreedFee: ({ onUse }: { onUse: (currency: "USD", amount: string) => void }) => (
+    <button onClick={() => onUse("USD", state.quoteFee!)}>Use agreed fee</button>
+  ),
+}));
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./delete-task-button", () => ({ DeleteTaskButton: () => null }));
 vi.mock("./task-review-form", () => ({
@@ -139,7 +145,7 @@ async function render(id = "task", account = "alice") {
           } as unknown as CrewTaskDTO
         }
         viewerUserId={account}
-        members={[]}
+        members={state.quoteFee === null ? [] : [{ id: "membership", userId: "member" } as never]}
         displays={new Map()}
         isOwner={state.owner}
         canReview={state.canReview}
@@ -201,6 +207,7 @@ afterEach(async () => {
   state.pageError = false;
   state.fetching = false;
   state.owner = false;
+  state.quoteFee = null;
   state.canReview = false;
   state.canSubmitAssigned = true;
   state.canComment = true;
@@ -759,3 +766,72 @@ it("restarts comment attachment discovery after an invalid cursor", async () => 
   expect(attachmentQuery.refetch).toHaveBeenCalledTimes(1);
   expect(attachmentQuery.fetchNextPage).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["123.45", 12345],
+  ["0.00", null],
+] as const)("uses agreed fee %s in the actual assignment payload", async (fee, minor) => {
+  state.owner = true;
+  state.quoteFee = fee;
+  state.patch.mockResolvedValue(undefined);
+  await render();
+  await act(async () => textButton("unassigned").click());
+  const panel = document.querySelector('[data-slot="popover-content"]')!;
+  await act(async () => (panel.querySelector('[role="checkbox"]') as HTMLButtonElement).click());
+  await act(async () =>
+    [...panel.querySelectorAll("button")].find((b) => b.textContent === "Use agreed fee")!.click()
+  );
+  await act(async () =>
+    [...panel.querySelectorAll("button")].find((b) => b.textContent === "save")!.click()
+  );
+  expect(state.patch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: expect.objectContaining({
+        assignees: [{ userId: "member", currency: "USD", rewardAmountMinor: minor }],
+      }),
+    })
+  );
+});
+
+vi.mock("@/app/(site)/crews/_components/task-extension-panel", () => ({
+  TaskExtensionPanel: () => null,
+}));
+
+vi.mock("@/app/(site)/crews/_components/task-closure-control", () => ({
+  TaskClosureControl: () => null,
+}));
+
+it("shows the recorded closure reason without relabelling generic status changes", async () => {
+  state.items = [
+    {
+      id: "closure-event",
+      kind: "task.updated",
+      actorUserId: "alice",
+      createdAt: new Date().toISOString(),
+      payload: {
+        closureOutcome: "cancelled_without_financial_settlement",
+        closure: { reason: "Project direction changed" },
+      },
+    } as unknown as CrewTaskTimelineItemDTO,
+  ];
+  await render();
+  expect(container.textContent).toContain("activity.reasonedClosure");
+  expect(container.textContent).toContain("Project direction changed");
+  state.items = [
+    {
+      ...state.items[0]!,
+      payload: { changedFields: { status: "cancelled" } },
+    } as CrewTaskTimelineItemDTO,
+  ];
+  await render();
+  expect(container.textContent).not.toContain("activity.reasonedClosure");
+  expect(container.textContent).not.toContain("Project direction changed");
+});
+
+vi.mock("@/app/(site)/crews/_components/task-feedback-panel", () => ({
+  TaskFeedbackPanel: () => null,
+}));
+
+vi.mock("@/app/(site)/crews/_components/task-dispute-control", () => ({
+  TaskDisputeControl: () => null,
+}));

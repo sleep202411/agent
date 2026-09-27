@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -670,7 +671,7 @@ jest.setTimeout(15000);
     messageBroadcast.mockClear();
     contextBroadcast.mockClear();
     let hideOnce = true;
-    const raced = db.$extends({
+    const raced = extendPrismaQueries(db, {
       query: {
         serviceOrder: {
           findFirst({ args, query }) {

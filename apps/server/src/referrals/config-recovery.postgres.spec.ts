@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID, randomInt } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -91,7 +92,7 @@ integration(
       'rolls back %s configuration if its response read fails',
       async (kind) => {
         const before = await snapshot();
-        const failing = db.$extends({
+        const failing = extendPrismaQueries(db, {
           query: {
             referralProgram: {
               findUnique() {

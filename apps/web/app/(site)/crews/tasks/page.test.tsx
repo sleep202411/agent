@@ -186,7 +186,10 @@ it.each(["viewer", null])(
     expect(nav).not.toBeNull();
     expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
       "/zh-CN/crews?view=mine",
+      "/zh-CN/crews/applications",
       "/zh-CN/crews/tasks",
+      "/zh-CN/crews/feedback",
+      "/zh-CN/crews/cases",
       "/zh-CN/crews/income",
       "/zh-CN/crews?view=crews",
       "/zh-CN/crews?view=positions",

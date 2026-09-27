@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+
 import { CrewSectionNavigation } from "../_components/crew-section-navigation";
 
 import { isCrewCursorError } from "../_hooks/api";
@@ -16,12 +19,30 @@ import { CREW_CURRENCY, formatCrewMoney } from "@/src/lib/crew-money";
 import { useMyCrewEarnings } from "../_hooks/use-earnings";
 
 export default function PersonalCrewIncome() {
+  const { user } = useCurrentUser();
+  return <PersonalIncomeSession key={user?.id ?? "anonymous"} />;
+}
+
+function PersonalIncomeSession() {
+  const client = useQueryClient();
+  const [crewId, setCrewId] = useState<string>();
   const t = useTranslations("crewPersonalIncome");
   const locale = useLocale() as Locale;
   const { user, isLoading } = useCurrentUser();
   const { open } = useAuthDialog();
   const currency = CREW_CURRENCY;
-  const feed = useMyCrewEarnings(currency);
+  const feed = useMyCrewEarnings(currency, crewId);
+  function selectCrew(next?: string) {
+    if (next === crewId || !user) return;
+    // Clear the destination cursor before switching, even when returning to cached history.
+    for (const kind of ["crew-personal-earnings", "crew-personal-payouts"]) {
+      void client.resetQueries({
+        queryKey: [kind, user.id, currency, ...(next ? [next] : [])],
+        exact: true,
+      });
+    }
+    setCrewId(next);
+  }
   const pages = user ? feed.data?.pages : undefined;
   const summary = pages?.[0]?.summary;
   const items = pages?.flatMap((page) => page.items) ?? [];
@@ -40,7 +61,10 @@ export default function PersonalCrewIncome() {
           <Link href={localizePath("/referral", locale)} className="text-primary hover:underline">
             {t("referralIncome")}
           </Link>
-          <Link href={localizePath("/profile/earnings", locale)} className="text-primary hover:underline">
+          <Link
+            href={localizePath("/profile/earnings", locale)}
+            className="text-primary hover:underline"
+          >
             {t("workIncome")}
           </Link>
         </nav>
@@ -54,6 +78,14 @@ export default function PersonalCrewIncome() {
           </div>
         ) : (
           <>
+            <div className="flex flex-wrap items-center gap-3" aria-label={t("crewFilter")}>
+              <p>{crewId ? t("selectedCrew", { id: crewId }) : t("allCrews")}</p>
+              {crewId && (
+                <Button variant="outline" onClick={() => selectCrew()}>
+                  {t("allCrews")}
+                </Button>
+              )}
+            </div>
             <div className="flex flex-wrap items-end gap-3">
               <div className="space-y-1 text-sm">
                 <p className="text-muted-foreground">{t("currency")}</p>
@@ -119,6 +151,15 @@ export default function PersonalCrewIncome() {
                           {item.description && (
                             <p className="text-muted-foreground">{item.description}</p>
                           )}
+                          {!crewId && (
+                            <Button
+                              variant="outline"
+                              disabled={feed.isError}
+                              onClick={() => selectCrew(item.crewId)}
+                            >
+                              {t("showCrew")}
+                            </Button>
+                          )}
                           <details className="mt-1 text-xs text-muted-foreground">
                             <summary>{t("references")}</summary>
                             <p>
@@ -158,7 +199,14 @@ export default function PersonalCrewIncome() {
             )}
           </>
         )}
-        {user && !isLoading && <PayoutHistory currency={currency} />}
+        {user && !isLoading && (
+          <PayoutHistory
+            key={crewId ?? "all"}
+            currency={currency}
+            crewId={crewId}
+            onCrewFilter={selectCrew}
+          />
+        )}
       </div>
     </main>
   );

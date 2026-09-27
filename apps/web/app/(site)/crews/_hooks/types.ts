@@ -115,6 +115,8 @@ export interface SalaryInput {
 }
 
 export interface CreatePositionInput {
+  taskId?: string;
+  recruitmentVisibility?: "public" | "private";
   positionType: string;
   description: string;
   targetCount: number;
@@ -132,7 +134,9 @@ export interface CreatePositionInput {
   closeDate?: string | null;
 }
 
-export interface UpdatePositionInput extends Partial<CreatePositionInput> {
+export interface UpdatePositionInput extends Partial<
+  Omit<CreatePositionInput, "taskId" | "recruitmentVisibility">
+> {
   status?: "open" | "frozen";
 }
 

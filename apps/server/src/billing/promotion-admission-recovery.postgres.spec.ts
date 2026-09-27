@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -56,7 +57,7 @@ integration('Promotional administration recovery (owned PostgreSQL)', () => {
     await db?.$disconnect();
   });
   it('does not leave usable voucher codes after the response read fails', async () => {
-    const failing = db.$extends({
+    const failing = extendPrismaQueries(db, {
       query: {
         voucher: {
           findMany() {

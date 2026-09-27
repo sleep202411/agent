@@ -300,3 +300,49 @@ describe('PositionsService.update recruitment status', () => {
     },
   );
 });
+
+describe('position discovery search', () => {
+  it('combines search and skill/crew filters with all publication and deadline guards', async () => {
+    const f = build();
+    f.crewPosition.findMany.mockResolvedValue([]);
+    f.crewPosition.count.mockResolvedValue(0);
+    await f.service.listPublic(
+      ListPublicPositionsQuerySchema.parse({
+        q: 'North',
+        crewId: 'crew-1',
+        skill: 'storyboard',
+      }),
+    );
+    const { where } = f.crewPosition.findMany.mock.calls[0][0];
+    expect(where).toMatchObject({
+      crewId: 'crew-1',
+      requiredSkills: { has: 'storyboard' },
+      status: 'open',
+      moderationStatus: 'ok',
+      crew: {
+        listingStatus: 'listed',
+        deletedAt: null,
+        moderationStatus: 'ok',
+      },
+    });
+    expect(where.AND).toEqual(
+      expect.arrayContaining([
+        {
+          OR: expect.arrayContaining([
+            { crew: { name: { contains: 'North', mode: 'insensitive' } } },
+          ]) as unknown,
+        },
+      ]),
+    );
+    expect(where.OR).toEqual(expect.arrayContaining([{ closeDate: null }]));
+    expect(f.crewPosition.count).toHaveBeenCalledWith({ where });
+  });
+  it('rejects blank or unbounded search input', () => {
+    expect(ListPublicPositionsQuerySchema.safeParse({ q: '   ' }).success).toBe(
+      false,
+    );
+    expect(
+      ListPublicPositionsQuerySchema.safeParse({ q: 'x'.repeat(121) }).success,
+    ).toBe(false);
+  });
+});

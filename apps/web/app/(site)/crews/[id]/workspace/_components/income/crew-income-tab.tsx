@@ -1,5 +1,7 @@
 "use client";
 
+import { AmendmentFinancePanel } from "@/app/(site)/crews/_components/amendment-finance-panel";
+
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 
 import { useLayoutEffect, useRef, useState } from "react";
@@ -263,6 +265,8 @@ function IncomeSession({
         </nav>
       </header>
 
+      {canApproveEarning && <AmendmentFinancePanel crewId={crewId} />}
+
       {view === "earnings" ? (
         <EarningsLedger
           crewId={crewId}
@@ -392,9 +396,9 @@ function EarningsLedger({
         <Metric
           label={t("metrics.confirmedAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={summary?.byStatus.posted.amountMinor ?? "0"}
+            <SummaryMoney
+              value={summary?.byStatus?.posted?.amountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -402,9 +406,9 @@ function EarningsLedger({
         <Metric
           label={t("metrics.pendingAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={summary?.byStatus.pending.amountMinor ?? "0"}
+            <SummaryMoney
+              value={summary?.byStatus?.pending?.amountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -412,9 +416,9 @@ function EarningsLedger({
         <Metric
           label={t("metrics.monthAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={summary?.postedThisMonthAmountMinor ?? "0"}
+            <SummaryMoney
+              value={summary?.postedThisMonthAmountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -554,9 +558,9 @@ function PayoutLedger({
         <Metric
           label={t("metrics.availableAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={query.summary?.availableAmountMinor ?? "0"}
+            <SummaryMoney
+              value={query.summary?.availableAmountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -564,9 +568,9 @@ function PayoutLedger({
         <Metric
           label={t("metrics.reservedAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={query.summary?.reservedAmountMinor ?? "0"}
+            <SummaryMoney
+              value={query.summary?.reservedAmountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -574,9 +578,9 @@ function PayoutLedger({
         <Metric
           label={t("metrics.paidAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={query.summary?.paidAmountMinor ?? "0"}
+            <SummaryMoney
+              value={query.summary?.paidAmountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -1627,6 +1631,23 @@ function SourceIcon({ source }: { source: CrewEarningSourceType }) {
             ? IconReceipt2
             : IconGift;
   return <Icon className="size-3 shrink-0" />;
+}
+
+/** Never present an absent, malformed or failed financial snapshot as a zero balance. */
+function SummaryMoney({
+  value,
+  failed,
+  locale,
+}: {
+  value: unknown;
+  failed: boolean;
+  locale: string;
+}) {
+  const t = useTranslations("crewIncome");
+  if (failed || typeof value !== "string" || !/^-?\d+$/.test(value)) {
+    return <span className="text-sm text-muted-foreground">{t("metrics.unavailable")}</span>;
+  }
+  return <MoneyAmount currency={CREW_CURRENCY} value={value} locale={locale} />;
 }
 
 function MoneyAmount({

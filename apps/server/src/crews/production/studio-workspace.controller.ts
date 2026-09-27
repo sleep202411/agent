@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentUser, type AuthUser } from '../../auth';
 import { parseIdParam } from '../../common/params';
@@ -13,6 +13,11 @@ export class CrewStudioWorkspaceController {
   @Get('studio-workspace-options')
   options(@Param('crewId') id: string, @CurrentUser() user: AuthUser) {
     return this.workspaces.options(parseIdParam(id, 'crewId'), user.userId);
+  }
+
+  @Post('studio-workspace/initialize')
+  initialize(@Param('crewId') id: string, @CurrentUser() user: AuthUser) {
+    return this.workspaces.initialize(parseIdParam(id, 'crewId'), user.userId);
   }
 
   @Patch('studio-workspace')

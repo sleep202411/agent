@@ -21,7 +21,9 @@ export const ListCrewPayoutsQuerySchema = z.object({
 });
 export const ListMyCrewPayoutsQuerySchema = ListCrewPayoutsQuerySchema.omit({
   scope: true,
-}).strict();
+})
+  .extend({ crewId: z.string().trim().min(1).max(128).optional() })
+  .strict();
 export type ListMyCrewPayoutsQuery = z.infer<
   typeof ListMyCrewPayoutsQuerySchema
 >;

@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import Page from "./page";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { CrewApiError } from "../_hooks/api";
 vi.mock("./payout-history", () => ({
   PayoutHistory: ({ currency }: { currency: string }) => {
@@ -35,8 +36,10 @@ vi.mock("../_hooks/use-earnings", () => ({
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
+let client: QueryClient;
 let container: HTMLDivElement;
 beforeEach(() => {
+  client = new QueryClient();
   state.user = { id: "alice" };
   state.locale = "en-US";
   state.feed = {
@@ -77,8 +80,18 @@ beforeEach(() => {
   container = document.createElement("div");
   root = createRoot(container);
 });
-afterEach(() => act(() => root.unmount()));
-const render = () => act(() => root.render(<Page />));
+afterEach(() => {
+  act(() => root.unmount());
+  client.clear();
+});
+const render = () =>
+  act(() =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Page />
+      </QueryClientProvider>
+    )
+  );
 it("uses full server totals, separates pending amounts and requests the next page", () => {
   render();
   expect(container.textContent).toContain("USD 900.00");
@@ -153,7 +166,10 @@ it.each(["alice", null])(
     expect(nav).not.toBeNull();
     expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
       "/en-US/crews?view=mine",
+      "/en-US/crews/applications",
       "/en-US/crews/tasks",
+      "/en-US/crews/feedback",
+      "/en-US/crews/cases",
       "/en-US/crews/income",
       "/en-US/crews?view=crews",
       "/en-US/crews?view=positions",

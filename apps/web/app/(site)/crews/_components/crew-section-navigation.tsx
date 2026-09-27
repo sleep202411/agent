@@ -9,11 +9,19 @@ import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
 
 type LobbyView = "mine" | "crews" | "positions";
-type CrewSection = LobbyView | "tasks" | "income";
+type CrewSection = LobbyView | "tasks" | "income" | "applications" | "feedback" | "cases";
 
 const sections = [
   { id: "mine", label: "myCrewsTitle", icon: IconUsers, href: "/crews?view=mine" },
+  {
+    id: "applications",
+    label: "myApplicationsTab",
+    icon: IconBriefcase,
+    href: "/crews/applications",
+  },
   { id: "tasks", label: "myTasksTab", icon: IconListCheck, href: "/crews/tasks" },
+  { id: "feedback", label: "myFeedbackTab", icon: IconListCheck, href: "/crews/feedback" },
+  { id: "cases", label: "myCasesTab", icon: IconListCheck, href: "/crews/cases" },
   { id: "income", label: "myIncomeTab", icon: IconCoins, href: "/crews/income" },
   { id: "crews", label: "allCrewsTitle", icon: IconUsers, href: "/crews?view=crews" },
   { id: "positions", label: "allPositionsTab", icon: IconBriefcase, href: "/crews?view=positions" },

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,7 +30,18 @@ interface LinkStudioMediaDialogProps {
   bindNodeId?: string | null;
 }
 
-export function LinkStudioMediaDialog({
+export function LinkStudioMediaDialog(props: LinkStudioMediaDialogProps) {
+  const { user } = useCurrentUser();
+  if (!props.open || !user) return null;
+  return (
+    <StudioMediaSession
+      key={JSON.stringify([user.id, props.crewId, props.parentId, props.bindNodeId])}
+      {...props}
+    />
+  );
+}
+
+function StudioMediaSession({
   open,
   onOpenChange,
   crewId,
@@ -48,16 +60,34 @@ export function LinkStudioMediaDialog({
   const options = useCrewStudioMediaOptions(crewId, open, filter);
   const pull = useLinkCrewStudioMedia(crewId);
   const setLink = useSetCrewAssetStudioLink(crewId);
-  const pending = pull.isPending || setLink.isPending;
+  const [saving, setSaving] = useState(false);
+  const busy = useRef(false);
+  const active = useRef(true);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  const pending = saving || pull.isPending || setLink.isPending;
+  const ready =
+    options.isSuccess &&
+    !options.isFetching &&
+    !options.isError &&
+    Boolean(options.data?.workspaceId);
+  const selectionValid =
+    selected.size > 0 &&
+    [...selected].every((id) => options.data?.items.some((item) => item.id === id));
 
   const close = () => {
-    if (pending) return;
+    if (busy.current || pending) return;
     setSelected(new Set());
     setProjectKey("");
     onOpenChange(false);
   };
 
   const toggle = (id: string) => {
+    if (busy.current || pending || !ready) return;
     setSelected((current) => {
       if (bind) return new Set([id]);
       const next = new Set(current);
@@ -69,7 +99,9 @@ export function LinkStudioMediaDialog({
 
   const submit = async () => {
     const mediaAssetIds = [...selected];
-    if (mediaAssetIds.length === 0) return;
+    if (!active.current || busy.current || pending || !ready || !selectionValid) return;
+    busy.current = true;
+    setSaving(true);
     const projectId = filter?.projectId ?? null;
     const storyProjectId = filter?.storyProjectId ?? null;
     try {
@@ -80,6 +112,7 @@ export function LinkStudioMediaDialog({
           projectId,
           storyProjectId,
         });
+        if (!active.current) return;
         toast.success(t("bindStudioSaved"));
       } else {
         const result = await pull.mutateAsync({
@@ -88,11 +121,16 @@ export function LinkStudioMediaDialog({
           projectId,
           storyProjectId,
         });
+        if (!active.current) return;
         toast.success(t("linkStudioAdded", { count: result.items.length }));
       }
-      close();
+      onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error && error.message ? error.message : t("operationFailed"));
+      if (active.current)
+        toast.error(error instanceof Error && error.message ? error.message : t("operationFailed"));
+    } finally {
+      busy.current = false;
+      if (active.current) setSaving(false);
     }
   };
 
@@ -122,7 +160,12 @@ export function LinkStudioMediaDialog({
             <>
               <NativeSelect
                 value={projectKey}
-                onChange={setProjectKey}
+                disabled={pending}
+                onChange={(value) => {
+                  if (busy.current || pending) return;
+                  setProjectKey(value);
+                  setSelected(new Set());
+                }}
                 aria-label={t("linkStudioAllProjects")}
                 className="h-9 w-full"
               >
@@ -148,6 +191,7 @@ export function LinkStudioMediaDialog({
                           <input
                             type={bind ? "radio" : "checkbox"}
                             checked={checked}
+                            disabled={pending || !ready}
                             onChange={() => toggle(item.id)}
                             className="size-3.5 accent-primary"
                           />
@@ -181,7 +225,7 @@ export function LinkStudioMediaDialog({
           </Button>
           <Button
             type="button"
-            disabled={pending || selected.size === 0 || workspaceMissing}
+            disabled={pending || !ready || !selectionValid}
             loading={pending}
             onClick={() => void submit()}
           >

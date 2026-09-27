@@ -319,6 +319,28 @@ it.each(["create", "update", "submit", "review"] as const)(
   }
 );
 
+it("forwards an explicit revision deadline with the reviewed submission", async () => {
+  const current = mount(() => useReviewCrewTask("crew-1"));
+  vi.mocked(crewApi.post).mockResolvedValue({ id: "task-1", crewId: "crew-1", version: 2 });
+  await act(async () => {
+    await current().mutateAsync({
+      taskId: "task-1",
+      expectedSubmissionId: "submission-1",
+      decision: "request_revision",
+      note: "Please revise the ending",
+      revisionDueAt: "2099-05-02T02:30:00.000Z",
+    });
+  });
+  expect(crewApi.post).toHaveBeenCalledWith("/crew-tasks/task-1/review", {
+    body: {
+      decision: "request_revision",
+      note: "Please revise the ending",
+      expectedSubmissionId: "submission-1",
+      revisionDueAt: "2099-05-02T02:30:00.000Z",
+    },
+  });
+});
+
 describe("Crew lifecycle task-centre refresh", () => {
   it.each(["rename", "delete", "remove", "permissions", "transfer", "accept"])(
     "refreshes task-centre results after %s succeeds",

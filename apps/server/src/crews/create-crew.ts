@@ -1,11 +1,10 @@
+import { createCrewStudioWorkspaceTx } from './production/create-studio-workspace';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   CrewMembershipStatus,
   CrewProductionKind,
   Prisma,
-  WorkspaceMemberRole,
-  WorkspaceMemberStatus,
 } from '@prisma/client';
 import type { ConversationsService } from '../conversations/conversations.service';
 import type { CreateCrewInput } from './dto';
@@ -187,21 +186,11 @@ async function resolveStudioWorkspaceId(
     );
   }
   if (input.createStudioWorkspace) {
-    const created = await tx.workspace.create({
-      data: {
-        name: input.createStudioWorkspace.name,
-        ownerUserId: userId,
-        createdById: userId,
-      },
-    });
-    await tx.workspaceMember.create({
-      data: {
-        workspaceId: created.id,
-        userId,
-        role: WorkspaceMemberRole.owner,
-        status: WorkspaceMemberStatus.active,
-      },
-    });
+    const created = await createCrewStudioWorkspaceTx(
+      tx,
+      userId,
+      input.createStudioWorkspace.name,
+    );
     return created.id;
   }
   if (!input.studioWorkspaceId) return null;

@@ -4,6 +4,7 @@ import { IconCheck, IconClipboardCheck } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useReviewCrewTask, type CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
@@ -31,6 +32,27 @@ function ReviewSession({ task, onReviewed }: Props) {
   const t = useTranslations("crewTasks");
   const review = useReviewCrewTask(task.crewId);
   const [reviewNote, setReviewNote] = useState("");
+  const [deadline, setDeadline] = useState("");
+  const [validationTime, setValidationTime] = useState(() => Date.now());
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const validDeadline = (now = validationTime) => {
+    if (!deadline) return true;
+    const date = new Date(deadline);
+    const local =
+      [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0"),
+      ].join("-") +
+      "T" +
+      [date.getHours(), date.getMinutes()].map((n) => String(n).padStart(2, "0")).join(":");
+    return (
+      local === deadline &&
+      Number.isFinite(date.getTime()) &&
+      date.getTime() > now &&
+      (!task.dueAt || date.getTime() > new Date(task.dueAt).getTime())
+    );
+  };
   const revisionLimitReached =
     task.revisionLimit != null && task.revisionRoundsUsed >= task.revisionLimit;
   const alive = useRef(true);
@@ -45,6 +67,11 @@ function ReviewSession({ task, onReviewed }: Props) {
   const decide = async (decision: "approve" | "request_revision") => {
     if (!submissionId || !alive.current || pending.current || task.status !== "submitted") return;
     if (decision === "request_revision" && (revisionLimitReached || !reviewNote.trim())) return;
+    if (decision === "request_revision" && !validDeadline(Date.now())) {
+      setValidationTime(Date.now());
+      toast.error(t("revisionDeadlineInvalid"));
+      return;
+    }
     pending.current = true;
     setSaving(true);
     try {
@@ -53,10 +80,14 @@ function ReviewSession({ task, onReviewed }: Props) {
         expectedSubmissionId: submissionId,
         decision,
         note: reviewNote,
+        ...(decision === "request_revision" && deadline
+          ? { revisionDueAt: new Date(deadline).toISOString() }
+          : {}),
       });
       if (!alive.current) return;
       toast.success(decision === "approve" ? t("approved") : t("revisionRequested"));
       setReviewNote("");
+      setDeadline("");
       onReviewed(decision);
     } catch (error) {
       if (alive.current) toast.error(error instanceof Error ? error.message : t("actionFailed"));
@@ -83,6 +114,30 @@ function ReviewSession({ task, onReviewed }: Props) {
       <p className={cn("mt-2 text-[9px] text-[#686e79]", revisionLimitReached && "text-amber-300")}>
         {revisionLimitReached ? t("revisionLimitReached") : t("revisionInstructionsRequired")}
       </p>
+      <div className="mt-3 space-y-2 text-sm">
+        <label className="block">
+          {t("revisionDeadlineLabel", { timezone })}
+          <Input
+            type="datetime-local"
+            value={deadline}
+            disabled={saving}
+            onChange={(event) => {
+              setDeadline(event.target.value);
+              setValidationTime(Date.now());
+            }}
+          />
+        </label>
+        <p className="text-muted-foreground">{t("revisionDeadlineHelp")}</p>
+        {task.dueAt && (
+          <p>
+            {t("revisionDeadlineCurrent", {
+              date: new Date(task.dueAt).toLocaleString(),
+              timezone,
+            })}
+          </p>
+        )}
+        {deadline && !validDeadline() && <p role="alert">{t("revisionDeadlineInvalid")}</p>}
+      </div>
       <div className="mt-3 flex justify-end gap-2">
         <Button
           size="sm"

@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -148,7 +149,7 @@ integration('Workspace wallet administrator writes (owned PostgreSQL)', () => {
       if (existing)
         await service().createAdminWorkspaceWalletCredit(adminId, input());
       const before = await snapshot();
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           walletLedgerEntry: {
             create({ args, query }) {
@@ -175,7 +176,7 @@ integration('Workspace wallet administrator writes (owned PostgreSQL)', () => {
       },
     });
     const before = await snapshot();
-    const failing = db.$extends({
+    const failing = extendPrismaQueries(db, {
       query: {
         walletLedgerEntry: {
           create({ args, query }) {

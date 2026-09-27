@@ -1,5 +1,11 @@
 "use client";
 
+import { TaskDisputeControl } from "@/app/(site)/crews/_components/task-dispute-control";
+import { TaskFeedbackPanel } from "@/app/(site)/crews/_components/task-feedback-panel";
+import { TaskClosureControl } from "@/app/(site)/crews/_components/task-closure-control";
+import { TaskExtensionPanel } from "@/app/(site)/crews/_components/task-extension-panel";
+import { TaskAgreedFee } from "@/app/(site)/crews/_components/task-agreed-fee";
+
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { TaskCommitments } from "@/app/(site)/crews/_components/accountability/task-commitments";
 
@@ -29,7 +35,6 @@ import Link from "next/link";
 import {
   IconArrowUpRight,
   IconAt,
-  IconBan,
   IconCalendar,
   IconCategory,
   IconCheck,
@@ -44,7 +49,6 @@ import {
   IconLoader2,
   IconMessage,
   IconMovie,
-  IconDots,
   IconPaperclip,
   IconPhoto,
   IconRefresh,
@@ -159,7 +163,6 @@ export function TaskIssueDetail({
     setEditingBrief(true);
   };
   const [subtaskOpen, setSubtaskOpen] = useState(false);
-  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const canShowSubmit = canWork && canSubmitAssigned && ACTIVE_STATUSES.includes(task.status);
   const unresolvedBlockers = task.blockedBy.filter((blocker) => !blocker.resolved);
   const canSubmit = canShowSubmit && unresolvedBlockers.length === 0;
@@ -209,19 +212,6 @@ export function TaskIssueDetail({
     }
   };
 
-  const cancelTask = async () => {
-    const cancelledState = project?.workflowStates.find(
-      (state) => !state.archived && state.systemKey === "cancelled"
-    );
-    if (!cancelledState) {
-      toast.error(t("cancelStateUnavailable"));
-      return;
-    }
-    if (await quickPatch({ workflowStateId: cancelledState.id })) {
-      setCancelConfirmOpen(false);
-    }
-  };
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#101012]">
       <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-white/[0.055] px-5">
@@ -255,39 +245,7 @@ export function TaskIssueDetail({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {isOwner && <DeleteTaskButton task={task} onDeleted={onClose} />}
-          {isOwner && !["submitted", "approved", "cancelled"].includes(task.status) ? (
-            <Popover open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="grid size-8 place-items-center rounded-md text-[#737985] transition-colors hover:bg-white/[0.055] hover:text-[#e1e3e7]"
-                  aria-label={t("moreActions")}
-                >
-                  <IconDots className="size-4" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                className="w-72 gap-3 border border-white/[0.1] bg-[#19191c] p-3 text-[#d8dade] shadow-[0_20px_60px_rgba(0,0,0,.55)]"
-              >
-                <div>
-                  <p className="text-[12px] font-semibold">{t("cancelTask")}</p>
-                  <p className="mt-1 text-[10px] leading-4 text-[#858991]">
-                    {t("cancelTaskDescription")}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  color="destructive"
-                  loading={patching}
-                  icon={<IconBan />}
-                  onClick={() => void cancelTask()}
-                >
-                  {t("confirmCancelTask")}
-                </Button>
-              </PopoverContent>
-            </Popover>
-          ) : null}
+          <TaskClosureControl task={task} canManage={isOwner} />
           {onClose ? (
             <button
               type="button"
@@ -400,6 +358,9 @@ export function TaskIssueDetail({
 
             <TaskCommitments task={task} canManage={isOwner} />
             <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
+            <TaskExtensionPanel task={task} canManage={isOwner} />
+            <TaskFeedbackPanel task={task} />
+            <TaskDisputeControl task={task} />
 
             <div className="mb-5 flex items-center gap-2 border-t border-white/[0.055] pt-7">
               <IconMessage className="size-4 text-[#8c929c]" />
@@ -1711,6 +1672,21 @@ function AssigneesEditor({
                     placeholder={selected?.currency ?? CREW_CURRENCY}
                     className="h-7 text-[10px]"
                   />
+                  {selected && open && (
+                    <TaskAgreedFee
+                      taskId={task.id}
+                      userId={member.userId}
+                      onUse={(currency, fee) =>
+                        setDraft((current) =>
+                          current.map((item) =>
+                            item.userId === member.userId
+                              ? { ...item, currency, rewardAmountMinor: fee === "0.00" ? "" : fee }
+                              : item
+                          )
+                        )
+                      }
+                    />
+                  )}
                 </div>
               );
             })}
@@ -2495,6 +2471,11 @@ function renderMentions(body: string, mentions: Array<{ userId: string; label: s
 
 function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTranslations>) {
   const payload = item.payload;
+  if (
+    item.kind === "task.updated" &&
+    payload.closureOutcome === "cancelled_without_financial_settlement"
+  )
+    return t("activity.reasonedClosure");
   switch (item.kind) {
     case "commitment.accepted":
       return t("activity.commitmentAccepted");
@@ -2537,6 +2518,18 @@ function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTra
 }
 
 function activityNote(item: CrewTaskTimelineItemDTO) {
+  if (
+    item.kind === "task.updated" &&
+    item.payload.closureOutcome === "cancelled_without_financial_settlement"
+  ) {
+    const closure = item.payload.closure;
+    return closure &&
+      typeof closure === "object" &&
+      "reason" in closure &&
+      typeof closure.reason === "string"
+      ? closure.reason
+      : null;
+  }
   if (item.kind.startsWith("commitment."))
     return typeof item.payload.note === "string" ? item.payload.note : null;
   if (

@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -94,7 +95,7 @@ integration(
       });
     it('rolls back creation when password-history storage fails', async () => {
       const data = input();
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           adminPasswordHistory: {
             create() {
@@ -112,7 +113,7 @@ integration(
     });
     it('rolls back creation when role insertion fails', async () => {
       const data = input();
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           adminUserRole: {
             createMany() {
@@ -151,7 +152,7 @@ integration(
     });
     it('rolls back account fields if role replacement fails', async () => {
       const before = await snapshot();
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           adminUserRole: {
             createMany() {
@@ -170,7 +171,7 @@ integration(
     });
     it('rolls back suspension if session revocation fails', async () => {
       const before = await snapshot();
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           adminSession: {
             updateMany() {

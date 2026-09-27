@@ -177,6 +177,7 @@ function build() {
     resolve: jest.fn().mockResolvedValue(authorizationContext),
   };
   const workspacePermissions = {
+    requireWorkspaceRole: jest.fn(),
     requireProjectRole: jest.fn(),
   };
   const access = {

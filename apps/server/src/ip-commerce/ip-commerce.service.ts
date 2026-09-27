@@ -2185,7 +2185,44 @@ export class IpCommerceService {
     const sourceLocale = normalizeLocale(input.sourceLocale);
     const summary = input.summary?.trim() || input.title;
 
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          title: input.title,
+          summary: input.summary?.trim() || null,
+          genreCodes: input.genreCodes,
+          tagCodes: input.tagCodes ?? [],
+          sourceLocale,
+          productionKind: input.productionKind ?? 'series',
+          studioWorkspaceId: input.studioWorkspaceId ?? null,
+          region: input.region ?? null,
+        }),
+      )
+      .digest('hex');
     const ip = await this.prisma.$transaction(async (tx) => {
+      if (input.idempotencyKey) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ip:create:${user.userId}:${input.idempotencyKey}`}, 0))`;
+        const previous = await tx.ip.findUnique({
+          where: {
+            createdById_creationKey: {
+              createdById: user.userId,
+              creationKey: input.idempotencyKey,
+            },
+          },
+          include: adminIpInclude,
+        });
+        if (previous) {
+          if (previous.creationFingerprint !== fingerprint)
+            throw new ConflictException(
+              'This creation request key was already used with different inputs.',
+            );
+          if (previous.deletedAt)
+            throw new ConflictException(
+              'The IP created by this request has been deleted.',
+            );
+          return previous;
+        }
+      }
       const created = await tx.ip.create({
         data: {
           channelType: 'ip',
@@ -2194,6 +2231,8 @@ export class IpCommerceService {
           sourceLocale,
           region: input.region ?? null,
           createdById: user.userId,
+          creationKey: input.idempotencyKey ?? null,
+          creationFingerprint: input.idempotencyKey ? fingerprint : null,
           localizations: {
             create: {
               locale: sourceLocale,
@@ -2221,7 +2260,10 @@ export class IpCommerceService {
             socialLinks: [],
             showcaseWorks: [],
             productionTemplateLocale: input.sourceLocale,
-            productionKind: 'series',
+            productionKind: input.productionKind ?? 'series',
+            ...(input.studioWorkspaceId
+              ? { studioWorkspaceId: input.studioWorkspaceId }
+              : { createStudioWorkspace: { name: input.title } }),
           },
           'unlisted',
         );

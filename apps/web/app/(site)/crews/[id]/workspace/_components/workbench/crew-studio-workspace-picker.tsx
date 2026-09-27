@@ -28,7 +28,13 @@ export function CrewStudioWorkspacePicker(props: {
   const { user } = useCurrentUser();
   return (
     <WorkspacePickerSession
-      key={`${props.crewId}:${user?.id}:${props.disabled}`}
+      key={JSON.stringify([
+        props.crewId,
+        user?.id,
+        props.disabled,
+        props.value?.id,
+        props.legacyProject?.id,
+      ])}
       {...props}
       userId={user?.id ?? ""}
     />
@@ -53,6 +59,11 @@ function WorkspacePickerSession({
   const client = useQueryClient();
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmCreate, setConfirmCreate] = useState(false);
+  const [initialized, setInitialized] = useState<Workspace | null>(null);
+  const linkedWorkspace = value ?? initialized;
+  const canInitialize = !disabled && Boolean(userId) && !linkedWorkspace && !legacyProject;
+
   const [error, setError] = useState<string | null>(null);
   const request = useRef<AbortController | null>(null);
   const active = useRef(false);
@@ -72,23 +83,44 @@ function WorkspacePickerSession({
     enabled: open && !disabled && Boolean(userId),
     retry: false,
   });
-  async function select(workspaceId: string | null) {
-    if (!active.current || !userId || request.current || disabled) return;
+  const sourceReady = options.isSuccess && !options.isFetching && !options.isError;
+  async function select(workspaceId: string | null, initialize = false) {
+    if (!active.current || !userId || request.current || disabled || !sourceReady) return;
+    if (workspaceId && !options.data?.some((workspace) => workspace.id === workspaceId)) return;
+    if (initialize && (!canInitialize || !confirmCreate || !sourceReady)) return;
     const controller = new AbortController();
     request.current = controller;
     setSaving(true);
     setError(null);
     try {
-      await crewApi.patch(`/crews/${encodeURIComponent(crewId)}/studio-workspace`, {
-        body: { workspaceId },
-        signal: controller.signal,
+      if (initialize) {
+        const result = await crewApi.post<{ studioWorkspace: Workspace; created: boolean }>(
+          `/crews/${encodeURIComponent(crewId)}/studio-workspace/initialize`,
+          { signal: controller.signal }
+        );
+        if (controller.signal.aborted) return;
+        setInitialized(result.studioWorkspace);
+      } else {
+        await crewApi.patch(`/crews/${encodeURIComponent(crewId)}/studio-workspace`, {
+          body: { workspaceId },
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setInitialized(null);
+      }
+      setConfirmCreate(false);
+      if (controller.signal.aborted) return;
+      await client.invalidateQueries({
+        queryKey: crewKeys.assets(crewId),
+        predicate: (query) => query.queryKey.at(-1) === userId,
       });
+      if (controller.signal.aborted) return;
+      await client.invalidateQueries({ queryKey: ["crew-studio-workspaces", crewId, userId] });
       if (controller.signal.aborted) return;
       await client.invalidateQueries({
         queryKey: [...crewKeys.productionOverview(crewId), userId],
       });
       if (controller.signal.aborted) return;
-      await client.invalidateQueries({ queryKey: ["crew-studio-workspaces", crewId, userId] });
       if (!controller.signal.aborted) setOpen(false);
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : t("failed"));
@@ -104,7 +136,10 @@ function WorkspacePickerSession({
       <Popover
         open={open}
         onOpenChange={(next) => {
-          if (!saving) setOpen(next);
+          if (!saving) {
+            setOpen(next);
+            setConfirmCreate(false);
+          }
         }}
       >
         <PopoverTrigger asChild>
@@ -117,7 +152,8 @@ function WorkspacePickerSession({
             className="max-w-48 text-xs"
           >
             <span className="truncate">
-              {value?.name ?? (legacy ? t("legacyProject", { name: legacy.name }) : t("link"))}
+              {linkedWorkspace?.name ??
+                (legacy ? t("legacyProject", { name: legacy.name }) : t("link"))}
             </span>
           </Button>
         </PopoverTrigger>
@@ -146,26 +182,61 @@ function WorkspacePickerSession({
                 <CommandItem
                   key={workspace.id}
                   value={`${workspace.name} ${workspace.id}`}
-                  disabled={saving}
+                  disabled={saving || !sourceReady}
                   onSelect={() => void select(workspace.id)}
                 >
                   <IconBuilding className="size-4" />
                   <span className="truncate">{workspace.name}</span>
                 </CommandItem>
               ))}
-              {value || legacy ? (
-                <CommandItem disabled={saving} onSelect={() => void select(null)}>
+              {linkedWorkspace || legacy ? (
+                <CommandItem disabled={saving || !sourceReady} onSelect={() => void select(null)}>
                   {legacy ? t("unlinkProject") : t("unlink")}
                 </CommandItem>
               ) : null}
             </CommandList>
           </Command>
+          {canInitialize ? (
+            <div className="mt-3 space-y-2">
+              {confirmCreate ? (
+                <>
+                  <p className="text-xs text-muted-foreground">{t("createDescription")}</p>
+                  <div className="flex gap-2">
+                    <Button
+                      disabled={saving || !sourceReady}
+                      loading={saving}
+                      onClick={() => void select(null, true)}
+                    >
+                      {t("createConfirm")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      color="muted"
+                      disabled={saving}
+                      onClick={() => setConfirmCreate(false)}
+                    >
+                      {t("createCancel")}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Button
+                  variant="outline"
+                  color="muted"
+                  disabled={saving || !sourceReady}
+                  onClick={() => setConfirmCreate(true)}
+                >
+                  {t("create")}
+                </Button>
+              )}
+            </div>
+          ) : null}
         </PopoverContent>
       </Popover>
-      {value ? (
+      {linkedWorkspace ? (
         <a
           className="rounded-md px-2 py-2 text-xs text-muted-foreground hover:text-white"
-          href={`${getStudioHref(locale)}/projects?ws=${encodeURIComponent(value.id)}`}
+          href={`${getStudioHref(locale)}/projects?ws=${encodeURIComponent(linkedWorkspace.id)}`}
         >
           {t("open")}
         </a>

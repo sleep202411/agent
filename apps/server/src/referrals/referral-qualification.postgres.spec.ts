@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, type Prisma } from '@prisma/client';
@@ -458,7 +459,7 @@ integration('Referral qualification admission (owned PostgreSQL)', () => {
   });
   it('rolls commission and attribution back together if reward reversal fails', async () => {
     const { order, attribution } = await prepareRefund();
-    const broken = db.$extends({
+    const broken = extendPrismaQueries(db, {
       query: {
         referralReward: {
           updateMany({ args, query }) {

@@ -11,6 +11,7 @@
  * Hard-soft delete (deletedAt) is ALWAYS blocked while pending
  * applications exist — per spec, owner must process them first.
  */
+import { assertRecruitableTask } from './task-recruitment';
 import {
   BadRequestException,
   ConflictException,
@@ -68,7 +69,12 @@ export class PositionsService {
       deletedAt: null,
       // Admin-taken-down postings are invisible on every public surface.
       moderationStatus: 'ok',
-      ...(canManage ? {} : { status: { not: 'frozen' as const } }),
+      ...(canManage
+        ? {}
+        : {
+            status: { not: 'frozen' as const },
+            recruitmentVisibility: 'public',
+          }),
     } satisfies Prisma.CrewPositionWhereInput;
     if (query.cursor) {
       const cursor = await this.prisma.crewPosition.findFirst({
@@ -139,7 +145,37 @@ export class PositionsService {
   async listPublic(query: ListPublicPositionsQuery) {
     const limit = query.limit;
     const today = new Date(new Date().toISOString().slice(0, 10));
-    const where = {
+    const baseWhere = {
+      recruitmentVisibility: 'public',
+      ...(query.crewId ? { crewId: query.crewId } : {}),
+      ...(query.skill ? { requiredSkills: { has: query.skill } } : {}),
+      ...(query.q
+        ? {
+            AND: [
+              {
+                OR: [
+                  {
+                    description: {
+                      contains: query.q,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  {
+                    positionType: {
+                      contains: query.q,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  {
+                    crew: {
+                      name: { contains: query.q, mode: 'insensitive' as const },
+                    },
+                  },
+                ],
+              },
+            ],
+          }
+        : {}),
       deletedAt: null,
       status: 'open',
       moderationStatus: 'ok',
@@ -161,6 +197,25 @@ export class PositionsService {
         moderationStatus: 'ok',
       },
     } satisfies Prisma.CrewPositionWhereInput;
+    const where: Prisma.CrewPositionWhereInput = {
+      ...baseWhere,
+      AND: [
+        ...(baseWhere.AND ?? []),
+        {
+          OR: [
+            { taskId: null },
+            {
+              task: {
+                deletedAt: null,
+                workflowState: {
+                  semantic: { notIn: ['approved', 'cancelled', 'submitted'] },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
     const direction = query.sort === 'oldest' ? 'asc' : 'desc';
     if (query.cursor) {
       const cursor = await this.prisma.crewPosition.findFirst({
@@ -327,13 +382,31 @@ export class PositionsService {
 
   async create(crewId: string, ownerId: string, input: CreatePositionInput) {
     await this.authorization.require(crewId, ownerId, 'openings.manage');
+    if (input.recruitmentVisibility === 'private' && !input.taskId)
+      throw new BadRequestException(
+        'Private recruitment requires a linked task.',
+      );
     return this.positionWrite(crewId, ownerId, undefined, async (tx) => {
+      if (input.taskId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+        await this.authorization.require(crewId, ownerId, 'tasks.manage', tx);
+        await assertRecruitableTask(tx, crewId, input.taskId);
+        const assigned = await tx.crewTaskAssignee.count({
+          where: { taskId: input.taskId },
+        });
+        if (assigned)
+          throw new ConflictException(
+            'Create task recruitment before assigning work. Existing assignments must retain their agreements.',
+          );
+      }
       assertAllowedCurrency(input.salary?.currency, 'salary.currency');
       const ccy = input.salary?.currency ?? null;
       const row = await tx.crewPosition.create({
         data: {
           id: newCrewDomainId(),
           crewId,
+          taskId: input.taskId ?? null,
+          recruitmentVisibility: input.recruitmentVisibility ?? 'public',
           positionType: input.positionType,
           description: input.description,
           targetCount: input.targetCount,
