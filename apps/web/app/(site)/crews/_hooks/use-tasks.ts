@@ -846,6 +846,38 @@ export function useDeleteCrewTaskComment(taskId: string) {
   });
 }
 
+export function useSetTaskDeliveryFolder(crewId: string) {
+  const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
+    mutationFn: ({
+      taskId,
+      deliveryFolderId,
+    }: {
+      taskId: string;
+      deliveryFolderId: string | null;
+    }) =>
+      crewApi.put<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/delivery-folder`, {
+        body: { deliveryFolderId },
+      }),
+    onSuccess: (task, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.assets(crewId), accountUserId));
+      qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(task.id), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
+    },
+  });
+}
+
 export function useSubmitCrewTask(crewId: string) {
   const qc = useQueryClient();
   const { user } = useCurrentUser();

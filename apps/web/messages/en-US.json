@@ -5604,7 +5604,10 @@
     "revisionDeadlineLabel": "Revision deadline (optional, {timezone})",
     "revisionDeadlineHelp": "Only applies to Request revision. Leave blank to keep the current deadline. Approval ignores this field.",
     "revisionDeadlineCurrent": "Current deadline: {date} ({timezone})",
-    "revisionDeadlineInvalid": "Choose a valid future time later than the current deadline."
+    "revisionDeadlineInvalid": "Choose a valid future time later than the current deadline.",
+    "linkFolder": "Link folder",
+    "linkFolderAuto": "Auto (create on submit)",
+    "linkFolderClear": "Clear"
   },
   "crewInvitations": {
     "signIn": "Sign in",

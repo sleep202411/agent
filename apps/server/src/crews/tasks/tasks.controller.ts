@@ -10,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
 } from '@nestjs/common';
@@ -32,6 +33,8 @@ import {
   type ListCrewTaskTimelineQuery,
   ReviewCrewTaskSchema,
   type ReviewCrewTaskInput,
+  SetTaskDeliveryFolderSchema,
+  type SetTaskDeliveryFolderInput,
   SubmitCrewTaskSchema,
   type SubmitCrewTaskInput,
   UpdateCrewTaskSchema,
@@ -579,6 +582,20 @@ export class CrewTasksController {
     input: z.infer<typeof TaskDeliveryTemplateInput>,
   ) {
     return this.tasks.setDeliveryTemplate(
+      parseIdParam(id, 'taskId'),
+      user.userId,
+      input,
+    );
+  }
+
+  @Put('crew-tasks/:taskId/delivery-folder')
+  setDeliveryFolder(
+    @Param('taskId') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(SetTaskDeliveryFolderSchema))
+    input: SetTaskDeliveryFolderInput,
+  ) {
+    return this.tasks.setDeliveryFolder(
       parseIdParam(id, 'taskId'),
       user.userId,
       input,
