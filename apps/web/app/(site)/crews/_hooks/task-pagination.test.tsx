@@ -123,3 +123,18 @@ it("does not continue cached task pages while the task section is disabled", asy
   await settle();
   expect(view.current().data.map((row) => row.id)).toEqual(["first", "last"]);
 });
+
+it("keeps recruitment filtering on every options page", async () => {
+  vi.mocked(crewApi.get)
+    .mockResolvedValueOnce({ items: [{ id: "first" }], nextCursor: "first" })
+    .mockResolvedValue({ items: [{ id: "last" }], nextCursor: null });
+  mount(() => useCrewTaskOptions("crew", { recruitmentOnly: true }));
+  await settle();
+  await settle();
+  await settle();
+  expect(crewApi.get).toHaveBeenCalledTimes(2);
+  for (const [url, options] of vi.mocked(crewApi.get).mock.calls) {
+    expect(url).toBe("/crews/crew/task-options");
+    expect(options?.query?.recruitmentOnly).toBe("true");
+  }
+});

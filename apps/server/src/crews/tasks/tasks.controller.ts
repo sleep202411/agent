@@ -1,3 +1,4 @@
+import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
 import { TaskDeliveryTemplateInput } from './task-delivery-template';
 import {
   Body,
@@ -83,6 +84,15 @@ export class CrewTasksController {
     private readonly tasks: CrewTasksService,
     private readonly taskDrafts: CrewTaskDraftService,
   ) {}
+
+  @Post('crew-tasks/:taskId/close')
+  close(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(CloseCrewTaskSchema)) body: CloseCrewTaskInput,
+  ) {
+    return this.tasks.close(parseIdParam(taskId, 'taskId'), user.userId, body);
+  }
 
   @Get('crew-task-center')
   taskCenter(
@@ -424,6 +434,24 @@ export class CrewTasksController {
       parseIdParam(crewId, 'crewId'),
       user.userId,
       body,
+    );
+  }
+
+  @Get('crew-tasks/:taskId/recruitment-terms')
+  recruitmentTerms(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Query(
+      new ZodValidationPipe(
+        z.object({ applicantId: z.string().min(1).max(128) }).strict(),
+      ),
+    )
+    query: { applicantId: string },
+  ) {
+    return this.tasks.recruitmentTerms(
+      parseIdParam(taskId, 'taskId'),
+      user.userId,
+      query.applicantId,
     );
   }
 

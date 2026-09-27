@@ -124,6 +124,10 @@ export const ListCrewTaskOptionsQuerySchema = z
     limit: z.coerce.number().int().min(1).max(100).default(30),
     query: z.string().trim().max(180).optional(),
     excludeTaskId: z.string().uuid().optional(),
+    recruitmentOnly: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true')
+      .optional(),
     activeOnly: z
       .enum(['true', 'false'])
       .transform((value) => value === 'true')

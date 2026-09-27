@@ -1,14 +1,26 @@
 import { CrewApiError as CursorApiError } from "@/app/(site)/crews/_hooks/api";
-import { act, type ReactNode } from "react";
+import { act, useEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApplicationReviewDialog } from "./application-review-dialog";
 import en from "@/messages/en-US.json";
 import cn from "@/messages/zh-CN.json";
 import hk from "@/messages/zh-HK.json";
+vi.mock("./application-terms-panel", () => ({
+  ApplicationTermsPanel: ({ onReady }: { onReady: (ready: boolean) => void }) => {
+    const ready = state.termsReady;
+    useEffect(() => {
+      onReady(ready);
+    }, [onReady, ready]);
+    return null;
+  },
+}));
 const messages = { "en-US": en, "zh-CN": cn, "zh-HK": hk };
 const state = vi.hoisted(() => ({
   cursorError: false,
+  termsReady: true,
+  interviewReady: true,
+  interview: "not_started",
   account: "alice",
   locale: "en-US" as "en-US" | "zh-CN" | "zh-HK",
   translate: false,
@@ -60,6 +72,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
           id,
           positionId: "position",
           applicantId: "12",
+          interview: { state: state.interview },
           status: "pending",
           message: "Application " + id,
           createdAt: state.createdAt,
@@ -128,6 +141,9 @@ vi.mock("@/components/ui/dialog", () => {
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  state.termsReady = true;
+  state.interviewReady = true;
+  state.interview = "not_started";
   state.cursorError = false;
   vi.clearAllMocks();
   state.account = "alice";
@@ -339,3 +355,29 @@ it("restarts after the server rejects a continuation cursor", async () => {
   expect(state.positionsRetry).toHaveBeenCalledTimes(1);
   expect(state.nextPage).not.toHaveBeenCalled();
 });
+
+it.each(["terms", "interview", "interview-read"])(
+  "blocks approval for unresolved %s but retains rejection",
+  async (reason) => {
+    state.termsReady = reason !== "terms";
+    state.interviewReady = reason !== "interview-read";
+    state.interview = reason === "interview" ? "confirmed" : "not_started";
+    await render();
+    const buttons = [...container.querySelectorAll("button")];
+    expect(buttons.find((button) => button.textContent === "approve")!.disabled).toBe(true);
+    expect(buttons.find((button) => button.textContent === "reject")!.disabled).toBe(false);
+    if (reason === "interview") expect(container.textContent).toContain("interviewBlocked");
+  }
+);
+
+vi.mock("./application-interview-panel", () => ({
+  ApplicationInterviewPanel: ({ onReady }: { onReady: (ready: boolean) => void }) => {
+    const ready = state.interviewReady;
+    useEffect(() => {
+      onReady(ready);
+    }, [onReady, ready]);
+    return <div>Interview controls</div>;
+  },
+}));
+
+vi.mock("./application-amendments-panel", () => ({ ApplicationAmendmentsPanel: () => null }));

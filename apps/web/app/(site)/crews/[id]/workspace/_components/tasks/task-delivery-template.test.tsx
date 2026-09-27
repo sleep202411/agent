@@ -181,7 +181,7 @@ it("keeps the task version from template selection through refresh and conflict 
                 id: "task",
                 crewId: "crew",
                 version,
-                status: "in_progress",
+                status: "open",
                 submissions: [],
               } as unknown as CrewTaskDTO
             }
@@ -230,4 +230,91 @@ it("keeps the task version from template selection through refresh and conflict 
     expectedVersion: 9,
     category: null,
   });
+});
+
+it.each([
+  "in_progress",
+  "revision_requested",
+  "submitted",
+  "approved",
+  "cancelled",
+  "open-with-submission",
+])("keeps agreed template visible but hides editing for %s", async (status) => {
+  const definition = { name: "Agreed animation", fields: [] };
+  vi.mocked(crewApi.get).mockImplementation(async (url) =>
+    url.includes("delivery-catalog")
+      ? { items: [{ id: "category", version: 1, definition }], nextCursor: null }
+      : { categoryId: "category", version: 1, definition }
+  );
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <TaskDeliveryTemplatePanel
+          canManage
+          task={
+            {
+              id: "task",
+              crewId: "crew",
+              version: 1,
+              status: status === "open-with-submission" ? "open" : status,
+              submissions: status === "open-with-submission" ? [{ id: "submission" }] : [],
+            } as unknown as CrewTaskDTO
+          }
+        />
+      </QueryClientProvider>
+    )
+  );
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(container.textContent).toContain("Agreed animation");
+  expect(container.textContent).toContain("requirementsLocked");
+  expect(container.querySelector("select")).toBeNull();
+  expect(
+    [...container.querySelectorAll("button")].some((button) => button.textContent === "save")
+  ).toBe(false);
+  expect(crewApi.post).not.toHaveBeenCalled();
+});
+it("removes a pending template edit when refreshed task state locks requirements", async () => {
+  vi.mocked(crewApi.get).mockImplementation(async (url) =>
+    url.includes("delivery-catalog")
+      ? {
+          items: [{ id: "category", version: 1, definition: { name: "Animation", fields: [] } }],
+          nextCursor: null,
+        }
+      : null
+  );
+  const render = async (status: string) => {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <TaskDeliveryTemplatePanel
+            canManage
+            task={
+              {
+                id: "task",
+                crewId: "crew",
+                version: 1,
+                status,
+                submissions: [],
+              } as unknown as CrewTaskDTO
+            }
+          />
+        </QueryClientProvider>
+      )
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  };
+  await render("open");
+  await act(async () => {
+    const select = container.querySelector("select")!;
+    select.value = "category:1";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await render("in_progress");
+  expect(container.querySelector("select")).toBeNull();
+  expect(container.textContent).toContain("requirementsLocked");
+  expect(crewApi.post).not.toHaveBeenCalled();
 });

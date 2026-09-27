@@ -132,3 +132,75 @@ it.each([true, false])(
     expect(container.querySelector('[role="alert"]')).toBeNull();
   }
 );
+
+const balances = {
+  confirmedAmountMinor: "9007199254740993123",
+  reservedAmountMinor: "200",
+  paidAmountMinor: "300",
+  availableAmountMinor: "9007199254740992623",
+  byStatus: [],
+};
+function balanceText() {
+  return container.querySelector('section[aria-label="balanceTitle"]')?.textContent ?? "";
+}
+it("shows exact personal balances even without payout records and keeps first-page totals during pagination", async () => {
+  vi.mocked(crewApi.get)
+    .mockResolvedValueOnce({ items: [], nextCursor: "next", summary: balances })
+    .mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      summary: { ...balances, availableAmountMinor: "0" },
+    });
+  mount();
+  await settle();
+  expect(balanceText()).toContain("USD 90,071,992,547,409,931.23");
+  expect(balanceText()).toContain("USD 90,071,992,547,409,926.23");
+  expect(balanceText()).toContain("USD 2.00");
+  expect(balanceText()).toContain("USD 3.00");
+  act(() =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "more")!.click()
+  );
+  await settle();
+  expect(balanceText()).toContain("USD 90,071,992,547,409,926.23");
+});
+it("hides unavailable balances after denial and isolates them across account switches", async () => {
+  vi.mocked(crewApi.get).mockResolvedValue({ items: [], nextCursor: null, summary: balances });
+  const render = mount();
+  await settle();
+  expect(balanceText()).toContain("USD 90,071,992,547,409,931.23");
+  vi.mocked(crewApi.get).mockRejectedValue(new CrewApiError(403, { message: "Denied" }));
+  act(() => container.querySelector("button")!.click());
+  await settle();
+  expect(balanceText()).toContain("balanceUnavailable");
+  expect(balanceText()).not.toContain("USD");
+  session.id = "bob";
+  vi.mocked(crewApi.get).mockImplementation(() => new Promise(() => {}));
+  render();
+  await settle();
+  expect(balanceText()).not.toContain("USD");
+});
+it.each([undefined, "invalid", 42])(
+  "does not turn missing or malformed balances into zero (%s)",
+  async (value) => {
+    vi.mocked(crewApi.get).mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      summary: { ...balances, availableAmountMinor: value },
+    });
+    mount();
+    await settle();
+    expect(balanceText()).toContain("balanceUnavailable");
+    expect(balanceText()).not.toContain("USD");
+  }
+);
+it("renders actual zero and negative balances without clamping", async () => {
+  vi.mocked(crewApi.get).mockResolvedValue({
+    items: [],
+    nextCursor: null,
+    summary: { ...balances, confirmedAmountMinor: "0", availableAmountMinor: "-500" },
+  });
+  mount();
+  await settle();
+  expect(balanceText()).toContain("USD 0.00");
+  expect(balanceText()).toContain("USD -5.00");
+});

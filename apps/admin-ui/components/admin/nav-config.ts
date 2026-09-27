@@ -482,6 +482,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           permission: "crew.manage",
         },
         {
+          href: "/crews/disputes",
+          label: "Cases / 争议 / 爭議",
+          icon: IconChecklist,
+          permission: "crew.manage",
+        },
+        {
           href: "/crews/expenses",
           label: "报销审核",
           icon: IconChecklist,

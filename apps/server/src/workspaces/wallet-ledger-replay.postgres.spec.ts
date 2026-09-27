@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { BillingService } from '../billing/billing.service';
@@ -72,7 +73,7 @@ integration('Wallet ledger replay (owned PostgreSQL)', () => {
       const ready = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const concurrent = db.$extends({
+      const concurrent = extendPrismaQueries(db, {
         query: {
           walletAccount: {
             async createMany({ args, query }) {
@@ -123,7 +124,7 @@ integration('Wallet ledger replay (owned PostgreSQL)', () => {
     const ready = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const concurrent = db.$extends({
+    const concurrent = extendPrismaQueries(db, {
       query: {
         walletAccount: {
           async createMany({ args, query }) {

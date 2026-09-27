@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { assertOutboxTestDatabase } from '../conversations/outbox-test-database';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -131,7 +132,7 @@ suite('notifications against local Postgres', () => {
   });
 
   it('a failed outbox insert rolls back the notification', async () => {
-    const failingDb = db.$extends({
+    const failingDb = extendPrismaQueries(db, {
       query: {
         notificationOutbox: {
           create: () => {

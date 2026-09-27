@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -43,7 +44,7 @@ integration('Copilot document admission (owned PostgreSQL)', () => {
       ),
     });
     // Delay returning actual counts to reproduce concurrent reads before insertion.
-    const delayed = db.$extends({
+    const delayed = extendPrismaQueries(db, {
       query: {
         copilotDocument: {
           async count({ args, query }) {

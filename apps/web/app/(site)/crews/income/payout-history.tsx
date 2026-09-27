@@ -8,43 +8,57 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { formatCrewMoney, type CrewLedgerCurrency } from "@/src/lib/crew-money";
 import { crewApi } from "../_hooks/api";
-import type { CrewPayoutDTO, CrewPayoutStatus } from "../_hooks/types";
+import type { CrewPayoutDTO, CrewPayoutPageDTO } from "../_hooks/types";
 
 interface PersonalPayoutPage {
   items: CrewPayoutDTO[];
   nextCursor: string | null;
-  summary: {
-    byStatus: Array<{
-      status: CrewPayoutStatus;
-      count: number;
-      amountMinor: string;
-      netAmountMinor: string;
-    }>;
-  };
+  summary: CrewPayoutPageDTO["summary"];
 }
-export function usePersonalPayouts(currency: CrewLedgerCurrency) {
+export function usePersonalPayouts(currency: CrewLedgerCurrency, crewId?: string) {
   const { user } = useCurrentUser();
   return useInfiniteQuery({
-    queryKey: ["crew-personal-payouts", user?.id ?? null, currency],
+    queryKey: ["crew-personal-payouts", user?.id ?? null, currency, ...(crewId ? [crewId] : [])],
     enabled: Boolean(user?.id),
     refetchInterval: 60_000,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       crewApi.get<PersonalPayoutPage>("/me/crew-payouts", {
         signal,
-        query: { currency, limit: 50, cursor: pageParam },
+        cache: "no-store",
+        query: { currency, limit: 50, cursor: pageParam, ...(crewId ? { crewId } : {}) },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
 }
-export function PayoutHistory({ currency }: { currency: CrewLedgerCurrency }) {
+export function PayoutHistory({
+  currency,
+  crewId,
+  onCrewFilter,
+}: {
+  currency: CrewLedgerCurrency;
+  crewId?: string;
+  onCrewFilter?: (crewId: string) => void;
+}) {
   const { user } = useCurrentUser();
-  const feed = usePersonalPayouts(currency);
+  const feed = usePersonalPayouts(currency, crewId);
   const t = useTranslations("crewPersonalPayouts");
   const locale = useLocale();
   if (!user) return null;
   const pages = feed.data?.pages;
   const items = pages?.flatMap((page) => page.items) ?? [];
+  const balance = pages?.[0]?.summary;
+  const balanceFields = [
+    ["confirmed", "confirmedAmountMinor"],
+    ["reserved", "reservedAmountMinor"],
+    ["grossPaid", "paidAmountMinor"],
+    ["available", "availableAmountMinor"],
+  ] as const;
+  const hasBalance =
+    !feed.isError &&
+    balanceFields.every(
+      ([, key]) => typeof balance?.[key] === "string" && /^-?\d+$/.test(balance[key])
+    );
   const money = (value: string) => formatCrewMoney(value, locale, currency);
   return (
     <section className="space-y-4" aria-label={t("title")}>
@@ -70,6 +84,24 @@ export function PayoutHistory({ currency }: { currency: CrewLedgerCurrency }) {
           </Button>
         </div>
       )}
+      <section className="space-y-2" aria-label={t("balanceTitle")}>
+        <h3 className="font-semibold">{t("balanceTitle")}</h3>
+        <p className="text-sm text-muted-foreground">{t("balanceDescription")}</p>
+        {hasBalance && balance ? (
+          <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {balanceFields.map(([label, key]) => (
+              <div key={key} className="rounded-lg bg-secondary p-4">
+                <dt>{t(label)}</dt>
+                <dd className="mt-2 break-words text-xl font-semibold tabular-nums">
+                  {money(balance[key])}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : !feed.isPending ? (
+          <p role="status">{t("balanceUnavailable")}</p>
+        ) : null}
+      </section>
       {pages && (
         <dl className="grid gap-4 sm:grid-cols-3">
           {(["pending", "paid", "voided"] as const).map((status) => {
@@ -112,6 +144,15 @@ export function PayoutHistory({ currency }: { currency: CrewLedgerCurrency }) {
               </p>
             )}
             {item.voidReason && <p>{item.voidReason}</p>}
+            {onCrewFilter && !crewId && (
+              <Button
+                variant="outline"
+                disabled={feed.isError}
+                onClick={() => onCrewFilter(item.crewId)}
+              >
+                {t("showCrew")}
+              </Button>
+            )}
             <details className="text-sm">
               <summary>{t("sources")}</summary>
               <p>

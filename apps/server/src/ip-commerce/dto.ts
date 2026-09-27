@@ -345,11 +345,14 @@ export type ListCreatorIpsQuery = z.infer<typeof ListCreatorIpsQuerySchema>;
 
 export const CreateIpDraftSchema = z
   .object({
+    idempotencyKey: z.string().trim().min(1).max(128).optional(),
     title: z.string().trim().min(1).max(80),
     summary: z.string().trim().max(280).optional(),
     genreCodes: GenreCodesSchema,
     tagCodes: TagCodesSchema.default([]),
     sourceLocale: SupportedIpLocaleSchema,
+    productionKind: z.enum(['interactive_film', 'series']).optional(),
+    studioWorkspaceId: z.string().uuid().optional(),
     // ISO-3166 alpha-2 or 'GLOBAL'. Optional; null = unspecified.
     region: z.string().trim().toUpperCase().min(2).max(16).optional(),
   })

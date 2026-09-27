@@ -1,3 +1,4 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
 import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -91,7 +92,7 @@ integration('Administrator reset consistency (owned PostgreSQL)', () => {
     'rolls back %s reset if session revocation fails',
     async (kind) => {
       const before = await snapshot();
-      const failing = db.$extends({
+      const failing = extendPrismaQueries(db, {
         query: {
           adminSession: {
             updateMany() {
