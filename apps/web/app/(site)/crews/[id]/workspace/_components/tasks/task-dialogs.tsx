@@ -24,6 +24,26 @@ import { useTranslations } from "@/src/i18n/i18n";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useCrewAssetFolders, useCrewAssets } from "../../_hooks/use-crew-assets";
 
+function slotKeyFor(type: string): string {
+  const mapping: Record<string, string> = {
+    document_or_link: "slot_document_or_link",
+    image: "slot_image",
+    music_asset: "slot_music_asset",
+    music_final: "slot_music_final",
+    video_with_subtitle: "slot_video_with_subtitle",
+    video_without_subtitle: "slot_video_without_subtitle",
+    audio_track: "slot_audio_track",
+    raw_image_assets: "slot_raw_image_assets",
+    raw_video_assets: "slot_raw_video_assets",
+    final_video: "slot_final_video",
+    cost_sheet: "slot_cost_sheet",
+    review_sheet: "slot_review_sheet",
+    client_signoff: "slot_client_signoff",
+    prompt_or_script: "slot_prompt_or_script",
+  };
+  return mapping[type] ?? type;
+}
+
 export function SubmitTaskDialog({
   open,
   onOpenChange,
@@ -54,6 +74,8 @@ export function SubmitTaskDialog({
   const [deliveryFolderId, setDeliveryFolderId] = useState("");
   const folders = useCrewAssetFolders(crewId, open);
   const [assetIds, setAssetIds] = useState<string[]>([]);
+  const deliveryFields = task?.deliveryFields ?? [];
+  const [assetSlots, setAssetSlots] = useState<Record<string, string>>({});
   const assetQuery = useCrewAssets(
     crewId,
     { source: "recent", sort: "modified", kind: "file" },
@@ -68,6 +90,22 @@ export function SubmitTaskDialog({
         ? typeof answer !== "string" || !answer.trim()
         : !Array.isArray(answer) || !answer.some((id) => assetIds.includes(id));
     }) ?? [];
+
+  const humanizeSlot = (type: string) => {
+    const key = slotKeyFor(type);
+    try {
+      return t(key as any);
+    } catch {
+      return type;
+    }
+  };
+
+  const missingRequiredSlots =
+    deliveryFields.length > 0 && assetIds.length > 0
+      ? deliveryFields
+          .filter((f) => f.required)
+          .filter((f) => !Object.values(assetSlots).includes(f.type))
+      : [];
 
   const [context, setContext] = useState({
     open,
@@ -85,6 +123,7 @@ export function SubmitTaskDialog({
     setSaving(false);
     setNote("");
     setAssetIds([]);
+    setAssetSlots({});
     setAnswers({});
     setDeliveryFolderId("");
   }
@@ -103,6 +142,7 @@ export function SubmitTaskDialog({
       generation.current += 1;
       setNote("");
       setAssetIds([]);
+      setAssetSlots({});
       setAnswers({});
       setDeliveryFolderId("");
     }
@@ -116,17 +156,22 @@ export function SubmitTaskDialog({
       pendingGeneration.current !== null ||
       template.isPending ||
       template.isError ||
-      missingRequiredFields.length > 0
+      missingRequiredFields.length > 0 ||
+      missingRequiredSlots.length > 0
     )
       return;
     const requestGeneration = generation.current;
     pendingGeneration.current = requestGeneration;
     setSaving(true);
     try {
+      const filteredAssetSlots = Object.fromEntries(
+        Object.entries(assetSlots).filter(([id, slot]) => assetIds.includes(id) && Boolean(slot))
+      );
       await submitTask.mutateAsync({
         taskId: task.id,
         note,
         assetNodeIds: assetIds,
+        ...(Object.keys(filteredAssetSlots).length > 0 ? { assetSlots: filteredAssetSlots } : {}),
         ...(template.data
           ? {
               professionalDelivery: {
@@ -261,26 +306,67 @@ export function SubmitTaskDialog({
                   {t("noRecentAssets")}
                 </p>
               ) : (
-                assets.map((asset) => (
-                  <label
-                    key={asset.id}
-                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-xs hover:bg-muted/50"
-                  >
-                    <Checkbox
-                      disabled={saving}
-                      checked={assetIds.includes(asset.id)}
-                      onCheckedChange={() =>
-                        setAssetIds((current) =>
-                          current.includes(asset.id)
-                            ? current.filter((id) => id !== asset.id)
-                            : [...current, asset.id]
-                        )
-                      }
-                    />
-                    <IconFile className="size-3.5 text-muted-foreground" />
-                    <span className="truncate">{asset.name}</span>
-                  </label>
-                ))
+                assets.map((asset) => {
+                  const isChecked = assetIds.includes(asset.id);
+                  return (
+                    <div
+                      key={asset.id}
+                      className="flex flex-col gap-1.5 rounded px-2 py-2 text-xs hover:bg-muted/50"
+                    >
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <Checkbox
+                          disabled={saving}
+                          checked={isChecked}
+                          onCheckedChange={() => {
+                            setAssetIds((current) => {
+                              const exists = current.includes(asset.id);
+                              if (exists) {
+                                setAssetSlots((prev) => {
+                                  const next = { ...prev };
+                                  delete next[asset.id];
+                                  return next;
+                                });
+                                return current.filter((id) => id !== asset.id);
+                              }
+                              return [...current, asset.id];
+                            });
+                          }}
+                        />
+                        <IconFile className="size-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate font-medium">{asset.name}</span>
+                      </label>
+                      {deliveryFields.length > 0 && isChecked ? (
+                        <div className="pl-6 pt-1">
+                          <NativeSelect
+                            size="sm"
+                            aria-label={t("slotLabel")}
+                            disabled={saving}
+                            value={assetSlots[asset.id] ?? ""}
+                            onChange={(val) =>
+                              setAssetSlots((prev) => {
+                                const next = { ...prev };
+                                if (val) {
+                                  next[asset.id] = val;
+                                } else {
+                                  delete next[asset.id];
+                                }
+                                return next;
+                              })
+                            }
+                          >
+                            <NativeSelectOption value="">{t("slotNone")}</NativeSelectOption>
+                            {deliveryFields.map((field) => (
+                              <NativeSelectOption key={field.type} value={field.type}>
+                                {humanizeSlot(field.type)}
+                                {field.required ? " *" : ""}
+                              </NativeSelectOption>
+                            ))}
+                          </NativeSelect>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
@@ -323,6 +409,13 @@ export function SubmitTaskDialog({
               })}
             </p>
           ) : null}
+          {missingRequiredSlots.length > 0 ? (
+            <p role="status" className="text-sm text-destructive">
+              {t("slotRequiredMissing", {
+                slots: missingRequiredSlots.map((f) => humanizeSlot(f.type)).join(", "),
+              })}
+            </p>
+          ) : null}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
@@ -330,7 +423,11 @@ export function SubmitTaskDialog({
           </Button>
           <Button
             disabled={
-              saving || template.isPending || template.isError || missingRequiredFields.length > 0
+              saving ||
+              template.isPending ||
+              template.isError ||
+              missingRequiredFields.length > 0 ||
+              missingRequiredSlots.length > 0
             }
             loading={saving}
             onClick={() => void submit()}
