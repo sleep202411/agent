@@ -5919,7 +5919,11 @@
         "actionFailed": "Payout action failed."
       }
     },
-    "optional": "Optional"
+    "optional": "Optional",
+    "spendSummaryHeading": "Project spend",
+    "spendSummaryTaskRewards": "Task rewards",
+    "spendSummaryReimbursements": "Reimbursements",
+    "spendSummaryTotal": "Total"
   },
   "crewWorkbench": {
     "projectUsage": "Studio project usage",

@@ -1,4 +1,5 @@
-"use client";
+import { useCrewExpensesSummary } from "@/app/(site)/crews/_hooks/use-expenses";
+("use client");
 
 import { AmendmentFinancePanel } from "@/app/(site)/crews/_components/amendment-finance-panel";
 
@@ -264,6 +265,8 @@ function IncomeSession({
           </ViewTab>
         </nav>
       </header>
+
+      <ProjectSpendSummary crewId={crewId} canView={canViewCrewLedger} locale={locale} />
 
       {canApproveEarning && <AmendmentFinancePanel crewId={crewId} />}
 
@@ -1681,4 +1684,83 @@ function formatDateTime(value: string, locale: string) {
 }
 function eventKey(action: string) {
   return action.split(".").at(-1) ?? "unknown";
+}
+
+function ProjectSpendSummary({
+  crewId,
+  canView,
+  locale,
+}: {
+  crewId: string;
+  canView: boolean;
+  locale: string;
+}) {
+  const t = useTranslations("crewIncome");
+  const { data, isLoading, isError, error } = useCrewExpensesSummary(crewId, canView);
+
+  if (!canView) return null;
+
+  if (isLoading) {
+    return (
+      <div className="mt-4 rounded-lg border border-white/[0.065] bg-white/[0.015] p-3.5">
+        <p className="text-[11px] text-[#737983]">{t("spendSummaryHeading")}…</p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3.5">
+        <p className="text-[11px] text-red-400">
+          {error instanceof Error ? error.message : t("loadFailed")}
+        </p>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const currencies = (["CNY", "USD"] as const).filter((c) => {
+    const rewards = BigInt(data.taskRewardsByCurrency[c] ?? "0");
+    const reimbursements = BigInt(data.reimbursementsByCurrency[c] ?? "0");
+    const total = BigInt(data.totalByCurrency[c] ?? "0");
+    return rewards > 0n || reimbursements > 0n || total > 0n;
+  });
+
+  if (currencies.length === 0) return null;
+
+  return (
+    <div className="mt-4 space-y-3">
+      {currencies.map((currency) => (
+        <div
+          key={currency}
+          className="rounded-lg border border-white/[0.065] bg-white/[0.015] p-3.5"
+        >
+          <div className="mb-2 text-[11px] font-medium text-[#858b95]">
+            {t("spendSummaryHeading")} · {currency}
+          </div>
+          <div className="grid grid-cols-3 gap-3 border-t border-white/[0.05] pt-2">
+            <div>
+              <div className="text-[10px] text-[#737983]">{t("spendSummaryTaskRewards")}</div>
+              <div className="mt-0.5 text-[14px] font-semibold tracking-[-0.02em] tabular-nums text-[#f1f2f4]">
+                {formatCrewMoney(data.taskRewardsByCurrency[currency] ?? "0", locale, currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#737983]">{t("spendSummaryReimbursements")}</div>
+              <div className="mt-0.5 text-[14px] font-semibold tracking-[-0.02em] tabular-nums text-[#f1f2f4]">
+                {formatCrewMoney(data.reimbursementsByCurrency[currency] ?? "0", locale, currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#737983]">{t("spendSummaryTotal")}</div>
+              <div className="mt-0.5 text-[14px] font-semibold tracking-[-0.02em] tabular-nums text-[#f1f2f4]">
+                {formatCrewMoney(data.totalByCurrency[currency] ?? "0", locale, currency)}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }

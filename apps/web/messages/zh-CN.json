@@ -5919,7 +5919,11 @@
         "actionFailed": "发放操作失败。"
       }
     },
-    "optional": "可选"
+    "optional": "可选",
+    "spendSummaryHeading": "项目支出",
+    "spendSummaryTaskRewards": "任务报酬",
+    "spendSummaryReimbursements": "报销",
+    "spendSummaryTotal": "合计"
   },
   "crewWorkbench": {
     "projectUsage": "Studio 项目消耗",

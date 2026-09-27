@@ -5919,7 +5919,11 @@
         "actionFailed": "發放操作失敗。"
       }
     },
-    "optional": "可選"
+    "optional": "可選",
+    "spendSummaryHeading": "項目支出",
+    "spendSummaryTaskRewards": "任務報酬",
+    "spendSummaryReimbursements": "報銷",
+    "spendSummaryTotal": "合計"
   },
   "crewWorkbench": {
     "projectUsage": "Studio 項目消耗",
