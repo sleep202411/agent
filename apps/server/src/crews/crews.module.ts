@@ -1,3 +1,4 @@
+import { ProjectTaskTemplateService } from './templates/project-task-template.service';
 import {
   CrewApplicationAmendmentsController,
   CrewAmendmentSettlementQueueController,
@@ -211,8 +212,13 @@ import { CrewProductionService } from './production/production.service';
     BoldSignAgreementProvider,
     CrewEarningsService,
     CrewPayoutsService,
+    ProjectTaskTemplateService,
   ],
   // The scope-agnostic InvitesController redeems crew link tokens.
-  exports: [CrewAssetAccessModule, CrewInviteLinksService],
+  exports: [
+    CrewAssetAccessModule,
+    CrewInviteLinksService,
+    ProjectTaskTemplateService,
+  ],
 })
 export class CrewsModule {}

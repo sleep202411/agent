@@ -5407,6 +5407,7 @@ model CrewTask {
   submittedAt         DateTime?                 @map("submitted_at") @db.Timestamptz(6)
   approvedAt          DateTime?                 @map("approved_at") @db.Timestamptz(6)
   cancelledAt         DateTime?                 @map("cancelled_at") @db.Timestamptz(6)
+  metadata            Json?                     @map("metadata") @db.JsonB
   createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt           DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -10602,4 +10603,19 @@ model CrewDisputeAttachment {
   mediaAsset MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   @@index([disputeId, uploaderUserId, createdAt, id])
   @@map("crew_dispute_attachments")
+}
+
+model ProjectTaskTemplate {
+  id          String             @id @default(uuid(7)) @db.Uuid
+  projectType CrewProductionKind @map("project_type")
+  name        String             @db.VarChar(120)
+  version     Int                @default(1)
+  active      Boolean            @default(true)
+  definition  Json               @db.JsonB
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([projectType, version])
+  @@index([projectType, active])
+  @@map("project_task_templates")
 }

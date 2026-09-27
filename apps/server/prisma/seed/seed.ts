@@ -11,6 +11,7 @@ import 'dotenv/config';
 
 import { CURRENT_CELL } from '../../src/common/region';
 import { buildPrisma } from '../../src/infra/db/db.module';
+import { seedTaskTemplates } from './seed-task-templates';
 import {
   seedAiImageCatalog,
   seedAiAudioCatalog,
@@ -27,6 +28,7 @@ async function main(): Promise<void> {
     await seedAiVideoCatalog(prisma);
     await seedAiAudioCatalog(prisma);
     await seedMembershipPlans(prisma);
+    await seedTaskTemplates(prisma);
     // CN-only fiat pricing (CNY compute packs + one-off membership + wechat_pay
     // bindings). Gated so it never runs on .com.
     if (CURRENT_CELL === 'cn') {

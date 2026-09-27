@@ -1,3 +1,4 @@
+import { ProjectTaskTemplateService } from './templates/project-task-template.service';
 import { createCrewStudioWorkspaceTx } from './production/create-studio-workspace';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
@@ -150,14 +151,30 @@ export async function createCrewTx(
       kind: productionKind,
       locale: input.productionTemplateLocale,
     });
-    await seedCrewProductionTasks(tx, {
-      crewId: c.id,
-      userId: creatorUserId,
-      episodeId,
-      kind: productionKind,
-      locale: input.productionTemplateLocale,
-      openWorkflowStateId,
-    });
+    if (productionKind === CrewProductionKind.series) {
+      const templateService = new ProjectTaskTemplateService(tx as any);
+      const template = await templateService.resolveActiveTemplate(
+        productionKind,
+        tx,
+      );
+      if (template) {
+        await templateService.instantiateTasks(tx, c.id, template, {
+          idempotencyKey: c.id,
+          userId: creatorUserId,
+          episodeId,
+          workflowStateId: openWorkflowStateId,
+        });
+      }
+    } else {
+      await seedCrewProductionTasks(tx, {
+        crewId: c.id,
+        userId: creatorUserId,
+        episodeId,
+        kind: productionKind,
+        locale: input.productionTemplateLocale,
+        openWorkflowStateId,
+      });
+    }
     await seedCrewTaskKindTemplates(tx, {
       crewId: c.id,
       userId: creatorUserId,
