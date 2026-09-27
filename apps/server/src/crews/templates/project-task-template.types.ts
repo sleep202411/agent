@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { CrewTaskKind } from '@prisma/client';
 
 export type TaskCategory = 'creative' | 'production';
@@ -244,6 +245,256 @@ export const DEFAULT_SERIES_TASK_TEMPLATE: TaskTemplateDefinition = {
       taskKind: CrewTaskKind.edit,
       priority: 'normal',
       requiresPlotTree: false,
+    },
+  ],
+};
+
+export type PlotTreeNodeType = 'scene' | 'choice' | 'ending';
+
+export interface PlotTreeTransition {
+  to: string;
+  label: string;
+  condition?: string;
+}
+
+export interface PlotTreeNode {
+  id: string;
+  type: PlotTreeNodeType;
+  content: Record<string, unknown>;
+  transitions: PlotTreeTransition[];
+}
+
+export interface PlotTree {
+  title: string;
+  description?: string;
+  startNodeId: string;
+  nodes: PlotTreeNode[];
+}
+
+export interface PlotTreeImportSummary {
+  templateId: string;
+  nodeCount: number;
+  choiceCount: number;
+  endingCount: number;
+}
+
+export const PlotTreeTransitionSchema = z.object({
+  to: z.string().trim().min(1),
+  label: z.string().default(''),
+  condition: z.string().optional(),
+});
+
+export const PlotTreeNodeTypeSchema = z.enum(['scene', 'choice', 'ending']);
+
+export const PlotTreeNodeSchema = z.object({
+  id: z.string().trim().min(1),
+  type: PlotTreeNodeTypeSchema,
+  content: z.record(z.string(), z.unknown()).default({}),
+  transitions: z.array(PlotTreeTransitionSchema).default([]),
+});
+
+export const PlotTreeSchema = z
+  .object({
+    title: z.string().trim().min(1),
+    description: z.string().default(''),
+    startNodeId: z.string().trim().min(1),
+    nodes: z.array(PlotTreeNodeSchema).min(1),
+  })
+  .superRefine((data, ctx) => {
+    const nodeMap = new Map<string, z.infer<typeof PlotTreeNodeSchema>>();
+    let hasEnding = false;
+
+    for (let i = 0; i < data.nodes.length; i++) {
+      const node = data.nodes[i];
+      if (nodeMap.has(node.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Node ID must be unique: ${node.id}`,
+          path: ['nodes', i, 'id'],
+        });
+      }
+      nodeMap.set(node.id, node);
+
+      if (node.type === 'ending') {
+        hasEnding = true;
+      }
+      if (node.type === 'choice' && node.transitions.length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Choice nodes must have at least 2 transitions',
+          path: ['nodes', i, 'transitions'],
+        });
+      }
+      if (node.type === 'scene' && node.transitions.length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Scene nodes must have at least 1 transition',
+          path: ['nodes', i, 'transitions'],
+        });
+      }
+    }
+
+    if (!nodeMap.has(data.startNodeId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'startNodeId must exist in nodes',
+        path: ['startNodeId'],
+      });
+    }
+
+    if (!hasEnding) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Plot tree must have at least one ending node',
+        path: ['nodes'],
+      });
+    }
+
+    for (let i = 0; i < data.nodes.length; i++) {
+      const node = data.nodes[i];
+      for (let j = 0; j < node.transitions.length; j++) {
+        const target = node.transitions[j].to;
+        if (!nodeMap.has(target)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Transition target does not exist: ${target}`,
+            path: ['nodes', i, 'transitions', j, 'to'],
+          });
+        }
+      }
+    }
+
+    if (nodeMap.has(data.startNodeId)) {
+      const visited = new Set<string>();
+      const queue: string[] = [data.startNodeId];
+      visited.add(data.startNodeId);
+
+      while (queue.length > 0) {
+        const currentId = queue.shift()!;
+        const currentNode = nodeMap.get(currentId);
+        if (currentNode && currentNode.transitions) {
+          for (const t of currentNode.transitions) {
+            if (nodeMap.has(t.to) && !visited.has(t.to)) {
+              visited.add(t.to);
+              queue.push(t.to);
+            }
+          }
+        }
+      }
+
+      for (let i = 0; i < data.nodes.length; i++) {
+        const node = data.nodes[i];
+        if (!visited.has(node.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Node is unreachable from startNodeId: ${node.id}`,
+            path: ['nodes', i],
+          });
+        }
+      }
+    }
+  });
+
+export type PlotTreeImportInput = z.infer<typeof PlotTreeSchema>;
+
+export const DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE: TaskTemplateDefinition = {
+  version: 1,
+  items: [
+    {
+      templateKey: 'script',
+      title: '剧本与分支设定',
+      category: 'creative',
+      roleRequirement: '编剧',
+      qualification: { certification: '编剧' },
+      deliveryFields: [{ type: 'document_or_link', required: true }],
+      unit: '100字',
+      priceRange: { min: 200 },
+      defaultDependencies: [],
+      taskKind: CrewTaskKind.script,
+      priority: 'normal',
+      requiresPlotTree: false,
+    },
+    {
+      templateKey: 'plot_tree',
+      title: '故事剧情树构建',
+      category: 'creative',
+      roleRequirement: '游戏策划/互动编剧',
+      deliveryFields: [{ type: 'document_or_link', required: true }],
+      unit: '分支点',
+      defaultDependencies: ['script'],
+      taskKind: CrewTaskKind.plot_tree,
+      priority: 'normal',
+      requiresPlotTree: true,
+    },
+    {
+      templateKey: 'character_art',
+      title: '互动人物设定',
+      category: 'creative',
+      roleRequirement: '美术设定-角色',
+      qualification: { pdLevel: 'PD', certification: '美术' },
+      deliveryFields: [{ type: 'image', required: true }],
+      unit: '张',
+      priceRange: { min: 15 },
+      defaultDependencies: ['script'],
+      taskKind: CrewTaskKind.art,
+      priority: 'normal',
+      requiresPlotTree: false,
+    },
+    {
+      templateKey: 'scene_art',
+      title: '场景分支概念图',
+      category: 'creative',
+      roleRequirement: '美术设定-场景',
+      qualification: { pdLevel: 'PD', certification: '美术' },
+      deliveryFields: [{ type: 'image', required: true }],
+      unit: '张',
+      priceRange: { min: 15 },
+      defaultDependencies: ['script'],
+      taskKind: CrewTaskKind.art,
+      priority: 'normal',
+      requiresPlotTree: false,
+    },
+    {
+      templateKey: 'storyboard',
+      title: '互动分镜设计',
+      category: 'creative',
+      roleRequirement: '互动分镜师',
+      deliveryFields: [{ type: 'raw_image_assets', required: true }],
+      unit: '镜',
+      defaultDependencies: ['plot_tree', 'character_art', 'scene_art'],
+      taskKind: CrewTaskKind.storyboard,
+      priority: 'normal',
+      requiresPlotTree: true,
+    },
+    {
+      templateKey: 'assembly',
+      title: '互动引擎集成与剪辑',
+      category: 'production',
+      roleRequirement: '互动视频剪辑与打包',
+      qualification: { pdLevel: 'PD' },
+      deliveryFields: [
+        { type: 'final_video', required: true },
+        { type: 'video_with_subtitle', required: true },
+        { type: 'raw_video_assets', required: true },
+      ],
+      unit: '分钟',
+      priceRange: { min: 120 },
+      defaultDependencies: ['storyboard'],
+      taskKind: CrewTaskKind.edit,
+      priority: 'normal',
+      requiresPlotTree: true,
+    },
+    {
+      templateKey: 'qa',
+      title: '互动体验与全分支测试',
+      category: 'production',
+      roleRequirement: 'QA测试',
+      deliveryFields: [{ type: 'review_sheet', required: true }],
+      unit: '项目',
+      defaultDependencies: ['assembly'],
+      taskKind: CrewTaskKind.qa,
+      priority: 'normal',
+      requiresPlotTree: true,
     },
   ],
 };

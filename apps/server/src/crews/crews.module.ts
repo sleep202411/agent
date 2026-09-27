@@ -1,5 +1,13 @@
+import {
+  ProjectStoryboardChildrenController,
+  StoryStoryboardChildrenController,
+} from './storyboard/storyboard-children.controller';
+import { StoryboardChildrenService } from './storyboard/storyboard-children.service';
 import { ProjectTaskTemplateService } from './templates/project-task-template.service';
-import { ProjectTaskTemplatesAdminController } from './templates/project-task-templates-admin.controller';
+import {
+  ProjectTaskTemplatesAdminController,
+  TaskTemplatesAdminAliasController,
+} from './templates/project-task-templates-admin.controller';
 import {
   CrewApplicationAmendmentsController,
   CrewAmendmentSettlementQueueController,
@@ -177,8 +185,12 @@ import { CrewProductionService } from './production/production.service';
     CrewEarningsController,
     CrewPayoutsController,
     ProjectTaskTemplatesAdminController,
+    TaskTemplatesAdminAliasController,
+    ProjectStoryboardChildrenController,
+    StoryStoryboardChildrenController,
   ],
   providers: [
+    StoryboardChildrenService,
     CrewApplicationAmendmentsService,
     CrewTaskFeedbackAppealsService,
     CrewTaskOverdueWorker,

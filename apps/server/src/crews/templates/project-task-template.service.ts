@@ -8,6 +8,10 @@ import {
 import { PrismaService } from '../../infra/db/db.module';
 import {
   DEFAULT_SERIES_TASK_TEMPLATE,
+  DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE,
+  PlotTreeSchema,
+  type PlotTreeImportInput,
+  type PlotTreeImportSummary,
   type TaskTemplateDefinition,
   type TaskTemplateItem,
 } from './project-task-template.types';
@@ -287,5 +291,60 @@ export class ProjectTaskTemplateService {
         definition: input.definition as any,
       },
     });
+  }
+
+  async importPlotTree(
+    input: PlotTreeImportInput,
+  ): Promise<PlotTreeImportSummary> {
+    const validated = PlotTreeSchema.parse(input);
+
+    const nodeCount = validated.nodes.length;
+    let choiceCount = 0;
+    let endingCount = 0;
+
+    for (const node of validated.nodes) {
+      if (node.type === 'choice') choiceCount++;
+      else if (node.type === 'ending') endingCount++;
+    }
+
+    const definition = {
+      version: 1,
+      plotTree: validated,
+      items: DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE.items,
+    };
+
+    const template = await this.prisma.$transaction(async (tx) => {
+      const latest = await tx.projectTaskTemplate.findFirst({
+        where: { projectType: CrewProductionKind.interactive_film },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+      const nextVersion = (latest?.version ?? 0) + 1;
+
+      await tx.projectTaskTemplate.updateMany({
+        where: {
+          projectType: CrewProductionKind.interactive_film,
+          active: true,
+        },
+        data: { active: false },
+      });
+
+      return tx.projectTaskTemplate.create({
+        data: {
+          projectType: CrewProductionKind.interactive_film,
+          name: validated.title,
+          version: nextVersion,
+          active: true,
+          definition: definition as unknown as Prisma.InputJsonValue,
+        },
+      });
+    });
+
+    return {
+      templateId: template.id,
+      nodeCount,
+      choiceCount,
+      endingCount,
+    };
   }
 }
