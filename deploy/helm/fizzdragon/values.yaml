@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: be026db829d267d6fc1b820def86c6c0baeea37c
+    tag: c28acfbc6d1cbb81f8ad09738a9e1c8369e7d515
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
