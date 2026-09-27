@@ -3277,7 +3277,8 @@
         "world": "概览",
         "stats": "状态",
         "media": "素材",
-        "catalog": "目录"
+        "catalog": "目录",
+        "analytics": "分析"
       },
       "chapters": {
         "action": "章节",
@@ -4364,5 +4365,29 @@
       "real_actor": "真实演员",
       "other": "其他"
     }
+  },
+  "studioAnalytics": {
+    "title": "数据分析",
+    "loading": "正在加载分析数据…",
+    "error": "数据加载失败",
+    "retry": "重试",
+    "empty": "暂无数据",
+    "overview": "核心数据概览",
+    "playerCount": "独立玩家数",
+    "playerCountHint": "登录用户",
+    "startCount": "开局次数",
+    "completeCount": "通关次数",
+    "completeRate": "通关率",
+    "replayRate": "重玩率",
+    "endingsHeading": "结局达成分布",
+    "choicesHeading": "关键选项选择分布",
+    "nodesHeading": "场景与情节节点到达",
+    "chaptersHeading": "章节到达分布",
+    "columnKey": "标识",
+    "columnCount": "到达 / 选择次数",
+    "columnRatio": "占比",
+    "columnOption": "选项",
+    "columnChapter": "章节",
+    "columnNode": "节点"
   }
 }

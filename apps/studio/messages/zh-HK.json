@@ -3277,7 +3277,8 @@
         "world": "概覽",
         "stats": "狀態",
         "media": "素材",
-        "catalog": "目錄"
+        "catalog": "目錄",
+        "analytics": "分析"
       },
       "chapters": {
         "action": "章節",
@@ -4364,5 +4365,29 @@
       "real_actor": "真實演員",
       "other": "其他"
     }
+  },
+  "studioAnalytics": {
+    "title": "數據分析",
+    "loading": "正在載入分析數據…",
+    "error": "數據載入失敗",
+    "retry": "重試",
+    "empty": "暫無數據",
+    "overview": "核心數據概覽",
+    "playerCount": "獨立玩家數",
+    "playerCountHint": "登入用戶",
+    "startCount": "開局次數",
+    "completeCount": "通關次數",
+    "completeRate": "通關率",
+    "replayRate": "重玩率",
+    "endingsHeading": "結局達成分佈",
+    "choicesHeading": "關鍵選項選擇分佈",
+    "nodesHeading": "場景與情節節點到達",
+    "chaptersHeading": "章節到達分佈",
+    "columnKey": "標識",
+    "columnCount": "到達 / 選擇次數",
+    "columnRatio": "佔比",
+    "columnOption": "選項",
+    "columnChapter": "章節",
+    "columnNode": "節點"
   }
 }
