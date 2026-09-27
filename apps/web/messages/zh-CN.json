@@ -2065,7 +2065,13 @@
     "myIncomeTab": "我的收入",
     "myApplicationsTab": "我的申请",
     "myFeedbackTab": "我的任务评价",
-    "myCasesTab": "我的争议案件"
+    "myCasesTab": "我的争议案件",
+    "importFromCanvas": "从影游画布导入情节树",
+    "importEmpty": "不导入（空白创建）",
+    "importLoading": "正在解析情节树...",
+    "importSummary": "{nodes} 个情节节点，{shots} 个片段",
+    "importIssuesTitle": "情节树未就绪",
+    "importClearSelection": "清除选择"
   },
   "crewRoles": {
     "director": "导演",

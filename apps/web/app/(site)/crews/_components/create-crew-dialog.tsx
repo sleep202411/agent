@@ -166,6 +166,64 @@ function CrewFormDialog({
   );
   const [studioWorkspaceId, setStudioWorkspaceId] = useState(workspaces[0]?.id ?? "");
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [selectedStoryProjectId, setSelectedStoryProjectId] = useState<string>("");
+  const [plotTreeData, setPlotTreeData] = useState<{
+    plotTree: any;
+    storyboardClipsByNode?: Record<string, any[]>;
+  } | null>(null);
+  const [plotTreeLoading, setPlotTreeLoading] = useState(false);
+  const [plotTreeIssues, setPlotTreeIssues] = useState<Array<{
+    nodeId?: string;
+    kind: string;
+    message: string;
+  }> | null>(null);
+
+  const storyProjectsQuery = useQuery({
+    queryKey: ["story-projects-list-picker"],
+    queryFn: () => crewApi.get<{ items: Array<{ id: string; title: string }> }>("/story-projects"),
+    enabled: open && !isEdit && productionKind === "interactive_film",
+    staleTime: 60_000,
+  });
+
+  const handleStoryProjectSelect = async (projectId: string) => {
+    setSelectedStoryProjectId(projectId);
+    setPlotTreeData(null);
+    setPlotTreeIssues(null);
+    if (!projectId) return;
+
+    setPlotTreeLoading(true);
+    try {
+      const res = await crewApi.get<{
+        projectId: string;
+        title: string;
+        plotTree: any;
+        storyboardClipsByNode?: Record<string, any[]>;
+      }>(`/story-projects/${encodeURIComponent(projectId)}/plot-tree`);
+      setPlotTreeData({
+        plotTree: res.plotTree,
+        storyboardClipsByNode: res.storyboardClipsByNode,
+      });
+    } catch (err: any) {
+      if (!alive.current) return;
+      if (
+        err instanceof CrewApiError &&
+        err.status === 422 &&
+        typeof err.body === "object" &&
+        err.body
+      ) {
+        const b = err.body as {
+          issues?: Array<{ nodeId?: string; kind: string; message: string }>;
+        };
+        setPlotTreeIssues(b.issues ?? [{ kind: "error", message: err.message }]);
+      } else {
+        setPlotTreeIssues([
+          { kind: "error", message: err instanceof Error ? err.message : String(err) },
+        ]);
+      }
+    } finally {
+      if (alive.current) setPlotTreeLoading(false);
+    }
+  };
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -279,6 +337,12 @@ function CrewFormDialog({
         ...(workspaceMode === "create"
           ? { createStudioWorkspace: { name: newWorkspaceName.trim() || name.trim() } }
           : { studioWorkspaceId }),
+        ...(productionKind === "interactive_film" && plotTreeData
+          ? {
+              plotTree: plotTreeData.plotTree,
+              storyboardClipsByNode: plotTreeData.storyboardClipsByNode,
+            }
+          : {}),
       },
       {
         onSuccess: (crew) => {
@@ -415,13 +479,89 @@ function CrewFormDialog({
                     aria-label={t("createProductionKindLabel")}
                     disabled={creating}
                     value={productionKind}
-                    onChange={(value) => setProductionKind(value as "interactive_film" | "series")}
+                    onChange={(value) => {
+                      const nextKind = value as "interactive_film" | "series";
+                      setProductionKind(nextKind);
+                      if (nextKind !== "interactive_film") {
+                        setSelectedStoryProjectId("");
+                        setPlotTreeData(null);
+                        setPlotTreeIssues(null);
+                      }
+                    }}
                     className="h-9 w-full"
                   >
                     <option value="series">{t("createProductionKindSeries")}</option>
                     <option value="interactive_film">{t("createProductionKindFilm")}</option>
                   </NativeSelect>
                 </Field>
+
+                {productionKind === "interactive_film" ? (
+                  <Field>
+                    <FieldLabel>{t("importFromCanvas")}</FieldLabel>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <NativeSelect
+                          aria-label={t("importFromCanvas")}
+                          disabled={creating || plotTreeLoading}
+                          value={selectedStoryProjectId}
+                          onChange={(val) => void handleStoryProjectSelect(val)}
+                          className="h-9 w-full"
+                        >
+                          <option value="">{t("importEmpty")}</option>
+                          {(storyProjectsQuery.data?.items ?? []).map((proj) => (
+                            <option key={proj.id} value={proj.id}>
+                              {proj.title}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                        {selectedStoryProjectId ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={creating || plotTreeLoading}
+                            onClick={() => void handleStoryProjectSelect("")}
+                          >
+                            {t("importClearSelection")}
+                          </Button>
+                        ) : null}
+                      </div>
+
+                      {plotTreeLoading ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <IconLoader2 className="size-3 animate-spin" />
+                          <span>{t("importLoading")}</span>
+                        </div>
+                      ) : null}
+
+                      {plotTreeData ? (
+                        <div className="rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">
+                          {t("importSummary", {
+                            nodes: plotTreeData.plotTree?.nodes?.length ?? 0,
+                            shots: Object.values(plotTreeData.storyboardClipsByNode ?? {}).reduce(
+                              (sum, list) => sum + list.length,
+                              0
+                            ),
+                          })}
+                        </div>
+                      ) : null}
+
+                      {plotTreeIssues && plotTreeIssues.length > 0 ? (
+                        <div className="rounded border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+                          <p className="font-medium mb-1">{t("importIssuesTitle")}</p>
+                          <ul className="list-disc pl-4 space-y-0.5 max-h-32 overflow-y-auto">
+                            {plotTreeIssues.map((issue, idx) => (
+                              <li key={idx}>
+                                {issue.nodeId ? `[${issue.nodeId}] ` : ""}
+                                {issue.message}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  </Field>
+                ) : null}
                 <Field>
                   <FieldLabel required>{t("createWorkspaceLabel")}</FieldLabel>
                   <p className="mb-2 text-[11px] text-muted-foreground">
@@ -500,6 +640,10 @@ function CrewFormDialog({
               !logoPath ||
               uploadingLogo ||
               creating ||
+              plotTreeLoading ||
+              (productionKind === "interactive_film" &&
+                !!plotTreeIssues &&
+                plotTreeIssues.length > 0) ||
               (!isEdit &&
                 (workspaceMode === "link"
                   ? !studioWorkspaceId

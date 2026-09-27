@@ -2065,7 +2065,13 @@
     "myIncomeTab": "My Income",
     "myApplicationsTab": "My applications",
     "myFeedbackTab": "My task feedback",
-    "myCasesTab": "My cases"
+    "myCasesTab": "My cases",
+    "importFromCanvas": "Import from Story Canvas",
+    "importEmpty": "No plot tree (blank creation)",
+    "importLoading": "Loading plot tree...",
+    "importSummary": "{nodes} plot nodes, {shots} shots",
+    "importIssuesTitle": "Draft not ready",
+    "importClearSelection": "Clear selection"
   },
   "crewRoles": {
     "director": "Director",

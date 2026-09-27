@@ -89,6 +89,16 @@ export interface CreateCrewInput {
   productionKind?: "interactive_film" | "series";
   studioWorkspaceId?: string | null;
   createStudioWorkspace?: { name: string };
+  plotTree?: unknown;
+  storyboardClipsByNode?: Record<
+    string,
+    Array<{
+      clipId: string;
+      title: string;
+      order: number;
+      durationSeconds: number | null;
+    }>
+  >;
 }
 
 export interface UpdateCrewInput extends Partial<

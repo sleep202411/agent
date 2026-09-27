@@ -2065,7 +2065,13 @@
     "myIncomeTab": "我的收入",
     "myApplicationsTab": "我的申請",
     "myFeedbackTab": "我的任務評價",
-    "myCasesTab": "我的爭議案件"
+    "myCasesTab": "我的爭議案件",
+    "importFromCanvas": "從影遊畫布導入情節樹",
+    "importEmpty": "不導入（空白創建）",
+    "importLoading": "正在解析情節樹...",
+    "importSummary": "{nodes} 個情節節點，{shots} 個片段",
+    "importIssuesTitle": "情節樹未就緒",
+    "importClearSelection": "清除選擇"
   },
   "crewRoles": {
     "director": "導演",
