@@ -2,7 +2,7 @@ import { act, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import { toast } from "sonner";
-import { exportTimelineToMp4, triggerBlobDownload } from "@/src/lib/timeline-export-mediabunny";
+import { exportTimelineToMp4, triggerBlobDownload } from "@repo/timeline-export";
 import { useTimelineExport } from "./use-timeline-export";
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 vi.mock("@/src/i18n/i18n", () => ({
@@ -11,7 +11,7 @@ vi.mock("@/src/i18n/i18n", () => ({
 }));
 const session = vi.hoisted(() => ({ id: "alice" }));
 vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: session.id } }) }));
-vi.mock("@/src/lib/timeline-export-mediabunny", () => ({
+vi.mock("@repo/timeline-export", () => ({
   exportTimelineToMp4: vi.fn(),
   triggerBlobDownload: vi.fn(),
   isExportSupported: () => true,
@@ -159,25 +159,35 @@ it("preserves the success message for complete output", async () => {
   expect(toast.warning).not.toHaveBeenCalled();
 });
 
-
-it.each(["project", "episode", "account"])("clears visible partial report on %s change", async (kind) => {
-  vi.mocked(exportTimelineToMp4).mockImplementation(async (_, options) => {
-    options?.onReport?.({ requestedShots: 2, completedShots: 1, partial: true,
-      issues: [{ index: 1, shotId: "two", reason: "probe_failed" }] });
-    return new Blob(["partial"]);
-  });
-  await render();
-  await act(async () => latest.handleExportMp4());
-  expect(latest.exportReport?.issues[0]?.index).toBe(1);
-  if (kind === "account") session.id = "bob";
-  await render(kind === "project" ? "b" : "a", kind === "episode" ? "two" : "one");
-  expect(latest.exportReport).toBeNull();
-});
+it.each(["project", "episode", "account"])(
+  "clears visible partial report on %s change",
+  async (kind) => {
+    vi.mocked(exportTimelineToMp4).mockImplementation(async (_, options) => {
+      options?.onReport?.({
+        requestedShots: 2,
+        completedShots: 1,
+        partial: true,
+        issues: [{ index: 1, shotId: "two", reason: "probe_failed" }],
+      });
+      return new Blob(["partial"]);
+    });
+    await render();
+    await act(async () => latest.handleExportMp4());
+    expect(latest.exportReport?.issues[0]?.index).toBe(1);
+    if (kind === "account") session.id = "bob";
+    await render(kind === "project" ? "b" : "a", kind === "episode" ? "two" : "one");
+    expect(latest.exportReport).toBeNull();
+  }
+);
 
 it("dismisses a report without starting another export", async () => {
   vi.mocked(exportTimelineToMp4).mockImplementation(async (_, options) => {
-    options?.onReport?.({ requestedShots: 2, completedShots: 1, partial: true,
-      issues: [{ index: 1, shotId: "two", reason: "probe_failed" }] });
+    options?.onReport?.({
+      requestedShots: 2,
+      completedShots: 1,
+      partial: true,
+      issues: [{ index: 1, shotId: "two", reason: "probe_failed" }],
+    });
     return new Blob(["partial"]);
   });
   await render();
@@ -188,14 +198,20 @@ it("dismisses a report without starting another export", async () => {
 });
 
 it("replaces the partial report after a complete re-export", async () => {
-  vi.mocked(exportTimelineToMp4).mockImplementationOnce(async (_, options) => {
-    options?.onReport?.({ requestedShots: 2, completedShots: 1, partial: true,
-      issues: [{ index: 1, shotId: "two", reason: "probe_failed" }] });
-    return new Blob(["partial"]);
-  }).mockImplementationOnce(async (_, options) => {
-    options?.onReport?.({ requestedShots: 2, completedShots: 2, partial: false, issues: [] });
-    return new Blob(["complete"]);
-  });
+  vi.mocked(exportTimelineToMp4)
+    .mockImplementationOnce(async (_, options) => {
+      options?.onReport?.({
+        requestedShots: 2,
+        completedShots: 1,
+        partial: true,
+        issues: [{ index: 1, shotId: "two", reason: "probe_failed" }],
+      });
+      return new Blob(["partial"]);
+    })
+    .mockImplementationOnce(async (_, options) => {
+      options?.onReport?.({ requestedShots: 2, completedShots: 2, partial: false, issues: [] });
+      return new Blob(["complete"]);
+    });
   await render();
   await act(async () => latest.handleExportMp4());
   expect(latest.exportReport).not.toBeNull();
