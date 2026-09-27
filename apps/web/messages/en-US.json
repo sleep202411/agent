@@ -5624,7 +5624,10 @@
     "slot_cost_sheet": "Cost sheet",
     "slot_review_sheet": "Review sheet",
     "slot_client_signoff": "Client sign-off",
-    "slot_prompt_or_script": "Prompt or script"
+    "slot_prompt_or_script": "Prompt or script",
+    "clipPrimaryAsset": "Clip primary asset",
+    "clipPrimaryAssetHint": "Which delivered video becomes the clip’s active media",
+    "rewardSuggestedHint": "Suggested from task template"
   },
   "crewInvitations": {
     "signIn": "Sign in",
@@ -5916,7 +5919,11 @@
         "actionFailed": "Payout action failed."
       }
     },
-    "optional": "Optional"
+    "optional": "Optional",
+    "spendSummaryHeading": "Project spend",
+    "spendSummaryTaskRewards": "Task rewards",
+    "spendSummaryReimbursements": "Reimbursements",
+    "spendSummaryTotal": "Total"
   },
   "crewWorkbench": {
     "projectUsage": "Studio project usage",
@@ -10588,5 +10595,19 @@
     "tabs": {
       "generation": "Audience Generation"
     }
+  },
+  "playSessionReport": {
+    "title": "Session Report",
+    "loading": "Loading session report…",
+    "error": "Failed to load session report",
+    "retry": "Retry",
+    "status_playing": "In progress",
+    "status_completed": "Completed",
+    "status_abandoned": "Abandoned",
+    "duration": "{minutes}m {seconds}s",
+    "pathCount": "Traversed {count} scenes",
+    "choicesHeading": "Key Choices",
+    "endingReachCount": "Reached by {count} players",
+    "completedAt": "Completed at: {time}"
   }
 }

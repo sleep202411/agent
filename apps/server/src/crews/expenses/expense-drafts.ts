@@ -18,7 +18,11 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  CrewEarningSourceType,
+  CrewEarningStatus,
+  Prisma,
+} from '@prisma/client';
 import { z } from 'zod';
 import { Public, CurrentUser, type AuthUser } from '../../auth';
 import { ZodValidationPipe } from '../../common/zod.pipe';
@@ -56,6 +60,7 @@ const Params = z.object({
   crewId: z.string().min(1).max(128),
   id: z.string().uuid(),
 });
+const SummaryParams = z.object({ crewId: z.string().min(1).max(128) });
 const ListParams = z.object({ crewId: z.string().min(1).max(128) });
 const ListQuery = z
   .object({
@@ -220,11 +225,74 @@ export class CrewExpenseDraftService {
       return submission;
     });
   }
+
+  async getCrewSummary(crewId: string, userId: string) {
+    await this.authz.require(crewId, userId, 'finance.ledger.view');
+
+    const rewards = await this.prisma.crewEarningEntry.groupBy({
+      by: ['currency'],
+      where: {
+        crewId,
+        sourceType: CrewEarningSourceType.task_reward,
+        status: CrewEarningStatus.posted,
+      },
+      _sum: { amountMinor: true },
+    });
+
+    const reimbursements = await this.prisma.$queryRaw<
+      Array<{ currency: string; totalMinor: string }>
+    >`SELECT d.definition->>'currency' AS currency,
+             COALESCE(SUM((d.definition->>'amountMinor')::numeric), 0)::text AS "totalMinor"
+      FROM crew_expense_submissions s
+      JOIN crew_expense_draft_revisions d
+        ON d.id = s.draft_id AND d.version = s.draft_version
+      WHERE d.crew_id = ${crewId}
+        AND s.status = 'approved'
+      GROUP BY d.definition->>'currency'`;
+
+    const taskRewardsByCurrency: Record<string, string> = {
+      CNY: '0',
+      USD: '0',
+    };
+    const reimbursementsByCurrency: Record<string, string> = {
+      CNY: '0',
+      USD: '0',
+    };
+    const totalByCurrency: Record<string, string> = { CNY: '0', USD: '0' };
+
+    for (const row of rewards) {
+      const v = (row._sum?.amountMinor ?? 0n).toString();
+      if (row.currency in taskRewardsByCurrency)
+        taskRewardsByCurrency[row.currency] = v;
+    }
+    for (const row of reimbursements) {
+      if (row.currency in reimbursementsByCurrency)
+        reimbursementsByCurrency[row.currency] = row.totalMinor;
+    }
+    for (const c of Object.keys(totalByCurrency)) {
+      totalByCurrency[c] = (
+        BigInt(taskRewardsByCurrency[c] ?? '0') +
+        BigInt(reimbursementsByCurrency[c] ?? '0')
+      ).toString();
+    }
+    return { taskRewardsByCurrency, reimbursementsByCurrency, totalByCurrency };
+  }
 }
 
 @Controller('crews/:crewId/expense-drafts')
 export class CrewExpenseDraftController {
   constructor(private readonly drafts: CrewExpenseDraftService) {}
+  @Get('summary')
+  @Header('Cache-Control', 'private, no-store')
+  summary(
+    @Param(new ZodValidationPipe(SummaryParams))
+    params: z.infer<typeof SummaryParams>,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.drafts
+      .getCrewSummary(params.crewId, user.userId)
+      .then((data) => ({ code: 200, data }));
+  }
   @Get(':id/history')
   @Header('Cache-Control', 'private, no-store')
   history(

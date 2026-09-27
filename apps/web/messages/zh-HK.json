@@ -5624,7 +5624,10 @@
     "slot_cost_sheet": "成本表",
     "slot_review_sheet": "評審表",
     "slot_client_signoff": "客戶簽字",
-    "slot_prompt_or_script": "提示詞/劇本"
+    "slot_prompt_or_script": "提示詞/劇本",
+    "clipPrimaryAsset": "分鏡主素材",
+    "clipPrimaryAssetHint": "哪個交付影片作為該分鏡的主素材",
+    "rewardSuggestedHint": "來自任務模板的建議值"
   },
   "crewInvitations": {
     "signIn": "登入",
@@ -5916,7 +5919,11 @@
         "actionFailed": "發放操作失敗。"
       }
     },
-    "optional": "可選"
+    "optional": "可選",
+    "spendSummaryHeading": "項目支出",
+    "spendSummaryTaskRewards": "任務報酬",
+    "spendSummaryReimbursements": "報銷",
+    "spendSummaryTotal": "合計"
   },
   "crewWorkbench": {
     "projectUsage": "Studio 項目消耗",
@@ -10588,5 +10595,19 @@
     "tabs": {
       "generation": "影迷AI共創"
     }
+  },
+  "playSessionReport": {
+    "title": "本局報告",
+    "loading": "載入本局報告…",
+    "error": "本局報告載入失敗",
+    "retry": "重試",
+    "status_playing": "進行中",
+    "status_completed": "已完成",
+    "status_abandoned": "已中斷",
+    "duration": "{minutes} 分 {seconds} 秒",
+    "pathCount": "經過 {count} 個場景",
+    "choicesHeading": "關鍵選擇",
+    "endingReachCount": "該結局累計 {count} 人到達",
+    "completedAt": "完成時間：{time}"
   }
 }

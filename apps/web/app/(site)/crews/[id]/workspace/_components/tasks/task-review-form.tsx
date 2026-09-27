@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useReviewCrewTask, type CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -53,6 +54,32 @@ function ReviewSession({ task, onReviewed }: Props) {
       (!task.dueAt || date.getTime() > new Date(task.dueAt).getTime())
     );
   };
+  const latestSubmission = task.submissions[0];
+  const videoAssets =
+    latestSubmission?.assets.filter((a) => a.contentType?.startsWith("video/")) ?? [];
+  const clipId = (task as any).metadata?.clipId;
+  const showPrimaryPicker = Boolean(clipId && videoAssets.length >= 1);
+
+  const defaultAssetId = (() => {
+    if (!videoAssets.length) return undefined;
+    const answers = (latestSubmission?.professionalDelivery as any)?.answers ?? {};
+    const assetIdForSlot = (slot: string): string | undefined => {
+      const v = answers[slot];
+      if (Array.isArray(v)) return v[0];
+      return typeof v === "string" ? v : undefined;
+    };
+    const preferredId =
+      assetIdForSlot("video_with_subtitle") ??
+      assetIdForSlot("final_video") ??
+      assetIdForSlot("video_without_subtitle");
+    if (preferredId && videoAssets.some((v) => v.id === preferredId)) {
+      return preferredId;
+    }
+    return videoAssets[0].id;
+  })();
+
+  const [selectedAssetId, setSelectedAssetId] = useState<string | undefined>(defaultAssetId);
+
   const revisionLimitReached =
     task.revisionLimit != null && task.revisionRoundsUsed >= task.revisionLimit;
   const alive = useRef(true);
@@ -83,6 +110,7 @@ function ReviewSession({ task, onReviewed }: Props) {
         ...(decision === "request_revision" && deadline
           ? { revisionDueAt: new Date(deadline).toISOString() }
           : {}),
+        ...(decision === "approve" && selectedAssetId ? { bindAssetNodeId: selectedAssetId } : {}),
       });
       if (!alive.current) return;
       toast.success(decision === "approve" ? t("approved") : t("revisionRequested"));
@@ -138,6 +166,27 @@ function ReviewSession({ task, onReviewed }: Props) {
         )}
         {deadline && !validDeadline() && <p role="alert">{t("revisionDeadlineInvalid")}</p>}
       </div>
+      {showPrimaryPicker && (
+        <div className="mt-3 space-y-1">
+          <label className="block text-xs font-medium text-[#e2e3e6]">
+            {t("clipPrimaryAsset")}
+            <NativeSelect
+              aria-label={t("clipPrimaryAsset")}
+              disabled={saving}
+              value={selectedAssetId ?? defaultAssetId ?? ""}
+              onChange={(val) => setSelectedAssetId(val || undefined)}
+              className="mt-1"
+            >
+              {videoAssets.map((asset) => (
+                <NativeSelectOption key={asset.id} value={asset.id}>
+                  {asset.name}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </label>
+          <p className="text-[11px] text-muted-foreground">{t("clipPrimaryAssetHint")}</p>
+        </div>
+      )}
       <div className="mt-3 flex justify-end gap-2">
         <Button
           size="sm"

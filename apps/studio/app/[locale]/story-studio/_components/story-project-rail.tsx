@@ -97,6 +97,11 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           active={sidePanel === "chapters"}
           onClick={() => togglePanel("chapters")}
         />
+        <RailLink
+          href={`/story-studio/projects/${projectId}/analytics`}
+          icon={IconChartBar}
+          label={t("sidebar.analytics")}
+        />
         {/* Material canvas — the free creative canvas scoped to this project. */}
         {MATERIAL_CANVAS_ENABLED && (
           <RailLink

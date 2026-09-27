@@ -1,7 +1,4 @@
-import {
-  PlotTreeSchema,
-  DeliveryFieldTypeSchema,
-} from './templates/project-task-template.types';
+import { PlotTreeSchema } from './templates/project-task-template.types';
 import { ProfessionalDeliveryInput } from './tasks/task-delivery-template';
 /**
  * Zod schemas for every crew controller body. Co-located in one file
@@ -801,7 +798,6 @@ export type SetTaskDeliveryFolderInput = z.infer<
 export const SubmitCrewTaskSchema = z.object({
   professionalDelivery: ProfessionalDeliveryInput.optional(),
   deliveryFolderId: z.string().uuid().optional(),
-  assetSlots: z.record(z.string().uuid(), DeliveryFieldTypeSchema).optional(),
   note: z.string().trim().max(5000).default(''),
   assetNodeIds: z.array(z.string().uuid()).max(100).default([]),
 });
@@ -812,6 +808,7 @@ export const ReviewCrewTaskSchema = z
     expectedSubmissionId: z.string().uuid(),
     decision: z.enum(['approve', 'request_revision']),
     revisionDueAt: z.string().datetime({ offset: true }).optional(),
+    bindAssetNodeId: z.string().uuid().optional(),
     note: z.string().trim().max(5000).default(''),
   })
   .refine((input) => input.decision === 'approve' || input.note.length > 0, {

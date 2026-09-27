@@ -889,14 +889,12 @@ export function useSubmitCrewTask(crewId: string) {
       assetNodeIds = [],
       deliveryFolderId,
       professionalDelivery,
-      assetSlots,
     }: {
       taskId: string;
       note: string;
       assetNodeIds?: string[];
       deliveryFolderId?: string;
       professionalDelivery?: CrewProfessionalDeliveryInput;
-      assetSlots?: Record<string, string>;
     }) =>
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/submissions`, {
         body: {
@@ -904,7 +902,6 @@ export function useSubmitCrewTask(crewId: string) {
           assetNodeIds,
           ...(professionalDelivery ? { professionalDelivery } : {}),
           ...(deliveryFolderId ? { deliveryFolderId } : {}),
-          ...(assetSlots && Object.keys(assetSlots).length > 0 ? { assetSlots } : {}),
         },
       }),
     onSuccess: (task, _variables, origin) => {
@@ -935,12 +932,14 @@ export function useReviewCrewTask(crewId: string) {
       decision,
       note,
       revisionDueAt,
+      bindAssetNodeId,
     }: {
       taskId: string;
       expectedSubmissionId: string;
       decision: "approve" | "request_revision";
       note: string;
       revisionDueAt?: string;
+      bindAssetNodeId?: string;
     }) =>
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/review`, {
         body: {
@@ -948,6 +947,7 @@ export function useReviewCrewTask(crewId: string) {
           note,
           expectedSubmissionId,
           ...(revisionDueAt !== undefined ? { revisionDueAt } : {}),
+          ...(bindAssetNodeId !== undefined ? { bindAssetNodeId } : {}),
         },
       }),
     onSuccess: (task, _variables, origin) => {

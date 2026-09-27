@@ -1645,6 +1645,8 @@ function AssigneesEditor({
 }) {
   const t = useTranslations("crewTasks");
 
+  const suggestedPriceMin = (task as any).metadata?.priceRange?.min;
+
   const [draft, setDraft] = useState(() =>
     task.assignees.map((assignee) => ({
       userId: assignee.userId,
@@ -1653,6 +1655,7 @@ function AssigneesEditor({
         assignee.rewardAmountMinor == null
           ? ""
           : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
+      isSuggested: false,
     }))
   );
   const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
@@ -1664,6 +1667,7 @@ function AssigneesEditor({
           assignee.rewardAmountMinor == null
             ? ""
             : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
+        isSuggested: false,
       }))
     );
   });
@@ -1696,11 +1700,26 @@ function AssigneesEditor({
   if (!editable) return summary;
 
   const toggleMember = (userId: string) => {
-    setDraft((current) =>
-      current.some((item) => item.userId === userId)
-        ? current.filter((item) => item.userId !== userId)
-        : [...current, { userId, rewardAmountMinor: "", currency: CREW_CURRENCY }]
-    );
+    setDraft((current) => {
+      if (current.some((item) => item.userId === userId)) {
+        return current.filter((item) => item.userId !== userId);
+      }
+      // TODO(#557): confirm with Pax whether the default source is
+      // task template priceRange, catalog referencePrice, or manual-only.
+      const prefill =
+        typeof suggestedPriceMin === "number" && suggestedPriceMin > 0
+          ? formatCrewMoneyInput(String(suggestedPriceMin * 100))
+          : "";
+      return [
+        ...current,
+        {
+          userId,
+          rewardAmountMinor: prefill,
+          currency: CREW_CURRENCY,
+          isSuggested: Boolean(prefill),
+        },
+      ];
+    });
   };
 
   const save = async () => {
@@ -1741,26 +1760,37 @@ function AssigneesEditor({
                   <span className="truncate text-[11px]">
                     {displayNameOf(member.userId, displays)}
                   </span>
-                  <Input
-                    type="number"
-                    min={0.01}
-                    max={100_000_000}
-                    step={0.01}
-                    disabled={!selected}
-                    value={selected?.rewardAmountMinor ?? ""}
-                    onChange={(event) =>
-                      setDraft((current) =>
-                        current.map((item) =>
-                          item.userId === member.userId
-                            ? { ...item, rewardAmountMinor: event.target.value }
-                            : item
+                  <div className="flex flex-col justify-center">
+                    <Input
+                      type="number"
+                      min={0.01}
+                      max={100_000_000}
+                      step={0.01}
+                      disabled={!selected}
+                      value={selected?.rewardAmountMinor ?? ""}
+                      onChange={(event) =>
+                        setDraft((current) =>
+                          current.map((item) =>
+                            item.userId === member.userId
+                              ? {
+                                  ...item,
+                                  rewardAmountMinor: event.target.value,
+                                  isSuggested: false,
+                                }
+                              : item
+                          )
                         )
-                      )
-                    }
-                    aria-label={`${t("reward")} (${selected?.currency ?? CREW_CURRENCY})`}
-                    placeholder={selected?.currency ?? CREW_CURRENCY}
-                    className="h-7 text-[10px]"
-                  />
+                      }
+                      aria-label={`${t("reward")} (${selected?.currency ?? CREW_CURRENCY})`}
+                      placeholder={selected?.currency ?? CREW_CURRENCY}
+                      className="h-7 text-[10px]"
+                    />
+                    {selected?.isSuggested && (
+                      <span className="mt-0.5 text-[9px] text-muted-foreground">
+                        {t("rewardSuggestedHint")}
+                      </span>
+                    )}
+                  </div>
                   {selected && open && (
                     <TaskAgreedFee
                       taskId={task.id}

@@ -3277,7 +3277,8 @@
         "world": "Overview",
         "stats": "State",
         "media": "Media",
-        "catalog": "Catalog"
+        "catalog": "Catalog",
+        "analytics": "Analytics"
       },
       "chapters": {
         "action": "Chapters",
@@ -4364,5 +4365,29 @@
       "real_actor": "Professional Actor",
       "other": "Other"
     }
+  },
+  "studioAnalytics": {
+    "title": "Analytics",
+    "loading": "Loading analytics…",
+    "error": "Failed to load analytics data",
+    "retry": "Retry",
+    "empty": "No data available yet",
+    "overview": "Overview",
+    "playerCount": "Unique Players",
+    "playerCountHint": "Logged-in users",
+    "startCount": "Total Starts",
+    "completeCount": "Completions",
+    "completeRate": "Completion Rate",
+    "replayRate": "Replay Rate",
+    "endingsHeading": "Endings Reached",
+    "choicesHeading": "Key Choices",
+    "nodesHeading": "Top Scenes & Nodes",
+    "chaptersHeading": "Chapters Reached",
+    "columnKey": "Identifier",
+    "columnCount": "Visits / Selections",
+    "columnRatio": "Rate",
+    "columnOption": "Option",
+    "columnChapter": "Chapter",
+    "columnNode": "Node"
   }
 }
