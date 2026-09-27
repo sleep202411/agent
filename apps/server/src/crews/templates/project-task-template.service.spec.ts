@@ -117,8 +117,8 @@ describe('ProjectTaskTemplateService', () => {
         },
       );
 
-      expect(createdTasks).toHaveLength(6);
-      expect(mockTx.crewTask.create).toHaveBeenCalledTimes(6);
+      expect(createdTasks).toHaveLength(12);
+      expect(mockTx.crewTask.create).toHaveBeenCalledTimes(12);
 
       // Verify metadata on tasks
       for (const task of createdTasks) {

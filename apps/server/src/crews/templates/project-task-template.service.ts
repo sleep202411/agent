@@ -175,6 +175,19 @@ export class ProjectTaskTemplateService {
         ...(options.idempotencyKey
           ? { idempotencyKey: options.idempotencyKey }
           : {}),
+        category: item.category,
+        roleRequirement: item.roleRequirement,
+        deliveryFields: item.deliveryFields as unknown as Prisma.InputJsonValue,
+        unit: item.unit,
+        ...(item.qualification !== undefined
+          ? {
+              qualification:
+                item.qualification as unknown as Prisma.InputJsonValue,
+            }
+          : {}),
+        ...(item.priceRange !== undefined
+          ? { priceRange: item.priceRange as unknown as Prisma.InputJsonValue }
+          : {}),
       };
 
       if (typeof (tx as any).crewTask.create === 'function') {
