@@ -55,10 +55,56 @@ export class ExperienceRuntimeController {
       ? restoreExperienceRuntime(manifest, options.restore)
       : initializeExperienceRuntime(manifest, { randomSeed: options.randomSeed });
     this.#started = Boolean(options.restore);
+
+    // Phase 1b: restore a persisted sessionId across page refreshes (browser only).
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        const stored = sessionStorage.getItem(this.#sessionStorageKey());
+        if (stored) this.#playSessionId = stored;
+      }
+    } catch {
+      // SSR or private mode — ignore.
+    }
   }
 
   state(): ExperienceRuntimeState {
     return structuredClone(this.#state);
+  }
+
+  /**
+   * Phase 1b: sessionStorage key for the current film build. A new build or
+   * film gets a fresh key, so restored sessions never cross film boundaries.
+   */
+  #sessionStorageKey(): string {
+    return `play_session:${this.#manifest.gameId}:${this.#manifest.buildId}`;
+  }
+
+  /**
+   * Phase 1b: on reporter failure, clear the persisted sessionId when the
+   * backend reports the session is gone (404/410), so the next start() will
+   * create a fresh session instead of silently no-op'ing forever.
+   */
+  #handleReporterFailure(err: unknown, context: string): void {
+    console.warn(`[ExperienceRuntimeController] Play session ${context} failed:`, err);
+    const e = err as {
+      status?: number;
+      statusCode?: number;
+      response?: { status?: number };
+    };
+    const status = e?.status ?? e?.statusCode ?? e?.response?.status;
+    if (status === 404 || status === 410) {
+      this.#playSessionId = null;
+      try {
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.removeItem(this.#sessionStorageKey());
+        }
+      } catch {
+        // ignore
+      }
+      console.warn(
+        "[ExperienceRuntimeController] Play session no longer valid, will restart on next start()"
+      );
+    }
   }
 
   /**
@@ -75,8 +121,8 @@ export class ExperienceRuntimeController {
     }
     this.#started = true;
 
-    // Fire-and-forget session start
-    if (this.#reporter) {
+    // Fire-and-forget session start — skipped if a sessionId was restored.
+    if (this.#reporter && !this.#playSessionId) {
       void (async () => {
         try {
           const res = await this.#reporter!.onStart({
@@ -88,6 +134,13 @@ export class ExperienceRuntimeController {
           });
           if (res?.sessionId) {
             this.#playSessionId = res.sessionId;
+            try {
+              if (typeof sessionStorage !== "undefined") {
+                sessionStorage.setItem(this.#sessionStorageKey(), res.sessionId);
+              }
+            } catch {
+              // ignore
+            }
           }
         } catch (err) {
           console.warn("[ExperienceRuntimeController] Play session onStart failed:", err);
@@ -134,10 +187,7 @@ export class ExperienceRuntimeController {
             try {
               await this.#reporter!.onProgress(sessionId, { currentNode });
             } catch (err) {
-              console.warn(
-                "[ExperienceRuntimeController] Play session onProgress (scene.changed) failed:",
-                err
-              );
+              this.#handleReporterFailure(err, "onProgress (scene.changed)");
             }
           });
         }
@@ -150,7 +200,7 @@ export class ExperienceRuntimeController {
             try {
               await this.#reporter!.onComplete(sessionId, { endingId, currentNode });
             } catch (err) {
-              console.warn("[ExperienceRuntimeController] Play session onComplete failed:", err);
+              this.#handleReporterFailure(err, "onComplete");
             }
           });
         }
@@ -238,10 +288,7 @@ export class ExperienceRuntimeController {
                 },
               });
             } catch (err) {
-              console.warn(
-                "[ExperienceRuntimeController] Play session onProgress (choice) failed:",
-                err
-              );
+              this.#handleReporterFailure(err, "onProgress (choice)");
             }
           });
         } else {
