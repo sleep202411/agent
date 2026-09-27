@@ -1,6 +1,15 @@
 "use client";
 
-import { IconArrowRight, IconLoader2, IconMovie, IconPhoto } from "@tabler/icons-react";
+import {
+  IconArrowRight,
+  IconCheck,
+  IconClock,
+  IconLink,
+  IconLoader2,
+  IconMovie,
+  IconPhoto,
+  IconPlus,
+} from "@tabler/icons-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
@@ -11,6 +20,11 @@ import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { StoryClipVideoReplace } from "../story-clip-video-replace";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
+import {
+  createStoryboardChild,
+  listStoryboardChildren,
+  type StoryboardChildItem,
+} from "@/lib/collab/storyboard-children-api";
 
 const VIDEO_FILE = /\.(m4v|mov|mp4|webm)(\?|$)/i;
 
@@ -56,6 +70,7 @@ export function StoryNodeStoryboardPanel({
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
   const [opening, setOpening] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
 
   const storyboardQuery = useQuery({
     queryKey: storyProductionKeys.storyboard(projectId, chapterId),
@@ -63,6 +78,15 @@ export function StoryNodeStoryboardPanel({
     enabled: Boolean(chapterId),
     retry: false,
   });
+
+  const childrenQuery = useQuery({
+    queryKey: ["storyboard-children", projectId],
+    queryFn: ({ signal }) => listStoryboardChildren(projectId, signal),
+    retry: false,
+  });
+
+  const childItem = childrenQuery.data?.find((item: StoryboardChildItem) => item.nodeId === nodeId);
+
   const sequence =
     storyboardQuery.data?.find((candidate) => candidate.plotNodeId === nodeId) ?? null;
   const clips = sequence?.clips ?? [];
@@ -86,6 +110,22 @@ export function StoryNodeStoryboardPanel({
     } catch (error) {
       toast.error(storyApiErrorMessage(error, t("openError")));
       setOpening(false);
+    }
+  };
+
+  const handleCreateTask = async () => {
+    if (creatingTask) return;
+    setCreatingTask(true);
+    try {
+      await createStoryboardChild(projectId, nodeId, {});
+      await queryClient.invalidateQueries({
+        queryKey: ["storyboard-children", projectId],
+      });
+      toast.success(t("createTask"));
+    } catch (error) {
+      toast.error(storyApiErrorMessage(error, "Failed to create task"));
+    } finally {
+      setCreatingTask(false);
     }
   };
 
@@ -117,6 +157,58 @@ export function StoryNodeStoryboardPanel({
           )}
         </span>
       </button>
+
+      {/* Linked Task Status / Create Task Affordance */}
+      <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
+        {childItem?.taskId ? (
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <span className="block text-[9px] font-medium tracking-wider text-white/40 uppercase">
+                {t("linkedTask")}
+              </span>
+              <span className="mt-0.5 block truncate text-[11px] font-semibold text-white/88">
+                {childItem.title}
+              </span>
+            </div>
+            {childItem.status ? (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-white/[0.08] px-2 py-0.5 text-[10px] font-medium text-white/72">
+                <IconCheck className="size-3" stroke={2} />
+                {childItem.status}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="block text-[10px] text-white/45">{t("noTaskYet")}</span>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                disabled={!canEdit}
+                onClick={() => toast.info("Task picker available when tasks exist")}
+                className="inline-flex items-center gap-1 rounded-lg bg-white/[0.06] px-2.5 py-1 text-[10px] font-medium text-white/72 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-50"
+              >
+                <IconLink className="size-3" stroke={1.8} />
+                {t("linkTask")}
+              </button>
+              <button
+                type="button"
+                disabled={!canEdit || creatingTask}
+                onClick={() => void handleCreateTask()}
+                className="inline-flex items-center gap-1 rounded-lg bg-white/[0.12] px-2.5 py-1 text-[10px] font-medium text-white transition hover:bg-white/[0.18] disabled:opacity-50"
+              >
+                {creatingTask ? (
+                  <IconLoader2 className="size-3 animate-spin" stroke={2} />
+                ) : (
+                  <IconPlus className="size-3" stroke={2} />
+                )}
+                {t("createTask")}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {clips.length > 0 || (sequence && chapterId) ? (
         <div className="mt-3 -mx-0.5 flex gap-2 overflow-x-auto px-0.5 py-0.5">

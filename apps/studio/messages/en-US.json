@@ -3485,7 +3485,6 @@
         "clip": "Clip",
         "decision": "Player decision"
       },
-
       "foundation": {
         "description": "Define the dramatic promise before expanding the branch graph. Changes autosave to the mutable draft.",
         "logline": "Logline",
@@ -3779,7 +3778,11 @@
           "summary": "{count} clips · {ready} with media",
           "loading": "Loading the storyboard…",
           "open": "Edit storyboard",
-          "openError": "The storyboard could not be opened."
+          "openError": "The storyboard could not be opened.",
+          "linkTask": "Link task",
+          "createTask": "Create task",
+          "linkedTask": "Linked task",
+          "noTaskYet": "No task yet"
         }
       },
       "stats": {

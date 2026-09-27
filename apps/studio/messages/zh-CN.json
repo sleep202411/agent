@@ -3485,7 +3485,6 @@
         "clip": "镜头",
         "decision": "玩家选择"
       },
-
       "foundation": {
         "description": "先固化戏剧承诺，再展开分支图；修改会自动保存到可编辑草稿。",
         "logline": "一句话梗概",
@@ -3779,7 +3778,11 @@
           "summary": "{count} 个片段 · {ready} 个已有媒体",
           "loading": "分镜加载中…",
           "open": "编辑分镜",
-          "openError": "无法打开分镜。"
+          "openError": "无法打开分镜。",
+          "linkTask": "关联任务",
+          "createTask": "创建任务",
+          "linkedTask": "已关联任务",
+          "noTaskYet": "尚无任务"
         }
       },
       "stats": {

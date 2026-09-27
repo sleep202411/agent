@@ -3485,7 +3485,6 @@
         "clip": "鏡頭",
         "decision": "玩家選擇"
       },
-
       "foundation": {
         "description": "先固定戲劇承諾，再展開分支圖；修改會自動儲存到可編輯草稿。",
         "logline": "一句話梗概",
@@ -3779,7 +3778,11 @@
           "summary": "{count} 個片段 · {ready} 個已有媒體",
           "loading": "分鏡載入中…",
           "open": "編輯分鏡",
-          "openError": "無法打開分鏡。"
+          "openError": "無法打開分鏡。",
+          "linkTask": "關聯任務",
+          "createTask": "建立任務",
+          "linkedTask": "已關聯任務",
+          "noTaskYet": "尚無任務"
         }
       },
       "stats": {
