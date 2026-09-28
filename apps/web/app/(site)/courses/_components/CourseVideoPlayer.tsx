@@ -18,6 +18,7 @@ import {
 import { recomputePublicCourseProgress } from "@/src/hooks/use-courses-public";
 
 import { DropdownMenu as Menu } from "radix-ui";
+import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
 
 interface CourseVideoPlayerProps {
@@ -107,12 +108,18 @@ export function CourseVideoPlayer({
   /**
    * 切换视频播放和暂停状态。
    */
-  function togglePlay() {
+  async function togglePlay() {
     const video = videoRef.current;
     if (!video || !videoUrl) return;
 
     if (video.paused) {
-      void video.play();
+      try {
+        await video.play();
+      } catch (error) {
+        if (videoRef.current === video) {
+          toast.error(error instanceof Error ? error.message : t("playFailed"));
+        }
+      }
     } else {
       video.pause();
     }
@@ -214,16 +221,24 @@ export function CourseVideoPlayer({
   /**
    * 进入或退出视频播放区全屏模式。
    */
-  function toggleFullscreen() {
+  async function toggleFullscreen() {
     const container = containerRef.current;
     if (!container) return;
 
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
-      return;
+    const video = videoRef.current;
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else if (typeof container.requestFullscreen === "function") {
+        await container.requestFullscreen();
+      } else {
+        toast.error(t("fullscreenUnavailable"));
+      }
+    } catch (error) {
+      if (containerRef.current === container && videoRef.current === video) {
+        toast.error(error instanceof Error ? error.message : t("fullscreenFailed"));
+      }
     }
-
-    void container.requestFullscreen();
   }
 
   return (

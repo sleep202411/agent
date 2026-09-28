@@ -1,9 +1,11 @@
 import { recomputePublicCourseProgress } from "@/src/hooks/use-courses-public";
 // @vitest-environment jsdom
 import { act } from "react";
+import { toast } from "sonner";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { CourseVideoPlayer } from "./CourseVideoPlayer";
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 vi.mock("@/src/hooks/use-courses", () => ({
   readLatestStoredEpisodeProgress: () => null,
   writeStoredEpisodeProgress: vi.fn(),
@@ -106,4 +108,74 @@ it("clears replacement lesson time while flushing each originating series", asyn
     act(() => root.unmount());
   }
   expect(vi.mocked(recomputePublicCourseProgress)).toHaveBeenLastCalledWith(20, [2]);
+});
+
+it("reports rejected playback and fullscreen requests without unhandled rejections", async () => {
+  const node = document.createElement("div"),
+    root = createRoot(node);
+  vi.mocked(toast.error).mockClear();
+  try {
+    await act(async () =>
+      root.render(<CourseVideoPlayer courseId={1} title="Test" videoUrl="/test.mp4" />)
+    );
+    const video = node.querySelector("video")!;
+    video.play = vi.fn().mockRejectedValue(new Error("Playback denied"));
+    await act(async () =>
+      node.querySelector<HTMLButtonElement>('button[aria-label="Play or pause"]')!.click()
+    );
+    expect(toast.error).toHaveBeenLastCalledWith("Playback denied");
+    const section = node.querySelector("section")!;
+    section.requestFullscreen = vi.fn().mockRejectedValue(new Error("Fullscreen denied"));
+    await act(async () =>
+      node.querySelector<HTMLButtonElement>('button[aria-label="Fullscreen"]')!.click()
+    );
+    expect(toast.error).toHaveBeenLastCalledWith("Fullscreen denied");
+  } finally {
+    act(() => root.unmount());
+  }
+});
+
+it("reports unsupported fullscreen through the existing notification system", async () => {
+  const node = document.createElement("div"),
+    root = createRoot(node);
+  vi.mocked(toast.error).mockClear();
+  try {
+    await act(async () =>
+      root.render(<CourseVideoPlayer courseId={1} title="Test" videoUrl="/test.mp4" />)
+    );
+    await act(async () =>
+      node.querySelector<HTMLButtonElement>('button[aria-label="Fullscreen"]')!.click()
+    );
+    expect(toast.error).toHaveBeenLastCalledWith("fullscreenUnavailable");
+  } finally {
+    act(() => root.unmount());
+  }
+});
+
+it("ignores playback failures from a lesson replaced while play was pending", async () => {
+  const node = document.createElement("div"),
+    root = createRoot(node);
+  vi.mocked(toast.error).mockClear();
+  let reject!: (error: Error) => void;
+  try {
+    await act(async () =>
+      root.render(<CourseVideoPlayer courseId={1} title="Old" videoUrl="/old.mp4" />)
+    );
+    node.querySelector("video")!.play = vi.fn(
+      () =>
+        new Promise<void>((_, fail) => {
+          reject = fail;
+        })
+    );
+    await act(async () =>
+      node.querySelector<HTMLButtonElement>('button[aria-label="Play or pause"]')!.click()
+    );
+    await act(async () =>
+      root.render(<CourseVideoPlayer courseId={2} title="New" videoUrl="/new.mp4" />)
+    );
+    await act(async () => reject(new Error("Obsolete failure")));
+    expect(toast.error).not.toHaveBeenCalled();
+  } finally {
+    act(() => root.unmount());
+  }
 });

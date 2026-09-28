@@ -10154,6 +10154,9 @@
     "viewIp": "View this game's IP"
   },
   "coursePlayerControls": {
+    "playFailed": "Unable to start playback. Please try again.",
+    "fullscreenUnavailable": "Fullscreen is not available in this browser.",
+    "fullscreenFailed": "Unable to enter or exit fullscreen. Please try again.",
     "mute": "Mute",
     "unmute": "Unmute",
     "options": "More options",

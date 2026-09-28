@@ -10154,6 +10154,9 @@
     "viewIp": "查看此遊戲的 IP"
   },
   "coursePlayerControls": {
+    "playFailed": "無法開始播放，請重試。",
+    "fullscreenUnavailable": "此瀏覽器不支援全螢幕。",
+    "fullscreenFailed": "無法進入或退出全螢幕，請重試。",
     "mute": "靜音",
     "unmute": "取消靜音",
     "options": "更多選項",
