@@ -75,6 +75,8 @@ type ReferralGrantContext = {
 @Injectable()
 export class ReferralsService {
   private readonly logger = new Logger(ReferralsService.name);
+  // Best-effort recovery position only; durable payout truth stays in the DB.
+  private readonly recoveryCursors = new Map<string, string>();
   // Validate at service construction so a missing origin fails startup,
   // before an invitation can be sent to the wrong site's account system.
   private readonly inviteBase = resolveReferralInviteBaseUrl(process.env);
@@ -116,12 +118,8 @@ export class ReferralsService {
         `lazy invitee perk failed for ${userId}: ${e instanceof Error ? e.message : e}`,
       ),
     );
-    // Finish rewards left marked paid_out with items still ungranted. A claim
-    // flips the status before paying, so a crash between the two strands the
-    // reward: the UI reads "Granted" and offers no button, leaving the holder
-    // no way to reach the heal inside claimReward. claimReward now releases the
-    // flip when the payout THROWS, but a crash cannot — so this read-time sweep
-    // is the only self-service repair. Best-effort.
+    // Recover historical partial payouts. Current claims commit atomically,
+    // but older paid_out rows can still contain ungranted bundle items.
     await this.settleUnfinishedPaidOutRewards(userId).catch((e) =>
       this.logger.warn(
         `lazy reward settle failed for ${userId}: ${e instanceof Error ? e.message : e}`,
@@ -1301,13 +1299,16 @@ export class ReferralsService {
    * rest of the dashboard to render.
    */
   private async settleUnfinishedPaidOutRewards(userId: string): Promise<void> {
+    const cursor = this.recoveryCursors.get(userId);
     const stranded = await this.prisma.referralReward.findMany({
       where: {
         userId,
         status: 'paid_out',
         items: { some: { grantedAt: null } },
+        ...(cursor ? { id: { gt: cursor } } : {}),
       },
       select: { id: true, userId: true, currency: true },
+      orderBy: { id: 'asc' },
       take: 20,
     });
     for (const reward of stranded) {
@@ -1319,6 +1320,16 @@ export class ReferralsService {
           `settle failed for reward ${reward.id}: ${e instanceof Error ? e.message : e}`,
         );
       }
+    }
+    // Advance even after payout failures, then wrap to retry skipped rewards.
+    // Bound per-process memory; eviction/restart merely restarts a user's scan.
+    this.recoveryCursors.delete(userId);
+    if (stranded.length === 20) {
+      if (this.recoveryCursors.size >= 1_000) {
+        const oldest = this.recoveryCursors.keys().next();
+        if (!oldest.done) this.recoveryCursors.delete(oldest.value);
+      }
+      this.recoveryCursors.set(userId, stranded[stranded.length - 1].id);
     }
   }
 

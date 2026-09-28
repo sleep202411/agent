@@ -234,6 +234,86 @@ function makeService() {
   return { service, prisma, tx, legacy, entitlements, walletLedger, javaUsers };
 }
 
+describe('unfinished reward recovery', () => {
+  it('keeps recovery positions scoped to each recipient', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralReward.findMany.mockResolvedValue(
+      Array.from({ length: 20 }, (_, i) => ({
+        id: String(i).padStart(3, '0'),
+        userId: REFERRER,
+        currency: 'USD',
+      })),
+    );
+    jest
+      .spyOn(service, 'claimReward')
+      .mockResolvedValue({ status: 'paid_out' });
+    const recovery = service as unknown as {
+      settleUnfinishedPaidOutRewards(userId: string): Promise<void>;
+    };
+    await recovery.settleUnfinishedPaidOutRewards(REFERRER);
+    prisma.referralReward.findMany.mockResolvedValue([]);
+    await recovery.settleUnfinishedPaidOutRewards(REFEREE);
+    expect(prisma.referralReward.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: {
+          userId: REFEREE,
+          status: 'paid_out',
+          items: { some: { grantedAt: null } },
+        },
+      }),
+    );
+    await recovery.settleUnfinishedPaidOutRewards(REFERRER);
+    expect(prisma.referralReward.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: {
+          userId: REFERRER,
+          status: 'paid_out',
+          items: { some: { grantedAt: null } },
+          id: { gt: '019' },
+        },
+      }),
+    );
+  });
+  it('advances beyond 20 failing rewards and wraps to retry them', async () => {
+    const { service, prisma } = makeService();
+    const rows = Array.from({ length: 21 }, (_, i) => ({
+      id: String(i).padStart(3, '0'),
+      userId: REFERRER,
+      currency: 'USD',
+    }));
+    prisma.referralReward.findMany.mockImplementation(
+      ({ where, take }: { where: { id?: { gt: string } }; take: number }) =>
+        Promise.resolve(
+          rows.filter((r) => !where.id || r.id > where.id.gt).slice(0, take),
+        ),
+    );
+    const claim = jest
+      .spyOn(service, 'claimReward')
+      .mockImplementation((_user, id) => {
+        if (id !== '020') throw new Error('Payout unavailable');
+        rows.splice(
+          rows.findIndex((r) => r.id === id),
+          1,
+        );
+        return Promise.resolve({ status: 'paid_out' });
+      });
+    const recover = () =>
+      (
+        service as unknown as {
+          settleUnfinishedPaidOutRewards(userId: string): Promise<void>;
+        }
+      ).settleUnfinishedPaidOutRewards(REFERRER);
+    await recover();
+    expect(claim).toHaveBeenCalledTimes(20);
+    await recover();
+    expect(claim).toHaveBeenCalledWith(REFERRER, '020');
+    claim.mockClear();
+    await recover();
+    expect(claim).toHaveBeenCalledWith(REFERRER, '000');
+    expect(claim).toHaveBeenCalledTimes(20);
+  });
+});
+
 describe('invitation links', () => {
   it.each([
     'https://fizzdragon.com',
