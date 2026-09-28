@@ -222,13 +222,16 @@ export async function uploadFileToSignedUrl(
   options?: { method?: string; headers?: Record<string, string>; signal?: AbortSignal }
 ) {
   options?.signal?.throwIfAborted();
+  // Signed headers override defaults case-insensitively. Object spreading
+  // would let Fetch combine Content-Type and content-type into one value.
+  const headers = new Headers({ "Content-Type": file.type || "application/octet-stream" });
+  for (const [name, value] of Object.entries(options?.headers ?? {})) {
+    headers.set(name, value);
+  }
   const response = await fetch(signedUrl, {
     signal: options?.signal,
     method: options?.method ?? "PUT",
-    headers: {
-      "Content-Type": file.type || "application/octet-stream",
-      ...(options?.headers ?? {}),
-    },
+    headers,
     body: file,
   });
 

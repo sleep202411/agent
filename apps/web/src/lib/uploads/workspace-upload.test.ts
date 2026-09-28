@@ -17,6 +17,21 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 describe("workspace upload ownership", () => {
+  it.each(["content-type", "cOnTeNt-TyPe"])(
+    "preserves the signed %s without appending the file MIME type",
+    async (header) => {
+      post.mockResolvedValue({
+        url: "https://media.example/brief.txt?signature=x",
+        headers: { [header]: "application/octet-stream", "x-upload-token": "signed-token" },
+      });
+      await uploadWorkspaceFile(file(), { uploadType: "WORLD" });
+      const init = vi.mocked(fetch).mock.calls[0]?.[1];
+      const headers = new Headers(init?.headers);
+      expect(headers.get("content-type")).toBe("application/octet-stream");
+      expect(headers.get("x-upload-token")).toBe("signed-token");
+    }
+  );
+
   it("rejects an already abandoned upload before signing", async () => {
     const controller = new AbortController();
     controller.abort();
