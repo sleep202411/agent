@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: eafb30d32b59fd75e3d44af3fd8744d996618b0f
+    tag: 9fd0ed31dbe1ba2371ff0ce0ced026d4f090abd7
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -347,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: eafb30d32b59fd75e3d44af3fd8744d996618b0f
+    tag: 9fd0ed31dbe1ba2371ff0ce0ced026d4f090abd7
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 0d946e6aa4b002946baeb2e98a3bff1aba51d851
+    tag: 9fd0ed31dbe1ba2371ff0ce0ced026d4f090abd7
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
