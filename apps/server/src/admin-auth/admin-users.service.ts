@@ -526,6 +526,11 @@ export class AdminUsersService {
   }
 
   private assertAssignableRoleKey(roleKey: string) {
+    if (roleKey === ADMIN_ROLE_KEYS.MasterFinancialController) {
+      throw new BadRequestException(
+        'Master Financial Controller is assigned only through controlled deployment tooling',
+      );
+    }
     if (roleKey === ADMIN_ROLE_KEYS.SuperAdmin) {
       throw new BadRequestException({
         code: 'ADMIN_SUPER_ADMIN_ROLE_MANAGED_OUT_OF_BAND',
@@ -562,6 +567,8 @@ function primaryRoleKey(user: AdminUserForList): AdminRoleKey {
   const roleKeys = user.roles.map((userRole) => userRole.role.key);
   if (roleKeys.includes(ADMIN_ROLE_KEYS.SuperAdmin))
     return ADMIN_ROLE_KEYS.SuperAdmin;
+  if (roleKeys.includes(ADMIN_ROLE_KEYS.MasterFinancialController))
+    return ADMIN_ROLE_KEYS.MasterFinancialController;
   if (roleKeys.includes(ADMIN_ROLE_KEYS.Admin)) return ADMIN_ROLE_KEYS.Admin;
   return ADMIN_ROLE_KEYS.Operations;
 }

@@ -18,9 +18,11 @@ export const ADMIN_PERMISSION_KEYS = {
   UserRead: 'user.read',
   UserWrite: 'user.write',
   CrewManage: 'crew.manage',
+  CrewComputeReview: 'crew.compute.review',
 } as const;
 
 export const ADMIN_ROLE_KEYS = {
+  MasterFinancialController: 'master_financial_controller',
   SuperAdmin: 'super_admin',
   Admin: 'admin',
   Operations: 'operations',
@@ -30,6 +32,11 @@ export type AdminRoleKey =
   (typeof ADMIN_ROLE_KEYS)[keyof typeof ADMIN_ROLE_KEYS];
 
 export const ADMIN_PERMISSION_CATALOG = [
+  {
+    key: ADMIN_PERMISSION_KEYS.CrewComputeReview,
+    description:
+      'Review Crew compute allowances as Master Financial Controller',
+  },
   {
     key: ADMIN_PERMISSION_KEYS.AdminManage,
     description: '管理后台账号、角色和权限',
@@ -107,10 +114,21 @@ export const ADMIN_ROLE_CATALOG: Array<{
   permissions: string[];
 }> = [
   {
+    key: ADMIN_ROLE_KEYS.MasterFinancialController,
+    name: 'Master Financial Controller',
+    description: 'Designated headquarters approver for Crew compute allowances',
+    permissions: [
+      ADMIN_PERMISSION_KEYS.CrewManage,
+      ADMIN_PERMISSION_KEYS.CrewComputeReview,
+    ],
+  },
+  {
     key: ADMIN_ROLE_KEYS.SuperAdmin,
     name: '超级管理员',
     description: '拥有后台账号、安全策略、审计和所有运营权限',
-    permissions: Object.values(ADMIN_PERMISSION_KEYS),
+    permissions: Object.values(ADMIN_PERMISSION_KEYS).filter(
+      (key) => key !== ADMIN_PERMISSION_KEYS.CrewComputeReview,
+    ),
   },
   {
     key: ADMIN_ROLE_KEYS.Admin,

@@ -49,8 +49,8 @@ import { cn } from "@/lib/utils";
 const ALL_VALUE = "__all__";
 
 type AdminUserStatus = "invited" | "active" | "suspended" | "disabled";
-type AdminRoleKey = "super_admin" | "admin" | "operations";
-type AssignableAdminRoleKey = Exclude<AdminRoleKey, "super_admin">;
+type AdminRoleKey = "super_admin" | "admin" | "operations" | "master_financial_controller";
+type AssignableAdminRoleKey = Exclude<AdminRoleKey, "super_admin" | "master_financial_controller">;
 
 export type AdminUserRow = {
   id: string;
@@ -106,6 +106,7 @@ const statusOptions: Array<{ value: AdminUserStatus; label: string }> = [
 ];
 
 const roleOptions: Array<{ value: AdminRoleKey; label: string }> = [
+  { value: "master_financial_controller", label: "Master Financial Controller" },
   { value: "super_admin", label: "超级管理员" },
   { value: "admin", label: "普通管理员" },
   { value: "operations", label: "运营" },
@@ -113,7 +114,7 @@ const roleOptions: Array<{ value: AdminRoleKey; label: string }> = [
 const assignableRoleOptions: Array<{ value: AssignableAdminRoleKey; label: string }> =
   roleOptions.filter(
     (option): option is { value: AssignableAdminRoleKey; label: string } =>
-      option.value !== "super_admin"
+      option.value !== "super_admin" && option.value !== "master_financial_controller"
   );
 
 const emptyData: AdminUsersListData = {
@@ -473,7 +474,9 @@ export function AdminUsersPanel({
         const user = row.original;
         const isSelf = user.id === currentUserId;
         const roleSelectOptions =
-          user.roleKey === "super_admin" ? roleOptions : assignableRoleOptions;
+          user.roleKey === "super_admin" || user.roleKey === "master_financial_controller"
+            ? roleOptions
+            : assignableRoleOptions;
         return (
           <Select
             value={user.roleKey}
@@ -482,6 +485,7 @@ export function AdminUsersPanel({
               loading ||
               isSelf ||
               user.roleKey === "super_admin" ||
+              user.roleKey === "master_financial_controller" ||
               pendingKey === `${user.id}:roleKey`
             }
             options={roleSelectOptions}

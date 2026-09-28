@@ -9,6 +9,7 @@ export const AdminUserStatusSchema = z.enum([
 
 export const AdminSiteScopeSchema = z.enum(['global', 'cn', 'all']);
 export const AdminRoleKeySchema = z.enum([
+  'master_financial_controller',
   'super_admin',
   'admin',
   'operations',

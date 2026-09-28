@@ -29,7 +29,7 @@ const QueueQuery = z.object({
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
-@RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CrewManage)
+@RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CrewComputeReview)
 @Controller('admin/crew-compute-requests')
 export class CrewComputeRequestsAdminController {
   constructor(private readonly requests: CrewComputeRequestsService) {}

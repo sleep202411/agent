@@ -3,8 +3,11 @@ import { ComputeRequestsPanel } from "@/components/admin/crews/compute-requests-
 
 export default async function ComputeRequestsPage() {
   const session = await getAdminSession();
-  if (!session?.user.permissions.includes("crew.manage")) {
-    return <p role="alert">Crew administration permission is required.</p>;
+  if (
+    !session?.user.permissions.includes("crew.compute.review") ||
+    !session.user.roleKeys.includes("master_financial_controller")
+  ) {
+    return <p role="alert">Master Financial Controller permission is required.</p>;
   }
 
   return (

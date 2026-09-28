@@ -59,8 +59,12 @@ describe('Admin-only compute request HTTP boundary', () => {
     expect(listAdmin).not.toHaveBeenCalled();
     expect(decideAdmin).not.toHaveBeenCalled();
   });
-  it('rejects an Admin without Crew management permission', async () => {
-    validateSession.mockResolvedValue({ id: randomUUID(), permissions: [] });
+  it('rejects an Admin without compute review permission', async () => {
+    validateSession.mockResolvedValue({
+      id: randomUUID(),
+      permissions: ['crew.manage', 'billing.write'],
+      roleKeys: ['super_admin'],
+    });
     await request(app.getHttpServer() as Server)
       .post(`/admin/crew-compute-requests/${crewId}/${requestId}/decision`)
       .send({ status: 'approved' })
@@ -68,7 +72,7 @@ describe('Admin-only compute request HTTP boundary', () => {
     expect(decideAdmin).not.toHaveBeenCalled();
   });
   it('uses the authenticated Admin identity, validates IDs and ignores submitted actor fields', async () => {
-    const admin = { id: randomUUID(), permissions: ['crew.manage'] };
+    const admin = { id: randomUUID(), permissions: ['crew.compute.review'] };
     validateSession.mockResolvedValue(admin);
     await request(app.getHttpServer() as Server)
       .post(`/admin/crew-compute-requests/${crewId}/invalid/decision`)

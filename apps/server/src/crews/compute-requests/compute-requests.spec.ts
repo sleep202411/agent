@@ -4,7 +4,8 @@ const admin = {
   status: 'active',
   sessionId: 'session',
   siteScope: 'all',
-  permissions: ['crew.manage'],
+  permissions: ['crew.compute.review'],
+  roleKeys: ['master_financial_controller'],
 } as AdminActor;
 const contains = (value: unknown): unknown => expect.objectContaining(value);
 import { CrewComputeRequestsService } from './compute-requests.service';
@@ -141,9 +142,27 @@ describe('Crew compute requests', () => {
           note: '',
         },
       ),
-    ).rejects.toThrow('Admin Crew management');
+    ).rejects.toThrow('Master Financial Controller');
     expect(f.tx.crewComputeRequest.update).not.toHaveBeenCalled();
   });
+  it.each(['super_admin', 'admin', 'operations'])(
+    'rejects %s even with an accidentally granted review permission',
+    async (role) => {
+      const f = fixture();
+      const actor = { ...admin, roleKeys: [role] };
+      await expect(f.service.listAdmin(actor, {})).rejects.toThrow(
+        'Master Financial Controller',
+      );
+      for (const status of ['approved', 'rejected'] as const) {
+        await expect(
+          f.service.decideAdmin('crew', 'request', actor, { status, note: '' }),
+        ).rejects.toThrow('Master Financial Controller');
+      }
+      expect(f.tx.crewComputeRequest.update).not.toHaveBeenCalled();
+      expect(f.tx.adminAuditLog.create).not.toHaveBeenCalled();
+    },
+  );
+
   it('rejects inactive Admins before reading or changing requests', async () => {
     const f = fixture();
     await expect(
@@ -153,7 +172,7 @@ describe('Crew compute requests', () => {
         { ...admin, status: 'disabled' },
         { status: 'approved', note: '' },
       ),
-    ).rejects.toThrow('Admin Crew management');
+    ).rejects.toThrow('Master Financial Controller');
     expect(f.tx.crewComputeRequest.findFirst).not.toHaveBeenCalled();
     expect(f.tx.adminAuditLog.create).not.toHaveBeenCalled();
   });

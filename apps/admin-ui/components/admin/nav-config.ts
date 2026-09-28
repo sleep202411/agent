@@ -511,7 +511,7 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/crews/compute-requests",
           label: "Compute requests / 算力申请",
           icon: IconChecklist,
-          permission: "crew.manage",
+          permission: "crew.compute.review",
         },
         {
           href: "/crews/task-templates",

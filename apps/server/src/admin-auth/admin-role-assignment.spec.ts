@@ -1,6 +1,14 @@
+import {
+  AssignableAdminRoleKeySchema,
+  AdminRoleKeySchema,
+} from './admin-users.dto';
 import type { PrismaClient } from '@prisma/client';
 import { assignAdminRole } from './admin-auth.bootstrap';
-import { ADMIN_ROLE_KEYS } from './admin-auth.constants';
+import {
+  ADMIN_ROLE_CATALOG,
+  ADMIN_PERMISSION_KEYS,
+  ADMIN_ROLE_KEYS,
+} from './admin-auth.constants';
 
 function fixture() {
   const events: string[] = [];
@@ -91,4 +99,24 @@ it('does not delete roles if lock acquisition fails', async () => {
   ).rejects.toThrow('lock timeout');
   expect(f.tx.adminUserRole.deleteMany).not.toHaveBeenCalled();
   expect(f.tx.adminUserRole.createMany).not.toHaveBeenCalled();
+});
+
+it('reserves compute approval for the designated controller without widening existing Admin roles', () => {
+  const reviewers = ADMIN_ROLE_CATALOG.filter((role) =>
+    role.permissions.includes(ADMIN_PERMISSION_KEYS.CrewComputeReview),
+  );
+  expect(reviewers.map((role) => role.key)).toEqual([
+    ADMIN_ROLE_KEYS.MasterFinancialController,
+  ]);
+});
+it('does not allow the controller role to be assigned through account-management forms', () => {
+  expect(
+    AssignableAdminRoleKeySchema.safeParse(
+      ADMIN_ROLE_KEYS.MasterFinancialController,
+    ).success,
+  ).toBe(false);
+  expect(
+    AdminRoleKeySchema.safeParse(ADMIN_ROLE_KEYS.MasterFinancialController)
+      .success,
+  ).toBe(true);
 });
