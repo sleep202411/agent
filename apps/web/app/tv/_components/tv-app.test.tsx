@@ -200,12 +200,12 @@ describe("TV IP list", () => {
     );
     expect(toggle).not.toBeNull();
     const details = container.querySelector<HTMLElement>("#tv-channel-details")!;
+    expect(details.hidden).toBe(true);
+    await act(async () => toggle!.click());
     expect(details.hidden).toBe(false);
+    expect(toggle!.getAttribute("aria-expanded")).toBe("true");
     await act(async () => toggle!.click());
     expect(details.hidden).toBe(true);
-    expect(toggle!.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => toggle!.click());
-    expect(details.hidden).toBe(false);
     expect(details.textContent).toContain("First IP");
   });
 

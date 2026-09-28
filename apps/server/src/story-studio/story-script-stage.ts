@@ -163,6 +163,10 @@ export function screenplayDocumentFromXml(
         'Unsupported embedded Script content; convert it to text before extraction.',
       );
     if (node.nodeName === 'hardBreak') return '\n';
+    if (node.length === 0 && !['paragraph', 'heading'].includes(node.nodeName))
+      throw new Error(
+        `Unsupported Script element: ${node.nodeName}. Convert it to text before extraction.`,
+      );
     return node
       .toArray()
       .map((child) => textOf(child))

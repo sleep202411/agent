@@ -15,9 +15,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL(".", import.meta.url)),
+      "server-only": fileURLToPath(new URL("./vitest.server-only-stub.ts", import.meta.url)),
     },
   },
   test: {
+    setupFiles: ["./vitest.setup.ts"],
     env: {
       NEXT_PUBLIC_SITE_REGION: "com",
       NEXT_PUBLIC_OSS_BASE_URL: "https://oss.test.invalid",
