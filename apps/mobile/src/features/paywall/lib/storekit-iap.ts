@@ -1,3 +1,5 @@
+import { capturePaymentSession } from "./payment-session";
+import { loadIap } from "./native-payment-sdks";
 import { isMembershipCategory } from "./catalog";
 import type { PaywallProduct } from "./catalog";
 import { PurchaseCancelledError, type PurchaseResult } from "./purchase-types";
@@ -6,10 +8,6 @@ import { hasStoreKitIapNative } from "./storekit-native";
 type IapSdk = typeof import("react-native-iap");
 
 let connected = false;
-
-function loadIap(): IapSdk {
-  return require("react-native-iap") as IapSdk;
-}
 
 async function ensureStoreKitConnected(): Promise<IapSdk> {
   if (!hasStoreKitIapNative()) {
@@ -43,10 +41,13 @@ function errorMessage(error: unknown): string {
 }
 
 export async function purchaseStoreKitProduct(product: PaywallProduct): Promise<PurchaseResult> {
+  const assertCurrentSession = capturePaymentSession();
   const iap = await ensureStoreKitConnected();
+  assertCurrentSession();
   const sku = product.storeProductId;
   const type = productType(product);
   const products = await iap.fetchProducts({ skus: [sku], type });
+  assertCurrentSession();
   if (!products?.length) {
     throw new Error("Couldn't find product.");
   }
@@ -90,6 +91,8 @@ export async function purchaseStoreKitProduct(product: PaywallProduct): Promise<
 }
 
 export async function restoreStoreKitPurchases(): Promise<void> {
+  const assertCurrentSession = capturePaymentSession();
   const iap = await ensureStoreKitConnected();
+  assertCurrentSession();
   await iap.restorePurchases();
 }

@@ -1,3 +1,5 @@
+import { capturePaymentSession } from "./payment-session";
+import { loadPurchases } from "./native-payment-sdks";
 import { NativeModules, Platform } from "react-native";
 
 import { getAuthSnapshot } from "@/auth";
@@ -27,10 +29,6 @@ function hasPurchasesNative(): boolean {
   return Platform.OS !== "web" && NativeModules.RNPurchases != null;
 }
 
-function loadPurchases(): PurchasesSdk {
-  return require("react-native-purchases") as PurchasesSdk;
-}
-
 function isPurchasesCancelled(error: unknown, Purchases: PurchasesSdk): boolean {
   if (!error || typeof error !== "object" || !("code" in error)) return false;
   return error.code === Purchases.PURCHASES_ERROR_CODE.PURCHASE_CANCELLED_ERROR;
@@ -38,26 +36,32 @@ function isPurchasesCancelled(error: unknown, Purchases: PurchasesSdk): boolean 
 
 let configuredKey: string | null = null;
 
-async function ensurePurchasesConfigured(apiKey: string): Promise<PurchasesSdk> {
+async function ensurePurchasesConfigured(
+  apiKey: string,
+  assertCurrentSession: () => void
+): Promise<PurchasesSdk> {
   if (!hasPurchasesNative()) {
     throw new Error(
       "[paywall] RevenueCat is not in this binary. Rebuild the Expo dev client after installing react-native-purchases."
     );
   }
 
+  const userId = purchasesUserId();
   const sdk = loadPurchases();
   const Purchases = sdk.default;
 
   if (configuredKey !== apiKey || !(await Purchases.isConfigured())) {
+    assertCurrentSession();
     Purchases.configure({ apiKey });
     configuredKey = apiKey;
   }
 
-  const userId = purchasesUserId();
+  assertCurrentSession();
   if (userId) {
     await Purchases.logIn(userId);
   }
 
+  assertCurrentSession();
   return sdk;
 }
 
@@ -74,7 +78,9 @@ export async function purchaseIapProduct(product: PaywallProduct): Promise<Purch
   }
 
   const apiKey = revenueCatApiKey(channel);
-  const sdk = await ensurePurchasesConfigured(apiKey);
+  const assertCurrentSession = capturePaymentSession();
+  const sdk = await ensurePurchasesConfigured(apiKey, assertCurrentSession);
+  assertCurrentSession();
   try {
     await sdk.default.purchaseProduct(product.storeProductId);
     return { mocked: false, productId: product.storeProductId };
@@ -100,7 +106,9 @@ export async function restoreIapPurchases(): Promise<{ mocked: boolean }> {
   }
 
   const apiKey = revenueCatApiKey(channel);
-  const sdk = await ensurePurchasesConfigured(apiKey);
+  const assertCurrentSession = capturePaymentSession();
+  const sdk = await ensurePurchasesConfigured(apiKey, assertCurrentSession);
+  assertCurrentSession();
   await sdk.default.restorePurchases();
   return { mocked: false };
 }

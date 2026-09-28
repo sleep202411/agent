@@ -1,7 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { purchaseWithWechat } from "./wechat";
 import type { PaywallProduct } from "./catalog";
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), generation: 1 }));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => mocks.generation }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
 vi.mock("@/config", () => ({ webBaseUrl: "https://fixture.invalid" }));
 vi.mock("@/lib/api-client", () => ({ api: mocks }));
@@ -29,6 +30,7 @@ const price = (id: string, interval = "year", currency = "CNY", isActive = true)
 });
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.generation = 1;
   mocks.post.mockResolvedValue({
     order: { id: "order", status: "pending" },
     paymentIntent: { checkoutUrl: "weixin://pay" },
@@ -63,4 +65,20 @@ it("preserves an explicitly selected server price without guessing a replacement
     "/billing/checkout",
     expect.objectContaining({ data: expect.objectContaining({ priceId: "selected-price" }) })
   );
+});
+
+it("does not create an order after account replacement during price lookup", async () => {
+  let finish!: (result: unknown) => void;
+  mocks.get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  const operation = purchaseWithWechat(product);
+  const assertion = expect(operation).rejects.toThrow("Account changed");
+  mocks.generation = 2;
+  finish({ plans: [{ prices: [price("annual")] }] });
+  await assertion;
+  expect(mocks.post).not.toHaveBeenCalled();
 });

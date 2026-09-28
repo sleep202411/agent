@@ -1,3 +1,4 @@
+import { capturePaymentSession } from "./payment-session";
 import { Platform } from "react-native";
 
 import { webBaseUrl } from "@/config";
@@ -45,6 +46,7 @@ function scanFromCheckout(result: BillingCheckoutResult): WechatScanCheckout | n
 async function createWechatScanCheckout(
   product: PaywallProduct
 ): Promise<WechatScanCheckout | null> {
+  const assertCurrentSession = capturePaymentSession();
   const urls = returnUrls();
   const idempotencyKey = newIdempotencyKey();
 
@@ -91,6 +93,7 @@ async function createWechatScanCheckout(
     throw new Error("[paywall] No CNY WeChat price is available for this product.");
   }
 
+  assertCurrentSession();
   const result = await createBillingCheckout({ priceId, idempotencyKey, ...urls });
   return scanFromCheckout(result);
 }
