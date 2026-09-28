@@ -10681,6 +10681,7 @@ model CrewComputeRequest {
   points Int
   reason String @db.Text
   status String @default("pending") @db.VarChar(16)
+  decidedByAdminId String? @map("decided_by_admin_id") @db.Uuid
   decidedByUserId String? @map("decided_by_user_id") @db.VarChar(64)
   decisionNote String? @map("decision_note") @db.Text
   decidedAt DateTime? @map("decided_at") @db.Timestamptz(6)

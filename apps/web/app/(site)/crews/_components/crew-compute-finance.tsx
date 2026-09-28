@@ -20,7 +20,6 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
   const [points, setPoints] = useState("");
   const [reason, setReason] = useState("");
   const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
-  const [note, setNote] = useState("");
   const displays = useUserDisplays(
     query.data?.items.flatMap((row) => [
       row.userId,
@@ -155,17 +154,6 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
           ) : (
             <p className="text-sm text-muted-foreground">{t("noTasks")}</p>
           )}
-          {query.data.isOwner && (
-            <label className="block space-y-1 text-sm">
-              {t("decisionNote")}
-              <Input
-                maxLength={2000}
-                value={note}
-                disabled={action.isPending}
-                onChange={(event) => setNote(event.target.value)}
-              />
-            </label>
-          )}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
@@ -191,30 +179,12 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
                     <td className="max-w-xs whitespace-pre-wrap break-words p-2">{row.reason}</td>
                     <td className="p-2">{t(row.status)}</td>
                     <td className="p-2">
-                      {row.status === "pending" && query.data.isOwner ? (
-                        <div className="flex gap-2">
-                          {(["approved", "rejected"] as const).map((status) => (
-                            <Button
-                              key={status}
-                              variant="outline"
-                              disabled={action.isPending}
-                              onClick={() =>
-                                action.mutate(
-                                  { id: row.id, status, note },
-                                  { onSuccess: () => setNote(""), onError: error }
-                                )
-                              }
-                            >
-                              {t(status === "approved" ? "approve" : "reject")}
-                            </Button>
-                          ))}
-                        </div>
-                      ) : (
-                        <>
-                          {row.decidedByUserId && displayNameOf(row.decidedByUserId, displays)}
-                          <p className="whitespace-pre-wrap">{row.decisionNote}</p>
-                        </>
-                      )}
+                      {row.decidedByAdminId
+                        ? t("adminReviewer")
+                        : row.decidedByUserId
+                          ? displayNameOf(row.decidedByUserId, displays)
+                          : null}
+                      <p className="whitespace-pre-wrap">{row.decisionNote}</p>
                     </td>
                   </tr>
                 ))}

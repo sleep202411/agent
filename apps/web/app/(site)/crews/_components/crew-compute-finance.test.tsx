@@ -75,15 +75,14 @@ it("shows recorded consumption and requires an assigned task", async () => {
     [...host.querySelectorAll("button")].some((button) => button.textContent === "approve")
   ).toBe(false);
 });
-it("exposes owner approval with the correct request", async () => {
+it("does not expose approval or rejection even to the Crew owner", async () => {
   h.owner = true;
   await render();
-  const approve = [...host.querySelectorAll("button")].find((b) => b.textContent === "approve")!;
-  await act(async () => approve.click());
-  expect(h.mutate).toHaveBeenCalledWith(
-    { id: "request", status: "approved", note: "" },
-    expect.any(Object)
-  );
+  const labels = [...host.querySelectorAll("button")].map((button) => button.textContent);
+  expect(labels).not.toContain("approve");
+  expect(labels).not.toContain("reject");
+  expect(host.textContent).not.toContain("decisionNote");
+  expect(h.mutate).not.toHaveBeenCalled();
 });
 it("keeps the submit key stable across retries until details change", async () => {
   h.tasks = [{ id: "task", title: "Shot one", number: 1 }];

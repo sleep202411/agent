@@ -1,3 +1,11 @@
+import type { AdminActor } from '../../admin-auth';
+const admin = {
+  id: 'admin',
+  status: 'active',
+  sessionId: 'session',
+  siteScope: 'all',
+  permissions: ['crew.manage'],
+} as AdminActor;
 const contains = (value: unknown): unknown => expect.objectContaining(value);
 import { CrewComputeRequestsService } from './compute-requests.service';
 import { requireCrewComputeAllowance } from './compute-allowance';
@@ -46,6 +54,7 @@ function fixture(owner = true) {
       findMany: jest.fn().mockResolvedValue([]),
       groupBy: jest.fn().mockResolvedValue([]),
     },
+    adminAuditLog: { create: jest.fn().mockResolvedValue({}) },
     walletAccount: {
       findUnique: jest.fn().mockResolvedValue({
         id: 'wallet',
@@ -120,28 +129,49 @@ describe('Crew compute requests', () => {
     });
     expect(f.tx.$executeRaw).toHaveBeenCalledTimes(2);
   });
-  it('requires the owner, not a finance role', async () => {
+  it('requires an active privileged Admin, not a Crew role', async () => {
     const f = fixture(false);
     await expect(
-      f.service.decide('crew', 'request', 'finance', {
-        status: 'approved',
-        note: '',
-      }),
-    ).rejects.toThrow('Only the Crew owner');
+      f.service.decideAdmin(
+        'crew',
+        'request',
+        { ...admin, permissions: [] },
+        {
+          status: 'approved',
+          note: '',
+        },
+      ),
+    ).rejects.toThrow('Admin Crew management');
     expect(f.tx.crewComputeRequest.update).not.toHaveBeenCalled();
   });
+  it('rejects inactive Admins before reading or changing requests', async () => {
+    const f = fixture();
+    await expect(
+      f.service.decideAdmin(
+        'crew',
+        'request',
+        { ...admin, status: 'disabled' },
+        { status: 'approved', note: '' },
+      ),
+    ).rejects.toThrow('Admin Crew management');
+    expect(f.tx.crewComputeRequest.findFirst).not.toHaveBeenCalled();
+    expect(f.tx.adminAuditLog.create).not.toHaveBeenCalled();
+  });
+
   it('approves once and rejects conflicting decisions', async () => {
     const f = fixture();
     const input = { status: 'approved' as const, note: 'Render next shot' };
-    await f.service.decide('crew', 'request', 'owner', input);
-    await f.service.decide('crew', 'request', 'owner', input);
+    await f.service.decideAdmin('crew', 'request', admin, input);
+    await f.service.decideAdmin('crew', 'request', admin, input);
     expect(f.tx.crewComputeRequest.update).toHaveBeenCalledTimes(1);
+    expect(f.tx.adminAuditLog.create).toHaveBeenCalledTimes(1);
     expect(f.request).toMatchObject({
       status: 'approved',
-      decidedByUserId: 'owner',
+      decidedByAdminId: 'admin',
+      decidedByUserId: null,
     });
     await expect(
-      f.service.decide('crew', 'request', 'owner', {
+      f.service.decideAdmin('crew', 'request', admin, {
         status: 'rejected',
         note: '',
       }),
@@ -151,7 +181,7 @@ describe('Crew compute requests', () => {
     const f = fixture();
     f.tx.crewTask.findFirst.mockResolvedValueOnce(null);
     await expect(
-      f.service.decide('crew', 'request', 'owner', {
+      f.service.decideAdmin('crew', 'request', admin, {
         status: 'approved',
         note: '',
       }),
@@ -162,7 +192,7 @@ describe('Crew compute requests', () => {
       availableBalance: 1n,
     });
     await expect(
-      f.service.decide('crew', 'request', 'owner', {
+      f.service.decideAdmin('crew', 'request', admin, {
         status: 'approved',
         note: '',
       }),
@@ -173,7 +203,7 @@ describe('Crew compute requests', () => {
     const f = fixture();
     f.tx.crewTask.findFirst.mockResolvedValue(null);
     await expect(
-      f.service.decide('crew', 'request', 'owner', {
+      f.service.decideAdmin('crew', 'request', admin, {
         status: 'rejected',
         note: 'Task reassigned',
       }),

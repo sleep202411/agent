@@ -10622,8 +10622,9 @@
     "completedAt": "Completed at: {time}"
   },
   "crewComputeFinance": {
+    "adminReviewer": "Platform Admin",
     "title": "Compute points",
-    "description": "Request production points for an assigned task. The Crew owner approves an allowance against the linked workspace; approval does not top up the wallet.",
+    "description": "Request task compute points for Admin review. Approval authorizes the existing workspace balance.",
     "loading": "Loading…",
     "retry": "Retry",
     "crewScope": "Crew totals",

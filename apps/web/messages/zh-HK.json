@@ -10622,8 +10622,9 @@
     "completedAt": "完成時間：{time}"
   },
   "crewComputeFinance": {
+    "adminReviewer": "平台管理員",
     "title": "算力積分",
-    "description": "選擇已分配給您的任務申請製作積分。劇組擁有者審批關聯工作空間的使用額度；審批不會充值錢包。",
+    "description": "提交任務算力積分申請，由平台管理員審核。批准後使用工作區現有餘額。",
     "loading": "載入中…",
     "retry": "重試",
     "crewScope": "劇組總計",

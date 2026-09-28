@@ -21,6 +21,15 @@ describe('Crew compute request migration', () => {
         'utf8',
       ),
     );
+    await db.exec(
+      readFileSync(
+        resolve(
+          __dirname,
+          '../../../prisma/migrations/20260928173000_crew_compute_admin_review/migration.sql',
+        ),
+        'utf8',
+      ),
+    );
   }, 30000);
   afterAll(async () => {
     await db.close();
@@ -56,8 +65,24 @@ describe('Crew compute request migration', () => {
     );
     await expect(
       db.exec(
-        "INSERT INTO crew_compute_requests SELECT '01994bd8-0000-7000-8000-000000000005', crew_id, task_id, workspace_id, user_id, task_title, points, reason, status, decided_by_user_id, decision_note, decided_at, created_at, request_key FROM crew_compute_requests",
+        "INSERT INTO crew_compute_requests SELECT '01994bd8-0000-7000-8000-000000000005', crew_id, task_id, workspace_id, user_id, task_title, points, reason, status, decided_by_user_id, decision_note, decided_at, created_at, request_key, NULL FROM crew_compute_requests",
       ),
+    ).rejects.toThrow();
+  });
+  it('stores Admin decisions separately and rejects ambiguous actors', async () => {
+    await insert();
+    await db.exec(
+      "UPDATE crew_compute_requests SET status = 'approved', decided_by_admin_id = '01994bd8-0000-7000-8000-000000000006', decided_at = CURRENT_TIMESTAMP",
+    );
+    expect(
+      (await db.query('SELECT decided_by_user_id FROM crew_compute_requests'))
+        .rows,
+    ).toEqual([{ decided_by_user_id: null }]);
+    await expect(
+      db.exec("UPDATE crew_compute_requests SET decided_by_user_id = 'owner'"),
+    ).rejects.toThrow();
+    await expect(
+      db.exec("UPDATE crew_compute_requests SET status = 'pending'"),
     ).rejects.toThrow();
   });
 });

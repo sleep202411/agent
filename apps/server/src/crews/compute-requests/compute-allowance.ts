@@ -84,7 +84,7 @@ export async function requireCrewComputeAllowance(
   const committed = -(usage._sum.availableDelta ?? 0n);
   if (committed + input.amount > allowance)
     throw new ConflictException(
-      'Task compute allowance exceeded. Request additional points from the Crew owner.',
+      'Task compute allowance exceeded. Submit an additional points request for Admin review.',
     );
   return true;
 }

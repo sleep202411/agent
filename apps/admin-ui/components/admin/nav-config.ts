@@ -508,6 +508,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           permission: "crew.manage",
         },
         {
+          href: "/crews/compute-requests",
+          label: "Compute requests / 算力申请",
+          icon: IconChecklist,
+          permission: "crew.manage",
+        },
+        {
           href: "/crews/task-templates",
           label: "任务模板",
           icon: IconFileSettings,

@@ -21,7 +21,14 @@ export function availableCrewAssetName(
   for (let copy = 2; copy < 100_000; copy += 1) {
     const suffix = ` (${copy})`;
     const maxStemLength = Math.max(1, 256 - suffix.length - extension.length);
-    const candidate = `${stem.slice(0, maxStemLength)}${suffix}${extension}`;
+    let shortenedStem = stem.slice(0, maxStemLength);
+    // The API length limit uses UTF-16 units. Keep that budget without cutting
+    // an emoji/supplementary character in half before UTF-8 database storage.
+    const lastUnit = shortenedStem.charCodeAt(shortenedStem.length - 1);
+    if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) {
+      shortenedStem = shortenedStem.slice(0, -1);
+    }
+    const candidate = `${shortenedStem}${suffix}${extension}`;
     if (!usedLowercase.has(candidate.toLowerCase())) return candidate;
   }
   throw new ConflictException('Could not allocate a unique asset name');

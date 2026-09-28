@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  ForbiddenException,
+} from '@nestjs/common';
 import { z } from 'zod';
 import { CurrentUser, type AuthUser } from '../../auth';
 import { ZodValidationPipe } from '../../common/zod.pipe';
@@ -45,19 +53,11 @@ export class CrewComputeRequestsController {
       input,
     );
   }
+  // Explicitly reject old clients; Crew ownership never grants Admin authority.
   @Post(':requestId/decision')
-  decide(
-    @Param('crewId') crewId: string,
-    @Param('requestId') requestId: string,
-    @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(DecideComputeRequestSchema))
-    input: z.infer<typeof DecideComputeRequestSchema>,
-  ) {
-    return this.requests.decide(
-      parseIdParam(crewId, 'crewId'),
-      parseIdParam(requestId, 'requestId'),
-      user.userId,
-      input,
+  decide() {
+    throw new ForbiddenException(
+      'Compute requests can only be reviewed in Admin',
     );
   }
 }

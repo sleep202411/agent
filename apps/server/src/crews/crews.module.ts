@@ -1,3 +1,4 @@
+import { CrewComputeRequestsAdminController } from './compute-requests/compute-requests-admin.controller';
 import { CrewComputeRequestsController } from './compute-requests/compute-requests.controller';
 import { CrewComputeRequestsService } from './compute-requests/compute-requests.service';
 import {
@@ -186,6 +187,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAgreementsController,
     CrewEarningsController,
     CrewComputeRequestsController,
+    CrewComputeRequestsAdminController,
     CrewPayoutsController,
     ProjectTaskTemplatesAdminController,
     TaskTemplatesAdminAliasController,

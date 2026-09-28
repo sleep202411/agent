@@ -10,6 +10,7 @@ export interface ComputeRequest {
   points: number;
   reason: string;
   status: "pending" | "approved" | "rejected";
+  decidedByAdminId: string | null;
   decidedByUserId: string | null;
   decisionNote: string | null;
   createdAt: string;
@@ -37,17 +38,8 @@ export function useComputeRequests(crewId: string, cursor?: string) {
 export function useComputeRequestAction(crewId: string) {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (
-      action:
-        | { taskId: string; points: number; reason: string; requestKey: string }
-        | { id: string; status: "approved" | "rejected"; note: string }
-    ) =>
-      "id" in action
-        ? crewApi.post(
-            `/crews/${encodeURIComponent(crewId)}/compute-requests/${encodeURIComponent(action.id)}/decision`,
-            { body: { status: action.status, note: action.note } }
-          )
-        : crewApi.post(`/crews/${encodeURIComponent(crewId)}/compute-requests`, { body: action }),
+    mutationFn: (action: { taskId: string; points: number; reason: string; requestKey: string }) =>
+      crewApi.post(`/crews/${encodeURIComponent(crewId)}/compute-requests`, { body: action }),
     onSuccess: () => client.invalidateQueries({ queryKey: ["crew-compute-requests", crewId] }),
   });
 }

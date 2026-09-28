@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { type Prisma } from '@prisma/client';
+import { ADMIN_PERMISSION_KEYS, type AdminActor } from '../../admin-auth';
 import { PrismaService } from '../../infra/db/db.module';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 
@@ -172,18 +173,49 @@ export class CrewComputeRequestsService {
     });
   }
 
-  async decide(
+  private requireAdmin(admin: AdminActor) {
+    if (
+      !admin?.id ||
+      admin.status !== 'active' ||
+      !admin.permissions?.includes(ADMIN_PERMISSION_KEYS.CrewManage)
+    ) {
+      throw new ForbiddenException(
+        'Admin Crew management permission is required',
+      );
+    }
+  }
+
+  async listAdmin(
+    admin: AdminActor,
+    query: { status?: string; cursor?: string },
+  ) {
+    this.requireAdmin(admin);
+    const rows = await this.prisma.crewComputeRequest.findMany({
+      where: {
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: 51,
+      include: { task: { select: { crew: { select: { name: true } } } } },
+    });
+    return {
+      items: rows
+        .slice(0, 50)
+        .map(({ task, ...row }) => ({ ...row, crewName: task.crew.name })),
+      nextCursor: rows.length > 50 ? rows[49].id : null,
+    };
+  }
+
+  async decideAdmin(
     crewId: string,
     id: string,
-    userId: string,
+    admin: AdminActor,
     input: { status: 'approved' | 'rejected'; note: string },
   ) {
+    this.requireAdmin(admin);
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
-      if (!(await this.access(crewId, userId, tx)).isOwner)
-        throw new ForbiddenException(
-          'Only the Crew owner can decide compute requests',
-        );
       const request = await tx.crewComputeRequest.findFirst({
         where: { id, crewId },
       });
@@ -229,14 +261,32 @@ export class CrewComputeRequestsService {
         data: {
           status: input.status,
           decisionNote: input.note,
-          decidedByUserId: userId,
+          decidedByUserId: null,
+          decidedByAdminId: admin.id,
           decidedAt: new Date(),
         },
       });
-      if (!(await this.access(crewId, userId, tx)).isOwner)
-        throw new ForbiddenException('Crew ownership changed during approval');
       if (input.status === 'approved')
         await this.eligible(tx, crewId, request.taskId, request.userId);
+      await tx.adminAuditLog.create({
+        data: {
+          actorUserId: admin.id,
+          actorSessionId: admin.sessionId,
+          siteScope: admin.siteScope,
+          action: `admin.crew.compute.${input.status}`,
+          resourceType: 'crew_compute_request',
+          resourceId: id,
+          outcome: 'success',
+          metadata: {
+            crewId,
+            taskId: request.taskId,
+            workspaceId: request.workspaceId,
+            applicantUserId: request.userId,
+            points: request.points,
+            note: input.note,
+          },
+        },
+      });
       return result;
     });
   }
