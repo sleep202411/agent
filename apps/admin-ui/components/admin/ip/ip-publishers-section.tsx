@@ -6,15 +6,20 @@ import { Button } from "@/components/ui/button";
 import { requestEnvelope, toErrorMessage } from "./shared";
 import type { AdminIpPublishersData, IpPublisherAssignment, IpPublisherRow } from "./types";
 
-export function IpPublishersSection({
-  ipId,
-  assigned,
-  onSaved,
-}: {
+type PublisherSectionProps = {
   ipId: string;
   assigned: IpPublisherAssignment[];
   onSaved: () => void;
-}) {
+};
+
+export function IpPublishersSection(props: PublisherSectionProps) {
+  // Reset only when the saved assignment changes, not when a parent creates an
+  // equivalent array while another section is loading or updating.
+  const scope = JSON.stringify([props.ipId, props.assigned.map(({ id, status }) => [id, status])]);
+  return <PublisherSelection key={scope} {...props} />;
+}
+
+function PublisherSelection({ ipId, assigned, onSaved }: PublisherSectionProps) {
   const { busy, begin } = useAdminOperation();
   const [catalog, setCatalog] = useState<IpPublisherRow[]>([]);
   const [selected, setSelected] = useState<string[]>(() => assigned.map((row) => row.id));
@@ -22,13 +27,8 @@ export function IpPublishersSection({
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setSelected(assigned.map((row) => row.id));
-  }, [assigned]);
-
-  useEffect(() => {
     const operation = begin("read");
     if (!operation) return;
-    setError(null);
     void requestEnvelope<AdminIpPublishersData>("/api/admin/ip-commerce/publishers", {
       signal: operation.signal,
     })
@@ -45,6 +45,7 @@ export function IpPublishersSection({
   }, [begin, ipId]);
 
   async function save() {
+    if (!loaded || !dirty) return;
     const operation = begin();
     if (!operation) return;
     setError(null);
@@ -53,7 +54,7 @@ export function IpPublishersSection({
         method: "PATCH",
         signal: operation.signal,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ publisherIds: selected }),
+        body: JSON.stringify({ publisherIds: activeSelection }),
       });
       if (!operation.current()) return;
       onSaved();
@@ -70,9 +71,10 @@ export function IpPublishersSection({
     );
   }
 
+  const activeSelection = selected.filter((id) => catalog.some((row) => row.id === id));
   const dirty =
-    selected.length !== assigned.length ||
-    selected.some((id) => !assigned.some((row) => row.id === id));
+    activeSelection.length !== assigned.length ||
+    activeSelection.some((id) => !assigned.some((row) => row.id === id));
 
   return (
     <section className="rounded-xl border border-slate-200 p-4">
@@ -83,7 +85,12 @@ export function IpPublishersSection({
             FizzDragon 已确认合作的发行渠道；前台会展示 logo。
           </p>
         </div>
-        <Button type="button" size="sm" onClick={() => void save()} disabled={!dirty || busy}>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void save()}
+          disabled={!loaded || !dirty || busy}
+        >
           保存绑定
         </Button>
       </div>
