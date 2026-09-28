@@ -43,7 +43,10 @@ import { ProviderRegistry } from './provider-registry.service';
 import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
 import { AiPromptCompilerService } from './prompt-compiler.service';
 import { AiGenerationQueueService } from './queue.service';
-import { AiGenerationRoutingService } from './routing.service';
+import {
+  AiGenerationRoutingService,
+  refineProviderExecutionRouting,
+} from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
 import { AiCanonicalCatalogService } from './canonical-catalog.service';
 import type { AiPromptReferenceBinding } from './prompt-document.types';
@@ -308,6 +311,7 @@ export class AiGenerationService {
       skillSnapshot,
     });
     const normalizedInput = promptCompilation.normalizedInput;
+    await refineProviderExecutionRouting(decision, normalizedInput);
     const prompt = promptCompilation.snapshot.displayText;
     await this.requireReferenceAccess(
       user.userId,
@@ -368,7 +372,7 @@ export class AiGenerationService {
             type: model.type,
             provider,
             modelId: model.id,
-            deployment: model.deployment,
+            deployment: snapshot.selectedDeployment,
             canonicalModelId: snapshot.selectedCanonicalModelId ?? null,
             providerBindingId: snapshot.selectedProviderBindingId ?? null,
             schemaVersion: model.schemaVersion,
@@ -489,25 +493,12 @@ export class AiGenerationService {
     try {
       await this.queue.enqueue(queueName, id, 0, priority);
     } catch (err) {
-      await this.billingWallet.releaseForJob(job, 'ai_job_enqueue_failed');
-      const failed = await this.store.update(id, {
-        status: 'failed',
-        stage: 'failed',
-        completedAt: new Date().toISOString(),
-        error: {
-          code: 'QUEUE_UNAVAILABLE',
-          message: err instanceof Error ? err.message : String(err),
-          userMessage:
-            'Generation queue is temporarily unavailable. Please try again in a moment.',
-          retryable: true,
-          createdAt: new Date().toISOString(),
-        },
-      });
-      if (failed) this.emitJobUpdate(failed);
-      throw new ServiceUnavailableException({
-        code: 'QUEUE_UNAVAILABLE',
-        msg: 'Generation queue is temporarily unavailable. Please try again in a moment.',
-      });
+      // Admission already committed the job and its hold. A lost enqueue ACK
+      // does not prove the queue rejected it; refunding can race a live worker.
+      // The queued-row reconciler restores missing delivery with the same job.
+      this.logger.error(
+        `Generation ${id} awaiting queue recovery: ${String(err)}`,
+      );
     }
     const saved = (await this.store.findById(id)) ?? job;
     this.emitJobUpdate(saved);
@@ -906,7 +897,14 @@ export class AiGenerationService {
         msg: 'AI generation job not found.',
       });
     }
-    if (job.userId === user.userId) return job;
+
+    // Keep the existing creator history/read contract. Mutations on scoped
+    // jobs must recheck current permissions, even for the original submitter.
+    if (
+      job.userId === user.userId &&
+      minimumRole === WorkspaceMemberRole.viewer
+    )
+      return job;
 
     if (job.projectId) {
       await this.workspacePermissions.requireProjectRole(
@@ -938,6 +936,9 @@ export class AiGenerationService {
       );
       return job;
     }
+
+    // Legacy unscoped jobs still belong to their original submitter.
+    if (job.userId === user.userId) return job;
 
     throw new NotFoundException({
       code: 'JOB_NOT_FOUND',

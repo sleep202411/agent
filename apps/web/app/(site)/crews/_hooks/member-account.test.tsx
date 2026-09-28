@@ -2,14 +2,19 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { crewApi } from "./api";
+import { crewApi, CrewApiError } from "./api";
+import { useCrewPermissions } from "./use-crew-permissions";
 import { useCrewMembers, useCrewMembership } from "./use-members";
 
 const session = vi.hoisted(() => ({ id: "alice" as string | null }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: session.id ? { id: session.id } : null }),
+  useUserInfo: () => ({ data: { nickName: "Alice" } }),
 }));
-vi.mock("./api", () => ({ crewApi: { get: vi.fn(), post: vi.fn() } }));
+vi.mock("./api", async (original) => ({
+  ...(await original<typeof import("./api")>()),
+  crewApi: { get: vi.fn(), post: vi.fn() },
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let client: QueryClient;
@@ -72,4 +77,35 @@ it("hides member lists and current-user permissions on logout and while another 
   expect(view.current().detail.data).toBeUndefined();
   await settle();
   expect(crewApi.get).toHaveBeenCalledTimes(4);
+});
+
+it("revokes cached UI authority after a failed membership refresh and restores it after recovery", async () => {
+  const member = {
+    userId: "alice",
+    member: { isOwner: true, policyKeys: ["admin"] },
+    permissions: ["applications.review", "tasks.manage"],
+  };
+  vi.mocked(crewApi.get).mockResolvedValue(member);
+  const view = mount(() => ({
+    membership: useCrewMembership("crew-1"),
+    permissions: useCrewPermissions("crew-1"),
+  }));
+  await settle();
+  expect(view.current().permissions.can("tasks.manage")).toBe(true);
+  vi.mocked(crewApi.get).mockRejectedValue(new CrewApiError(403, "Membership revoked"));
+  await act(async () => {
+    await view.current().membership.refetch();
+  });
+  await settle();
+  expect(view.current().membership.data).toEqual(member); // React Query retains the old snapshot.
+  expect(view.current().permissions.can("tasks.manage")).toBe(false);
+  expect(view.current().permissions.isOwner).toBe(false);
+  expect(view.current().permissions.isMember).toBe(false);
+  expect(view.current().permissions.policyKeys).toEqual([]);
+  vi.mocked(crewApi.get).mockResolvedValue(member);
+  await act(async () => {
+    await view.current().membership.refetch();
+  });
+  await settle();
+  expect(view.current().permissions.can("tasks.manage")).toBe(true);
 });

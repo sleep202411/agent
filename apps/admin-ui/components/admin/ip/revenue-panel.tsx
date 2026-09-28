@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
+import { useOrderRevenueBreakdown } from "./use-order-revenue-breakdown";
 import { IconCoin, IconPercentage, IconRefresh, IconReportMoney } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -16,7 +18,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   fetchAdminRevenueEntries,
-  fetchAdminOrderRevenueBreakdown,
   updateIpCommerceRevenueShare,
 } from "@/lib/admin-ip-commerce-client";
 import {
@@ -31,7 +32,6 @@ import {
   toErrorMessage,
 } from "./shared";
 import type {
-  AdminOrderRevenueBreakdownData,
   AdminRevenueEntriesData,
   AdminRevenueEntryRow,
   IpCommerceSettingsData,
@@ -68,7 +68,7 @@ export function IpRevenuePanel({
     initialSettings?.creatorRevenueShareBps ?? null
   );
   const [sharePercent, setSharePercent] = useState(initialPercent);
-  const [savingShare, setSavingShare] = useState(false);
+  const { busy: savingShare, begin: beginShare } = useAdminOperation();
   const [shareError, setShareError] = useState<string | null>(null);
   const [shareSaved, setShareSaved] = useState(false);
 
@@ -77,15 +77,20 @@ export function IpRevenuePanel({
   const [ipId, setIpId] = useState("");
   const [userId, setUserId] = useState("");
   const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
+  const loadingMore = loading;
   const [error, setError] = useState<string | null>(initialError);
 
   // Per-order breakdown drilldown.
-  const [breakdown, setBreakdown] = useState<AdminOrderRevenueBreakdownData | null>(null);
-  const [breakdownLoading, setBreakdownLoading] = useState(false);
-  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+  const {
+    data: breakdown,
+    loading: breakdownLoading,
+    error: breakdownError,
+    open: openBreakdown,
+    close: closeBreakdown,
+  } = useOrderRevenueBreakdown();
 
+  const [loadedQuery, setLoadedQuery] = useState<Record<string, string>>({});
   function entryQuery(extra?: Record<string, string>) {
     return {
       ...(ipId.trim() ? { ipId: ipId.trim() } : {}),
@@ -102,60 +107,66 @@ export function IpRevenuePanel({
       setShareError("默认分成比例必须在 0% 到 100% 之间。");
       return;
     }
-    setSavingShare(true);
+    const operation = beginShare();
+    if (!operation) return;
     setShareError(null);
     setShareSaved(false);
     try {
-      const result = await updateIpCommerceRevenueShare(Math.round(percent * 100));
+      const result = await updateIpCommerceRevenueShare(
+        Math.round(percent * 100),
+        operation.signal
+      );
+      if (!operation.current()) return;
       setSavedBps(result.valueInt);
       if (result.valueInt != null) setSharePercent(String(result.valueInt / 100));
       setShareSaved(true);
     } catch (err) {
-      setShareError(toErrorMessage(err));
+      if (operation.current()) setShareError(toErrorMessage(err));
     } finally {
-      setSavingShare(false);
+      operation.finish();
     }
   }
 
   async function refreshEntries() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
+    const query = entryQuery();
     setError(null);
     try {
-      setEntries(await fetchAdminRevenueEntries(entryQuery()));
+      const data = await fetchAdminRevenueEntries(query, operation.signal);
+      if (operation.current()) {
+        setEntries(data);
+        setLoadedQuery(query);
+      }
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
-
   async function loadMoreEntries() {
-    if (!entries.nextCursor || loadingMore) return;
-    setLoadingMore(true);
+    if (!entries.nextCursor) return;
+    if (JSON.stringify(entryQuery()) !== JSON.stringify(loadedQuery)) {
+      await refreshEntries();
+      return;
+    }
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      const next = await fetchAdminRevenueEntries(entryQuery({ cursor: entries.nextCursor }));
-      setEntries((current) => ({
-        items: [...current.items, ...next.items],
-        nextCursor: next.nextCursor,
-      }));
+      const next = await fetchAdminRevenueEntries(
+        { ...loadedQuery, cursor: entries.nextCursor },
+        operation.signal
+      );
+      if (operation.current())
+        setEntries((current) => ({
+          items: [...current.items, ...next.items],
+          nextCursor: next.nextCursor,
+        }));
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoadingMore(false);
-    }
-  }
-
-  async function openBreakdown(orderId: string) {
-    setBreakdownLoading(true);
-    setBreakdownError(null);
-    setBreakdown(null);
-    try {
-      setBreakdown(await fetchAdminOrderRevenueBreakdown(orderId));
-    } catch (err) {
-      setBreakdownError(toErrorMessage(err));
-    } finally {
-      setBreakdownLoading(false);
+      operation.finish();
     }
   }
 
@@ -251,9 +262,7 @@ export function IpRevenuePanel({
         ),
       },
     ],
-    // openBreakdown is a render-stable closure used only in an onClick; rebuild
-    // only when the disabled state flips (matches the other action tables).
-    [breakdownLoading]
+    [breakdownLoading, openBreakdown]
   );
 
   return (
@@ -284,6 +293,7 @@ export function IpRevenuePanel({
               min={0}
               max={100}
               step="0.01"
+              disabled={savingShare}
               value={sharePercent}
               onChange={(event) => {
                 setSharePercent(event.target.value);
@@ -379,10 +389,7 @@ export function IpRevenuePanel({
         breakdown={breakdown}
         loading={breakdownLoading}
         error={breakdownError}
-        onClose={() => {
-          setBreakdown(null);
-          setBreakdownError(null);
-        }}
+        onClose={closeBreakdown}
       />
     </div>
   );

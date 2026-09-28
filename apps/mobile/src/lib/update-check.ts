@@ -37,11 +37,18 @@ function promptUpdate(
   url: string,
   forced: boolean
 ) {
+  const openUpdate = async () => {
+    try {
+      await Linking.openURL(url);
+    } catch (error) {
+      Alert.alert(t("update.openFailed"), error instanceof Error ? error.message : undefined);
+    }
+  };
   const buttons = forced
-    ? [{ text: t("update.updateNow"), onPress: () => void Linking.openURL(url) }]
+    ? [{ text: t("update.updateNow"), onPress: () => void openUpdate() }]
     : [
         { text: t("update.later"), style: "cancel" as const },
-        { text: t("update.updateNow"), onPress: () => void Linking.openURL(url) },
+        { text: t("update.updateNow"), onPress: () => void openUpdate() },
       ];
   Alert.alert(
     `${t("update.availableTitle")} ${versionName}`,

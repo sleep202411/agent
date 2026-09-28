@@ -1,6 +1,9 @@
 "use client";
 
-import { useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useAdminSessionRequests } from "../admin-session-boundary";
+import { useAdminOperation } from "../use-admin-operation";
+import { adminUiApiPath } from "@/lib/admin-api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -66,19 +69,24 @@ function CoverThumb({
   );
 }
 
-async function uploadCoverFile(file: File): Promise<string> {
+async function uploadCoverFile(file: File, signal: AbortSignal): Promise<string> {
   const form = new FormData();
   form.set("file", file);
-  const response = await fetch("/api/admin/courses/upload/cover", { method: "POST", body: form });
+  const response = await fetch(adminUiApiPath("/api/admin/courses/upload/cover"), {
+    method: "POST",
+    body: form,
+    signal,
+  });
   const body = (await response.json().catch(() => null)) as {
     path?: string;
     data?: string;
     error?: string;
     msg?: string;
   } | null;
+  signal.throwIfAborted();
   const path = body?.path?.trim() || (typeof body?.data === "string" ? body.data.trim() : "");
   if (!response.ok || !path) {
-    throw new Error("文件上传失败");
+    throw new Error(body?.error ?? body?.msg ?? "文件上传失败");
   }
   return path;
 }
@@ -96,52 +104,68 @@ function putCourseVideoToOss(
   method: string,
   headers: Record<string, string>,
   file: File,
+  signal: AbortSignal,
   onProgress?: (percent: number) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Upload aborted", "AbortError"));
+      return;
+    }
     const xhr = new XMLHttpRequest();
-    xhr.open(method || "PUT", uploadUrl, true);
-    const merged: Record<string, string> = {
-      "Content-Type": file.type || "application/octet-stream",
-      ...headers,
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", abort);
+      xhr.onload = xhr.onerror = xhr.onabort = null;
+      xhr.upload.onprogress = null;
+      if (error) reject(error);
+      else resolve();
     };
-    for (const [key, value] of Object.entries(merged)) {
-      xhr.setRequestHeader(key, value);
-    }
-    if (onProgress) {
+    const abort = () => {
+      xhr.abort();
+      finish(new DOMException("Upload aborted", "AbortError"));
+    };
+    try {
+      xhr.open(method || "PUT", uploadUrl, true);
+      const merged = new Headers(headers);
+      if (!merged.has("content-type"))
+        merged.set("content-type", file.type || "application/octet-stream");
+      merged.forEach((value, key) => xhr.setRequestHeader(key, value));
       xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable && event.total > 0) {
-          onProgress(Math.round((event.loaded / event.total) * 100));
-        }
+        if (!settled && !signal.aborted && event.lengthComputable && event.total > 0)
+          onProgress?.(Math.round((event.loaded / event.total) * 100));
       };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) finish();
+        else
+          finish(
+            new Error(
+              xhr.responseText
+                ? `文件上传失败：${extractOssErrorMessage(xhr.responseText, xhr.status)}`
+                : "文件上传失败"
+            )
+          );
+      };
+      xhr.onerror = () => finish(new Error("文件上传失败"));
+      xhr.onabort = () => finish(new DOMException("Upload aborted", "AbortError"));
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+      else xhr.send(file);
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error(String(error)));
     }
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-        return;
-      }
-      const bodyText = xhr.responseText || "";
-      reject(
-        new Error(
-          bodyText
-            ? `文件上传失败：${extractOssErrorMessage(bodyText, xhr.status)}`
-            : "文件上传失败"
-        )
-      );
-    };
-    xhr.onerror = () => {
-      reject(new Error("文件上传失败"));
-    };
-    xhr.onabort = () => reject(new DOMException("Upload aborted", "AbortError"));
-    xhr.send(file);
   });
 }
 
 async function uploadCourseVideoDirect(
   file: File,
+  signal: AbortSignal,
   onProgress?: (percent: number) => void
 ): Promise<string> {
-  const urlRes = await fetch("/api/admin/courses/upload/video-url", {
+  const urlRes = await fetch(adminUiApiPath("/api/admin/courses/upload/video-url"), {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -160,11 +184,13 @@ async function uploadCourseVideoDirect(
       path?: string;
     };
   } | null;
+  signal.throwIfAborted();
   if (!urlRes.ok || urlBody?.code !== 200 || !urlBody.data?.uploadUrl || !urlBody.data.path) {
-    throw new Error("文件上传失败");
+    throw new Error(urlBody?.error ?? urlBody?.msg ?? "文件上传失败");
   }
   const { uploadUrl, method, headers, path } = urlBody.data;
-  await putCourseVideoToOss(uploadUrl, method || "PUT", headers ?? {}, file, onProgress);
+  await putCourseVideoToOss(uploadUrl, method || "PUT", headers ?? {}, file, signal, onProgress);
+  signal.throwIfAborted();
   return path;
 }
 
@@ -188,7 +214,11 @@ function videoCoverUploadKey(clientKey: string) {
   return `video-cover:${clientKey}`;
 }
 
-export function CourseEditor({
+export function CourseEditor(props: Parameters<typeof CourseEditorContent>[0]) {
+  return <CourseEditorContent key={props.course?.id ?? "missing"} {...props} />;
+}
+
+function CourseEditorContent({
   course: initial,
   loadError,
   siteLabel,
@@ -200,6 +230,24 @@ export function CourseEditor({
   databaseLabel: string;
 }) {
   const router = useRouter();
+  const { busy: writeBusy, begin } = useAdminOperation();
+  const writing = useRef(false);
+  const activeWrite = useRef<ReturnType<typeof begin>>(null);
+  const requests = useAdminSessionRequests();
+  const uploadKeys = useRef(new Map<string, NonNullable<ReturnType<typeof requests.begin>>>());
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    const leases = uploadKeys.current;
+    return () => {
+      mounted.current = false;
+      for (const lease of leases.values()) {
+        lease.cancel();
+        lease.release();
+      }
+      leases.clear();
+    };
+  }, []);
   const [course, setCourse] = useState<Course | null>(initial);
   const [locale, setLocale] = useState<CourseLocaleCode>(COURSE_PRIMARY_LOCALE);
   const [saving, setSaving] = useState(false);
@@ -218,6 +266,10 @@ export function CourseEditor({
   const titlePreview = useMemo(() => (course ? courseDisplayTitle(course) : "课程编辑"), [course]);
 
   function beginUpload(key: string, withPercent: boolean) {
+    if (!mounted.current || writing.current || uploadKeys.current.has(key)) return null;
+    const lease = requests.begin();
+    if (!lease) return null;
+    uploadKeys.current.set(key, lease);
     setUploads((current) => ({ ...current, [key]: { percent: withPercent ? 0 : null } }));
     setUploadErrors((current) => {
       if (!(key in current)) return current;
@@ -225,6 +277,10 @@ export function CourseEditor({
       delete next[key];
       return next;
     });
+    return {
+      ...lease,
+      current: () => mounted.current && uploadKeys.current.get(key) === lease && lease.current(),
+    };
   }
 
   function setUploadPercent(key: string, percent: number) {
@@ -234,7 +290,11 @@ export function CourseEditor({
     });
   }
 
-  function endUpload(key: string) {
+  function endUpload(key: string, operation: NonNullable<ReturnType<typeof beginUpload>>) {
+    if (uploadKeys.current.get(key)?.signal !== operation.signal) return;
+    uploadKeys.current.delete(key);
+    operation.release();
+    if (!mounted.current) return;
     setUploads((current) => {
       if (!(key in current)) return current;
       const next = { ...current };
@@ -253,7 +313,19 @@ export function CourseEditor({
         <PageHeader title="课程编辑" description={`${siteLabel} · ${databaseLabel}`} />
         <ErrorBanner message={error ?? "课程不存在或加载失败。"} />
         <Button variant="outline" asChild>
-          <Link href="/courses">
+          <Link
+            href="/courses"
+            onClick={() => {
+              writing.current = true;
+              activeWrite.current?.cancel();
+              activeWrite.current?.finish();
+              for (const lease of uploadKeys.current.values()) {
+                lease.cancel();
+                lease.release();
+              }
+              uploadKeys.current.clear();
+            }}
+          >
             <IconArrowLeft className="size-4" />
             返回列表
           </Link>
@@ -276,65 +348,109 @@ export function CourseEditor({
   }
 
   function setVideos(next: CourseVideo[]) {
+    const retained = new Set(next.map((video) => video.clientKey));
+    for (const video of course?.videos ?? []) {
+      if (retained.has(video.clientKey)) continue;
+      for (const key of [
+        videoFileUploadKey(video.clientKey),
+        videoCoverUploadKey(video.clientKey),
+      ]) {
+        const lease = uploadKeys.current.get(key);
+        if (lease) {
+          lease.cancel();
+          lease.release();
+          uploadKeys.current.delete(key);
+        }
+        setUploads((current) => {
+          const result = { ...current };
+          delete result[key];
+          return result;
+        });
+      }
+    }
     setCourse((current) => (current ? { ...current, videos: reindexVideos(next) } : current));
   }
 
   async function handleCoverUpload(file: File | null) {
     if (!file) return;
     const key = courseCoverUploadKey();
-    beginUpload(key, false);
+    const operation = beginUpload(key, false);
+    if (!operation) return;
     try {
-      const path = await uploadCoverFile(file);
-      patchLocale({ coverUrl: path });
+      const path = await uploadCoverFile(file, operation.signal);
+      if (!operation.current()) return;
+      setCourse((current) =>
+        current && current.localized[locale].coverUrl === currentLocale.coverUrl
+          ? {
+              ...current,
+              localized: {
+                ...current.localized,
+                [locale]: { ...current.localized[locale], coverUrl: path },
+              },
+            }
+          : current
+      );
     } catch (err) {
-      failUpload(key, err instanceof Error ? err.message : "文件上传失败");
+      if (operation.current()) failUpload(key, err instanceof Error ? err.message : "文件上传失败");
     } finally {
-      endUpload(key);
+      endUpload(key, operation);
     }
   }
 
   async function handleVideoFileUpload(clientKey: string, file: File | null) {
     if (!file) return;
     const key = videoFileUploadKey(clientKey);
-    beginUpload(key, true);
+    const operation = beginUpload(key, true);
+    if (!operation) return;
     try {
-      const path = await uploadCourseVideoDirect(file, (percent) => setUploadPercent(key, percent));
+      const path = await uploadCourseVideoDirect(file, operation.signal, (percent) => {
+        if (operation.current()) setUploadPercent(key, percent);
+      });
+      if (!operation.current()) return;
       setCourse((current) => {
         if (!current) return current;
         const videos = current.videos.map((video) =>
-          video.clientKey === clientKey ? { ...video, videoKey: path } : video
+          video.clientKey === clientKey &&
+          video.videoKey === course?.videos.find((item) => item.clientKey === clientKey)?.videoKey
+            ? { ...video, videoKey: path }
+            : video
         );
         return { ...current, videos };
       });
     } catch (err) {
-      failUpload(key, err instanceof Error ? err.message : "文件上传失败");
+      if (operation.current()) failUpload(key, err instanceof Error ? err.message : "文件上传失败");
     } finally {
-      endUpload(key);
+      endUpload(key, operation);
     }
   }
 
   async function handleVideoCoverUpload(clientKey: string, file: File | null) {
     if (!file) return;
     const key = videoCoverUploadKey(clientKey);
-    beginUpload(key, false);
+    const operation = beginUpload(key, false);
+    if (!operation) return;
     try {
-      const path = await uploadCoverFile(file);
+      const path = await uploadCoverFile(file, operation.signal);
+      if (!operation.current()) return;
       setCourse((current) => {
         if (!current) return current;
         const videos = current.videos.map((video) =>
-          video.clientKey === clientKey ? { ...video, coverUrl: path } : video
+          video.clientKey === clientKey &&
+          video.coverUrl === course?.videos.find((item) => item.clientKey === clientKey)?.coverUrl
+            ? { ...video, coverUrl: path }
+            : video
         );
         return { ...current, videos };
       });
     } catch (err) {
-      failUpload(key, err instanceof Error ? err.message : "文件上传失败");
+      if (operation.current()) failUpload(key, err instanceof Error ? err.message : "文件上传失败");
     } finally {
-      endUpload(key);
+      endUpload(key, operation);
     }
   }
 
   async function save() {
-    if (!course) return;
+    if (!course || writing.current || uploadKeys.current.size) return;
     if (!hasAnyCourseTitle(course.localized)) {
       setError("至少填写一种语言的课程名称。");
       return;
@@ -345,58 +461,84 @@ export function CourseEditor({
         return;
       }
     }
+    const operation = begin();
+    if (!operation) return;
+    activeWrite.current = operation;
+    writing.current = true;
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/admin/courses/${course.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          localized: course.localized,
-          videos: course.videos.map((video, index) => ({
-            videoKey: video.videoKey,
-            coverUrl: video.coverUrl,
-            sortOrder: index + 1,
-            localized: video.localized,
-          })),
-          instructorUserIds: course.instructors.map((item) => item.userId),
-        }),
-      });
+      const response = await fetch(
+        adminUiApiPath(`/api/admin/courses/${encodeURIComponent(course.id)}`),
+        {
+          signal: operation.signal,
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            localized: course.localized,
+            videos: course.videos.map((video, index) => ({
+              videoKey: video.videoKey,
+              coverUrl: video.coverUrl,
+              sortOrder: index + 1,
+              localized: video.localized,
+            })),
+            instructorUserIds: course.instructors.map((item) => item.userId),
+          }),
+        }
+      );
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!operation.current()) return;
       if (!response.ok) throw new Error(body?.error ?? `保存失败：${response.status}`);
       setNotice("已保存（未改变上架状态）。");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "保存失败。");
+      if (operation.current()) setError(err instanceof Error ? err.message : "保存失败。");
     } finally {
-      setSaving(false);
+      if (operation.current()) {
+        setSaving(false);
+        writing.current = false;
+      }
+      operation.finish();
     }
   }
 
   async function togglePublish() {
-    if (!course) return;
+    if (!course || writing.current || uploadKeys.current.size) return;
     if (!course.published && !hasAnyCourseTitle(course.localized)) {
       setError("发布前请至少填写一种语言的课程名称，并先保存。");
       return;
     }
+    const operation = begin();
+    if (!operation) return;
+    activeWrite.current = operation;
+    writing.current = true;
     setPublishing(true);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/admin/courses/${course.id}/publish`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ published: !course.published }),
-      });
+      const response = await fetch(
+        adminUiApiPath(`/api/admin/courses/${encodeURIComponent(course.id)}/publish`),
+        {
+          signal: operation.signal,
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ published: !course.published }),
+        }
+      );
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!operation.current()) return;
       if (!response.ok) throw new Error(body?.error ?? `操作失败：${response.status}`);
-      setCourse({ ...course, published: !course.published });
+      setCourse((current) => (current ? { ...current, published: !course.published } : current));
       setNotice(course.published ? "已下架。" : "已发布上架。");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "更新发布状态失败。");
+      if (operation.current()) setError(err instanceof Error ? err.message : "更新发布状态失败。");
     } finally {
-      setPublishing(false);
+      if (operation.current()) {
+        setPublishing(false);
+        writing.current = false;
+      }
+      operation.finish();
     }
   }
 
@@ -467,14 +609,26 @@ export function CourseEditor({
               <StatusPill tone="muted">未上架</StatusPill>
             )}
             <Button variant="outline" asChild>
-              <Link href="/courses">
+              <Link
+                href="/courses"
+                onClick={() => {
+                  writing.current = true;
+                  activeWrite.current?.cancel();
+                  activeWrite.current?.finish();
+                  for (const lease of uploadKeys.current.values()) {
+                    lease.cancel();
+                    lease.release();
+                  }
+                  uploadKeys.current.clear();
+                }}
+              >
                 <IconArrowLeft className="size-4" />
                 返回
               </Link>
             </Button>
             <Button
               variant="outline"
-              disabled={publishing || saving}
+              disabled={publishing || saving || Object.keys(uploads).length > 0}
               onClick={() => void togglePublish()}
             >
               {course.published ? (
@@ -489,7 +643,10 @@ export function CourseEditor({
                 </>
               )}
             </Button>
-            <Button disabled={saving || publishing} onClick={() => void save()}>
+            <Button
+              disabled={saving || publishing || Object.keys(uploads).length > 0}
+              onClick={() => void save()}
+            >
               {saving ? (
                 <IconLoader2 className="size-4 animate-spin" />
               ) : (
@@ -508,7 +665,10 @@ export function CourseEditor({
         </div>
       ) : null}
 
-      <section className="space-y-4 rounded-xl border border-slate-200 border-l-4 border-l-slate-800 bg-white p-4 shadow-sm">
+      <section
+        inert={writeBusy}
+        className="space-y-4 rounded-xl border border-slate-200 border-l-4 border-l-slate-800 bg-white p-4 shadow-sm"
+      >
         <div className="flex items-start gap-3">
           <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-900 text-white">
             <IconBook2 className="size-4" />
@@ -602,7 +762,10 @@ export function CourseEditor({
         </div>
       </section>
 
-      <section className="space-y-4 rounded-xl border border-indigo-100 border-l-4 border-l-indigo-500 bg-indigo-50/30 p-4 shadow-sm">
+      <section
+        inert={writeBusy}
+        className="space-y-4 rounded-xl border border-indigo-100 border-l-4 border-l-indigo-500 bg-indigo-50/30 p-4 shadow-sm"
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-indigo-600 text-white">
@@ -849,10 +1012,16 @@ export function CourseEditor({
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section
+        inert={writeBusy}
+        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
         <InstructorPicker
           instructors={course.instructors}
-          onChange={(instructors) => setCourse({ ...course, instructors })}
+          onChange={(instructors) => {
+            if (writing.current) return;
+            setCourse((current) => (current ? { ...current, instructors } : current));
+          }}
         />
       </section>
     </div>

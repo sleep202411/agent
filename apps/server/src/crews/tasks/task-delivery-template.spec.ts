@@ -1,5 +1,6 @@
 import {
   ProfessionalDeliveryInput,
+  assertDeliveryTemplateEditable,
   validateProfessionalDelivery,
 } from './task-delivery-template';
 const id = '00000000-0000-4000-8000-000000000001',
@@ -65,4 +66,29 @@ it('requires the pinned version and attachment membership, without accepting arb
       answers: { file: ['not-uuid'] },
     }).success,
   ).toBe(false);
+});
+
+it('locks delivery requirements once a commitment, submission or work state exists', () => {
+  expect(() =>
+    assertDeliveryTemplateEditable({
+      status: 'open',
+      hasSubmission: false,
+      hasAcceptedCommitment: false,
+    }),
+  ).not.toThrow();
+  for (const state of [
+    { status: 'open', hasSubmission: true, hasAcceptedCommitment: false },
+    { status: 'open', hasSubmission: false, hasAcceptedCommitment: true },
+    {
+      status: 'in_progress',
+      hasSubmission: false,
+      hasAcceptedCommitment: false,
+    },
+    {
+      status: 'revision_requested',
+      hasSubmission: true,
+      hasAcceptedCommitment: true,
+    },
+  ])
+    expect(() => assertDeliveryTemplateEditable(state)).toThrow('locked');
 });

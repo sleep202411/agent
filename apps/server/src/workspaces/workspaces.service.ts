@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -81,28 +82,44 @@ export class WorkspacesService {
   }
 
   async ensureDefaultWorkspace(user: AuthUser) {
-    return this.prisma
-      .$transaction(async (tx) => {
-        await tx.$executeRaw`
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`workspace:default:${user.userId}`})::bigint)
       `;
 
-        let workspace = await tx.workspace.findFirst({
-          where: {
+      let workspace = await tx.workspace.findFirst({
+        where: {
+          defaultForUserId: user.userId,
+          deletedAt: null,
+        },
+      });
+
+      if (!workspace) {
+        workspace = await tx.workspace.create({
+          data: {
             defaultForUserId: user.userId,
-            deletedAt: null,
+            name: `${displayName(user)}'s Workspace`,
+            ownerUserId: user.userId,
+            createdById: user.userId,
           },
         });
-
-        if (!workspace) {
-          workspace = await tx.workspace.create({
-            data: {
-              defaultForUserId: user.userId,
-              name: `${displayName(user)}'s Workspace`,
-              ownerUserId: user.userId,
-              createdById: user.userId,
-            },
-          });
+        await tx.workspaceMember.create({
+          data: {
+            workspaceId: workspace.id,
+            userId: user.userId,
+            role: WorkspaceMemberRole.owner,
+            status: WorkspaceMemberStatus.active,
+          },
+        });
+      } else {
+        const member = await tx.workspaceMember.findFirst({
+          where: {
+            workspaceId: workspace.id,
+            userId: user.userId,
+            removedAt: null,
+          },
+        });
+        if (!member) {
           await tx.workspaceMember.create({
             data: {
               workspaceId: workspace.id,
@@ -111,39 +128,21 @@ export class WorkspacesService {
               status: WorkspaceMemberStatus.active,
             },
           });
-        } else {
-          const member = await tx.workspaceMember.findFirst({
-            where: {
-              workspaceId: workspace.id,
-              userId: user.userId,
-              removedAt: null,
-            },
-          });
-          if (!member) {
-            await tx.workspaceMember.create({
-              data: {
-                workspaceId: workspace.id,
-                userId: user.userId,
-                role: WorkspaceMemberRole.owner,
-                status: WorkspaceMemberStatus.active,
-              },
-            });
-          }
         }
+      }
 
-        return workspace;
-      })
-      .then(async (workspace) => {
-        await this.wallets.ensureDefaultAccounts(
-          WalletOwnerType.user,
-          user.userId,
-        );
-        await this.wallets.ensureDefaultAccounts(
-          WalletOwnerType.workspace,
-          workspace.id,
-        );
-        return workspace;
-      });
+      await this.wallets.ensureDefaultAccounts(
+        WalletOwnerType.user,
+        user.userId,
+        tx,
+      );
+      await this.wallets.ensureDefaultAccounts(
+        WalletOwnerType.workspace,
+        workspace.id,
+        tx,
+      );
+      return workspace;
+    });
   }
 
   async createWorkspace(user: AuthUser, input: CreateWorkspaceInput) {
@@ -166,20 +165,23 @@ export class WorkspacesService {
           status: WorkspaceMemberStatus.active,
         },
       });
+      await this.wallets.ensureDefaultAccounts(
+        WalletOwnerType.workspace,
+        created.id,
+        tx,
+      );
+      await this.audit.record(
+        {
+          workspaceId: created.id,
+          actorUserId: user.userId,
+          action: 'workspace.created',
+          entityType: 'workspace',
+          entityId: created.id,
+          after: created,
+        },
+        tx,
+      );
       return created;
-    });
-
-    await this.wallets.ensureDefaultAccounts(
-      WalletOwnerType.workspace,
-      workspace.id,
-    );
-    await this.audit.record({
-      workspaceId: workspace.id,
-      actorUserId: user.userId,
-      action: 'workspace.created',
-      entityType: 'workspace',
-      entityId: workspace.id,
-      after: workspace,
     });
 
     return { workspace: this.workspaceDto(workspace, user.userId) };
@@ -212,51 +214,71 @@ export class WorkspacesService {
       workspaceId,
       WorkspaceMemberRole.admin,
     );
-    const before = await this.prisma.workspace.findFirst({
-      where: { id: workspaceId, deletedAt: null },
-    });
-    if (!before) {
-      throw new NotFoundException({
-        code: 'WORKSPACE_NOT_FOUND',
-        msg: 'Workspace not found.',
+    const workspace = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM workspaces WHERE id = ${workspaceId}::uuid FOR UPDATE`;
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.admin,
+        tx,
+      );
+      const before = await tx.workspace.findFirst({
+        where: { id: workspaceId, deletedAt: null },
       });
-    }
+      if (!before) {
+        throw new NotFoundException({
+          code: 'WORKSPACE_NOT_FOUND',
+          msg: 'Workspace not found.',
+        });
+      }
 
-    const result = await this.prisma.workspace.updateMany({
-      where: {
-        id: workspaceId,
-        deletedAt: null,
-        ...(input.expectedVersion == null
-          ? {}
-          : { version: input.expectedVersion }),
-      },
-      data: {
-        name: input.name,
-        slug: input.slug === null ? null : input.slug,
-        description:
-          input.description === undefined ? undefined : input.description,
-        avatarUrl: input.avatarUrl === undefined ? undefined : input.avatarUrl,
-        version: { increment: 1 },
-      },
-    });
-    if (result.count === 0) {
-      throw new ConflictException({
-        code: 'WORKSPACE_VERSION_CONFLICT',
-        msg: 'Workspace was modified by another request.',
+      const result = await tx.workspace.updateMany({
+        where: {
+          id: workspaceId,
+          deletedAt: null,
+          ...(input.expectedVersion == null
+            ? {}
+            : { version: input.expectedVersion }),
+        },
+        data: {
+          name: input.name,
+          slug: input.slug === null ? null : input.slug,
+          description:
+            input.description === undefined ? undefined : input.description,
+          avatarUrl:
+            input.avatarUrl === undefined ? undefined : input.avatarUrl,
+          version: { increment: 1 },
+        },
       });
-    }
+      if (result.count === 0) {
+        throw new ConflictException({
+          code: 'WORKSPACE_VERSION_CONFLICT',
+          msg: 'Workspace was modified by another request.',
+        });
+      }
 
-    const workspace = await this.prisma.workspace.findUniqueOrThrow({
-      where: { id: workspaceId },
-    });
-    await this.audit.record({
-      workspaceId,
-      actorUserId: user.userId,
-      action: 'workspace.updated',
-      entityType: 'workspace',
-      entityId: workspaceId,
-      before,
-      after: workspace,
+      const workspace = await tx.workspace.findUniqueOrThrow({
+        where: { id: workspaceId },
+      });
+      await this.audit.record(
+        {
+          workspaceId,
+          actorUserId: user.userId,
+          action: 'workspace.updated',
+          entityType: 'workspace',
+          entityId: workspaceId,
+          before,
+          after: workspace,
+        },
+        tx,
+      );
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.admin,
+        tx,
+      );
+      return workspace;
     });
 
     return { workspace: this.workspaceDto(workspace, user.userId) };
@@ -324,6 +346,13 @@ export class WorkspacesService {
     );
 
     const project = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM workspaces WHERE id = ${workspaceId}::uuid FOR UPDATE`;
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.editor,
+        tx,
+      );
       const created = await tx.platformProject.create({
         data: {
           workspaceId,
@@ -360,17 +389,25 @@ export class WorkspacesService {
         action: 'created',
         actorUserId: user.userId,
       });
+      await this.audit.record(
+        {
+          workspaceId,
+          projectId: created.id,
+          actorUserId: user.userId,
+          action: 'project.created',
+          entityType: 'project',
+          entityId: created.id,
+          after: created,
+        },
+        tx,
+      );
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.editor,
+        tx,
+      );
       return created;
-    });
-
-    await this.audit.record({
-      workspaceId,
-      projectId: project.id,
-      actorUserId: user.userId,
-      action: 'project.created',
-      entityType: 'project',
-      entityId: project.id,
-      after: project,
     });
 
     return { project: this.projectDto(project) };
@@ -394,12 +431,39 @@ export class WorkspacesService {
     projectId: string,
     input: UpdateProjectInput,
   ) {
-    const before = await this.permissions.requireProjectRole(
+    await this.permissions.requireProjectRole(
       user.userId,
       projectId,
       ProjectMemberRole.editor,
     );
     const project = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      const before = await this.permissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.editor,
+        tx,
+      );
+      // A cover must be a ready image asset inside the project's own
+      // workspace — binding a foreign/broken asset would 404 the thumbnail.
+      if (input.coverAssetId != null) {
+        const coverAsset = await tx.mediaAsset.findFirst({
+          where: {
+            id: input.coverAssetId,
+            workspaceId: before.workspaceId,
+            kind: 'image',
+            status: 'ready',
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (!coverAsset) {
+          throw new BadRequestException({
+            code: 'PROJECT_COVER_ASSET_INVALID',
+            msg: 'Cover asset must be a ready image in this workspace.',
+          });
+        }
+      }
       const result = await tx.platformProject.updateMany({
         where: {
           id: projectId,
@@ -419,6 +483,8 @@ export class WorkspacesService {
               : (input.visibility as ProjectVisibility),
           description:
             input.description === undefined ? undefined : input.description,
+          coverAssetId:
+            input.coverAssetId === undefined ? undefined : input.coverAssetId,
           updatedById: user.userId,
           version: { increment: 1 },
         },
@@ -439,17 +505,26 @@ export class WorkspacesService {
         action: 'updated',
         actorUserId: user.userId,
       });
+      await this.audit.record(
+        {
+          workspaceId: updated.workspaceId,
+          projectId,
+          actorUserId: user.userId,
+          action: 'project.updated',
+          entityType: 'project',
+          entityId: projectId,
+          before,
+          after: updated,
+        },
+        tx,
+      );
+      await this.permissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.editor,
+        tx,
+      );
       return updated;
-    });
-    await this.audit.record({
-      workspaceId: project.workspaceId,
-      projectId,
-      actorUserId: user.userId,
-      action: 'project.updated',
-      entityType: 'project',
-      entityId: projectId,
-      before,
-      after: project,
     });
 
     return { project: this.projectDto(project) };
@@ -515,95 +590,128 @@ export class WorkspacesService {
         .expireLapsedGrants(computeAccount.id)
         .catch(() => undefined);
     }
-    const [freshAccount, activeSubscriptions, pendingOrders] =
-      await Promise.all([
-        computeAccount
-          ? this.prisma.walletAccount.findUnique({
-              where: { id: computeAccount.id },
-              select: { availableBalance: true, heldBalance: true },
-            })
-          : Promise.resolve(null),
-        this.prisma.billingSubscription.count({
-          where: {
-            status: {
-              in: [
-                BillingSubscriptionStatus.active,
-                BillingSubscriptionStatus.past_due,
-              ],
-            },
-            ...subjectFilter,
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM workspaces WHERE id = ${workspaceId}::uuid FOR UPDATE`;
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.owner,
+        tx,
+      );
+      const currentWorkspace = await tx.workspace.findUniqueOrThrow({
+        where: { id: workspaceId },
+      });
+      if (currentWorkspace.defaultForUserId !== null)
+        throw new ConflictException({
+          code: 'DEFAULT_WORKSPACE_CANNOT_BE_DELETED',
+          msg: 'The default workspace cannot be deleted while it receives account credits.',
+        });
+      const currentAccount = await tx.walletAccount.findUnique({
+        where: {
+          ownerType_ownerId_currency_balanceKind: {
+            ownerType: WalletOwnerType.workspace,
+            ownerId: workspaceId,
+            currency: WalletCurrencyType.compute_point,
+            balanceKind: WalletBalanceKind.consumable,
           },
-        }),
-        this.prisma.billingOrder.count({
-          where: {
-            status: BillingOrderStatus.pending_payment,
-            ...subjectFilter,
+        },
+        select: { id: true },
+      });
+
+      if (currentAccount)
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${currentAccount.id}`})::bigint)`;
+      const freshAccount = currentAccount
+        ? await tx.walletAccount.findUnique({
+            where: { id: currentAccount.id },
+            select: { availableBalance: true, heldBalance: true },
+          })
+        : null;
+      const activeSubscriptions = await tx.billingSubscription.count({
+        where: {
+          status: {
+            in: [
+              BillingSubscriptionStatus.active,
+              BillingSubscriptionStatus.past_due,
+            ],
           },
-        }),
-      ]);
+          ...subjectFilter,
+        },
+      });
+      const pendingOrders = await tx.billingOrder.count({
+        where: { status: BillingOrderStatus.pending_payment, ...subjectFilter },
+      });
+      const available = freshAccount?.availableBalance ?? 0n;
+      const held = freshAccount?.heldBalance ?? 0n;
+      const blockers: Array<{ type: string; detail: string }> = [];
+      if (available > 0n) {
+        blockers.push({
+          type: 'compute_balance',
+          detail: `${available} compute credits remaining`,
+        });
+      }
+      if (held > 0n) {
+        blockers.push({
+          type: 'compute_hold',
+          detail: `${held} compute credits held by in-progress generations`,
+        });
+      }
+      if (activeSubscriptions > 0) {
+        blockers.push({
+          type: 'active_subscription',
+          detail: `${activeSubscriptions} active plan${activeSubscriptions === 1 ? '' : 's'}`,
+        });
+      }
+      if (pendingOrders > 0) {
+        blockers.push({
+          type: 'pending_order',
+          detail: `${pendingOrders} unpaid order${pendingOrders === 1 ? '' : 's'}`,
+        });
+      }
+      if (blockers.length > 0) {
+        throw new ConflictException({
+          code: 'WORKSPACE_NOT_EMPTY',
+          msg: `This workspace still has ${blockers
+            .map((blocker) => blocker.detail)
+            .join(
+              '; ',
+            )}. Spend down the remaining credits (or ask support to adjust the balance), let in-progress generations finish, cancel any active plan, and settle pending orders before deleting.`,
+          blockers,
+        });
+      }
 
-    const available = freshAccount?.availableBalance ?? 0n;
-    const held = freshAccount?.heldBalance ?? 0n;
-    const blockers: Array<{ type: string; detail: string }> = [];
-    if (available > 0n) {
-      blockers.push({
-        type: 'compute_balance',
-        detail: `${available} compute credits remaining`,
+      await this.audit.record(
+        {
+          workspaceId,
+          actorUserId: user.userId,
+          action: 'workspace.deleted',
+          entityType: 'workspace',
+          entityId: workspaceId,
+          before: currentWorkspace,
+        },
+        tx,
+      );
+      await this.permissions.requireWorkspaceRole(
+        user.userId,
+        workspaceId,
+        WorkspaceMemberRole.owner,
+        tx,
+      );
+      const result = await tx.workspace.updateMany({
+        where: {
+          id: workspaceId,
+          deletedAt: null,
+          ...(input.expectedVersion == null
+            ? {}
+            : { version: input.expectedVersion }),
+        },
+        data: { deletedAt: new Date(), version: { increment: 1 } },
       });
-    }
-    if (held > 0n) {
-      blockers.push({
-        type: 'compute_hold',
-        detail: `${held} compute credits held by in-progress generations`,
-      });
-    }
-    if (activeSubscriptions > 0) {
-      blockers.push({
-        type: 'active_subscription',
-        detail: `${activeSubscriptions} active plan${activeSubscriptions === 1 ? '' : 's'}`,
-      });
-    }
-    if (pendingOrders > 0) {
-      blockers.push({
-        type: 'pending_order',
-        detail: `${pendingOrders} unpaid order${pendingOrders === 1 ? '' : 's'}`,
-      });
-    }
-    if (blockers.length > 0) {
-      throw new ConflictException({
-        code: 'WORKSPACE_NOT_EMPTY',
-        msg: `This workspace still has ${blockers
-          .map((blocker) => blocker.detail)
-          .join(
-            '; ',
-          )}. Spend down the remaining credits (or ask support to adjust the balance), let in-progress generations finish, cancel any active plan, and settle pending orders before deleting.`,
-        blockers,
-      });
-    }
-
-    const result = await this.prisma.workspace.updateMany({
-      where: {
-        id: workspaceId,
-        deletedAt: null,
-        ...(input.expectedVersion == null
-          ? {}
-          : { version: input.expectedVersion }),
-      },
-      data: { deletedAt: new Date(), version: { increment: 1 } },
-    });
-    if (result.count === 0) {
-      throw new ConflictException({
-        code: 'WORKSPACE_VERSION_CONFLICT',
-        msg: 'Workspace was modified by another request.',
-      });
-    }
-    await this.audit.record({
-      workspaceId,
-      actorUserId: user.userId,
-      action: 'workspace.deleted',
-      entityType: 'workspace',
-      entityId: workspaceId,
-      before: workspace,
+      if (result.count === 0) {
+        throw new ConflictException({
+          code: 'WORKSPACE_VERSION_CONFLICT',
+          msg: 'Workspace was modified by another request.',
+        });
+      }
     });
     // Workspace is gone — kick EVERY member's live sockets off its channels now
     // (no userId = all), so nobody keeps a realtime stream to a deleted workspace.
@@ -616,12 +724,50 @@ export class WorkspacesService {
     projectId: string,
     input: ArchiveProjectInput,
   ) {
-    const before = await this.permissions.requireProjectRole(
+    await this.permissions.requireProjectRole(
       user.userId,
       projectId,
       ProjectMemberRole.owner,
     );
-    const result = await this.prisma.$transaction(async (tx) => {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      const before = await this.permissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.owner,
+        tx,
+      );
+      // If this was the workspace's defaultProjectId, clear it so the
+      // next created project becomes the new default.
+      await tx.workspace.updateMany({
+        where: { defaultProjectId: projectId },
+        data: { defaultProjectId: null },
+      });
+
+      await enqueueProjectChanged(tx, {
+        workspaceId: before.workspaceId,
+        projectId,
+        action: 'archived',
+        actorUserId: user.userId,
+      });
+      await this.audit.record(
+        {
+          workspaceId: before.workspaceId,
+          projectId,
+          actorUserId: user.userId,
+          action: 'project.archived',
+          entityType: 'project',
+          entityId: projectId,
+          before,
+        },
+        tx,
+      );
+      await this.permissions.requireProjectRole(
+        user.userId,
+        projectId,
+        ProjectMemberRole.owner,
+        tx,
+      );
       const updated = await tx.platformProject.updateMany({
         where: {
           id: projectId,
@@ -638,39 +784,13 @@ export class WorkspacesService {
           version: { increment: 1 },
         },
       });
-      if (updated.count === 0) return null;
 
-      // If this was the workspace's defaultProjectId, clear it so the
-      // next created project becomes the new default.
-      await tx.workspace.updateMany({
-        where: { defaultProjectId: projectId },
-        data: { defaultProjectId: null },
-      });
-
-      await enqueueProjectChanged(tx, {
-        workspaceId: before.workspaceId,
-        projectId,
-        action: 'archived',
-        actorUserId: user.userId,
-      });
+      if (updated.count === 0)
+        throw new ConflictException({
+          code: 'PROJECT_VERSION_CONFLICT',
+          msg: 'Project was modified by another request.',
+        });
       return updated;
-    });
-
-    if (!result || result.count === 0) {
-      throw new ConflictException({
-        code: 'PROJECT_VERSION_CONFLICT',
-        msg: 'Project was modified by another request.',
-      });
-    }
-
-    await this.audit.record({
-      workspaceId: before.workspaceId,
-      projectId,
-      actorUserId: user.userId,
-      action: 'project.archived',
-      entityType: 'project',
-      entityId: projectId,
-      before,
     });
 
     // ⟦v2⟧ Archiving tears down every real_person likeness grant for this

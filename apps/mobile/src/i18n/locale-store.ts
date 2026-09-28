@@ -39,6 +39,7 @@ function detectDeviceLocale(): AppLocale {
 }
 
 let currentLocale: AppLocale = detectDeviceLocale();
+let hasExplicitSelection = false;
 const listeners = new Set<() => void>();
 
 function notify() {
@@ -58,12 +59,16 @@ export function subscribeLocale(listener: () => void): () => void {
 
 /** Change the active locale and persist it as the user's override. */
 export function setLocale(locale: AppLocale): void {
-  if (!SUPPORTED_LOCALES.includes(locale) || locale === currentLocale) return;
-  currentLocale = locale;
-  notify();
-  // Server responses are locale-dependent (titles, taxonomy labels, region
-  // names) — every browse list must refetch in the new language.
-  invalidateBrowse();
+  if (!SUPPORTED_LOCALES.includes(locale)) return;
+  // A deliberate selection wins over an outstanding startup storage read,
+  // including selecting the device language already displayed.
+  hasExplicitSelection = true;
+  if (locale !== currentLocale) {
+    currentLocale = locale;
+    notify();
+    // Server responses are locale-dependent; refetch only when the locale changes.
+    invalidateBrowse();
+  }
   void setStoredString(STORAGE_KEY, locale).catch(() => {});
 }
 
@@ -71,6 +76,7 @@ export function setLocale(locale: AppLocale): void {
 export async function initLocale(): Promise<void> {
   try {
     const saved = await getStoredString(STORAGE_KEY);
+    if (hasExplicitSelection) return;
     if (saved && SUPPORTED_LOCALES.includes(saved as AppLocale) && saved !== currentLocale) {
       currentLocale = saved as AppLocale;
       notify();

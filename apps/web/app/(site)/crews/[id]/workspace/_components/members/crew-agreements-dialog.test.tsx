@@ -1,8 +1,10 @@
+import { CrewApiError as CursorApiError } from "@/app/(site)/crews/_hooks/api";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
+  cursorError: false,
   failed: true,
   loaded: false,
   nextPageError: true,
@@ -58,7 +60,9 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
       hasNextPage: true,
       fetchNextPage: state.next,
       refetch: state.refetch,
-      error: new Error("Agreement page unavailable"),
+      error: state.cursorError
+        ? new CursorApiError(400, { code: "CREW_AGREEMENT_CURSOR_INVALID" })
+        : new Error("Agreement page unavailable"),
     }),
     useCreateCrewAgreement: mutation,
     useCreateCrewAgreementSigningSession: mutation,
@@ -73,6 +77,7 @@ import { CrewAgreementsDialog } from "./crew-agreements-dialog";
 const host = document.createElement("div");
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
+  state.cursorError = false;
   act(() => root.unmount());
   vi.clearAllMocks();
   state.failed = true;
@@ -147,5 +152,17 @@ it("disables explicit pagination while refreshing loaded agreements", () => {
   const more = [...host.querySelectorAll("button")].find((b) => b.textContent === "loadMore")!;
   expect(more.disabled).toBe(true);
   act(() => more.click());
+  expect(state.next).not.toHaveBeenCalled();
+});
+
+it("restarts after the server rejects a continuation cursor", async () => {
+  state.cursorError = true;
+  state.failed = true;
+  state.nextPageError = true;
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click()
+  );
+  expect(state.refetch).toHaveBeenCalledTimes(1);
   expect(state.next).not.toHaveBeenCalled();
 });

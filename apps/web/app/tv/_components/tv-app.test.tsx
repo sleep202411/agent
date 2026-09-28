@@ -8,10 +8,23 @@ import type { IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock("@/app/(site)/ip-studio/_components/new-ip-create-form", () => ({
+  NewIpCreateDialog: () => null,
+}));
+vi.mock("@/components/payment/community-recharge-dialog", () => ({
+  CommunityRechargeDialog: () => null,
+}));
+vi.mock("@/components/payment/community-membership-dialog", () => ({
+  CommunityMembershipDialog: () => null,
+}));
 vi.mock("./tv-right-rail", () => ({ TvRightRail: () => null }));
+vi.mock("@/components/auth/auth-dialog-provider", () => ({
+  useAuthDialog: () => ({ open: vi.fn() }),
+}));
 const harness = vi.hoisted(() => ({
   userId: "viewer-a",
   get: vi.fn(),
+  post: vi.fn(),
   list: vi.fn(),
   discovery: vi.fn(),
   routerPush: vi.fn(),
@@ -28,9 +41,17 @@ vi.mock("@/src/i18n/locale-url", () => ({ localizePath: (path: string) => path }
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: harness.routerPush }) }));
 vi.mock("@/src/lib/api", () => ({
   api: {
+    post: (...args: unknown[]) => harness.post(...args),
     get: (path: string, config?: unknown) => {
       harness.get(path, config);
       if (String(path).includes("/discovery")) return harness.discovery();
+      if (path.endsWith("/access")) {
+        return Promise.resolve({
+          episodes: [{ id: "locked", access: "locked", price: null }],
+          entitlements: [],
+          wallet: null,
+        });
+      }
       if (/\/ips\//.test(path)) return Promise.resolve({ ip: null });
       return harness.list(config);
     },
@@ -142,6 +163,7 @@ describe("TV IP list", () => {
       }
     );
     harness.get.mockReset();
+    harness.post.mockReset().mockResolvedValue({ recorded: true });
     harness.list.mockReset().mockResolvedValue({ items: ips, nextCursor: null });
     harness.discovery.mockReset().mockResolvedValue({ items: [] });
     harness.routerPush.mockClear();
@@ -169,6 +191,48 @@ describe("TV IP list", () => {
       );
     });
   }
+
+  it("collapses and restores channel details without replacing the player", async () => {
+    await render();
+    await waitForText("First IP");
+    const toggle = container.querySelector<HTMLButtonElement>(
+      'button[aria-controls="tv-channel-details"]'
+    );
+    expect(toggle).not.toBeNull();
+    const details = container.querySelector<HTMLElement>("#tv-channel-details")!;
+    expect(details.hidden).toBe(true);
+    await act(async () => toggle!.click());
+    expect(details.hidden).toBe(false);
+    expect(toggle!.getAttribute("aria-expanded")).toBe("true");
+    await act(async () => toggle!.click());
+    expect(details.hidden).toBe(true);
+    expect(details.textContent).toContain("First IP");
+  });
+
+  it("shows both categories together without filtering catalog or discovery", async () => {
+    harness.list.mockResolvedValue({
+      items: [
+        { ...makeIp("ip-1", "First IP"), channelType: "ip" },
+        { ...makeIp("community-1", "Community video"), channelType: "community" },
+      ],
+      nextCursor: null,
+    });
+    await render();
+    await waitForText("Community video");
+    expect(container.textContent).toContain("First IP");
+    expect(container.textContent).toContain("channels.ip");
+    expect(container.textContent).toContain("channels.community");
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (b) => b.textContent === "channels.community"
+      )
+    ).toBe(false);
+    for (const [path, options] of harness.get.mock.calls) {
+      if (path === "/aurora/ip-commerce/ips" || path === "/aurora/ip-commerce/discovery") {
+        expect(options.params.channelType).toBeUndefined();
+      }
+    }
+  });
 
   it("cancels catalog and discovery reads when the viewer changes", async () => {
     harness.list.mockImplementation(() => new Promise(() => {}));
@@ -239,6 +303,91 @@ describe("TV IP list", () => {
   const selected = () =>
     container.querySelector('nav button[aria-current="true"]')?.getAttribute("aria-label");
 
+  it("records full-episode playback once, without counting trailers or buffering", async () => {
+    const first = makeIp("ip-1", "First IP");
+    first.episodes = [1, 2].map((number) => ({
+      id: `episode-${number}`,
+      episodeNo: number,
+      title: `Episode ${number}`,
+      status: "published",
+      mediaAsset: { ...first.trailerAsset!, url: `https://cdn.test/episode-${number}.mp4` },
+    })) as typeof first.episodes;
+    harness.list.mockResolvedValue({ items: [first], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    act(() => player().trigger("playing"));
+    expect(harness.post).not.toHaveBeenCalled();
+    for (const number of [1, 2]) {
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>(`[data-episode-id="episode-${number}"]`)!
+          .click();
+      });
+      await waitForSource(`episode-${number}`);
+      expect(harness.post).toHaveBeenCalledTimes(number - 1);
+      const staleSource = vi
+        .spyOn(player(), "currentSrc")
+        .mockReturnValue("https://cdn.test/old.mp4");
+      act(() => player().trigger("playing"));
+      expect(harness.post).toHaveBeenCalledTimes(number - 1);
+      staleSource.mockRestore();
+      await act(async () => {
+        player().trigger("playing");
+        player().trigger("waiting");
+        player().trigger("playing");
+      });
+      expect(harness.post).toHaveBeenCalledTimes(number);
+      expect(harness.post).toHaveBeenLastCalledWith("/aurora/ip-commerce/member-views", {
+        data: { ipId: "ip-1", episodeId: `episode-${number}` },
+      });
+    }
+  });
+
+  it.each(["failed", "ineligible"])(
+    "skips guests and retries a %s signal on later playback",
+    async (outcome) => {
+      const first = makeIp("ip-1", "First IP");
+      first.episodes = [
+        {
+          id: "episode-1",
+          episodeNo: 1,
+          title: "Episode 1",
+          status: "published",
+          mediaAsset: { ...first.trailerAsset!, url: "https://cdn.test/episode-one.mp4" },
+        },
+      ] as typeof first.episodes;
+      harness.list.mockResolvedValue({ items: [first], nextCursor: null });
+      harness.userId = "";
+      await render();
+      await waitForSource("ip-1");
+      async function selectEpisode() {
+        await act(async () => {
+          container.querySelector<HTMLButtonElement>('[data-episode-id="episode-1"]')!.click();
+        });
+        await waitForSource("episode-one");
+      }
+      await selectEpisode();
+      await act(async () => player().trigger("playing"));
+      expect(harness.post).not.toHaveBeenCalled();
+      harness.userId = "viewer-b";
+      if (outcome === "failed") harness.post.mockRejectedValueOnce(new Error("Signal unavailable"));
+      else harness.post.mockResolvedValueOnce({ recorded: false });
+      await render();
+      await waitForSource("ip-1");
+      await selectEpisode();
+      await act(async () => player().trigger("playing"));
+      expect(harness.post).toHaveBeenCalledTimes(1);
+      expect(container.querySelector('nav [aria-label="tv.nowPlaying"]')).not.toBeNull();
+      await act(async () => {
+        player().trigger("waiting");
+        player().trigger("playing");
+      });
+      expect(harness.post).toHaveBeenCalledTimes(2);
+      await act(async () => player().trigger("playing"));
+      expect(harness.post).toHaveBeenCalledTimes(2);
+    }
+  );
+
   it("lists locked episodes without exposing their video and clears feedback on another channel", async () => {
     const first = makeIp("ip-1", "First IP");
     const media = { ...first.trailerAsset!, url: "https://cdn.test/episode-one.mp4" };
@@ -263,20 +412,18 @@ describe("TV IP list", () => {
     harness.list.mockResolvedValue({ items: [first, ips[1]], nextCursor: null });
     await render();
     await waitForSource("ip-1");
-    const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="tv.episodeSelector"]'
+    const select = container.querySelector<HTMLElement>(
+      '[role="group"][aria-label="tv.episodeSelector"]'
     )!;
     expect(select.textContent).toContain("First episode");
     expect(select.textContent).toContain("Locked");
     await act(async () => {
-      select.value = "episode-1";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.querySelector<HTMLButtonElement>('[data-episode-id="episode-1"]')!.click();
     });
     await waitForSource("episode-one");
     expect(container.querySelector('[data-feedback="episode-1"]')).not.toBeNull();
     await act(async () => {
-      select.value = "locked";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.querySelector<HTMLButtonElement>('[data-episode-id="locked"]')!.click();
     });
     expect(container.textContent).toContain("tv.episodeAccess");
     expect(container.querySelector("[data-feedback]")).toBeNull();
@@ -465,10 +612,13 @@ describe("TV IP list", () => {
     const video = container.querySelector("video")!;
     const instance = player();
     expect(video.controls).toBe(false);
-    expect(container.querySelectorAll(".vjs-control-bar button")).toHaveLength(2);
+    expect(container.querySelectorAll(".vjs-control-bar button")).toHaveLength(3);
     expect(container.querySelector(".vjs-play-control")).not.toBeNull();
     expect(container.querySelector(".vjs-volume-panel")).not.toBeNull();
-    expect(container.querySelector(".vjs-progress-control, .vjs-fullscreen-control")).toBeNull();
+    expect(container.querySelector('.vjs-progress-control [role="slider"]')).not.toBeNull();
+    expect(container.querySelector(".vjs-current-time")).not.toBeNull();
+    expect(container.querySelector(".vjs-duration")).not.toBeNull();
+    expect(container.querySelector(".vjs-fullscreen-control")).not.toBeNull();
     act(() => {
       player().muted(false);
       player().volume(0.4);
@@ -545,6 +695,50 @@ describe("TV IP list", () => {
     await waitForSource("ip-1");
   });
 
+  it.each(["resolve", "reject"] as const)(
+    "abandons pending channel navigation when search changes (%s)",
+    async (outcome) => {
+      let resolvePage!: (value: unknown) => void;
+      let rejectPage!: (error: Error) => void;
+      harness.list
+        .mockReset()
+        .mockImplementation((config: { params: { q?: string; cursor?: string } }) => {
+          if (config.params.q)
+            return Promise.resolve({
+              items: [makeIp("new-ip", "Search result")],
+              nextCursor: null,
+            });
+          if (!config.params.cursor)
+            return Promise.resolve({ items: [ips[0]], nextCursor: "page-2" });
+          return new Promise((resolve, reject) => {
+            resolvePage = resolve;
+            rejectPage = reject;
+          });
+        });
+      await render();
+      await waitForSource("ip-1");
+      act(() => player().trigger("ended"));
+      expect(container.textContent).toContain("tv.loadingChannel");
+      const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+      act(() => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(
+          input,
+          "new"
+        );
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "new" }));
+      });
+      expect(container.textContent).not.toContain("tv.loadingChannel");
+      await act(async () => {
+        if (outcome === "resolve") resolvePage({ items: [ips[1]], nextCursor: null });
+        else rejectPage(new Error("Abandoned navigation failure"));
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      });
+      await waitForText("Search result");
+      expect(container.textContent).not.toContain("Abandoned navigation failure");
+      expect(selected()).toContain("Search result");
+    }
+  );
+
   it("surfaces a next-page failure and lets the viewer retry without losing the channel", async () => {
     harness.list
       .mockReset()
@@ -606,6 +800,99 @@ describe("TV IP list", () => {
     );
     act(() => player().trigger("ended"));
     await waitForSource("ip-2");
+  });
+
+  it.each([
+    ["video/quicktime", "mov", false, "video/mp4"],
+    ["video/quicktime", "mov", true, "video/quicktime"],
+    ["video/webm", "webm", false, "video/webm"],
+    ["application/x-mpegURL", "m3u8", false, "application/x-mpegURL"],
+  ])(
+    "admits %s %s sources while preserving supported hints (%s)",
+    async (type, extension, quicktimeSupported, expected) => {
+      vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockImplementation((mime) =>
+        mime === "video/quicktime" && !quicktimeSupported ? "" : "probably"
+      );
+      const ip = makeIp("compat", "Compatibility");
+      ip.trailerAsset = {
+        ...ip.trailerAsset!,
+        url: `https://cdn.test/compat.${extension}?version=1`,
+        contentType: type,
+      };
+      harness.list.mockResolvedValue({ items: [ip], nextCursor: null });
+      await render();
+      await vi.waitFor(() => {
+        expect(player().currentSrc()).toBe(ip.trailerAsset!.url);
+        expect(player().currentType()).toBe(expected);
+      });
+    }
+  );
+
+  it("uses the same MOV admission when selecting a published episode", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockImplementation((mime) =>
+      mime === "video/quicktime" ? "" : "probably"
+    );
+    const ip = makeIp("ip-1", "First IP");
+    const media = {
+      ...ip.trailerAsset!,
+      url: "https://cdn.test/episode.mov",
+      contentType: "video/quicktime",
+    };
+    ip.episodes = [
+      {
+        id: "mov-episode",
+        episodeNo: 1,
+        title: "MOV episode",
+        status: "published",
+        mediaAsset: media,
+      },
+    ] as typeof ip.episodes;
+    harness.list.mockResolvedValue({ items: [ip], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    const select = container.querySelector<HTMLElement>(
+      '[role="group"][aria-label="tv.episodeSelector"]'
+    )!;
+    await act(async () => {
+      select.querySelector<HTMLButtonElement>('[data-episode-id="mov-episode"]')!.click();
+    });
+    await vi.waitFor(() => {
+      expect(player().currentSrc()).toBe(media.url);
+      expect(player().currentType()).toBe("video/mp4");
+    });
+  });
+
+  it("releases the previous stream before selecting a channel that cannot load", async () => {
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    act(() => {
+      instance.muted(false);
+      instance.volume(0.4);
+    });
+    const pause = vi.spyOn(instance, "pause");
+    const reset = vi.spyOn(instance, "reset");
+    // Source admission can fail before a replacement tech is attached.
+    const setSource = vi.spyOn(instance, "src").mockImplementation(() => "");
+    clickIp("Second IP");
+    await vi.waitFor(() => expect(reset).toHaveBeenCalled());
+    expect(pause.mock.invocationCallOrder[0]).toBeLessThan(reset.mock.invocationCallOrder[0]!);
+    expect(reset.mock.invocationCallOrder[0]).toBeLessThan(
+      setSource.mock.invocationCallOrder.at(-1)!
+    );
+    expect(instance.currentSrc()).not.toContain("ip-1.mp4");
+    expect(instance.muted()).toBe(false);
+    expect(instance.volume()).toBeCloseTo(0.4);
+  });
+
+  it("stops playback when a media error is reported", async () => {
+    await render();
+    await waitForSource("ip-1");
+    const pause = vi.spyOn(player(), "pause");
+    vi.spyOn(videojs.log, "error").mockImplementation(() => {});
+    act(() => player().error("Unsupported replacement"));
+    expect(pause).toHaveBeenCalled();
+    expect(container.textContent).toContain("Unsupported replacement");
   });
 
   it("retries a failed source on the same player", async () => {

@@ -3,6 +3,11 @@ import {
   InteractiveFilmReleaseSchema,
   type InteractiveFilmRelease,
 } from '@repo/shared/interactive-film-runtime';
+import {
+  storyAutoFallbackNodeId,
+  storyExitNodeIds,
+  storyRouteNodeId,
+} from '@repo/shared/story-stats';
 import type { ExperienceRuntimeManifest } from '@repo/shared/experience-runtime';
 import type {
   StoryBuildDiagnosticDto,
@@ -54,12 +59,6 @@ export interface StoryBuildNodeTimelineInput {
   segments: StoryBuildSegmentInput[];
 }
 
-export interface StoryBuildWorldInput {
-  graphNodeId: string;
-  worldId: string;
-  status: 'generating' | 'ready' | 'failed';
-}
-
 type FrozenStoryBuildSegment = StoryBuildSegmentInput & {
   asset: FrozenStoryVideoAsset;
 };
@@ -80,7 +79,6 @@ export interface StoryBuildCompilerInput {
   metadata: { title: string; summary: string | null };
   draft: InteractiveStoryDraftContent;
   timelines: StoryBuildNodeTimelineInput[];
-  worlds?: StoryBuildWorldInput[];
   /**
    * Playable URL per bound music MediaAsset id — a plain public media URL, not
    * a frozen build asset. A binding missing from this map simply gets no music,
@@ -126,22 +124,6 @@ export function compileStoryBuild(
     }
     timelines.set(timeline.graphNodeId, timeline);
   });
-  const worlds = new Map<string, StoryBuildWorldInput>();
-  (input.worlds ?? []).forEach((world) => {
-    if (worlds.has(world.graphNodeId)) {
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_WORLD_BINDING_DUPLICATE',
-          `Graph node ${world.graphNodeId} has more than one world binding.`,
-          'revision',
-          world.graphNodeId,
-        ),
-      );
-      return;
-    }
-    worlds.set(world.graphNodeId, world);
-  });
 
   const entryNodeId = resolveEntryNodeId(input, nodes, diagnostics);
   const selection = selectGraphNodes(
@@ -171,7 +153,6 @@ export function compileStoryBuild(
   // not part of this playable cut. Compiling it into the runtime would make the
   // manifest invalid even though the connected film itself is ready.
   const runtimeSelection = reachable;
-  validateWorldBindings(runtimeSelection, nodes, worlds, diagnostics);
   const requiredGraphNodeIds = requiredVideoNodeIds(runtimeSelection, nodes);
   // Missing footage never stops a compile, on either channel. A creator may
   // ship a work in progress on purpose; the release reports what is unfilled
@@ -340,45 +321,6 @@ export function compileStoryBuild(
       .filter((timeline) => timeline.segments.length > 0)
       .map((timeline) => timeline.graphNodeId),
   };
-}
-
-function validateWorldBindings(
-  selection: ReadonlySet<string>,
-  nodes: ReadonlyMap<
-    string,
-    InteractiveStoryDraftContent['graph']['nodes'][number]
-  >,
-  worlds: ReadonlyMap<string, StoryBuildWorldInput>,
-  diagnostics: StoryBuildDiagnosticDto[],
-) {
-  [...selection].sort().forEach((nodeId) => {
-    const node = nodes.get(nodeId);
-    if (!node || node.kind !== 'world') return;
-    const binding = worlds.get(nodeId);
-    if (!node.worldId || !binding || binding.worldId !== node.worldId) {
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_WORLD_UNAVAILABLE',
-          `World node ${nodeId} does not resolve to a world in this project.`,
-          'revision',
-          nodeId,
-        ),
-      );
-      return;
-    }
-    if (binding.status !== 'ready') {
-      diagnostics.push(
-        diagnostic(
-          'error',
-          'STORY_BUILD_WORLD_NOT_READY',
-          `World node ${nodeId} is ${binding.status}; wait until the world is ready before playtesting or publishing.`,
-          'revision',
-          nodeId,
-        ),
-      );
-    }
-  });
 }
 
 function resolveEntryNodeId(
@@ -716,17 +658,16 @@ function analyzePaths(
 
     onStack.add(nodeId);
     const selfMs =
-      node.kind === 'world'
-        ? node.maxExperienceSeconds * 1_000
-        : (timelines
-            .get(node.nodeId)
-            ?.segments.reduce(
-              (total, segment) => total + segment.durationMs,
-              0,
-            ) ?? 0);
+      timelines
+        .get(node.nodeId)
+        ?.segments.reduce((total, segment) => total + segment.durationMs, 0) ??
+      0;
 
     let facts: NodePathFacts = DEAD_END;
-    if (node.exit.kind === 'auto' && node.exit.nextNodeId === null) {
+    if (
+      node.exit.kind === 'auto' &&
+      storyAutoFallbackNodeId(node.exit) === null
+    ) {
       facts = {
         pathCount: 1,
         terminalNodeIds: new Set([node.nodeId]),
@@ -734,14 +675,7 @@ function analyzePaths(
         durationMaxMs: selfMs,
       };
     } else {
-      const successors: string[] = [];
-      if (node.exit.kind === 'choice') {
-        node.exit.choices.forEach((choice) => {
-          if (choice.nextNodeId) successors.push(choice.nextNodeId);
-        });
-      } else if (node.exit.nextNodeId) {
-        successors.push(node.exit.nextNodeId);
-      }
+      const successors = storyExitNodeIds(node.exit);
       if (successors.length > 0) {
         facts = combineSuccessorFacts(
           successors.map((next) => factsFor(next)),
@@ -832,31 +766,6 @@ function compileIntermediateRelease(
   [...selection].sort().forEach((nodeId) => {
     const node = nodes.get(nodeId);
     if (!node) return;
-    if (node.kind === 'world') {
-      if (!node.worldId) return;
-      runtimeNodes.push({
-        nodeId: node.nodeId,
-        communityPointPrice: node.communityPointPrice,
-        title: Object.fromEntries(
-          locales.map((locale) => [
-            locale,
-            storyNodeTitle(node, locale, input.defaultLocale),
-          ]),
-        ),
-        presentation: {
-          kind: 'world',
-          worldId: node.worldId,
-          ...(node.entryInstruction
-            ? { entryInstruction: node.entryInstruction }
-            : {}),
-          maxExperienceSeconds: node.maxExperienceSeconds,
-        },
-        overlays: [],
-        interactions: [],
-        exit: compileExit(node),
-      });
-      return;
-    }
     if (node.kind === 'decision') {
       runtimeNodes.push({
         nodeId: node.nodeId,
@@ -869,6 +778,7 @@ function compileIntermediateRelease(
         presentation: { kind: 'decision' },
         overlays: [],
         interactions: [],
+        ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
         exit: compileExit(node),
       });
       return;
@@ -882,10 +792,9 @@ function compileIntermediateRelease(
     const segments = timeline?.segments ?? [];
     // A choice immediately after footage still opens over that footage. Keep
     // the standalone scene too, for entry points and other incoming routes.
-    const nextNode =
-      node.exit.kind === 'auto' && node.exit.nextNodeId
-        ? nodes.get(node.exit.nextNodeId)
-        : undefined;
+    const nextNodeId =
+      node.exit.kind === 'auto' ? storyAutoFallbackNodeId(node.exit) : null;
+    const nextNode = nextNodeId ? nodes.get(nextNodeId) : undefined;
     const exitOwner =
       nextNode?.kind === 'decision' && nextNode.exit.kind === 'choice'
         ? nextNode
@@ -914,10 +823,11 @@ function compileIntermediateRelease(
                   ),
                 } as const),
         })),
-        fit: 'cover',
+        fit: 'contain',
       },
       overlays: [],
       interactions: node.interactions,
+      ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
       exit: compileExit(exitOwner),
     });
   });
@@ -933,14 +843,13 @@ function compileIntermediateRelease(
     const node = runtimeById.get(nodeId);
     if (!node) continue;
     reachableRuntimeIds.add(nodeId);
-    if (node.exit.kind === 'auto') {
-      if (node.exit.nextNodeId) pending.push(node.exit.nextNodeId);
-    } else if (node.exit.kind === 'choice') {
-      pending.push(...node.exit.choices.map((choice) => choice.nextNodeId));
-    }
+    pending.push(...storyExitNodeIds(node.exit));
     for (const interaction of node.interactions) {
       for (const action of Object.values(interaction.outcomes)) {
-        if (action?.kind === 'goto') pending.push(action.nodeId);
+        if (action?.kind === 'goto') {
+          const targetNodeId = storyRouteNodeId(action.target);
+          if (targetNodeId) pending.push(targetNodeId);
+        }
       }
     }
   }
@@ -954,6 +863,19 @@ function compileIntermediateRelease(
     defaultLocale: input.defaultLocale,
     locales,
     media,
+    stateVariables: (input.draft.storyBible.stateVariables ?? []).map(
+      (variable) => ({
+        key: variable.key,
+        name: variable.name,
+        valueType: variable.valueType,
+        initialValue: variable.initialValue,
+      }),
+    ),
+    endings: (input.draft.storyBible.endings ?? []).map((ending) => ({
+      endingId: ending.endingId,
+      title: ending.title,
+      kind: ending.kind,
+    })),
     nodes: runtimeNodes.filter((node) => reachableRuntimeIds.has(node.nodeId)),
   };
 }
@@ -963,19 +885,23 @@ function compileExit(
 ): InteractiveFilmRelease['nodes'][number]['exit'] {
   const exit = node.exit;
   if (exit.kind === 'auto') {
-    return { kind: 'auto', nextNodeId: exit.nextNodeId };
+    return { kind: 'auto', routes: exit.routes };
   }
   return {
     kind: 'choice',
     decisionId: exit.decisionId,
     prompt: exit.prompt,
     choices: exit.choices.flatMap((choice) =>
-      choice.nextNodeId
+      choice.target
         ? [
             {
               choiceId: choice.choiceId,
               label: choice.label,
-              nextNodeId: choice.nextNodeId,
+              ...(choice.effects ? { effects: choice.effects } : {}),
+              ...(choice.visibleWhen
+                ? { visibleWhen: choice.visibleWhen }
+                : {}),
+              target: choice.target,
             },
           ]
         : [],
@@ -1005,23 +931,17 @@ export function storyMusicTrackId(mediaAssetId: string): string {
 function nextNodeIds(
   node: InteractiveStoryDraftContent['graph']['nodes'][number],
 ): string[] {
-  const exitTargets =
-    node.exit.kind === 'choice'
-      ? node.exit.choices.flatMap((choice) =>
-          choice.nextNodeId ? [choice.nextNodeId] : [],
-        )
-      : node.exit.nextNodeId
-        ? [node.exit.nextNodeId]
-        : [];
   const interactionTargets =
     node.kind === 'clip'
       ? node.interactions.flatMap((interaction) =>
-          Object.values(interaction.outcomes).flatMap((action) =>
-            action?.kind === 'goto' ? [action.nodeId] : [],
-          ),
+          Object.values(interaction.outcomes).flatMap((action) => {
+            if (action?.kind !== 'goto') return [];
+            const nodeId = storyRouteNodeId(action.target);
+            return nodeId ? [nodeId] : [];
+          }),
         )
       : [];
-  return [...new Set([...exitTargets, ...interactionTargets])];
+  return [...new Set([...storyExitNodeIds(node.exit), ...interactionTargets])];
 }
 
 function diagnostic(
@@ -1032,6 +952,19 @@ function diagnostic(
   entityId: string | null,
 ): StoryBuildDiagnosticDto {
   return { severity, code, message, entityType, entityId };
+}
+
+function storyNodeTitle(
+  node: InteractiveStoryDraftContent['graph']['nodes'][number],
+  locale: string,
+  defaultLocale: string,
+): string {
+  if (node.kind !== 'decision') return node.name || node.nodeId;
+  return (
+    (node.exit.kind === 'choice' &&
+      (node.exit.prompt[locale] || node.exit.prompt[defaultLocale])) ||
+    node.nodeId
+  );
 }
 
 function sortAndDedupeDiagnostics(
@@ -1057,18 +990,5 @@ function sortAndDedupeDiagnostics(
       left.code.localeCompare(right.code) ||
       (left.entityId ?? '').localeCompare(right.entityId ?? '') ||
       left.message.localeCompare(right.message),
-  );
-}
-
-function storyNodeTitle(
-  node: InteractiveStoryDraftContent['graph']['nodes'][number],
-  locale: string,
-  defaultLocale: string,
-): string {
-  if (node.kind !== 'decision') return node.name || node.nodeId;
-  return (
-    (node.exit.kind === 'choice' &&
-      (node.exit.prompt[locale] || node.exit.prompt[defaultLocale])) ||
-    node.nodeId
   );
 }

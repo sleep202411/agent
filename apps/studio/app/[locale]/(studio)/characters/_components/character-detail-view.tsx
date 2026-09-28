@@ -1,5 +1,7 @@
 "use client";
 
+import { useCharacterOperation } from "../_lib/use-character-operation";
+
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
@@ -94,6 +96,15 @@ export function CharacterDetailView({ characterId }: { characterId: string }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
+  const operation = useCharacterOperation(characterId, () => {
+    setEditingName(false);
+    setNameValue("");
+    setEditingDescription(false);
+    setDescriptionValue("");
+    setSaveBusy(false);
+    setDeleteOpen(false);
+    setDeleteBusy(false);
+  });
   const character = query.data;
 
   const saveName = async () => {
@@ -103,14 +114,19 @@ export function CharacterDetailView({ characterId }: { characterId: string }) {
       setEditingName(false);
       return;
     }
+    const run = operation.start();
+    if (!run) return;
     setSaveBusy(true);
     try {
-      applyDetail(await updateCharacter(character.id, { name: trimmed }));
+      const detail = await updateCharacter(character.id, { name: trimmed }, run.signal);
+      if (!operation.isCurrent(run)) return;
+      applyDetail(detail);
       setEditingName(false);
     } catch (error) {
+      if (!operation.isCurrent(run)) return;
       toast.error(error instanceof Error ? error.message : tc("error"));
     } finally {
-      setSaveBusy(false);
+      if (operation.finish(run)) setSaveBusy(false);
     }
   };
 
@@ -121,14 +137,23 @@ export function CharacterDetailView({ characterId }: { characterId: string }) {
       setEditingDescription(false);
       return;
     }
+    const run = operation.start();
+    if (!run) return;
     setSaveBusy(true);
     try {
-      applyDetail(await updateCharacter(character.id, { description: trimmed || null }));
+      const detail = await updateCharacter(
+        character.id,
+        { description: trimmed || null },
+        run.signal
+      );
+      if (!operation.isCurrent(run)) return;
+      applyDetail(detail);
       setEditingDescription(false);
     } catch (error) {
+      if (!operation.isCurrent(run)) return;
       toast.error(error instanceof Error ? error.message : tc("error"));
     } finally {
-      setSaveBusy(false);
+      if (operation.finish(run)) setSaveBusy(false);
     }
   };
 
@@ -138,16 +163,22 @@ export function CharacterDetailView({ characterId }: { characterId: string }) {
 
   const confirmDelete = async () => {
     if (!character || deleteBusy) return;
+    const run = operation.start();
+    if (!run) return;
     setDeleteBusy(true);
     try {
-      await deleteCharacter(character.id);
+      await deleteCharacter(character.id, run.signal);
+      if (!operation.isCurrent(run)) return;
       queryClient.removeQueries({ queryKey: charactersKeys.detail(character.id) });
       await queryClient.invalidateQueries({ queryKey: charactersKeys.lists() });
+      if (!operation.isCurrent(run)) return;
       toast.success(isRevoke ? t("characterRevoked") : t("characterDeleted"));
       router.push("/characters");
     } catch (error) {
+      if (!operation.isCurrent(run)) return;
       toast.error(error instanceof Error ? error.message : tc("error"));
-      setDeleteBusy(false);
+    } finally {
+      if (operation.finish(run)) setDeleteBusy(false);
     }
   };
 

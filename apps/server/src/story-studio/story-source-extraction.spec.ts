@@ -16,6 +16,7 @@ import {
   validateSourceExtraction,
   validateSourceAudit,
   applySourceRoutingRepair,
+  applySourceLinearSpine,
   type StorySourceExtraction,
 } from './story-source-extraction';
 import { compileScreenplayToStoryOperations } from './story-authoring-pipeline.service';
@@ -459,7 +460,7 @@ describe('faithful source extraction', () => {
       ...input.scenes[1],
       nodeId: 'orphan',
       start: 2,
-      exit: { kind: 'auto', nextNodeId: 'orphan' },
+      exit: { kind: 'auto', nextNodeId: 'ending' },
     });
     expect(
       validateSourceExtraction(input, source, indexStorySource(source)).join(
@@ -1243,5 +1244,294 @@ describe('faithful source extraction', () => {
         indexStorySource(ambiguous),
       ).join('\n'),
     ).toContain('must uniquely quote');
+  });
+});
+
+describe('linear routing spine', () => {
+  type Scene = StorySourceExtraction['scenes'][number];
+  const scene = (
+    nodeId: string,
+    start: number,
+    exit: Scene['exit'],
+  ): Scene => ({
+    nodeId,
+    name: nodeId,
+    heading: nodeId,
+    beat: nodeId,
+    start,
+    exit,
+  });
+  const planWith = (scenes: Scene[]): StorySourceExtraction => ({
+    title: '标题',
+    logline: '一句话梗概。',
+    synopsis: '概要。',
+    characters: [],
+    entrySceneId: 'source_0',
+    scenes,
+    context: [],
+    unsupportedRules: [],
+  });
+
+  it('chains plain orphaned scenes along reading order and validates clean', () => {
+    const source = '第一段\n第二段\n第三段';
+    const blocks = indexStorySource(source);
+    const original = planWith([
+      scene('source_0', 0, { kind: 'auto', nextNodeId: null }),
+      scene('source_1', 1, { kind: 'auto', nextNodeId: null }),
+      scene('source_2', 2, { kind: 'auto', nextNodeId: null }),
+    ]);
+    const spine = applySourceLinearSpine(original, blocks);
+    expect(spine.attached).toBe(2);
+    expect(spine.plan.scenes.map((item) => item.exit)).toEqual([
+      { kind: 'auto', nextNodeId: 'source_1' },
+      { kind: 'auto', nextNodeId: 'source_2' },
+      { kind: 'auto', nextNodeId: null },
+    ]);
+    expect(validateSourceExtraction(spine.plan, source, blocks)).toEqual([]);
+    // The input plan is never mutated.
+    expect(original.scenes[0].exit).toEqual({
+      kind: 'auto',
+      nextNodeId: null,
+    });
+  });
+
+  it('leaves choice-outcome orphans for the model loop and routes around them', () => {
+    const source = '开场\n· A. 追问 → 继续\n结尾';
+    const blocks = indexStorySource(source);
+    const original = planWith([
+      scene('source_0', 0, { kind: 'auto', nextNodeId: null }),
+      scene('source_1', 1, { kind: 'auto', nextNodeId: null }),
+      scene('source_2', 2, { kind: 'auto', nextNodeId: null }),
+    ]);
+    const spine = applySourceLinearSpine(original, blocks);
+    // source_1 is an explicit choice outcome: an auto predecessor is not a
+    // choice, so only source_2 is attached (to the reachable source_0).
+    expect(spine.attached).toBe(1);
+    expect(
+      spine.plan.scenes.find((item) => item.nodeId === 'source_0')?.exit,
+    ).toEqual({ kind: 'auto', nextNodeId: 'source_2' });
+    expect(
+      spine.plan.scenes.find((item) => item.nodeId === 'source_1')?.exit,
+    ).toEqual({ kind: 'auto', nextNodeId: null });
+    expect(
+      validateSourceExtraction(spine.plan, source, blocks).join('\n'),
+    ).toContain('source_1 at block 1 is unreachable');
+  });
+
+  it('never routes through ending or shared-epilogue passages', () => {
+    const source = '开场\n【结局：火种】\n尾声内容';
+    const blocks = indexStorySource(source);
+    const original = planWith([
+      scene('source_0', 0, { kind: 'auto', nextNodeId: null }),
+      scene('ending_1', 1, { kind: 'auto', nextNodeId: null }),
+      scene('tail_2', 2, { kind: 'auto', nextNodeId: null }),
+    ]);
+    const spine = applySourceLinearSpine(original, blocks);
+    // ending_1 owns a named ending marker and must not gain a spine edge nor
+    // serve as one; tail_2 attaches to source_0 instead.
+    expect(spine.attached).toBe(1);
+    expect(
+      spine.plan.scenes.find((item) => item.nodeId === 'ending_1')?.exit,
+    ).toEqual({ kind: 'auto', nextNodeId: null });
+    expect(
+      spine.plan.scenes.find((item) => item.nodeId === 'source_0')?.exit,
+    ).toEqual({ kind: 'auto', nextNodeId: 'tail_2' });
+  });
+
+  it('reattaches scenes orphaned by a redirected auto edge to a fixed point', () => {
+    const source = '一\n二\n三\n四';
+    const blocks = indexStorySource(source);
+    const original = planWith([
+      scene('source_0', 0, { kind: 'auto', nextNodeId: 'source_3' }),
+      scene('source_1', 1, { kind: 'auto', nextNodeId: 'source_2' }),
+      scene('source_2', 2, { kind: 'auto', nextNodeId: null }),
+      scene('source_3', 3, { kind: 'auto', nextNodeId: null }),
+    ]);
+    const spine = applySourceLinearSpine(original, blocks);
+    expect(spine.attached).toBe(3);
+    expect(spine.plan.scenes.map((item) => item.exit)).toEqual([
+      { kind: 'auto', nextNodeId: 'source_1' },
+      { kind: 'auto', nextNodeId: 'source_2' },
+      { kind: 'auto', nextNodeId: 'source_3' },
+      { kind: 'auto', nextNodeId: null },
+    ]);
+    expect(validateSourceExtraction(spine.plan, source, blocks)).toEqual([]);
+  });
+
+  it('is a no-op for an already connected plan', () => {
+    const source = '第一段\n第二段';
+    const blocks = indexStorySource(source);
+    const original = planWith([
+      scene('source_0', 0, { kind: 'auto', nextNodeId: 'source_1' }),
+      scene('source_1', 1, { kind: 'auto', nextNodeId: null }),
+    ]);
+    const spine = applySourceLinearSpine(original, blocks);
+    expect(spine.attached).toBe(0);
+    expect(spine.plan).toBe(original);
+  });
+});
+
+describe('unresolved interactive evidence', () => {
+  type Scene = StorySourceExtraction['scenes'][number];
+  const scene = (
+    nodeId: string,
+    start: number,
+    exit: Scene['exit'],
+  ): Scene => ({
+    nodeId,
+    name: nodeId,
+    heading: nodeId,
+    beat: nodeId,
+    start,
+    exit,
+  });
+  const planWith = (ruleSource: {
+    start: number;
+    end: number;
+  }): StorySourceExtraction => ({
+    title: '标题',
+    logline: '一句话梗概。',
+    synopsis: '概要。',
+    characters: [],
+    entrySceneId: 'source_0',
+    scenes: [
+      scene('source_0', 0, {
+        kind: 'unresolved',
+        reason: '未实现的交互。',
+        targetNodeIds: ['source_1'],
+      }),
+      scene('source_1', 1, { kind: 'auto', nextNodeId: null }),
+    ],
+    context: [],
+    unsupportedRules: [
+      {
+        source: ruleSource,
+        nodeIds: ['source_0'],
+        affectsRouting: true,
+        explanation: '未实现的交互。',
+      },
+    ],
+  });
+
+  it('accepts an unresolved rule quoting real interactive notation', () => {
+    const source = '开场\n· A. 追问 → 回应';
+    expect(
+      validateSourceExtraction(
+        planWith({ start: 1, end: 1 }),
+        source,
+        indexStorySource(source),
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects an unresolved rule quoting a plain chapter hand-off', () => {
+    const source = '开场\n要知後事如何，且聽下回分解。\n下回内容';
+    const issues = validateSourceExtraction(
+      planWith({ start: 1, end: 1 }),
+      source,
+      indexStorySource(source),
+    );
+    expect(issues.join('\n')).toContain('contain no interactive notation');
+    expect(issues.join('\n')).toContain('ordinary scene transition');
+  });
+});
+
+describe('unresolved chapter hand-off guard', () => {
+  type Scene = StorySourceExtraction['scenes'][number];
+  const scene = (
+    nodeId: string,
+    start: number,
+    exit: Scene['exit'],
+  ): Scene => ({
+    nodeId,
+    name: nodeId,
+    heading: nodeId,
+    beat: nodeId,
+    start,
+    exit,
+  });
+  const planWith = (): StorySourceExtraction => ({
+    title: '标题',
+    logline: '一句话梗概。',
+    synopsis: '概要。',
+    characters: [],
+    entrySceneId: 'source_0',
+    scenes: [
+      scene('source_0', 0, {
+        kind: 'unresolved',
+        reason: '未实现的交互。',
+        targetNodeIds: ['source_2'],
+      }),
+      scene('source_2', 2, { kind: 'auto', nextNodeId: null }),
+    ],
+    context: [],
+    unsupportedRules: [
+      {
+        source: { start: 0, end: 0 },
+        nodeIds: ['source_0'],
+        affectsRouting: true,
+        explanation: '规则引文。',
+      },
+    ],
+  });
+
+  it('rejects an unresolved exit gating the next chapter heading', () => {
+    // The rule quotes conditional-sounding prose (若), so it passes the
+    // evidence check; the chapter guard must still catch the hand-off.
+    const source =
+      '若梦初醒，叙事展开。\n要知後事如何，且聽下回分解。\n第二回 新章开始';
+    const issues = validateSourceExtraction(
+      planWith(),
+      source,
+      indexStorySource(source),
+    );
+    expect(issues.join('\n')).toContain('starts the next chapter heading');
+  });
+
+  it('keeps the unresolved when the scene itself carries an option arrow', () => {
+    const source =
+      '若梦初醒，选择追问 → 进入下一章\n要知後事如何，且聽下回分解。\n第二回 新章开始';
+    expect(
+      validateSourceExtraction(planWith(), source, indexStorySource(source)),
+    ).toEqual([]);
+  });
+});
+
+describe('self-route guard', () => {
+  type Scene = StorySourceExtraction['scenes'][number];
+  const scene = (
+    nodeId: string,
+    start: number,
+    exit: Scene['exit'],
+  ): Scene => ({
+    nodeId,
+    name: nodeId,
+    heading: nodeId,
+    beat: nodeId,
+    start,
+    exit,
+  });
+
+  it('rejects an auto exit routing a scene into itself', () => {
+    const source = '开场\n后续';
+    const issues = validateSourceExtraction(
+      {
+        title: '标题',
+        logline: '一句话梗概。',
+        synopsis: '概要。',
+        characters: [],
+        entrySceneId: 'source_0',
+        scenes: [
+          scene('source_0', 0, { kind: 'auto', nextNodeId: 'source_0' }),
+        ],
+        context: [],
+        unsupportedRules: [],
+      },
+      source,
+      indexStorySource(source),
+    );
+    expect(issues.join('\n')).toContain(
+      'source_0: a scene cannot route into itself',
+    );
   });
 });

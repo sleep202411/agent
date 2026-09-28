@@ -46,6 +46,9 @@ function fixture() {
   };
   const mediaAccess = {
     requireUseAccess: jest.fn().mockResolvedValue(undefined),
+    denialForUse: jest.fn().mockReturnValue(null),
+    ownsAsset: jest.fn().mockReturnValue(false),
+    canvasReferencedAssetIds: jest.fn().mockResolvedValue(new Set<string>()),
   };
   const adapter: MediaAssetReadinessAdapter = {
     capability: CAPABILITY,
@@ -227,6 +230,8 @@ describe('readiness with canonical media access', () => {
       requireDocument: jest.fn().mockResolvedValue({
         contentSnapshot: { nodes: [{ data: { mediaAssetId: ASSET_ID } }] },
       }),
+      requireDocumentRef: jest.fn().mockResolvedValue({ id: DOCUMENT_ID }),
+      referencedAssetIds: jest.fn().mockResolvedValue(new Set([ASSET_ID])),
     };
     const workspaces = {
       requireWorkspaceRole: jest.fn().mockResolvedValue({}),
@@ -235,7 +240,7 @@ describe('readiness with canonical media access', () => {
       prisma as never,
       {} as never,
       workspaces as never,
-      {} as never,
+      { canReadStudioReference: jest.fn().mockResolvedValue(false) } as never,
       documents as never,
     );
     const service = new MediaAssetReadinessService(prisma as never, access, [
@@ -252,11 +257,17 @@ describe('readiness with canonical media access', () => {
     await expect(
       f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY, context),
     ).resolves.toMatchObject({ status: 'pending' });
-    expect(f.documents.requireDocument).toHaveBeenCalledWith(
+    expect(f.documents.requireDocumentRef).toHaveBeenCalledWith(
       USER_ID,
       DOCUMENT_ID,
       'read',
     );
+    // One canvas-context check per REQUEST, not per asset: the batch listing
+    // and the single check each consult the snapshot exactly once.
+    expect(f.documents.referencedAssetIds).toHaveBeenCalledTimes(2);
+    expect(f.documents.referencedAssetIds).toHaveBeenCalledWith(DOCUMENT_ID, [
+      ASSET_ID,
+    ]);
     expect(f.workspaces.requireWorkspaceRole).not.toHaveBeenCalled();
     expect(f.prisma.mediaAsset.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -299,7 +310,7 @@ describe('readiness with canonical media access', () => {
     await expect(
       f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY),
     ).resolves.toMatchObject({ status: 'pending' });
-    expect(f.documents.requireDocument).not.toHaveBeenCalled();
+    expect(f.documents.requireDocumentRef).not.toHaveBeenCalled();
   });
 
   it('rechecks the canvas grant when a previously visible asset is checked', async () => {
@@ -307,9 +318,7 @@ describe('readiness with canonical media access', () => {
     await expect(
       f.service.listStatusesForUser(USER_ID, CAPABILITY, [ASSET_ID], context),
     ).resolves.toMatchObject([{ status: 'not_requested' }]);
-    f.documents.requireDocument.mockResolvedValue({
-      contentSnapshot: { nodes: [] },
-    });
+    f.documents.referencedAssetIds.mockResolvedValue(new Set<string>());
     await expect(
       f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY, context),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -321,11 +330,11 @@ describe('readiness with canonical media access', () => {
     async (scenario) => {
       const f = sharedFixture();
       if (scenario === 'unreadable canvas')
-        f.documents.requireDocument.mockRejectedValue(new ForbiddenException());
+        f.documents.requireDocumentRef.mockRejectedValue(
+          new ForbiddenException(),
+        );
       if (scenario === 'unreferenced asset')
-        f.documents.requireDocument.mockResolvedValue({
-          contentSnapshot: { nodes: [] },
-        });
+        f.documents.referencedAssetIds.mockResolvedValue(new Set<string>());
       const requestContext = scenario === 'no context' ? undefined : context;
       await expect(
         f.service.listStatusesForUser(
@@ -372,8 +381,10 @@ describe('readiness with canonical media access', () => {
   });
 
   it('does not swallow policy infrastructure failures as missing statuses', async () => {
-    const f = sharedFixture({ workspaceId: WORKSPACE_ID });
-    f.workspaces.requireWorkspaceRole.mockRejectedValue(
+    const f = sharedFixture();
+    // The canvas-context probe is now the primary grant path — an
+    // infrastructure fault there must surface, never read as "unchecked".
+    f.documents.referencedAssetIds.mockRejectedValue(
       new Error('database unavailable'),
     );
     await expect(

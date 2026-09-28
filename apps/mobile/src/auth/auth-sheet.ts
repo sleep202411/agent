@@ -2,6 +2,7 @@ import { router as imperativeRouter, type ImperativeRouter } from "expo-router";
 
 import { toHref } from "@/lib/navigation";
 
+import { getAuthGeneration, getAuthSnapshot } from "./auth-store";
 import type { AuthState } from "./types";
 
 export type AuthSheetMode = "login" | "register" | "forgot-password";
@@ -27,6 +28,23 @@ const COMPLETION_DELAY_MS = 260;
 let pendingRequest: AuthSheetOptions | undefined;
 let completingAuth = false;
 let authSheetOpen = false;
+let completionTimer: ReturnType<typeof setTimeout> | undefined;
+
+function cancelCompletion() {
+  if (completionTimer !== undefined) clearTimeout(completionTimer);
+  completionTimer = undefined;
+  completingAuth = false;
+}
+
+function scheduleCompletion(request: AuthSheetOptions | undefined, generation: number) {
+  completingAuth = true;
+  completionTimer = setTimeout(() => {
+    completionTimer = undefined;
+    completingAuth = false;
+    if (getAuthGeneration() !== generation || getAuthSnapshot().status !== "authenticated") return;
+    flushPendingRequest(request);
+  }, COMPLETION_DELAY_MS);
+}
 
 function navigateToAuth(mode: AuthSheetMode, replace: boolean) {
   const href = toHref(AUTH_ROUTES[mode]);
@@ -48,8 +66,9 @@ function flushPendingRequest(request: AuthSheetOptions | undefined) {
 }
 
 export function openAuthSheet(options: AuthSheetOptions = {}) {
+  cancelCompletion();
   const mode = options.mode ?? "login";
-  pendingRequest = options.onAuthenticated ? options : pendingRequest;
+  pendingRequest = options;
   navigateToAuth(mode, options.replace ?? false);
 }
 
@@ -69,41 +88,52 @@ export function releasePendingAuthRequest() {
   const request = pendingRequest;
   pendingRequest = undefined;
   authSheetOpen = false;
-  setTimeout(() => {
-    flushPendingRequest(request);
-  }, COMPLETION_DELAY_MS);
+  if (getAuthSnapshot().status !== "authenticated") return;
+  scheduleCompletion(request, getAuthGeneration());
 }
 
 export function completeAuthSheet(router: ImperativeRouter) {
-  if (completingAuth) return;
-
+  if (completingAuth || getAuthSnapshot().status !== "authenticated") return;
+  const generation = getAuthGeneration();
   completingAuth = true;
   const request = pendingRequest;
   pendingRequest = undefined;
   authSheetOpen = false;
-
-  if (router.canDismiss()) {
-    router.dismissAll();
-  }
-  if (router.canGoBack()) router.back();
-  else router.replace(toHref("/"));
-
-  setTimeout(() => {
+  try {
+    if (router.canDismiss()) router.dismissAll();
+    if (router.canGoBack()) router.back();
+    else router.replace(toHref("/"));
+  } catch (error) {
     completingAuth = false;
-    flushPendingRequest(request);
-  }, COMPLETION_DELAY_MS);
+    pendingRequest = request;
+    throw error;
+  }
+  scheduleCompletion(request, generation);
 }
 
 /** Dismiss the auth flow WITHOUT authenticating — the "skip / browse first"
  *  affordance. Returns the guest to where they were. */
 export function skipAuthSheet(router: ImperativeRouter) {
+  cancelCompletion();
   cancelPendingAuthRequest();
   if (router.canGoBack()) router.back();
   else router.replace(toHref("/"));
 }
 
 export function requireAuthenticated(auth: AuthState, options: AuthSheetOptions = {}): boolean {
-  if (auth.status === "authenticated") {
+  const current = getAuthSnapshot();
+  // A retained gate from another authenticated account cannot authorize its
+  // old action using the replacement account's credentials.
+  if (
+    auth.status === "authenticated" &&
+    (current.status !== "authenticated" ||
+      auth.session?.region !== current.session?.region ||
+      auth.session?.token?.tokenName !== current.session?.token?.tokenName ||
+      auth.session?.token?.tokenValue !== current.session?.token?.tokenValue ||
+      (auth.user?.id ?? auth.user?.userId) !== (current.user?.id ?? current.user?.userId))
+  )
+    return false;
+  if (current.status === "authenticated") {
     options.onAuthenticated?.();
     return true;
   }

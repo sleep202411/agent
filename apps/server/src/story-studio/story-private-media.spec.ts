@@ -12,6 +12,50 @@ function responseFixture() {
 }
 describe('private story media stream', () => {
   afterEach(() => jest.restoreAllMocks());
+  it.each(['rejected', 'pending'])(
+    'finishes a range rejection when upstream cancellation is %s',
+    async (mode) => {
+      const cancel = jest.fn(() =>
+        mode === 'rejected'
+          ? Promise.reject(new Error('cleanup failed'))
+          : new Promise<void>(() => {}),
+      );
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(new ReadableStream({ cancel }), {
+          status: 416,
+          headers: { 'content-range': 'bytes */10' },
+        }),
+      );
+      const { response } = responseFixture();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const outcome = await Promise.race([
+          streamStoryPrivateMedia(
+            'https://storage.example/video',
+            response as never,
+          ).then(
+            () => 'finished',
+            (error: Error) => error.message,
+          ),
+          new Promise<string>((resolve) => {
+            timer = setTimeout(() => resolve('waiting'), 100);
+          }),
+        ]);
+        expect(outcome).toBe('finished');
+        expect(response.status).toHaveBeenCalledWith(416);
+        expect(response.setHeader).toHaveBeenCalledWith(
+          'content-range',
+          'bytes */10',
+        );
+        expect(response.writableEnded).toBe(true);
+        expect(cancel).toHaveBeenCalledTimes(1);
+      } finally {
+        clearTimeout(timer);
+        response.destroy();
+      }
+    },
+  );
+
   it('streams partial content without revealing or redirecting to the origin', async () => {
     const fetcher = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('abc', {

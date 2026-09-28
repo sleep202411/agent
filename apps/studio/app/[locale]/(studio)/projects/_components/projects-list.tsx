@@ -76,7 +76,7 @@ export function ProjectsList() {
     try {
       await renameLegacyProject(renaming.id, name);
       await refresh();
-      setRenaming(null);
+      setRenaming((current) => (current === renaming ? null : current));
       toast.success(tp("projectRenamed"));
     } catch {
       toast.error(tp("renameFailed"));
@@ -91,7 +91,7 @@ export function ProjectsList() {
     try {
       await deleteLegacyProject(deleting.id);
       await refresh();
-      setDeleting(null);
+      setDeleting((current) => (current === deleting ? null : current));
       toast.success(tp("projectDeleted"));
     } catch {
       toast.error(tp("deleteFailed"));
@@ -129,14 +129,18 @@ export function ProjectsList() {
                   <DropdownMenuItem
                     onSelect={() => {
                       setRenameValue(project.name);
-                      setRenaming(project);
+                      // Each opening owns its completion, even for the same project.
+                      setRenaming({ ...project });
                     }}
                   >
                     <IconPencil className="size-4" stroke={1.8} />
                     {tp("rename")}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(project)}>
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => setDeleting({ ...project })}
+                  >
                     <IconTrash className="size-4" stroke={1.8} />
                     {tc("delete")}
                   </DropdownMenuItem>

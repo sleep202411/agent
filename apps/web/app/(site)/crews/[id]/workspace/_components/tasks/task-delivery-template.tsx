@@ -140,6 +140,7 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
     void qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(task.id), user.id));
   };
   const current = useTaskDeliveryTemplate(task.id);
+  const requirementsLocked = task.status !== "open" || task.submissions.length > 0;
   type Category = {
     id: string;
     version: number;
@@ -157,7 +158,7 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
       ),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
-  const [choice, setChoice] = useState<string | null>(null),
+  const [draft, setDraft] = useState<{ choice: string; expectedVersion: number } | null>(null),
     [pending, setPending] = useState(false),
     [error, setError] = useState<string | null>(null);
   const active = useRef<AbortController | null>(null);
@@ -168,29 +169,40 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
     },
     []
   );
+  const choice = draft?.choice ?? null;
   const categories = catalog.data?.pages.flatMap((page) => page.items) ?? [];
   const currentKey = current.data ? `${current.data.categoryId}:${current.data.version}` : "";
   const selectedDefinition =
-    choice === null
+    requirementsLocked || choice === null
       ? current.data?.definition
       : categories.find((row) => `${row.id}:${row.version}` === choice)?.definition;
   async function save() {
-    if (active.current || choice === null) return;
+    if (
+      active.current ||
+      !draft ||
+      !canManage ||
+      requirementsLocked ||
+      current.isError ||
+      catalog.isError ||
+      current.isPending ||
+      catalog.isPending
+    )
+      return;
     const controller = new AbortController();
     active.current = controller;
     setPending(true);
     setError(null);
     try {
-      const [id, version] = choice.split(":");
+      const [id, version] = draft.choice.split(":");
       await crewApi.post(`/crew-tasks/${task.id}/delivery-template`, {
         signal: controller.signal,
         body: {
-          expectedVersion: task.version,
-          category: choice ? { id, version: Number(version) } : null,
+          expectedVersion: draft.expectedVersion,
+          category: draft.choice ? { id, version: Number(version) } : null,
         },
       });
       if (!controller.signal.aborted) {
-        setChoice(null);
+        setDraft(null);
         await current.refetch();
         if (!controller.signal.aborted) refreshTask();
       }
@@ -235,9 +247,10 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
           </Button>
         </div>
       ) : null}
-      {canManage &&
-      !["submitted", "approved", "cancelled"].includes(task.status) &&
-      (categories.length > 0 || current.data) ? (
+      {canManage && requirementsLocked ? (
+        <p className="text-xs text-muted-foreground">{t("requirementsLocked")}</p>
+      ) : null}
+      {canManage && !requirementsLocked && (categories.length > 0 || current.data) ? (
         <div className="flex flex-wrap items-center gap-2">
           <NativeSelect
             className="min-w-0 flex-1 basis-52"
@@ -250,7 +263,7 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
               catalog.isError
             }
             value={choice ?? currentKey}
-            onChange={setChoice}
+            onChange={(choice) => setDraft({ choice, expectedVersion: task.version })}
           >
             <NativeSelectOption value="">{t("none")}</NativeSelectOption>
             {current.data &&
@@ -289,7 +302,7 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
       ) : null}
       {selectedDefinition ? <DeliveryReferencePrices definition={selectedDefinition} /> : null}
       {task.submissions
-        .filter((submission) => submission.professionalDelivery)
+        .filter((submission) => submission.professionalDelivery?.categoryId)
         .map((submission) => {
           const form = submission.professionalDelivery!;
           return (

@@ -18,4 +18,10 @@ export interface CrewAssetPreviewItem {
   accessMode: "inherit" | "restricted";
   permissionVersion: number;
   effectivePermission: "view" | "upload" | "edit" | "manage";
+  linkedStudio?: {
+    mediaAssetId: string;
+    projectId: string | null;
+    storyProjectId: string | null;
+    previewUrl: string;
+  } | null;
 }

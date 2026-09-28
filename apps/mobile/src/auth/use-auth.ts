@@ -4,6 +4,7 @@ import {
   clearIsNewUserFlag,
   continueWithCode,
   getAuthSnapshot,
+  getAuthGeneration,
   refreshCurrentUser,
   resetPasswordAndSignIn,
   saveAccountPassword,
@@ -20,6 +21,7 @@ export function useAuth() {
   return useMemo(
     () => ({
       ...state,
+      generation: getAuthGeneration(),
       clearIsNewUserFlag,
       continueWithCode,
       refreshCurrentUser,

@@ -24,6 +24,10 @@ function build() {
     },
     workspaceInvite: { create: inviteCreate },
   };
+  Object.assign(prisma, {
+    $transaction: (work: (tx: typeof prisma) => Promise<unknown>) =>
+      work(prisma),
+  });
   const permissions = { requireWorkspaceRole: jest.fn() };
   const audit = { record: jest.fn() };
   return {

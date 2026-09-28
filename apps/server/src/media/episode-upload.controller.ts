@@ -9,7 +9,10 @@ import {
   Post,
 } from '@nestjs/common';
 import { z } from 'zod';
-import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
+import {
+  CONTENT_REVIEW_VIDEO_MAX_BYTES,
+  EPISODE_SOURCE_MAX_BYTES,
+} from '@repo/shared';
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
@@ -17,12 +20,36 @@ import {
   type StartEpisodeUpload,
 } from './episode-upload.service';
 
-const StartSchema = z.object({
-  id: z.string().uuid(),
-  fileName: z.string().trim().min(1).max(256),
-  contentType: z.enum(['video/mp4', 'video/quicktime', 'video/webm']),
-  sizeBytes: z.number().int().positive().max(EPISODE_SOURCE_MAX_BYTES),
-});
+const MultipartUploadKindSchema = z.enum([
+  'episode_source_video',
+  'content_review_video',
+]);
+
+const StartSchema = z
+  .object({
+    id: z.string().uuid(),
+    fileName: z.string().trim().min(1).max(256),
+    contentType: z.enum(['video/mp4', 'video/quicktime', 'video/webm']),
+    sizeBytes: z.number().int().positive().max(EPISODE_SOURCE_MAX_BYTES),
+    kind: MultipartUploadKindSchema.default('episode_source_video'),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind !== 'content_review_video') return;
+    if (value.contentType === 'video/webm') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['contentType'],
+        message: 'Content review videos must be MP4 or MOV',
+      });
+    }
+    if (value.sizeBytes > CONTENT_REVIEW_VIDEO_MAX_BYTES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['sizeBytes'],
+        message: 'Content review videos must be 2 GB or smaller',
+      });
+    }
+  });
 const IdSchema = z.string().uuid();
 
 @Controller('media/episode-uploads')

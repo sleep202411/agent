@@ -111,6 +111,8 @@ export function toCrewDTO(
     showcaseWorks: (c.showcaseWorks as CrewDTO['showcaseWorks'] | null) ?? [],
     ownerUserId: c.ownership.member.userId,
     listingStatus: c.listingStatus as CrewDTO['listingStatus'],
+    productionKind: c.productionKind as CrewDTO['productionKind'],
+    studioWorkspaceId: c.studioWorkspaceId ?? null,
     listedAt: iso(c.listedAt),
     version: c.version,
     createdAt: isoReq(c.createdAt),
@@ -136,6 +138,8 @@ export function toPositionDTO(
 ): CrewPositionDTO {
   return {
     id: p.id,
+    taskId: p.taskId,
+    recruitmentVisibility: p.recruitmentVisibility as 'public' | 'private',
     crewId: p.crewId,
     positionType: p.positionType,
     description: p.description,
@@ -199,9 +203,30 @@ export function toMemberDTO(m: CrewMemberView): CrewMemberDTO {
   };
 }
 
-export function toApplicationDTO(a: CrewApplication): CrewApplicationDTO {
+export function toApplicationDTO(
+  a: CrewApplication & {
+    interviewEvents?: Array<{
+      state: string;
+      version: number;
+      scheduledAt: Date | null;
+    }>;
+  },
+): CrewApplicationDTO {
   return {
     id: a.id,
+    ...(a.interviewEvents
+      ? {
+          interview: {
+            state: (a.interviewEvents[0]?.state ??
+              'not_started') as NonNullable<
+              CrewApplicationDTO['interview']
+            >['state'],
+            version: a.interviewEvents[0]?.version ?? 0,
+            scheduledAt:
+              a.interviewEvents[0]?.scheduledAt?.toISOString() ?? null,
+          },
+        }
+      : {}),
     crewId: a.crewId,
     positionId: a.positionId,
     applicantId: a.applicantId,

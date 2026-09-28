@@ -8,6 +8,7 @@ import {
   STORY_VISUAL_STYLE_SKILL_SLUGS,
   storyVisualStyleSkillBySlug,
 } from '@repo/shared';
+import { storyAutoExit } from '@repo/shared/story-stats';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
@@ -27,10 +28,9 @@ import {
 
 function node(
   nodeId: string,
-  exit: InteractiveStoryDraftContent['graph']['nodes'][number]['exit'] = {
-    kind: 'auto',
-    nextNodeId: null,
-  },
+  exit: InteractiveStoryDraftContent['graph']['nodes'][number]['exit'] = storyAutoExit(
+    null,
+  ),
 ): Extract<
   InteractiveStoryDraftContent['graph']['nodes'][number],
   { kind: 'clip' }
@@ -123,6 +123,7 @@ describe('StoryAgentCapabilityHandler', () => {
   it('claims only the new Story capability family', () => {
     expect(handler.supports('story.read')).toBe(true);
     expect(handler.supports('story.confirmCreativeProfile')).toBe(true);
+    expect(handler.supports('story.updateStateVariables')).toBe(true);
     expect(handler.supports('story.addBranch')).toBe(true);
     expect(handler.supports('story.putInteraction')).toBe(true);
     expect(handler.supports('story.removeInteraction')).toBe(true);
@@ -132,6 +133,7 @@ describe('StoryAgentCapabilityHandler', () => {
     expect(handler.supports('story.generation.quoteAssets')).toBe(true);
     expect(handler.supports('story.generation.quoteStoryboard')).toBe(true);
     expect(handler.supports('story.generation.confirmBatch')).toBe(true);
+    expect(handler.supports('story.generation.resumeBatch')).toBe(true);
     expect(handler.supports('characters.upsert')).toBe(false);
     expect(handler.supports('canvas.applyPatch')).toBe(false);
   });
@@ -140,6 +142,7 @@ describe('StoryAgentCapabilityHandler', () => {
     const projectId = '0197f4a2-0800-7000-8000-0000000000c5';
     const chapterId = '0197f4a2-0800-7000-8000-0000000000c7';
     const content = draft([node('scene.gate')]);
+    let latestWrittenContent: InteractiveStoryDraftContent | undefined;
     const tx = {
       storyProject: {
         findFirst: jest.fn().mockResolvedValue({
@@ -167,7 +170,16 @@ describe('StoryAgentCapabilityHandler', () => {
         }),
         update: jest.fn().mockResolvedValue({}),
       },
-      storyDraft: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      storyDraft: {
+        updateMany: jest
+          .fn()
+          .mockImplementation(
+            (input: { data: { content: InteractiveStoryDraftContent } }) => {
+              latestWrittenContent = input.data.content;
+              return Promise.resolve({ count: 1 });
+            },
+          ),
+      },
       storyChapter: { update: jest.fn().mockResolvedValue({}) },
       storyChapterGraphRepair: { upsert: jest.fn().mockResolvedValue({}) },
       storyStoryboardSequence: {
@@ -211,11 +223,33 @@ describe('StoryAgentCapabilityHandler', () => {
       }),
     ).resolves.toMatchObject({ draftRevision: 4 });
 
+    await expect(
+      scoped.execute({
+        ...storyboardExecuteInput('story.updateStateVariables', {
+          baseDraftRevision: 3,
+          upsert: [
+            {
+              key: 'courage',
+              name: { 'en-US': 'Courage' },
+              valueType: 'number',
+              initialValue: 0,
+            },
+          ],
+        }),
+        projectId,
+        workbenchContext: { chapterId },
+      }),
+    ).resolves.toMatchObject({ draftRevision: 4 });
+
+    expect(latestWrittenContent?.storyBible.stateVariables).toEqual([
+      expect.objectContaining({ key: 'courage' }),
+    ]);
+
     expect(tx.storyChapter.update).toHaveBeenCalledWith({
       where: { id: chapterId },
       data: { nodeIds: ['scene.gate'], entryNodeId: 'scene.gate' },
     });
-    expect(tx.storyChapterGraphRepair.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.storyChapterGraphRepair.upsert).toHaveBeenCalledTimes(2);
     expect(tx.storyStoryboardSequence.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         storyProjectId: projectId,
@@ -487,6 +521,56 @@ describe('StoryAgentCapabilityHandler', () => {
       },
     });
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('resumes a paused batch through the guarded resume path after the creator asks to continue', async () => {
+    const requireWrite = jest.fn().mockResolvedValue({
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+    });
+    const resume = jest
+      .fn()
+      .mockResolvedValue({ id: '88888888-8888-4888-8888-888888888888' });
+    const scoped = new StoryAgentCapabilityHandler(
+      {} as never,
+      {} as never,
+      { requireWrite } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { resume } as never,
+    );
+
+    await expect(
+      scoped.execute({
+        toolId: 'story.generation.resumeBatch',
+        runId: '22222222-2222-4222-8222-222222222222',
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        turnId: '44444444-4444-4444-8444-444444444444',
+        toolCallId: 'resume-generation-batch-1',
+        actorId: 'creator-1',
+        projectId: '55555555-5555-4555-8555-555555555555',
+        skillResolutionId: '66666666-6666-4666-8666-666666666666',
+        skillVersionIds: [],
+        workbenchContext: {
+          chapterId: '77777777-7777-4777-8777-777777777777',
+        },
+        idempotencyKey: 'resume-generation-batch-key-1',
+        arguments: {
+          batchId: '88888888-8888-4888-8888-888888888888',
+        },
+      }),
+    ).resolves.toEqual({ id: '88888888-8888-4888-8888-888888888888' });
+    expect(requireWrite).toHaveBeenCalledWith(
+      'creator-1',
+      '55555555-5555-4555-8555-555555555555',
+    );
+    expect(resume).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '55555555-5555-4555-8555-555555555555',
+      '77777777-7777-4777-8777-777777777777',
+      '88888888-8888-4888-8888-888888888888',
+    );
   });
 
   it('quotes only the requested asset kind without forwarding absent model fields', async () => {
@@ -1367,12 +1451,12 @@ describe('StoryAgentCapabilityHandler', () => {
         {
           choiceId: 'choice.left',
           label: { 'en-US': 'Left' },
-          nextNodeId: 'scene.left',
+          target: { kind: 'node', nodeId: 'scene.left' },
         },
         {
           choiceId: 'choice.right',
           label: { 'en-US': 'Right' },
-          nextNodeId: 'scene.right',
+          target: { kind: 'node', nodeId: 'scene.right' },
         },
       ],
     });
@@ -1403,12 +1487,18 @@ describe('StoryAgentCapabilityHandler', () => {
           {
             choiceId: 'choice.shared',
             label: { 'en-US': 'Shared' },
-            nextNodeId: 'shared',
+            target: { kind: 'node', nodeId: 'shared' },
           },
         ],
       }),
-      node('root', { kind: 'auto', nextNodeId: 'child' }),
-      node('child', { kind: 'auto', nextNodeId: 'shared' }),
+      node('root', {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'child' } }],
+      }),
+      node('child', {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'shared' } }],
+      }),
       node('shared'),
     ]);
     const result = executeStoryPatch({
@@ -1424,6 +1514,17 @@ describe('StoryAgentCapabilityHandler', () => {
 
   it('creates and replaces an interaction by stable id without duplicates', () => {
     const current = draft([node('opening'), node('ending')]);
+    current.storyBible.stateVariables = [
+      {
+        key: 'courage',
+        name: { 'en-US': 'Courage' },
+        valueType: 'number',
+        initialValue: 0,
+      },
+    ];
+    const opening = current.graph.nodes[0];
+    if (opening?.kind !== 'clip') throw new Error('Expected clip');
+    opening.onEnterEffects = [{ kind: 'add', key: 'courage', amount: 1 }];
     const create = StoryPutInteractionInputSchema.parse({
       baseDraftRevision: 0,
       nodeId: 'opening',
@@ -1436,7 +1537,10 @@ describe('StoryAgentCapabilityHandler', () => {
         startMs: 500,
         endMs: 1_500,
         outcomes: {
-          success: { kind: 'continue' },
+          success: {
+            kind: 'continue',
+            effects: [{ kind: 'add', key: 'courage', amount: 1 }],
+          },
           timeout: { kind: 'goto', nodeId: 'ending' },
         },
       },
@@ -1466,6 +1570,12 @@ describe('StoryAgentCapabilityHandler', () => {
       kind: 'press-hold',
       durationMs: 700,
       controlTimeline: false,
+    });
+    expect(replacedOpening.onEnterEffects).toEqual([
+      { kind: 'add', key: 'courage', amount: 1 },
+    ]);
+    expect(replacedOpening.interactions[0]?.outcomes.success).toMatchObject({
+      effects: [{ kind: 'add', key: 'courage', amount: 1 }],
     });
   });
 
@@ -1512,13 +1622,21 @@ describe('StoryAgentCapabilityHandler', () => {
         rect: { x: 0.2, y: 0.2, width: 0.4, height: 0.4 },
         startMs: 0,
         endMs: 1_000,
-        outcomes: { success: { kind: 'goto', nodeId: 'shared' } },
+        outcomes: {
+          success: { kind: 'goto', target: { kind: 'node', nodeId: 'shared' } },
+        },
       },
     ];
     const current = draft([
       outside,
-      node('root', { kind: 'auto', nextNodeId: 'shared' }),
-      node('shared', { kind: 'auto', nextNodeId: 'tail' }),
+      node('root', {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'shared' } }],
+      }),
+      node('shared', {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'tail' } }],
+      }),
       node('tail'),
     ]);
     const result = executeStoryPatch({

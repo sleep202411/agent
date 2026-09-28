@@ -1,6 +1,6 @@
+import { ExperienceStillSegment } from "./experience-still-segment";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import type { VideoContentFit } from "expo-video";
 
@@ -40,7 +40,6 @@ function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPla
 
 const EMPTY_SEQUENCE_HOLD_MS = 6_000;
 /** How often a still reports elapsed time, matching a video's timeupdate rate. */
-const STILL_CLOCK_TICK_MS = 250;
 
 /**
  * Imperative expo-video control lives outside the component so React Compiler
@@ -343,13 +342,15 @@ export function ExperienceVideoRenderer({
     onRuntimeError(message);
   });
 
+  const completeEmptySequence = useEffectEvent(() => completeRenderer());
+
   // Empty sequence: hold, then complete — kept in an effect so completion can
   // go through useEffectEvent (not callable during render).
   useEffect(() => {
     if (sequenceLength !== 0) return;
-    const timer = setTimeout(() => completeRenderer(), EMPTY_SEQUENCE_HOLD_MS);
+    const timer = setTimeout(() => completeEmptySequence(), EMPTY_SEQUENCE_HOLD_MS);
     return () => clearTimeout(timer);
-  }, [sequenceLength]);
+  }, [renderer.instanceId, sequenceLength]);
 
   useEffect(() => {
     if (!sourceUri || isStill) {
@@ -514,159 +515,6 @@ export function ExperienceVideoRenderer({
   }
 
   return visual;
-}
-
-/**
- * A storyboard still on the sequence timeline. A still has no element that
- * plays itself, so it is governed like footage: it starts its hold clock once
- * the scene is presenting (stills only mount after Start), reports elapsed
- * time so time-anchored interactions stay live, and advances the sequence
- * when that clock runs out — the same beat H5 owns on the still, not on a
- * parent timeout that remounts can drop.
- */
-function ExperienceStillSegment({
-  uri,
-  fit,
-  durationMs,
-  timelineOffsetMs,
-  playbackIdentity,
-  presenting,
-  onDisplayed,
-  onHoldComplete,
-  onTimelineTimeMs,
-  onLoadError,
-}: {
-  uri: string;
-  fit: VideoContentFit;
-  durationMs: number;
-  timelineOffsetMs: number;
-  playbackIdentity: string;
-  presenting: boolean;
-  onDisplayed: () => void;
-  onHoldComplete: () => void;
-  onTimelineTimeMs: (timeMs: number) => void;
-  onLoadError: () => void;
-}) {
-  const displayedRef = useRef(false);
-  const holdCompletedRef = useRef(false);
-  const elapsedMsRef = useRef(0);
-  const runningSinceRef = useRef<number | null>(null);
-  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [playableUri, setPlayableUri] = useState<string | null>(null);
-  const mediaKey = `${playbackIdentity}:${uri}`;
-  const [previousMediaKey, setPreviousMediaKey] = useState(mediaKey);
-  if (previousMediaKey !== mediaKey) {
-    setPreviousMediaKey(mediaKey);
-    setPlayableUri(null);
-  }
-  const onDisplayedRef = useRef(onDisplayed);
-  useLayoutEffect(() => {
-    onDisplayedRef.current = onDisplayed;
-  }, [onDisplayed]);
-  const onHoldCompleteRef = useRef(onHoldComplete);
-  useLayoutEffect(() => {
-    onHoldCompleteRef.current = onHoldComplete;
-  }, [onHoldComplete]);
-  const onTimelineTimeMsRef = useRef(onTimelineTimeMs);
-  useLayoutEffect(() => {
-    onTimelineTimeMsRef.current = onTimelineTimeMs;
-  }, [onTimelineTimeMs]);
-  const onLoadErrorRef = useRef(onLoadError);
-  useLayoutEffect(() => {
-    onLoadErrorRef.current = onLoadError;
-  }, [onLoadError]);
-
-  const stopTicking = () => {
-    if (tickRef.current === null) return;
-    clearInterval(tickRef.current);
-    tickRef.current = null;
-  };
-
-  const elapsed = () =>
-    elapsedMsRef.current +
-    (runningSinceRef.current === null ? 0 : performance.now() - runningSinceRef.current);
-
-  const finishHold = () => {
-    if (holdCompletedRef.current) return;
-    holdCompletedRef.current = true;
-    elapsedMsRef.current = durationMs;
-    runningSinceRef.current = null;
-    stopTicking();
-    onTimelineTimeMsRef.current(timelineOffsetMs + durationMs);
-    onHoldCompleteRef.current();
-  };
-
-  const startTicking = () => {
-    if (tickRef.current !== null || holdCompletedRef.current) return;
-    tickRef.current = setInterval(() => {
-      const now = Math.min(elapsed(), durationMs);
-      onTimelineTimeMsRef.current(timelineOffsetMs + now);
-      if (now >= durationMs) finishHold();
-    }, STILL_CLOCK_TICK_MS);
-  };
-
-  useEffect(() => {
-    displayedRef.current = false;
-    holdCompletedRef.current = false;
-    elapsedMsRef.current = 0;
-    runningSinceRef.current = null;
-
-    const abort = new AbortController();
-    void resolvePlaybackUri(uri, abort.signal)
-      .then((resolved) => {
-        if (!abort.signal.aborted) setPlayableUri(resolved);
-      })
-      .catch(() => {
-        if (!abort.signal.aborted) onLoadErrorRef.current();
-      });
-    return () => {
-      abort.abort();
-      stopTicking();
-    };
-  }, [playbackIdentity, uri]);
-
-  // Stills only mount after Start, so do not wait on sequence autoplay: entering
-  // hold-last-frame flips that flag off, and a remount would then show the image
-  // forever without ever running the hold clock.
-  useEffect(() => {
-    if (!presenting || !playableUri || displayedRef.current) return;
-    displayedRef.current = true;
-    runningSinceRef.current = performance.now();
-    onTimelineTimeMsRef.current(timelineOffsetMs);
-    startTicking();
-    onDisplayedRef.current();
-  }, [playableUri, presenting, timelineOffsetMs]);
-
-  useEffect(() => {
-    if (!displayedRef.current || holdCompletedRef.current) return;
-    if (!presenting) {
-      if (runningSinceRef.current === null) return;
-      elapsedMsRef.current = elapsed();
-      runningSinceRef.current = null;
-      stopTicking();
-      return;
-    }
-    if (elapsed() >= durationMs) {
-      finishHold();
-      return;
-    }
-    if (runningSinceRef.current !== null) return;
-    runningSinceRef.current = performance.now();
-    startTicking();
-  }, [durationMs, presenting]);
-
-  if (!playableUri) return null;
-
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <Image
-        source={{ uri: playableUri }}
-        style={StyleSheet.absoluteFill}
-        contentFit={fit === "contain" ? "contain" : "cover"}
-        onError={() => onLoadErrorRef.current()}
-      />
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({

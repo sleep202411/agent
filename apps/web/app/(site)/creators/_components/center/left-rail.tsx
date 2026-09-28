@@ -20,7 +20,7 @@
  * is typically equally tall, so empty space below the rail isn't a
  * concern in practice.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBriefcase,
@@ -35,7 +35,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import type { Locale } from "@/src/i18n/config";
 import { parseEducation, type EducationEntry } from "@/src/services/user";
 import {
   useCreatorExperience,
@@ -45,6 +46,9 @@ import {
 import { useCreatorCertificates } from "@/app/(site)/creators/_hooks/use-certificates";
 import type { ExperienceEntry } from "@/app/(site)/profile/_hooks/use-profile-extras";
 import { LevelApplyDialog } from "@/app/(site)/creators/_components/center/dialogs/level-apply-dialog";
+import { IpPublisherLogos } from "@/components/ip-commerce/ip-publisher-logos";
+import type { IpPublisherPublic } from "@/src/lib/ip-commerce/api";
+import { useAllMyIpCommerceIps, usePublicCreatorIps } from "@/src/lib/ip-commerce/hooks";
 
 interface CreatorLeftRailProps {
   creator: Creator;
@@ -74,11 +78,28 @@ export function CreatorLeftRail({
 }: CreatorLeftRailProps) {
   const t = useTranslations("creatorCenter");
   const securityT = useTranslations("accountSecurity");
+  const locale = useLocale() as Locale;
   const { data: experience } = useCreatorExperience(creator.id);
   const { data: certificates = [] } = useCreatorCertificates(creator.id);
   const [levelApplyOpen, setLevelApplyOpen] = useState(false);
   const joined = formatJoined(creator.joinedAt);
   const topCertificate = certificates[0] ?? null;
+
+  // Aggregated distributors from this creator's public (or own) IPs — shown
+  // only in 档案信息, not on the IPs tab cards.
+  const myIps = useAllMyIpCommerceIps(isOwner, { locale });
+  const publicIps = usePublicCreatorIps(creator.id, !isOwner, { locale });
+  const publishers = useMemo(() => {
+    const items = isOwner ? (myIps.data?.items ?? []) : (publicIps.data?.items ?? []);
+    const byId = new Map<string, IpPublisherPublic>();
+    for (const ip of items) {
+      for (const publisher of ip.publishers ?? []) {
+        if (!publisher.logoUrl?.trim()) continue;
+        if (!byId.has(publisher.id)) byId.set(publisher.id, publisher);
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => a.displayOrder - b.displayOrder);
+  }, [isOwner, myIps.data?.items, publicIps.data?.items]);
 
   const bio = (creator.bio || "").trim();
   const education = parseEducation(creator.study);
@@ -128,6 +149,12 @@ export function CreatorLeftRail({
           {joined ? <InfoRow label={t("info.joined")} value={joined} /> : null}
         </div>
       </RailCard>
+
+      {publishers.length > 0 ? (
+        <RailCard title={t("info.publishers")}>
+          <IpPublisherLogos publishers={publishers} size="lg" />
+        </RailCard>
+      ) : null}
 
       {/* FD Certification badges — GitHub-achievements pattern: grid
           of imagePath icons, name underneath, full description on

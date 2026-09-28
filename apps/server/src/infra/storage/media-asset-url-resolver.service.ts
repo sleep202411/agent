@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { HLS_VARIANT_KEY } from './media-asset-placement';
+import { HLS_VARIANT_KEY, ORIGINAL_VARIANT_KEY } from './media-asset-placement';
 
 export interface ResolvableMediaAsset {
   storageProvider: string;
@@ -43,6 +43,10 @@ export interface GatedMediaAsset {
 }
 
 export interface ResolvableMediaObjectPlacement {
+  /** Owning variant, null for legacy asset-level placements. Variant-scoped
+   * rows are only reachable through `resolveVariant` — never through the
+   * asset-level `resolve`. */
+  variantId?: string | null;
   storageProvider: string;
   bucket: string | null;
   region: string | null;
@@ -67,7 +71,16 @@ export class MediaAssetUrlResolverService {
   resolve(asset: ResolvableMediaAsset): string {
     assertAssetCanResolveUrl(asset);
 
-    const placement = pickPlacement(asset.placements);
+    // Asset-level means "the ORIGINAL bytes' URL". Derived variants (video
+    // poster, HLS) register their own `primary` placements under the same
+    // asset; picking from the flat list lets a jpg poster or an m3u8 playlist
+    // shadow the original mp4 — they are only reachable via resolveVariant /
+    // playback resolution. Prefer the original variant's current placement,
+    // then legacy asset-level (variant-less) placements, then the asset's own
+    // storage identity.
+    const placement =
+      pickPlacement(readyOriginalVariant(asset)?.placements) ??
+      pickPlacement(assetLevelPlacements(asset.placements));
     if (placement) return this.resolvePlacement(placement);
 
     if (asset.storageProvider === 'external_url') {
@@ -112,9 +125,7 @@ export class MediaAssetUrlResolverService {
    * SELECT a compile error.
    */
   resolvePublicUrl(asset: GatedMediaAsset): string | null {
-    if (asset.deletedAt || asset.status === 'deleted') return null;
-    if (asset.status != null && asset.status !== 'ready') return null;
-    if (asset.moderationStatus === 'blocked') return null;
+    if (!canExposeAsset(asset)) return null;
     try {
       return this.resolve(asset);
     } catch {
@@ -126,12 +137,15 @@ export class MediaAssetUrlResolverService {
     assertAssetCanResolveUrl(asset);
 
     const variant = asset.variants?.find(
-      (candidate) =>
-        candidate.variantKey === variantKey &&
-        candidate.status !== 'deleted' &&
-        candidate.status !== 'blocked' &&
-        !candidate.deletedAt,
+      (candidate) => candidate.variantKey === variantKey,
     );
+    if (
+      variant &&
+      (variant.deletedAt ||
+        (variant.status != null && variant.status !== 'ready'))
+    ) {
+      throw new Error(`media asset variant "${variantKey}" is not ready`);
+    }
     const placement = pickPlacement(variant?.placements);
     if (placement) return this.resolvePlacement(placement);
     if (variantKey === 'original') return this.resolve(asset);
@@ -262,7 +276,7 @@ export function resolveMediaPublicVariantUrl(
   asset: GatedMediaAsset,
   variantKey: string,
 ): string | null {
-  if (resolveMediaPublicUrl(asset) == null) return null;
+  if (!canExposeAsset(asset)) return null;
   try {
     sharedResolver ??= new MediaAssetUrlResolverService();
     return sharedResolver.resolveVariant(asset, variantKey);
@@ -285,8 +299,7 @@ export function resolveMediaPlaybackUrl(asset: GatedMediaAsset): {
   contentType: string | null;
 } {
   sharedResolver ??= new MediaAssetUrlResolverService();
-  const original = sharedResolver.resolvePublicUrl(asset);
-  if (original == null) return { url: null, contentType: null };
+  if (!canExposeAsset(asset)) return { url: null, contentType: null };
 
   const hls = asset.variants?.find(
     (v) =>
@@ -302,7 +315,15 @@ export function resolveMediaPlaybackUrl(asset: GatedMediaAsset): {
       // HLS variant unresolvable (e.g. missing placement) — keep the original.
     }
   }
-  return { url: original, contentType: null };
+  return { url: sharedResolver.resolvePublicUrl(asset), contentType: null };
+}
+
+function canExposeAsset(asset: GatedMediaAsset): boolean {
+  return (
+    !asset.deletedAt &&
+    (asset.status == null || asset.status === 'ready') &&
+    asset.moderationStatus !== 'blocked'
+  );
 }
 
 function assertAssetCanResolveUrl(asset: ResolvableMediaAsset): void {
@@ -326,6 +347,25 @@ function pickPlacement(
     )
     .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
   return active[0] ?? null;
+}
+
+function readyOriginalVariant(
+  asset: ResolvableMediaAsset,
+): ResolvableMediaAssetVariant | null {
+  const variant = asset.variants?.find(
+    (candidate) => candidate.variantKey === ORIGINAL_VARIANT_KEY,
+  );
+  if (!variant || variant.deletedAt) return null;
+  return variant.status == null || variant.status === 'ready' ? variant : null;
+}
+
+function assetLevelPlacements(
+  placements: ResolvableMediaObjectPlacement[] | undefined,
+): ResolvableMediaObjectPlacement[] {
+  // Callers that hand-build placements without `variantId` keep the legacy
+  // behavior; Prisma-loaded rows carry it and variant-scoped rows are
+  // reserved for resolveVariant.
+  return (placements ?? []).filter((placement) => placement.variantId == null);
 }
 
 function cleanBaseUrl(value: string | null | undefined): string | null {

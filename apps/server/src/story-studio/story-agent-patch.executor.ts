@@ -6,6 +6,20 @@ import {
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
 import { z } from 'zod';
+import {
+  MAX_STORY_CONDITION_DEPTH,
+  MAX_STORY_CONDITION_LEAVES,
+  measureStoryCondition,
+  migrateStoryNodeStats,
+  storyConditionTypeError,
+  storyEffectTypeError,
+  storyExitNodeIds,
+  storyRouteNodeId,
+  type StoryCondition,
+  type StoryRouteTarget,
+  type StoryStateEffect,
+  type StoryStateVariableLookup,
+} from '@repo/shared/story-stats';
 import { InteractiveStoryDraftContentSchema } from './interactive-film.schema';
 import type { InteractiveStoryDraftContent } from './interactive-film.schema';
 
@@ -44,6 +58,9 @@ export class StoryPatchExecutionError extends Error {
 type StoryGraphNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type StoryCharacter =
   InteractiveStoryDraftContent['storyBible']['characters'][number];
+type StoryStateVariable = NonNullable<
+  InteractiveStoryDraftContent['storyBible']['stateVariables']
+>[number];
 
 // A screenplay can compile 200 scenes, 100 characters, and three operations
 // for overview/entry/notes (decision nodes are expanded during execution). This server-only
@@ -83,7 +100,18 @@ export function executeStoryPatch(input: {
     }
     throw error;
   }
-  const draft = structuredClone(input.draft);
+  const incomingDraft = InteractiveStoryDraftContentSchema.safeParse(
+    input.draft,
+  );
+  if (!incomingDraft.success) {
+    const issue = incomingDraft.error.issues[0];
+    throw new StoryPatchExecutionError({
+      code: 'STORY_PATCH_INVALID_RESULT',
+      message: issue?.message ?? 'The Story patch received an invalid draft.',
+      path: issue?.path ?? [],
+    });
+  }
+  const draft = structuredClone(incomingDraft.data);
   const layout = structuredClone(input.layout);
   const beforeDraft = JSON.stringify(input.draft);
   const beforeLayout = JSON.stringify(input.layout);
@@ -172,6 +200,33 @@ function applyOperation(input: {
       );
       return;
     }
+    case 'story_bible.put_state_variable': {
+      const variable: StoryStateVariable = operation.payload.variable;
+      draft.storyBible.stateVariables = putEntity({
+        values: draft.storyBible.stateVariables ?? [],
+        keyOf: (value) => value.key,
+        key: variable.key,
+        value: variable,
+        intent: operation.payload.intent,
+        operation,
+        entityLabel: 'state variable',
+      });
+      return;
+    }
+    case 'story_bible.remove_state_variable': {
+      const key = operation.payload.key;
+      const variables = draft.storyBible.stateVariables ?? [];
+      requireExistingEntity(
+        variables.some((variable) => variable.key === key),
+        operation,
+        'state variable',
+        key,
+      );
+      draft.storyBible.stateVariables = variables.filter(
+        (variable) => variable.key !== key,
+      );
+      return;
+    }
     case 'story_graph.set_entry_node': {
       const nodeId = operation.payload.nodeId;
       if (nodeId !== null) {
@@ -187,7 +242,9 @@ function applyOperation(input: {
       return;
     }
     case 'story_graph.put_node': {
-      const incoming = operation.payload.node as StoryGraphNode;
+      const incoming = migrateStoryNodeStats(
+        operation.payload.node,
+      ) as StoryGraphNode;
       const existing = draft.graph.nodes.find(
         (value) => value.nodeId === incoming.nodeId,
       );
@@ -304,26 +361,54 @@ function removeGraphNode(
   affectedNodeIds.add(nodeId);
   if (draft.graph.entryNodeId === nodeId) draft.graph.entryNodeId = null;
 
-  draft.graph.nodes = draft.graph.nodes.map((node) => {
-    if (node.kind === 'world') {
-      if (node.exit.nextNodeId !== nodeId) return node;
+  draft.graph.nodes = draft.graph.nodes.map(
+    (node): InteractiveStoryDraftContent['graph']['nodes'][number] => {
+      if (node.exit.kind === 'auto') {
+        if (!storyExitNodeIds(node.exit).includes(nodeId)) return node;
+        affectedNodeIds.add(node.nodeId);
+        const routes = node.exit.routes.flatMap((route) => {
+          if (storyRouteNodeId(route.target) !== nodeId) return [route];
+          return route.when ? [] : [{ target: null }];
+        });
+        const conditionals = routes.filter((route) => route.when);
+        const fallback = routes.find((route) => !route.when) ?? {
+          target: null,
+        };
+        return {
+          ...node,
+          exit: { kind: 'auto' as const, routes: [...conditionals, fallback] },
+        };
+      }
+      if (
+        !node.exit.choices.some(
+          (choice) => storyRouteNodeId(choice.target) === nodeId,
+        )
+      ) {
+        return node;
+      }
+      const choices = node.exit.choices.map((choice) =>
+        storyRouteNodeId(choice.target) === nodeId
+          ? { ...choice, target: null }
+          : choice,
+      );
       affectedNodeIds.add(node.nodeId);
-      return { ...node, exit: { kind: 'auto' as const, nextNodeId: null } };
-    }
-    if (node.exit.kind === 'auto') {
-      if (node.exit.nextNodeId !== nodeId) return node;
-      affectedNodeIds.add(node.nodeId);
-      return { ...node, exit: { kind: 'auto', nextNodeId: null } };
-    }
-    if (!node.exit.choices.some((choice) => choice.nextNodeId === nodeId)) {
-      return node;
-    }
-    const choices = node.exit.choices.map((choice) =>
-      choice.nextNodeId === nodeId ? { ...choice, nextNodeId: null } : choice,
-    );
-    affectedNodeIds.add(node.nodeId);
-    return { ...node, exit: { ...node.exit, choices } };
-  });
+      const choiceExit: Extract<
+        InteractiveStoryDraftContent['graph']['nodes'][number]['exit'],
+        { kind: 'choice' }
+      > = {
+        kind: 'choice',
+        decisionId: node.exit.decisionId,
+        prompt: node.exit.prompt,
+        choices,
+      };
+      if (node.kind === 'decision') {
+        return { ...node, exit: choiceExit };
+      }
+      // World nodes only ever carry auto exits and returned above.
+      if (node.kind !== 'clip') return node;
+      return { ...node, exit: choiceExit };
+    },
+  );
 }
 
 function assertAgentDraftIntegrity(draft: InteractiveStoryDraftContent): void {
@@ -331,6 +416,17 @@ function assertAgentDraftIntegrity(draft: InteractiveStoryDraftContent): void {
     draft.graph.nodes.map((node) => node.nodeId),
     'STORY_PATCH_DUPLICATE_NODE_ID',
     'Graph node ids must be unique.',
+  );
+  const endingIds = uniqueIdentitySet(
+    (draft.storyBible.endings ?? []).map((ending) => ending.endingId),
+    'STORY_PATCH_DUPLICATE_ENDING_ID',
+    'Ending IDs must be unique.',
+  );
+  const variables: StoryStateVariableLookup = new Map(
+    (draft.storyBible.stateVariables ?? []).map((variable) => [
+      variable.key,
+      { valueType: variable.valueType },
+    ]),
   );
   // Enforced for its throw-on-duplicate side effect; clip keys are no longer
   // referenced elsewhere now that choices carry no reaction clip.
@@ -349,7 +445,96 @@ function assertAgentDraftIntegrity(draft: InteractiveStoryDraftContent): void {
     );
   }
 
-  for (const node of draft.graph.nodes) {
+  const assertTarget = (
+    target: StoryRouteTarget | null,
+    path: PropertyKey[],
+  ) => {
+    if (target?.kind === 'node' && !nodeIds.has(target.nodeId)) {
+      throw integrityError(
+        'STORY_PATCH_DANGLING_NODE_REFERENCE',
+        `Unknown target node ${target.nodeId}.`,
+        path,
+      );
+    }
+    if (target?.kind === 'ending' && !endingIds.has(target.endingId)) {
+      throw integrityError(
+        'STORY_PATCH_DANGLING_ENDING_REFERENCE',
+        `Unknown ending ${target.endingId}.`,
+        path,
+      );
+    }
+  };
+  const assertEffects = (
+    effects: readonly StoryStateEffect[] | undefined,
+    path: PropertyKey[],
+  ) => {
+    effects?.forEach((effect, index) => {
+      const error = storyEffectTypeError(effect, variables);
+      if (error) {
+        throw integrityError('STORY_PATCH_INVALID_STATE_EFFECT', error, [
+          ...path,
+          index,
+        ]);
+      }
+    });
+  };
+  const assertCondition = (
+    condition: StoryCondition | undefined,
+    path: PropertyKey[],
+  ) => {
+    if (!condition) return;
+    const bounds = measureStoryCondition(condition);
+    if (
+      bounds.depth > MAX_STORY_CONDITION_DEPTH ||
+      bounds.leaves > MAX_STORY_CONDITION_LEAVES
+    ) {
+      throw integrityError(
+        'STORY_PATCH_STATE_CONDITION_TOO_COMPLEX',
+        `State conditions are limited to depth ${MAX_STORY_CONDITION_DEPTH} and ${MAX_STORY_CONDITION_LEAVES} comparisons.`,
+        path,
+      );
+    }
+    const error = storyConditionTypeError(condition, variables);
+    if (error) {
+      throw integrityError('STORY_PATCH_INVALID_STATE_CONDITION', error, path);
+    }
+  };
+
+  for (const [nodeIndex, node] of draft.graph.nodes.entries()) {
+    const nodePath: PropertyKey[] = ['graph', 'nodes', nodeIndex];
+    assertEffects(node.onEnterEffects, [...nodePath, 'onEnterEffects']);
+    if (node.kind === 'clip') {
+      node.interactions.forEach((interaction, interactionIndex) => {
+        Object.entries(interaction.outcomes).forEach(([outcome, action]) => {
+          if (!action) return;
+          const actionPath = [
+            ...nodePath,
+            'interactions',
+            interactionIndex,
+            'outcomes',
+            outcome,
+          ];
+          assertEffects(action.effects, [...actionPath, 'effects']);
+          if (action.kind === 'goto') {
+            assertTarget(action.target, [...actionPath, 'target']);
+          }
+        });
+      });
+    }
+    if (node.exit.kind === 'auto') {
+      node.exit.routes.forEach((route, routeIndex) => {
+        const routePath = [...nodePath, 'exit', 'routes', routeIndex];
+        assertCondition(route.when, [...routePath, 'when']);
+        assertTarget(route.target, [...routePath, 'target']);
+      });
+    } else {
+      node.exit.choices.forEach((choice, choiceIndex) => {
+        const choicePath = [...nodePath, 'exit', 'choices', choiceIndex];
+        assertEffects(choice.effects, [...choicePath, 'effects']);
+        assertCondition(choice.visibleWhen, [...choicePath, 'visibleWhen']);
+        assertTarget(choice.target, [...choicePath, 'target']);
+      });
+    }
     const targets = graphNodeTargets(node);
     for (const target of targets) {
       if (!nodeIds.has(target)) {
@@ -373,12 +558,7 @@ function uniqueIdentitySet(
 }
 
 function graphNodeTargets(node: StoryGraphNode): string[] {
-  if (node.exit.kind === 'auto') {
-    return node.exit.nextNodeId ? [node.exit.nextNodeId] : [];
-  }
-  return node.exit.choices.flatMap((choice) =>
-    choice.nextNodeId ? [choice.nextNodeId] : [],
-  );
+  return storyExitNodeIds(node.exit);
 }
 
 function removeOrphanedCanvasPositions(
@@ -414,6 +594,7 @@ function operationError(
 function integrityError(
   code: string,
   message: string,
+  path: PropertyKey[] = [],
 ): StoryPatchExecutionError {
-  return new StoryPatchExecutionError({ code, message });
+  return new StoryPatchExecutionError({ code, message, path });
 }

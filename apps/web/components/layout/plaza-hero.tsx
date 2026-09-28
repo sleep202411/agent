@@ -72,6 +72,8 @@ export interface PlazaHeroProps {
     /** Tailwind gradient direction + stops, e.g. `from-amber-400 to-orange-500`.
      *  Defaults to the palette-matching pair for `ambient`. */
     accentGradient?: string;
+    /** Extra classes on the accent line (e.g. a horizontal offset). */
+    accentClassName?: string;
   };
   subtitle?: string;
   /** Inline stats row. When present, renders below the subtitle. */
@@ -96,6 +98,8 @@ export interface PlazaHeroProps {
   /** Radial wash palette. Defaults to `amber`. */
   ambient?: AmbientPalette;
   className?: string;
+  /** Overrides the inner content shell (`max-w-450 px-6 pb-12 pt-16`). */
+  contentClassName?: string;
 }
 
 // Default gradient pairs per ambient — keeps callers from having to
@@ -115,6 +119,7 @@ export function PlazaHero({
   backgroundImage,
   ambient = "amber",
   className,
+  contentClassName,
 }: PlazaHeroProps) {
   const palette = AMBIENT[ambient];
   const EyebrowIcon = eyebrow.icon;
@@ -144,7 +149,7 @@ export function PlazaHero({
         style={{ backgroundImage: palette.radial }}
       />
 
-      <div className="relative mx-auto w-full max-w-450 px-6 pb-12 pt-16">
+      <div className={cn("relative mx-auto w-full max-w-450 px-6 pb-12 pt-16", contentClassName)}>
         <div className="max-w-3xl">
           {/* Eyebrow */}
           <div
@@ -172,7 +177,11 @@ export function PlazaHero({
               <>
                 <br />
                 <span
-                  className={cn("bg-linear-to-r bg-clip-text text-transparent", accentGradient)}
+                  className={cn(
+                    "inline-block bg-linear-to-r bg-clip-text text-transparent",
+                    accentGradient,
+                    title.accentClassName
+                  )}
                 >
                   {title.accent}
                 </span>

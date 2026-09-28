@@ -22,7 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
-import { downloadCanvasMedia } from "./download-media";
+import { useCanvasMediaDownload } from "./use-canvas-media-download";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
   EXPAND_OP,
@@ -55,6 +55,7 @@ export type ImageNodeType = Node<
 export const IMAGE_NODE_WIDTH = canvasNodeGeometry({ type: "image" }).width;
 
 function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
+  const downloadCanvasMedia = useCanvasMediaDownload();
   const t = useTranslations("canvasNodes");
   const tc = useTranslations("common");
   // Pending operation invoked from the toolbar (Upscale / 720°): shows a confirm
@@ -77,7 +78,7 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
     // `src`, not `data.src`: the raw value drops the canvas document grant and
     // the local blob preview an in-flight upload is still showing.
     void downloadCanvasMedia(src, title, "image");
-  }, [src, title]);
+  }, [src, title, downloadCanvasMedia]);
 
   const commitName = useCallback(
     (name: string) => {

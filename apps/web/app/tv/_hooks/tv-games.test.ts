@@ -57,3 +57,45 @@ it("retains catalog artwork and rejects unsafe image URLs", () => {
     parseTvGames("text-game", [{ ...row, posterUrl: "javascript:alert(1)" }])[0]?.coverUrl
   ).toBeUndefined();
 });
+
+it("retains published films with historical offline timestamps or absent artwork", () => {
+  const rows = parseTvGames("interactive-film", [
+    {
+      ...film,
+      gameId: "jinling",
+      title: "Jinling",
+      status: "published",
+      offlineAt: "2026-08-25T18:12:24+08:00",
+      coverUrl: null,
+    },
+    { ...film, gameId: "offline", status: "offline" },
+  ]);
+  expect(rows.map((row) => row.id)).toEqual(["interactive-film:jinling"]);
+});
+
+it("keeps the publishing user identity without guessing it from a title or image", () => {
+  expect(parseTvGames("interactive-film", [{ ...film, creatorId: 13425 }])[0]?.creatorId).toBe(
+    "13425"
+  );
+  for (const creatorId of [null, "", -1, 1.5, {}, "../users", Number.MAX_SAFE_INTEGER + 1]) {
+    expect(
+      parseTvGames("interactive-film", [{ ...film, creatorId }])[0]?.creatorId
+    ).toBeUndefined();
+  }
+});
+
+it("retains authoritative text-adventure publisher identity and the original title", () => {
+  const row = {
+    gameId: "tg_1234567890123456",
+    name: "Original title",
+    posterUrl: null,
+    synopsis: null,
+    status: "published",
+    creatorId: "9007199254740993",
+  };
+  const game = parseTvGames("text-game", [row])[0];
+  expect(game?.creatorId).toBe("9007199254740993");
+  expect(game?.title).toBe("Original title");
+  expect(parseTvGames("text-game", [{ ...row, creatorId: null }])[0]?.creatorId).toBeUndefined();
+  expect(() => parseTvGames("text-game", [{ ...row, creatorId: 9007199254740992 }])).toThrow();
+});

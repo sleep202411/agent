@@ -17,6 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/app/_components/auth-provider";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { listProjects, type ProjectRef } from "@/lib/collab/projects-api";
 import { listWorkspaceMembers, type SharingMember } from "@/lib/collab/sharing-api";
@@ -191,21 +192,27 @@ function settledByJob(entries: WalletLedgerEntry[]): Map<string, bigint> {
   return map;
 }
 
-function useAnalyticsData(workspaceId: string | undefined) {
+function useAnalyticsData(workspaceId: string | undefined, viewerId: string | null) {
   const ledger = useQuery({
-    queryKey: ["settings", "analytics", "wallet-ledger", workspaceId],
-    enabled: Boolean(workspaceId),
-    queryFn: () =>
+    queryKey: ["settings", "analytics", "wallet-ledger", viewerId, workspaceId],
+    enabled: Boolean(viewerId && workspaceId),
+    queryFn: ({ signal }) =>
       api.get<WalletLedgerData>("/aurora/billing/wallet-ledger", {
+        signal,
+        headers: { "x-fizz-workspace-id": workspaceId! },
         params: { currency: "compute_point", balanceKind: "consumable", limit: LEDGER_LIMIT },
       }),
     staleTime: 20_000,
   });
 
   const jobs = useQuery({
-    queryKey: ["settings", "analytics", "jobs", workspaceId],
-    enabled: Boolean(workspaceId),
-    queryFn: () => listFizzAiJobs({ limit: JOB_HISTORY_LIMIT }),
+    queryKey: ["settings", "analytics", "jobs", viewerId, workspaceId],
+    enabled: Boolean(viewerId && workspaceId),
+    queryFn: ({ signal }) =>
+      listFizzAiJobs(
+        { limit: JOB_HISTORY_LIMIT },
+        { signal, headers: { "x-fizz-workspace-id": workspaceId! } }
+      ),
     staleTime: 20_000,
   });
 
@@ -214,23 +221,34 @@ function useAnalyticsData(workspaceId: string | undefined) {
 
 /** Workspace usage analytics backed by real wallet ledger + AI job history. */
 export default function AnalyticsSettingsPage() {
+  const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
+  const viewerId = user?.id == null ? null : String(user.id);
+  return (
+    <AnalyticsView key={JSON.stringify([viewerId, activeWorkspace?.id])} viewerId={viewerId} />
+  );
+}
+
+function AnalyticsView({ viewerId }: { viewerId: string | null }) {
   const t = useTranslations("settings");
   const { activeWorkspace: ws, loading } = useWorkspace();
-  const { ledger, jobs } = useAnalyticsData(ws?.id);
+  const { ledger, jobs } = useAnalyticsData(ws?.id, viewerId);
   const [selectedProjectId, setSelectedProjectId] = useState("");
 
   const projectsQuery = useQuery({
-    queryKey: ["settings", "analytics", "projects", ws?.id],
-    enabled: Boolean(ws?.id),
-    queryFn: () => listProjects(ws!.id),
+    queryKey: ["settings", "analytics", "projects", viewerId, ws?.id],
+    enabled: Boolean(viewerId && ws?.id),
+    queryFn: ({ signal }) => listProjects(ws!.id, signal),
     staleTime: 20_000,
   });
 
   const dailyUsage = useQuery({
-    queryKey: ["settings", "analytics", "daily-usage", ws?.id, selectedProjectId],
-    enabled: Boolean(ws?.id),
-    queryFn: () =>
+    queryKey: ["settings", "analytics", "daily-usage", viewerId, ws?.id, selectedProjectId],
+    enabled: Boolean(viewerId && ws?.id),
+    queryFn: ({ signal }) =>
       api.get<DailyUsageData>("/aurora/billing/wallet-ledger/daily-usage", {
+        signal,
+        headers: { "x-fizz-workspace-id": ws!.id },
         params: { days: DAILY_USAGE_DAYS, projectId: selectedProjectId || undefined },
       }),
     staleTime: 20_000,
@@ -240,9 +258,9 @@ export default function AnalyticsSettingsPage() {
   // is keyed by userId) and the caller's own role, which gates the panel — per-
   // member consumption is admin-only (the server enforces it too).
   const membersQuery = useQuery({
-    queryKey: ["settings", "analytics", "members", ws?.id],
-    enabled: Boolean(ws?.id),
-    queryFn: () => listWorkspaceMembers(ws!.id),
+    queryKey: ["settings", "analytics", "members", viewerId, ws?.id],
+    enabled: Boolean(viewerId && ws?.id),
+    queryFn: ({ signal }) => listWorkspaceMembers(ws!.id, signal),
     staleTime: 20_000,
   });
   const members = membersQuery.data ?? EMPTY_MEMBERS;
@@ -367,7 +385,12 @@ export default function AnalyticsSettingsPage() {
       </Panel>
 
       {canViewMemberUsage && (
-        <MemberUsagePanel workspaceId={ws.id} projects={projects} members={members} />
+        <MemberUsagePanel
+          viewerId={viewerId!}
+          workspaceId={ws.id}
+          projects={projects}
+          members={members}
+        />
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -453,10 +476,12 @@ export default function AnalyticsSettingsPage() {
 
 /** Per-member compute usage for a team (admin-only), broken down by project. */
 function MemberUsagePanel({
+  viewerId,
   workspaceId,
   projects,
   members,
 }: {
+  viewerId: string;
   workspaceId: string;
   projects: ProjectRef[];
   members: SharingMember[];
@@ -467,10 +492,12 @@ function MemberUsagePanel({
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
   const usage = useQuery({
-    queryKey: ["settings", "analytics", "member-usage", workspaceId, range, projectId],
-    enabled: Boolean(workspaceId),
-    queryFn: () =>
+    queryKey: ["settings", "analytics", "member-usage", viewerId, workspaceId, range, projectId],
+    enabled: Boolean(viewerId && workspaceId),
+    queryFn: ({ signal }) =>
       api.get<MemberUsageData>("/aurora/billing/wallet-ledger/member-usage", {
+        signal,
+        headers: { "x-fizz-workspace-id": workspaceId },
         params: { days: range, projectId: projectId || undefined },
       }),
     staleTime: 20_000,

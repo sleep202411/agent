@@ -80,6 +80,8 @@ export const AUTH_TRANSLATION_KEYS = [
   "inviteTitle",
   "inviteSubtitle",
   "inviteLabel",
+  "inviteOptionalHint",
+  "continueWithoutInvite",
   "invitePlaceholder",
   "inviteSubmit",
 

@@ -57,6 +57,7 @@ export class CrewAgreementsService {
       : null;
     if (query.cursor && !cursor) {
       throw new BadRequestException({
+        code: 'CREW_AGREEMENT_CURSOR_INVALID',
         message:
           'The agreements cursor is invalid for the current view. Restart from the first page.',
       });
@@ -330,11 +331,28 @@ export class CrewAgreementsService {
       agreement.providerDocumentId,
     );
     const resolvedStatus = mapBoldSignStatus(providerStatus, providerStatus);
-    const status = isTerminalAgreementStatus(agreement.status)
-      ? agreement.status
-      : resolvedStatus;
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Serialize with webhook writes, then discard a response for an older
+      // document or lifecycle. Provider calls must remain outside the lock.
+      await tx.$executeRaw`SELECT id FROM crew_agreements WHERE id=${agreement.id}::uuid FOR UPDATE`;
+      const current = await tx.crewAgreement.findUniqueOrThrow({
+        where: { id: agreement.id },
+      });
+      if (
+        isTerminalAgreementStatus(current.status) ||
+        current.providerDocumentId !== agreement.providerDocumentId ||
+        current.status !== agreement.status ||
+        current.lastProviderEventId !== agreement.lastProviderEventId ||
+        current.lastSyncedAt?.getTime() !== agreement.lastSyncedAt?.getTime()
+      ) {
+        await this.enqueueArchive(current, tx);
+        return tx.crewAgreement.findUniqueOrThrow({
+          where: { id: current.id },
+          include: AGREEMENT_ARCHIVE_INCLUDE,
+        });
+      }
+      const status = resolvedStatus;
       const row = await tx.crewAgreement.update({
         where: { id: agreement.id },
         data: {

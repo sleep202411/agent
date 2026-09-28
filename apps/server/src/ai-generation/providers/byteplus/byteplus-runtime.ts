@@ -166,6 +166,7 @@ export function createBytePlusVideoRuntimeConfig(
     parameterPolicy: args.parameterPolicy,
     outputPolicy: args.outputPolicy,
     inputSchema: videoInputSchemaFor(
+      args.endpointId,
       args.generationModes,
       args.parameterPolicy,
     ),
@@ -459,6 +460,7 @@ function imageFrameProperty(
  * Seedance provider (real-person ACR + pricing + watermark compliance).
  */
 function videoInputSchemaFor(
+  endpointId: string,
   generationModes: AiGenerationMode[],
   parameterPolicy?: AiJsonValue,
 ): AiInputSchema {
@@ -491,7 +493,7 @@ function videoInputSchemaFor(
       type: 'string',
       title: 'Prompt',
       minLength: 1,
-      maxLength: 4000,
+      maxLength: numberFromPolicy(parameterPolicy, 'promptMaxLength') ?? 4000,
       'x-ui': {
         control: 'textarea',
         group: 'prompt',
@@ -764,6 +766,33 @@ function videoInputSchemaFor(
     // before any wallet hold) so both the manual and character-mention paths
     // fail loud with a typed 400 instead of a provider-side rejection.
     'x-rules': [
+      // Match the worker mapper before submission or credit reservation.
+      ...(endpointId === 'dreamina-seedance-2-5-260628'
+        ? [
+            {
+              id: 'seedance-frame-ratio-adaptive',
+              when: {
+                all: [
+                  {
+                    any: [
+                      { field: 'startFrame', operator: 'exists' as const },
+                      { field: 'endFrame', operator: 'exists' as const },
+                    ],
+                  },
+                  {
+                    field: 'aspectRatio',
+                    operator: 'notEquals' as const,
+                    value: 'auto',
+                  },
+                ],
+              },
+              fields: ['aspectRatio'],
+              effect: 'forbid' as const,
+              message:
+                'Seedance 2.5 frame-guided generation requires Auto aspect ratio.',
+            },
+          ]
+        : []),
       {
         id: 'seedance-prompt-or-media',
         when: {
@@ -956,6 +985,10 @@ function capabilityMatrixFor(
   ) {
     inputModalities.push('audio');
   }
+  const promptSchema = inputSchema.properties.prompt as
+    | { maxLength?: unknown }
+    | undefined;
+  const promptMaxLength = promptSchema?.maxLength;
   return {
     source: 'internal',
     inputModalities,
@@ -970,7 +1003,8 @@ function capabilityMatrixFor(
     },
     limits: {
       maxOutputs: 1,
-      maxPromptCharacters: 4000,
+      maxPromptCharacters:
+        typeof promptMaxLength === 'number' ? promptMaxLength : 4000,
     },
   };
 }

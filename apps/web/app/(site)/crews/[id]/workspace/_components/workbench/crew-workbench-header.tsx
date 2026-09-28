@@ -35,7 +35,7 @@ export function CrewWorkbenchHeader({
   return (
     <header
       aria-label={tw("header")}
-      className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/[0.065] bg-[#0b0c0f] px-3 py-3 sm:flex-nowrap"
+      className="flex shrink-0 flex-wrap items-center gap-2 border-b border-white/[0.065] bg-background px-3 py-3 sm:flex-nowrap"
     >
       <span className="grid size-7 shrink-0 place-items-center rounded-md bg-[#e52227]/10 text-[#ef4444]">
         <IconCube className="size-4" stroke={1.8} />
@@ -55,7 +55,8 @@ export function CrewWorkbenchHeader({
             key={crewId}
             crewId={crewId}
             value={overview.data?.studioWorkspace ?? null}
-            disabled={!overview.data?.capabilities.linkWorkspace}
+            legacyProject={overview.data?.studioProject ?? null}
+            disabled={overview.isError || !overview.data?.capabilities.linkWorkspace}
           />
         ) : null}
         <Button

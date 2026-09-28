@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
     data: {
       founded: [] as Array<{ id: string; logo: string; name: string }>,
       joined: [] as Array<{ id: string; logo: string; name: string }>,
+      community: [] as Array<{ id: string; logo: string; name: string }>,
     },
     isPending: false,
     isError: false,
@@ -48,7 +49,9 @@ function render() {
   document.body.append(container);
   root = createRoot(container);
   act(() =>
-    root!.render(<CrewSwitcherRail currentCrew={{ id: "crew_1", logo: "one.png", name: "One" }} />)
+    root!.render(
+      <CrewSwitcherRail showNames currentCrew={{ id: "crew_1", logo: "one.png", name: "One" }} />
+    )
   );
 }
 
@@ -56,6 +59,7 @@ beforeEach(() => {
   document.body.innerHTML = "";
   state.query = {
     data: {
+      community: [],
       founded: [{ id: "crew_1", logo: "one.png", name: "One" }],
       joined: [
         { id: "crew_1", logo: "one.png", name: "One" },
@@ -76,6 +80,18 @@ afterEach(() => {
 });
 
 describe("crew switcher rail", () => {
+  it("opens fan subscriptions in community chat and deduplicates team membership", () => {
+    state.query.data.community = [
+      { id: "fans", logo: "fan.png", name: "Fans" },
+      { id: "crew_2", logo: "two.png", name: "Two" },
+    ];
+    render();
+    expect(document.querySelectorAll("[data-logo]")).toHaveLength(3);
+    expect([...document.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toContain(
+      "/zh-CN/crews/fans/workspace?tab=chat&channel=community"
+    );
+    expect(document.querySelector('a[href="/zh-CN/crews/crew_2/workspace"]')).not.toBeNull();
+  });
   it("hides after a successful empty membership response", () => {
     expect(shouldShowCrewSwitcherRail({ crewCount: 0, isPending: false, isError: false })).toBe(
       false
@@ -95,6 +111,8 @@ describe("crew switcher rail", () => {
     render();
 
     expect(document.querySelectorAll("[data-logo]")).toHaveLength(2);
+    expect(document.querySelector('a[aria-label="One"]')?.textContent).toBe("One");
+    expect(document.querySelector('a[aria-label="Two"]')?.textContent).toBe("Two");
     expect(document.querySelector('a[href="/zh-CN/crews/crew_1/workspace"]')).not.toBeNull();
     expect(document.querySelector('a[href="/zh-CN/crews/crew_2/workspace"]')).not.toBeNull();
     expect(document.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(

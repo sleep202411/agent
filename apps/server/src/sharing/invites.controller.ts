@@ -40,7 +40,7 @@ export class InvitesController {
     @Query('token') token: string | undefined,
     @CurrentUser() user: AuthUser,
   ) {
-    if (!token || token.trim().length < 8) {
+    if (typeof token !== 'string' || token.trim().length < 8) {
       throw new BadRequestException({
         code: 'INVALID_TOKEN',
         msg: 'A valid invite token is required.',

@@ -23,8 +23,10 @@ export function useCrewAgreements(
   const query = useInfiniteQuery({
     queryKey: [...crewKeys.agreements(crewId), view, pageSize, user?.id ?? null] as const,
     enabled: enabled && !!crewId && Boolean(user),
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewAgreementsResponse>(`/crews/${encodeURIComponent(crewId)}/agreements`, {
+        signal,
+        cache: "no-store",
         query: { limit: pageSize, cursor: pageParam, view },
       }),
     initialPageParam: undefined as string | undefined,

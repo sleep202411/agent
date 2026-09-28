@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
+import { ExperienceStableIdSchema, parseExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
 import {
   advanceExperienceTimeline,
   assertExperienceRuntimeCompatibility,
@@ -735,4 +735,71 @@ test("defensively rejects reserved state paths without polluting Object.prototyp
     { code: "STATE_PATH_RESERVED" }
   );
   assert.equal({}.polluted, undefined);
+});
+
+test("repeated polygon vertices do not turn the whole viewport into a hit target", () => {
+  const transform = createMediaContentTransform(
+    { width: 100, height: 100 },
+    { width: 100, height: 100 },
+    "contain"
+  );
+  const points = [
+    { x: 0.2, y: 0.2 },
+    { x: 0.8, y: 0.2 },
+    { x: 0.8, y: 0.8 },
+    { x: 0.2, y: 0.8 },
+  ];
+  for (const repeated of [
+    [...points, points[0]],
+    [points[0], ...points],
+  ]) {
+    const geometry = { kind: "polygon", points: repeated };
+    assert.equal(hitTestExperienceGeometry(geometry, { x: 5, y: 5 }, transform), false);
+    assert.equal(hitTestExperienceGeometry(geometry, { x: 50, y: 50 }, transform), true);
+    assert.equal(hitTestExperienceGeometry(geometry, { x: 20, y: 20 }, transform), true);
+  }
+});
+
+test("very short polygon edges retain a distance-based boundary tolerance", () => {
+  const transform = createMediaContentTransform(
+    { width: 100, height: 100 },
+    { width: 100, height: 100 },
+    "contain"
+  );
+  const geometry = {
+    kind: "polygon",
+    points: [
+      { x: 0.2, y: 0.2 },
+      { x: 0.2000000001, y: 0.2 },
+      { x: 0.8, y: 0.8 },
+      { x: 0.2, y: 0.8 },
+    ],
+  };
+  assert.equal(hitTestExperienceGeometry(geometry, { x: 90, y: 10 }, transform), false);
+  assert.equal(hitTestExperienceGeometry(geometry, { x: 20, y: 50 }, transform), true);
+});
+
+test("audio cue counters survive JSON restoration without inherited ID collisions", () => {
+  for (const cueId of ["constructor", "toString", "hasOwnProperty"]) {
+    assert.equal(ExperienceStableIdSchema.parse(cueId), cueId);
+    const manifest = {
+      audio: {
+        cues: [{
+          cueId,
+          assetIds: ["audio.a", "audio.b"],
+          selection: "sequential",
+          playbackRate: { minimum: 1, maximum: 1 },
+        }],
+      },
+    };
+    let state = JSON.parse(JSON.stringify(createExperienceDeterministicRuntimeState()));
+    const first = resolveExperienceAudioPlayback(manifest, state, cueId);
+    assert.equal(first.assetId, "audio.a");
+    assert.equal(first.playbackOrdinal, 0);
+    state = JSON.parse(JSON.stringify(state));
+    const second = resolveExperienceAudioPlayback(manifest, state, cueId);
+    assert.equal(second.assetId, "audio.b");
+    assert.equal(second.playbackOrdinal, 1);
+    assert.equal(state.audioCuePlayCounts[cueId], 2);
+  }
 });

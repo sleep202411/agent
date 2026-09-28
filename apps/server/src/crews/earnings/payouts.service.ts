@@ -1,5 +1,5 @@
 import { formatLedgerAmount } from './ledger-currency';
-import { lockMemberPayouts } from './ledger-lock';
+import { lockMemberPayouts, lockLedgerReceipt } from './ledger-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -67,6 +67,7 @@ export class CrewPayoutsService {
     const where = {
       userId,
       currency: query.currency,
+      ...(query.crewId ? { crewId: query.crewId } : {}),
       ...(query.status ? { status: query.status } : {}),
     } satisfies Prisma.CrewPayoutWhereInput;
     if (
@@ -76,10 +77,12 @@ export class CrewPayoutsService {
         select: { id: true },
       }))
     )
-      throw new BadRequestException(
-        'The payout cursor is invalid for the current filters. Restart from the first page.',
-      );
-    const [rows, groups] = await Promise.all([
+      throw new BadRequestException({
+        code: 'CREW_PAYOUT_CURSOR_INVALID',
+        message:
+          'The payout cursor is invalid for the current filters. Restart from the first page.',
+      });
+    const [rows, groups, availability] = await Promise.all([
       this.prisma.crewPayout.findMany({
         where,
         include: payoutInclude,
@@ -93,12 +96,14 @@ export class CrewPayoutsService {
         _count: { _all: true },
         _sum: { amountMinor: true, netAmountMinor: true },
       }),
+      this.availability(query.crewId, userId, 'mine', query.currency),
     ]);
     const items = rows.slice(0, query.limit);
     return {
       items: items.map(payoutDto),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
       summary: {
+        ...availability,
         byStatus: groups.map((group) => ({
           status: group.status,
           count: group._count._all,
@@ -224,12 +229,26 @@ export class CrewPayoutsService {
 
     const idempotencyKey = `crew-payout:${crewId}:${userId}:${input.idempotencyKey}`;
     const payout = await this.prisma.$transaction(async (tx) => {
+      await lockLedgerReceipt(tx, idempotencyKey);
       await lockMemberPayouts(tx, crewId, member.userId);
       const existing = await tx.crewPayout.findUnique({
         where: { idempotencyKey },
         include: payoutInclude,
       });
-      if (existing) return existing;
+      if (existing) {
+        if (
+          existing.crewMemberId !== member.id ||
+          existing.userId !== member.userId ||
+          existing.currency !== input.currency ||
+          existing.amountMinor !== requestedAmountMinor ||
+          existing.withholdingAmountMinor !== withholding ||
+          existing.note !== (input.note || null)
+        )
+          throw new ConflictException(
+            'Payout retry key was already used for different terms.',
+          );
+        return existing;
+      }
 
       const earnings = await tx.crewEarningEntry.findMany({
         where: {
@@ -396,46 +415,44 @@ export class CrewPayoutsService {
   }
 
   private async availability(
-    crewId: string,
+    crewId: string | undefined,
     userId: string,
     scope: 'mine' | 'crew',
     currency: string,
   ) {
-    const userWhere = { currency, ...(scope === 'mine' ? { userId } : {}) };
-    const [confirmed, reserved, paid] = await Promise.all([
-      this.prisma.crewEarningEntry.aggregate({
-        where: { crewId, ...userWhere, status: CrewEarningStatus.posted },
-        _sum: { amountMinor: true },
-      }),
-      this.prisma.crewPayoutAllocation.aggregate({
-        where: {
-          payout: {
-            crewId,
-            ...userWhere,
-            status: CrewPayoutStatus.pending,
-          },
-        },
-        _sum: { amountMinor: true },
-      }),
-      this.prisma.crewPayoutAllocation.aggregate({
-        where: {
-          payout: { crewId, ...userWhere, status: CrewPayoutStatus.paid },
-        },
-        _sum: { amountMinor: true },
-      }),
-    ]);
-    const confirmedAmountMinor = confirmed._sum.amountMinor ?? 0n;
-    const reservedAmountMinor = reserved._sum.amountMinor ?? 0n;
-    const paidAmountMinor = paid._sum.amountMinor ?? 0n;
+    // One statement gives all balance components the same PostgreSQL snapshot.
+    // SUM(bigint) returns numeric; text preserves totals above the bigint range.
+    const earningScope = Prisma.sql`e.currency = ${currency}
+      ${crewId === undefined ? Prisma.empty : Prisma.sql`AND e.crew_id = ${crewId}`}
+      ${scope === 'mine' ? Prisma.sql`AND e.user_id = ${userId}` : Prisma.empty}`;
+    const payoutScope = Prisma.sql`p.currency = ${currency}
+      ${crewId === undefined ? Prisma.empty : Prisma.sql`AND p.crew_id = ${crewId}`}
+      ${scope === 'mine' ? Prisma.sql`AND p.user_id = ${userId}` : Prisma.empty}`;
+    const [totals] = await this.prisma.$queryRaw<
+      Array<{
+        confirmed: string;
+        reserved: string;
+        paid: string;
+      }>
+    >(Prisma.sql`
+      SELECT
+        (SELECT COALESCE(SUM(e.amount_minor), 0)::text
+         FROM crew_earning_entries e WHERE ${earningScope} AND e.status = 'posted') AS confirmed,
+        COALESCE(SUM(a.amount_minor) FILTER (WHERE p.status = 'pending'), 0)::text AS reserved,
+        COALESCE(SUM(a.amount_minor) FILTER (WHERE p.status = 'paid'), 0)::text AS paid
+      FROM crew_payout_allocations a
+      JOIN crew_payouts p ON p.id = a.payout_id AND p.crew_id = a.crew_id
+      WHERE ${payoutScope} AND p.status IN ('pending', 'paid')
+    `);
     return {
-      confirmedAmountMinor: confirmedAmountMinor.toString(),
+      confirmedAmountMinor: totals.confirmed,
+      reservedAmountMinor: totals.reserved,
+      paidAmountMinor: totals.paid,
       availableAmountMinor: (
-        confirmedAmountMinor -
-        reservedAmountMinor -
-        paidAmountMinor
+        BigInt(totals.confirmed) -
+        BigInt(totals.reserved) -
+        BigInt(totals.paid)
       ).toString(),
-      reservedAmountMinor: reservedAmountMinor.toString(),
-      paidAmountMinor: paidAmountMinor.toString(),
     };
   }
 

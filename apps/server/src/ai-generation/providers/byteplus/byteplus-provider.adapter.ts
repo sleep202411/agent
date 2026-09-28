@@ -78,7 +78,7 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
     input: Record<string, unknown>,
     ctx: ProviderGenerationContext,
   ): Promise<StartResult> {
-    const runtime = await this.requireRuntime(modelId);
+    const runtime = await this.requireRuntime(modelId, true);
     if (runtime.type === 'video') {
       return this.startVideoGeneration(runtime, input);
     }
@@ -267,8 +267,10 @@ export class BytePlusProviderAdapter implements ProviderAdapter {
     return mapBytePlusUnknownError(err);
   }
 
-  private async requireRuntime(modelId: string) {
-    const runtime = await this.catalog.getRuntimeConfig(modelId);
+  private async requireRuntime(modelId: string, forSubmission = false) {
+    const runtime = await this.catalog.getRuntimeConfig(modelId, {
+      forSubmission,
+    });
     if (!runtime) {
       throw bytePlusError(
         'VALIDATION_ERROR',

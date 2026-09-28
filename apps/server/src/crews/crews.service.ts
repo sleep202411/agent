@@ -23,7 +23,7 @@ import { joinCrewFanTx } from './fan-community';
  * The public community channel is a separate Conversation (`crew:<crewId>:community`)
  * whose participants are subscribers, not crew members.
  */
-import { randomUUID } from 'node:crypto';
+import { createCrewTx } from './create-crew';
 import { releaseRecruitedPositions } from './recruitment-capacity';
 import {
   BadRequestException,
@@ -51,6 +51,8 @@ import {
 } from '../conversations/conversations.service';
 import { toConversationDTO } from '../conversations/mappers';
 import { PrismaService } from '../infra/db/db.module';
+import { WalletLedgerService } from '../workspaces/wallet-ledger.service';
+import { WalletOwnerType } from '@prisma/client';
 import { CrewAuthorizationService } from './crew-authorization.service';
 import type {
   CreateCrewInput,
@@ -59,17 +61,8 @@ import type {
   UpdateCrewListingInput,
 } from './dto';
 import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
-import { newCrewDomainId, newCrewId } from './id';
+import { newCrewDomainId } from './id';
 import { toAdminCrewDTO, toCrewDTO } from './mappers';
-import {
-  CREW_PRODUCTION_TEMPLATE_VERSION,
-  createDefaultProductionDocument,
-  createDefaultProductionPlan,
-} from './production/production-document';
-import {
-  DEFAULT_CREW_TASK_WORKFLOW_STATES,
-  defaultCrewTaskView,
-} from './tasks/task-defaults';
 
 const DEFAULT_PAGE_SIZE = 24;
 const MAX_PAGE_SIZE = 100;
@@ -84,6 +77,7 @@ export class CrewsService {
     private readonly conversations: ConversationsService,
     private readonly authorization: CrewAuthorizationService,
     private readonly collaboration: CrewCollaborationService,
+    private readonly wallets: WalletLedgerService,
   ) {}
 
   creationEligibility(user: AuthUser) {
@@ -100,122 +94,14 @@ export class CrewsService {
     }
     const creatorUserId = creator.userId;
     const crew = await this.prisma.$transaction(async (tx) => {
-      const productionPlan = createDefaultProductionPlan(
-        input.productionTemplateLocale,
-      );
-      const c = await tx.crew.create({
-        data: {
-          id: newCrewId(),
-          name: input.name,
-          description: input.description,
-          logo: input.logo,
-          tagline: input.tagline ?? null,
-          genres: input.genres,
-          styles: input.styles,
-          // Empty arrays come through as SQL NULL — Prisma's JsonB
-          // column requires Prisma.DbNull for the null literal.
-          ...(input.socialLinks.length > 0
-            ? { socialLinks: input.socialLinks }
-            : { socialLinks: Prisma.DbNull }),
-          ...(input.showcaseWorks.length > 0
-            ? { showcaseWorks: input.showcaseWorks }
-            : { showcaseWorks: Prisma.DbNull }),
-          createdByUserId: creatorUserId,
-          // Product decision (2026-05-21): new crews are public by
-          // default so they show up in the Crew Hall immediately —
-          // founders can still toggle to `unlisted` later via
-          // updateListing(). DB column default is still `unlisted`
-          // (kept as the safer fallback if a future caller forgets
-          // to pass listingStatus) — set it explicitly here.
-          listingStatus: 'listed',
-          listedAt: new Date(),
-          productionPage: {
-            create: {
-              document: createDefaultProductionDocument(
-                input.productionTemplateLocale,
-              ),
-              createdByUserId: creatorUserId,
-              updatedByUserId: creatorUserId,
-            },
-          },
-          productionActivity: {
-            create: {
-              kind: 'project_created',
-              createdByUserId: creatorUserId,
-              payload: {
-                productionTemplateVersion: CREW_PRODUCTION_TEMPLATE_VERSION,
-                productionTemplateLocale: input.productionTemplateLocale,
-              },
-            },
-          },
-        },
-      });
-      const ownerMember = await tx.crewMember.create({
-        data: {
-          id: newCrewDomainId(),
-          crewId: c.id,
-          userId: creatorUserId,
-          status: CrewMembershipStatus.active,
-          joinedVia: 'creation',
-        },
-      });
-      await tx.crewOwnership.create({
-        data: { crewId: c.id, memberId: ownerMember.id },
-      });
-      const workflowStateIds = new Map(
-        DEFAULT_CREW_TASK_WORKFLOW_STATES.map((state) => [
-          state.systemKey,
-          randomUUID(),
-        ]),
-      );
-      await tx.crewTaskWorkflowState.createMany({
-        data: DEFAULT_CREW_TASK_WORKFLOW_STATES.map((state) => ({
-          id: workflowStateIds.get(state.systemKey)!,
-          crewId: c.id,
-          name: state.name,
-          color: state.color,
-          semantic: state.semantic,
-          systemKey: state.systemKey,
-          position: state.position,
-          createdByUserId: creatorUserId,
-        })),
-      });
-      await tx.crewTaskView.create({
-        data: defaultCrewTaskView(c.id, creatorUserId),
-      });
-
-      const episodeId = randomUUID();
-      await tx.crewEpisode.create({
-        data: {
-          id: episodeId,
-          crewId: c.id,
-          number: 1,
-          title: productionPlan.episode.title,
-          synopsis: productionPlan.episode.synopsis,
-          status: 'planned',
-          rank: 1024,
-          createdByUserId: creatorUserId,
-        },
-      });
-
-      // One crew, one group chat — opened with the crew so there is
-      // never a window where a member exists without a thread to talk
-      // in. No `crew.member.joined` system message here on purpose:
-      // the founder joining the crew they just created, into a chat
-      // with no other reader, is not an event — the chat's existence
-      // already says it. Every LATER join announces itself.
-      await this.conversations.openCrewConversation(c.id, tx);
-      await this.conversations.syncCrewParticipant(
-        c.id,
-        creatorUserId,
-        'join',
-        tx,
-      );
-      return tx.crew.findUniqueOrThrow({
-        where: { id: c.id },
-        include: CREW_OWNER_INCLUDE,
-      });
+      return createCrewTx(tx, this.conversations, creatorUserId, input);
     });
+    if (crew.studioWorkspaceId) {
+      await this.wallets.ensureDefaultAccounts(
+        WalletOwnerType.workspace,
+        crew.studioWorkspaceId,
+      );
+    }
     return toCrewDTO(crew, {
       memberCount: 1,
       openPositionCount: 0,
@@ -229,14 +115,16 @@ export class CrewsService {
   ) {
     const limit = clampPageSize(opts.limit);
     const blockedIds = await this.blockedCrewIds(viewerId);
+    const where: Prisma.CrewWhereInput = {
+      deletedAt: null,
+      listingStatus: 'listed',
+      moderationStatus: 'ok',
+      ...(blockedIds.length ? { id: { notIn: blockedIds } } : {}),
+    };
+    await this.assertListCursor(opts.cursor, where);
     const rows = await this.prisma.crew.findMany({
-      where: {
-        deletedAt: null,
-        listingStatus: 'listed',
-        moderationStatus: 'ok',
-        ...(blockedIds.length ? { id: { notIn: blockedIds } } : {}),
-      },
-      orderBy: [{ listedAt: 'desc' }, { createdAt: 'desc' }],
+      where,
+      orderBy: [{ listedAt: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
       include: CREW_OWNER_INCLUDE,
@@ -254,6 +142,23 @@ export class CrewsService {
       ),
       nextCursor: hasMore ? slice[slice.length - 1].id : null,
     };
+  }
+
+  private async assertListCursor(
+    cursor: string | undefined,
+    where: Prisma.CrewWhereInput,
+  ) {
+    if (!cursor) return;
+    const row = await this.prisma.crew.findFirst({
+      where: { AND: [where, { id: cursor }] },
+      select: { id: true },
+    });
+    if (!row)
+      throw new BadRequestException({
+        code: 'CREW_CURSOR_INVALID',
+        message:
+          'The Crew cursor is invalid for the current filters. Restart from the first page.',
+      });
   }
 
   async detail(id: string, viewerId: string | null) {
@@ -319,9 +224,10 @@ export class CrewsService {
         ? { OR: [{ id: q }, { name: { contains: q, mode: 'insensitive' } }] }
         : {}),
     };
+    await this.assertListCursor(opts.cursor, where);
     const rows = await this.prisma.crew.findMany({
       where,
-      orderBy: [{ createdAt: 'desc' }],
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
       include: CREW_OWNER_INCLUDE,
@@ -345,25 +251,30 @@ export class CrewsService {
     status: CrewModerationStatus,
     opts: { adminId: string; reason?: string },
   ) {
-    const crew = await this.prisma.crew.findFirst({
-      where: { id: crewId, deletedAt: null },
-      select: { id: true, moderationStatus: true },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
+      const crew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { id: true, moderationStatus: true },
+      });
+      if (!crew) throw new NotFoundException('Crew not found');
+      const isTakedown = status === 'taken_down';
+      const reason = opts.reason?.trim() || null;
+      const updated = await tx.crew.update({
+        where: { id: crewId },
+        data: {
+          moderationStatus: status,
+          moderatedAt: new Date(),
+          moderatedByAdminId: opts.adminId,
+          moderationReason: isTakedown ? reason : null,
+        },
+        include: CREW_OWNER_INCLUDE,
+      });
+      const memberCount = await tx.crewMember.count({
+        where: { crewId, status: CrewMembershipStatus.active },
+      });
+      return toAdminCrewDTO(updated, memberCount);
     });
-    if (!crew) throw new NotFoundException('Crew not found');
-    const isTakedown = status === 'taken_down';
-    const reason = opts.reason?.trim() || null;
-    const updated = await this.prisma.crew.update({
-      where: { id: crewId },
-      data: {
-        moderationStatus: status,
-        moderatedAt: new Date(),
-        moderatedByAdminId: opts.adminId,
-        moderationReason: isTakedown ? reason : null,
-      },
-      include: CREW_OWNER_INCLUDE,
-    });
-    const counts = await this.countsFor([crewId]);
-    return toAdminCrewDTO(updated, counts.members.get(crewId) ?? 0);
   }
 
   /**
@@ -555,61 +466,65 @@ export class CrewsService {
   ) {
     await this.authorization.require(id, ownerId, 'crew.settings.manage');
 
-    const patch: Prisma.CrewUpdateInput = {
-      ...(input.name !== undefined ? { name: input.name } : {}),
-      ...(input.description !== undefined
-        ? { description: input.description }
-        : {}),
-      ...(input.logo !== undefined ? { logo: input.logo } : {}),
-      ...(input.tagline !== undefined ? { tagline: input.tagline } : {}),
-      ...(input.genres !== undefined ? { genres: input.genres } : {}),
-      ...(input.styles !== undefined ? { styles: input.styles } : {}),
-      ...(input.socialLinks !== undefined
-        ? {
-            socialLinks:
-              input.socialLinks.length > 0 ? input.socialLinks : Prisma.DbNull,
-          }
-        : {}),
-      ...(input.showcaseWorks !== undefined
-        ? {
-            showcaseWorks:
-              input.showcaseWorks.length > 0
-                ? input.showcaseWorks
-                : Prisma.DbNull,
-          }
-        : {}),
-      version: { increment: 1 },
-    };
+    return this.settingsWrite(id, ownerId, async (tx) => {
+      const patch: Prisma.CrewUpdateInput = {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
+        ...(input.logo !== undefined ? { logo: input.logo } : {}),
+        ...(input.tagline !== undefined ? { tagline: input.tagline } : {}),
+        ...(input.genres !== undefined ? { genres: input.genres } : {}),
+        ...(input.styles !== undefined ? { styles: input.styles } : {}),
+        ...(input.socialLinks !== undefined
+          ? {
+              socialLinks:
+                input.socialLinks.length > 0
+                  ? input.socialLinks
+                  : Prisma.DbNull,
+            }
+          : {}),
+        ...(input.showcaseWorks !== undefined
+          ? {
+              showcaseWorks:
+                input.showcaseWorks.length > 0
+                  ? input.showcaseWorks
+                  : Prisma.DbNull,
+            }
+          : {}),
+        version: { increment: 1 },
+      };
 
-    if (input.expectedVersion !== undefined) {
-      const r = await this.prisma.crew.updateMany({
-        where: { id, version: input.expectedVersion, deletedAt: null },
-        data: patch,
-      });
-      if (r.count === 0) {
-        // Distinguish "row gone" from "version stale".
-        const current = await this.prisma.crew.findUnique({
-          where: { id },
-          select: { version: true, deletedAt: true },
+      if (input.expectedVersion !== undefined) {
+        const r = await tx.crew.updateMany({
+          where: { id, version: input.expectedVersion, deletedAt: null },
+          data: patch,
         });
-        if (!current || current.deletedAt)
-          throw new NotFoundException('Crew not found');
-        throw new ConflictException({
-          message: 'Crew was modified by someone else; refresh and retry',
-          expectedVersion: input.expectedVersion,
-          actualVersion: current.version,
-        });
+        if (r.count === 0) {
+          // Distinguish "row gone" from "version stale".
+          const current = await tx.crew.findUnique({
+            where: { id },
+            select: { version: true, deletedAt: true },
+          });
+          if (!current || current.deletedAt)
+            throw new NotFoundException('Crew not found');
+          throw new ConflictException({
+            message: 'Crew was modified by someone else; refresh and retry',
+            expectedVersion: input.expectedVersion,
+            actualVersion: current.version,
+          });
+        }
+      } else {
+        await tx.crew.update({ where: { id }, data: patch });
       }
-    } else {
-      await this.prisma.crew.update({ where: { id }, data: patch });
-    }
 
-    const updated = await this.prisma.crew.findUnique({
-      where: { id },
-      include: CREW_OWNER_INCLUDE,
+      const updated = await tx.crew.findUnique({
+        where: { id },
+        include: CREW_OWNER_INCLUDE,
+      });
+      if (!updated) throw new NotFoundException('Crew not found');
+      return toCrewDTO(updated);
     });
-    if (!updated) throw new NotFoundException('Crew not found');
-    return toCrewDTO(updated);
   }
 
   async updateListing(
@@ -619,40 +534,66 @@ export class CrewsService {
   ) {
     await this.authorization.require(id, ownerId, 'crew.settings.manage');
 
-    const data: Prisma.CrewUpdateInput = {
-      listingStatus: input.listingStatus,
-      listedAt: input.listingStatus === 'listed' ? new Date() : null,
-      version: { increment: 1 },
-    };
+    return this.settingsWrite(id, ownerId, async (tx) => {
+      const data: Prisma.CrewUpdateInput = {
+        listingStatus: input.listingStatus,
+        listedAt: input.listingStatus === 'listed' ? new Date() : null,
+        version: { increment: 1 },
+      };
 
-    if (input.expectedVersion !== undefined) {
-      const r = await this.prisma.crew.updateMany({
-        where: { id, version: input.expectedVersion, deletedAt: null },
-        data,
-      });
-      if (r.count === 0) {
-        const current = await this.prisma.crew.findUnique({
-          where: { id },
-          select: { version: true, deletedAt: true },
+      if (input.expectedVersion !== undefined) {
+        const r = await tx.crew.updateMany({
+          where: { id, version: input.expectedVersion, deletedAt: null },
+          data,
         });
-        if (!current || current.deletedAt)
-          throw new NotFoundException('Crew not found');
-        throw new ConflictException({
-          message: 'Crew was modified by someone else; refresh and retry',
-          expectedVersion: input.expectedVersion,
-          actualVersion: current.version,
-        });
+        if (r.count === 0) {
+          const current = await tx.crew.findUnique({
+            where: { id },
+            select: { version: true, deletedAt: true },
+          });
+          if (!current || current.deletedAt)
+            throw new NotFoundException('Crew not found');
+          throw new ConflictException({
+            message: 'Crew was modified by someone else; refresh and retry',
+            expectedVersion: input.expectedVersion,
+            actualVersion: current.version,
+          });
+        }
+      } else {
+        await tx.crew.update({ where: { id }, data });
       }
-    } else {
-      await this.prisma.crew.update({ where: { id }, data });
-    }
 
-    const updated = await this.prisma.crew.findUnique({
-      where: { id },
-      include: CREW_OWNER_INCLUDE,
+      const updated = await tx.crew.findUnique({
+        where: { id },
+        include: CREW_OWNER_INCLUDE,
+      });
+      if (!updated) throw new NotFoundException('Crew not found');
+      return toCrewDTO(updated);
     });
-    if (!updated) throw new NotFoundException('Crew not found');
-    return toCrewDTO(updated);
+  }
+
+  private async settingsWrite<T>(
+    crewId: string,
+    userId: string,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
+      await this.authorization.require(
+        crewId,
+        userId,
+        'crew.settings.manage',
+        tx,
+      );
+      const result = await work(tx);
+      await this.authorization.require(
+        crewId,
+        userId,
+        'crew.settings.manage',
+        tx,
+      );
+      return result;
+    });
   }
 
   /** Atomically moves the unique CrewOwnership relation and its projections. */
@@ -693,6 +634,11 @@ export class CrewsService {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${crewId}`})::bigint)
       `;
+      const currentCrew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!currentCrew) throw new NotFoundException('Crew not found');
       const lockedOwner = await tx.crewOwnership.findUnique({
         where: { crewId },
         include: {
@@ -784,10 +730,11 @@ export class CrewsService {
           });
         }
       } else {
-        await tx.crew.update({
-          where: { id: crewId },
+        const changed = await tx.crew.updateMany({
+          where: { id: crewId, deletedAt: null },
           data: { version: { increment: 1 } },
         });
+        if (!changed.count) throw new NotFoundException('Crew not found');
       }
 
       await tx.crewOwnership.update({
@@ -885,7 +832,7 @@ export class CrewsService {
     });
   }
 
-  /** Founded + joined crews for the current user — drives /profile?tab=crews. */
+  /** Production memberships and separate fan subscriptions for the current user. */
   async myCrews(userId: string) {
     const memberships = await this.prisma.crewMember.findMany({
       where: {
@@ -923,7 +870,40 @@ export class CrewsService {
       if (m.ownership) founded.push(dto);
       else joined.push(dto);
     }
-    return { founded, joined };
+    // A community subscription is discoverable here, but is not a production
+    // membership. Keep it separate so clients cannot infer team permissions.
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: {
+        userId,
+        leftAt: null,
+        conversation: { contextType: 'crew', crewChannel: 'community' },
+      },
+      select: { conversation: { select: { contextId: true } } },
+      orderBy: [{ joinedAt: 'desc' }, { conversationId: 'asc' }],
+    });
+    const excluded = new Set([
+      ...crews.map((crew) => crew.id),
+      ...(await this.blockedCrewIds(userId)),
+    ]);
+    const communityIds = [
+      ...new Set(participants.map((p) => p.conversation.contextId)),
+    ].filter((id) => !excluded.has(id));
+    const communityRows = communityIds.length
+      ? await this.prisma.crew.findMany({
+          where: {
+            id: { in: communityIds },
+            deletedAt: null,
+            moderationStatus: 'ok',
+          },
+          include: CREW_OWNER_INCLUDE,
+        })
+      : [];
+    const communityById = new Map(communityRows.map((crew) => [crew.id, crew]));
+    const community = communityIds.flatMap((id) => {
+      const crew = communityById.get(id);
+      return crew ? [toCrewDTO(crew)] : [];
+    });
+    return { founded, joined, community };
   }
 
   /**
@@ -1106,14 +1086,26 @@ export class CrewsService {
       }),
       this.prisma.crewPosition.groupBy({
         by: ['crewId'],
-        where: { crewId: { in: ids }, status: 'open', deletedAt: null },
+        where: {
+          crewId: { in: ids },
+          status: 'open',
+          deletedAt: null,
+          recruitmentVisibility: 'public',
+          moderationStatus: 'ok',
+        },
         _count: { _all: true },
       }),
       // Preview names for the plaza card — newest 3 open positions
       // per crew, ordered by createdAt desc. Cheap to fetch
       // alongside the counts: server-paginates to ≤3 × N rows.
       this.prisma.crewPosition.findMany({
-        where: { crewId: { in: ids }, status: 'open', deletedAt: null },
+        where: {
+          crewId: { in: ids },
+          status: 'open',
+          deletedAt: null,
+          recruitmentVisibility: 'public',
+          moderationStatus: 'ok',
+        },
         orderBy: { createdAt: 'desc' },
         select: { crewId: true, positionType: true, createdAt: true },
       }),

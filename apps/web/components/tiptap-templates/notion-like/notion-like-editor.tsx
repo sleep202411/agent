@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useEffect, useMemo, useRef, type FocusEvent } from "react";
+import { useContext, useEffect, useMemo, useRef, type ReactNode, type FocusEvent } from "react";
 import type { JSONContent } from "@tiptap/core";
 import { Emoji, gitHubEmojis } from "@tiptap/extension-emoji";
 import { Highlight } from "@tiptap/extension-highlight";
@@ -94,6 +94,7 @@ export interface NotionEditorProps {
   onUpdate: (document: JSONContent) => void;
   onBlur: () => void;
   onReady?: (editor: Editor) => void;
+  renderToolbar?: (editor: Editor) => ReactNode;
   slashMenuFilterPlaceholder: string;
   slashMenuLabels: NonNullable<SlashMenuConfig["labels"]>;
   dragMenuLabels: DragContextMenuLabels;
@@ -141,6 +142,7 @@ export function NotionEditor({
   onUpdate,
   onBlur,
   onReady,
+  renderToolbar,
   slashMenuFilterPlaceholder,
   slashMenuLabels,
   dragMenuLabels,
@@ -269,6 +271,7 @@ export function NotionEditor({
       }}
     >
       <EditorContext.Provider value={{ editor }}>
+        {editable ? renderToolbar?.(editor) : null}
         <div className="notion-like-editor-layout">
           <NotionEditorContent slashMenuConfig={slashMenuConfig} dragMenuLabels={dragMenuLabels} />
         </div>

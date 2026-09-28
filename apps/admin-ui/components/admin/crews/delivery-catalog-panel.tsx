@@ -1,4 +1,5 @@
 "use client";
+import { adminUiApiPath } from "@/lib/admin-api";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 type Field = {
@@ -9,6 +10,7 @@ type Field = {
   required: boolean;
 };
 type Definition = {
+  categoryKey?: string;
   name: string;
   description: string;
   status: "active" | "archived";
@@ -18,7 +20,7 @@ type Definition = {
 type Category = { id: string; version: number; definition: Definition };
 type Page = { items: Category[]; nextCursor: string | null };
 async function request<T>(path: string, signal: AbortSignal, data?: unknown): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(adminUiApiPath(path), {
     method: data ? "POST" : "GET",
     signal,
     cache: "no-store",
@@ -108,6 +110,11 @@ export function DeliveryCatalogPanel() {
   }
   async function save() {
     if (active.current || !draft) return;
+    const catKey = draft.definition.categoryKey?.trim();
+    if (catKey && !/^[a-z][a-z0-9_]{0,47}$/.test(catKey)) {
+      setError("Category key must be lowercase snake_case.");
+      return;
+    }
     const controller = new AbortController();
     active.current = controller;
     setPending(true);
@@ -135,7 +142,7 @@ export function DeliveryCatalogPanel() {
   const inputClass = "w-full rounded border border-slate-300 bg-transparent p-2 text-sm";
   return (
     <main className="space-y-4 p-5">
-      <h1 className="text-xl font-semibold">Professional delivery catalog</h1>
+      <h1 className="text-xl font-semibold">交付标准</h1>
       <p className="text-sm text-slate-500">
         Reference prices and delivery requirements. Changes do not rewrite agreed task compensation.
       </p>
@@ -212,6 +219,23 @@ export function DeliveryCatalogPanel() {
             {draft.version ? `Edit revision ${draft.version}` : "New category"}
           </h2>
           <fieldset disabled={pending} className="space-y-3">
+            <div className="space-y-1">
+              <label className="block">
+                Category key
+                <input
+                  className={inputClass}
+                  placeholder="e.g. storyboard_delivery"
+                  value={draft.definition.categoryKey ?? ""}
+                  maxLength={48}
+                  onChange={(e) => change({ categoryKey: e.target.value.trim() || undefined })}
+                />
+              </label>
+              {!draft.definition.categoryKey && (
+                <p className="text-xs text-amber-500">
+                  Set a category key to enable task binding for this category.
+                </p>
+              )}
+            </div>
             <label className="block">
               Category name
               <input

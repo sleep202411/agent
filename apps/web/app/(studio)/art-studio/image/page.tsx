@@ -560,7 +560,7 @@ export default function AiImageLabPage() {
     // co-located so 429s from submitAiJob (which emit via the upgrade
     // store) only open the dialog when the user is actually on this
     // page. Gated on `user` so anonymous visits skip the WS entirely.
-    <QuotaProvider enabled={Boolean(user) && !IMAGE_GENERATION_SUBMIT_DISABLED}>
+    <QuotaProvider enabled={Boolean(user) && !IMAGE_GENERATION_SUBMIT_DISABLED} viewerId={user?.id}>
       <UpgradeDialogHost />
       <div className="relative flex h-[calc(100dvh-56px)] flex-col overflow-hidden bg-black text-foreground lg:pl-20">
         {/* Canvas — the scrollable content keeps a `pb-28` runway so the

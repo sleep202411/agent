@@ -3,6 +3,7 @@
 import { useTransition, type ComponentType } from "react";
 import {
   IconBook2,
+  IconChartBar,
   IconClipboardList,
   IconLanguage,
   IconListTree,
@@ -79,6 +80,12 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           onClick={() => togglePanel("world")}
         />
         <RailButton
+          icon={IconChartBar}
+          label={t("sidebar.stats")}
+          active={sidePanel === "stats"}
+          onClick={() => togglePanel("stats")}
+        />
+        <RailButton
           icon={IconListTree}
           label={t("sidebar.catalog")}
           active={sidePanel === "catalog"}
@@ -89,6 +96,11 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           label={t("chapters.action")}
           active={sidePanel === "chapters"}
           onClick={() => togglePanel("chapters")}
+        />
+        <RailLink
+          href={`/story-studio/projects/${projectId}/analytics`}
+          icon={IconChartBar}
+          label={t("sidebar.analytics")}
         />
         {/* Material canvas — the free creative canvas scoped to this project. */}
         {MATERIAL_CANVAS_ENABLED && (

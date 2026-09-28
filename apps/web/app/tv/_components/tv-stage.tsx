@@ -14,7 +14,7 @@ import styles from "./tv-stage.module.css";
 
 interface TvStageProps {
   item: TvItem;
-  onPlaybackChange: (playing: boolean) => void;
+  onPlaybackChange: (playing: boolean, source?: string) => void;
   onNext?: () => void;
   advancing: boolean;
   navigationError: string | null;
@@ -58,7 +58,14 @@ export function TvStage(props: TvStageProps) {
       languages: { "zh-CN": simplifiedChinese, "zh-HK": traditionalChinese },
       userActions: { doubleClick: false },
       controlBar: {
-        children: ["playToggle", "volumePanel"],
+        children: [
+          "playToggle",
+          "volumePanel",
+          "currentTimeDisplay",
+          "progressControl",
+          "durationDisplay",
+          "fullscreenToggle",
+        ],
       },
     });
     playerRef.current = player;
@@ -73,7 +80,7 @@ export function TvStage(props: TvStageProps) {
     };
     player.on("playing", () => {
       if (!visible.current || document.hidden) player.pause();
-      else latest.current.onPlaybackChange(true);
+      else latest.current.onPlaybackChange(true, player.currentSrc());
     });
     player.on(["pause", "waiting", "emptied"], paused);
     player.on("ended", () => {
@@ -81,6 +88,8 @@ export function TvStage(props: TvStageProps) {
       if (visible.current && !document.hidden) latest.current.onNext?.();
     });
     player.on("error", () => {
+      autoplayPending.current = false;
+      player.pause();
       paused();
       const src = player.currentSrc();
       if (src === latest.current.item.trailer) {
@@ -102,6 +111,8 @@ export function TvStage(props: TvStageProps) {
     return () => {
       observer.disconnect();
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      autoplayPending.current = false;
+      player.pause();
       playerRef.current = null;
       player.dispose();
     };
@@ -119,23 +130,33 @@ export function TvStage(props: TvStageProps) {
     if (!player) return;
     latest.current.onPlaybackChange(false);
     setFailure(null);
-    autoplayPending.current = Boolean(item.trailer);
-    if (!item.trailer) {
-      const volume = player.volume();
-      const muted = player.muted();
-      player.pause();
-      player.one("playerreset", () => {
-        if (volume !== undefined) player.volume(volume);
-        if (muted !== undefined) player.muted(muted);
-      });
-      player.reset();
-      return;
-    }
+    // Stop and release the old media before attempting source selection. If the
+    // next source is unsupported, Video.js can otherwise retain the old tech
+    // and its audible stream underneath the new channel's error overlay.
+    autoplayPending.current = false;
+    const volume = player.volume();
+    const muted = player.muted();
+    const poster = player.poster();
+    player.pause();
+    player.reset();
+    player.poster(poster);
+    if (volume !== undefined) player.volume(volume);
+    if (muted !== undefined) player.muted(muted);
+    if (!item.trailer) return;
+    autoplayPending.current = true;
+    // Let Video.js infer its MOV alias when this browser rejects QuickTime's
+    // MIME hint. The original URL/bytes remain unchanged; codec support is
+    // still decided by the native decoder. Preserve browsers accepting it.
+    const inferMovType =
+      item.trailerType?.toLowerCase() === "video/quicktime" &&
+      /\.mov(?:[?#]|$)/i.test(item.trailer) &&
+      !document.createElement("video").canPlayType(item.trailerType);
     player.src({
       src: item.trailer,
-      type:
-        item.trailerType &&
-        /^(video\/|application\/(?:vnd\.apple\.mpegurl|x-mpegurl))/i.test(item.trailerType)
+      type: inferMovType
+        ? undefined
+        : item.trailerType &&
+            /^(video\/|application\/(?:vnd\.apple\.mpegurl|x-mpegurl))/i.test(item.trailerType)
           ? item.trailerType
           : /\.m3u8(?:[?#]|$)/i.test(item.trailer)
             ? "application/x-mpegURL"

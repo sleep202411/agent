@@ -14,6 +14,7 @@ import { GlassRim } from "@/components/ui/glass-rim";
 import { useDismiss } from "@/lib/use-dismiss";
 import {
   enumOptions,
+  stringMaxLength,
   type FizzAiCatalog,
   type FizzAiModel,
   type FizzAiReferenceFieldConstraints,
@@ -266,7 +267,7 @@ export function StudioComposer({
         <textarea
           ref={textareaRef}
           value={prompt}
-          maxLength={800}
+          maxLength={stringMaxLength(model, "prompt")}
           rows={3}
           placeholder={t("promptPlaceholder")}
           onChange={(event) => {

@@ -1,4 +1,12 @@
 "use client";
+
+import { TaskDisputeControl } from "@/app/(site)/crews/_components/task-dispute-control";
+import { TaskFeedbackPanel } from "@/app/(site)/crews/_components/task-feedback-panel";
+import { TaskClosureControl } from "@/app/(site)/crews/_components/task-closure-control";
+import { TaskExtensionPanel } from "@/app/(site)/crews/_components/task-extension-panel";
+import { TaskAgreedFee } from "@/app/(site)/crews/_components/task-agreed-fee";
+
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { TaskCommitments } from "@/app/(site)/crews/_components/accountability/task-commitments";
 
 import { TaskDeliveryTemplatePanel } from "./task-delivery-template";
@@ -27,8 +35,8 @@ import Link from "next/link";
 import {
   IconArrowUpRight,
   IconAt,
-  IconBan,
   IconCalendar,
+  IconCategory,
   IconCheck,
   IconChevronDown,
   IconCircle,
@@ -37,11 +45,11 @@ import {
   IconEdit,
   IconFile,
   IconFlag3,
+  IconFolder,
   IconGitBranch,
   IconLoader2,
   IconMessage,
   IconMovie,
-  IconDots,
   IconPaperclip,
   IconPhoto,
   IconRefresh,
@@ -63,18 +71,22 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  CREW_TASK_KIND_MESSAGE_KEYS,
+  CREW_TASK_KINDS,
   useCreateCrewTaskComment,
   useDeleteCrewTaskComment,
   useCrewTaskOptions,
   useCrewEpisodes,
   useCrewTaskProject,
   useUpdateCrewTask,
+  useSetTaskDeliveryFolder,
   useUpdateCrewTaskComment,
   useCrewTaskTimeline,
   type CrewMemberDTO,
   type CrewTaskCommentAttachmentInput,
   type CrewTaskCustomValue,
   type CrewTaskDTO,
+  type CrewTaskKind,
   type CrewTaskFieldDTO,
   type CrewTaskLabelDTO,
   type CrewTaskPriority,
@@ -91,6 +103,7 @@ import {
   discardPendingCrewAssetUpload,
   useCrewAssetContext,
   useCrewAssets,
+  useCrewAssetFolders,
 } from "../../_hooks/use-crew-assets";
 import { TaskQuickCreate } from "./task-quick-create";
 import { TaskSelect } from "./task-select";
@@ -101,6 +114,9 @@ interface TaskIssueDetailProps {
   task: CrewTaskDTO;
   members: CrewMemberDTO[];
   isOwner: boolean;
+  canReview: boolean;
+  canSubmitAssigned: boolean;
+  canComment: boolean;
   canWork: boolean;
   viewerUserId?: string;
   displays: ReturnType<typeof useUserDisplays>;
@@ -113,6 +129,9 @@ export function TaskIssueDetail({
   task,
   members,
   isOwner,
+  canReview,
+  canSubmitAssigned,
+  canComment,
   canWork,
   viewerUserId,
   displays,
@@ -123,6 +142,8 @@ export function TaskIssueDetail({
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
   const updateTask = useUpdateCrewTask(task.crewId);
+  const setDeliveryFolderMutation = useSetTaskDeliveryFolder(task.crewId);
+  const assetFolders = useCrewAssetFolders(task.crewId, true);
   const timeline = useCrewTaskTimeline(task.id);
   const project = useCrewTaskProject(task.crewId).data;
   const episodes = useCrewEpisodes(task.crewId).data ?? [];
@@ -147,8 +168,7 @@ export function TaskIssueDetail({
     setEditingBrief(true);
   };
   const [subtaskOpen, setSubtaskOpen] = useState(false);
-  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
-  const canShowSubmit = canWork && ACTIVE_STATUSES.includes(task.status);
+  const canShowSubmit = canWork && canSubmitAssigned && ACTIVE_STATUSES.includes(task.status);
   const unresolvedBlockers = task.blockedBy.filter((blocker) => !blocker.resolved);
   const canSubmit = canShowSubmit && unresolvedBlockers.length === 0;
   const timelineItems = useMemo(
@@ -197,19 +217,6 @@ export function TaskIssueDetail({
     }
   };
 
-  const cancelTask = async () => {
-    const cancelledState = project?.workflowStates.find(
-      (state) => !state.archived && state.systemKey === "cancelled"
-    );
-    if (!cancelledState) {
-      toast.error(t("cancelStateUnavailable"));
-      return;
-    }
-    if (await quickPatch({ workflowStateId: cancelledState.id })) {
-      setCancelConfirmOpen(false);
-    }
-  };
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#101012]">
       <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-white/[0.055] px-5">
@@ -243,39 +250,7 @@ export function TaskIssueDetail({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {isOwner && <DeleteTaskButton task={task} onDeleted={onClose} />}
-          {isOwner && !["submitted", "approved", "cancelled"].includes(task.status) ? (
-            <Popover open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="grid size-8 place-items-center rounded-md text-[#737985] transition-colors hover:bg-white/[0.055] hover:text-[#e1e3e7]"
-                  aria-label={t("moreActions")}
-                >
-                  <IconDots className="size-4" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                className="w-72 gap-3 border border-white/[0.1] bg-[#19191c] p-3 text-[#d8dade] shadow-[0_20px_60px_rgba(0,0,0,.55)]"
-              >
-                <div>
-                  <p className="text-[12px] font-semibold">{t("cancelTask")}</p>
-                  <p className="mt-1 text-[10px] leading-4 text-[#858991]">
-                    {t("cancelTaskDescription")}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  color="destructive"
-                  loading={patching}
-                  icon={<IconBan />}
-                  onClick={() => void cancelTask()}
-                >
-                  {t("confirmCancelTask")}
-                </Button>
-              </PopoverContent>
-            </Popover>
-          ) : null}
+          <TaskClosureControl task={task} canManage={isOwner} />
           {onClose ? (
             <button
               type="button"
@@ -388,6 +363,9 @@ export function TaskIssueDetail({
 
             <TaskCommitments task={task} canManage={isOwner} />
             <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
+            <TaskExtensionPanel task={task} canManage={isOwner} />
+            <TaskFeedbackPanel task={task} />
+            <TaskDisputeControl task={task} />
 
             <div className="mb-5 flex items-center gap-2 border-t border-white/[0.055] pt-7">
               <IconMessage className="size-4 text-[#8c929c]" />
@@ -450,6 +428,7 @@ export function TaskIssueDetail({
                       task={task}
                       viewerUserId={viewerUserId}
                       isOwner={isOwner}
+                      canComment={canComment}
                       displays={displays}
                     />
                   ) : (
@@ -459,17 +438,19 @@ export function TaskIssueDetail({
               </div>
             ) : null}
 
-            {isOwner && task.status === "submitted" ? (
+            {canReview && task.status === "submitted" ? (
               <TaskReviewForm task={task} onReviewed={onReviewed} />
             ) : null}
 
-            <CommentComposer
-              key={task.id}
-              task={task}
-              members={members}
-              viewerUserId={viewerUserId}
-              displays={displays}
-            />
+            {canComment && (
+              <CommentComposer
+                key={task.id}
+                task={task}
+                members={members}
+                viewerUserId={viewerUserId}
+                displays={displays}
+              />
+            )}
           </div>
         </main>
 
@@ -509,6 +490,29 @@ export function TaskIssueDetail({
                 />
               ) : (
                 <span>{t(`priority.${task.priority}`)}</span>
+              )}
+            </RailRow>
+            <RailRow icon={<IconCategory className="size-4" />}>
+              {isOwner ? (
+                <InlinePropertySelect
+                  value={task.taskKind ?? ""}
+                  onChange={(value) =>
+                    void quickPatch({ taskKind: (value || null) as CrewTaskKind | null })
+                  }
+                  options={[
+                    { value: "", label: t("taskKindUnset") },
+                    ...CREW_TASK_KINDS.map((kind) => ({
+                      value: kind,
+                      label: t(CREW_TASK_KIND_MESSAGE_KEYS[kind]),
+                    })),
+                  ]}
+                />
+              ) : (
+                <span>
+                  {task.taskKind
+                    ? t(CREW_TASK_KIND_MESSAGE_KEYS[task.taskKind])
+                    : t("taskKindUnset")}
+                </span>
               )}
             </RailRow>
             <RailRow icon={<IconUserCircle className="size-4" />} align="start">
@@ -697,6 +701,90 @@ export function TaskIssueDetail({
                 </Link>
               </RailRow>
             ) : null}
+            <RailRow icon={<IconFolder className="size-4" />}>
+              <div className="flex w-full min-w-0 items-center justify-between gap-2">
+                <span
+                  className="truncate text-[#8b8d94]"
+                  title={task.deliveryFolder?.name ?? t("linkFolderAuto")}
+                >
+                  {task.deliveryFolder?.name ?? t("linkFolderAuto")}
+                </span>
+                {isOwner || (canSubmitAssigned && canWork) ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        disabled={setDeliveryFolderMutation.isPending || assetFolders.isLoading}
+                        className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-[#c5c6cb] hover:bg-white/[0.045] hover:text-white"
+                      >
+                        {t("linkFolder")}
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-60 p-2 space-y-2">
+                      <p className="text-xs font-medium text-[#d7d9de]">{t("deliveryFolder")}</p>
+                      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+                        <button
+                          type="button"
+                          disabled={setDeliveryFolderMutation.isPending}
+                          onClick={() => {
+                            setDeliveryFolderMutation.mutate(
+                              { taskId: task.id, deliveryFolderId: null },
+                              {
+                                onSuccess: () => toast.success(t("taskUpdated")),
+                                onError: (err) =>
+                                  toast.error(
+                                    err instanceof Error ? err.message : t("actionFailed")
+                                  ),
+                              }
+                            );
+                          }}
+                          className={cn(
+                            "flex w-full items-center justify-between rounded px-2 py-1.5 text-xs text-left transition-colors hover:bg-white/[0.08]",
+                            !task.deliveryFolder && "bg-white/[0.04] font-medium text-[#e12b32]"
+                          )}
+                        >
+                          <span>{t("linkFolderClear")}</span>
+                          {!task.deliveryFolder ? <IconCheck className="size-3.5" /> : null}
+                        </button>
+                        {(assetFolders.data ?? [])
+                          .filter((folder) =>
+                            ["upload", "edit", "manage"].includes(folder.effectivePermission ?? "")
+                          )
+                          .map((folder) => {
+                            const isSelected = task.deliveryFolder?.id === folder.id;
+                            return (
+                              <button
+                                key={folder.id}
+                                type="button"
+                                disabled={setDeliveryFolderMutation.isPending}
+                                onClick={() => {
+                                  setDeliveryFolderMutation.mutate(
+                                    { taskId: task.id, deliveryFolderId: folder.id },
+                                    {
+                                      onSuccess: () => toast.success(t("taskUpdated")),
+                                      onError: (err) =>
+                                        toast.error(
+                                          err instanceof Error ? err.message : t("actionFailed")
+                                        ),
+                                    }
+                                  );
+                                }}
+                                className={cn(
+                                  "flex w-full items-center justify-between rounded px-2 py-1.5 text-xs text-left transition-colors hover:bg-white/[0.08]",
+                                  isSelected && "bg-white/[0.04] font-medium text-[#e12b32]"
+                                )}
+                              >
+                                <span className="truncate">{folder.name}</span>
+                                {isSelected ? <IconCheck className="size-3.5 shrink-0" /> : null}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : null}
+              </div>
+            </RailRow>
             <RailRow icon={<IconClock className="size-4" />}>
               <span className="text-[#8b8d94]">{new Date(task.updatedAt).toLocaleString()}</span>
             </RailRow>
@@ -721,12 +809,14 @@ export function TaskIssueDetail({
 }
 
 function CommentItem({
+  canComment,
   item,
   task,
   viewerUserId,
   isOwner,
   displays,
 }: {
+  canComment: boolean;
   item: CrewTaskTimelineItemDTO;
   task: CrewTaskDTO;
   viewerUserId?: string;
@@ -753,7 +843,7 @@ function CommentItem({
   const authorName = item.actorUserId
     ? displayNameOf(item.actorUserId, displays)
     : t("systemAssistant");
-  const canManage = item.actorUserId === viewerUserId || isOwner;
+  const canManage = canComment && (item.actorUserId === viewerUserId || isOwner);
 
   const startEditing = () => {
     if (pending.current || !canManage || item.deletedAt) return;
@@ -866,7 +956,7 @@ function CommentItem({
         <div className="px-4 py-3.5">
           {item.deletedAt ? (
             <p className="text-[12px] italic text-[#616772]">{t("deletedComment")}</p>
-          ) : editing ? (
+          ) : editing && canManage ? (
             <div>
               <Textarea
                 disabled={saving}
@@ -963,6 +1053,7 @@ function CommentComposer({
   displays: ReturnType<typeof useUserDisplays>;
 }) {
   const t = useTranslations("crewTasks");
+  const common = useTranslations("common");
   const memberPositionLabel = useCrewMemberPositionLabel();
   const create = useCreateCrewTaskComment(task.crewId, task.id);
   const assetContext = useCrewAssetContext(task.crewId);
@@ -1223,9 +1314,48 @@ function CommentComposer({
         <PickerPanel
           title={t("chooseCrewAsset")}
           onClose={() => setAssetOpen(false)}
-          empty={(recentAssets.data?.items.length ?? 0) === 0}
+          empty={
+            !recentAssets.isLoading &&
+            !recentAssets.isError &&
+            (recentAssets.data?.items.length ?? 0) === 0
+          }
           emptyText={t("noRecentAssets")}
         >
+          {recentAssets.isLoading && <p role="status">{common("loading")}</p>}
+          {recentAssets.isError && (
+            <div role="alert">
+              <p>
+                {recentAssets.error instanceof Error
+                  ? recentAssets.error.message
+                  : common("loadFailed")}
+              </p>
+              <Button
+                variant="outline"
+                color="muted"
+                size="sm"
+                disabled={saving || recentAssets.isFetching}
+                onClick={() =>
+                  void (recentAssets.isFetchNextPageError &&
+                  !isCrewCursorError(recentAssets.error, "CREW_ASSET_CURSOR_INVALID")
+                    ? recentAssets.fetchNextPage({ cancelRefetch: false })
+                    : recentAssets.refetch())
+                }
+              >
+                {common("retry")}
+              </Button>
+            </div>
+          )}
+          {recentAssets.hasNextPage && !recentAssets.isFetchNextPageError && (
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              disabled={saving || recentAssets.isFetching}
+              onClick={() => void recentAssets.fetchNextPage({ cancelRefetch: false })}
+            >
+              {recentAssets.isFetching ? common("loading") : common("loadMore")}
+            </Button>
+          )}
           {(recentAssets.data?.items ?? []).map((asset) => {
             const selected = attachments.some(
               (attachment) => attachment.source === "asset" && attachment.assetNodeId === asset.id
@@ -1515,6 +1645,8 @@ function AssigneesEditor({
 }) {
   const t = useTranslations("crewTasks");
 
+  const suggestedPriceMin = (task as any).metadata?.priceRange?.min;
+
   const [draft, setDraft] = useState(() =>
     task.assignees.map((assignee) => ({
       userId: assignee.userId,
@@ -1523,6 +1655,7 @@ function AssigneesEditor({
         assignee.rewardAmountMinor == null
           ? ""
           : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
+      isSuggested: false,
     }))
   );
   const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
@@ -1534,6 +1667,7 @@ function AssigneesEditor({
           assignee.rewardAmountMinor == null
             ? ""
             : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
+        isSuggested: false,
       }))
     );
   });
@@ -1566,11 +1700,26 @@ function AssigneesEditor({
   if (!editable) return summary;
 
   const toggleMember = (userId: string) => {
-    setDraft((current) =>
-      current.some((item) => item.userId === userId)
-        ? current.filter((item) => item.userId !== userId)
-        : [...current, { userId, rewardAmountMinor: "", currency: CREW_CURRENCY }]
-    );
+    setDraft((current) => {
+      if (current.some((item) => item.userId === userId)) {
+        return current.filter((item) => item.userId !== userId);
+      }
+      // TODO(#557): confirm with Pax whether the default source is
+      // task template priceRange, catalog referencePrice, or manual-only.
+      const prefill =
+        typeof suggestedPriceMin === "number" && suggestedPriceMin > 0
+          ? formatCrewMoneyInput(String(suggestedPriceMin * 100))
+          : "";
+      return [
+        ...current,
+        {
+          userId,
+          rewardAmountMinor: prefill,
+          currency: CREW_CURRENCY,
+          isSuggested: Boolean(prefill),
+        },
+      ];
+    });
   };
 
   const save = async () => {
@@ -1611,26 +1760,52 @@ function AssigneesEditor({
                   <span className="truncate text-[11px]">
                     {displayNameOf(member.userId, displays)}
                   </span>
-                  <Input
-                    type="number"
-                    min={0.01}
-                    max={100_000_000}
-                    step={0.01}
-                    disabled={!selected}
-                    value={selected?.rewardAmountMinor ?? ""}
-                    onChange={(event) =>
-                      setDraft((current) =>
-                        current.map((item) =>
-                          item.userId === member.userId
-                            ? { ...item, rewardAmountMinor: event.target.value }
-                            : item
+                  <div className="flex flex-col justify-center">
+                    <Input
+                      type="number"
+                      min={0.01}
+                      max={100_000_000}
+                      step={0.01}
+                      disabled={!selected}
+                      value={selected?.rewardAmountMinor ?? ""}
+                      onChange={(event) =>
+                        setDraft((current) =>
+                          current.map((item) =>
+                            item.userId === member.userId
+                              ? {
+                                  ...item,
+                                  rewardAmountMinor: event.target.value,
+                                  isSuggested: false,
+                                }
+                              : item
+                          )
                         )
-                      )
-                    }
-                    aria-label={`${t("reward")} (${selected?.currency ?? CREW_CURRENCY})`}
-                    placeholder={selected?.currency ?? CREW_CURRENCY}
-                    className="h-7 text-[10px]"
-                  />
+                      }
+                      aria-label={`${t("reward")} (${selected?.currency ?? CREW_CURRENCY})`}
+                      placeholder={selected?.currency ?? CREW_CURRENCY}
+                      className="h-7 text-[10px]"
+                    />
+                    {selected?.isSuggested && (
+                      <span className="mt-0.5 text-[9px] text-muted-foreground">
+                        {t("rewardSuggestedHint")}
+                      </span>
+                    )}
+                  </div>
+                  {selected && open && (
+                    <TaskAgreedFee
+                      taskId={task.id}
+                      userId={member.userId}
+                      onUse={(currency, fee) =>
+                        setDraft((current) =>
+                          current.map((item) =>
+                            item.userId === member.userId
+                              ? { ...item, currency, rewardAmountMinor: fee === "0.00" ? "" : fee }
+                              : item
+                          )
+                        )
+                      }
+                    />
+                  )}
                 </div>
               );
             })}
@@ -1887,6 +2062,14 @@ function TaskRelationshipsEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <fieldset disabled={pending} className="contents">
+          {options.isError && (
+            <div role="alert" className="space-y-2 text-xs text-destructive">
+              <p>{options.error instanceof Error ? options.error.message : t("loadFailed")}</p>
+              <Button disabled={options.isFetching} onClick={() => void options.refetch()}>
+                {t("retry")}
+              </Button>
+            </div>
+          )}
           <PropertyInput label={t("parentTask")}>
             <TaskSelect
               value={parentId}
@@ -2407,6 +2590,11 @@ function renderMentions(body: string, mentions: Array<{ userId: string; label: s
 
 function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTranslations>) {
   const payload = item.payload;
+  if (
+    item.kind === "task.updated" &&
+    payload.closureOutcome === "cancelled_without_financial_settlement"
+  )
+    return t("activity.reasonedClosure");
   switch (item.kind) {
     case "commitment.accepted":
       return t("activity.commitmentAccepted");
@@ -2449,6 +2637,18 @@ function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTra
 }
 
 function activityNote(item: CrewTaskTimelineItemDTO) {
+  if (
+    item.kind === "task.updated" &&
+    item.payload.closureOutcome === "cancelled_without_financial_settlement"
+  ) {
+    const closure = item.payload.closure;
+    return closure &&
+      typeof closure === "object" &&
+      "reason" in closure &&
+      typeof closure.reason === "string"
+      ? closure.reason
+      : null;
+  }
   if (item.kind.startsWith("commitment."))
     return typeof item.payload.note === "string" ? item.payload.note : null;
   if (

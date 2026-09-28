@@ -67,11 +67,13 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
     };
   }, []);
   const t = useTranslations("workspace");
+  const commonT = useTranslations("common");
 
   const [accessPreset, setAccessPreset] = useState<CrewInviteAccessPreset>("standard");
   const [expiry, setExpiry] = useState<(typeof EXPIRY_CHOICES)[number]>("never");
   const [uses, setUses] = useState<(typeof USES_CHOICES)[number]>("unlimited");
-  const [freshUrl, setFreshUrl] = useState<string | null>(null);
+  const [freshLink, setFreshLink] = useState<{ id: string; url: string } | null>(null);
+  const freshUrl = freshLink?.url;
 
   const links = useCrewInviteLinks(crewId, open);
   const { mutateAsync: createLink, isPending: creating } = useCreateCrewInviteLink(crewId);
@@ -88,7 +90,7 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
       });
       if (!active.current) return;
       const url = crewInviteUrl(created.token);
-      setFreshUrl(url);
+      setFreshLink({ id: created.id, url });
       await copy(url);
     } catch (err) {
       if (active.current) toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
@@ -114,7 +116,10 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
     revokePending.current = true;
     try {
       await revokeLink(link.id);
-      if (active.current) toast.success(t("inviteLinkRevoked"));
+      if (active.current) {
+        setFreshLink((current) => (current?.id === link.id ? null : current));
+        toast.success(t("inviteLinkRevoked"));
+      }
     } catch (err) {
       if (active.current) toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
     } finally {
@@ -217,10 +222,26 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
 
       <div className="flex flex-col gap-2">
         <span className="text-xs font-medium text-foreground">{t("inviteLinkActive")}</span>
+        {links.isError ? (
+          <div role="alert" className="space-y-2 text-sm">
+            <p className="text-destructive">{links.error?.message || commonT("loadFailed")}</p>
+            <Button
+              type="button"
+              variant="outline"
+              color="muted"
+              disabled={links.isFetching}
+              onClick={() => void links.refetch()}
+            >
+              {commonT("retry")}
+            </Button>
+          </div>
+        ) : null}
         {links.isLoading ? (
           <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
         ) : (links.data?.length ?? 0) === 0 ? (
-          <p className="m-0 text-[11px] leading-5 text-muted-foreground">{t("inviteLinkNone")}</p>
+          !links.isError ? (
+            <p className="m-0 text-[11px] leading-5 text-muted-foreground">{t("inviteLinkNone")}</p>
+          ) : null
         ) : (
           links.data?.map((link) => (
             <div

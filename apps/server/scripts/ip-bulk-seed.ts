@@ -248,7 +248,8 @@ async function seed(opts: {
   if (!(process.env.FAL_API_KEY || process.env.FAL_KEY))
     throw new Error('FAL_API_KEY unset');
 
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma = buildPrisma();

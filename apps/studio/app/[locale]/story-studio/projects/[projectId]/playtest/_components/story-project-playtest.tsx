@@ -1,10 +1,13 @@
 "use client";
 
+import { createNoopPlaySessionReporter } from "../_lib/play-session-reporter.noop";
 import { IconAlertTriangle, IconArrowLeft, IconLoader2, IconRefresh } from "@tabler/icons-react";
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experience-runtime-player";
+import { StoryPlaytestStateHud } from "./story-playtest-state-hud";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 import {
@@ -30,19 +33,23 @@ export function StoryProjectPlaytest({
 }) {
   const t = useTranslations("storyStudio.canvas.workingPreview");
   const locale = useLocale();
+  const [sessionValues, setSessionValues] = useState<Record<string, unknown>>({});
+  const [completedEndingIds, setCompletedEndingIds] = useState<string[]>([]);
   const runtimeQuery = useQuery<LoadedPlaytestRuntime>({
     queryKey: [
       "story-studio",
       "playtest-runtime",
       projectId,
       source.kind,
-      source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
+      source.kind === "build"
+        ? source.buildId
+        : `${source.chapterId ?? "current-draft"}:${source.sceneId ?? "chapter"}`,
     ],
     queryFn: async () => {
       return source.kind === "draft"
         ? {
             kind: "draft" as const,
-            preview: await getStoryWorkingPreview(projectId, source.chapterId),
+            preview: await getStoryWorkingPreview(projectId, source.chapterId, source.sceneId),
           }
         : {
             kind: "build" as const,
@@ -51,6 +58,7 @@ export function StoryProjectPlaytest({
     },
     retry: false,
   });
+  const playSessionReporter = useMemo(createNoopPlaySessionReporter, []);
 
   const loading = runtimeQuery.isLoading;
   const loadError = runtimeQuery.error;
@@ -90,6 +98,7 @@ export function StoryProjectPlaytest({
     return (
       <PlaytestFailure
         projectId={projectId}
+        chapterId={source.kind === "draft" ? source.chapterId : undefined}
         message={t("unavailableDescription", {
           errors: errors.length,
           warnings: warnings.length,
@@ -101,6 +110,17 @@ export function StoryProjectPlaytest({
   }
 
   const parsedRuntime = ExperienceRuntimeManifestSchema.safeParse(runtime);
+  const stateRows = parsedRuntime.success
+    ? parsedRuntime.data.stateDefinitions.map((definition) => {
+        const label = definition.name
+          ? localizedText(definition.name, locale, parsedRuntime.data.localization.defaultLocale)
+          : "";
+        return {
+          key: definition.key,
+          label: label || definition.key,
+        };
+      })
+    : [];
   const runtimeTitle = parsedRuntime.success
     ? localizedText(
         parsedRuntime.data.metadata.title,
@@ -113,10 +133,16 @@ export function StoryProjectPlaytest({
     <main className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white">
       <div className="absolute inset-0">
         <ExperienceRuntimePlayer
-          key={parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}
+          key={`${parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}:${source.kind === "draft" ? (source.sceneId ?? "entry") : "entry"}`}
           runtime={runtime}
           locale={locale}
+          startSceneId={source.kind === "draft" ? (source.sceneId ?? null) : null}
           coverUrl={loadedRuntime.kind === "draft" ? loadedRuntime.preview.coverUrl : undefined}
+          onStateChange={(state) => {
+            setSessionValues(state.values.session);
+            setCompletedEndingIds(state.completedEndingIds);
+          }}
+          playSessionReporter={playSessionReporter}
         />
       </div>
 
@@ -136,6 +162,13 @@ export function StoryProjectPlaytest({
         </div>
 
         <div className="pointer-events-auto flex items-start gap-2">
+          {stateRows.length > 0 ? (
+            <StoryPlaytestStateHud
+              values={sessionValues}
+              rows={stateRows}
+              completedEndingIds={completedEndingIds}
+            />
+          ) : null}
           <Button
             type="button"
             size="icon"
@@ -179,11 +212,13 @@ function PlaytestLoading() {
 
 function PlaytestFailure({
   projectId,
+  chapterId,
   message,
   diagnostics = [],
   onRetry,
 }: {
   projectId: string;
+  chapterId?: string;
   message: string;
   diagnostics?: StoryBuildDiagnostic[];
   onRetry?: () => void;
@@ -197,15 +232,54 @@ function PlaytestFailure({
         <p className="mt-2 text-sm leading-6 text-white/54">{message}</p>
         {diagnostics.length > 0 ? (
           <ul className="mt-6 max-h-[48vh] space-y-2 overflow-y-auto">
-            {diagnostics.map((diagnostic, index) => (
-              <li
-                key={`${diagnostic.code}:${diagnostic.entityId ?? "project"}:${index}`}
-                className="rounded-2xl bg-black/28 px-4 py-3"
-              >
-                <p className="text-[10px] font-semibold text-white/42">{diagnostic.code}</p>
-                <p className="mt-1 text-xs leading-5 text-white/68">{diagnostic.message}</p>
-              </li>
-            ))}
+            {diagnostics.map((diagnostic, index) => {
+              const details = diagnostic.details;
+              const description =
+                details?.kind === "state-effect-type" &&
+                details.operation === "add" &&
+                details.variableType === "boolean" &&
+                details.choiceLabel
+                  ? t("booleanEffectError", {
+                      node: details.nodeTitle,
+                      choice: details.choiceLabel,
+                      effect: details.effectIndex,
+                      variable: details.variableName,
+                    })
+                  : diagnostic.message;
+              const content = (
+                <>
+                  <p className="text-[10px] font-semibold text-white/42">{diagnostic.code}</p>
+                  <p className="mt-1 text-xs leading-5 text-white/78">{description}</p>
+                  {diagnostic.entityType === "node" && diagnostic.entityId ? (
+                    <p className="mt-2 text-xs font-semibold text-brand-blue">
+                      {t("locateNode")} →
+                    </p>
+                  ) : null}
+                </>
+              );
+              const key = `${diagnostic.code}:${diagnostic.entityId ?? "project"}:${index}`;
+              if (diagnostic.entityType === "node" && diagnostic.entityId) {
+                const params = new URLSearchParams();
+                const targetChapterId = diagnostic.chapterId ?? chapterId;
+                if (targetChapterId) params.set("chapter", targetChapterId);
+                params.set("focus", diagnostic.entityId);
+                return (
+                  <li key={key}>
+                    <Link
+                      href={`/story-studio/projects/${encodeURIComponent(projectId)}/canvas?${params}`}
+                      className="block rounded-2xl bg-black/28 px-4 py-3 transition hover:bg-white/[0.09] focus-visible:outline-2 focus-visible:outline-brand-blue"
+                    >
+                      {content}
+                    </Link>
+                  </li>
+                );
+              }
+              return (
+                <li key={key} className="rounded-2xl bg-black/28 px-4 py-3">
+                  {content}
+                </li>
+              );
+            })}
           </ul>
         ) : null}
         <div className="mt-7 flex flex-wrap gap-2">

@@ -181,7 +181,7 @@ export function AuthDialog({
         aria-labelledby={titleId}
         aria-describedby={subtitleId}
         className={cx(
-          "relative w-full max-w-[440px] rounded-2xl bg-popover p-6 shadow-2xl shadow-black/60",
+          "relative max-h-[calc(100dvh-2rem)] overflow-y-auto w-full max-w-[440px] rounded-2xl bg-popover p-6 shadow-2xl shadow-black/60",
           "duration-200 animate-in fade-in-0 zoom-in-95 sm:p-7"
         )}
       >
@@ -219,6 +219,28 @@ export function AuthDialog({
             resolveAvatarUrl={resolveAvatarUrl}
           />
         </div>
+
+        {flow.state.mode === "signin" &&
+        flow.state.steps.invite &&
+        ["identifier", "code", "password"].includes(flow.state.step) ? (
+          <details
+            className="mt-5 text-sm text-muted-foreground"
+            open={initialInviteCode?.trim() ? true : undefined}
+          >
+            <summary className="cursor-pointer py-2">{t("inviteLabel")}</summary>
+            <p className="mb-2 text-xs">{t("inviteOptionalHint")}</p>
+            <Field label={t("inviteLabel")} htmlFor="auth-optional-invite">
+              <TextInput
+                id="auth-optional-invite"
+                autoCapitalize="characters"
+                value={flow.state.inviteCode}
+                disabled={flow.state.pending}
+                placeholder={t("invitePlaceholder")}
+                onChange={(event) => flow.actions.setInviteCode(event.target.value)}
+              />
+            </Field>
+          </details>
+        ) : null}
 
         {legal ? (
           <div className="mt-6 text-center text-[11px] leading-4 text-muted-foreground">
@@ -442,41 +464,39 @@ function StepBody({
 
     case "invite":
       return (
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            actions.submitInvite();
-          }}
-        >
-          <Field label={t("inviteLabel")} htmlFor="auth-invite">
-            <TextInput
-              id="auth-invite"
-              autoFocus
-              autoCapitalize="characters"
-              aria-describedby={describedBy}
-              aria-invalid={state.error ? true : undefined}
-              placeholder={t("invitePlaceholder")}
-              value={state.inviteCode}
-              disabled={state.pending}
-              onChange={(event) => actions.setInviteCode(event.target.value)}
-            />
-          </Field>
-          {error}
-          <PrimaryButton
-            type="submit"
-            disabled={!can.submitInvite}
-            busy={state.pending}
-            busyLabel={t("busy")}
-          >
-            {t("inviteSubmit")}
+        <div className="space-y-4">
+          <PrimaryButton type="button" onClick={actions.skipInvite} disabled={state.pending}>
+            {t("continueWithoutInvite")}
           </PrimaryButton>
-          <div className="flex justify-center">
-            <QuietButton type="button" onClick={actions.skipInvite} disabled={state.pending}>
-              {t("skip")}
-            </QuietButton>
-          </div>
-        </form>
+          <details open className="text-sm text-muted-foreground">
+            <summary className="cursor-pointer py-2">{t("inviteLabel")}</summary>
+            <p className="mb-3 text-xs">{t("inviteOptionalHint")}</p>
+            <form
+              className="space-y-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                actions.submitInvite();
+              }}
+            >
+              <Field label={t("inviteLabel")} htmlFor="auth-invite">
+                <TextInput
+                  id="auth-invite"
+                  autoCapitalize="characters"
+                  aria-describedby={describedBy}
+                  aria-invalid={state.error ? true : undefined}
+                  placeholder={t("invitePlaceholder")}
+                  value={state.inviteCode}
+                  disabled={state.pending}
+                  onChange={(event) => actions.setInviteCode(event.target.value)}
+                />
+              </Field>
+              {error}
+              <QuietButton type="submit" disabled={!can.submitInvite}>
+                {state.pending ? t("busy") : t("inviteSubmit")}
+              </QuietButton>
+            </form>
+          </details>
+        </div>
       );
 
     default:

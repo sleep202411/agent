@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ProductionActivityComposer } from "./production-project-update";
+import { ProductionActivityComposer, ProductionActivityEntry } from "./production-project-update";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -13,7 +13,8 @@ const state = vi.hoisted(() => ({ create: vi.fn() }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, unknown>) =>
+    values ? `${key} ${Object.values(values).join(" ")}` : key,
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", async () => {
   const actual = await vi.importActual<object>("@/app/(site)/crews/_hooks/use-crew");
@@ -30,13 +31,21 @@ vi.mock("./production-activity-editor", () => ({
   EMPTY_PRODUCTION_ACTIVITY_DOCUMENT: { type: "doc", content: [{ type: "paragraph" }] },
   ProductionActivityEditor: ({
     placeholder,
+    value,
+    onSubmit,
     onChange,
   }: {
     placeholder: string;
+    value: { content?: Array<{ content?: Array<{ text?: string }> }> };
+    onSubmit: () => void;
     onChange: (document: object, plainText: string) => void;
   }) => (
     <textarea
       placeholder={placeholder}
+      value={value.content?.[0]?.content?.[0]?.text ?? ""}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && event.ctrlKey) onSubmit();
+      }}
       onChange={(event) =>
         onChange(
           {
@@ -88,6 +97,7 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root?.unmount());
   container?.remove();
+  vi.restoreAllMocks();
   root = null;
   container = null;
 });
@@ -151,3 +161,137 @@ describe("ProductionActivityComposer", () => {
     });
   });
 });
+
+it("keeps text entered while the previous post is saving", async () => {
+  let finish!: () => void;
+  state.create.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  renderComposer();
+  act(() => setTextarea("First update"));
+  act(() =>
+    [...container!.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "updates.post")!
+      .click()
+  );
+  act(() => setTextarea("Next update in progress"));
+  await act(async () => finish());
+  expect(container!.querySelector("textarea")!.value).toBe("Next update in progress");
+});
+
+it("ignores repeated keyboard submissions while a post is saving", async () => {
+  let finish!: () => void;
+  state.create.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      })
+  );
+  renderComposer();
+  act(() => setTextarea("One update"));
+  act(() => {
+    const input = container!.querySelector("textarea")!;
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })
+    );
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })
+    );
+  });
+  const calls = state.create.mock.calls.length;
+  await act(async () => finish());
+  expect(calls).toBe(1);
+});
+
+it("retains a rejected draft and allows retry", async () => {
+  state.create.mockRejectedValueOnce(new Error("Try again")).mockResolvedValueOnce(undefined);
+  renderComposer();
+  act(() => setTextarea("Retry this update"));
+  const submit = () =>
+    [...container!.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent === "updates.post")!
+      .click();
+  await act(async () => submit());
+  expect(container!.querySelector("textarea")!.value).toBe("Retry this update");
+  await act(async () => submit());
+  expect(state.create).toHaveBeenCalledTimes(2);
+  expect(container!.querySelector("textarea")!.value).toBe("");
+});
+
+it("preserves a draft as a comment after production-management access is revoked", async () => {
+  renderComposer();
+  act(() => setTextarea("Keep this production note"));
+  act(() =>
+    root!.render(
+      <ProductionActivityComposer
+        crewId="crew-1"
+        viewerUserId="user-1"
+        canManage={false}
+        startDate="2026-09-09"
+        projectCreatedAt="2026-08-01T00:00:00.000Z"
+        latestUpdate={null}
+        progress={45}
+      />
+    )
+  );
+  expect(container!.querySelector("textarea")!.value).toBe("Keep this production note");
+  expect(container!.querySelector("textarea")!.getAttribute("placeholder")).toBe(
+    "activity.commentPlaceholder"
+  );
+  expect(container!.textContent).not.toContain("updates.post");
+  await act(async () =>
+    [...container!.querySelectorAll("button")]
+      .find((b) => b.textContent === "activity.postComment")!
+      .click()
+  );
+  expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ kind: "comment" }));
+  expect(state.create.mock.calls[0][0]).not.toHaveProperty("health");
+});
+
+it.each(["America/Los_Angeles", "Asia/Shanghai", "Pacific/Kiritimati"])(
+  "preserves calendar dates in the composer and audit history in %s",
+  (timeZone) => {
+    const DateTimeFormat = Intl.DateTimeFormat;
+    vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function (locale, options) {
+      return new DateTimeFormat(locale, { timeZone, ...options });
+    });
+    renderComposer();
+    expect(container!.textContent).toContain("activity.setTo Sep 9");
+    const localTimestamp = new DateTimeFormat("en-US", {
+      timeZone,
+      month: "short",
+      day: "numeric",
+    }).format(new Date("2026-08-01T00:00:00.000Z"));
+    expect(container!.textContent).toContain(`activity.progressSince ${localTimestamp}`);
+    act(() =>
+      root!.render(
+        <ProductionActivityEntry
+          display={null}
+          activity={{
+            plainText: "",
+            id: "audit",
+            crewId: "crew-1",
+            kind: "properties_changed",
+            createdByUserId: "user-1",
+            createdAt: "2026-08-01T00:00:00.000Z",
+            content: null,
+            health: null,
+            progress: null,
+            payload: {
+              changes: [
+                { field: "start_date", from: null, to: "2026-09-09" },
+                { field: "target_date", from: null, to: "2026-10-01" },
+              ],
+            },
+          }}
+        />
+      )
+    );
+    expect(container!.textContent).toContain("activity.setStartDate Sep 9");
+    expect(container!.textContent).toContain("activity.setTargetDate Oct 1");
+    expect(container!.querySelector("time")!.textContent).toContain(localTimestamp);
+  }
+);

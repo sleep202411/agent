@@ -1,3 +1,4 @@
+import { MEDIA_PROCESSING_LOCK_TTL_MS } from './media-worker-leases';
 import { hostname } from 'os';
 import {
   Injectable,
@@ -26,7 +27,6 @@ import { VideoPosterService } from './video-poster.service';
 
 const DEFAULT_INTERVAL_MS = 5_000;
 const DEFAULT_BATCH_SIZE = 10;
-const LOCK_TTL_MS = 10 * 60_000;
 const BACKOFFS_MS = [
   10_000,
   60_000,
@@ -51,7 +51,8 @@ export class MediaProcessingWorkerService
 {
   private readonly logger = new Logger(MediaProcessingWorkerService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -60,6 +61,7 @@ export class MediaProcessingWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopped) return;
     if (process.env.MEDIA_PROCESSING_WORKER_ENABLED === 'false') return;
     const intervalMs = positiveInt(
       process.env.MEDIA_PROCESSING_WORKER_INTERVAL_MS,
@@ -72,64 +74,67 @@ export class MediaProcessingWorkerService
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.draining;
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
+    if (this.stopped) return;
+    if (this.draining) return this.draining;
+    this.draining = this.drain(batch).finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(batch: number): Promise<void> {
     try {
       const rows = await this.claim(batch);
       for (const row of rows) {
+        if (this.stopped) break;
         await this.processOne(row);
       }
     } catch (err) {
       this.logger.warn(`media processing drain failed: ${errorText(err)}`);
-    } finally {
-      this.draining = false;
     }
   }
 
   private async claim(batch: number): Promise<MediaProcessingJob[]> {
     const now = new Date();
-    const lockCutoff = new Date(now.getTime() - LOCK_TTL_MS);
-    const candidates = await this.prisma.mediaProcessingJob.findMany({
-      where: {
-        deadAt: null,
-        OR: [
-          {
-            status: {
-              in: [
-                MediaProcessingJobStatus.pending,
-                MediaProcessingJobStatus.failed,
-              ],
-            },
-            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-            AND: [
-              { OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }] },
+    const lockCutoff = new Date(now.getTime() - MEDIA_PROCESSING_LOCK_TTL_MS);
+    const eligibility = {
+      deadAt: null,
+      OR: [
+        {
+          status: {
+            in: [
+              MediaProcessingJobStatus.pending,
+              MediaProcessingJobStatus.failed,
             ],
           },
-          {
-            status: MediaProcessingJobStatus.processing,
-            lockedAt: { lt: lockCutoff },
-          },
-        ],
-      },
+          OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          AND: [{ OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }] }],
+        },
+        {
+          status: MediaProcessingJobStatus.processing,
+          lockedAt: { lt: lockCutoff },
+        },
+      ],
+    };
+    const candidates = await this.prisma.mediaProcessingJob.findMany({
+      where: eligibility,
       orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
       take: batch,
       select: { id: true },
     });
-    if (candidates.length === 0) return [];
+    if (this.stopped || candidates.length === 0) return [];
 
     const ids = candidates.map((row) => row.id);
     await this.prisma.mediaProcessingJob.updateMany({
-      where: {
-        id: { in: ids },
-        deadAt: null,
-        OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }],
-      },
+      where: { ...eligibility, id: { in: ids } },
       data: {
         status: MediaProcessingJobStatus.processing,
         lockedAt: now,
@@ -142,6 +147,7 @@ export class MediaProcessingWorkerService
       where: {
         id: { in: ids },
         lockedBy: POD_ID,
+        lockedAt: now,
         status: MediaProcessingJobStatus.processing,
         deadAt: null,
       },
@@ -451,8 +457,13 @@ export class MediaProcessingWorkerService
     output: Prisma.InputJsonObject,
     delayMs: number,
   ): Promise<void> {
-    await this.prisma.mediaProcessingJob.update({
-      where: { id: row.id },
+    await this.prisma.mediaProcessingJob.updateMany({
+      where: {
+        id: row.id,
+        status: MediaProcessingJobStatus.processing,
+        lockedBy: row.lockedBy,
+        lockedAt: row.lockedAt,
+      },
       data: {
         status: MediaProcessingJobStatus.pending,
         output,
@@ -469,8 +480,13 @@ export class MediaProcessingWorkerService
     output: Prisma.InputJsonObject,
   ): Promise<void> {
     const now = new Date();
-    await this.prisma.mediaProcessingJob.update({
-      where: { id: row.id },
+    await this.prisma.mediaProcessingJob.updateMany({
+      where: {
+        id: row.id,
+        status: MediaProcessingJobStatus.processing,
+        lockedBy: row.lockedBy,
+        lockedAt: row.lockedAt,
+      },
       data: {
         status: MediaProcessingJobStatus.completed,
         attempt: row.attempt + 1,
@@ -496,8 +512,13 @@ export class MediaProcessingWorkerService
     const reachedMaxAttempts = nextAttempt >= row.maxAttempts;
     const isDead = Boolean(options.permanent) || reachedMaxAttempts;
     const backoff = BACKOFFS_MS[Math.min(row.attempt, BACKOFFS_MS.length - 1)];
-    await this.prisma.mediaProcessingJob.update({
-      where: { id: row.id },
+    const result = await this.prisma.mediaProcessingJob.updateMany({
+      where: {
+        id: row.id,
+        status: MediaProcessingJobStatus.processing,
+        lockedBy: row.lockedBy,
+        lockedAt: row.lockedAt,
+      },
       data: {
         status: isDead
           ? MediaProcessingJobStatus.dead
@@ -511,6 +532,7 @@ export class MediaProcessingWorkerService
         deadAt: isDead ? now : null,
       },
     });
+    if (result.count === 0) return;
     this.logger.warn(
       `media processing failed job=${row.id} type=${row.jobType} attempt=${nextAttempt}/${row.maxAttempts}${isDead ? ' [DLQ]' : ''}: ${message}`,
     );

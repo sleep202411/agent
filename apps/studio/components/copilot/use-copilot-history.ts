@@ -41,9 +41,12 @@ export function useCopilotHistory<UI_MESSAGE extends UIMessage>({
   onLoaded?: (payload: CopilotHistoryPayload<UI_MESSAGE>) => void;
 }) {
   const scopeKey = `${workspaceId ?? "anonymous"}:${mode ?? "copilot"}:${projectId ?? "none"}:${conversationId}`;
-  const scopeKeyRef = useRef(scopeKey);
+  const scopeKeyRef = useRef<string | null>(scopeKey);
   useLayoutEffect(() => {
     scopeKeyRef.current = scopeKey;
+    return () => {
+      scopeKeyRef.current = null;
+    };
   }, [scopeKey]);
   const [state, setState] = useState<CopilotHistoryState>(() => ({
     scopeKey,
@@ -54,7 +57,7 @@ export function useCopilotHistory<UI_MESSAGE extends UIMessage>({
   }));
   const requestIdRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
-  const resetInFlightRef = useRef(false);
+  const resetAbortRef = useRef<AbortController | null>(null);
   const onLoadedRef = useRef(onLoaded);
   useEffect(() => {
     onLoadedRef.current = onLoaded;
@@ -64,6 +67,7 @@ export function useCopilotHistory<UI_MESSAGE extends UIMessage>({
     async (
       options: { resetting?: boolean; apply?: boolean } = {}
     ): Promise<CopilotHistoryPayload<UI_MESSAGE> | null> => {
+      if (scopeKeyRef.current !== scopeKey) return null;
       const requestId = ++requestIdRef.current;
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -139,16 +143,19 @@ export function useCopilotHistory<UI_MESSAGE extends UIMessage>({
   );
 
   const reset = useCallback(async (): Promise<boolean> => {
-    if (resetInFlightRef.current) return false;
-    resetInFlightRef.current = true;
+    if (resetAbortRef.current || scopeKeyRef.current !== scopeKey) return false;
+    const controller = new AbortController();
+    resetAbortRef.current = controller;
+    const active = () => !controller.signal.aborted && scopeKeyRef.current === scopeKey;
     try {
       // The CAS snapshot is authoritative input for the reset request, not a
       // state transition. Applying it here could overwrite a local draft,
       // selected Skill, or pending-turn recovery before reset completion is
       // proven by the post-reset canonical reload.
       const snapshot = await load({ resetting: true, apply: false });
-      if (!snapshot || snapshot.status === "streaming") return false;
+      if (!active() || !snapshot || snapshot.status === "streaming") return false;
       const response = await fetch(COPILOT_RESET_API, {
+        signal: controller.signal,
         method: "POST",
         credentials: "include",
         headers: requestHeaders(workspaceId),
@@ -160,14 +167,17 @@ export function useCopilotHistory<UI_MESSAGE extends UIMessage>({
           ...(projectId ? { projectId } : {}),
         }),
       });
+      if (!active()) return false;
       if (!response.ok) throw await copilotResponseError(response);
       // A successful delete is not proof that the conversation is still empty:
       // another tab can create the next session before this response arrives.
       // Reload canonical state and let its new session/revision win.
       const canonical = await load({ resetting: true });
-      return canonical !== null;
+      return active() && canonical !== null;
     } catch (caught) {
+      if (!active()) return false;
       await load({ resetting: true });
+      if (!active()) return false;
       setState((current) => ({
         ...current,
         error: caught instanceof CopilotHistoryRemoteError ? caught : null,
@@ -175,10 +185,12 @@ export function useCopilotHistory<UI_MESSAGE extends UIMessage>({
       }));
       return false;
     } finally {
-      resetInFlightRef.current = false;
-      setState((current) => ({ ...current, resetting: false }));
+      if (resetAbortRef.current === controller) {
+        resetAbortRef.current = null;
+        if (active()) setState((current) => ({ ...current, resetting: false }));
+      }
     }
-  }, [conversationId, load, mode, projectId, workspaceId]);
+  }, [conversationId, load, mode, projectId, scopeKey, workspaceId]);
 
   useEffect(() => {
     let active = true;
@@ -187,6 +199,8 @@ export function useCopilotHistory<UI_MESSAGE extends UIMessage>({
     });
     return () => {
       active = false;
+      resetAbortRef.current?.abort();
+      resetAbortRef.current = null;
       requestIdRef.current += 1;
       abortRef.current?.abort();
       abortRef.current = null;

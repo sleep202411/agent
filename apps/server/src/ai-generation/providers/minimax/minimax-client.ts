@@ -85,6 +85,7 @@ export class MiniMaxClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
     let response: Response;
+    let raw: string;
     try {
       response = await fetch(url, {
         ...init,
@@ -96,8 +97,13 @@ export class MiniMaxClient {
         },
         signal: controller.signal,
       });
+      raw = await response.text();
+      controller.signal.throwIfAborted();
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
         throw minimaxError(
           'PROVIDER_TIMEOUT',
           `MiniMax request timed out after ${config.requestTimeoutMs}ms`,
@@ -112,7 +118,6 @@ export class MiniMaxClient {
       clearTimeout(timer);
     }
 
-    const raw = await response.text().catch(() => '');
     if (!response.ok) throw mapMiniMaxHttpError(response.status, raw);
 
     return {
@@ -123,13 +128,24 @@ export class MiniMaxClient {
   }
 }
 
-function parseJsonBody(raw: string): unknown {
-  if (!raw) return null;
+function parseJsonBody(raw: string): Record<string, unknown> {
+  let body: unknown;
   try {
-    return JSON.parse(raw);
+    body = JSON.parse(raw);
   } catch {
-    return raw;
+    throw minimaxError('UNKNOWN', 'MiniMax returned invalid JSON');
   }
+  if (!isRecord(body)) {
+    throw minimaxError(
+      'UNKNOWN',
+      'MiniMax returned a non-object JSON response',
+    );
+  }
+  return body;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function responseHeaders(headers: Headers): Record<string, string> {
@@ -141,7 +157,17 @@ function responseHeaders(headers: Headers): Record<string, string> {
 }
 
 /** Normalize query response into a single task object. */
-export function taskFromQueryBody(body: MiniMaxQueryResponse): MiniMaxTaskBody {
-  if (body.task && typeof body.task === 'object') return body.task;
-  return body as MiniMaxTaskBody;
+export function taskFromQueryBody(body: unknown): MiniMaxTaskBody {
+  const task = isRecord(body) && 'task' in body ? body.task : body;
+  if (
+    !isRecord(task) ||
+    typeof task.status !== 'string' ||
+    !task.status.trim()
+  ) {
+    throw minimaxError(
+      'UNKNOWN',
+      'MiniMax query returned no valid task status',
+    );
+  }
+  return { ...task, status: task.status.trim() };
 }

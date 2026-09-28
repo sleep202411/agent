@@ -62,7 +62,8 @@ export class NotificationDispatcherService
 {
   private readonly logger = new Logger(NotificationDispatcherService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -71,6 +72,7 @@ export class NotificationDispatcherService
   ) {}
 
   onApplicationBootstrap() {
+    if (this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), DISPATCH_INTERVAL_MS);
     void this.drainOnce();
     this.logger.log(
@@ -78,8 +80,11 @@ export class NotificationDispatcherService
     );
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    await this.draining;
   }
 
   /**
@@ -90,20 +95,26 @@ export class NotificationDispatcherService
    *   4. GC old dispatched rows once per cycle.
    */
   async drainOnce(): Promise<void> {
-    if (this.draining) return; // overlap guard
-    this.draining = true;
+    if (this.stopped) return;
+    if (this.draining) return;
+    this.draining = this.drain().finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(): Promise<void> {
     try {
       for (let sent = 0; sent < DISPATCH_BATCH; sent += 1) {
+        if (this.stopped) break;
         const [row] = await this.claim(1);
-        if (!row) break;
+        if (!row || this.stopped) break;
         await this.dispatchOne(row);
       }
-      await this.gc();
+      if (!this.stopped) await this.gc();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`drain error: ${msg}`);
-    } finally {
-      this.draining = false;
     }
   }
 
@@ -111,6 +122,7 @@ export class NotificationDispatcherService
     const now = new Date();
     const lockExpiry = new Date(now.getTime() - LOCK_TTL_MS);
     return this.prisma.$transaction(async (tx) => {
+      if (this.stopped) return [];
       const eligible = await tx.$queryRaw<Array<{ id: string }>>(Prisma.sql`
         SELECT id
         FROM notification_outbox
@@ -122,18 +134,20 @@ export class NotificationDispatcherService
         LIMIT ${batch}
         FOR UPDATE SKIP LOCKED
       `);
-      if (eligible.length === 0) return [];
+      if (this.stopped || eligible.length === 0) return [];
+      const claimedAt = new Date();
 
       const ids = eligible.map((row) => row.id);
       await tx.notificationOutbox.updateMany({
         where: { id: { in: ids } },
-        data: { lockedAt: now, lockedBy: POD_ID },
+        data: { lockedAt: claimedAt, lockedBy: POD_ID },
       });
+      if (this.stopped) return [];
       return tx.notificationOutbox.findMany({
         where: {
           id: { in: ids },
           lockedBy: POD_ID,
-          lockedAt: now,
+          lockedAt: claimedAt,
           dispatchedAt: null,
           deadAt: null,
         },
@@ -197,6 +211,7 @@ export class NotificationDispatcherService
   }
 
   private async gc(): Promise<void> {
+    if (this.stopped) return;
     const cutoff = new Date(Date.now() - GC_DISPATCHED_OLDER_THAN_MS);
     const r = await this.prisma.notificationOutbox.deleteMany({
       where: { dispatchedAt: { lt: cutoff } },

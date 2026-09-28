@@ -1,4 +1,12 @@
 "use client";
+
+import {
+  recoverIpCreationIntent,
+  completeIpCreationIntent,
+  type IpCreationIntent,
+} from "./create-ip-intent";
+import { useRef } from "react";
+import { collectIpPages } from "./collect-ip-pages";
 import { useCurrentUser } from "@/src/hooks/use-user";
 
 import {
@@ -135,14 +143,16 @@ export function useIpCommerceIps(params?: {
   cursor?: string;
   limit?: number;
 }) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.ips(params),
-    queryFn: () => listIpCommerceIps(params),
+    queryKey: [...ipCommerceKeys.ips(params), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listIpCommerceIps(params, signal),
     staleTime: 60_000,
   });
 }
 
 export function useInfiniteIpCommerceIps(params?: {
+  channelType?: "ip" | "community";
   genreCodes?: string[];
   tagCodes?: string[];
   regions?: string[];
@@ -150,15 +160,19 @@ export function useInfiniteIpCommerceIps(params?: {
   locale?: string;
   limit?: number;
 }) {
+  const { user } = useCurrentUser();
   const limit = params?.limit ?? 24;
   return useInfiniteQuery({
-    queryKey: ipCommerceKeys.ipsInfinite({ ...params, limit }),
-    queryFn: ({ pageParam }) =>
-      listIpCommerceIps({
-        ...params,
-        limit,
-        cursor: pageParam || undefined,
-      }),
+    queryKey: [...ipCommerceKeys.ipsInfinite({ ...params, limit }), user?.id ?? "guest"],
+    queryFn: ({ pageParam, signal }) =>
+      listIpCommerceIps(
+        {
+          ...params,
+          limit,
+          cursor: pageParam || undefined,
+        },
+        signal
+      ),
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     staleTime: 60_000,
@@ -170,15 +184,27 @@ export function useInfiniteIpCommerceIps(params?: {
  * term for the header rides on each page (`data.pages[0].term`).
  */
 export function useInfiniteIpsByTag(code: string, params?: { locale?: string; limit?: number }) {
+  const { user } = useCurrentUser();
   const limit = params?.limit ?? 24;
   return useInfiniteQuery({
-    queryKey: ["ip-commerce", "tag-ips", code, params?.locale ?? "", limit] as const,
-    queryFn: ({ pageParam }) =>
-      listIpsByTag(code, {
-        locale: params?.locale,
-        limit,
-        cursor: (pageParam as string) || undefined,
-      }),
+    queryKey: [
+      "ip-commerce",
+      "tag-ips",
+      code,
+      params?.locale ?? "",
+      limit,
+      user?.id ?? "guest",
+    ] as const,
+    queryFn: ({ pageParam, signal }) =>
+      listIpsByTag(
+        code,
+        {
+          locale: params?.locale,
+          limit,
+          cursor: (pageParam as string) || undefined,
+        },
+        signal
+      ),
     initialPageParam: "",
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: !!code,
@@ -198,6 +224,7 @@ export function useIpCommerceTaxonomyTerms(params?: {
 }
 
 export function useIpCommerceDiscovery(params: {
+  channelType?: "ip" | "community";
   placementKey: IpDiscoveryPlacementKey;
   locale?: string;
   enabled?: boolean;
@@ -206,19 +233,28 @@ export function useIpCommerceDiscovery(params: {
   return useQuery({
     queryKey: [
       ...ipCommerceKeys.discovery(params.placementKey, params.locale),
+      params.channelType ?? "all",
       user?.id ?? "guest",
     ],
     queryFn: ({ signal }) =>
-      listIpCommerceDiscovery({ placementKey: params.placementKey, locale: params.locale }, signal),
+      listIpCommerceDiscovery(
+        {
+          placementKey: params.placementKey,
+          locale: params.locale,
+          channelType: params.channelType,
+        },
+        signal
+      ),
     staleTime: 60_000,
     enabled: params.enabled ?? true,
   });
 }
 
 export function useIpCommerceIp(ipId: string | null | undefined, params?: { locale?: string }) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.ip(ipId ?? "", params),
-    queryFn: () => getIpCommerceIp(ipId!, params),
+    queryKey: [...ipCommerceKeys.ip(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) => getIpCommerceIp(ipId!, params, signal),
     enabled: Boolean(ipId),
     retry: false,
     staleTime: 30_000,
@@ -229,10 +265,11 @@ export function useMyIpCommerceIps(
   enabled = true,
   params?: { locale?: string; cursor?: string; limit?: number }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIps(params),
-    queryFn: () => listMyIpCommerceIps(params),
-    enabled,
+    queryKey: [...ipCommerceKeys.myIps(params), user?.id],
+    queryFn: ({ signal }) => listMyIpCommerceIps(params, signal),
+    enabled: enabled && Boolean(user?.id),
     staleTime: 30_000,
   });
 }
@@ -244,20 +281,15 @@ export function useMyIpCommerceIps(
  * against a pathological/repeating nextCursor.
  */
 export function useAllMyIpCommerceIps(enabled = true, params?: { locale?: string }) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ["ip-commerce", "me", "ips", "all", params ?? {}] as const,
-    queryFn: async () => {
-      const items: Awaited<ReturnType<typeof listMyIpCommerceIps>>["items"] = [];
-      let cursor: string | undefined;
-      for (let page = 0; page < 200; page++) {
-        const res = await listMyIpCommerceIps({ ...params, cursor, limit: 50 });
-        items.push(...res.items);
-        if (!res.nextCursor) break;
-        cursor = res.nextCursor;
-      }
-      return { items };
-    },
-    enabled,
+    queryKey: ["ip-commerce", "me", "ips", "all", params ?? {}, user?.id] as const,
+    queryFn: ({ signal }) =>
+      collectIpPages(
+        (cursor) => listMyIpCommerceIps({ ...params, cursor, limit: 50 }, signal),
+        signal
+      ),
+    enabled: enabled && Boolean(user?.id),
     staleTime: 30_000,
   });
 }
@@ -271,29 +303,33 @@ export function usePublicCreatorIps(
   enabled = true,
   params?: { locale?: string }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ["ip-commerce", "creators", creatorId ?? "", "ips", "all", params ?? {}] as const,
-    queryFn: async () => {
-      const items: Awaited<ReturnType<typeof listPublicCreatorIps>>["items"] = [];
-      let cursor: string | undefined;
-      for (let page = 0; page < 200; page++) {
-        const res = await listPublicCreatorIps(creatorId!, { ...params, cursor, limit: 50 });
-        items.push(...res.items);
-        if (!res.nextCursor) break;
-        cursor = res.nextCursor;
-      }
-      return { items };
-    },
+    queryKey: [
+      "ip-commerce",
+      "creators",
+      creatorId ?? "",
+      "ips",
+      "all",
+      params ?? {},
+      user?.id ?? "guest",
+    ] as const,
+    queryFn: ({ signal }) =>
+      collectIpPages(
+        (cursor) => listPublicCreatorIps(creatorId!, { ...params, cursor, limit: 50 }, signal),
+        signal
+      ),
     enabled: enabled && !!creatorId,
     staleTime: 30_000,
   });
 }
 
 export function useMyIpCommerceIp(ipId: string | null | undefined, params?: { locale?: string }) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIp(ipId ?? "", params),
-    queryFn: () => getMyIpCommerceIp(ipId!, params),
-    enabled: Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIp(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) => getMyIpCommerceIp(ipId!, params, signal),
+    enabled: Boolean(ipId && user?.id),
     // 404 is a definitive answer (not the creator / IP gone) — the default
     // 3-retry backoff only pins the public detail page in its loading state
     // for extra seconds before the not-found screen. Mirrors useIpCommerceIp.
@@ -316,45 +352,58 @@ function patchIpEngagement(
   };
 }
 
-function publicIpQueryFilter(ipId: string) {
+function publicIpQueryFilter(ipId: string, viewerId?: string | number) {
   return {
     queryKey: ["ip-commerce", "ips"],
     predicate: (query: Query) => {
       const data = query.state.data as { ip?: { id: string } } | undefined;
-      return query.queryKey[2] === ipId || data?.ip?.id === ipId;
+      return (
+        (viewerId === undefined || query.queryKey.at(-1) === viewerId) &&
+        (query.queryKey[2] === ipId || data?.ip?.id === ipId)
+      );
     },
   };
 }
 
 function usePatchIpEngagementCache() {
   const qc = useQueryClient();
-  return (ipId: string, engagement: IpEngagementMutationResult["engagement"]) => {
-    qc.setQueriesData<{ ip: IpCommerceIp }>(publicIpQueryFilter(ipId), (current) =>
+  return (
+    ipId: string,
+    engagement: IpEngagementMutationResult["engagement"],
+    viewerId: string | number
+  ) => {
+    qc.setQueriesData<{ ip: IpCommerceIp }>(publicIpQueryFilter(ipId, viewerId), (current) =>
       current?.ip ? { ...current, ip: patchIpEngagement(current.ip, engagement) } : current
     );
   };
 }
 
 export function useRecordIpView() {
+  const { user } = useCurrentUser();
   const patchCache = usePatchIpEngagementCache();
   return useMutation({
+    onMutate: () => ({ viewerId: user?.id ?? "guest" }),
     mutationFn: (input: { ipId: string; source?: string; idempotencyKey?: string }) =>
       recordIpView(input),
-    onSuccess: (result, input) => {
-      patchCache(input.ipId, result.engagement);
+    onSuccess: (result, input, context) => {
+      if (!context) return;
+      patchCache(input.ipId, result.engagement, context.viewerId);
     },
   });
 }
 
 export function useToggleIpEngagementLike() {
+  const { user } = useCurrentUser();
   const patchCache = usePatchIpEngagementCache();
   const qc = useQueryClient();
   return useMutation({
+    onMutate: () => ({ viewerId: user?.id ?? "guest" }),
     mutationFn: (input: { ipId: string; viewerHasLiked: boolean }) =>
       input.viewerHasLiked ? unlikeIpContent(input.ipId) : likeIpContent(input.ipId),
-    onSuccess: async (result, input) => {
-      patchCache(input.ipId, result.engagement);
-      await qc.invalidateQueries(publicIpQueryFilter(input.ipId));
+    onSuccess: async (result, input, context) => {
+      if (!context) return;
+      patchCache(input.ipId, result.engagement, context.viewerId);
+      await qc.invalidateQueries(publicIpQueryFilter(input.ipId, context.viewerId));
     },
   });
 }
@@ -363,10 +412,11 @@ export function useMyIpCommerceOverview(
   ipId: string | null | undefined,
   params?: { locale?: string }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIpCommerce(ipId ?? "", params),
-    queryFn: () => getMyIpCommerceOverview(ipId!, params),
-    enabled: Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIpCommerce(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) => getMyIpCommerceOverview(ipId!, params, signal),
+    enabled: Boolean(ipId && user?.id),
     staleTime: 30_000,
   });
 }
@@ -375,18 +425,34 @@ export function useMyIpCommerceAssets(
   ipId: string | null | undefined,
   params?: { purpose?: "source_material" | "reference_art" | "production_asset" }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIpAssets(ipId ?? "", params),
-    queryFn: () => listMyIpCommerceIpAssets(ipId!, params),
-    enabled: Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIpAssets(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listMyIpCommerceIpAssets(ipId!, params, signal),
+    enabled: Boolean(ipId && user?.id),
     staleTime: 30_000,
   });
 }
 
 export function useCreateIpCommerceIp() {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const request = useRef<{ signature: string; intent: Promise<IpCreationIntent> } | null>(null);
   return useMutation({
-    mutationFn: (input: CreateIpDraftInput) => createIpCommerceIp(input),
+    mutationFn: async (input: CreateIpDraftInput) => {
+      if (input.idempotencyKey) return createIpCommerceIp(input);
+      if (!user?.id) throw new Error("Sign in before creating a project.");
+      const signature = JSON.stringify([user.id, input]);
+      if (request.current?.signature !== signature) {
+        request.current = { signature, intent: recoverIpCreationIntent(String(user.id), input) };
+      }
+      const intent = await request.current.intent;
+      const result = await createIpCommerceIp({ ...input, idempotencyKey: intent.key });
+      completeIpCreationIntent(intent);
+      // Keep the mounted form's identity for repeated clicks, but allow a new
+      // form after confirmed success to represent an intentional new project.
+      return result;
+    },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpsRoot });
     },
@@ -428,6 +494,10 @@ export function useUpdateIpCommerceIpAssets() {
     mutationFn: (input: UpdateIpAssetsInput) => updateIpCommerceIpAssets(input),
     onSuccess: async (_result, input) => {
       await Promise.all([
+        // Viewing surfaces cache the same cover/trailer outside the IP query tree.
+        qc.invalidateQueries({ queryKey: ["tv", "ips"] }),
+        qc.invalidateQueries({ queryKey: ["tv", "selected-ip", input.ipId] }),
+        qc.invalidateQueries({ queryKey: ["ip-commerce", "discovery"] }),
         qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpsRoot }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "ips"] }),
         qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId] }),
@@ -533,10 +603,11 @@ function invalidateIpAclCaches(qc: ReturnType<typeof useQueryClient>, ipId: stri
 }
 
 export function useMyIpAclGrants(ipId: string | null | undefined, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIpAcl(ipId ?? ""),
-    queryFn: () => listMyIpAclGrants(ipId!),
-    enabled: enabled && Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIpAcl(ipId ?? ""), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listMyIpAclGrants(ipId!, signal),
+    enabled: enabled && Boolean(ipId && user?.id),
     staleTime: 30_000,
   });
 }
@@ -572,10 +643,11 @@ export function useTransferIpOwner() {
 }
 
 export function useMyIpContributors(ipId: string | null | undefined) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.myIpContributors(ipId ?? ""),
-    queryFn: () => listIpCommerceContributors(ipId!),
-    enabled: Boolean(ipId),
+    queryKey: [...ipCommerceKeys.myIpContributors(ipId ?? ""), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listIpCommerceContributors(ipId!, signal),
+    enabled: Boolean(ipId && user?.id),
     staleTime: 30_000,
   });
 }
@@ -636,23 +708,29 @@ export function useIpAccess(
   ipId: string | null | undefined,
   params?: { episodeIds?: readonly string[]; locale?: string }
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.ipAccess(ipId ?? "", params),
-    queryFn: () =>
-      getIpAccess(ipId!, {
-        episodeIds: params?.episodeIds ? [...params.episodeIds] : undefined,
-        locale: params?.locale,
-      }),
+    queryKey: [...ipCommerceKeys.ipAccess(ipId ?? "", params), user?.id ?? "guest"],
+    queryFn: ({ signal }) =>
+      getIpAccess(
+        ipId!,
+        {
+          episodeIds: params?.episodeIds ? [...params.episodeIds] : undefined,
+          locale: params?.locale,
+        },
+        signal
+      ),
     enabled: Boolean(ipId),
     staleTime: 30_000,
   });
 }
 
 export function useIpCommerceWallet(enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.wallet,
-    queryFn: getIpCommerceWallet,
-    enabled,
+    queryKey: [...ipCommerceKeys.wallet, user?.id ?? "guest"],
+    queryFn: ({ signal }) => getIpCommerceWallet(signal),
+    enabled: enabled && Boolean(user?.id),
     staleTime: 30_000,
   });
 }
@@ -671,10 +749,11 @@ export function useCommunityPointBalance(enabled = true) {
 }
 
 export function useIpCommerceCollection(enabled = true, locale?: string) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.collection(locale),
-    queryFn: () => listIpCommerceCollection({ locale }),
-    enabled,
+    queryKey: [...ipCommerceKeys.collection(locale), user?.id ?? "guest"],
+    queryFn: ({ signal }) => listIpCommerceCollection({ locale }, signal),
+    enabled: enabled && Boolean(user?.id),
     staleTime: 30_000,
   });
 }

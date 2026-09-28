@@ -20,17 +20,18 @@ import type {
   CrewEarningStatus,
 } from "./types";
 
-export function useMyCrewEarnings(currency: CrewLedgerCurrency) {
+export function useMyCrewEarnings(currency: CrewLedgerCurrency, crewId?: string) {
   const { user } = useCurrentUser();
   return useInfiniteQuery({
-    queryKey: ["crew-personal-earnings", user?.id ?? null, currency],
+    queryKey: ["crew-personal-earnings", user?.id ?? null, currency, ...(crewId ? [crewId] : [])],
     enabled: Boolean(user?.id),
     refetchInterval: 60_000,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewEarningPageDTO>("/me/crew-earnings", {
         signal,
-        query: { currency, cursor: pageParam, limit: 50 },
+        cache: "no-store",
+        query: { currency, cursor: pageParam, limit: 50, ...(crewId ? { crewId } : {}) },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
@@ -41,8 +42,11 @@ export function useCrewEarningDetail(earningId: string | null) {
   return useQuery({
     queryKey: [...crewKeys.earning(earningId ?? ""), user?.id ?? null],
     enabled: Boolean(earningId) && Boolean(user),
-    queryFn: () =>
-      crewApi.get<CrewEarningDetailDTO>(`/crew-earnings/${encodeURIComponent(earningId!)}`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewEarningDetailDTO>(`/crew-earnings/${encodeURIComponent(earningId!)}`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
@@ -67,8 +71,10 @@ export function useCrewEarnings(
     ],
     enabled: enabled && Boolean(crewId) && Boolean(user),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewEarningPageDTO>(`/crews/${encodeURIComponent(crewId)}/earnings`, {
+        signal,
+        cache: "no-store",
         query: {
           currency: input.currency,
           scope: input.scope,

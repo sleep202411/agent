@@ -1,4 +1,6 @@
 import { recommendViewing } from "../viewer/recommend.js";
+import { answerFilmKnowledge } from "../viewer/film-knowledge.js";
+import { FilmKnowledgeQueryRequestSchema } from "@repo/agent-protocol";
 import { ViewerAssistanceRequestSchema } from "@repo/agent-protocol";
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -291,6 +293,40 @@ export function createAgentOsHttpServer() {
           billing: "free",
           rateLimit: "disabled",
         });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/v1/agent-os/film-knowledge") {
+        const parsed = FilmKnowledgeQueryRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          send(res, 400, {
+            error: {
+              code: "INVALID_FILM_KNOWLEDGE_REQUEST",
+              message: "Invalid film knowledge query or sources.",
+            },
+          });
+          return;
+        }
+        const profileId = process.env.AGENT_OS_VIEWER_MODEL_PROFILE?.trim() || "gpt-4o-mini";
+        const controller = new AbortController();
+        const disconnect = () => controller.abort();
+        res.once("close", disconnect);
+        const timeout = setTimeout(() => controller.abort(), 40_000);
+        try {
+          const model = createLiteLlmChatModel({ profileId });
+          const reply = await answerFilmKnowledge(
+            parsed.data,
+            async (messages, signal) => {
+              const response = await model.invoke(messages, { signal });
+              return response.content;
+            },
+            controller.signal
+          );
+          if (!controller.signal.aborted) send(res, 200, reply);
+        } finally {
+          clearTimeout(timeout);
+          res.off("close", disconnect);
+        }
         return;
       }
 

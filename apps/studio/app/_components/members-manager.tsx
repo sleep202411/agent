@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   IconCheck,
   IconCopy,
@@ -22,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiRequestError } from "@/lib/api";
@@ -43,8 +45,7 @@ import {
   type SharingMember,
 } from "@/lib/collab/sharing-api";
 
-const errMsg = (e: unknown, fallback: string) =>
-  e instanceof ApiRequestError ? e.message : fallback;
+const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 function expiryDays(expiresAt: string): number {
   return Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
@@ -70,6 +71,26 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * no borders).
  */
 export function MembersManager({ scope, canManage }: { scope: ShareScope; canManage: boolean }) {
+  const { user } = useAuth();
+  const viewerId = user?.id == null ? null : String(user.id);
+  return (
+    <MembersManagerView
+      key={JSON.stringify([viewerId, scope.kind, scope.id, canManage])}
+      scope={scope}
+      canManage={canManage}
+      viewerId={viewerId}
+    />
+  );
+}
+function MembersManagerView({
+  scope,
+  canManage,
+  viewerId,
+}: {
+  scope: ShareScope;
+  canManage: boolean;
+  viewerId: string | null;
+}) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const roleLabel = (r: string) =>
@@ -82,7 +103,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
         | "roles.reviewer"
     );
   const queryClient = useQueryClient();
-  const membersKey = ["share-members", scope.kind, scope.id] as const;
+  const membersKey = ["share-members", scope.kind, scope.id, viewerId] as const;
   const {
     data: members,
     isLoading,
@@ -91,7 +112,8 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
     refetch,
   } = useQuery({
     queryKey: membersKey,
-    queryFn: () => listMembers(scope),
+    queryFn: ({ signal }) => listMembers(scope, signal),
+    enabled: Boolean(viewerId),
     retry: false,
   });
 
@@ -119,70 +141,148 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
   // Realtime: refresh the roster when membership changes server-side — including
   // a change another admin made. Workspace scope only (project members differ).
   useEffect(() => {
-    if (scope.kind !== "workspace") return;
+    if (!viewerId || scope.kind !== "workspace") return;
     const sub = getAssetsRealtimeKernel({ workspaceId: scope.id }).subscribe({
       onEvent: (event) => {
         if (event.kind === "team_member_changed" && event.workspaceId === scope.id) {
           void queryClient.invalidateQueries({
-            queryKey: ["share-members", scope.kind, scope.id],
+            queryKey: ["share-members", scope.kind, scope.id, viewerId],
           });
         }
       },
     });
     return () => sub.close();
-  }, [scope.kind, scope.id, queryClient]);
+  }, [scope.kind, scope.id, viewerId, queryClient]);
 
-  const addMut = useMutation({
-    mutationFn: () => addMember(scope, account.trim(), role),
-    onSuccess: (m) => {
-      setAccount("");
-      void invalidate();
-      toast.success(t("addedMember", { name: m.nickname ?? t("memberFallback") }));
-    },
-    onError: (e) => toast.error(errMsg(e, t("addMemberFailed"))),
-  });
-  const roleMut = useMutation({
-    mutationFn: (v: { memberId: string; nextRole: AssignableShareRole }) =>
-      updateMemberRole(scope, v.memberId, v.nextRole),
-    onSuccess: () => void invalidate(),
-    onError: (e) => toast.error(errMsg(e, t("changeRoleFailed"))),
-  });
-  const removeMut = useMutation({
-    mutationFn: (memberId: string) => removeMember(scope, memberId),
-    onSuccess: () => void invalidate(),
-    onError: (e) => toast.error(errMsg(e, t("removeMemberFailed"))),
-  });
+  const mounted = useRef(false);
+  const activeAction = useRef<AbortController | null>(null);
+  const [pending, setPending] = useState(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      activeAction.current?.abort();
+      activeAction.current = null;
+    };
+  }, []);
+  function runAction<R>(
+    execute: (signal: AbortSignal) => Promise<R>,
+    success: (result: R, current: () => boolean) => void | Promise<void>,
+    failure: string
+  ) {
+    if (!mounted.current || !viewerId || !canManage || accessDenied || activeAction.current) return;
+    const claim = new AbortController();
+    activeAction.current = claim;
+    setPending(true);
+    const current = () => mounted.current && activeAction.current === claim;
+    void (async () => {
+      try {
+        const result = await execute(claim.signal);
+        if (current()) await success(result, current);
+      } catch (error) {
+        if (current()) toast.error(errMsg(error, failure));
+      } finally {
+        if (current()) {
+          activeAction.current = null;
+          setPending(false);
+        }
+      }
+    })();
+  }
+  const addMut = {
+    isPending: pending,
+    mutate: () =>
+      runAction(
+        (signal) => addMember(scope, account.trim(), role, signal),
+        (m) => {
+          setAccount("");
+          void invalidate();
+          toast.success(t("addedMember", { name: m.nickname ?? t("memberFallback") }));
+        },
+        t("addMemberFailed")
+      ),
+  };
+  const roleMut = {
+    isPending: pending,
+    mutate: (v: { memberId: string; nextRole: AssignableShareRole }) =>
+      runAction(
+        (signal) => updateMemberRole(scope, v.memberId, v.nextRole, signal),
+        () => {
+          void invalidate();
+        },
+        t("changeRoleFailed")
+      ),
+  };
+  const removeMut = {
+    isPending: pending,
+    mutate: (memberId: string) =>
+      runAction(
+        (signal) => removeMember(scope, memberId, signal),
+        () => {
+          void invalidate();
+        },
+        t("removeMemberFailed")
+      ),
+  };
 
   // ── Invite links ──────────────────────────────────────────────────────────
   const [linkRole, setLinkRole] = useState<AssignableShareRole>(defaultRoleForScope(scope));
   const [created, setCreated] = useState<CreatedInvite | null>(null);
-  const invitesKey = ["share-invites", scope.kind, scope.id] as const;
-  const { data: invites } = useQuery({
+  const invitesKey = ["share-invites", scope.kind, scope.id, viewerId] as const;
+  const invitesQuery = useQuery({
     queryKey: invitesKey,
-    queryFn: () => listInvites(scope),
-    enabled: canManage,
+    queryFn: ({ signal }) => listInvites(scope, signal),
+    enabled: Boolean(viewerId && canManage),
   });
+  const invites = invitesQuery.data;
+  const inviteError = canManage ? invitesQuery.error : null;
+  const accessDenied = [error, inviteError].some(
+    (e) => e instanceof ApiRequestError && (e.status === 401 || e.status === 403)
+  );
   const invalidateInvites = () => queryClient.invalidateQueries({ queryKey: invitesKey });
 
-  const createLinkMut = useMutation({
-    mutationFn: () => createInvite(scope, linkRole),
-    onSuccess: async (inv) => {
-      setCreated(inv);
-      void invalidateInvites();
-      const copied = await copyToClipboard(inviteUrl(inv.token));
-      toast.success(copied ? t("inviteLinkCopied") : t("inviteLinkCreated"));
-    },
-    onError: (e) => toast.error(errMsg(e, t("createInviteFailed"))),
-  });
-  const revokeLinkMut = useMutation({
-    mutationFn: (inviteId: string) => revokeInvite(scope, inviteId),
-    onSuccess: (_data, inviteId) => {
-      if (created?.inviteId === inviteId) setCreated(null);
-      void invalidateInvites();
-      toast.success(t("inviteLinkRevoked"));
-    },
-    onError: (e) => toast.error(errMsg(e, t("revokeLinkFailed"))),
-  });
+  const createLinkMut = {
+    isPending: pending,
+    mutate: () =>
+      runAction(
+        (signal) => createInvite(scope, linkRole, undefined, signal),
+        async (inv, current) => {
+          setCreated(inv);
+          void invalidateInvites();
+          const copied = await copyToClipboard(inviteUrl(inv.token));
+          if (current()) toast.success(copied ? t("inviteLinkCopied") : t("inviteLinkCreated"));
+        },
+        t("createInviteFailed")
+      ),
+  };
+  const revokeLinkMut = {
+    isPending: pending,
+    mutate: (inviteId: string) =>
+      runAction(
+        (signal) => revokeInvite(scope, inviteId, signal),
+        () => {
+          if (created?.inviteId === inviteId) setCreated(null);
+          void invalidateInvites();
+          toast.success(t("inviteLinkRevoked"));
+        },
+        t("revokeLinkFailed")
+      ),
+  };
+  const copyMut = {
+    isPending: pending,
+    mutate: () =>
+      runAction(
+        () => copyToClipboard(inviteUrl(created!.token)),
+        (ok) => {
+          if (ok) toast.success(tc("copied"));
+          else toast.error(t("copyFailed"));
+        },
+        t("copyFailed")
+      ),
+  };
+
+  const canChangeRoles =
+    scope.kind !== "workspace" ? canManage : Boolean(members?.some((m) => m.isSelf && m.isOwner));
 
   const filtered = useMemo(() => {
     if (!members) return members;
@@ -206,11 +306,13 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
         >
           <Input
             placeholder={t("addByEmailOrPhone")}
+            disabled={pending}
             value={account}
             onChange={(event) => setAccount(event.target.value)}
             className="flex-1"
           />
           <select
+            disabled={pending}
             value={role}
             onChange={(event) => setRole(event.target.value as AssignableShareRole)}
             className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
@@ -276,28 +378,72 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
                     : roleLabel(member.role)}
                 </span>
               </div>
+              {scope.kind === "workspace" &&
+                !member.isOwner &&
+                member.accessScope !== "project_only" && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span
+                          tabIndex={!canChangeRoles ? 0 : undefined}
+                          aria-label={!canChangeRoles ? t("contactOwnerRole") : undefined}
+                        >
+                          <select
+                            aria-label={t("changeMemberRole", {
+                              name: member.nickname ?? member.userId,
+                            })}
+                            value={member.role}
+                            disabled={!canChangeRoles || pending}
+                            onChange={(event) => {
+                              if (canChangeRoles)
+                                roleMut.mutate({
+                                  memberId: member.memberId,
+                                  nextRole: event.target.value as AssignableShareRole,
+                                });
+                            }}
+                            className="h-8 rounded-md bg-input/30 px-2 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {!roleOptions.includes(member.role as AssignableShareRole) && (
+                              <option value={member.role}>{roleLabel(member.role)}</option>
+                            )}
+                            {roleOptions.map((r) => (
+                              <option key={r} value={r}>
+                                {roleLabel(r)}
+                              </option>
+                            ))}
+                          </select>
+                        </span>
+                      </TooltipTrigger>
+                      {!canChangeRoles && <TooltipContent>{t("contactOwnerRole")}</TooltipContent>}
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
               {canManage &&
               !member.isOwner &&
               !member.isSelf &&
               member.accessScope !== "project_only" ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger
+                    disabled={pending}
                     aria-label={t("memberActions")}
                     className="flex size-7 items-center justify-center rounded-md text-white/55 outline-none transition-colors hover:bg-white/[0.08] hover:text-white"
                   >
                     <IconDotsVertical className="size-4" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {roleOptions.map((r) => (
-                      <DropdownMenuItem
-                        key={r}
-                        onSelect={() => roleMut.mutate({ memberId: member.memberId, nextRole: r })}
-                      >
-                        <IconCheck className={`size-4 ${member.role === r ? "" : "opacity-0"}`} />
-                        {roleLabel(r)}
-                      </DropdownMenuItem>
-                    ))}
-                    <DropdownMenuSeparator />
+                    {scope.kind !== "workspace" &&
+                      roleOptions.map((r) => (
+                        <DropdownMenuItem
+                          key={r}
+                          onSelect={() =>
+                            roleMut.mutate({ memberId: member.memberId, nextRole: r })
+                          }
+                        >
+                          <IconCheck className={`size-4 ${member.role === r ? "" : "opacity-0"}`} />
+                          {roleLabel(r)}
+                        </DropdownMenuItem>
+                      ))}
+                    {scope.kind !== "workspace" && <DropdownMenuSeparator />}
                     <DropdownMenuItem
                       variant="destructive"
                       onSelect={() => removeMut.mutate(member.memberId)}
@@ -341,11 +487,8 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
                 type="button"
                 size="sm"
                 variant="secondary"
-                onClick={async () => {
-                  const ok = await copyToClipboard(inviteUrl(created.token));
-                  if (ok) toast.success(tc("copied"));
-                  else toast.error(t("copyFailed"));
-                }}
+                disabled={pending}
+                onClick={() => copyMut.mutate()}
               >
                 <IconCopy className="size-4" />
                 {tc("copy")}
@@ -355,6 +498,7 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
 
           <div className="flex items-center gap-2">
             <select
+              disabled={pending}
               value={linkRole}
               onChange={(event) => setLinkRole(event.target.value as AssignableShareRole)}
               className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"

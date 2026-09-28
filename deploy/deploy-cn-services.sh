@@ -92,7 +92,7 @@ MANIFEST_FILE=""
 cleanup() {
   [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
   [ -z "$MANIFEST_FILE" ] || rm -f "$MANIFEST_FILE"
-  rm -f /tmp/cn-src.tar.gz /tmp/cn-build-services.log
+  rm -f /tmp/cn-git-archive.tar /tmp/cn-src.tar.gz /tmp/cn-build-services.log
   if [ -n "$ECS_IP" ] && [ "${KEEP_CN_BUILD_ECS:-0}" != 1 ]; then
     echo "==> stopping CN build ECS"
     aliyun ecs StopInstance --InstanceId "$ECS_ID" --StoppedMode StopCharging --profile default >/dev/null 2>&1 || true
@@ -121,7 +121,9 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
 
   echo "==> full secret-free source sync"
   TMP_DIR="$(mktemp -d)"
-  git archive HEAD | tar -x -C "$TMP_DIR"
+  GIT_ARCHIVE="/tmp/cn-git-archive.tar"
+  git archive HEAD -o "$GIT_ARCHIVE"
+  tar -xf "$GIT_ARCHIVE" -C "$TMP_DIR"
   printf '%s\n' "$TAG" > "$TMP_DIR/.fizzdragon-source-revision"
   find "$TMP_DIR" -type f -name '.env*' ! -path '*/apps/web/.env.production.cn' -delete
   sed -i'' -e "s#^NEXT_PUBLIC_PARENT_ORIGIN=.*#NEXT_PUBLIC_PARENT_ORIGIN=$LIVE_ORIGIN#" "$TMP_DIR/apps/web/.env.production.cn"
@@ -131,7 +133,7 @@ if [ "$PHASE" = build ] || [ "$PHASE" = all ]; then
   archive_sha="$(shasum -a 256 /tmp/cn-src.tar.gz | awk '{print $1}')"
   chunk_dir="$TMP_DIR/chunks"
   mkdir -p "$chunk_dir"
-  (cd "$chunk_dir" && split -b 4m /tmp/cn-src.tar.gz part-)
+  (cd "$chunk_dir" && split -b 32m /tmp/cn-src.tar.gz part-)
   "${SSH[@]}" "root@$ECS_IP" 'rm -rf /root/src-chunks && mkdir -p /root/src-chunks'
   for chunk in "$chunk_dir"/part-*; do
     name="$(basename "$chunk")"

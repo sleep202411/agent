@@ -1,6 +1,6 @@
-import IconClock from "@tabler/icons-react-native/icons/IconClock";
-import IconMovie from "@tabler/icons-react-native/icons/IconMovie";
-import IconSparkles from "@tabler/icons-react-native/icons/IconSparkles";
+import IconClock from "@tabler/icons-react-native/IconClock";
+import IconMovie from "@tabler/icons-react-native/IconMovie";
+import IconSparkles from "@tabler/icons-react-native/IconSparkles";
 import { Image } from "expo-image";
 import type { ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";

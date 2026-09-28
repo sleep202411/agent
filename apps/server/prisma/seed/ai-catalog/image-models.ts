@@ -452,7 +452,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       'OpenAI image generation and editing model for instruction-following, typography, layout, product mockups, and structured visual edits.',
     modes: [T2I, I2I, INPAINT],
     requiredPlan: null,
-    cost: 30,
+    // Default quote (1K medium) after the 2026-09-17 −30% reprice.
+    cost: 21,
     parameterPolicy: GPT_IMAGE_2_PARAMETER_POLICY,
     productPricing: GPT_IMAGE_2_PRODUCT_PRICING,
     group: 'recommended',
@@ -480,7 +481,8 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
           : 'Precision image generation and editing for detailed compositions with up to 16 reference images.',
       modes: [T2I, I2I, INPAINT],
       requiredPlan: null,
-      cost: 84,
+      // Default quote (1K high) after the 2026-09-17 −30% reprice.
+      cost: 59,
       parameterPolicy: GPT_IMAGE_25_PARAMETER_POLICY,
       productPricing: GPT_IMAGE_25_PRODUCT_PRICING,
       group: 'recommended',

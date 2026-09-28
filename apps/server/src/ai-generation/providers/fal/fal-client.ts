@@ -117,6 +117,7 @@ export class FalClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), config.requestTimeoutMs);
     let response: Response;
+    let raw: string;
     try {
       response = await fetch(url, {
         ...init,
@@ -127,8 +128,13 @@ export class FalClient {
         },
         signal: controller.signal,
       });
+      raw = await response.text().catch(() => '');
+      controller.signal.throwIfAborted();
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      if (
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === 'AbortError')
+      ) {
         throw falError(
           'PROVIDER_TIMEOUT',
           `fal.ai request timed out after ${config.requestTimeoutMs}ms`,
@@ -143,7 +149,6 @@ export class FalClient {
       clearTimeout(timer);
     }
 
-    const raw = await response.text().catch(() => '');
     const body = parseFalBody(raw) as T;
 
     if (!response.ok && !options.allowErrorBody) {

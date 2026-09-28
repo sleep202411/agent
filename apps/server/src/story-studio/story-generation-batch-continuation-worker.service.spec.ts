@@ -1,8 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Jest mock payload inspection is intentionally structural. */
+import { ConflictException, Logger } from '@nestjs/common';
 import {
   StoryGenerationBatchStatus,
   StoryProductionGenerationTargetKind,
 } from '@prisma/client';
+import {
+  AgentOsContinuationNotReadyError,
+  type AgentOsJournalDispatch,
+} from '../agent-os-journal/agent-os-run-journal.service';
 import { StoryGenerationBatchContinuationWorkerService } from './story-generation-batch-continuation-worker.service';
 
 const BATCH_ID = '10000000-0000-4000-8000-000000000001';
@@ -10,6 +15,45 @@ const RUN_ID = '20000000-0000-4000-8000-000000000002';
 const TURN_ID = '30000000-0000-4000-8000-000000000003';
 
 describe('StoryGenerationBatchContinuationWorkerService', () => {
+  it.each(['candidate lookup', 'committed publish'])(
+    'contains a %s failure and resumes on the next sweep',
+    async (phase) => {
+      const failure = new Error('temporary dependency failure');
+      const query = jest.fn().mockResolvedValue([]);
+      const publish = jest.fn().mockResolvedValue(undefined);
+      const transaction = jest.fn().mockResolvedValue({});
+      if (phase === 'candidate lookup') query.mockRejectedValueOnce(failure);
+      else {
+        query.mockResolvedValueOnce([{ id: BATCH_ID }]);
+        publish.mockRejectedValueOnce(failure);
+      }
+      const worker = new StoryGenerationBatchContinuationWorkerService(
+        { $queryRaw: query, $transaction: transaction } as never,
+        { publishCommitted: publish } as never,
+      );
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        await expect(worker.drainOnce()).resolves.toBeUndefined();
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(failure.message),
+        );
+        await expect(worker.drainOnce()).resolves.toBeUndefined();
+        expect(query).toHaveBeenCalledTimes(2);
+        expect(transaction).toHaveBeenCalledTimes(
+          phase === 'committed publish' ? 1 : 0,
+        );
+        expect(publish).toHaveBeenCalledTimes(
+          phase === 'committed publish' ? 1 : 0,
+        );
+      } finally {
+        warn.mockRestore();
+        worker.onModuleDestroy();
+      }
+    },
+  );
+
   it('resumes the original Agent turn only after the Asset batch completes', async () => {
     const fixture = makeFixture(StoryGenerationBatchStatus.completed);
 
@@ -55,22 +99,132 @@ describe('StoryGenerationBatchContinuationWorkerService', () => {
     expect(input).not.toHaveProperty('storyContinuation');
   });
 
-  it('does not select blocked or failed batches for stage advancement', async () => {
+  it('does not select blocked, failed, or abandoned batches for delivery', async () => {
     const queryRaw = jest.fn().mockResolvedValue([]);
-    const tx = { $queryRaw: queryRaw };
     const service = new StoryGenerationBatchContinuationWorkerService(
-      {} as never,
+      { $queryRaw: queryRaw } as never,
       {} as never,
     ) as unknown as {
-      deliverNextInTransaction(tx: unknown): Promise<unknown>;
+      pickNextCandidateId(): Promise<string | null>;
     };
 
-    await expect(service.deliverNextInTransaction(tx)).resolves.toBeNull();
+    await expect(service.pickNextCandidateId()).resolves.toBeNull();
 
     const sql = sqlText(queryRaw.mock.calls[0]?.[0]);
     expect(sql).toContain("batch.\"status\" IN ('completed', 'cancelled')");
     expect(sql).not.toContain("'blocked'");
     expect(sql).not.toContain("'failed'");
+    expect(sql).toContain('batch."handoff_abandoned_at" IS NULL');
+  });
+
+  describe('delivery failure classification', () => {
+    let errorSpy: jest.SpyInstance;
+    let warnSpy: jest.SpyInstance;
+    beforeEach(() => {
+      errorSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined);
+      warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    });
+
+    it('durably abandons a terminal handoff instead of retrying it every sweep', async () => {
+      const harness = makeDrainHarness();
+      harness.queryRaw
+        .mockResolvedValueOnce([{ id: BATCH_ID }])
+        .mockResolvedValue([]);
+      harness.reconcileExternalHandoffInTransaction.mockRejectedValue(
+        new ConflictException({
+          code: 'AGENT_OS_EXTERNAL_HANDOFF_AFTER_TERMINAL',
+          message:
+            'Terminal Agent OS run completed cannot recover an external handoff.',
+        }),
+      );
+
+      await harness.worker.drainOnce();
+
+      expect(harness.publishCommitted).not.toHaveBeenCalled();
+      expect(harness.abandonUpdateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: BATCH_ID,
+            handoffResultDeliveredAt: null,
+            handoffAbandonedAt: null,
+          }),
+          data: expect.objectContaining({
+            handoffAbandonedAt: expect.any(Date),
+            handoffAbandonReason: expect.objectContaining({
+              code: 'AGENT_OS_EXTERNAL_HANDOFF_AFTER_TERMINAL',
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('treats a lost delivery claim as a benign race', async () => {
+      const harness = makeDrainHarness();
+      harness.queryRaw
+        .mockResolvedValueOnce([{ id: BATCH_ID }])
+        .mockResolvedValue([]);
+      harness.deliverUpdateMany.mockResolvedValue({ count: 0 });
+
+      await harness.worker.drainOnce();
+
+      expect(harness.publishCommitted).not.toHaveBeenCalled();
+      expect(harness.abandonUpdateMany).not.toHaveBeenCalled();
+    });
+
+    it('abandons a batch whose durable handoff identity is permanently invalid', async () => {
+      const harness = makeDrainHarness();
+      harness.queryRaw
+        .mockResolvedValueOnce([{ id: BATCH_ID }])
+        .mockResolvedValue([]);
+      harness.findUnique.mockResolvedValue({
+        ...buildBatchRow(StoryGenerationBatchStatus.completed),
+        externalHandoffRegistration: undefined,
+      });
+
+      await harness.worker.drainOnce();
+
+      expect(harness.abandonUpdateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: BATCH_ID }),
+        }),
+      );
+      expect(harness.publishCommitted).not.toHaveBeenCalled();
+    });
+
+    it('backs off a transient failure and keeps draining later candidates', async () => {
+      const harness = makeDrainHarness();
+      const candidateA = 'a0000000-0000-4000-8000-00000000000a';
+      const candidateB = 'b0000000-0000-4000-8000-00000000000b';
+      harness.queryRaw
+        .mockResolvedValueOnce([{ id: candidateA }, { id: candidateB }])
+        .mockResolvedValueOnce([{ id: candidateB }])
+        .mockResolvedValue([]);
+      harness.reconcileExternalHandoffInTransaction.mockRejectedValueOnce(
+        new AgentOsContinuationNotReadyError(RUN_ID, 'paused'),
+      );
+
+      await harness.worker.drainOnce();
+
+      // The failing head did not publish, but the next candidate still got
+      // its delivery attempt in the same drain — no head-of-line blocking.
+      expect(harness.publishCommitted).toHaveBeenCalledTimes(1);
+      expect(harness.abandonUpdateMany).not.toHaveBeenCalled();
+
+      // Immediately draining again must skip the backed-off head entirely:
+      // only the head is a candidate, its delivery transaction is skipped.
+      harness.queryRaw.mockResolvedValueOnce([{ id: candidateA }]);
+      const deliveriesAfterFirstDrain = harness.transaction.mock.calls.length;
+      await harness.worker.drainOnce();
+      expect(harness.transaction.mock.calls.length).toBe(
+        deliveriesAfterFirstDrain,
+      );
+    });
   });
 });
 
@@ -79,6 +233,36 @@ function sqlText(value: unknown): string {
   if (!value || typeof value !== 'object' || !('strings' in value)) return '';
   const strings = (value as { strings?: unknown }).strings;
   return Array.isArray(strings) ? strings.join('?') : '';
+}
+
+function buildBatchRow(status: StoryGenerationBatchStatus) {
+  return {
+    id: BATCH_ID,
+    status,
+    project: { defaultLocale: 'zh-CN' },
+    items: [
+      {
+        targetKind: StoryProductionGenerationTargetKind.asset_spec,
+      },
+    ],
+    externalHandoffRegistration: {
+      externalJobId: BATCH_ID,
+      generationBatchId: BATCH_ID,
+      sourceAgentRunId: RUN_ID,
+      sourceAgentTurnId: TURN_ID,
+      sourceAgentToolCallId: 'story-media-confirm:response-1',
+      sourceToolId: 'story.generation.confirmBatch',
+      completionMessage: '资产图片已全部生成，正在准备分镜方案。',
+      continuationPlan: {
+        continueThrough: 'storyboard',
+        title: 'Cat',
+        summary: 'Cat story',
+        brief: 'Create a cat story.',
+        experience: 'mobile_h5',
+        autoGenerateAssetImages: true,
+      },
+    },
+  };
 }
 
 function makeFixture(status: StoryGenerationBatchStatus) {
@@ -103,33 +287,7 @@ function makeFixture(status: StoryGenerationBatchStatus) {
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([{ id: BATCH_ID }]),
     storyGenerationBatch: {
-      findUnique: jest.fn().mockResolvedValue({
-        id: BATCH_ID,
-        status,
-        project: { defaultLocale: 'zh-CN' },
-        items: [
-          {
-            targetKind: StoryProductionGenerationTargetKind.asset_spec,
-          },
-        ],
-        externalHandoffRegistration: {
-          externalJobId: BATCH_ID,
-          generationBatchId: BATCH_ID,
-          sourceAgentRunId: RUN_ID,
-          sourceAgentTurnId: TURN_ID,
-          sourceAgentToolCallId: 'story-media-confirm:response-1',
-          sourceToolId: 'story.generation.confirmBatch',
-          completionMessage: '资产图片已全部生成，正在准备分镜方案。',
-          continuationPlan: {
-            continueThrough: 'storyboard',
-            title: 'Cat',
-            summary: 'Cat story',
-            brief: 'Create a cat story.',
-            experience: 'mobile_h5',
-            autoGenerateAssetImages: true,
-          },
-        },
-      }),
+      findUnique: jest.fn().mockResolvedValue(buildBatchRow(status)),
       updateMany,
     },
   };
@@ -146,13 +304,67 @@ function makeFixture(status: StoryGenerationBatchStatus) {
       appendExternalResultInTransaction,
     } as never,
   ) as unknown as {
-    deliverNextInTransaction(tx: unknown): Promise<unknown>;
+    deliverCandidateInTransaction(
+      tx: unknown,
+      candidateId: string,
+    ): Promise<AgentOsJournalDispatch>;
   };
   return {
     tx,
     updateMany,
     appendExternalResultInTransaction,
     resultDispatch,
-    deliver: () => service.deliverNextInTransaction(tx),
+    deliver: () => service.deliverCandidateInTransaction(tx, BATCH_ID),
+  };
+}
+
+/**
+ * Drain-level harness: exercises the full pick → deliver → classify loop
+ * over mocked persistence. The prisma client exposes two updateMany call
+ * sites that must be told apart — the in-transaction delivery claim and the
+ * client-level durable abandon.
+ */
+function makeDrainHarness() {
+  const queryRaw = jest.fn().mockResolvedValue([]);
+  const deliverUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+  const findUnique = jest
+    .fn()
+    .mockResolvedValue(buildBatchRow(StoryGenerationBatchStatus.completed));
+  const tx = {
+    storyGenerationBatch: { findUnique, updateMany: deliverUpdateMany },
+  };
+  const transaction = jest.fn((cb: (tx: unknown) => unknown) =>
+    Promise.resolve(cb(tx)),
+  );
+  const abandonUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+  const publishCommitted = jest.fn().mockResolvedValue(undefined);
+  const reconcileExternalHandoffInTransaction = jest
+    .fn()
+    .mockResolvedValue({ events: [], snapshot: {} });
+  const appendExternalResultInTransaction = jest
+    .fn()
+    .mockResolvedValue({ events: [], snapshot: {} });
+  const worker = new StoryGenerationBatchContinuationWorkerService(
+    {
+      $queryRaw: queryRaw,
+      $transaction: transaction,
+      storyGenerationBatch: { updateMany: abandonUpdateMany },
+    } as never,
+    {
+      publishCommitted,
+      reconcileExternalHandoffInTransaction,
+      appendExternalResultInTransaction,
+    } as never,
+  );
+  return {
+    worker,
+    queryRaw,
+    transaction,
+    findUnique,
+    deliverUpdateMany,
+    abandonUpdateMany,
+    publishCommitted,
+    reconcileExternalHandoffInTransaction,
+    appendExternalResultInTransaction,
   };
 }

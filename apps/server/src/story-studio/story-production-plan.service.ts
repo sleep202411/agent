@@ -30,6 +30,7 @@ import {
   type StoryProductionPlan,
   type StoryStoryboardPlan,
 } from '@repo/shared/story-production';
+import { storyAutoFallbackNodeId } from '@repo/shared/story-stats';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import {
@@ -445,16 +446,16 @@ export class StoryProductionPlanService {
       sequenceRows,
       scriptHead,
       approvedAssetPlanMarker,
-    ] = await Promise.all([
-      tx.storyProject.findUniqueOrThrow({ where: { id: projectId } }),
-      tx.storyChapter.findFirstOrThrow({
+    ] = [
+      await tx.storyProject.findUniqueOrThrow({ where: { id: projectId } }),
+      await tx.storyChapter.findFirstOrThrow({
         where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
         select: { nodeIds: true },
       }),
-      tx.storyDraft.findUniqueOrThrow({
+      await tx.storyDraft.findUniqueOrThrow({
         where: { storyProjectId: projectId },
       }),
-      tx.storyAssetSpec.findMany({
+      await tx.storyAssetSpec.findMany({
         where: {
           storyProjectId: projectId,
           storyChapterId: chapterId,
@@ -465,7 +466,7 @@ export class StoryProductionPlanService {
           status: true,
         },
       }),
-      tx.storyStoryboardSequence.findMany({
+      await tx.storyStoryboardSequence.findMany({
         where: {
           storyProjectId: projectId,
           storyChapterId: chapterId,
@@ -479,9 +480,13 @@ export class StoryProductionPlanService {
           },
         },
       }),
-      readStoryScriptHead(tx, projectId, chapterId),
-      this.readApprovedAssetPlanMarkerInTransaction(tx, projectId, chapterId),
-    ]);
+      await readStoryScriptHead(tx, projectId, chapterId),
+      await this.readApprovedAssetPlanMarkerInTransaction(
+        tx,
+        projectId,
+        chapterId,
+      ),
+    ];
     const parsedDraft = InteractiveStoryDraftContentSchema.parse(draft.content);
     const ownedNodeIds = new Set(jsonStringArray(chapter.nodeIds));
     const plotNodeIds = parsedDraft.graph.nodes
@@ -1042,8 +1047,8 @@ export class StoryProductionPlanService {
           throw productionNotFound('Storyboard sequence', sequenceId);
         }
 
-        const [allClips, cues] = await Promise.all([
-          tx.storyStoryboardClip.findMany({
+        const [allClips, cues] = [
+          await tx.storyStoryboardClip.findMany({
             where: {
               sequenceId,
               storyProjectId: projectId,
@@ -1051,7 +1056,7 @@ export class StoryProductionPlanService {
             },
             orderBy: [{ rank: 'asc' }, { id: 'asc' }],
           }),
-          tx.storyStoryboardCue.findMany({
+          await tx.storyStoryboardCue.findMany({
             where: {
               sequenceId,
               storyProjectId: projectId,
@@ -1060,7 +1065,7 @@ export class StoryProductionPlanService {
             },
             select: { id: true, atMs: true, version: true },
           }),
-        ]);
+        ];
         // Agent commands are version-free: resolve them against the current
         // rows inside this mutation transaction (last-write-wins; the write
         // fence serializes writers) and re-validate continuity through the
@@ -1706,8 +1711,8 @@ export class StoryProductionPlanService {
       operation: 'storyboard-binding.put',
       request: { sequenceId, clipId, assetSpecId, input },
       mutate: async (tx, now) => {
-        const [clip, assetSpec] = await Promise.all([
-          tx.storyStoryboardClip.findFirst({
+        const [clip, assetSpec] = [
+          await tx.storyStoryboardClip.findFirst({
             where: {
               id: clipId,
               sequenceId,
@@ -1715,14 +1720,14 @@ export class StoryProductionPlanService {
               storyChapterId: chapterId,
             },
           }),
-          tx.storyAssetSpec.findFirst({
+          await tx.storyAssetSpec.findFirst({
             where: {
               id: assetSpecId,
               storyProjectId: projectId,
               storyChapterId: chapterId,
             },
           }),
-        ]);
+        ];
         if (!clip) throw productionNotFound('Storyboard clip', clipId);
         if (!assetSpec) throw productionNotFound('Asset Spec', assetSpecId);
         if (input.pinnedMediaVersionId) {
@@ -1868,17 +1873,17 @@ export class StoryProductionPlanService {
       rawInput.productionPlan,
     );
     assertProductionSourceFingerprint(rawInput.sourceFingerprint);
-    const [chapter, draftRow] = await Promise.all([
-      tx.storyChapter.findFirst({
+    const [chapter, draftRow] = [
+      await tx.storyChapter.findFirst({
         where: {
           id: rawInput.storyChapterId,
           storyProjectId: rawInput.storyProjectId,
         },
       }),
-      tx.storyDraft.findUnique({
+      await tx.storyDraft.findUnique({
         where: { storyProjectId: rawInput.storyProjectId },
       }),
-    ]);
+    ];
     if (!chapter || !draftRow) {
       throw new NotFoundException({
         code: 'STORY_CHAPTER_NOT_FOUND',
@@ -1976,22 +1981,22 @@ export class StoryProductionPlanService {
       rawInput.storyboardPlan,
     );
     assertProductionSourceFingerprint(rawInput.sourceFingerprint);
-    const [chapter, draftRow, currentAssetPlan] = await Promise.all([
-      tx.storyChapter.findFirst({
+    const [chapter, draftRow, currentAssetPlan] = [
+      await tx.storyChapter.findFirst({
         where: {
           id: rawInput.storyChapterId,
           storyProjectId: rawInput.storyProjectId,
         },
       }),
-      tx.storyDraft.findUnique({
+      await tx.storyDraft.findUnique({
         where: { storyProjectId: rawInput.storyProjectId },
       }),
-      this.readCurrentAssetPlanInTransaction(
+      await this.readCurrentAssetPlanInTransaction(
         tx,
         rawInput.storyProjectId,
         rawInput.storyChapterId,
       ),
-    ]);
+    ];
     if (!chapter || !draftRow) {
       throw new NotFoundException({
         code: 'STORY_CHAPTER_NOT_FOUND',
@@ -2038,8 +2043,8 @@ export class StoryProductionPlanService {
     storyProjectId: string,
     storyChapterId: string,
   ): Promise<StoryAssetPlan | null> {
-    const [rows, marker] = await Promise.all([
-      tx.storyAssetSpec.findMany({
+    const [rows, marker] = [
+      await tx.storyAssetSpec.findMany({
         where: {
           storyProjectId,
           storyChapterId,
@@ -2047,12 +2052,12 @@ export class StoryProductionPlanService {
         },
         orderBy: [{ stableKey: 'asc' }, { id: 'asc' }],
       }),
-      this.readApprovedAssetPlanMarkerInTransaction(
+      await this.readApprovedAssetPlanMarkerInTransaction(
         tx,
         storyProjectId,
         storyChapterId,
       ),
-    ]);
+    ];
     if (marker === null && rows.length === 0) {
       return null;
     }
@@ -2251,7 +2256,7 @@ export class StoryProductionPlanService {
           sequence.plotNodeId,
         );
       const nextNodeId =
-        node.exit.kind === 'auto' ? node.exit.nextNodeId : null;
+        node.exit.kind === 'auto' ? storyAutoFallbackNodeId(node.exit) : null;
       const nextNode = nextNodeId
         ? draft.graph.nodes.find((candidate) => candidate.nodeId === nextNodeId)
         : undefined;
@@ -2500,20 +2505,18 @@ export class StoryProductionPlanService {
         current.status === StoryProductionSpecStatus.archived
       )
         continue;
-      await Promise.all([
-        tx.storyStoryboardClipAssetBinding.updateMany({
-          where: { storyboardClip: { sequenceId: current.id } },
-          data: { status: StoryProductionSpecStatus.archived },
-        }),
-        tx.storyStoryboardCue.updateMany({
-          where: { sequenceId: current.id },
-          data: { status: StoryProductionSpecStatus.archived },
-        }),
-        tx.storyStoryboardClip.updateMany({
-          where: { sequenceId: current.id },
-          data: { status: StoryProductionSpecStatus.archived },
-        }),
-      ]);
+      await tx.storyStoryboardClipAssetBinding.updateMany({
+        where: { storyboardClip: { sequenceId: current.id } },
+        data: { status: StoryProductionSpecStatus.archived },
+      });
+      await tx.storyStoryboardCue.updateMany({
+        where: { sequenceId: current.id },
+        data: { status: StoryProductionSpecStatus.archived },
+      });
+      await tx.storyStoryboardClip.updateMany({
+        where: { sequenceId: current.id },
+        data: { status: StoryProductionSpecStatus.archived },
+      });
       await tx.storyStoryboardSequence.update({
         where: { id: current.id },
         data: {
@@ -2638,26 +2641,24 @@ export class StoryProductionPlanService {
     tx: Prisma.TransactionClient,
     sequenceId: string,
   ): Promise<void> {
-    await Promise.all([
-      tx.storyStoryboardClipAssetBinding.updateMany({
-        where: { storyboardClip: { sequenceId } },
-        data: {
-          status: StoryProductionSpecStatus.archived,
-        },
-      }),
-      tx.storyStoryboardCue.updateMany({
-        where: { sequenceId },
-        data: {
-          status: StoryProductionSpecStatus.archived,
-        },
-      }),
-      tx.storyStoryboardClip.updateMany({
-        where: { sequenceId },
-        data: {
-          status: StoryProductionSpecStatus.archived,
-        },
-      }),
-    ]);
+    await tx.storyStoryboardClipAssetBinding.updateMany({
+      where: { storyboardClip: { sequenceId } },
+      data: {
+        status: StoryProductionSpecStatus.archived,
+      },
+    });
+    await tx.storyStoryboardCue.updateMany({
+      where: { sequenceId },
+      data: {
+        status: StoryProductionSpecStatus.archived,
+      },
+    });
+    await tx.storyStoryboardClip.updateMany({
+      where: { sequenceId },
+      data: {
+        status: StoryProductionSpecStatus.archived,
+      },
+    });
   }
 
   private async reconcileBindings(

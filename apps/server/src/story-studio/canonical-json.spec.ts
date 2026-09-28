@@ -54,3 +54,24 @@ describe('canonical JSON', () => {
     expect(() => canonicalizeJson(value)).toThrow('Non-plain object');
   });
 });
+
+it('preserves parsed prototype-named keys in canonical content and hashes', () => {
+  const input: unknown = JSON.parse(
+    '{"z":0,"nested":{"__proto__":{"value":1}},"__proto__":"literal"}',
+  );
+  expect(canonicalJsonString(input)).toBe(
+    '{"__proto__":"literal","nested":{"__proto__":{"value":1}},"z":0}',
+  );
+  expect(canonicalJsonHash(input)).not.toBe(
+    canonicalJsonHash({ z: 0, nested: {} }),
+  );
+  expect(Object.getPrototypeOf(canonicalizeJson(input))).toBe(Object.prototype);
+});
+
+it('rejects sparse arrays instead of hashing missing slots as explicit null', () => {
+  const sparse = new Array<unknown>(1);
+  expect(() => canonicalJsonString({ values: sparse })).toThrow(
+    'Unsupported JSON value',
+  );
+  expect(canonicalJsonString({ values: [null] })).toBe('{"values":[null]}');
+});

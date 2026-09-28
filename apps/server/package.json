@@ -6,6 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
+    "dev": "npm run start:dev",
     "build": "prisma generate && nest build && tsc -p tsconfig.catalog-update.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "cross-env PORT=4399 nest start",
@@ -42,7 +43,8 @@
     "test:crew-migrations": "node scripts/verify-crew-migrations.mjs",
     "test:workspace-migration": "node scripts/verify-workspace-migration.mjs",
     "test:story-project-move": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-story-project-move.ts",
-    "test:workspace-permissions": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-workspace-permissions.ts"
+    "test:workspace-permissions": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-workspace-permissions.ts",
+    "media:inspect": "tsx scripts/inspect-media.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed/seed.ts"
@@ -123,7 +125,8 @@
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0",
-    "@electric-sql/pglite": "0.4.1"
+    "@electric-sql/pglite": "0.4.1",
+    "tsx": "^4.21.0"
   },
   "jest": {
     "moduleFileExtensions": [

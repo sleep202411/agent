@@ -22,6 +22,7 @@ function makeService(
   } = {},
 ) {
   const prisma = {
+    $queryRaw: jest.fn(() => Promise.resolve([{ now: new Date() }])),
     characterCastingInvite: {
       create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
         Promise.resolve({
@@ -91,7 +92,10 @@ function makeService(
     grantViaAcceptedInvite: jest.fn(() => Promise.resolve({ id: 'grant-1' })),
   };
   const service = new CharacterCastingService(
-    prisma as never,
+    {
+      ...prisma,
+      $transaction: (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma),
+    } as never,
     featureFlags as never,
     grants as never,
   );

@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import {
   ForbiddenException,
@@ -26,7 +27,7 @@ suite('Task deletion on isolated PostgreSQL', () => {
   };
   let sequence = 0;
   beforeAll(() => {
-    const parsed = new URL(url!);
+    const parsed = postgresFixtureUrl(url!);
     if (
       parsed.hostname !== '127.0.0.1' ||
       parsed.port !== '55439' ||
@@ -186,7 +187,11 @@ suite('Task deletion on isolated PostgreSQL', () => {
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
     await expect(
-      service.review(task.id, 'owner', { decision: 'approve', note: '' }),
+      service.review(task.id, 'owner', {
+        decision: 'approve',
+        note: '',
+        expectedSubmissionId: task.id,
+      }),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(
       await db.crewEarningEntry.count({ where: { taskId: task.id } }),

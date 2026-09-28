@@ -1,6 +1,8 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
   IconArrowLeft,
@@ -17,6 +19,7 @@ import {
   IconFolder,
   IconFolderPlus,
   IconHistory,
+  IconLink,
   IconLock,
   IconLockOpen,
   IconLayoutGrid,
@@ -80,9 +83,11 @@ import {
   useRestoreCrewAsset,
   useSetCrewAssetFavorite,
   useSetCrewAssetPermissions,
+  useSetCrewAssetStudioLink,
   useTrashCrewAsset,
   useUpdateCrewAsset,
 } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-assets";
+import { LinkStudioMediaDialog } from "./link-studio-media-dialog";
 import { useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
 import { useCrewTransfers } from "@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center";
 
@@ -117,17 +122,28 @@ export function CrewAssetsTab({
   const [sort, setSort] = useState<CrewAssetSort>("modified");
   const [folderPath, setFolderPath] = useState<FolderCrumb[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState("");
+  const currentSelection = useRef(selectedAssetId);
+  useLayoutEffect(() => {
+    currentSelection.current = selectedAssetId;
+  }, [selectedAssetId]);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
+  const bulkPending = useRef(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const folderCreatePending = useRef(false);
+  const [savingFolder, setSavingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [assetAction, setAssetAction] = useState<AssetAction | null>(null);
-  const [assetActionTargetIds, setAssetActionTargetIds] = useState<string[]>([]);
+  const [assetActionTargets, setAssetActionTargets] = useState<CrewAssetPreviewItem[]>([]);
   const [assetActionBusy, setAssetActionBusy] = useState(false);
   const [assetActionErrors, setAssetActionErrors] = useState<string[]>([]);
   const [actionName, setActionName] = useState("");
+  const [renameVersion, setRenameVersion] = useState("");
   const [destinationId, setDestinationId] = useState<string>("");
   const [confirmPermanentDeleteOpen, setConfirmPermanentDeleteOpen] = useState(false);
+  const [studioDialogOpen, setStudioDialogOpen] = useState(false);
+  const [bindNodeId, setBindNodeId] = useState<string | null>(null);
 
   const activeFolderId = folderPath.at(-1)?.id ?? null;
   const contextQuery = useCrewAssetContext(crewId);
@@ -155,6 +171,7 @@ export function CrewAssetsTab({
   const restoreAsset = useRestoreCrewAsset(crewId);
   const permanentlyDeleteAsset = usePermanentlyDeleteCrewAsset(crewId);
   const setFavorite = useSetCrewAssetFavorite(crewId);
+  const setStudioLink = useSetCrewAssetStudioLink(crewId);
   const capabilities = contextQuery.data?.capabilities;
   const containerPermission: CrewAssetPermission | null =
     activeFolderId == null
@@ -216,7 +233,6 @@ export function CrewAssetsTab({
     checkedIds.size > 1
       ? undefined
       : sourceItems.find((item) => item.id === (checkedAssetId ?? selectedAssetId));
-  const assetActionTargets = sourceItems.filter((item) => assetActionTargetIds.includes(item.id));
   const checkedAssets = sourceItems.filter((item) => checkedIds.has(item.id));
   const movableChecked = checkedAssets.filter((item) =>
     hasAssetPermission(item.effectivePermission, "edit")
@@ -310,46 +326,63 @@ export function CrewAssetsTab({
     setCreatingFolder(false);
   };
 
-  const deleteChecked = async () => {
-    if (checkedIds.size === 0) return;
-    if (activeSource === "trash" ? !canDeleteForever : !canTrash) return;
-    const ids = [...checkedIds];
-    try {
-      if (activeSource === "trash") {
-        await Promise.all(ids.map((id) => permanentlyDeleteAsset.mutateAsync(id)));
-        toast.success(t("deletedForever", { count: ids.length }));
-      } else {
-        await Promise.all(ids.map((id) => trashAsset.mutateAsync(id)));
-        toast.success(t("movedToTrash", { count: ids.length }));
-      }
-      setCheckedIds(new Set());
+  const settleCheckedActions = async (ids: string[], action: (id: string) => Promise<unknown>) => {
+    const results = await Promise.allSettled(ids.map(action));
+    const succeeded = new Set(ids.filter((_, index) => results[index].status === "fulfilled"));
+    setCheckedIds((current) => new Set([...current].filter((id) => !succeeded.has(id))));
+    if (succeeded.has(currentSelection.current)) {
       setSelectedAssetId("");
       setInspectorOpen(false);
       onSelectedAssetChange?.(null);
+    }
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+  };
+
+  const deleteChecked = async () => {
+    if (checkedIds.size === 0 || bulkPending.current) return;
+    if (activeSource === "trash" ? !canDeleteForever : !canTrash) return;
+    const ids = [...checkedIds];
+    bulkPending.current = true;
+    setBulkBusy(true);
+    try {
+      if (activeSource === "trash") {
+        await settleCheckedActions(ids, (id) => permanentlyDeleteAsset.mutateAsync(id));
+        toast.success(t("deletedForever", { count: ids.length }));
+      } else {
+        await settleCheckedActions(ids, (id) => trashAsset.mutateAsync(id));
+        toast.success(t("movedToTrash", { count: ids.length }));
+      }
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      bulkPending.current = false;
+      setBulkBusy(false);
     }
   };
 
   const restoreChecked = async () => {
-    if (checkedIds.size === 0 || !canRestore) return;
+    if (checkedIds.size === 0 || !canRestore || bulkPending.current) return;
     const ids = [...checkedIds];
+    bulkPending.current = true;
+    setBulkBusy(true);
     try {
-      await Promise.all(ids.map((id) => restoreAsset.mutateAsync(id)));
+      await settleCheckedActions(ids, (id) => restoreAsset.mutateAsync(id));
       toast.success(t("restored", { count: ids.length }));
-      setCheckedIds(new Set());
-      setSelectedAssetId("");
-      setInspectorOpen(false);
-      onSelectedAssetChange?.(null);
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      bulkPending.current = false;
+      setBulkBusy(false);
     }
   };
 
   const addFolder = async () => {
-    if (!canCreateFolder) return;
+    if (!canCreateFolder || folderCreatePending.current) return;
     const name = newFolderName.trim();
     if (!name) return;
+    folderCreatePending.current = true;
+    setSavingFolder(true);
     try {
       await createFolder.mutateAsync({ name, parentId: activeFolderId });
       setCreatingFolder(false);
@@ -357,6 +390,9 @@ export function CrewAssetsTab({
       toast.success(t("folderCreated"));
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      folderCreatePending.current = false;
+      setSavingFolder(false);
     }
   };
 
@@ -385,9 +421,10 @@ export function CrewAssetsTab({
   const openAssetAction = (action: AssetAction, targetIds?: string[]) => {
     if (action === "rename") {
       if (!actionableAsset) return;
-      setAssetActionTargetIds([actionableAsset.id]);
+      setAssetActionTargets([actionableAsset]);
       setAssetAction("rename");
       setActionName(actionableAsset.name);
+      setRenameVersion(actionableAsset.updatedAt);
       setDestinationId(actionableAsset.parentId ?? "");
       return;
     }
@@ -396,7 +433,7 @@ export function CrewAssetsTab({
       targetIds && targetIds.length > 0 ? targetIds : actionableAsset ? [actionableAsset.id] : [];
     if (ids.length === 0) return;
     const primary = sourceItems.find((item) => item.id === ids[0]);
-    setAssetActionTargetIds(ids);
+    setAssetActionTargets(sourceItems.filter((item) => ids.includes(item.id)));
     setAssetActionErrors([]);
     setAssetAction("move");
     setActionName(primary?.name ?? "");
@@ -405,6 +442,7 @@ export function CrewAssetsTab({
 
   const submitAssetAction = async () => {
     if (!assetAction || assetActionTargets.length === 0 || assetActionBusy) return;
+    if (assetAction === "move" && (folderQuery.isPending || folderQuery.isError)) return;
     setAssetActionBusy(true);
     setAssetActionErrors([]);
     try {
@@ -415,7 +453,7 @@ export function CrewAssetsTab({
         if (!name) return;
         await updateAsset.mutateAsync({
           nodeId: target.id,
-          expectedUpdatedAt: target.updatedAt,
+          expectedUpdatedAt: renameVersion,
           name,
         });
         toast.success(t("renamed"));
@@ -451,13 +489,13 @@ export function CrewAssetsTab({
               )
               .join("\n")
           );
-          setAssetActionTargetIds(failures.map(({ target }) => target.id));
+          setAssetActionTargets(failures.map(({ target }) => target));
           setCheckedIds(new Set(failures.map(({ target }) => target.id)));
           return;
         }
       }
       setAssetAction(null);
-      setAssetActionTargetIds([]);
+      setAssetActionTargets([]);
       setCheckedIds(new Set());
       setSelectedAssetId("");
       setInspectorOpen(false);
@@ -591,6 +629,19 @@ export function CrewAssetsTab({
                         {t("newFolder")}
                       </button>
                     ) : null}
+                    {canUpload ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBindNodeId(null);
+                          setStudioDialogOpen(true);
+                        }}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border/70 px-3 text-xs font-semibold text-foreground transition-colors hover:bg-secondary/40"
+                      >
+                        <IconLink className="size-3.5" />
+                        {t("linkStudioAssets")}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -617,7 +668,10 @@ export function CrewAssetsTab({
                   <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                   <input
                     value={query}
-                    onChange={(event) => setQuery(event.target.value)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setCheckedIds(new Set());
+                    }}
                     placeholder={t("searchPlaceholder")}
                     className="h-8 w-full rounded-lg border border-border/70 bg-background/60 pl-8 pr-3 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/60"
                   />
@@ -625,7 +679,10 @@ export function CrewAssetsTab({
                 <ToolbarSelect
                   ariaLabel={t("typeFilter")}
                   value={typeFilter}
-                  onChange={(value) => setTypeFilter(value as "all" | CrewAssetKind)}
+                  onChange={(value) => {
+                    setTypeFilter(value as "all" | CrewAssetKind);
+                    setCheckedIds(new Set());
+                  }}
                   options={[
                     ["all", t("allTypes")],
                     ["folder", t("typeFolder")],
@@ -742,6 +799,7 @@ export function CrewAssetsTab({
                   <BulkAction
                     icon={<IconRefresh />}
                     label={t("restore")}
+                    disabled={bulkBusy}
                     onClick={() => void restoreChecked()}
                   />
                 ) : null}
@@ -750,6 +808,7 @@ export function CrewAssetsTab({
                     <BulkAction
                       icon={<IconTrash />}
                       label={t("deleteForever")}
+                      disabled={bulkBusy}
                       destructive
                       onClick={() => setConfirmPermanentDeleteOpen(true)}
                     />
@@ -758,6 +817,7 @@ export function CrewAssetsTab({
                   <BulkAction
                     icon={<IconTrash />}
                     label={t("delete")}
+                    disabled={bulkBusy}
                     destructive
                     onClick={() => void deleteChecked()}
                   />
@@ -805,6 +865,7 @@ export function CrewAssetsTab({
                   checkedIds={checkedIds}
                   selectedAssetId={selectedAssetId}
                   creatingFolder={creatingFolder}
+                  savingFolder={savingFolder}
                   newFolderName={newFolderName}
                   t={t}
                   onNewFolderNameChange={setNewFolderName}
@@ -838,7 +899,8 @@ export function CrewAssetsTab({
                   error={assetQuery.error}
                   t={t}
                   onRetry={() =>
-                    void (assetQuery.isFetchNextPageError
+                    void (assetQuery.isFetchNextPageError &&
+                    !isCrewCursorError(assetQuery.error, "CREW_ASSET_CURSOR_INVALID")
                       ? assetQuery.fetchNextPage()
                       : assetQuery.refetch())
                   }
@@ -879,6 +941,30 @@ export function CrewAssetsTab({
                 onSelectedAssetChange?.(null);
               }}
               onToggleFavorite={() => toggleFavorite(selectedAsset.id)}
+              onBindStudio={
+                selectedAsset.kind !== "folder" &&
+                hasAssetPermission(selectedAsset.effectivePermission, "manage")
+                  ? () => {
+                      setBindNodeId(selectedAsset.id);
+                      setStudioDialogOpen(true);
+                    }
+                  : undefined
+              }
+              onUnlinkStudio={
+                selectedAsset.linkedStudio &&
+                hasAssetPermission(selectedAsset.effectivePermission, "manage")
+                  ? () => {
+                      setStudioLink.mutate(
+                        { nodeId: selectedAsset.id, mediaAssetId: null },
+                        {
+                          onSuccess: () => toast.success(t("bindStudioSaved")),
+                          onError: (error) =>
+                            toast.error(describeError(error, t("operationFailed"))),
+                        }
+                      );
+                    }
+                  : undefined
+              }
             />
           ) : null}
         </div>
@@ -891,6 +977,12 @@ export function CrewAssetsTab({
         folders={(folderQuery.data ?? []).filter((folder) =>
           hasAssetPermission(folder.effectivePermission, "upload")
         )}
+        foldersLoading={folderQuery.isPending}
+        foldersError={
+          folderQuery.isError ? describeError(folderQuery.error, t("operationFailed")) : null
+        }
+        foldersFetching={folderQuery.isFetching}
+        onRetryFolders={() => void folderQuery.refetch()}
         pending={assetActionBusy}
         errors={assetActionErrors}
         t={t}
@@ -900,9 +992,19 @@ export function CrewAssetsTab({
           if (assetActionBusy) return;
           setAssetActionErrors([]);
           setAssetAction(null);
-          setAssetActionTargetIds([]);
+          setAssetActionTargets([]);
         }}
         onSubmit={() => void submitAssetAction()}
+      />
+      <LinkStudioMediaDialog
+        open={studioDialogOpen}
+        onOpenChange={(open) => {
+          setStudioDialogOpen(open);
+          if (!open) setBindNodeId(null);
+        }}
+        crewId={crewId}
+        parentId={activeFolderId}
+        bindNodeId={bindNodeId}
       />
       <AlertDialog open={confirmPermanentDeleteOpen} onOpenChange={setConfirmPermanentDeleteOpen}>
         <AlertDialogContent>
@@ -915,6 +1017,7 @@ export function CrewAssetsTab({
           <AlertDialogFooter>
             <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
             <AlertDialogAction
+              disabled={bulkBusy}
               variant="solid"
               color="destructive"
               onClick={() => {
@@ -1096,6 +1199,7 @@ function AssetList({
   checkedIds,
   selectedAssetId,
   creatingFolder,
+  savingFolder,
   newFolderName,
   t,
   onNewFolderNameChange,
@@ -1111,6 +1215,7 @@ function AssetList({
   checkedIds: Set<string>;
   selectedAssetId: string;
   creatingFolder: boolean;
+  savingFolder: boolean;
   newFolderName: string;
   t: Translation;
   onNewFolderNameChange: (value: string) => void;
@@ -1167,6 +1272,7 @@ function AssetList({
             <IconFolder className="size-5 shrink-0 fill-amber-300/15 text-amber-300/80" />
             <input
               autoFocus
+              disabled={savingFolder}
               value={newFolderName}
               onChange={(event) => onNewFolderNameChange(event.target.value)}
               placeholder={t("folderNamePlaceholder")}
@@ -1180,12 +1286,14 @@ function AssetList({
           <div className="flex items-center justify-end gap-1">
             <button
               type="submit"
+              disabled={savingFolder || !newFolderName.trim()}
               className="rounded-md bg-primary px-2 py-1 text-[10px] font-semibold text-primary-foreground"
             >
               {t("save")}
             </button>
             <button
               type="button"
+              disabled={savingFolder}
               onClick={onCancelNewFolder}
               className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-secondary"
               aria-label={t("cancel")}
@@ -1240,6 +1348,11 @@ function AssetList({
             <div className="flex min-w-0 items-center gap-2 py-2">
               <AssetThumbnail item={item} compact />
               <span className="truncate font-medium text-foreground">{displayName(item, t)}</span>
+              {item.linkedStudio ? (
+                <span className="shrink-0 rounded bg-primary/12 px-1.5 py-0.5 text-[9px] font-semibold text-primary">
+                  {t("linkedStudio")}
+                </span>
+              ) : null}
             </div>
             <span className="truncate text-[11px] text-muted-foreground">
               {t(item.typeLabelKey)}
@@ -1450,12 +1563,16 @@ function AssetInspector({
   t,
   onClose,
   onToggleFavorite,
+  onBindStudio,
+  onUnlinkStudio,
 }: {
   crewId: string;
   asset: CrewAssetPreviewItem;
   t: Translation;
   onClose: () => void;
   onToggleFavorite: () => void;
+  onBindStudio?: () => void;
+  onUnlinkStudio?: () => void;
 }) {
   return (
     <aside
@@ -1549,6 +1666,35 @@ function AssetInspector({
 
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
         <InfoPanel asset={asset} t={t} />
+        {asset.kind !== "folder" && (onBindStudio || onUnlinkStudio || asset.linkedStudio) ? (
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold text-foreground">{t("linkedStudio")}</p>
+            <p className="text-[10px] leading-4 text-muted-foreground">
+              {asset.linkedStudio ? t("linkedStudio") : t("linkStudioSelect")}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {onBindStudio ? (
+                <button
+                  type="button"
+                  onClick={onBindStudio}
+                  className="inline-flex h-7 items-center gap-1 rounded-md bg-secondary px-2 text-[10px] font-semibold text-foreground"
+                >
+                  <IconLink className="size-3.5" />
+                  {t("linkExisting")}
+                </button>
+              ) : null}
+              {onUnlinkStudio ? (
+                <button
+                  type="button"
+                  onClick={onUnlinkStudio}
+                  className="inline-flex h-7 items-center rounded-md px-2 text-[10px] font-semibold text-muted-foreground hover:bg-secondary"
+                >
+                  {t("unlinkStudio")}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <PermissionSummary key={asset.id} crewId={crewId} asset={asset} t={t} />
       </div>
     </aside>
@@ -1572,11 +1718,14 @@ function PermissionSummary({
   );
   const setPermissions = useSetCrewAssetPermissions(crewId);
   const members = useCrewMembers(crewId);
+  const membersIncomplete = members.isPending || members.isError || members.hasNextPage;
   const memberIds = (members.data ?? []).map((member) => member.userId);
   const actorIds = (permissionEvents.data ?? []).map((event) => event.actorUserId);
   const displays = useUserDisplays([...new Set([...memberIds, ...actorIds])]);
   const [editing, setEditing] = useState(false);
+  const savePending = useRef(false);
   const [restricted, setRestricted] = useState(false);
+  const [editPermissionVersion, setEditPermissionVersion] = useState<number | null>(null);
   const [draftGrants, setDraftGrants] = useState<
     Array<{ userId: string; permission: CrewAssetPermission }>
   >([]);
@@ -1584,6 +1733,7 @@ function PermissionSummary({
   const beginEdit = () => {
     if (!permissions.data?.canManage) return;
     setRestricted(permissions.data.accessMode === "restricted");
+    setEditPermissionVersion(permissions.data.permissionVersion);
     setDraftGrants(
       permissions.data.grants.map((grant) => ({
         userId: grant.userId,
@@ -1595,18 +1745,27 @@ function PermissionSummary({
 
   const save = async () => {
     const current = permissions.data;
-    if (!current) return;
+    if (
+      !current?.canManage ||
+      editPermissionVersion === null ||
+      (restricted && membersIncomplete) ||
+      savePending.current
+    )
+      return;
+    savePending.current = true;
     try {
       await setPermissions.mutateAsync({
         nodeId: asset.id,
         accessMode: restricted ? "restricted" : "inherit",
-        expectedVersion: current.permissionVersion,
+        expectedVersion: editPermissionVersion,
         grants: restricted ? draftGrants : [],
       });
       setEditing(false);
       toast.success(t("permissionsSaved"));
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      savePending.current = false;
     }
   };
 
@@ -1626,8 +1785,16 @@ function PermissionSummary({
   }
   if (permissions.isError || !permissions.data) {
     return (
-      <div className="border-t border-border/60 pt-4 text-[10px] text-destructive">
-        {describeError(permissions.error, t("permissionsLoadFailed"))}
+      <div role="alert" className="border-t border-border/60 pt-4 text-[10px] text-destructive">
+        <p>{describeError(permissions.error, t("permissionsLoadFailed"))}</p>
+        <button
+          type="button"
+          disabled={permissions.isFetching}
+          onClick={() => void permissions.refetch()}
+          className="mt-2 text-[10px] font-semibold text-primary hover:underline disabled:opacity-50"
+        >
+          {t("retry")}
+        </button>
       </div>
     );
   }
@@ -1673,6 +1840,7 @@ function PermissionSummary({
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border/60 p-2.5">
             <input
               type="checkbox"
+              disabled={setPermissions.isPending}
               checked={restricted}
               onChange={(event) => setRestricted(event.target.checked)}
               className="mt-0.5 size-3.5 accent-primary"
@@ -1688,6 +1856,23 @@ function PermissionSummary({
           </label>
           {restricted ? (
             <div className="max-h-60 space-y-1 overflow-y-auto">
+              {members.isError ? (
+                <div role="alert" className="text-[10px] text-destructive">
+                  <p>{describeError(members.error, t("loadFailed"))}</p>
+                  <button
+                    type="button"
+                    disabled={members.isFetching}
+                    onClick={() => void members.refetch()}
+                    className="mt-2 font-semibold text-primary hover:underline disabled:opacity-50"
+                  >
+                    {t("retry")}
+                  </button>
+                </div>
+              ) : membersIncomplete ? (
+                <p role="status" className="text-[10px] text-muted-foreground">
+                  {t("loading")}
+                </p>
+              ) : null}
               {(members.data ?? []).map((member) => {
                 const permission =
                   draftGrants.find((grant) => grant.userId === member.userId)?.permission ?? "none";
@@ -1705,6 +1890,7 @@ function PermissionSummary({
                       {displayNameOf(member.userId, displays)}
                     </span>
                     <NativeSelect
+                      disabled={setPermissions.isPending}
                       value={permission}
                       onChange={(nextValue) =>
                         updateGrant(member.userId, nextValue as CrewAssetPermission | "none")
@@ -1729,6 +1915,7 @@ function PermissionSummary({
           <div className="flex justify-end gap-2">
             <button
               type="button"
+              disabled={setPermissions.isPending}
               onClick={() => setEditing(false)}
               className="h-7 rounded-md px-2 text-[10px] font-semibold text-muted-foreground hover:bg-secondary"
             >
@@ -1736,7 +1923,7 @@ function PermissionSummary({
             </button>
             <button
               type="button"
-              disabled={setPermissions.isPending}
+              disabled={setPermissions.isPending || (restricted && membersIncomplete)}
               onClick={() => void save()}
               className="h-7 rounded-md bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground disabled:opacity-50"
             >
@@ -1830,6 +2017,10 @@ function AssetActionDialog({
   name,
   destinationId,
   folders,
+  foldersLoading,
+  foldersError,
+  foldersFetching,
+  onRetryFolders,
   pending,
   errors,
   t,
@@ -1843,6 +2034,10 @@ function AssetActionDialog({
   name: string;
   destinationId: string;
   folders: CrewAssetFolderDTO[];
+  foldersLoading: boolean;
+  foldersError: string | null;
+  foldersFetching: boolean;
+  onRetryFolders: () => void;
   pending: boolean;
   errors: string[];
   t: Translation;
@@ -1851,6 +2046,8 @@ function AssetActionDialog({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const common = useTranslations("common");
+  const moveBlocked = action === "move" && (foldersLoading || Boolean(foldersError));
   const moveCount = assets.length;
   const excludedFolderIds = useMemo(
     () => assets.filter((asset) => asset.kind === "folder").map((asset) => asset.id),
@@ -1882,6 +2079,20 @@ function AssetActionDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
+            {action === "move" && foldersLoading && <p role="status">{common("loading")}</p>}
+            {action === "move" && foldersError && (
+              <div role="alert" className="mb-3 space-y-2 text-sm text-destructive">
+                <p>{foldersError}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pending || foldersFetching}
+                  onClick={onRetryFolders}
+                >
+                  {common("retry")}
+                </Button>
+              </div>
+            )}
             {errors.length ? (
               <ul role="alert" className="mb-3 max-h-40 overflow-auto text-xs text-destructive">
                 {errors.map((error, index) => (
@@ -1908,6 +2119,7 @@ function AssetActionDialog({
                   {t("destination")}
                 </span>
                 <NativeSelect
+                  disabled={pending || moveBlocked}
                   aria-label={t("destination")}
                   value={destinationId}
                   onChange={onDestinationChange}
@@ -1938,7 +2150,7 @@ function AssetActionDialog({
               variant="solid"
               color="primary"
               loading={pending}
-              disabled={action === "rename" && !name.trim()}
+              disabled={pending || moveBlocked || (action === "rename" && !name.trim())}
             >
               {action === "move" ? t("move") : t("rename")}
             </Button>
@@ -2057,19 +2269,22 @@ function BulkAction({
   icon,
   label,
   destructive = false,
+  disabled = false,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   destructive?: boolean;
+  disabled?: boolean;
   onClick?: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        "inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors [&>svg]:size-3.5",
+        "inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] transition-colors disabled:opacity-50 [&>svg]:size-3.5",
         destructive
           ? "text-destructive hover:bg-destructive/10"
           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -2193,6 +2408,7 @@ function mapAssetNode(node: CrewAssetNodeDTO, contributor: string): CrewAssetPre
     mediaUrl,
     contentType: node.media?.contentType,
     favorite: node.favorite,
+    linkedStudio: node.linkedStudio ?? null,
     accessMode: node.accessMode,
     permissionVersion: node.permissionVersion,
     effectivePermission: node.effectivePermission,

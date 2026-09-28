@@ -73,22 +73,31 @@ export function useMenuNavigation<T>({
     query,
     index: initialIndex,
   });
-  const selectedIndex = selection.query === query ? selection.index : initialIndex;
+  const selectedIndex =
+    selection.query === query && selection.index < items.length ? selection.index : initialIndex;
   const setSelectedIndex = useCallback(
     (action: SetStateAction<number>) => {
       setSelection((current) => {
-        const currentIndex = current.query === query ? current.index : initialIndex;
+        const currentIndex =
+          current.query === query && current.index < items.length ? current.index : initialIndex;
         return {
           query,
           index: typeof action === "function" ? action(currentIndex) : action,
         };
       });
     },
-    [initialIndex, query]
+    [initialIndex, query, items.length]
   );
 
   useEffect(() => {
     const handleKeyboardNavigation = (event: KeyboardEvent) => {
+      if (event.isComposing) return false;
+      if (event.key === "Escape") {
+        if (!onClose) return false;
+        event.preventDefault();
+        onClose();
+        return true;
+      }
       if (!items.length) return false;
 
       const moveNext = () =>
@@ -156,18 +165,10 @@ export function useMenuNavigation<T>({
         }
 
         case "Enter": {
-          if (event.isComposing) return false;
           event.preventDefault();
           if (selectedIndex !== -1 && items[selectedIndex]) {
             onSelect?.(items[selectedIndex]);
           }
-          return true;
-        }
-
-        case "Escape": {
-          if (!onClose) return false;
-          event.preventDefault();
-          onClose?.();
           return true;
         }
 

@@ -132,3 +132,38 @@ it.each(["list", "board"])("shows the task unread marker in %s", async (layout) 
   await act(async () => root.render(<TaskProjectView {...props} />));
   expect(el.querySelector('[role="status"]')?.getAttribute("data-task-id")).toBe("task");
 });
+
+it.each([
+  ["list", true],
+  ["list", false],
+  ["board", false],
+] as const)("respects management access in %s (empty=%s)", async (layout, empty) => {
+  const props = propsFor(layout);
+  if (empty) props.tasks = [];
+  const el = document.createElement("div");
+  document.body.append(el);
+  root = createRoot(el);
+  const managementButtons = () =>
+    Array.from(el.querySelectorAll("button")).filter((button) =>
+      ["newIssue", "addIssue", "editWorkflowColumn"].includes(
+        button.getAttribute("aria-label") ?? button.textContent ?? ""
+      )
+    );
+  await act(async () => root.render(<TaskProjectView {...props} canManage={false} />));
+  expect(managementButtons()).toHaveLength(0);
+  if (empty) expect(el.textContent).toContain("noIssues");
+  else {
+    const taskButton = Array.from(el.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Example task")
+    );
+    expect(taskButton).toBeDefined();
+    await act(async () => taskButton!.click());
+    expect(props.onOpenTask).toHaveBeenCalledWith("task");
+  }
+  await act(async () => root.render(<TaskProjectView {...props} canManage />));
+  expect(managementButtons().length).toBeGreaterThan(0);
+  await act(async () => managementButtons()[0]!.click());
+  expect(layout === "board" ? props.onEditWorkflowState : props.onCreateTask).toHaveBeenCalled();
+  await act(async () => root.render(<TaskProjectView {...props} canManage={false} />));
+  expect(managementButtons()).toHaveLength(0);
+});

@@ -1,6 +1,13 @@
+.viewport {
+  container-type: size;
+}
+
 .stage {
   position: absolute;
   inset: 0;
+  margin: auto;
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  height: min(100cqh, calc(100cqw * 9 / 16));
   overflow: hidden;
 }
 
@@ -13,6 +20,7 @@
 
 .stage :global(.vjs-tech) {
   object-fit: contain;
+  object-position: center;
 }
 
 .stage[data-has-video="false"] :global(.vjs-control-bar),
@@ -51,4 +59,15 @@
 .stage :global(button:focus-visible) {
   outline: 2px solid white;
   outline-offset: -3px;
+}
+
+.stage :global(.vjs-current-time),
+.stage :global(.vjs-duration) {
+  display: block;
+  flex: none;
+  line-height: 44px;
+}
+
+.stage :global(.vjs-progress-control) {
+  min-width: 64px;
 }

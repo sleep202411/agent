@@ -68,9 +68,23 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
   const [pending, setPending] = React.useState(false);
+  const operationRef = React.useRef<object | null>(null);
+  const activeRef = React.useRef(false);
 
   const isControlled = controlledOpen !== undefined;
   const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const [previousOpen, setPreviousOpen] = React.useState(open);
+  if (previousOpen !== open) {
+    setPreviousOpen(open);
+    setPending(false);
+  }
+  React.useLayoutEffect(() => {
+    activeRef.current = Boolean(open);
+    return () => {
+      activeRef.current = false;
+      operationRef.current = null;
+    };
+  }, [open]);
   const setOpen = React.useCallback(
     (next: boolean) => {
       if (!isControlled) setUncontrolledOpen(next);
@@ -80,12 +94,20 @@ export function ConfirmDialog({
   );
 
   async function handleConfirm() {
+    if (!activeRef.current || operationRef.current) return;
+    const operation = {};
+    operationRef.current = operation;
     setPending(true);
     try {
       await onConfirm();
-      setOpen(false);
+      if (activeRef.current && operationRef.current === operation) setOpen(false);
+    } catch {
+      // The caller owns error presentation. Keep its failed confirmation open.
     } finally {
-      setPending(false);
+      if (operationRef.current === operation) {
+        operationRef.current = null;
+        setPending(false);
+      }
     }
   }
 
@@ -94,7 +116,7 @@ export function ConfirmDialog({
       open={open}
       onOpenChange={(next) => {
         // Don't allow closing mid-action.
-        if (pending) return;
+        if (operationRef.current) return;
         setOpen(next);
       }}
     >

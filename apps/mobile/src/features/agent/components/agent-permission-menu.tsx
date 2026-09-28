@@ -1,6 +1,6 @@
-import IconHandStop from "@tabler/icons-react-native/icons/IconHandStop";
-import IconShieldCheck from "@tabler/icons-react-native/icons/IconShieldCheck";
-import IconShieldExclamation from "@tabler/icons-react-native/icons/IconShieldExclamation";
+import IconHandStop from "@tabler/icons-react-native/IconHandStop";
+import IconShieldCheck from "@tabler/icons-react-native/IconShieldCheck";
+import IconShieldExclamation from "@tabler/icons-react-native/IconShieldExclamation";
 import { useState, type ComponentType } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -13,12 +13,12 @@ import { AgentComposerMenuSheet } from "./agent-composer-menu-sheet";
 const MUTED = "rgba(255,255,255,0.72)";
 const FULL = "rgba(254,202,202,0.88)";
 
-const MODES: Array<{
+const MODES: {
   id: AgentOsPermissionMode;
   labelKey: MessageKey;
   hintKey: MessageKey;
   Icon: ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
-}> = [
+}[] = [
   {
     id: "ask",
     labelKey: "agent.composer.permAsk",

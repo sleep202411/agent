@@ -34,6 +34,11 @@ import {
   type AiGenerationCompletionObserver,
 } from '../ai-generation/completion-observer.service';
 import { AiGenerationService } from '../ai-generation/ai-generation.service';
+import {
+  describeGenerationRequestShape,
+  generationRequestShape,
+  modelSupportsRequest,
+} from '../ai-generation/generation-mode-capability';
 import { STORY_STUDIO_WORKBENCH_SURFACE } from '../ai-generation/output-storage-target';
 import type {
   AiPromptDocument,
@@ -301,6 +306,7 @@ export class StoryProductionGenerationService
   private timer: NodeJS.Timeout | null = null;
   private unregisterObserver: (() => void) | null = null;
   private draining = false;
+  private stopping = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -313,6 +319,7 @@ export class StoryProductionGenerationService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopping || this.unregisterObserver) return;
     this.unregisterObserver = this.completionObservers.register(this);
     if (
       process.env.STORY_PRODUCTION_GENERATION_RECONCILER_ENABLED === 'false'
@@ -333,6 +340,7 @@ export class StoryProductionGenerationService
   }
 
   onModuleDestroy(): void {
+    this.stopping = true;
     this.unregisterObserver?.();
     this.unregisterObserver = null;
     if (this.timer) clearInterval(this.timer);
@@ -976,17 +984,19 @@ export class StoryProductionGenerationService
   }
 
   async onAiGenerationCompleted(job: AiJob): Promise<void> {
-    if (job.sourceSurface !== STORY_STUDIO_WORKBENCH_SURFACE) return;
+    if (this.stopping || job.sourceSurface !== STORY_STUDIO_WORKBENCH_SURFACE)
+      return;
     await this.reconcileCompletedGeneration(job.id, true, true);
   }
 
   async drainOnce(batch = DEFAULT_RECONCILE_BATCH_SIZE): Promise<void> {
-    if (this.draining) return;
+    if (this.stopping || this.draining) return;
     this.draining = true;
     try {
       const ids = await this.claimCompletedGenerations(
         Math.max(1, Math.trunc(batch)),
       );
+      if (this.stopping) return;
       await Promise.all(
         ids.map((id) =>
           this.reconcileCompletedGeneration(id, false, true, true),
@@ -1512,12 +1522,16 @@ export class StoryProductionGenerationService
     });
     let durationFailure: BadRequestException | null = null;
     let inputFailure: BadRequestException | null = null;
+    let modeFailure: BadRequestException | null = null;
     for (const candidate of candidates) {
-      if (
-        !candidate.enabled ||
-        candidate.access?.allowed === false ||
-        modelCompatibilityIssue(candidate, kind, references) !== null
-      ) {
+      if (!candidate.enabled || candidate.access?.allowed === false) {
+        continue;
+      }
+      const issue = modelCompatibilityIssue(candidate, kind, references);
+      if (issue) {
+        if (issue.code === 'STORY_GENERATION_MODEL_MODE_UNSUPPORTED') {
+          modeFailure ??= new BadRequestException(issue);
+        }
         continue;
       }
       try {
@@ -1541,10 +1555,13 @@ export class StoryProductionGenerationService
 
     // Do not hide a timeline that no available provider can cover behind a
     // generic "default unavailable" response. The creator needs the concrete
-    // split-clip action, while required-input failures explain that an
-    // explicit model/setting selection is necessary.
+    // split-clip action, required-input failures explain that an
+    // explicit model/setting selection is necessary, and mode failures
+    // explain that every candidate lacked the capability this request
+    // shape needs (e.g. only image-to-video models for a text-only clip).
     if (inputFailure) throw inputFailure;
     if (durationFailure) throw durationFailure;
+    if (modeFailure) throw modeFailure;
     throw new ServiceUnavailableException({
       code: 'STORY_GENERATION_DEFAULT_MODEL_UNAVAILABLE',
       message: `No accessible ${kind} generation model can satisfy this target and its resolved @Asset references.`,
@@ -1726,7 +1743,7 @@ export class StoryProductionGenerationService
     target: StoryGenerationTarget,
     command: Pick<
       SubmitGenerationCommand,
-      'expectedVersion' | 'requestedOutputKind'
+      'expectedVersion' | 'requestedOutputKind' | 'batchAdmission'
     >,
   ): void {
     if (target.status === StoryProductionSpecStatus.archived) {
@@ -1735,7 +1752,13 @@ export class StoryProductionGenerationService
         message: 'This production target has been archived.',
       });
     }
-    if (target.version !== command.expectedVersion) {
+    // Trusted batch dispatches re-read the live target: the batch's OWN
+    // materializations legitimately bump target versions between quote and
+    // dispatch (e.g. a completed same-sequence clip writes the timeline and
+    // bumps sibling clips), and a confirmed, paid batch must not die to its
+    // own progress. Direct creator submissions keep the strict optimistic
+    // lock — a stale version there still means "reload and retry".
+    if (target.version !== command.expectedVersion && !command.batchAdmission) {
       throw new ConflictException({
         code: 'STORY_PRODUCTION_VERSION_CONFLICT',
         message:
@@ -1820,6 +1843,7 @@ export class StoryProductionGenerationService
     logFailure = false,
     reconcileLeaseAlreadyClaimed = false,
   ): Promise<void> {
+    if (this.stopping) return;
     const generation = await this.prisma.storyProductionGeneration.findFirst({
       where: idMayBeJobId
         ? { OR: [{ id: generationOrJobId }, { aiJobId: generationOrJobId }] }
@@ -1833,6 +1857,7 @@ export class StoryProductionGenerationService
       },
     });
     if (
+      this.stopping ||
       !generation ||
       generation.materializedAt ||
       generation.aiJob.status !== AiJobStatus.completed
@@ -1846,6 +1871,7 @@ export class StoryProductionGenerationService
       return;
     }
 
+    if (this.stopping) return;
     try {
       await this.materializeGeneration(generation.id);
     } catch (error) {
@@ -2460,7 +2486,7 @@ interface ProviderReference {
   };
 }
 
-function modelCompatibilityIssue(
+export function modelCompatibilityIssue(
   model: AiModelDefinition,
   kind: 'image' | 'video',
   references: ProviderReference[],
@@ -2484,6 +2510,25 @@ function modelCompatibilityIssue(
       code: 'STORY_GENERATION_MODEL_PROMPT_UNSUPPORTED',
       message: 'The selected model does not accept a Story prompt.',
     };
+  }
+  // Single capability authority: the canonical's declared generationModes
+  // decide whether this request shape is quotable at all. A text-only request
+  // must never quote an i2v-only model (the kling-motion class of failure:
+  // quoted, billed, then rejected 422 by the provider for image_url).
+  // Models with no declared modes keep the schema-only checks below.
+  if (model.generationModes?.length) {
+    const shape = generationRequestShape(
+      kind,
+      references.map((reference) => reference.binding.kind),
+    );
+    if (!modelSupportsRequest(model.generationModes, shape)) {
+      return {
+        code: 'STORY_GENERATION_MODEL_MODE_UNSUPPORTED',
+        message:
+          `The selected model only supports ${model.generationModes.join(', ')} ` +
+          `and cannot serve ${describeGenerationRequestShape(shape)}.`,
+      };
+    }
   }
   for (const referenceKind of ['image', 'video'] as const) {
     const count = references.filter(
@@ -3079,6 +3124,11 @@ function estimateGenerationPoints(
     },
     referenceImageCount: arraySize(aiInput.referenceImages),
     referenceVideoSeconds: mediaDurationSeconds(aiInput.referenceVideos),
+    // Seedance 2.5 edit contract (doc 1520757): output keeps the source
+    // video's duration — an explicit 'auto' quotes at the combined
+    // reference-video length instead of the ceiling.
+    outputDurationFollowsReferenceVideos:
+      optionalString(aiInput.omniReferenceTaskType) === 'edit',
     generateAudio:
       typeof aiInput.generateAudio === 'boolean'
         ? aiInput.generateAudio

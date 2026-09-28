@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   IconAlertTriangle,
   IconLoader2,
@@ -52,6 +52,15 @@ function CenteredSpinner() {
 function CastingAcceptInner() {
   const params = useSearchParams();
   const token = params.get("token") ?? "";
+  const { user } = useAuth();
+  const { workspaces } = useWorkspace();
+  const workspaceId = workspaces.find((w) => w.isDefault)?.id ?? null;
+  return (
+    <CastingAcceptContent key={JSON.stringify([token, user?.id, workspaceId])} token={token} />
+  );
+}
+
+function CastingAcceptContent({ token }: { token: string }) {
   const t = useTranslations("characters");
   const tc = useTranslations("common");
   const router = useRouter();
@@ -68,7 +77,7 @@ function CastingAcceptInner() {
   // initial 401 for a signed-out actor) refetches the preview automatically.
   const previewQ = useQuery<CastingInvitePreview, ApiRequestError>({
     queryKey: ["casting-preview", token, userId ?? "anon"],
-    queryFn: () => previewCastingInvite(token),
+    queryFn: ({ signal }) => previewCastingInvite(token, signal),
     enabled: token.length > 0,
     retry: false,
   });
@@ -84,14 +93,45 @@ function CastingAcceptInner() {
     [charactersQ.data]
   );
 
-  const acceptMut = useMutation({
-    mutationFn: () =>
-      acceptCastingInvite(token, characterId as string, {
-        version: REAL_PERSON_GRANT_CONSENT_VERSION,
-        adultAttested: true,
-      }),
-    onSuccess: () => setStep("done"),
-    onError: (error) => {
+  const active = useRef<AbortController | null>(null);
+  const mounted = useRef(false);
+  const [pending, setPending] = useState(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      active.current?.abort();
+      active.current = null;
+    };
+  }, []);
+  const accept = async () => {
+    if (
+      !mounted.current ||
+      active.current ||
+      !userId ||
+      !characterId ||
+      !consentRead ||
+      !consentAttested ||
+      charactersQ.isError ||
+      !likenesses.some((c) => c.id === characterId) ||
+      !previewQ.data?.acceptable ||
+      previewQ.data.status !== "pending"
+    )
+      return;
+    const claim = new AbortController();
+    active.current = claim;
+    setPending(true);
+    const current = () => mounted.current && active.current === claim;
+    try {
+      await acceptCastingInvite(
+        token,
+        characterId,
+        { version: REAL_PERSON_GRANT_CONSENT_VERSION, adultAttested: true },
+        claim.signal
+      );
+      if (current()) setStep("done");
+    } catch (error) {
+      if (!current()) return;
       const code = characterApiErrorCode(error);
       // Consent rejected → re-surface the gated consent screen.
       if (code === "CONSENT_REQUIRED") {
@@ -111,8 +151,13 @@ function CastingAcceptInner() {
         (code && map[code]) ||
           (error instanceof ApiRequestError ? error.message : t("castingAcceptFailed"))
       );
-    },
-  });
+    } finally {
+      if (current()) {
+        active.current = null;
+        setPending(false);
+      }
+    }
+  };
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-4 py-10">
@@ -245,26 +290,24 @@ function CastingAcceptInner() {
             onRead={() => setConsentRead(true)}
             attested={consentAttested}
             onAttestedChange={setConsentAttested}
-            disabled={acceptMut.isPending}
+            disabled={pending}
           />
           <div className="mt-4 flex items-center gap-2">
             <Button
               variant="ghost"
               className="flex-1"
               onClick={() => setStep("pick")}
-              disabled={acceptMut.isPending}
+              disabled={pending}
             >
               {tc("back")}
             </Button>
             <Button
               className="flex-1"
-              disabled={acceptMut.isPending || !consentRead || !consentAttested || !characterId}
+              disabled={pending || !consentRead || !consentAttested || !characterId}
               title={REAL_PERSON_GRANT_CONSENT_VERSION}
-              onClick={() => acceptMut.mutate()}
+              onClick={() => void accept()}
             >
-              {acceptMut.isPending ? (
-                <IconLoader2 data-icon="inline-start" className="animate-spin" />
-              ) : null}
+              {pending ? <IconLoader2 data-icon="inline-start" className="animate-spin" /> : null}
               {t("castingAccept")}
             </Button>
           </div>
@@ -273,7 +316,7 @@ function CastingAcceptInner() {
     }
 
     // Pick-a-likeness step.
-    const loadingLikenesses = wsLoading || charactersQ.isPending;
+    const loadingLikenesses = wsLoading || (defaultWorkspaceId !== null && charactersQ.isPending);
     return (
       <div>
         <div className="mb-4 text-center">

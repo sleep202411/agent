@@ -50,6 +50,7 @@ import {
   type ExperienceRuntimeEvent,
   type ExperienceRuntimeState,
   type ExperienceTimelineCursor,
+  type PlaySessionReporter,
 } from "@repo/experience-engine";
 import {
   IconAlertTriangle,
@@ -112,6 +113,10 @@ export interface ExperiencePlayerProps {
   frameProfile?: ExperiencePlayerFrameProfile;
   loadTheme?: ExperienceThemeLoader;
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
+  /** Authoring hosts may observe session state without changing playback. */
+  onStateChange?: (state: ExperienceRuntimeState) => void;
+  playSessionReporter?: PlaySessionReporter;
+  endingExtra?: (sessionId: string | null) => ReactNode;
 }
 
 const PRIMARY_BUTTON =
@@ -132,6 +137,9 @@ export function ExperiencePlayer({
   previewAccess = false,
   accessCheckpoint,
   onAccessCheckpoint,
+  onStateChange,
+  playSessionReporter,
+  endingExtra,
 }: ExperiencePlayerProps) {
   const hydrationSeedId = useId();
   const [restartEpoch, setRestartEpoch] = useState(0);
@@ -159,6 +167,7 @@ export function ExperiencePlayer({
           canAccess: access?.canAccess,
           previewAccess,
           restore: restartEpoch === 0 ? accessCheckpoint?.state : undefined,
+          playSessionReporter,
         }),
       };
     } catch (error) {
@@ -194,6 +203,7 @@ export function ExperiencePlayer({
       previewAccess={previewAccess}
       accessCheckpoint={restartEpoch === 0 ? accessCheckpoint : undefined}
       onAccessCheckpoint={onAccessCheckpoint}
+      onStateChange={onStateChange}
       manifest={prepared.manifest}
       controller={prepared.controller}
       locale={locale}
@@ -202,6 +212,7 @@ export function ExperiencePlayer({
       frameProfile={frameProfile}
       loadTheme={loadTheme}
       renderWorldModel={renderWorldModel}
+      endingExtra={endingExtra}
       onRestart={() => {
         setRandomSeed(globalThis.crypto.randomUUID());
         setRestartEpoch((value) => value + 1);
@@ -224,9 +235,13 @@ function ActiveExperienceRuntimePlayer({
   previewAccess,
   accessCheckpoint,
   onAccessCheckpoint,
+  onStateChange,
+  endingExtra,
 }: {
   accessCheckpoint?: ExperienceAccessCheckpoint;
   onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
+  onStateChange?: (state: ExperienceRuntimeState) => void;
+  endingExtra?: (sessionId: string | null) => ReactNode;
   access?: ExperiencePlayerAccess;
   previewAccess: boolean;
   manifest: ExperienceRuntimeManifest;
@@ -240,9 +255,16 @@ function ActiveExperienceRuntimePlayer({
   onRestart: () => void;
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
+  useEffect(() => {
+    onStateChange?.(runtimeState);
+  }, [onStateChange, runtimeState]);
   const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sceneEpoch, setSceneEpoch] = useState(0);
   const [sceneTimeMs, setSceneTimeMs] = useState(0);
+  const [decodedContentSize, setDecodedContentSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -311,10 +333,12 @@ function ActiveExperienceRuntimePlayer({
         const handle = playbackHandlesRef.current.get(effect.instanceId);
         if (!handle) return;
         if (effect.commandType === "play") {
+          playbackEnabledRef.current = true;
           void handle.play().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
           return;
         }
         if (effect.commandType === "pause") {
+          playbackEnabledRef.current = false;
           handle.pause();
           return;
         }
@@ -437,8 +461,14 @@ function ActiveExperienceRuntimePlayer({
 
   useEffect(() => {
     const abortController = new AbortController();
-    void loadTheme(manifest, abortController.signal)
-      .then(setTheme)
+    void Promise.resolve()
+      .then(() => {
+        abortController.signal.throwIfAborted();
+        return loadTheme(manifest, abortController.signal);
+      })
+      .then((loadedTheme) => {
+        if (!abortController.signal.aborted) setTheme(loadedTheme);
+      })
       .catch((error: unknown) => {
         if (!abortController.signal.aborted) setRuntimeError(runtimeErrorMessage(error));
       });
@@ -705,6 +735,7 @@ function ActiveExperienceRuntimePlayer({
       onRuntimeError={setRuntimeError}
       onPlaybackHandle={registerPlaybackHandle}
       onSoundBlocked={handleSoundBlocked}
+      onContentSize={setDecodedContentSize}
       renderWorldModel={renderWorldModel}
     />
   );
@@ -735,7 +766,9 @@ function ActiveExperienceRuntimePlayer({
               runtimeState={runtimeState}
               sceneTimeMs={sceneTimeMs}
               locale={playbackLocale}
+              viewerLocale={locale}
               orientation={orientation}
+              decodedContentSize={decodedContentSize}
               onEvents={emitRuntimeEvents}
               onRuntimeError={setRuntimeError}
               onTimelineHoldGateChange={setTimelineHoldGate}
@@ -882,6 +915,9 @@ function ActiveExperienceRuntimePlayer({
               <IconRefresh className="size-4" />
               {copy.playAgain}
             </button>
+            {endingExtra ? (
+              <div className="mt-6 w-full text-left">{endingExtra(controller.playSessionId)}</div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -922,6 +958,7 @@ function CoreRenderer({
   onRuntimeError,
   onPlaybackHandle,
   onSoundBlocked,
+  onContentSize,
   renderWorldModel,
   formatPrice,
 }: {
@@ -944,6 +981,7 @@ function CoreRenderer({
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
   onSoundBlocked: () => void;
+  onContentSize: (size: { width: number; height: number }) => void;
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
 }) {
   if (renderer.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID) {
@@ -971,6 +1009,7 @@ function CoreRenderer({
         onRuntimeError={onRuntimeError}
         onPlaybackHandle={onPlaybackHandle}
         onSoundBlocked={onSoundBlocked}
+        onContentSize={onContentSize}
       />
     );
   }
@@ -1233,6 +1272,7 @@ function CoreVideoRenderer({
   onRuntimeError,
   onPlaybackHandle,
   onSoundBlocked,
+  onContentSize,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -1244,6 +1284,7 @@ function CoreVideoRenderer({
   onRuntimeError: (message: string) => void;
   onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
   onSoundBlocked: () => void;
+  onContentSize: (size: { width: number; height: number }) => void;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
@@ -1410,6 +1451,7 @@ function CoreVideoRenderer({
       onPlaybackError={(message) => onRuntimeError(message?.trim() || copy.mediaError(assetId))}
       onPlaybackHandle={registerPlaybackHandle}
       onSoundBlocked={onSoundBlocked}
+      onContentSize={onContentSize}
       playbackIdentity={playbackIdentity}
       copy={copy.video}
     />
@@ -1589,99 +1631,95 @@ function CoreChoiceRenderer({
     <div
       role="group"
       aria-labelledby={promptId}
-      className="pointer-events-auto absolute inset-x-0 bottom-0 bg-linear-to-t from-black via-black/88 to-transparent px-4 pt-24 pb-12 sm:px-8 sm:pb-16"
+      className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-linear-to-t from-black/80 via-black/45 to-transparent px-5 pt-28 pb-8 sm:pb-12"
       style={{ zIndex: renderer.layer }}
     >
-      <p
-        id={promptId}
-        className="mx-auto max-w-2xl text-center text-sm leading-5 font-medium text-balance text-white/80"
-      >
-        {localize(config.prompt, locale, manifest.localization.defaultLocale)}
-      </p>
-      {choices.length > 0 ? (
-        <div className="mx-auto mt-3 grid max-w-2xl gap-2 sm:grid-cols-2">
-          {choices.map((choice, index) => {
-            const requirement = manifest.graph.nodes
-              .flatMap((node) => node.eventBindings)
-              .filter(
-                (binding) =>
-                  binding.on.type === "renderer.outcome" &&
-                  binding.on.sourceId === renderer.instanceId &&
-                  binding.on.qualifierId === "choice-selected"
-              )
-              .flatMap((binding) => binding.routes)
-              .find(
-                (route) =>
-                  !route.when ||
-                  evaluateExperienceCondition(route.when, runtimeState, {
-                    type: "renderer.outcome",
-                    sourceId: renderer.instanceId,
-                    qualifierId: "choice-selected",
-                    payload: { choiceId: choice.choiceId },
-                  })
-              )?.access;
-            const price =
-              requirement && formatPrice ? formatPrice(requirement.communityPointPrice) : null;
-            return (
-              <button
-                key={choice.choiceId}
-                type="button"
-                onClick={() => onSelect(choice.choiceId)}
-                className={classNames(
-                  "flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-[13px] leading-5 font-medium text-white",
-                  "bg-white/[0.10] backdrop-blur-2xl transition-colors duration-200 hover:bg-white/[0.17]",
-                  "focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none",
-                  !price ? "border-white/10 hover:border-white/20" : undefined,
-                  choices.length % 2 === 1 && index === choices.length - 1
-                    ? "sm:col-span-2"
-                    : undefined
-                )}
-                style={
-                  price
-                    ? {
-                        borderColor:
-                          "color-mix(in srgb, var(--brand-yellow, #ffd84d) 45%, transparent)",
-                      }
-                    : undefined
-                }
-                aria-label={
-                  choice.accessibilityLabel
-                    ? localize(
-                        choice.accessibilityLabel,
-                        locale,
-                        manifest.localization.defaultLocale
-                      )
-                    : undefined
-                }
-              >
-                {price ? (
-                  <span
-                    className="flex shrink-0 items-center"
-                    style={{ color: "var(--brand-yellow, #ffd84d)" }}
-                  >
-                    <IconLock className="size-4" stroke={1.8} aria-hidden />
-                  </span>
-                ) : null}
-                <span className="min-w-0 flex-1 wrap-anywhere">
-                  {localize(choice.label, locale, manifest.localization.defaultLocale)}
-                </span>
-                {price ? (
-                  <span
-                    className="max-w-[45%] shrink-0 text-right text-xs font-medium leading-4 tabular-nums"
-                    style={{ color: "var(--brand-yellow, #ffd84d)" }}
-                  >
-                    {price}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <p role="alert" className="mt-3 text-center text-xs text-white/52">
-          {copy.noVisibleChoices}
+      <div className="pointer-events-auto w-full max-w-5xl">
+        <p
+          id={promptId}
+          className="mb-3 text-center text-[13px] leading-5 font-medium tracking-[0.04em] text-balance text-white/70"
+        >
+          {localize(config.prompt, locale, manifest.localization.defaultLocale)}
         </p>
-      )}
+        {choices.length > 0 ? (
+          <div className="flex flex-row items-stretch justify-center gap-3">
+            {choices.map((choice, index) => {
+              const requirement = manifest.graph.nodes
+                .flatMap((node) => node.eventBindings)
+                .filter(
+                  (binding) =>
+                    binding.on.type === "renderer.outcome" &&
+                    binding.on.sourceId === renderer.instanceId &&
+                    binding.on.qualifierId === "choice-selected"
+                )
+                .flatMap((binding) => binding.routes)
+                .find(
+                  (route) =>
+                    !route.when ||
+                    evaluateExperienceCondition(route.when, runtimeState, {
+                      type: "renderer.outcome",
+                      sourceId: renderer.instanceId,
+                      qualifierId: "choice-selected",
+                      payload: { choiceId: choice.choiceId },
+                    })
+                )?.access;
+              const price =
+                requirement && formatPrice ? formatPrice(requirement.communityPointPrice) : null;
+              return (
+                <button
+                  key={choice.choiceId}
+                  type="button"
+                  onClick={() => onSelect(choice.choiceId)}
+                  className={classNames(
+                    "group flex min-h-12 min-w-0 max-w-sm flex-1 basis-0 items-center gap-3 rounded-2xl border px-3.5 text-left text-[15px] leading-5 font-medium text-white",
+                    "bg-white/10 shadow-[0_10px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl",
+                    "transition-[background-color,border-color,transform] duration-200",
+                    "hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none active:scale-[0.99]",
+                    price ? undefined : "border-white/15 hover:border-white/30"
+                  )}
+                  style={
+                    price
+                      ? {
+                          borderColor:
+                            "color-mix(in srgb, var(--brand-yellow, #ffd84d) 45%, transparent)",
+                        }
+                      : undefined
+                  }
+                  aria-label={
+                    choice.accessibilityLabel
+                      ? localize(
+                          choice.accessibilityLabel,
+                          locale,
+                          manifest.localization.defaultLocale
+                        )
+                      : undefined
+                  }
+                >
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full border border-white/15 bg-white/10 text-[11px] font-semibold text-white/60 tabular-nums group-hover:border-white/30 group-hover:text-white">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 wrap-anywhere">
+                    {localize(choice.label, locale, manifest.localization.defaultLocale)}
+                  </span>
+                  {price ? (
+                    <span
+                      className="flex max-w-[42%] shrink-0 items-center gap-1 text-xs leading-4 font-medium tabular-nums"
+                      style={{ color: "var(--brand-yellow, #ffd84d)" }}
+                    >
+                      <IconLock className="size-3.5" stroke={1.8} aria-hidden />
+                      {price}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p role="alert" className="text-center text-xs text-white/52">
+            {copy.noVisibleChoices}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -1693,12 +1731,13 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
 };
 
 /**
- * The cinematic shell preserves the authored aspect ratio and covers the
- * viewport, rotating landscape work on portrait screens when necessary. The
- * narrative shell is responsive instead, so long-form text owns the available
- * reading viewport without being cropped. Renderer selection remains entirely
- * manifest-driven in both profiles. Choices and player controls belong to the
- * visible viewport, outside the cropped/rotated media coordinate space.
+ * The cinematic shell preserves the authored aspect ratio and fits inside the
+ * viewport, so the whole frame stays visible and the stage fills whichever
+ * side it can. Landscape work still rotates on portrait screens. The narrative
+ * shell is responsive instead, so long-form text owns the available reading
+ * viewport. Renderer selection remains entirely manifest-driven in both
+ * profiles. Choices and player controls belong to the visible viewport,
+ * outside the rotated media coordinate space.
  */
 function PlayerFrame({
   orientation,
@@ -1729,7 +1768,7 @@ function PlayerFrame({
   if (stageProfile === "cinematic" && shellSize) {
     const availWidth = rotated ? shellSize.height : shellSize.width;
     const availHeight = rotated ? shellSize.width : shellSize.height;
-    const width = Math.max(availWidth, availHeight * aspect);
+    const width = Math.min(availWidth, availHeight * aspect);
     stageStyle = { width: Math.round(width), height: Math.round(width / aspect) };
   }
   return (
@@ -1737,8 +1776,7 @@ function PlayerFrame({
       ref={shellRef}
       role="region"
       aria-label={copy.regionLabel}
-      // Clip the oversized cover stage without allowing focus restoration to
-      // scroll this shell and displace the viewport controls.
+      // Keep the fitted stage from scrolling the shell when focus moves.
       style={{ ...style, overflow: "clip" }}
       data-experience-profile={experienceProfile}
       data-experience-stage-profile={stageProfile}
@@ -1902,6 +1940,7 @@ function parkedEventBranchAtMs(
     )
     .flatMap((node) => node.gestures)
     .find((candidate) => candidate.gestureId === event.sourceId);
+  if (gesture?.holdFrame) return 0;
   return gesture?.branchAtMs ?? gesture?.activeWindow?.endMs ?? 0;
 }
 

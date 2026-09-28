@@ -83,8 +83,48 @@ export class MediaAssetReadinessService {
       select: READINESS_ASSET_SELECT,
     });
     const eligibleIds: string[] = [];
+    const remaining: typeof assets = [];
     for (const asset of assets) {
       if (!adapter.supports(asset.kind)) continue;
+      // In-memory gates + owner shortcut first — no queries for the common
+      // "checking my own canvas uploads" case.
+      if (this.mediaAccess.denialForUse(userId, asset)) continue;
+      if (this.mediaAccess.ownsAsset(userId, asset)) {
+        eligibleIds.push(asset.id);
+        continue;
+      }
+      remaining.push(asset);
+    }
+
+    // One canvas-context check answers the whole shared-canvas batch: a single
+    // document access check + a single snapshot containment fetch replaces a
+    // per-asset walk of the canonical chain.
+    if (remaining.length > 0 && context?.documentId) {
+      try {
+        const granted = await this.mediaAccess.canvasReferencedAssetIds(
+          userId,
+          context.documentId,
+          remaining.map((asset) => asset.id),
+        );
+        for (let i = remaining.length - 1; i >= 0; i -= 1) {
+          if (granted.has(remaining[i].id)) {
+            eligibleIds.push(remaining[i].id);
+            remaining.splice(i, 1);
+          }
+        }
+      } catch (error) {
+        // Typed document denials mean the context cannot widen anything — the
+        // canonical chain below decides. Infrastructure failures fail loud.
+        if (
+          !(error instanceof ForbiddenException) &&
+          !(error instanceof NotFoundException)
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    for (const asset of remaining) {
       try {
         await this.mediaAccess.requireUseAccess(userId, asset, context);
         eligibleIds.push(asset.id);

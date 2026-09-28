@@ -8,7 +8,10 @@ import {
   WorkspaceMemberRole,
 } from '@prisma/client';
 import { crewAssetStorageProviderForCell } from '../infra/storage/crew-asset-storage-policy';
-import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
+import {
+  CONTENT_REVIEW_VIDEO_MAX_BYTES,
+  EPISODE_SOURCE_MAX_BYTES,
+} from '@repo/shared';
 import { MediaUploadService } from './media-upload.service';
 
 const USER_ID = 'user-1';
@@ -229,7 +232,7 @@ function serviceFixture() {
 }
 
 describe('MediaUploadService workspace-scoped generic uploads', () => {
-  it('allows 35 GiB only for episode sources and rejects one byte over', async () => {
+  it('allows 35 GiB for episode sources and 2 GB for content-review videos', async () => {
     const { service } = serviceFixture();
     const source = {
       kind: 'episode_source_video' as const,
@@ -251,6 +254,28 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     await expect(service.createUploadUrl(USER_ID, source)).rejects.toThrow(
       'Episode source videos require multipart upload',
     );
+    await expect(
+      service.createUploadUrl(USER_ID, {
+        ...source,
+        kind: 'content_review_video',
+      }),
+    ).rejects.toThrow('Content review videos require multipart upload');
+    await expect(
+      service.prepareUpload(USER_ID, {
+        ...source,
+        kind: 'content_review_video',
+        sizeBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES,
+      }),
+    ).resolves.toMatchObject({
+      policy: { maxBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES },
+    });
+    await expect(
+      service.prepareUpload(USER_ID, {
+        ...source,
+        kind: 'content_review_video',
+        sizeBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES + 1,
+      }),
+    ).rejects.toThrow();
     await expect(
       service.prepareUpload(USER_ID, {
         ...source,
@@ -783,5 +808,99 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     expect(fixture.storage.promoteObject).not.toHaveBeenCalled();
     expect(fixture.uploadedImages.probe).not.toHaveBeenCalled();
     expect(fixture.createAsset).not.toHaveBeenCalled();
+  });
+});
+
+describe('generic upload confirmation byte limits', () => {
+  it('rejects actual stored bytes above the kind limit despite a small declaration', async () => {
+    const f = serviceFixture();
+    const issued = await f.service.createUploadUrl(USER_ID, {
+      kind: 'episode_video',
+      contentType: 'video/mp4',
+      fileName: 'clip.mp4',
+      sizeBytes: 1024,
+    });
+    f.storage.headObject.mockResolvedValue({
+      exists: true,
+      provider: 'azure_blob',
+      bucket: 'media',
+      region: 'eastus2',
+      contentType: 'video/mp4',
+      sizeBytes: 2 * 1024 ** 3 + 1,
+    });
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'episode_video',
+        contentType: 'video/mp4',
+        storageKey: issued.storageKey,
+      }),
+    ).rejects.toMatchObject({ status: 413 });
+    expect(f.createAsset).not.toHaveBeenCalled();
+  });
+});
+
+describe('generic upload stored-size metadata', () => {
+  it.each([
+    null,
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])(
+    'rejects invalid stored size %s before recording an asset',
+    async (sizeBytes) => {
+      const f = serviceFixture();
+      const issued = await f.service.createUploadUrl(USER_ID, {
+        kind: 'episode_video',
+        contentType: 'video/mp4',
+        fileName: 'clip.mp4',
+        sizeBytes: 1024,
+      });
+      f.storage.headObject.mockResolvedValue({
+        exists: true,
+        provider: 'azure_blob',
+        bucket: 'media',
+        region: 'eastus2',
+        contentType: 'video/mp4',
+        sizeBytes,
+      } as never);
+      await expect(
+        f.service.confirmUpload(USER_ID, {
+          kind: 'episode_video',
+          contentType: 'video/mp4',
+          storageKey: issued.storageKey,
+        }),
+      ).rejects.toMatchObject({ status: 422 });
+      expect(f.createAsset).not.toHaveBeenCalled();
+      expect(f.storage.setCacheControl).not.toHaveBeenCalled();
+    },
+  );
+  it('accepts exactly the kind limit', async () => {
+    const f = serviceFixture();
+    const sizeBytes = 2 * 1024 ** 3;
+    const issued = await f.service.createUploadUrl(USER_ID, {
+      kind: 'episode_video',
+      contentType: 'video/mp4',
+      fileName: 'clip.mp4',
+      sizeBytes,
+    });
+    f.storage.headObject.mockResolvedValue({
+      exists: true,
+      provider: 'azure_blob',
+      bucket: 'media',
+      region: 'eastus2',
+      contentType: 'video/mp4',
+      sizeBytes,
+    });
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'episode_video',
+        contentType: 'video/mp4',
+        storageKey: issued.storageKey,
+      }),
+    ).resolves.toHaveProperty('mediaAssetId');
+    expect(f.createAsset).toHaveBeenCalled();
   });
 });

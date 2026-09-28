@@ -1,45 +1,42 @@
 "use client";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { recordMemberView } from "@/src/lib/ip-commerce/api";
 import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
-import { IconX } from "@tabler/icons-react";
+import { IconChevronDown, IconLock, IconX } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useTvIps, useTvSelectedIp } from "../_hooks/use-tv-ips";
 import { EpisodeFeedback } from "@/app/(site)/ips/_components/episode-feedback";
-import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+
+import { TvEpisodeUnlock } from "./tv-episode-unlock";
+
 import { TvGames } from "./tv-games";
 import { TvStage } from "./tv-stage";
+import stageStyles from "./tv-stage.module.css";
 import { TvIpList } from "./tv-ip-list";
 import { TvInfoBar } from "./tv-info-bar";
 import { TvEmptyState, TvErrorState, TvLoadingState } from "./tv-empty";
 import { TvRightRail } from "./tv-right-rail";
 
+import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
+import { TvCatalogToolbar } from "./tv-catalog-toolbar";
+
 export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const { user } = useCurrentUser();
-  const t = useTranslations("tvGames");
+  const [createOpen, setCreateOpen] = useState(false);
   const tv = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
   const [mode, setMode] = useState<"videos" | "games">("videos");
   return (
     <div className="flex min-h-full min-w-0 max-w-full flex-col lg:h-full lg:min-h-0 bg-[#0c0e13] text-white">
-      <div role="group" aria-label={t("catalog")} className="flex shrink-0 gap-1 px-4 py-2">
-        {(["videos", "games"] as const).map((value) => (
-          <button
-            type="button"
-            key={value}
-            aria-pressed={mode === value}
-            onClick={() => setMode(value)}
-            className="min-h-11 rounded-full px-3 text-sm font-medium leading-5 text-white/60 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white aria-pressed:bg-white/10 aria-pressed:text-white"
-          >
-            {t(value)}
-          </button>
-        ))}
-      </div>
+      <TvCatalogToolbar mode={mode} onModeChange={setMode} onCreate={() => setCreateOpen(true)} />
+      <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
       {mode === "games" && !embedded && (
         <button
           type="button"
@@ -51,7 +48,9 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
         </button>
       )}
       {mode === "videos" ? (
-        <TvVideoApp key={user?.id ?? "guest"} embedded={embedded} />
+        <>
+          <TvVideoApp key={user?.id ?? "guest"} embedded={embedded} />
+        </>
       ) : (
         <TvGames />
       )}
@@ -60,9 +59,12 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
 }
 
 function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
+  const { user } = useCurrentUser();
+  const signaledEpisodes = useRef(new Set<string>());
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -184,21 +186,56 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
         isLoadingMore={isFetchingNextPage}
         onLoadMore={() => void fetchNextPage()}
         search={search}
-        onSearchChange={setSearch}
+        onSearchChange={(value) => {
+          navigationVersion.current += 1;
+          setAdvancing(false);
+          setNextError(null);
+          setSearch(value);
+        }}
       />
       <section
         aria-label={t("playerTitle")}
         className="relative flex min-w-0 shrink-0 flex-col lg:flex-1 lg:overflow-hidden"
       >
-        <div className="relative aspect-video shrink-0 lg:aspect-auto lg:min-h-0 lg:flex-1">
+        <div
+          className={`${stageStyles.viewport} relative aspect-video shrink-0 lg:aspect-auto lg:min-h-0 lg:flex-1`}
+        >
           {item ? (
             <TvStage
               item={playbackItem!}
-              onPlaybackChange={(playing) => {
+              onPlaybackChange={(playing, source) => {
                 setIsPlaying(playing);
                 if (playing) {
                   navigationVersion.current += 1;
                   setAdvancing(false);
+                  // The API applies membership/grant eligibility and monthly deduplication.
+                  // Only report an actually playing full episode, never its trailer.
+                  if (
+                    user?.id &&
+                    episode?.video &&
+                    !episode.locked &&
+                    source &&
+                    new URL(source, window.location.href).href ===
+                      new URL(episode.video, window.location.href).href
+                  ) {
+                    const key = JSON.stringify([
+                      item.id,
+                      episode.id,
+                      new Date().toISOString().slice(0, 7),
+                    ]);
+                    if (!signaledEpisodes.current.has(key)) {
+                      signaledEpisodes.current.add(key);
+                      void recordMemberView({ ipId: item.id, episodeId: episode.id })
+                        .then((result) => {
+                          // Eligibility may change after a membership purchase or free unlock.
+                          if (!result.recorded) signaledEpisodes.current.delete(key);
+                        })
+                        .catch(() => {
+                          // A later playback/resume may retry a failed best-effort signal.
+                          signaledEpisodes.current.delete(key);
+                        });
+                    }
+                  }
                 }
               }}
               onNext={hasNext ? () => void nextChannel() : undefined}
@@ -227,49 +264,120 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
             </button>
           </p>
         )}
-        {item && Boolean(item.episodes?.length) && (
-          <div className="shrink-0 space-y-2 px-4 py-2">
-            <p className="text-xs text-white/60">{t("episodeSelector")}</p>
-            <NativeSelect
-              aria-label={t("episodeSelector")}
-              value={episode?.id ?? ""}
-              onChange={(episodeId) => {
-                navigationVersion.current += 1;
-                setAdvancing(false);
-                setNextError(null);
-                setIsPlaying(false);
-                setEpisodeChoice(episodeId ? { ipId: item.id, episodeId } : null);
-              }}
+        {item && (
+          <div className="shrink-0 lg:max-h-[45%] lg:overflow-y-auto" data-lenis-prevent>
+            <button
+              type="button"
+              aria-expanded={detailsOpen}
+              aria-controls="tv-channel-details"
+              onClick={() => setDetailsOpen((open) => !open)}
+              className="flex min-h-11 w-full items-center justify-between gap-3 border-t border-white/10 px-4 text-sm text-white/70 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-white"
             >
-              <NativeSelectOption value="">{t("preview")}</NativeSelectOption>
-              {item.episodes?.map((entry) => (
-                <NativeSelectOption key={entry.id} value={entry.id}>
-                  {entry.number}. {entry.title}
-                  {entry.locked
-                    ? ` · ${t("lockedEpisode")}`
-                    : !entry.video
-                      ? ` · ${t("videoUnavailable")}`
-                      : ""}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-            {episode && !episode.video && (
-              <p role="status" className="text-sm text-white/60">
-                {episode.locked ? t("episodeAccess") : t("videoUnavailable")}{" "}
-                <Link
-                  className="underline"
-                  href={localizePath(ipRoomPath(item.roomNumber), locale)}
-                >
-                  {t("viewDetail")}
-                </Link>
-              </p>
-            )}
-            {episode && Boolean(episode.video) && episode.number >= 1 && episode.number <= 3 && (
-              <EpisodeFeedback ipId={item.id} episodeId={episode.id} />
-            )}
+              <span>{t(detailsOpen ? "hideDetails" : "showDetails")}</span>
+              <IconChevronDown
+                aria-hidden
+                className={`size-4 ${detailsOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            <div id="tv-channel-details" hidden={!detailsOpen}>
+              {item && Boolean(item.episodes?.length) && (
+                <div className="shrink-0 space-y-2 px-4 py-2">
+                  <p className="text-xs text-white/60">{t("episodeSelector")}</p>
+                  <div
+                    role="group"
+                    aria-label={t("episodeSelector")}
+                    className="flex gap-2 overflow-x-auto pb-2"
+                  >
+                    {[
+                      {
+                        id: "",
+                        title: t("preview"),
+                        cover: item.cover,
+                        number: 0,
+                        locked: false,
+                        video: item.trailer,
+                      },
+                      ...(item.episodes ?? []),
+                    ].map((entry) => (
+                      <button
+                        type="button"
+                        key={entry.id}
+                        data-episode-id={entry.id}
+                        aria-pressed={(episode?.id ?? "") === entry.id}
+                        onClick={() => {
+                          navigationVersion.current += 1;
+                          setAdvancing(false);
+                          setNextError(null);
+                          setIsPlaying(false);
+                          setEpisodeChoice(
+                            entry.id ? { ipId: item.id, episodeId: entry.id } : null
+                          );
+                        }}
+                        title={entry.title}
+                        className="flex w-28 shrink-0 flex-col rounded-md p-1 text-left text-xs text-white/70 hover:bg-primary/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+                      >
+                        {entry.cover ? (
+                          <Image
+                            unoptimized
+                            width={112}
+                            height={63}
+                            src={entry.cover}
+                            alt=""
+                            className="mb-1 aspect-video w-full rounded-md object-cover"
+                          />
+                        ) : (
+                          <span className="mb-1 flex aspect-video items-center justify-center rounded-md bg-white/10">
+                            {entry.number || t("preview")}
+                          </span>
+                        )}
+                        <span
+                          className={`line-clamp-1 ${(episode?.id ?? "") === entry.id ? "text-primary" : ""}`}
+                        >
+                          {entry.number ? `${entry.number}. ` : ""}
+                          {entry.title}
+                        </span>
+                        {isPlaying && !entry.locked && (episode?.id ?? "") === entry.id && (
+                          <span className="text-xs text-primary">{t("nowPlaying")}</span>
+                        )}
+                        {entry.locked && (
+                          <span className="inline-flex items-center gap-1 text-xs">
+                            <IconLock aria-hidden="true" className="size-3" />
+                            {t("lockedEpisode")}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  {episode && !episode.video && (
+                    <p role="status" className="text-sm text-white/60">
+                      {episode.locked ? t("episodeAccess") : t("videoUnavailable")}{" "}
+                      <Link
+                        className="underline"
+                        href={localizePath(ipRoomPath(item.roomNumber), locale)}
+                      >
+                        {t("viewDetail")}
+                      </Link>
+                    </p>
+                  )}
+                  {episode?.locked && (
+                    <TvEpisodeUnlock
+                      key={`${item.id}:${episode.id}`}
+                      ipId={item.id}
+                      episodeId={episode.id}
+                    />
+                  )}
+                  {episode &&
+                    Boolean(episode.video) &&
+                    episode.number >= 1 &&
+                    episode.number <= 3 && (
+                      <EpisodeFeedback ipId={item.id} episodeId={episode.id} />
+                    )}
+                </div>
+              )}
+              {item && <TvInfoBar item={item} />}
+            </div>
           </div>
         )}
-        {item && <TvInfoBar item={item} />}
 
         {!embedded && (
           <div className="absolute right-4 top-4 z-20 flex items-center gap-2 sm:right-6">

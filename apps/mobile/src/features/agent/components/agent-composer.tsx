@@ -1,5 +1,5 @@
-import IconArrowUp from "@tabler/icons-react-native/icons/IconArrowUp";
-import IconPlayerStopFilled from "@tabler/icons-react-native/icons/IconPlayerStopFilled";
+import IconArrowUp from "@tabler/icons-react-native/IconArrowUp";
+import IconPlayerStopFilled from "@tabler/icons-react-native/IconPlayerStopFilled";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 

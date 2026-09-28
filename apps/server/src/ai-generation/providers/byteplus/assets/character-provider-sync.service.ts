@@ -127,6 +127,7 @@ export class CharacterProviderSyncService
   private workers: Worker[] = [];
   private sweepTimer: NodeJS.Timeout | null = null;
   private sweeping = false;
+  private stopping = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -161,6 +162,7 @@ export class CharacterProviderSyncService
   }
 
   async onApplicationShutdown(): Promise<void> {
+    this.stopping = true;
     if (this.sweepTimer) clearInterval(this.sweepTimer);
     await Promise.allSettled(this.workers.map((worker) => worker.close()));
     await Promise.allSettled([
@@ -182,6 +184,16 @@ export class CharacterProviderSyncService
    */
   async ensureAigcGroup(characterId: string): Promise<string | null> {
     if (!this.configService.config.aigcRegistrationEnabled) return null;
+    const eligible = await this.prisma.studioCharacter.findFirst({
+      where: {
+        id: characterId,
+        kind: 'virtual',
+        status: 'active',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!eligible) return null;
     const existing = await this.prisma.aiProviderAssetGroup.findUnique({
       where: {
         characterId_provider: { characterId, provider: PROVIDER_KEY },
@@ -209,30 +221,61 @@ export class CharacterProviderSyncService
     }
     // Upsert guards the create-race (two attaches at once): the unique
     // (characterId, provider) makes the loser reuse the winner's row.
-    const group = await this.prisma.aiProviderAssetGroup.upsert({
-      where: {
-        characterId_provider: { characterId, provider: PROVIDER_KEY },
-      },
-      create: {
-        characterId,
-        provider: PROVIDER_KEY,
-        externalGroupId,
-        groupType: AiProviderAssetGroupType.aigc,
-        projectName: this.configService.config.projectName,
-        status: AiProviderAssetGroupStatus.active,
-      },
-      update: {},
-      select: { id: true, externalGroupId: true },
-    });
+    const group = await this.prisma
+      .$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+        const current = await tx.studioCharacter.findFirst({
+          where: {
+            id: characterId,
+            kind: 'virtual',
+            status: 'active',
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (!current) return null;
+        return tx.aiProviderAssetGroup.upsert({
+          where: {
+            characterId_provider: { characterId, provider: PROVIDER_KEY },
+          },
+          create: {
+            characterId,
+            provider: PROVIDER_KEY,
+            externalGroupId,
+            groupType: AiProviderAssetGroupType.aigc,
+            projectName: this.configService.config.projectName,
+            status: AiProviderAssetGroupStatus.active,
+          },
+          update: {},
+          select: { id: true, externalGroupId: true, status: true },
+        });
+      })
+      .catch(async (error: unknown) => {
+        // The provider already created this group; a failed local publication
+        // must still request cleanup, without masking the original DB failure.
+        try {
+          await this.enqueueCriticalTeardown({
+            externalAssetIds: [],
+            externalGroupIds: [externalGroupId],
+          });
+        } catch {
+          this.logger.warn(
+            `Unable to queue orphan provider group cleanup: ${externalGroupId}`,
+          );
+        }
+        throw error;
+      });
     // If we lost the race our just-created upstream group is an orphan —
     // tear it down on the critical lane.
-    if (group.externalGroupId !== externalGroupId) {
+    if (!group || group.externalGroupId !== externalGroupId) {
       await this.enqueueCriticalTeardown({
         externalAssetIds: [],
         externalGroupIds: [externalGroupId],
       });
     }
-    return group.id;
+    return group?.status === AiProviderAssetGroupStatus.active
+      ? group.id
+      : null;
   }
 
   /**
@@ -278,7 +321,9 @@ export class CharacterProviderSyncService
     await this.queue().add(
       'register',
       { op: 'register', externalAssetRowId },
-      { jobId: `register:${externalAssetRowId}:${Date.now()}`, priority },
+      // Colons are forbidden in custom job ids (BullMQ Redis key separator);
+      // the legacy 3-segment form is a deprecated compatibility window only.
+      { jobId: `register-${externalAssetRowId}-${Date.now()}`, priority },
     );
   }
 
@@ -331,11 +376,12 @@ export class CharacterProviderSyncService
   // ── Consumers ───────────────────────────────────────────────────────────
 
   private processAssetsJob: Processor<AssetsJobData> = async (job) => {
+    if (this.stopping) return;
     const row = await this.prisma.aiProviderExternalAsset.findUnique({
       where: { id: job.data.externalAssetRowId },
       include: MIRROR_INCLUDE,
     });
-    if (!row) return;
+    if (this.stopping || !row) return;
     // A disabled group means the character was revoked mid-flight — the
     // critical lane owns teardown; this lane just stops touching the row.
     if (row.assetGroup.status !== AiProviderAssetGroupStatus.active) return;
@@ -401,26 +447,45 @@ export class CharacterProviderSyncService
     // tear it down on the critical lane rather than orphan it. (revoke's own
     // teardown snapshot was taken BEFORE this asset existed, so only this
     // path can clean it up.)
-    const applied = await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.aiProviderExternalAsset.updateMany({
-        where: { id: row.id, status: AiProviderExternalAssetStatus.pending },
-        data: {
-          status: AiProviderExternalAssetStatus.processing,
-          externalAssetId: createdId,
-          statusReason: null,
-          processingDeadline: new Date(Date.now() + PROCESSING_DEADLINE_MS),
-          lastSyncedAt: new Date(),
-        },
+    const applied = await this.prisma
+      .$transaction(async (tx) => {
+        const { count } = await tx.aiProviderExternalAsset.updateMany({
+          where: {
+            id: row.id,
+            status: AiProviderExternalAssetStatus.pending,
+            updatedAt: row.updatedAt,
+            externalAssetId: row.externalAssetId,
+          },
+          data: {
+            status: AiProviderExternalAssetStatus.processing,
+            externalAssetId: createdId,
+            statusReason: null,
+            processingDeadline: new Date(Date.now() + PROCESSING_DEADLINE_MS),
+            lastSyncedAt: new Date(),
+          },
+        });
+        if (count === 0) return false;
+        await this.emitMediaEvent(
+          tx,
+          row,
+          AiProviderExternalAssetStatus.processing,
+          null,
+        );
+        return true;
+      })
+      .catch(async (error: unknown) => {
+        try {
+          await this.enqueueCriticalTeardown({
+            externalAssetIds: [createdId],
+            externalGroupIds: [],
+          });
+        } catch {
+          this.logger.warn(
+            `Unable to queue orphan provider asset cleanup: ${createdId}`,
+          );
+        }
+        throw error;
       });
-      if (count === 0) return false;
-      await this.emitMediaEvent(
-        tx,
-        row,
-        AiProviderExternalAssetStatus.processing,
-        null,
-      );
-      return true;
-    });
     if (!applied) {
       await this.enqueueCriticalTeardown({
         externalAssetIds: [createdId],
@@ -437,13 +502,17 @@ export class CharacterProviderSyncService
       { op: 'poll', externalAssetRowId },
       {
         delay: POLL_DELAY_MS,
-        jobId: `poll:${externalAssetRowId}:${Date.now()}`,
+        jobId: `poll-${externalAssetRowId}-${Date.now()}`,
       },
     );
   }
 
   private async poll(row: MirrorRow): Promise<void> {
-    if (!row.externalAssetId) return;
+    if (
+      row.status !== AiProviderExternalAssetStatus.processing ||
+      !row.externalAssetId
+    )
+      return;
     let record: Awaited<ReturnType<BytePlusAssetsClient['getAsset']>>;
     try {
       record = await this.client.getAsset(row.externalAssetId);
@@ -542,7 +611,7 @@ export class CharacterProviderSyncService
    * the asset lane independent of the group.
    */
   private async reconcileTeardowns(): Promise<void> {
-    if (!this.configService.config.assetsPlaneEnabled) return;
+    if (this.stopping || !this.configService.config.assetsPlaneEnabled) return;
     const graceCutoff = new Date(Date.now() - TEARDOWN_REENQUEUE_GRACE_MS);
     try {
       const assets = await this.prisma.aiProviderExternalAsset.findMany({
@@ -554,6 +623,7 @@ export class CharacterProviderSyncService
         select: { externalAssetId: true },
         take: 100,
       });
+      if (this.stopping) return;
       const groups = await this.prisma.aiProviderAssetGroup.findMany({
         where: {
           status: AiProviderAssetGroupStatus.disabled,
@@ -562,7 +632,7 @@ export class CharacterProviderSyncService
         select: { externalGroupId: true },
         take: 100,
       });
-      if (assets.length === 0 && groups.length === 0) return;
+      if (this.stopping || (assets.length === 0 && groups.length === 0)) return;
       await this.enqueueCriticalTeardown({
         externalAssetIds: assets
           .map((a) => a.externalAssetId)
@@ -583,9 +653,10 @@ export class CharacterProviderSyncService
    * observable rather than silently draining over many minutes.
    */
   private async reportBackpressure(): Promise<void> {
+    if (this.stopping) return;
     try {
       const waiting = await this.queue().getWaitingCount();
-      if (waiting >= BACKPRESSURE_WARN_DEPTH) {
+      if (!this.stopping && waiting >= BACKPRESSURE_WARN_DEPTH) {
         const drainMinutes = Math.ceil(waiting / CREATE_ASSET_LIMITER.max);
         this.logger.warn(
           `ai-assets registration backlog: ${waiting} queued (~${drainMinutes} min to drain at ${CREATE_ASSET_LIMITER.max}/min)`,
@@ -598,7 +669,12 @@ export class CharacterProviderSyncService
 
   /** Safety net for lost poll jobs (§2.2 staleness rule). */
   private async sweepStaleMirrors(): Promise<void> {
-    if (this.sweeping || !this.configService.config.assetsPlaneEnabled) return;
+    if (
+      this.stopping ||
+      this.sweeping ||
+      !this.configService.config.assetsPlaneEnabled
+    )
+      return;
     this.sweeping = true;
     try {
       const stuck = await this.prisma.aiProviderExternalAsset.findMany({
@@ -615,6 +691,7 @@ export class CharacterProviderSyncService
         take: 50,
       });
       for (const row of stuck) {
+        if (this.stopping) return;
         await this.transition(row, AiProviderExternalAssetStatus.failed, {
           statusReason: 'stale',
         });
@@ -640,6 +717,11 @@ export class CharacterProviderSyncService
       processingDeadline?: Date;
     },
   ): Promise<void> {
+    if (
+      row.status !== AiProviderExternalAssetStatus.pending &&
+      row.status !== AiProviderExternalAssetStatus.processing
+    )
+      return;
     const updatedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
       // Guarded transition: only advance a row that is STILL pending/processing.
@@ -650,12 +732,9 @@ export class CharacterProviderSyncService
       const { count } = await tx.aiProviderExternalAsset.updateMany({
         where: {
           id: row.id,
-          status: {
-            in: [
-              AiProviderExternalAssetStatus.pending,
-              AiProviderExternalAssetStatus.processing,
-            ],
-          },
+          status: row.status,
+          updatedAt: row.updatedAt,
+          externalAssetId: row.externalAssetId,
         },
         data: {
           status,

@@ -295,50 +295,46 @@ export class AiModelPresetRegistryService {
     preset: 'fast' | 'standard' | 'professional',
   ): AiModelDefinition[] {
     return [...models].sort((a, b) => {
-      const score =
-        this.modelPresetScore(b, preset) - this.modelPresetScore(a, preset);
-      if (score !== 0) return score;
+      const order = this.comparePresetModels(a, b, preset);
+      if (order !== 0) return order;
       return a.id.localeCompare(b.id);
     });
   }
 
-  private modelPresetScore(
-    model: AiModelDefinition,
+  /**
+   * Deterministic, structured tier ordering — no keyword matching on model
+   * names/descriptions (a renamed model must never silently change preset
+   * ordering). Tiers are derived from data the catalog already curates:
+   * - fast: cheapest reference cost first, then higher concurrency.
+   * - standard: admin-recommended first, then canonical sortOrder.
+   * - professional: most capable proxy we have — reference cost descending,
+   *   multi-output models first.
+   */
+  private comparePresetModels(
+    a: AiModelDefinition,
+    b: AiModelDefinition,
     preset: 'fast' | 'standard' | 'professional',
   ): number {
-    const haystack = [
-      model.id,
-      model.name,
-      model.modelName,
-      model.deployment,
-      model.description,
-    ]
-      .join(' ')
-      .toLowerCase();
-    const cost = this.referenceProductCost(model);
-    const concurrency = model.queue.globalConcurrency;
-    const planBoost = model.entitlement.requiredPlan ? 3 : 0;
-
     if (preset === 'fast') {
-      return (
-        (haystack.includes('schnell') ? 10 : 0) +
-        (haystack.includes('fast') || haystack.includes('turbo') ? 8 : 0) +
-        concurrency -
-        cost
-      );
+      const cost = this.referenceProductCost(a) - this.referenceProductCost(b);
+      if (cost !== 0) return cost;
+      return b.queue.globalConcurrency - a.queue.globalConcurrency;
     }
     if (preset === 'professional') {
+      const cost = this.referenceProductCost(b) - this.referenceProductCost(a);
+      if (cost !== 0) return cost;
       return (
-        (haystack.includes('pro') || haystack.includes('ultra') ? 8 : 0) +
-        planBoost +
-        cost +
-        (model.capabilities.maxOutputs > 1 ? 2 : 0)
+        Number(b.capabilities.maxOutputs > 1) -
+        Number(a.capabilities.maxOutputs > 1)
       );
     }
+    const recommended =
+      Number(Boolean(b.ui_policy?.recommended)) -
+      Number(Boolean(a.ui_policy?.recommended));
+    if (recommended !== 0) return recommended;
     return (
-      (haystack.includes('standard') ? 5 : 0) +
-      Math.max(0, 10 - Math.abs(cost - 2)) +
-      concurrency / 2
+      (a.ui_policy?.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+      (b.ui_policy?.sortOrder ?? Number.MAX_SAFE_INTEGER)
     );
   }
 

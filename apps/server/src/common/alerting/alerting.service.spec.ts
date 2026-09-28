@@ -87,4 +87,52 @@ describe('Alert delivery during Redis failures', () => {
     expect(redis.set).not.toHaveBeenCalled();
     expect(post).not.toHaveBeenCalled();
   });
+  it('rejects a failed body read after successful HTTP headers', async () => {
+    const failure = new Error('response connection closed');
+    post.mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(failure);
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    await expect(service.dispatch(event)).rejects.toBe(failure);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('logs a response-body timeout through the non-blocking notify path', async () => {
+    process.env.FEISHU_ALERT_TIMEOUT_MS = '1000';
+    post.mockImplementation((_url: string, options: RequestInit) =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              options.signal!.addEventListener(
+                'abort',
+                () => {
+                  controller.error(new Error('alert response timed out'));
+                },
+                { once: true },
+              );
+            },
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    service.notify(event);
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(warn).toHaveBeenCalledWith(
+      'Alert dispatch failed: alert response timed out',
+    );
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('preserves successful empty acknowledgements', async () => {
+    post.mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(service.dispatch(event)).resolves.toBeUndefined();
+  });
 });

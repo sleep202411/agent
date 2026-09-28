@@ -391,28 +391,31 @@ export class CrewInviteLinksService {
         where: { id: link.id },
         data: { useCount: { increment: 1 } },
       });
+      // Commit the durable owner alert with membership; realtime delivery may fail.
+      await this.notifications.send(
+        {
+          userId: link.createdByUserId,
+          type: 'crew.invitation.accepted',
+          title: 'Someone joined through your link',
+          body: `A new member joined "${crew.name}".`,
+          meta: {
+            crewId: link.crewId,
+            crewName: crew.name,
+            userId: user.userId,
+            inviteLinkId: link.id,
+            deeplink: `/crews/${link.crewId}/workspace?tab=members`,
+          },
+          idempotencyKey: `crew.invite_link.accepted:${link.id}:${user.userId}`,
+        },
+        tx,
+      );
       return { memberId: joined.memberId, rejoined: true };
     });
 
     for (const message of pendingMessages) {
       await this.conversations.broadcastMessage(message);
     }
-    if (result.rejoined) {
-      await this.notifications.send({
-        userId: link.createdByUserId,
-        type: 'crew.invitation.accepted',
-        title: 'Someone joined through your link',
-        body: `A new member joined "${crew.name}".`,
-        meta: {
-          crewId: link.crewId,
-          crewName: crew.name,
-          userId: user.userId,
-          inviteLinkId: link.id,
-          deeplink: `/crews/${link.crewId}/workspace?tab=members`,
-        },
-        idempotencyKey: `crew.invite_link.accepted:${link.id}:${user.userId}`,
-      });
-    }
+
     return {
       scope: 'crew',
       crewId: link.crewId,

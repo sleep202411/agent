@@ -4,7 +4,10 @@ const isDev = process.env.NODE_ENV === "development";
 function getStore(): Record<string, boolean> {
   if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const stored: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    return stored && typeof stored === "object" && !Array.isArray(stored)
+      ? (stored as Record<string, boolean>)
+      : {};
   } catch {
     return {};
   }
@@ -37,5 +40,9 @@ export function resetGuide(guideId: string): void {
 
 export function resetAllGuides(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(STORAGE_KEY);
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Match the best-effort storage contract used by guide reads and writes.
+  }
 }

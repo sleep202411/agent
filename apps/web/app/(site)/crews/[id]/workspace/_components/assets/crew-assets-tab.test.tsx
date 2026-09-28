@@ -106,6 +106,7 @@ let container: HTMLElement | null = null;
 let requests: Array<{ url: string; method: string; body?: unknown }> = [];
 let storageAvailable = true;
 let paginated = false;
+let cursorRejected = false;
 let nextPageFails = false;
 let assetListFails = false;
 
@@ -117,11 +118,19 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
+let legacyProject: { id: string; name: string } | null = null;
 let canLink = true;
+let overviewReadFails = false;
+let permissionReadFails = false;
 let linkFails = false;
 let linkedWorkspaceId: string | null = null;
+let folderReadFails = false;
 let bulkMove = false;
 let movedSecond = false;
+let memberReadFails = false;
+let accessVersion = 1;
+let refreshedAsset = false;
+let trashFails = false;
 
 function installFetch() {
   vi.stubGlobal(
@@ -135,7 +144,12 @@ function installFetch() {
         body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
       });
       if (method === "GET" && url.endsWith("/production-overview")) {
+        if (overviewReadFails)
+          return jsonResponse({ message: "Overview unavailable" }, { status: 403 });
         return jsonResponse({
+          studioProject: legacyProject
+            ? { ...legacyProject, workspace: { id: "legacy-workspace", name: "Legacy workspace" } }
+            : null,
           studioWorkspace: linkedWorkspaceId ? { id: linkedWorkspaceId, name: "Studio" } : null,
           capabilities: { linkWorkspace: canLink },
         });
@@ -150,7 +164,8 @@ function installFetch() {
         if (linkFails) {
           return jsonResponse({ message: "Workspace link changed" }, { status: 403 });
         }
-        linkedWorkspaceId = "ws-1";
+        linkedWorkspaceId = JSON.parse(String(init?.body)).workspaceId;
+        legacyProject = null;
         return jsonResponse({ studioWorkspace: { id: "ws-1", name: "Studio" } });
       }
       if (method === "GET" && url.includes("/users/by-ids")) {
@@ -197,16 +212,20 @@ function installFetch() {
         return jsonResponse([]);
       }
       if (method === "GET" && url.endsWith("/assets/file-1/permissions")) {
+        if (permissionReadFails)
+          return jsonResponse({ message: "Access read unavailable" }, { status: 503 });
         return jsonResponse({
           accessMode: "inherit",
-          permissionVersion: 1,
+          permissionVersion: accessVersion,
           effectivePermission: "manage",
           canManage: true,
           grants: [],
         });
       }
-      if (method === "GET" && url.endsWith("/members")) {
-        return jsonResponse([]);
+      if (method === "GET" && new URL(url, "http://localhost").pathname.endsWith("/members")) {
+        if (memberReadFails)
+          return jsonResponse({ message: "Member list unavailable" }, { status: 403 });
+        return jsonResponse({ items: [], nextCursor: null, total: 0 });
       }
       if (method === "PATCH" && url.includes("/assets/")) {
         if (url.endsWith("/file-1"))
@@ -219,11 +238,23 @@ function installFetch() {
           parentId: "folder-1",
         });
       }
-      if (method === "GET" && url.endsWith("/assets/folders")) return jsonResponse([ROOT_ITEMS[0]]);
+      if (method === "GET" && url.includes("/assets/studio-media-options")) {
+        return jsonResponse({ workspaceId: "ws-1", projects: [], items: [] });
+      }
+      if (method === "GET" && url.endsWith("/assets/folders")) {
+        if (folderReadFails)
+          return jsonResponse({ message: "Folders unavailable" }, { status: 503 });
+        return jsonResponse([ROOT_ITEMS[0]]);
+      }
       if (method === "GET" && url.includes("/assets")) {
         if (assetListFails)
           return jsonResponse({ message: "Refresh unavailable" }, { status: 503 });
         if (url.includes("cursor=")) {
+          if (cursorRejected)
+            return jsonResponse(
+              { code: "CREW_ASSET_CURSOR_INVALID", message: "Restart assets" },
+              { status: 400 }
+            );
           return nextPageFails
             ? jsonResponse({ message: "Next page unavailable" }, { status: 503 })
             : jsonResponse({
@@ -238,7 +269,11 @@ function installFetch() {
           items: inFolder
             ? []
             : [
-                ...ROOT_ITEMS,
+                ...ROOT_ITEMS.map((item) =>
+                  refreshedAsset && item.id === "file-1"
+                    ? { ...item, name: "Collaborator.png", updatedAt: "2026-09-23T10:00:00.000Z" }
+                    : item
+                ),
                 ...(bulkMove && !movedSecond
                   ? [{ ...ROOT_ITEMS[1], id: "file-2", name: "second.png" }]
                   : []),
@@ -258,7 +293,11 @@ function installFetch() {
           { status: 201 }
         );
       }
+      if (method === "POST" && trashFails && url.endsWith("/assets/file-1/restore"))
+        return jsonResponse({ message: "Asset temporarily unavailable" }, { status: 503 });
       if (method === "PUT" || method === "POST") return jsonResponse({ favorite: true });
+      if (method === "DELETE" && trashFails && url.endsWith("/assets/file-1"))
+        return jsonResponse({ message: "Asset temporarily unavailable" }, { status: 503 });
       if (method === "DELETE") return new Response(null, { status: 204 });
       throw new Error(`Unhandled request: ${method} ${url}`);
     })
@@ -313,10 +352,13 @@ beforeEach(() => {
   storageAvailable = true;
   paginated = false;
   nextPageFails = false;
+  cursorRejected = false;
   assetListFails = false;
   canLink = true;
+  overviewReadFails = false;
   linkFails = false;
   linkedWorkspaceId = null;
+  legacyProject = null;
   HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal(
     "ResizeObserver",
@@ -330,8 +372,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  folderReadFails = false;
   bulkMove = false;
   movedSecond = false;
+  memberReadFails = false;
+  accessVersion = 1;
+  refreshedAsset = false;
+  trashFails = false;
+  permissionReadFails = false;
   vi.clearAllMocks();
   act(() => root?.unmount());
   container?.remove();
@@ -356,6 +404,9 @@ describe("crew asset center", () => {
     await click(document.querySelector<HTMLInputElement>('input[aria-label="Select second.png"]')!);
     await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
     const form = document.querySelector('[data-slot="dialog-content"] form')!;
+    await vi.waitFor(() =>
+      expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
+    );
     await act(async () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await new Promise((resolve) => setTimeout(resolve, 50));
@@ -445,6 +496,39 @@ describe("crew asset center", () => {
     expect(requests.some((request) => request.url.includes("source=favorites"))).toBe(true);
   });
 
+  it("keeps move versions through refresh and retry until the dialog is reopened", async () => {
+    const client = await render();
+    await click(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!
+    );
+    await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+    refreshedAsset = true;
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    const submit = async () => {
+      await act(async () => {
+        document
+          .querySelector('[data-slot="dialog-content"] form')!
+          .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+    };
+    await submit();
+    expect(requests.filter((r) => r.method === "PATCH").at(-1)?.body).toMatchObject({
+      expectedUpdatedAt: ROOT_ITEMS[1].updatedAt,
+    });
+    await submit();
+    expect(requests.filter((r) => r.method === "PATCH").at(-1)?.body).toMatchObject({
+      expectedUpdatedAt: ROOT_ITEMS[1].updatedAt,
+    });
+    await click(byText("button", "Cancel"));
+    await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+    await submit();
+    expect(requests.filter((r) => r.method === "PATCH").at(-1)?.body).toMatchObject({
+      expectedUpdatedAt: "2026-09-23T10:00:00.000Z",
+    });
+  });
+
   it("locks rename to the single checked asset instead of the open inspector asset", async () => {
     await render();
 
@@ -507,6 +591,43 @@ describe("crew asset center", () => {
     });
   });
 
+  it("locks the permission draft while saving and retains it after failure", async () => {
+    await render();
+    const originalFetch = globalThis.fetch;
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/assets/file-1/permissions") && init?.method === "PUT") {
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      return originalFetch(input, init);
+    });
+    await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await click(byText("button", "Manage access"));
+    const restricted = document.querySelector<HTMLInputElement>(
+      'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+    )!;
+    await click(restricted);
+    await click(byText("button", "Save access"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(restricted.disabled).toBe(true);
+    expect((byText("button", "Cancel") as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => finish(jsonResponse({ message: "Save unavailable" }, { status: 503 })));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(restricted.disabled).toBe(false);
+    expect(restricted.checked).toBe(true);
+    expect((byText("button", "Cancel") as HTMLButtonElement).disabled).toBe(false);
+    expect(byText("button", "Save access")).toBeTruthy();
+  });
+
   it("requires confirmation before permanent deletion from Trash", async () => {
     await render();
     await click(byText("button", "Trash"));
@@ -532,11 +653,22 @@ describe("crew asset center", () => {
 
 describe("Link workspace", () => {
   it("links a workspace from the shared header and updates the trigger", async () => {
-    await render();
+    const client = await render();
+    const sourceKey = ["crew", "assets", "crew_1", "studio-media-options", {}, "user-1"];
+    const otherAccount = [...sourceKey.slice(0, -1), "other-user"];
+    const otherCrew = ["crew", "assets", "crew_2", "studio-media-options", {}, "user-1"];
+    for (const key of [sourceKey, otherAccount, otherCrew]) {
+      client.setQueryData(key, { workspaceId: "old-workspace", projects: [], items: [] });
+    }
     const trigger = byText("button", "Link workspace");
     const header = document.querySelector('header[aria-label="Crew header"]');
     expect(header?.contains(trigger)).toBe(true);
     expect(header?.contains(byText("button", "New folder"))).toBe(false);
+    expect(
+      [...document.querySelectorAll("button")].filter(
+        (button) => button.textContent === "Link workspace"
+      )
+    ).toHaveLength(1);
     await click(trigger);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
@@ -549,10 +681,13 @@ describe("Link workspace", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
-      expect(trigger.textContent).toBe("Studio");
+      expect(byText("button", "Studio")?.textContent).toBe("Studio");
     });
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.body.textContent).toContain("Open in Studio");
+    expect(client.getQueryState(sourceKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(otherAccount)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(otherCrew)?.isInvalidated).toBe(false);
   });
   it("keeps the action disabled without the workspace-link capability", async () => {
     canLink = false;
@@ -562,7 +697,9 @@ describe("Link workspace", () => {
   });
   it("keeps the picker open and reports a rejected link", async () => {
     linkFails = true;
-    await render();
+    const client = await render();
+    const sourceKey = ["crew", "assets", "crew_1", "studio-media-options", {}, "user-1"];
+    client.setQueryData(sourceKey, { workspaceId: "old-workspace", projects: [], items: [] });
     await click(byText("button", "Link workspace"));
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
@@ -574,6 +711,7 @@ describe("Link workspace", () => {
       );
     });
     expect(byText("span", "Studio")).toBeTruthy();
+    expect(client.getQueryState(sourceKey)?.isInvalidated).toBe(false);
   });
 });
 
@@ -625,4 +763,415 @@ it("retains loaded assets after a refresh failure and recovers with refresh retr
   });
   expect(document.body.textContent).not.toContain("Refresh unavailable");
   expect(document.body.textContent).toContain("concept.png");
+});
+
+describe("Legacy project link", () => {
+  it("shows the retained project and explains explicit workspace replacement", async () => {
+    legacyProject = { id: "old-project", name: "Old canvas" };
+    await render();
+    await click(byText("button", "Project: Old canvas"));
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain("Existing Crew asset access stays limited")
+    );
+    expect(document.body.textContent).toContain("Disconnect project");
+    expect(requests.some((r) => r.method === "PATCH")).toBe(false);
+    await click(byText("span", "Studio"));
+    await vi.waitFor(() => expect(byText("button", "Studio")).toBeTruthy());
+    expect(document.body.textContent).not.toContain("Project: Old canvas");
+  });
+  it("allows explicit legacy disconnect without choosing a workspace", async () => {
+    legacyProject = { id: "old-project", name: "Old canvas" };
+    const client = await render();
+    const sourceKey = ["crew", "assets", "crew_1", "studio-media-options", {}, "user-1"];
+    client.setQueryData(sourceKey, { workspaceId: "old-workspace", projects: [], items: [] });
+    await click(byText("button", "Project: Old canvas"));
+    await vi.waitFor(() => expect(byText('[role="option"]', "Disconnect project")).toBeTruthy());
+    await click(byText('[role="option"]', "Disconnect project"));
+    expect(requests).toContainEqual(
+      expect.objectContaining({ method: "PATCH", body: { workspaceId: null } })
+    );
+    await vi.waitFor(() => expect(byText("button", "Link workspace")).toBeTruthy());
+    expect(client.getQueryState(sourceKey)?.isInvalidated).toBe(true);
+  });
+  it("keeps a legacy link visible but disabled for non-admins", async () => {
+    legacyProject = { id: "old-project", name: "Old canvas" };
+    canLink = false;
+    await render();
+    expect((byText("button", "Project: Old canvas") as HTMLButtonElement).disabled).toBe(true);
+    expect(requests.some((r) => r.url.endsWith("/studio-workspace-options"))).toBe(false);
+  });
+});
+
+it("keeps the original permission version through refresh and reloads it on reopening", async () => {
+  const client = await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await click(byText("button", "Manage access"));
+  const checkbox = document.querySelector<HTMLInputElement>(
+    'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+  )!;
+  await click(checkbox);
+  accessVersion = 2;
+  await act(async () => {
+    await client.invalidateQueries();
+  });
+  expect(checkbox.checked).toBe(true);
+  await click(byText("button", "Save access"));
+  const writes = () =>
+    requests.filter((r) => r.method === "PUT" && r.url.endsWith("/assets/file-1/permissions"));
+  expect(writes()[0]?.body).toMatchObject({ expectedVersion: 1, accessMode: "restricted" });
+  await click(byText("button", "Manage access"));
+  await click(byText("button", "Save access"));
+  expect(writes()[1]?.body).toMatchObject({ expectedVersion: 2 });
+});
+
+it("rebuilds asset pages after a cursor rejection instead of replaying the invalid boundary", async () => {
+  paginated = true;
+  cursorRejected = true;
+  await render();
+  const scroller = container!.querySelector<HTMLElement>(".relative.overflow-auto")!;
+  await act(async () => scroller.dispatchEvent(new Event("scroll", { bubbles: true })));
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Restart assets"));
+  expect(document.body.textContent).toContain("concept.png");
+  const before = requests.length;
+  paginated = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() => expect(requests.length).toBeGreaterThan(before));
+  const retried = requests.slice(before).find((request) => request.url.includes("/assets?"))!;
+  expect(retried.url).not.toContain("cursor=");
+  await vi.waitFor(() => expect(document.body.textContent).not.toContain("Restart assets"));
+});
+
+it("retries failed access reads without closing the asset preview", async () => {
+  permissionReadFails = true;
+  await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await vi.waitFor(() => expect(document.body.textContent).toContain("Access read unavailable"));
+  const panel = document.querySelector('aside[aria-label="Asset preview and details"]')!;
+  const retry = [...panel.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === "Retry"
+  );
+  expect(retry).toBeDefined();
+  permissionReadFails = false;
+  await click(retry!);
+  await vi.waitFor(() => expect(panel.textContent).toContain("Manage access"));
+  expect(panel.textContent).not.toContain("Access read unavailable");
+  expect(panel.textContent).toContain("concept.png");
+});
+
+it("blocks duplicate folder creation and retains a failed draft for retry", async () => {
+  await render();
+  const original = globalThis.fetch;
+  let finish!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
+  const create = vi.fn(() => pending);
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    init?.method === "POST" && String(input).endsWith("/assets/folders")
+      ? create()
+      : original(input, init)
+  );
+  await click(byText("button", "New folder"));
+  const input = document.querySelector<HTMLInputElement>('input[placeholder="Folder name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "References"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const form = input.closest("form")!;
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(input.disabled).toBe(true);
+  await act(async () => finish(jsonResponse({ message: "Create unavailable" }, { status: 503 })));
+  expect(input.value).toBe("References");
+  expect(input.disabled).toBe(false);
+  vi.stubGlobal("fetch", original);
+  await act(async () =>
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  );
+  expect(document.querySelector('input[placeholder="Folder name"]')).toBeNull();
+});
+
+it("blocks restricted-access saves and retries a failed member list", async () => {
+  memberReadFails = true;
+  await render();
+  await click(byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!);
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await click(byText("button", "Manage access"));
+  await click(
+    document.querySelector<HTMLInputElement>(
+      'aside[aria-label="Asset preview and details"] input[type="checkbox"]'
+    )!
+  );
+  expect((byText("button", "Save access") as HTMLButtonElement).disabled).toBe(true);
+  expect(document.body.textContent).toContain("Member list unavailable");
+  memberReadFails = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() =>
+    expect((byText("button", "Save access") as HTMLButtonElement).disabled).toBe(false)
+  );
+  expect(document.body.textContent).not.toContain("Member list unavailable");
+  expect(requests.some((r) => r.method === "PUT")).toBe(false);
+});
+
+it("shows destination read failure and retries before allowing a move", async () => {
+  folderReadFails = true;
+  await render();
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-slot="dialog-content"]')?.textContent).toContain(
+      "Folders unavailable"
+    )
+  );
+  const form = document.querySelector('[data-slot="dialog-content"] form')!;
+  expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true);
+  await act(async () => {
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+  folderReadFails = false;
+  await click(byText("button", "Retry"));
+  await vi.waitFor(() =>
+    expect(form.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
+  );
+  expect(form.textContent).not.toContain("Folders unavailable");
+});
+
+it("keeps the original rename version when assets refresh during editing", async () => {
+  const client = await render();
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Rename"]')!);
+  const input = document.querySelector<HTMLInputElement>('input[aria-label="Name"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "My draft.png"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  refreshedAsset = true;
+  await act(async () => {
+    await client.invalidateQueries();
+  });
+  expect(input.value).toBe("My draft.png");
+  await act(async () => {
+    document
+      .querySelector('[data-slot="dialog-content"] form')!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  const update = requests.find((r) => r.method === "PATCH" && r.url.endsWith("/assets/file-1"));
+  expect(update?.body).toMatchObject({
+    name: "My draft.png",
+    expectedUpdatedAt: ROOT_ITEMS[1].updatedAt,
+  });
+  await click(byText("button", "Cancel"));
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="Rename"]')!);
+  expect(document.querySelector<HTMLInputElement>('input[aria-label="Name"]')!.value).toBe(
+    "Collaborator.png"
+  );
+  await act(async () => {
+    document
+      .querySelector('[data-slot="dialog-content"] form')!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  expect(
+    requests.filter((r) => r.method === "PATCH" && r.url.endsWith("/assets/file-1")).at(-1)?.body
+  ).toMatchObject({
+    expectedUpdatedAt: "2026-09-23T10:00:00.000Z",
+  });
+});
+
+it.each(["trash", "restore"])(
+  "retries only failed assets after partial bulk %s",
+  async (action) => {
+    const suffix = action === "restore" ? "/restore" : "";
+    const method = action === "restore" ? "POST" : "DELETE";
+    const label = action === "restore" ? "Restore" : "Delete";
+    trashFails = true;
+    await render();
+    if (action === "restore") {
+      await click(byText("button", "Trash"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    await act(async () => {
+      document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.click();
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.click();
+    });
+    await click(byText("button", label));
+    expect(document.body.textContent).toContain("1 selected");
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.checked
+    ).toBe(false);
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.checked
+    ).toBe(true);
+    trashFails = false;
+    await click(byText("button", label));
+    expect(
+      requests.filter((r) => r.method === method && r.url.endsWith(`/assets/folder-1${suffix}`))
+    ).toHaveLength(1);
+    expect(
+      requests.filter((r) => r.method === method && r.url.endsWith(`/assets/file-1${suffix}`))
+    ).toHaveLength(2);
+  }
+);
+
+it("clears checked assets when the search changes", async () => {
+  await render();
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.click()
+  );
+  const search = document.querySelector<HTMLInputElement>('input[placeholder*="Search"]')!;
+  expect(search).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      search,
+      "concept"
+    );
+    search.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')?.checked
+  ).not.toBe(true);
+  expect(document.body.textContent).not.toContain("1 selected");
+});
+
+it("clears checked assets when the type filter hides them", async () => {
+  await render();
+  await act(async () =>
+    document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.click()
+  );
+  const filter = document.querySelector<HTMLElement>('[aria-label="Filter by type"]')!;
+  await act(async () =>
+    filter.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  );
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (item) => item.textContent === "Video"
+  )!;
+  expect(option).toBeDefined();
+  await click(option);
+  expect(document.body.textContent).not.toContain("1 selected");
+});
+
+it.each(["trash", "restore"])("prevents duplicate bulk %s while pending", async (action) => {
+  await render();
+  if (action === "restore") {
+    await click(byText("button", "Trash"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  const originalFetch = globalThis.fetch;
+  const finishes: Array<() => void> = [];
+  let attempts = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const matches =
+        action === "trash"
+          ? init?.method === "DELETE" && String(input).endsWith("/assets/file-1")
+          : init?.method === "POST" && String(input).endsWith("/assets/file-1/restore");
+      if (!matches) return originalFetch(input, init);
+      attempts += 1;
+      return new Promise<Response>((resolve) => {
+        finishes.push(() =>
+          resolve(action === "trash" ? new Response(null, { status: 204 }) : jsonResponse({}))
+        );
+      });
+    })
+  );
+  try {
+    const button = byText("button", action === "trash" ? "Delete" : "Restore") as HTMLButtonElement;
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+    expect(attempts).toBe(1);
+    expect(button.disabled).toBe(true);
+    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!);
+  } finally {
+    await act(async () => {
+      finishes.forEach((finish) => finish());
+    });
+  }
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.checked
+  ).toBe(true);
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.checked
+  ).toBe(false);
+});
+
+it.each(["trash", "restore"])(
+  "keeps a different preview opened while bulk %s is pending",
+  async (action) => {
+    await render();
+    if (action === "restore") {
+      await click(byText("button", "Trash"));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!);
+    const originalFetch = globalThis.fetch;
+    let finish!: () => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const matches =
+          action === "trash"
+            ? init?.method === "DELETE" && String(input).endsWith("/assets/folder-1")
+            : init?.method === "POST" && String(input).endsWith("/assets/folder-1/restore");
+        if (!matches) return originalFetch(input, init);
+        return new Promise<Response>((resolve) => {
+          finish = () =>
+            resolve(action === "trash" ? new Response(null, { status: 204 }) : jsonResponse({}));
+        });
+      })
+    );
+    await click(byText("button", action === "trash" ? "Delete" : "Restore"));
+    const row = byText("span", "concept.png").closest<HTMLElement>('[role="button"]')!;
+    await click(row);
+    const preview = () => document.querySelector('aside[aria-label="Asset preview and details"]');
+    expect(preview()?.textContent).toContain("concept.png");
+    await act(async () => {
+      finish();
+    });
+    expect(preview()?.textContent).toContain("concept.png");
+  }
+);
+
+it("disables cached workspace authority after an overview refresh fails", async () => {
+  const client = await render();
+  expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(false);
+  const key = ["crew", "production", "crew_1", "overview", "user-1"];
+  client.setQueryDefaults(key, { retry: false });
+  overviewReadFails = true;
+  await act(async () => {
+    await client.refetchQueries({ queryKey: key });
+  });
+  await vi.waitFor(() =>
+    expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(true)
+  );
+  overviewReadFails = false;
+  await act(async () => {
+    await client.refetchQueries({ queryKey: key });
+  });
+  await vi.waitFor(() =>
+    expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(false)
+  );
 });

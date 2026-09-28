@@ -33,8 +33,10 @@ export function useCrewPayouts(
     ],
     enabled: enabled && Boolean(crewId) && Boolean(user),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewPayoutPageDTO>(`/crews/${encodeURIComponent(crewId)}/payouts`, {
+        signal,
+        cache: "no-store",
         query: {
           currency: input.currency,
           scope: input.scope,
@@ -57,8 +59,11 @@ export function useCrewPayoutDetail(payoutId: string | null) {
   return useQuery({
     queryKey: [...crewKeys.payout(payoutId ?? ""), user?.id ?? null],
     enabled: Boolean(payoutId) && Boolean(user),
-    queryFn: () =>
-      crewApi.get<CrewPayoutDetailDTO>(`/crew-payouts/${encodeURIComponent(payoutId!)}`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewPayoutDetailDTO>(`/crew-payouts/${encodeURIComponent(payoutId!)}`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 

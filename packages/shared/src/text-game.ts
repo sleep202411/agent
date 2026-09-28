@@ -40,6 +40,11 @@ export type TextGameCharacter = z.infer<typeof TextGameCharacterSchema>;
 
 export const TextGameSummarySchema = z.object({
   gameId: TextGameIdSchema,
+  /** Authoritative Java creator identity. String preserves BIGINT precision. */
+  creatorId: z
+    .string()
+    .regex(/^[1-9]\d*$/)
+    .nullish(),
   name: NullableTextSchema,
   posterUrl: NullableTextSchema,
   synopsis: NullableTextSchema,
@@ -104,6 +109,10 @@ export type TextGameVersionContent = z.infer<typeof TextGameVersionContentSchema
 
 export const TextGameDetailSchema = z.object({
   gameId: TextGameIdSchema,
+  creatorId: z
+    .string()
+    .regex(/^[1-9]\d*$/)
+    .nullish(),
   projectId: NullableTextSchema,
   status: TextGameStatusSchema,
   rejectReason: NullableTextSchema,

@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 7954bed58017989f7caeaa486be8e42583b30d00
+    tag: eafb30d32b59fd75e3d44af3fd8744d996618b0f
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 7954bed58017989f7caeaa486be8e42583b30d00
+    tag: c28acfbc6d1cbb81f8ad09738a9e1c8369e7d515
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -347,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 3fd872f61a4a47df6ffef864203fbedfba51cdb1
+    tag: eafb30d32b59fd75e3d44af3fd8744d996618b0f
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 7954bed58017989f7caeaa486be8e42583b30d00
+    tag: 0d946e6aa4b002946baeb2e98a3bff1aba51d851
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -424,6 +424,14 @@ server:
       provider: aks-com
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
+    # Emergency pause: Java still calls register_bonus after disabling its
+    # legacy 500-point grant. Nest answers successfully without minting points.
+    REGISTRATION_COMPUTE_BONUS_PAUSED: "true"
+    # V8 heap in a 1Gi cgroup sits around ~476Mi and OOMs the API+WS+outbox
+    # process under collab load (P2028 follows: Prisma maxWait cannot start a
+    # transaction while GC is thrashing). 1536 leaves ~500Mi of the 2Gi limit
+    # for native buffers / Y.Doc / pg. Do not raise replicaCount to "fix" heap.
+    NODE_OPTIONS: "--max-old-space-size=1536"
     # Required public web origin for invitation links (CN overrides explicitly).
     NEXT_PUBLIC_SITE_REGION: global
     REFERRAL_INVITE_BASE_URL: https://fizzdragon.com
@@ -431,6 +439,13 @@ server:
     # Never default this in code: an omitted value must fail the server at boot
     # instead of silently resolving .com/.cn data against another region.
     LEGACY_OSS_BASE_URL: https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com
+    # Mobile H5 generation defaults. Region-owned deploy facts — both ids must
+    # exist (active + bound + provider credential present) in THIS region's
+    # catalog or the server refuses to boot (StoryMobileModelDefaultsService).
+    # No code fallback by design: a default pointing at a canonical the region
+    # never catalogued must fail the rollout, not the user's quote.
+    AGENT_OS_MOBILE_IMAGE_MODEL: wan-image-2.7
+    AGENT_OS_MOBILE_VIDEO_MODEL: minimax-h3
     # Region-owned banner bucket that holds crew logos (relative keys). The admin
     # DTOs resolve crew.logo to an absolute URL with this base.
     BANNER_BASE_URL: https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com
@@ -499,6 +514,11 @@ server:
     REALTIME_TRANSPORT: self-hosted
     DISABLE_CONTENT_MODERATION: "false"
     AUTH_DISABLED: "false"
+    # Incident 2026-09-25: consult the shared Redis user-ID blocklist on every
+    # authenticated request, including a Java session served from Nest's cache.
+    # Also blocks the exact bulk-signup email shape while new IDs are discovered.
+    # Turn off after the incident has been resolved and reviewed.
+    EMERGENCY_USER_BLOCKLIST_ENABLED: "true"
     PAYMENT_PROVIDER: airwallex
     AIRWALLEX_API_BASE_URL: https://api.airwallex.com
     # AppLovin (Axon) server-side Conversions API. AXON_PIXEL_ID is the
@@ -521,8 +541,8 @@ server:
     LEGACY_MYSQL_PORT: "3306"
     LEGACY_MYSQL_DATABASE: fizzdragon_client
   resources:
-    requests: { cpu: 100m, memory: 256Mi }
-    limits: { cpu: 1000m, memory: 1Gi }
+    requests: { cpu: 250m, memory: 1Gi }
+    limits: { cpu: 1500m, memory: 2Gi }
   nodeSelector:
     pool: worker
   tolerations:
@@ -544,7 +564,7 @@ agentOs:
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
-    tag: 59a4366128433ab03e482f7e52ef5d21bf6d3ba9
+    tag: 626627f6fab65105aff621ef7562ad3dd94f1ede
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.

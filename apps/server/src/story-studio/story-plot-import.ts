@@ -1,3 +1,21 @@
+import {
+  MAX_STORY_STATE_VARIABLES,
+  MAX_STORY_CONDITION_DEPTH,
+  MAX_STORY_CONDITION_LEAVES,
+  MAX_STORY_EXIT_ROUTES,
+  MAX_STORY_STATE_NOTE_LENGTH,
+  StoryConditionSchema,
+  StoryStateEffectsSchema,
+  StoryStateKeySchema,
+  storyConditionTypeError,
+  storyEffectTypeError,
+  measureStoryCondition,
+  storyNodeTarget,
+  type StoryCondition,
+  type StoryStateEffect,
+  type StoryStateValueType,
+} from '@repo/shared/story-stats';
+
 export const MAX_PLOT_IMPORT_BYTES = 2 * 1024 * 1024;
 export const MAX_PLOT_IMPORT_NODES = 500;
 export const MAX_PLOT_IMPORT_CHAPTER_NODES = 500;
@@ -23,6 +41,8 @@ type Scene = {
   title: string;
   description: string;
   next: string | null;
+  routes: { when: StoryCondition; next: string | null }[];
+  onEnterEffects?: StoryStateEffect[];
   storyboard: { clips: SceneClip[] };
 };
 
@@ -30,7 +50,21 @@ type Decision = {
   id: string;
   type: 'decision';
   prompt: string;
-  choices: { label: string; next: string }[];
+  onEnterEffects?: StoryStateEffect[];
+  choices: {
+    label: string;
+    next: string;
+    effects?: StoryStateEffect[];
+    visibleWhen?: StoryCondition;
+  }[];
+};
+
+export type StoryPlotImportStateVariable = {
+  key: string;
+  name: string;
+  valueType: StoryStateValueType;
+  initialValue: number | boolean;
+  note: string | null;
 };
 
 export type StoryPlotImportAsset = {
@@ -46,6 +80,7 @@ export type StoryPlotImportAsset = {
 export type StoryPlotImport = {
   entryNodeId: string;
   assets: StoryPlotImportAsset[];
+  stateVariables: StoryPlotImportStateVariable[];
   nodes: (Scene | Decision)[];
 };
 
@@ -83,12 +118,20 @@ type ImportedClipNode = {
   name: string;
   description: string;
   interactions: [];
-  exit: { kind: 'auto'; nextNodeId: string | null };
+  onEnterEffects?: StoryStateEffect[];
+  exit: {
+    kind: 'auto';
+    routes: Array<{
+      when?: StoryCondition;
+      target: ReturnType<typeof storyNodeTarget>;
+    }>;
+  };
 };
 
 type ImportedDecisionNode = {
   kind: 'decision';
   nodeId: string;
+  onEnterEffects?: StoryStateEffect[];
   exit: {
     kind: 'choice';
     decisionId: string;
@@ -96,7 +139,9 @@ type ImportedDecisionNode = {
     choices: Array<{
       choiceId: string;
       label: Record<string, string>;
-      nextNodeId: string;
+      effects?: StoryStateEffect[];
+      visibleWhen?: StoryCondition;
+      target: NonNullable<ReturnType<typeof storyNodeTarget>>;
     }>;
   };
 };
@@ -121,6 +166,7 @@ export class StoryPlotImportError extends Error {
       | 'unreachable'
       | 'capacity'
       | 'assets'
+      | 'state'
       | 'clips'
       | 'duration'
       | 'mention',
@@ -197,6 +243,88 @@ function id(value: unknown, path: string): string {
     fail('id', path);
   }
   return value;
+}
+
+function stateIssuePath(path: string, issuePath: PropertyKey[]): string {
+  return issuePath.reduce<string>(
+    (current, part) =>
+      typeof part === 'number'
+        ? `${current}[${String(part)}]`
+        : `${current}.${String(part)}`,
+    path,
+  );
+}
+
+function parseStateEffects(
+  value: unknown,
+  path: string,
+): StoryStateEffect[] | undefined {
+  if (value === undefined) return undefined;
+  const parsed = StoryStateEffectsSchema.safeParse(value);
+  if (!parsed.success) {
+    fail('state', stateIssuePath(path, parsed.error.issues[0]?.path ?? []));
+  }
+  return parsed.data;
+}
+
+function parseCondition(
+  value: unknown,
+  path: string,
+): StoryCondition | undefined {
+  if (value === undefined) return undefined;
+  const parsed = StoryConditionSchema.safeParse(value);
+  if (!parsed.success) {
+    fail('state', stateIssuePath(path, parsed.error.issues[0]?.path ?? []));
+  }
+  const bounds = measureStoryCondition(parsed.data);
+  if (
+    bounds.depth > MAX_STORY_CONDITION_DEPTH ||
+    bounds.leaves > MAX_STORY_CONDITION_LEAVES
+  ) {
+    fail('state', path);
+  }
+  return parsed.data;
+}
+
+function parseStateVariable(
+  value: unknown,
+  path: string,
+  keys: Set<string>,
+): StoryPlotImportStateVariable {
+  const variable = object(value, path, [
+    'key',
+    'name',
+    'valueType',
+    'initialValue',
+    'note',
+  ]);
+  const parsedKey = StoryStateKeySchema.safeParse(variable.key);
+  if (!parsedKey.success) fail('state', `${path}.key`);
+  if (keys.has(parsedKey.data)) fail('duplicate', `${path}.key`);
+  keys.add(parsedKey.data);
+  if (variable.valueType !== 'number' && variable.valueType !== 'boolean') {
+    fail('state', `${path}.valueType`);
+  }
+  if (typeof variable.initialValue !== variable.valueType) {
+    fail('state', `${path}.initialValue`);
+  }
+  if (
+    typeof variable.initialValue === 'number' &&
+    !Number.isFinite(variable.initialValue)
+  ) {
+    fail('state', `${path}.initialValue`);
+  }
+  return {
+    key: parsedKey.data,
+    name: text(variable.name, `${path}.name`, 4_000),
+    valueType: variable.valueType,
+    initialValue: variable.initialValue as number | boolean,
+    note: optionalText(
+      variable.note,
+      `${path}.note`,
+      MAX_STORY_STATE_NOTE_LENGTH,
+    ),
+  };
 }
 
 function durationMs(value: unknown, path: string): number {
@@ -320,7 +448,12 @@ function parseAsset(
 }
 
 export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
-  const root = object(value, '$', ['entryNodeId', 'assets', 'nodes']);
+  const root = object(value, '$', [
+    'entryNodeId',
+    'assets',
+    'stateVariables',
+    'nodes',
+  ]);
   const entryNodeId = id(root.entryNodeId, '$.entryNodeId');
   if (
     !Array.isArray(root.assets) ||
@@ -339,6 +472,19 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
   const assets = root.assets.map((asset, index) =>
     parseAsset(asset, `$.assets[${index}]`, assetIds),
   );
+  if (
+    root.stateVariables !== undefined &&
+    (!Array.isArray(root.stateVariables) ||
+      root.stateVariables.length > MAX_STORY_STATE_VARIABLES)
+  ) {
+    fail('state', '$.stateVariables');
+  }
+  const stateKeys = new Set<string>();
+  const stateVariables = Array.isArray(root.stateVariables)
+    ? root.stateVariables.map((variable, index) =>
+        parseStateVariable(variable, `$.stateVariables[${index}]`, stateKeys),
+      )
+    : [];
   const ids = new Set<string>();
   const nodes = root.nodes.map((nodeValue, index): Scene | Decision => {
     const path = `$.nodes[${index}]`;
@@ -350,6 +496,8 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
       'next',
       'prompt',
       'choices',
+      'routes',
+      'onEnterEffects',
       'storyboard',
     ]);
     const nodeId = id(node.id, `${path}.id`);
@@ -362,8 +510,23 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
         'title',
         'description',
         'next',
+        'routes',
+        'onEnterEffects',
         'storyboard',
       ]);
+      if (node.routes !== undefined && !Array.isArray(node.routes)) {
+        fail('state', `${path}.routes`);
+      }
+      if (
+        Array.isArray(node.routes) &&
+        node.routes.length >= MAX_STORY_EXIT_ROUTES
+      ) {
+        fail('state', `${path}.routes`);
+      }
+      const onEnterEffects = parseStateEffects(
+        node.onEnterEffects,
+        `${path}.onEnterEffects`,
+      );
       return {
         id: nodeId,
         type: 'scene',
@@ -373,11 +536,27 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
             ? ''
             : text(node.description, `${path}.description`, 4_000, true),
         next: node.next === null ? null : id(node.next, `${path}.next`),
+        routes: Array.isArray(node.routes)
+          ? node.routes.map((routeValue, routeIndex) => {
+              const routePath = `${path}.routes[${routeIndex}]`;
+              const route = object(routeValue, routePath, ['when', 'next']);
+              const when = parseCondition(route.when, `${routePath}.when`);
+              if (!when) fail('state', `${routePath}.when`);
+              return {
+                when,
+                next:
+                  route.next === null
+                    ? null
+                    : id(route.next, `${routePath}.next`),
+              };
+            })
+          : [],
+        ...(onEnterEffects ? { onEnterEffects } : {}),
         storyboard: parseStoryboard(node.storyboard, `${path}.storyboard`),
       };
     }
     if (node.type !== 'decision') fail('type', `${path}.type`);
-    object(node, path, ['id', 'type', 'prompt', 'choices']);
+    object(node, path, ['id', 'type', 'prompt', 'choices', 'onEnterEffects']);
     if (
       !Array.isArray(node.choices) ||
       node.choices.length < 2 ||
@@ -385,16 +564,36 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
     ) {
       fail('choices', `${path}.choices`);
     }
+    const onEnterEffects = parseStateEffects(
+      node.onEnterEffects,
+      `${path}.onEnterEffects`,
+    );
     return {
       id: nodeId,
       type: 'decision',
       prompt: text(node.prompt, `${path}.prompt`, 4_000),
+      ...(onEnterEffects ? { onEnterEffects } : {}),
       choices: node.choices.map((choiceValue, choiceIndex) => {
         const choicePath = `${path}.choices[${choiceIndex}]`;
-        const choice = object(choiceValue, choicePath, ['label', 'next']);
+        const choice = object(choiceValue, choicePath, [
+          'label',
+          'next',
+          'effects',
+          'visibleWhen',
+        ]);
+        const effects = parseStateEffects(
+          choice.effects,
+          `${choicePath}.effects`,
+        );
+        const visibleWhen = parseCondition(
+          choice.visibleWhen,
+          `${choicePath}.visibleWhen`,
+        );
         return {
           label: text(choice.label, `${choicePath}.label`, 4_000),
           next: id(choice.next, `${choicePath}.next`),
+          ...(effects ? { effects } : {}),
+          ...(visibleWhen ? { visibleWhen } : {}),
         };
       }),
     };
@@ -404,9 +603,16 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
   nodes.forEach((node, index) => {
     const targets =
       node.type === 'scene'
-        ? node.next === null
-          ? []
-          : [{ target: node.next, path: `$.nodes[${index}].next` }]
+        ? [
+            ...node.routes.map((route, routeIndex) => ({
+              target: route.next,
+              path: `$.nodes[${index}].routes[${routeIndex}].next`,
+            })),
+            { target: node.next, path: `$.nodes[${index}].next` },
+          ].filter(
+            (route): route is { target: string; path: string } =>
+              route.target !== null,
+          )
         : node.choices.map((choice, i) => ({
             target: choice.next,
             path: `$.nodes[${index}].choices[${i}].next`,
@@ -422,7 +628,7 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
   const reachable = new Set<string>();
   const queue = [entryNodeId];
   for (let i = 0; i < queue.length; i++) {
-    const current = queue[i]!;
+    const current = queue[i];
     if (reachable.has(current)) continue;
     reachable.add(current);
     queue.push(...adjacency.get(current)!);
@@ -430,7 +636,7 @@ export function parseStoryPlotImportValue(value: unknown): StoryPlotImport {
   nodes.forEach((node, index) => {
     if (!reachable.has(node.id)) fail('unreachable', `$.nodes[${index}].id`);
   });
-  return { entryNodeId, assets, nodes };
+  return { entryNodeId, assets, stateVariables, nodes };
 }
 
 export function parseStoryPlotImport(source: string): StoryPlotImport {
@@ -446,7 +652,18 @@ export function parseStoryPlotImport(source: string): StoryPlotImport {
 }
 
 export function applyStoryPlotImport<
-  T extends { graph: { entryNodeId: string | null; nodes: unknown[] } },
+  T extends {
+    storyBible: {
+      stateVariables?: Array<{
+        key: string;
+        name: Record<string, string>;
+        valueType: StoryStateValueType;
+        initialValue: number | boolean;
+        note?: string;
+      }>;
+    };
+    graph: { entryNodeId: string | null; nodes: unknown[] };
+  },
 >(
   current: T,
   plot: StoryPlotImport,
@@ -466,6 +683,86 @@ export function applyStoryPlotImport<
   ) {
     fail('capacity', '$.nodes');
   }
+  const existingVariables = current.storyBible.stateVariables ?? [];
+  const variablesByKey = new Map(
+    existingVariables.map((variable) => [variable.key, variable]),
+  );
+  const addedVariables = plot.stateVariables.flatMap((variable, index) => {
+    const existing = variablesByKey.get(variable.key);
+    if (existing) {
+      if (
+        existing.valueType !== variable.valueType ||
+        existing.initialValue !== variable.initialValue
+      ) {
+        fail('state', `$.stateVariables[${index}].key`);
+      }
+      return [];
+    }
+    const imported = {
+      key: variable.key,
+      name: { [locale]: variable.name },
+      valueType: variable.valueType,
+      initialValue: variable.initialValue,
+      ...(variable.note ? { note: variable.note } : {}),
+    };
+    variablesByKey.set(variable.key, imported);
+    return [imported];
+  });
+  if (
+    existingVariables.length + addedVariables.length >
+    MAX_STORY_STATE_VARIABLES
+  ) {
+    fail('state', '$.stateVariables');
+  }
+  const variableLookup = new Map(
+    [...variablesByKey.values()].map((variable) => [
+      variable.key,
+      { valueType: variable.valueType },
+    ]),
+  );
+  const validateEffects = (
+    effects: StoryStateEffect[] | undefined,
+    path: string,
+  ) => {
+    effects?.forEach((effect, index) => {
+      if (storyEffectTypeError(effect, variableLookup)) {
+        fail('state', `${path}[${index}]`);
+      }
+    });
+  };
+  const validateCondition = (
+    condition: StoryCondition | undefined,
+    path: string,
+  ) => {
+    if (condition && storyConditionTypeError(condition, variableLookup)) {
+      fail('state', path);
+    }
+  };
+  plot.nodes.forEach((node, nodeIndex) => {
+    validateEffects(
+      node.onEnterEffects,
+      `$.nodes[${nodeIndex}].onEnterEffects`,
+    );
+    if (node.type === 'scene') {
+      node.routes.forEach((route, routeIndex) =>
+        validateCondition(
+          route.when,
+          `$.nodes[${nodeIndex}].routes[${routeIndex}].when`,
+        ),
+      );
+      return;
+    }
+    node.choices.forEach((choice, choiceIndex) => {
+      validateEffects(
+        choice.effects,
+        `$.nodes[${nodeIndex}].choices[${choiceIndex}].effects`,
+      );
+      validateCondition(
+        choice.visibleWhen,
+        `$.nodes[${nodeIndex}].choices[${choiceIndex}].visibleWhen`,
+      );
+    });
+  });
   const importedNodes = plot.nodes.map((node, index): StoryPlotImportedNode => {
     const nodeId = importedPlotNodeId(namespace, node.id);
     if (node.type === 'scene') {
@@ -476,18 +773,31 @@ export function applyStoryPlotImport<
         name: node.title,
         description: node.description,
         interactions: [],
+        ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
         exit: {
           kind: 'auto',
-          nextNodeId:
-            node.next === null
-              ? null
-              : importedPlotNodeId(namespace, node.next),
+          routes: [
+            ...node.routes.map((route) => ({
+              when: route.when,
+              target:
+                route.next === null
+                  ? null
+                  : storyNodeTarget(importedPlotNodeId(namespace, route.next)),
+            })),
+            {
+              target:
+                node.next === null
+                  ? null
+                  : storyNodeTarget(importedPlotNodeId(namespace, node.next)),
+            },
+          ],
         },
       };
     }
     return {
       kind: 'decision',
       nodeId,
+      ...(node.onEnterEffects ? { onEnterEffects: node.onEnterEffects } : {}),
       exit: {
         kind: 'choice',
         decisionId: nodeId,
@@ -495,7 +805,9 @@ export function applyStoryPlotImport<
         choices: node.choices.map((choice, i) => ({
           choiceId: `option:${i + 1}`,
           label: { [locale]: choice.label },
-          nextNodeId: importedPlotNodeId(namespace, choice.next),
+          ...(choice.effects ? { effects: choice.effects } : {}),
+          ...(choice.visibleWhen ? { visibleWhen: choice.visibleWhen } : {}),
+          target: storyNodeTarget(importedPlotNodeId(namespace, choice.next))!,
         })),
       },
     };
@@ -507,6 +819,10 @@ export function applyStoryPlotImport<
     namespace,
     content: {
       ...current,
+      storyBible: {
+        ...current.storyBible,
+        stateVariables: [...existingVariables, ...addedVariables],
+      },
       graph: {
         entryNodeId:
           mode === 'replace'

@@ -9,6 +9,36 @@ import {
 
 const encoder = new TextEncoder();
 
+it.each([NaN, Infinity])("rejects an invalid byte budget: %s", (budget) => {
+  expect(() => assertMaxSerializedBytes(z.string().max(100), budget, "Frame")).toThrow(/budget/i);
+});
+it.each([NaN, Infinity, -1, 0])("rejects invalid measurement cost: %s", (bytesPerCharacter) => {
+  expect(() => measureMaxSerializedBytes(z.string().max(100), { bytesPerCharacter })).toThrow(
+    /bytesPerCharacter/
+  );
+});
+
+it.each([-1, -Infinity, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+  "rejects unusable byte budgets: %s",
+  (budget) => {
+    expect(() => assertMaxSerializedBytes(z.never(), budget, "Frame")).toThrow(/byte budget/);
+  }
+);
+it("permits a zero budget only for a zero-size schema", () => {
+  expect(() => assertMaxSerializedBytes(z.never(), 0, "Empty")).not.toThrow();
+  expect(() => assertMaxSerializedBytes(z.null(), 0, "Nonempty")).toThrow(/over the 0-byte budget/);
+});
+it("retains positive custom measurement costs and exact budget boundaries", () => {
+  const schema = z.string().max(10);
+  expect(measureMaxSerializedBytes(schema, { bytesPerCharacter: 1.5 }).bytes).toBe(17);
+  expect(() =>
+    assertMaxSerializedBytes(schema, 17, "Exact", { bytesPerCharacter: 1.5 })
+  ).not.toThrow();
+  expect(() => assertMaxSerializedBytes(schema, 16, "Small", { bytesPerCharacter: 1.5 })).toThrow(
+    /over the 16-byte budget/
+  );
+});
+
 describe("utf8ByteLength", () => {
   it.each([
     ["ascii", "hello"],
@@ -147,3 +177,35 @@ describe("utf8BoundedString", () => {
     expect(() => utf8BoundedString(0)).toThrow(/positive integer/);
   });
 });
+
+it.each([
+  [z.iso.time(), `12:34:56.${"1".repeat(400)}`],
+  [z.iso.datetime(), `2026-09-17T12:34:56.${"1".repeat(400)}Z`],
+  [z.iso.duration(), `P${"1".repeat(400)}D`],
+] as const)("does not assign a finite ceiling to variable-length ISO values", (schema, value) => {
+  expect(schema.safeParse(value).success).toBe(true);
+  expect(measureMaxSerializedBytes(schema).unbounded).not.toHaveLength(0);
+  expect(() => assertMaxSerializedBytes(schema, 300, "ISO field")).toThrow(/no size ceiling/);
+});
+
+it.each([-1, 0, 3, 400])("measures explicit ISO precision %s conservatively", (precision) => {
+  const time =
+    precision === -1 ? "12:34" : precision === 0 ? "12:34:56" : `12:34:56.${"1".repeat(precision)}`;
+  for (const [schema, value] of [
+    [z.iso.time({ precision }), time],
+    [z.iso.datetime({ precision }), `2026-09-17T${time}Z`],
+    [z.iso.datetime({ precision, offset: true }), `2026-09-17T${time}+08:00`],
+  ] as const) {
+    expect(schema.safeParse(value).success).toBe(true);
+    const report = measureMaxSerializedBytes(schema);
+    expect(report.unbounded).toEqual([]);
+    expect(report.bytes).toBeGreaterThanOrEqual(encoder.encode(JSON.stringify(value)).length);
+  }
+});
+
+it.each([z.iso.time(), z.iso.datetime(), z.iso.duration()])(
+  "honors an explicit max for variable ISO formats",
+  (schema) => {
+    expect(measureMaxSerializedBytes(schema.max(100))).toEqual({ bytes: 402, unbounded: [] });
+  }
+);

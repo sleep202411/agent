@@ -1,4 +1,3 @@
-import { BadRequestException } from '@nestjs/common';
 import {
   ListCrewPositionsQuerySchema,
   ListPublicPositionsQuerySchema,
@@ -170,7 +169,10 @@ describe('PositionsService.listPublic', () => {
         workMode: ['remote'],
         sort: 'newest',
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_POSITION_CURSOR_INVALID' },
+      status: 400,
+    });
 
     expect(t.crewPosition.findMany).not.toHaveBeenCalled();
     expect(t.crewPosition.count).not.toHaveBeenCalled();
@@ -237,5 +239,110 @@ describe('PositionsService.list', () => {
         },
       }),
     );
+  });
+});
+
+describe('PositionsService.update recruitment status', () => {
+  function editor(status: 'open' | 'frozen' | 'full', recruitedCount: number) {
+    const before = { ...position('position-1'), status, recruitedCount };
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      crewPosition: {
+        findFirst: jest.fn().mockResolvedValue(before),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Partial<typeof before> }) =>
+            Promise.resolve({ ...before, ...data }),
+          ),
+      },
+    };
+    const db = {
+      $transaction: (work: (value: typeof tx) => Promise<unknown>) => work(tx),
+    };
+    const service = new PositionsService(
+      db as never,
+      { require: jest.fn().mockResolvedValue({}) } as never,
+    );
+    return { service, tx };
+  }
+
+  it('keeps a full closed position hidden when editing its description', async () => {
+    const { service } = editor('frozen', 2);
+    const result = await service.update('crew-1', 'position-1', 'owner-1', {
+      description: 'Updated description',
+      targetCount: 2,
+    });
+    expect(result.status).toBe('frozen');
+    expect(result.description).toBe('Updated description');
+  });
+
+  it('honors an explicit close while increasing capacity on a full position', async () => {
+    const { service } = editor('full', 2);
+    const result = await service.update('crew-1', 'position-1', 'owner-1', {
+      status: 'frozen',
+      targetCount: 3,
+    });
+    expect(result.status).toBe('frozen');
+  });
+
+  it.each([
+    ['full', 2, 3, 'open'],
+    ['open', 2, 2, 'full'],
+    ['frozen', 1, 3, 'frozen'],
+  ] as const)(
+    'derives capacity without losing closed intent (%s)',
+    async (status, recruitedCount, targetCount, expected) => {
+      const { service } = editor(status, recruitedCount);
+      const result = await service.update('crew-1', 'position-1', 'owner-1', {
+        targetCount,
+      });
+      expect(result.status).toBe(expected);
+    },
+  );
+});
+
+describe('position discovery search', () => {
+  it('combines search and skill/crew filters with all publication and deadline guards', async () => {
+    const f = build();
+    f.crewPosition.findMany.mockResolvedValue([]);
+    f.crewPosition.count.mockResolvedValue(0);
+    await f.service.listPublic(
+      ListPublicPositionsQuerySchema.parse({
+        q: 'North',
+        crewId: 'crew-1',
+        skill: 'storyboard',
+      }),
+    );
+    const { where } = f.crewPosition.findMany.mock.calls[0][0];
+    expect(where).toMatchObject({
+      crewId: 'crew-1',
+      requiredSkills: { has: 'storyboard' },
+      status: 'open',
+      moderationStatus: 'ok',
+      crew: {
+        listingStatus: 'listed',
+        deletedAt: null,
+        moderationStatus: 'ok',
+      },
+    });
+    expect(where.AND).toEqual(
+      expect.arrayContaining([
+        {
+          OR: expect.arrayContaining([
+            { crew: { name: { contains: 'North', mode: 'insensitive' } } },
+          ]) as unknown,
+        },
+      ]),
+    );
+    expect(where.OR).toEqual(expect.arrayContaining([{ closeDate: null }]));
+    expect(f.crewPosition.count).toHaveBeenCalledWith({ where });
+  });
+  it('rejects blank or unbounded search input', () => {
+    expect(ListPublicPositionsQuerySchema.safeParse({ q: '   ' }).success).toBe(
+      false,
+    );
+    expect(
+      ListPublicPositionsQuerySchema.safeParse({ q: 'x'.repeat(121) }).success,
+    ).toBe(false);
   });
 });

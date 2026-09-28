@@ -1,6 +1,15 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { setApiWorkspaceId } from "@/lib/api";
@@ -32,7 +41,8 @@ interface WorkspaceContextValue {
   createWorkspace: (
     name: string,
     description?: string,
-    avatarUrl?: string
+    avatarUrl?: string,
+    signal?: AbortSignal
   ) => Promise<WorkspaceRef>;
   refresh: () => void;
   loading: boolean;
@@ -72,13 +82,24 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
   const userKey = user?.id == null ? "anonymous" : String(user.id);
+  const owner = useRef<{ key: string; controller: AbortController } | null>(null);
+  const selectionVersion = useRef(0);
+  useLayoutEffect(() => {
+    const current = { key: userKey, controller: new AbortController() };
+    owner.current = current;
+    return () => {
+      current.controller.abort();
+      if (owner.current === current) owner.current = null;
+    };
+  }, [userKey]);
 
   const { data: loadedWorkspaces = EMPTY_WORKSPACES, isLoading } = useQuery({
     queryKey: [...WORKSPACES_QUERY_KEY, userKey] as const,
     // Ensure the default workspace exists, then list all memberships.
-    queryFn: async () => {
-      await ensureDefaultWorkspace();
-      return listWorkspaces();
+    queryFn: async ({ signal }) => {
+      await ensureDefaultWorkspace(signal);
+      signal.throwIfAborted();
+      return listWorkspaces(signal);
     },
     enabled: Boolean(user),
     staleTime: 60_000,
@@ -115,24 +136,28 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setApiWorkspaceId(activeWorkspace?.id ?? null);
   }, [activeWorkspace?.id]);
 
-  const setActiveWorkspaceId = useCallback((id: string) => {
-    setActiveId(id);
-    try {
-      localStorage.setItem(STORAGE_KEY, id);
-    } catch {
-      /* ignore */
-    }
-    const url = new URL(window.location.href);
-    if (url.searchParams.has("ws") && url.searchParams.get("ws") !== id) {
-      url.searchParams.set("ws", id);
-      window.history.replaceState(null, "", url);
-    }
-  }, []);
+  const setActiveWorkspaceId = useCallback(
+    (id: string) => {
+      if (owner.current?.key !== userKey || owner.current.controller.signal.aborted) return;
+      selectionVersion.current += 1;
+      setActiveId(id);
+      try {
+        localStorage.setItem(STORAGE_KEY, id);
+      } catch {
+        /* ignore */
+      }
+      const url = new URL(window.location.href);
+      if (url.searchParams.has("ws") && url.searchParams.get("ws") !== id) {
+        url.searchParams.set("ws", id);
+        window.history.replaceState(null, "", url);
+      }
+    },
+    [userKey]
+  );
 
   useEffect(() => {
     if (requestedId && activeWorkspace?.id === requestedId) {
       // URL navigation is an external selection change; persist it for subsequent pages.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setActiveWorkspaceId(requestedId);
     }
   }, [requestedId, activeWorkspace?.id, setActiveWorkspaceId]);
@@ -142,18 +167,31 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [queryClient]);
 
   const createWorkspace = useCallback(
-    async (name: string, description?: string, avatarUrl?: string) => {
+    async (name: string, description?: string, avatarUrl?: string, callerSignal?: AbortSignal) => {
+      const current = owner.current;
+      if (!user || !current || current.key !== userKey)
+        throw new DOMException("Workspace session changed", "AbortError");
+      const signal = AbortSignal.any([
+        current.controller.signal,
+        ...(callerSignal ? [callerSignal] : []),
+      ]);
+      signal.throwIfAborted();
+      const selectedAtStart = selectionVersion.current;
       const trimmed = description?.trim();
-      const workspace = await createWorkspaceRequest({
-        name,
-        ...(trimmed ? { description: trimmed } : {}),
-        ...(avatarUrl ? { avatarUrl } : {}),
+      const workspace = await createWorkspaceRequest(
+        { name, ...(trimmed ? { description: trimmed } : {}), ...(avatarUrl ? { avatarUrl } : {}) },
+        signal
+      );
+      signal.throwIfAborted();
+      await queryClient.invalidateQueries({
+        queryKey: [...WORKSPACES_QUERY_KEY, userKey],
+        exact: true,
       });
-      await queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
-      setActiveWorkspaceId(workspace.id);
+      signal.throwIfAborted();
+      if (selectionVersion.current === selectedAtStart) setActiveWorkspaceId(workspace.id);
       return workspace;
     },
-    [queryClient, setActiveWorkspaceId]
+    [queryClient, setActiveWorkspaceId, user, userKey]
   );
 
   const value = useMemo<WorkspaceContextValue>(

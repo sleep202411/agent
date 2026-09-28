@@ -22,6 +22,7 @@ export const crewKeys = {
   assets: (crewId: string) => ["crew", "assets", crewId] as const,
   taskCenter: ["crew", "task-center"] as const,
   taskProject: (crewId: string) => ["crew", "task-project", crewId] as const,
+  taskKindTemplates: (crewId: string) => ["crew", "task-kind-templates", crewId] as const,
   tasks: (crewId: string) => ["crew", "tasks", crewId] as const,
   taskView: (crewId: string, input: { viewId: string; query?: string; priority?: string }) =>
     ["crew", "tasks", crewId, "view", input] as const,
@@ -32,8 +33,6 @@ export const crewKeys = {
   task: (taskId: string) => ["crew", "task", taskId] as const,
   taskTimeline: (taskId: string) => ["crew", "task", taskId, "timeline"] as const,
   productionOverview: (crewId: string) => ["crew", "production", crewId, "overview"] as const,
-  studioProjectOptions: (crewId: string) =>
-    ["crew", "production", crewId, "studio-project-options"] as const,
   productionActivity: (crewId: string) => ["crew", "production", crewId, "activity"] as const,
   episodes: (crewId: string) => ["crew", "production", crewId, "episodes"] as const,
   earnings: (crewId: string, scope: "mine" | "crew") =>

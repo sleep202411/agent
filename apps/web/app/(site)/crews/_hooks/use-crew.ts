@@ -47,11 +47,13 @@ export type {
   CrewTaskOptionPageDTO,
   CrewTaskSummaryDTO,
   CrewTaskStatus,
+  CrewTaskKind,
   CrewTaskPriority,
   CrewTaskViewLayout,
   CrewTaskCompletedMode,
   CrewTaskViewGroup,
   CrewTaskViewDTO,
+  CrewTaskKindTemplateDTO,
   CrewTaskProjectDTO,
   CrewTaskWorkflowStateDTO,
   CrewTaskCycleDTO,
@@ -90,9 +92,6 @@ export type {
   CrewProductionUpdateDTO,
   CrewProductionUpdateHealth,
   CrewStudioProjectSummaryDTO,
-  CrewStudioProjectOptionDTO,
-  CrewStudioProjectOptionsDTO,
-  CrewStudioProjectDisabledReason,
   UpdateCrewProductionProjectInput,
   CreateCrewProductionResourceInput,
   CreateCrewProductionActivityInput,
@@ -121,10 +120,9 @@ export type {
   CreateCrewAgreementInput,
   UpdateCrewMemberInput,
 } from "./types";
+export { CREW_TASK_KINDS, CREW_TASK_KIND_MESSAGE_KEYS } from "./types";
 export {
   useCrewProductionOverview,
-  useCrewStudioProjectOptions,
-  useLinkCrewStudioProject,
   useCrewEpisodes,
   useSaveCrewProductionDocument,
   useUpdateCrewProductionProject,
@@ -188,6 +186,7 @@ export {
 } from "./use-members";
 export {
   useCrewTaskProject,
+  useCrewTaskKindTemplates,
   useCrewTaskView,
   useCrewTaskOptions,
   useCrewTaskSummary,
@@ -201,6 +200,7 @@ export {
   useCreateCrewTaskComment,
   useUpdateCrewTaskComment,
   useDeleteCrewTaskComment,
+  useSetTaskDeliveryFolder,
   useSubmitCrewTask,
   useReviewCrewTask,
   useCreateCrewTaskView,

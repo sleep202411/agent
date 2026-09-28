@@ -1,7 +1,9 @@
+import { requireNonReceiptAsset } from './media-receipt-policy';
 import {
   BadRequestException,
   ForbiddenException,
   GoneException,
+  HttpException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -188,18 +190,86 @@ export class MediaAccessService {
     asset: MediaAssetAccessSubject,
     context?: MediaAccessContext,
   ): Promise<void> {
-    requireNonReceiptAsset(asset.metadata);
+    const denial = this.denialForUse(userId, asset);
+    if (denial) throw denial;
+
+    if (this.ownsAsset(userId, asset)) return;
+
+    // Canvas context is the PRIMARY grant for on-canvas consumption, not a
+    // rescue: whoever can read a Studio document may consume every asset that
+    // document references — putting an asset on a canvas IS the act of sharing
+    // it with the canvas's audience, and removing it ends the grant on the
+    // next request. One document access check + one snapshot containment
+    // check answers it, so shared-canvas consumers never pay for the
+    // workspace/crew/character/story miss-chain below. The moderation and
+    // lifecycle gates above are a different axis and stay binding.
+    if (context?.documentId) {
+      try {
+        const granted = await this.canvasReferencedAssetIds(
+          userId,
+          context.documentId,
+          [asset.id],
+        );
+        if (granted.size > 0) return;
+      } catch (error) {
+        // Typed denials mean the context cannot widen anything — fall through
+        // to the canonical chain. Infrastructure failures fail loud instead of
+        // silently becoming a deny.
+        if (
+          !(error instanceof ForbiddenException) &&
+          !(error instanceof NotFoundException)
+        ) {
+          throw error;
+        }
+      }
+    }
+
+    await this.requireAccess(userId, asset);
+  }
+
+  /**
+   * Owner shortcut that respects the Crew-authoritative exception: once a
+   * Crew claims an asset, its node ACL governs consumption even for the
+   * original uploader and former members.
+   */
+  ownsAsset(
+    userId: string | null | undefined,
+    asset: Pick<MediaAssetAccessSubject, 'createdByUserId' | 'metadata'>,
+  ): boolean {
+    return (
+      userId != null &&
+      asset.createdByUserId === userId &&
+      !crewAssetCrewId(asset.metadata)
+    );
+  }
+
+  /**
+   * In-memory consumption gates (receipt scope, lifecycle, pre-broadcast
+   * moderation) shared by {@link requireUseAccess} and batch eligibility
+   * checks. Returns the denial instead of throwing so batch callers can skip
+   * inaccessible assets without exception churn.
+   */
+  denialForUse(
+    userId: string | null | undefined,
+    asset: MediaAssetAccessSubject,
+  ): HttpException | null {
+    try {
+      requireNonReceiptAsset(asset.metadata);
+    } catch (error) {
+      if (error instanceof ForbiddenException) return error;
+      throw error;
+    }
     if (
       asset.status === MediaAssetStatus.deleted ||
       asset.moderationStatus === MediaAssetModerationStatus.blocked
     ) {
-      throw new GoneException({
+      return new GoneException({
         code: 'MEDIA_ASSET_UNAVAILABLE',
         message: 'Media asset is no longer available.',
       });
     }
     if (asset.status !== MediaAssetStatus.ready) {
-      throw new NotFoundException({
+      return new NotFoundException({
         code: 'MEDIA_ASSET_NOT_READY',
         message: 'Media asset is not ready.',
       });
@@ -216,31 +286,12 @@ export class MediaAccessService {
         requireModerationApproval(),
       )
     ) {
-      throw new ForbiddenException({
+      return new ForbiddenException({
         code: 'MEDIA_ASSET_PENDING_MODERATION',
         message: 'Media asset is awaiting moderation approval.',
       });
     }
-
-    try {
-      await this.requireAccess(userId, asset);
-    } catch (err) {
-      // Ownership/membership denials (only) may be rescued by canvas context;
-      // the moderation and lifecycle gates above are a different axis and
-      // already threw. 401 (signed-out) and 404 pass through untouched.
-      if (
-        !(err instanceof ForbiddenException) ||
-        userId == null ||
-        !context?.documentId ||
-        !(await this.hasCanvasReferenceAccess(
-          userId,
-          context.documentId,
-          asset.id,
-        ))
-      ) {
-        throw err;
-      }
-    }
+    return null;
   }
 
   async requireUseAccessById(
@@ -253,34 +304,27 @@ export class MediaAccessService {
   }
 
   /**
-   * Reference-reaches-context, canvas edition (matches the character-cast
-   * grant below): whoever can read a Studio document may consume every asset
-   * that document references. The document snapshot itself is the authority —
-   * no side-table, no mint step; putting an asset on a canvas IS the act of
-   * sharing it with the canvas's audience, and removing it ends the grant on
-   * the next request. Containment is a full-UUID string check against the
-   * snapshot JSON: asset ids are UUIDs, so a substring collision between two
-   * distinct ids is impossible.
+   * Canvas-context grant, batch edition: which of `assetIds` are referenced by
+   * the document the user can read. One document access check + one snapshot
+   * text fetch answers the whole batch — the containment semantics are
+   * identical to the single-asset path in {@link requireUseAccess}. Typed
+   * access denials throw (the caller decides whether that widens anything);
+   * infrastructure failures propagate.
    */
-  private async hasCanvasReferenceAccess(
-    userId: string,
+  async canvasReferencedAssetIds(
+    userId: string | null | undefined,
     documentId: string,
-    assetId: string,
-  ): Promise<boolean> {
-    let snapshot: unknown;
-    try {
-      const document = await this.documentAccess.requireDocument(
-        userId,
-        documentId,
-        'read',
-      );
-      snapshot = document.contentSnapshot;
-    } catch {
-      // Not readable (or gone) — the context cannot widen anything.
-      return false;
-    }
-    if (snapshot == null) return false;
-    return JSON.stringify(snapshot).includes(assetId);
+    assetIds: readonly string[],
+  ): Promise<Set<string>> {
+    // A signed-out caller can never be granted through document context —
+    // an empty set keeps the canonical chain (and its 401) authoritative.
+    if (!userId) return new Set();
+    const document = await this.documentAccess.requireDocumentRef(
+      userId,
+      documentId,
+      'read',
+    );
+    return this.documentAccess.referencedAssetIds(document.id, assetIds);
   }
 
   async issueAdminAccessUrl(
@@ -520,21 +564,6 @@ export class MediaAccessService {
       url: signed.url,
       expiresAt: signed.expiresAt,
     };
-  }
-}
-
-/** Expense evidence is readable only through its claim/revision authorization. */
-function requireNonReceiptAsset(metadata: Prisma.JsonValue): void {
-  if (
-    metadata &&
-    typeof metadata === 'object' &&
-    !Array.isArray(metadata) &&
-    metadata.uploadKind === 'crew_expense_receipt'
-  ) {
-    throw new ForbiddenException({
-      code: 'EXPENSE_RECEIPT_ACCESS_REQUIRED',
-      message: 'Open this receipt through its expense claim.',
-    });
   }
 }
 

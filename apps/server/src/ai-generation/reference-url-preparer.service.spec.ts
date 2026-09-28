@@ -249,3 +249,99 @@ describe('canvas preview to Seedance request transport', () => {
     });
   });
 });
+
+// Incident wan3.0-video 01a0b48e: a canvas video reference was rebound to the
+// asset's auto-generated poster jpg (both placements primary/priority 0) and
+// the provider rejected the format. Providers must always receive the
+// ORIGINAL bytes.
+describe('video reference resolves to the original bytes', () => {
+  const MP4_KEY = 'aliyun-bailian/2026/09/18/15097/01a0b477/0-8743de9bfc8b.mp4';
+  const POSTER_KEY = `posters/${ASSET_ID}/916714d3214b5c7a0fd0.jpg`;
+
+  function placement(variantId: string | null, objectKey: string) {
+    return {
+      variantId,
+      storageProvider: 's3_compatible',
+      bucket: 'fizzdragon-media',
+      region: 'auto',
+      objectKey,
+      externalUrl: null,
+      publicBaseUrl: 'https://r2.fizzdragon.com',
+      role: 'primary',
+      status: 'active',
+      priority: 0,
+      deletedAt: null,
+    };
+  }
+
+  function videoAssetRow() {
+    return asset({
+      kind: 'video',
+      contentType: 'video/mp4',
+      objectKey: MP4_KEY,
+      variants: [
+        {
+          variantKey: 'original',
+          status: 'ready',
+          contentType: 'video/mp4',
+          deletedAt: null,
+          placements: [placement('v-original', MP4_KEY)],
+        },
+      ],
+      placements: [
+        placement('v-poster', POSTER_KEY),
+        placement('v-original', MP4_KEY),
+      ],
+    });
+  }
+
+  it('keeps referenceVideos on the mp4 when a poster variant exists', async () => {
+    const prisma = {
+      mediaAsset: { findMany: jest.fn().mockResolvedValue([videoAssetRow()]) },
+    };
+    const result = await new AiReferenceUrlPreparerService(
+      prisma as never,
+      new MediaAssetUrlResolverService(),
+    ).prepareReferences({
+      referenceVideos: [
+        {
+          assetId: ASSET_ID,
+          refId: 'selected-ref',
+          url: `/aurora/media/assets/${ASSET_ID}/content`,
+          durationSeconds: 4.04,
+        },
+      ],
+    });
+
+    expect(result.referenceVideos).toEqual([
+      {
+        assetId: ASSET_ID,
+        refId: 'selected-ref',
+        url: `https://r2.fizzdragon.com/${MP4_KEY}`,
+        durationSeconds: 4.04,
+      },
+    ]);
+  });
+
+  it('loads only the original variant so derived variants stay out of scope', async () => {
+    let capturedQuery: unknown;
+    const findMany = jest.fn((query: unknown) => {
+      capturedQuery = query;
+      return Promise.resolve([videoAssetRow()]);
+    });
+    await new AiReferenceUrlPreparerService(
+      { mediaAsset: { findMany } } as never,
+      new MediaAssetUrlResolverService(),
+    ).prepareReferences({ referenceVideos: [{ assetId: ASSET_ID }] });
+
+    const query = capturedQuery as {
+      include: {
+        variants: { where: { variantKey: string; deletedAt: string | null } };
+      };
+    };
+    expect(query.include.variants.where).toEqual({
+      variantKey: 'original',
+      deletedAt: null,
+    });
+  });
+});

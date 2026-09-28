@@ -37,13 +37,77 @@ export class StudioDocumentAccessService {
     });
     if (!document) this.notFound();
 
+    await this.assertProjectAccess(userId, document, action);
+    return document;
+  }
+
+  /**
+   * Access-check-only edition of {@link requireDocument}: identical boundary,
+   * but selects none of the heavy columns. `contentSnapshot` alone can be
+   * hundreds of KB (see DocumentCompactionService), so permission probes that
+   * never read the document body must not pay for transferring it.
+   */
+  async requireDocumentRef(
+    userId: string,
+    documentId: string,
+    action: StudioDocumentAction,
+  ): Promise<{ id: string }> {
+    const document = await this.prisma.studioDocument.findFirst({
+      where: {
+        id: documentId,
+        status: StudioDocumentStatus.active,
+        deletedAt: null,
+      },
+      select: { id: true, platformProjectId: true, storyProjectId: true },
+    });
+    if (!document) this.notFound();
+
+    await this.assertProjectAccess(userId, document, action);
+    return { id: document.id };
+  }
+
+  /**
+   * Which of `assetIds` the document's content snapshot references. Asset ids
+   * are UUIDs, so a plain text-containment check can never produce a false
+   * positive between two distinct ids. The snapshot is fetched as text and is
+   * never parsed or re-serialized — callers may test a whole canvas batch
+   * against one fetch.
+   */
+  async referencedAssetIds(
+    documentId: string,
+    assetIds: readonly string[],
+  ): Promise<Set<string>> {
+    const unique = [...new Set(assetIds)].filter(Boolean);
+    if (unique.length === 0) return new Set();
+    const rows = await this.prisma.$queryRaw<
+      Array<{ snapshot_text: string | null }>
+    >`SELECT content_snapshot::text AS snapshot_text
+      FROM studio_documents
+      WHERE id = ${documentId}::uuid`;
+    const snapshotText = rows[0]?.snapshot_text;
+    if (!snapshotText) return new Set();
+    const referenced = new Set<string>();
+    for (const assetId of unique) {
+      if (snapshotText.includes(assetId)) referenced.add(assetId);
+    }
+    return referenced;
+  }
+
+  private async assertProjectAccess(
+    userId: string,
+    document: {
+      platformProjectId: string | null;
+      storyProjectId: string | null;
+    },
+    action: StudioDocumentAction,
+  ): Promise<void> {
     if (document.platformProjectId) {
       await this.workspacePermissions.requireProjectRole(
         userId,
         document.platformProjectId,
         action === 'read' ? ProjectMemberRole.viewer : ProjectMemberRole.editor,
       );
-      return document;
+      return;
     }
 
     if (document.storyProjectId) {
@@ -63,7 +127,7 @@ export class StudioDocumentAccessService {
         // `read` would make an archived project editable.
         { allowArchived: action === 'read' },
       );
-      return document;
+      return;
     }
 
     // The database CHECK makes this unreachable; fail closed if corrupted data

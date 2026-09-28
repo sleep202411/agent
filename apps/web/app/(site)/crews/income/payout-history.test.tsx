@@ -3,7 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { PayoutHistory } from "./payout-history";
-import { crewApi } from "../_hooks/api";
+import { crewApi, CrewApiError } from "../_hooks/api";
 const session = vi.hoisted(() => ({ id: "alice" as string | null }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: session.id ? { id: session.id } : null }),
@@ -13,7 +13,10 @@ vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("@/src/lib/region/cell", () => ({ CURRENT_CELL: "com" }));
-vi.mock("../_hooks/api", () => ({ crewApi: { get: vi.fn() } }));
+vi.mock("../_hooks/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../_hooks/api")>()),
+  crewApi: { get: vi.fn() },
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let client: QueryClient;
@@ -96,4 +99,108 @@ it("cancels the previous account's request and hides its records on account chan
   await settle();
   expect(replacement?.aborted).toBe(true);
   expect(container.textContent).toBe("");
+});
+
+it.each([true, false])(
+  "retries payout pagination with the correct cursor (invalid: %s)",
+  async (invalid) => {
+    const page = { items: [], nextCursor: "old-cursor", summary: { byStatus: [] } };
+    vi.mocked(crewApi.get)
+      .mockResolvedValueOnce(page)
+      .mockRejectedValueOnce(
+        invalid
+          ? new CrewApiError(400, { code: "CREW_PAYOUT_CURSOR_INVALID" })
+          : new Error("Temporary outage")
+      )
+      .mockResolvedValue({ ...page, nextCursor: null });
+    mount();
+    await settle();
+    act(() =>
+      [...container.querySelectorAll("button")].find((node) => node.textContent === "more")!.click()
+    );
+    await settle();
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    act(() =>
+      [...container.querySelectorAll("button")]
+        .find((node) => node.textContent === "retry")!
+        .click()
+    );
+    await settle();
+    expect(vi.mocked(crewApi.get).mock.calls[2][1]?.query?.cursor).toBe(
+      invalid ? undefined : "old-cursor"
+    );
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  }
+);
+
+const balances = {
+  confirmedAmountMinor: "9007199254740993123",
+  reservedAmountMinor: "200",
+  paidAmountMinor: "300",
+  availableAmountMinor: "9007199254740992623",
+  byStatus: [],
+};
+function balanceText() {
+  return container.querySelector('section[aria-label="balanceTitle"]')?.textContent ?? "";
+}
+it("shows exact personal balances even without payout records and keeps first-page totals during pagination", async () => {
+  vi.mocked(crewApi.get)
+    .mockResolvedValueOnce({ items: [], nextCursor: "next", summary: balances })
+    .mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      summary: { ...balances, availableAmountMinor: "0" },
+    });
+  mount();
+  await settle();
+  expect(balanceText()).toContain("USD 90,071,992,547,409,931.23");
+  expect(balanceText()).toContain("USD 90,071,992,547,409,926.23");
+  expect(balanceText()).toContain("USD 2.00");
+  expect(balanceText()).toContain("USD 3.00");
+  act(() =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "more")!.click()
+  );
+  await settle();
+  expect(balanceText()).toContain("USD 90,071,992,547,409,926.23");
+});
+it("hides unavailable balances after denial and isolates them across account switches", async () => {
+  vi.mocked(crewApi.get).mockResolvedValue({ items: [], nextCursor: null, summary: balances });
+  const render = mount();
+  await settle();
+  expect(balanceText()).toContain("USD 90,071,992,547,409,931.23");
+  vi.mocked(crewApi.get).mockRejectedValue(new CrewApiError(403, { message: "Denied" }));
+  act(() => container.querySelector("button")!.click());
+  await settle();
+  expect(balanceText()).toContain("balanceUnavailable");
+  expect(balanceText()).not.toContain("USD");
+  session.id = "bob";
+  vi.mocked(crewApi.get).mockImplementation(() => new Promise(() => {}));
+  render();
+  await settle();
+  expect(balanceText()).not.toContain("USD");
+});
+it.each([undefined, "invalid", 42])(
+  "does not turn missing or malformed balances into zero (%s)",
+  async (value) => {
+    vi.mocked(crewApi.get).mockResolvedValue({
+      items: [],
+      nextCursor: null,
+      summary: { ...balances, availableAmountMinor: value },
+    });
+    mount();
+    await settle();
+    expect(balanceText()).toContain("balanceUnavailable");
+    expect(balanceText()).not.toContain("USD");
+  }
+);
+it("renders actual zero and negative balances without clamping", async () => {
+  vi.mocked(crewApi.get).mockResolvedValue({
+    items: [],
+    nextCursor: null,
+    summary: { ...balances, confirmedAmountMinor: "0", availableAmountMinor: "-500" },
+  });
+  mount();
+  await settle();
+  expect(balanceText()).toContain("USD 0.00");
+  expect(balanceText()).toContain("USD -5.00");
 });

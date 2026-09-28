@@ -2,6 +2,7 @@
 
 import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
 import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
+import { AudienceGenerationTemplatesEditor } from "./audience-generation-templates-editor";
 import { IpGameAssociations } from "@/app/(site)/ips/_components/ip-game-associations";
 import { IpStageApplications } from "@/app/(site)/ips/_components/ip-stage-applications";
 import { useEffect, useRef, useState } from "react";
@@ -120,6 +121,7 @@ const STUDIO_TABS = [
   { key: "rights", icon: IconFileText },
   { key: "pricing", icon: IconCoin },
   { key: "orders", icon: IconReceipt },
+  { key: "generation", icon: IconPhoto },
 ] as const;
 
 type StudioTabKey = (typeof STUDIO_TABS)[number]["key"];
@@ -154,7 +156,7 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
   const t = useTranslations("newIpWorkbench");
   const [activeTab, setActiveTab] = useState<StudioTabKey>("overview");
   const [profileEditOpen, setProfileEditOpen] = useState(false);
-  const { data, isLoading, error, refetch } = useMyIpCommerceIp(ipId, { locale });
+  const { data, isLoading, isFetching, error, refetch } = useMyIpCommerceIp(ipId, { locale });
   const submitReview = useSubmitIpCommerceIpForReview();
 
   if (isLoading) {
@@ -165,7 +167,7 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
     );
   }
 
-  if (error || !data?.ip) {
+  if (!data?.ip) {
     return (
       <main className="min-h-[calc(100vh-4rem)] bg-background px-5 py-10 text-foreground">
         <div className="mx-auto flex max-w-xl flex-col items-start gap-5 rounded-2xl border border-border bg-card p-6">
@@ -196,6 +198,23 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
 
   return (
     <main className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
+      {error && (
+        <div
+          role="alert"
+          className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 text-sm text-destructive"
+        >
+          <span>{errorMessage(error) || t("notFoundBody")}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {t("retry")}
+          </Button>
+        </div>
+      )}
       <EditStyleHero
         ip={ip}
         t={t}
@@ -258,14 +277,14 @@ export function IpStudioWorkbench({ ipId }: IpStudioWorkbenchProps) {
         {activeTab === "rights" ? <RightsPanel ip={ip} t={t} /> : null}
         {activeTab === "pricing" ? <PricingPanel ip={ip} t={t} /> : null}
         {activeTab === "orders" ? <OrdersPanel ip={ip} t={t} locale={locale} /> : null}
+        {activeTab === "generation" ? (
+          <Section title={t("tabs.generation", { defaultValue: "Audience Generation" })}>
+            <AudienceGenerationTemplatesEditor ipId={ip.id} />
+          </Section>
+        ) : null}
       </div>
 
-      <IpProfileEditDialog
-        key={`${ip.id}:${ip.version}:${profileEditOpen ? "open" : "closed"}`}
-        ip={ip}
-        open={profileEditOpen}
-        onOpenChange={setProfileEditOpen}
-      />
+      <IpProfileEditDialog ip={ip} open={profileEditOpen} onOpenChange={setProfileEditOpen} />
     </main>
   );
 }
@@ -534,7 +553,7 @@ function EpisodesPanel({
   );
 }
 
-function EpisodeManager({
+export function EpisodeManager({
   ip,
   t,
   onOpenPricing,
@@ -547,7 +566,6 @@ function EpisodeManager({
   const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
   const episodes = ip.episodes ?? [];
   const editingEpisode = episodes.find((episode) => episode.id === editingEpisodeId) ?? null;
-  const nextEpisodeNo = episodes.reduce((max, episode) => Math.max(max, episode.episodeNo), 0) + 1;
 
   return (
     <div className="space-y-3">
@@ -609,7 +627,7 @@ function EpisodeManager({
       </div>
 
       <EpisodeUpsertDialog
-        key={`create:${createDialogOpen}:${nextEpisodeNo}:${ip.version}`}
+        key={`create:${ip.id}:${createDialogOpen}`}
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         ip={ip}
@@ -617,7 +635,7 @@ function EpisodeManager({
       />
       {editingEpisode ? (
         <EpisodeUpsertDialog
-          key={`edit:${editingEpisode.id}:${ip.version}`}
+          key={`edit:${ip.id}:${editingEpisode.id}`}
           open={Boolean(editingEpisode)}
           onOpenChange={(open) => {
             if (!open) setEditingEpisodeId(null);
@@ -657,6 +675,8 @@ function EpisodeUpsertDialog({
   episode?: StudioEpisode;
   t: Translate;
 }) {
+  // Preserve the concurrency version belonging to this open draft.
+  const [expectedVersion] = useState(ip.version);
   const oldT = useTranslations("ipEdit");
   const commonT = useTranslations("common");
   const createEpisode = useCreateIpCommerceEpisode();
@@ -854,7 +874,7 @@ function EpisodeUpsertDialog({
           isFreePreview: draft.isFreePreview,
           coverAssetId: draft.coverAssetId,
           mediaAssetId: draft.mediaAssetId,
-          expectedVersion: ip.version,
+          expectedVersion,
         });
         toast.success(t("episodesPanel.toasts.saved"));
       } else {
@@ -869,7 +889,7 @@ function EpisodeUpsertDialog({
           isFreePreview: draft.isFreePreview,
           coverAssetId: draft.coverAssetId ?? undefined,
           mediaAssetId: draft.mediaAssetId ?? undefined,
-          expectedVersion: ip.version,
+          expectedVersion,
         });
         toast.success(t("episodesPanel.toasts.created"));
       }
@@ -1575,7 +1595,7 @@ function PricingPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
       </div>
 
       {mode === "free" ? <FreeModeCard t={t} /> : null}
-      {mode === "bundle" ? <BundlePriceEditor ip={ip} t={t} /> : null}
+      {mode === "bundle" ? <BundlePriceEditor key={ip.id} ip={ip} t={t} /> : null}
       {mode === "episode" ? <EpisodePricingList ip={ip} episodes={sellableEpisodes} t={t} /> : null}
     </Section>
   );
@@ -1721,19 +1741,32 @@ const BUNDLE_QUICK_PICKS = ["30", "50", "99"] as const;
 
 // Prominent whole-IP bundle card. One price unlocks every episode (incl. future
 // ones) via an IP-level entitlement. No per-episode prices exist in this mode.
-function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+export function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   const upsertPrice = useUpsertIpCommercePriceRule();
-  const [amount, setAmount] = useState(ip.price?.amount ?? "");
-  const [originalAmount, setOriginalAmount] = useState(ip.price?.originalAmount ?? "");
-  const [startsAt, setStartsAt] = useState(toDateTimeLocal(ip.price?.startsAt));
-  const [endsAt, setEndsAt] = useState(toDateTimeLocal(ip.price?.endsAt));
+  const [baseline, setBaseline] = useState(ip);
+  const [amount, setAmount] = useState(baseline.price?.amount ?? "");
+  const [originalAmount, setOriginalAmount] = useState(baseline.price?.originalAmount ?? "");
+  const [startsAt, setStartsAt] = useState(toDateTimeLocal(baseline.price?.startsAt));
+  const [endsAt, setEndsAt] = useState(toDateTimeLocal(baseline.price?.endsAt));
+  const dirty =
+    amount !== (baseline.price?.amount ?? "") ||
+    originalAmount !== (baseline.price?.originalAmount ?? "") ||
+    startsAt !== toDateTimeLocal(baseline.price?.startsAt) ||
+    endsAt !== toDateTimeLocal(baseline.price?.endsAt);
+  if (!dirty && !upsertPrice.isPending && ip.version > baseline.version) {
+    setBaseline(ip);
+    setAmount(ip.price?.amount ?? "");
+    setOriginalAmount(ip.price?.originalAmount ?? "");
+    setStartsAt(toDateTimeLocal(ip.price?.startsAt));
+    setEndsAt(toDateTimeLocal(ip.price?.endsAt));
+  }
   const valid = validatePriceRuleInput({ amount, originalAmount, startsAt, endsAt });
   const canSave = !upsertPrice.isPending && valid;
 
   const handleSave = async () => {
     if (!canSave) return;
     try {
-      await upsertPrice.mutateAsync({
+      const result = await upsertPrice.mutateAsync({
         ipId: ip.id,
         targetType: "ip",
         status: "active",
@@ -1743,8 +1776,9 @@ function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
         startsAt: dateTimeLocalToIso(startsAt),
         endsAt: dateTimeLocalToIso(endsAt),
         maxPerUser: null,
-        expectedVersion: ip.version,
+        expectedVersion: baseline.version,
       });
+      setBaseline(result.ip);
       toast.success(t("pricingPanel.toasts.saved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("pricingPanel.toasts.saveFailed"));
@@ -1774,7 +1808,7 @@ function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
         <FormTextField
           label={t("pricingPanel.form.amount")}
           value={amount}
-          onChange={(value) => setAmount(value.replace(/[^\d]/g, ""))}
+          onChange={setAmount}
           placeholder={t("pricingPanel.form.amountPlaceholder")}
         />
         <div className="mt-2 flex flex-wrap gap-2">
@@ -1793,7 +1827,7 @@ function BundlePriceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
         originalAmount={originalAmount}
         startsAt={startsAt}
         endsAt={endsAt}
-        onOriginalAmountChange={(value) => setOriginalAmount(value.replace(/[^\d]/g, ""))}
+        onOriginalAmountChange={setOriginalAmount}
         onStartsAtChange={setStartsAt}
         onEndsAtChange={setEndsAt}
         t={t}
@@ -1825,7 +1859,7 @@ function deriveEpisodePriceState(episode: StudioEpisode): EpisodePriceState {
 // One row in the per-episode pricing list. Hides the amount input behind an
 // explicit "Set price" affordance; supports clearing back to unpriced and a
 // "Free preview" state. Compare-at + schedule live behind a per-row disclosure.
-function EpisodePriceEditor({
+export function EpisodePriceEditor({
   ip,
   episode,
   displayNumber,
@@ -1844,6 +1878,10 @@ function EpisodePriceEditor({
   const updateEpisode = useUpdateIpCommerceEpisode();
   const serverState = deriveEpisodePriceState(episode);
   const [editing, setEditing] = useState(false);
+  const [draftBase, setDraftBase] = useState({
+    version: ip.version,
+    isFreePreview: episode.isFreePreview,
+  });
   const [amount, setAmount] = useState(episode.price?.amount ?? "");
   const [originalAmount, setOriginalAmount] = useState(episode.price?.originalAmount ?? "");
   const [startsAt, setStartsAt] = useState(toDateTimeLocal(episode.price?.startsAt));
@@ -1851,22 +1889,33 @@ function EpisodePriceEditor({
   const valid = validatePriceRuleInput({ amount, originalAmount, startsAt, endsAt });
   const busy = upsertPrice.isPending || updateEpisode.isPending;
 
+  const beginEdit = () => {
+    setDraftBase({ version: ip.version, isFreePreview: episode.isFreePreview });
+    setAmount(episode.price?.amount ?? "");
+    setOriginalAmount(episode.price?.originalAmount ?? "");
+    setStartsAt(toDateTimeLocal(episode.price?.startsAt));
+    setEndsAt(toDateTimeLocal(episode.price?.endsAt));
+    setEditing(true);
+  };
+
   // Clear the free-preview flag (if set) before/while pricing, since a priced
   // episode is not a free preview.
   const clearFreePreview = async () => {
-    if (!episode.isFreePreview) return;
-    await updateEpisode.mutateAsync({
+    if (!draftBase.isFreePreview) return draftBase.version;
+    const result = await updateEpisode.mutateAsync({
       ipId: ip.id,
       episodeId: episode.id,
       isFreePreview: false,
-      expectedVersion: ip.version,
+      expectedVersion: draftBase.version,
     });
+    setDraftBase({ version: result.ip.version, isFreePreview: false });
+    return result.ip.version;
   };
 
   const handleSavePrice = async () => {
     if (!valid || busy) return;
     try {
-      await clearFreePreview();
+      const expectedVersion = await clearFreePreview();
       await upsertPrice.mutateAsync({
         ipId: ip.id,
         targetType: "episode",
@@ -1878,7 +1927,7 @@ function EpisodePriceEditor({
         startsAt: dateTimeLocalToIso(startsAt),
         endsAt: dateTimeLocalToIso(endsAt),
         maxPerUser: null,
-        expectedVersion: ip.version,
+        expectedVersion,
       });
       toast.success(t("pricingPanel.toasts.saved"));
       setEditing(false);
@@ -1889,8 +1938,8 @@ function EpisodePriceEditor({
 
   // Disable any active episode price rule, returning the episode to unpriced.
   const disablePrice = async () => {
-    if (!episode.price) return;
-    await upsertPrice.mutateAsync({
+    if (!episode.price) return ip.version;
+    const result = await upsertPrice.mutateAsync({
       ipId: ip.id,
       targetType: "episode",
       episodeId: episode.id,
@@ -1899,18 +1948,19 @@ function EpisodePriceEditor({
       maxPerUser: null,
       expectedVersion: ip.version,
     });
+    return result.ip.version;
   };
 
   const handleClear = async () => {
     if (busy) return;
     try {
-      await disablePrice();
+      const expectedVersion = await disablePrice();
       if (episode.isFreePreview) {
         await updateEpisode.mutateAsync({
           ipId: ip.id,
           episodeId: episode.id,
           isFreePreview: false,
-          expectedVersion: ip.version,
+          expectedVersion,
         });
       }
       toast.success(t("pricingPanel.toasts.saved"));
@@ -1924,12 +1974,12 @@ function EpisodePriceEditor({
     if (busy || episode.isFreePreview) return;
     try {
       // A free preview is free — drop any active price first.
-      await disablePrice();
+      const expectedVersion = await disablePrice();
       await updateEpisode.mutateAsync({
         ipId: ip.id,
         episodeId: episode.id,
         isFreePreview: true,
-        expectedVersion: ip.version,
+        expectedVersion,
       });
       toast.success(t("pricingPanel.toasts.saved"));
       setEditing(false);
@@ -1963,7 +2013,7 @@ function EpisodePriceEditor({
             <FormTextField
               label={t("pricingPanel.form.amount")}
               value={amount}
-              onChange={(value) => setAmount(value.replace(/[^\d]/g, ""))}
+              onChange={setAmount}
               placeholder={t("pricingPanel.form.amountPlaceholder")}
             />
           </div>
@@ -1971,7 +2021,7 @@ function EpisodePriceEditor({
             originalAmount={originalAmount}
             startsAt={startsAt}
             endsAt={endsAt}
-            onOriginalAmountChange={(value) => setOriginalAmount(value.replace(/[^\d]/g, ""))}
+            onOriginalAmountChange={setOriginalAmount}
             onStartsAtChange={setStartsAt}
             onEndsAtChange={setEndsAt}
             t={t}
@@ -2005,7 +2055,7 @@ function EpisodePriceEditor({
             size="sm"
             variant={serverState === "priced" ? "outline" : "solid"}
             color={serverState === "priced" ? "muted" : "primary"}
-            onClick={() => setEditing(true)}
+            onClick={beginEdit}
             disabled={busy}
           >
             <IconCoin className="size-3.5" />
@@ -2143,11 +2193,11 @@ function PriceScheduleFields({
   );
 }
 
-function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
-  const { data, isLoading, error, refetch } = useMyIpContributors(ip.id);
+export function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale: Locale }) {
+  const { data, isLoading, isFetching, error, refetch } = useMyIpContributors(ip.id);
   const [addOpen, setAddOpen] = useState(false);
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
         <div className="flex items-center gap-2 rounded-xl bg-card p-6 text-sm text-muted-foreground ring-1 ring-border/65">
@@ -2158,7 +2208,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
     );
   }
 
-  if (error || !data) {
+  if (!data) {
     return (
       <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
         <div className="rounded-xl bg-card p-6 ring-1 ring-border/65">
@@ -2170,6 +2220,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
             variant="outline"
             size="sm"
             className="mt-3"
+            disabled={isFetching}
             onClick={() => void refetch()}
           >
             <IconRefresh className="size-4" />
@@ -2185,6 +2236,20 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
 
   return (
     <Section title={t("membersPanel.sectionTitle")} description={t("membersPanel.sectionBody")}>
+      {error ? (
+        <div role="alert" className="flex items-center gap-3 text-sm text-destructive">
+          <p>{errorMessage(error) || t("membersPanel.loadFailed")}</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => void refetch()}
+          >
+            {t("membersPanel.retry")}
+          </Button>
+        </div>
+      ) : null}
       <div className="space-y-4">
         <AccessControlPanel ip={ip} contributors={data.contributors} t={t} locale={locale} />
 
@@ -2255,7 +2320,7 @@ function MembersPanel({ ip, t, locale }: { ip: IpCreatorIp; t: Translate; locale
 
 type LinkedUserDraft = { userId: string; name: string };
 
-function AccessControlPanel({
+export function AccessControlPanel({
   ip,
   contributors,
   t,
@@ -2349,7 +2414,8 @@ function AccessControlPanel({
         permission: "edit",
       });
       toast.success(t("membersPanel.toasts.accessGranted"));
-      setSelectedUser(null);
+      // A completed grant must not discard an account selected while it was pending.
+      setSelectedUser((current) => (current === selectedUser ? null : current));
     } catch (err) {
       toast.error(errorMessage(err) || t("membersPanel.toasts.accessGrantFailed"));
     }
@@ -2619,22 +2685,35 @@ function UserSearchPicker({
   const [account, setAccount] = useState("");
   const [results, setResults] = useState<IpUserSearchHit[]>([]);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const lookupVersion = useRef(0);
+
+  useEffect(
+    () => () => {
+      lookupVersion.current += 1;
+    },
+    []
+  );
 
   const handleSearch = async () => {
     const value = account.trim();
     if (!value) return;
+    const version = ++lookupVersion.current;
     setLookupError(null);
+    setResults([]);
     try {
       const hits = await search.mutateAsync(value);
+      if (version !== lookupVersion.current) return;
       setResults(hits);
       if (hits.length === 0) setLookupError(t("membersPanel.lookupNotFound"));
     } catch (err) {
+      if (version !== lookupVersion.current) return;
       setResults([]);
       setLookupError(errorMessage(err) || t("membersPanel.lookupFailed"));
     }
   };
 
   const handleSelect = (hit: IpUserSearchHit) => {
+    lookupVersion.current += 1;
     onSelect(hit);
     setAccount("");
     setResults([]);
@@ -2642,6 +2721,7 @@ function UserSearchPicker({
   };
 
   const handleClear = () => {
+    lookupVersion.current += 1;
     onClear();
     setAccount("");
     setResults([]);
@@ -2671,7 +2751,9 @@ function UserSearchPicker({
         <Input
           value={account}
           onChange={(event) => {
+            lookupVersion.current += 1;
             setAccount(event.target.value);
+            setResults([]);
             setLookupError(null);
           }}
           onKeyDown={(event) => {
@@ -2726,7 +2808,7 @@ function UserSearchPicker({
   );
 }
 
-function MemberRow({
+export function MemberRow({
   ip,
   contributor,
   contributors,
@@ -2741,13 +2823,13 @@ function MemberRow({
   const remove = useDeleteIpCommerceContributor();
   const linked = Boolean(contributor.userId);
   const [shareText, setShareText] = useState(bpsToPercentText(contributor.revenueShareBps));
-  // Re-sync the local input when the server value changes (e.g. after a refetch
-  // following another row's edit) using React's "adjust state during render"
-  // pattern, which avoids an effect + cascading render.
+  const [shareDirty, setShareDirty] = useState(false);
+  const sharePending = useRef(false);
+  // Refresh untouched inputs without replacing an unsaved percentage draft.
   const [syncedBps, setSyncedBps] = useState(contributor.revenueShareBps);
   if (syncedBps !== contributor.revenueShareBps) {
     setSyncedBps(contributor.revenueShareBps);
-    setShareText(bpsToPercentText(contributor.revenueShareBps));
+    if (!shareDirty) setShareText(bpsToPercentText(contributor.revenueShareBps));
   }
 
   const roleLabel = contributor.customRole?.trim()
@@ -2757,24 +2839,34 @@ function MemberRow({
   const eligibleSumExcludingThis = sumEligibleBps(contributors, contributor.id);
 
   const commitShare = async () => {
+    if (sharePending.current || update.isPending || remove.isPending) return;
     const nextBps = percentTextToBps(shareText);
-    if (nextBps === contributor.revenueShareBps) return;
+    if (nextBps === undefined) {
+      toast.error(t("membersPanel.invalidShare"));
+      return;
+    }
+    if (nextBps === contributor.revenueShareBps) {
+      setShareDirty(false);
+      return;
+    }
     // Client guard: eligible totals must stay <= 100%.
     if (contributor.revenueEligible && eligibleSumExcludingThis + (nextBps ?? 0) > BPS_FULL) {
       toast.error(t("membersPanel.overAllocated"));
-      setShareText(bpsToPercentText(contributor.revenueShareBps));
       return;
     }
+    sharePending.current = true;
     try {
       await update.mutateAsync({
         ipId: ip.id,
         contributorId: contributor.id,
         revenueShareBps: nextBps,
       });
+      setShareDirty(false);
       toast.success(t("membersPanel.toasts.updated"));
     } catch (err) {
-      setShareText(bpsToPercentText(contributor.revenueShareBps));
       toast.error(errorMessage(err) || t("membersPanel.toasts.updateFailed"));
+    } finally {
+      sharePending.current = false;
     }
   };
 
@@ -2836,7 +2928,10 @@ function MemberRow({
       </Button>
       <Input
         value={shareText}
-        onChange={(event) => setShareText(event.target.value.replace(/[^\d.]/g, ""))}
+        onChange={(event) => {
+          setShareDirty(true);
+          setShareText(event.target.value);
+        }}
         onBlur={() => void commitShare()}
         onKeyDown={(event) => {
           if (event.key === "Enter") event.currentTarget.blur();
@@ -2862,7 +2957,7 @@ function MemberRow({
   );
 }
 
-function AddMemberDialog({
+export function AddMemberDialog({
   open,
   onOpenChange,
   ip,
@@ -2903,6 +2998,10 @@ function AddMemberDialog({
   const handleSubmit = async () => {
     if (!canSubmit) return;
     const shareBps = eligible ? percentTextToBps(shareText) : null;
+    if (shareBps === undefined) {
+      toast.error(t("membersPanel.invalidShare"));
+      return;
+    }
     if (eligible && !linkedUser) {
       toast.error(t("membersPanel.mustLinkToEarn"));
       return;
@@ -2929,91 +3028,101 @@ function AddMemberDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!create.isPending) onOpenChange(next);
+      }}
+    >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t("membersPanel.addTitle")}</DialogTitle>
           <DialogDescription>{t("membersPanel.addBody")}</DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <FieldGroup>
-            <Field>
-              <FieldLabel required>{t("membersPanel.displayNameLabel")}</FieldLabel>
-              <Input
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value.slice(0, 120))}
-                placeholder={t("membersPanel.displayNamePlaceholder")}
-                maxLength={120}
-              />
-            </Field>
-
-            <div className="grid gap-4 sm:grid-cols-2">
+          <fieldset disabled={create.isPending} className="min-w-0">
+            <FieldGroup>
               <Field>
-                <FieldLabel>{t("membersPanel.roleLabel")}</FieldLabel>
-                <Select value={role} onValueChange={(value) => setRole(value as IpContributorRole)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CONTRIBUTOR_ROLE_OPTIONS.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {t(`roles.${value}`)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field>
-                <FieldLabel>{t("membersPanel.customRoleLabel")}</FieldLabel>
+                <FieldLabel required>{t("membersPanel.displayNameLabel")}</FieldLabel>
                 <Input
-                  value={customRole}
-                  onChange={(event) => setCustomRole(event.target.value.slice(0, 80))}
-                  placeholder={t("membersPanel.customRolePlaceholder")}
-                  maxLength={80}
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value.slice(0, 120))}
+                  placeholder={t("membersPanel.displayNamePlaceholder")}
+                  maxLength={120}
                 />
               </Field>
-            </div>
 
-            <Field>
-              <FieldLabel>{t("membersPanel.linkUserLabel")}</FieldLabel>
-              <UserSearchPicker
-                t={t}
-                selectedUser={linkedUser}
-                onSelect={pickUser}
-                onClear={unlink}
-                placeholder={t("membersPanel.linkUserPlaceholder")}
-                selectedLabel={(user) => t("membersPanel.lookupFound", { name: user.name })}
-                description={t("membersPanel.eligibleHint")}
-              />
-            </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel>{t("membersPanel.roleLabel")}</FieldLabel>
+                  <Select
+                    value={role}
+                    onValueChange={(value) => setRole(value as IpContributorRole)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CONTRIBUTOR_ROLE_OPTIONS.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {t(`roles.${value}`)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field>
+                  <FieldLabel>{t("membersPanel.customRoleLabel")}</FieldLabel>
+                  <Input
+                    value={customRole}
+                    onChange={(event) => setCustomRole(event.target.value.slice(0, 80))}
+                    placeholder={t("membersPanel.customRolePlaceholder")}
+                    maxLength={80}
+                  />
+                </Field>
+              </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
-              <label
-                className={cn(
-                  "inline-flex items-center gap-2 text-sm",
-                  linkedUser ? "text-foreground" : "cursor-not-allowed text-muted-foreground"
-                )}
-                title={linkedUser ? undefined : t("membersPanel.cannotEarn")}
-              >
-                <input
-                  type="checkbox"
-                  checked={eligible}
-                  disabled={!linkedUser}
-                  onChange={(event) => setEligible(event.target.checked)}
-                  className="size-4 accent-primary"
+              <Field>
+                <FieldLabel>{t("membersPanel.linkUserLabel")}</FieldLabel>
+                <UserSearchPicker
+                  t={t}
+                  selectedUser={linkedUser}
+                  onSelect={pickUser}
+                  onClear={unlink}
+                  placeholder={t("membersPanel.linkUserPlaceholder")}
+                  selectedLabel={(user) => t("membersPanel.lookupFound", { name: user.name })}
+                  description={t("membersPanel.eligibleHint")}
                 />
-                {t("membersPanel.eligible")}
-              </label>
-              <Input
-                value={shareText}
-                onChange={(event) => setShareText(event.target.value.replace(/[^\d.]/g, ""))}
-                disabled={!linkedUser || !eligible}
-                placeholder={t("membersPanel.sharePlaceholder")}
-                aria-label={t("membersPanel.shareAriaLabel")}
-                className="h-9 w-24"
-              />
-            </div>
-          </FieldGroup>
+              </Field>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2.5">
+                <label
+                  className={cn(
+                    "inline-flex items-center gap-2 text-sm",
+                    linkedUser ? "text-foreground" : "cursor-not-allowed text-muted-foreground"
+                  )}
+                  title={linkedUser ? undefined : t("membersPanel.cannotEarn")}
+                >
+                  <input
+                    type="checkbox"
+                    checked={eligible}
+                    disabled={!linkedUser}
+                    onChange={(event) => setEligible(event.target.checked)}
+                    className="size-4 accent-primary"
+                  />
+                  {t("membersPanel.eligible")}
+                </label>
+                <Input
+                  value={shareText}
+                  onChange={(event) => setShareText(event.target.value)}
+                  disabled={!linkedUser || !eligible}
+                  placeholder={t("membersPanel.sharePlaceholder")}
+                  aria-label={t("membersPanel.shareAriaLabel")}
+                  className="h-9 w-24"
+                />
+              </div>
+            </FieldGroup>
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button
@@ -3037,7 +3146,7 @@ function AddMemberDialog({
 function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   return (
     <Section title={t("assetsPanel.rightsTitle")} description={t("assetsPanel.rightsBody")}>
-      <RightsGovernanceEditor ip={ip} t={t} />
+      <RightsGovernanceEditor key={ip.id} ip={ip} t={t} />
       <IpCrewOrigin ipId={ip.id} editable />
       <IpReleaseLinks ipId={ip.id} editable />
       <IpGameAssociations ipId={ip.id} />
@@ -3046,13 +3155,14 @@ function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   );
 }
 
-function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+export function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   const update = useUpdateIpCommerceIpProfile();
-  const currentOwner = ip.copyrightOwner ?? "";
-  const currentRights = jsonStringField(ip.rightsSummary, "statement");
-  const currentAiStatement = jsonStringField(ip.aiDisclosure, "statement");
-  const currentGeneratedVisuals = jsonBooleanField(ip.aiDisclosure, "generatedVisuals");
-  const currentGeneratedCopy = jsonBooleanField(ip.aiDisclosure, "generatedCopy");
+  const [baseline, setBaseline] = useState(ip);
+  const currentOwner = baseline.copyrightOwner ?? "";
+  const currentRights = jsonStringField(baseline.rightsSummary, "statement");
+  const currentAiStatement = jsonStringField(baseline.aiDisclosure, "statement");
+  const currentGeneratedVisuals = jsonBooleanField(baseline.aiDisclosure, "generatedVisuals");
+  const currentGeneratedCopy = jsonBooleanField(baseline.aiDisclosure, "generatedCopy");
   const [owner, setOwner] = useState(currentOwner);
   const [rightsStatement, setRightsStatement] = useState(currentRights);
   const [aiStatement, setAiStatement] = useState(currentAiStatement);
@@ -3065,12 +3175,21 @@ function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
     aiStatement.trim() !== currentAiStatement.trim() ||
     generatedVisuals !== currentGeneratedVisuals ||
     generatedCopy !== currentGeneratedCopy;
+  // Refresh clean forms, but never attach a newer version to an older draft.
+  if (!dirty && !update.isPending && ip.version > baseline.version) {
+    setBaseline(ip);
+    setOwner(ip.copyrightOwner ?? "");
+    setRightsStatement(jsonStringField(ip.rightsSummary, "statement"));
+    setAiStatement(jsonStringField(ip.aiDisclosure, "statement"));
+    setGeneratedVisuals(jsonBooleanField(ip.aiDisclosure, "generatedVisuals"));
+    setGeneratedCopy(jsonBooleanField(ip.aiDisclosure, "generatedCopy"));
+  }
   const canSave = dirty && !update.isPending;
 
   const handleSave = async () => {
     if (!canSave) return;
     try {
-      await update.mutateAsync({
+      const result = await update.mutateAsync({
         ipId: ip.id,
         copyrightOwner: owner.trim() || null,
         rightsSummary: {
@@ -3081,8 +3200,9 @@ function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
           generatedCopy,
           statement: aiStatement.trim(),
         },
-        expectedVersion: ip.version,
+        expectedVersion: baseline.version,
       });
+      setBaseline(result.ip);
       toast.success(t("assetsPanel.rightsForm.saved"));
     } catch (err) {
       toast.error(errorMessage(err) || t("assetsPanel.rightsForm.saveFailed"));
@@ -3300,17 +3420,24 @@ function AssetPreview({
   );
 }
 
-function IpProfileEditDialog({
-  ip,
-  open,
-  onOpenChange,
-}: {
+type IpProfileEditDialogProps = {
   ip: IpCreatorIp;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+};
+
+export function IpProfileEditDialog(props: IpProfileEditDialogProps) {
+  return (
+    <IpProfileEditSession key={`${props.ip.id}:${props.open ? "open" : "closed"}`} {...props} />
+  );
+}
+
+function IpProfileEditSession({ ip: currentIp, open, onOpenChange }: IpProfileEditDialogProps) {
+  // An open editing session owns both its initial fields and their server version.
+  const [ip] = useState(currentIp);
   const t = useTranslations("newIpWorkbench");
   const typeT = useTranslations("newIpCreate");
+  const commonT = useTranslations("common");
   const locale = useLocale() as Locale;
   const update = useUpdateIpCommerceIpProfile();
   const taxonomy = useIpCommerceTaxonomyTerms({ locale });
@@ -3447,14 +3574,28 @@ function IpProfileEditDialog({
 
             <Field>
               <FieldLabel required>{t("profileEdit.genres")}</FieldLabel>
-              <TaxonomyPicker
-                items={genreOptions}
-                selectedCodes={genreCodes}
-                max={GENRE_MAX_COUNT}
-                loading={taxonomy.isLoading}
-                emptyLabel={t("profileEdit.taxonomyEmpty")}
-                onChange={setGenreCodes}
-              />
+              {taxonomy.isError ? (
+                <div role="alert" className="space-y-2">
+                  <p className="text-sm text-destructive">{typeT("taxonomyLoadFailed")}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={taxonomy.isFetching}
+                    onClick={() => void taxonomy.refetch()}
+                  >
+                    {commonT("retry")}
+                  </Button>
+                </div>
+              ) : (
+                <TaxonomyPicker
+                  items={genreOptions}
+                  selectedCodes={genreCodes}
+                  max={GENRE_MAX_COUNT}
+                  loading={taxonomy.isLoading}
+                  emptyLabel={t("profileEdit.taxonomyEmpty")}
+                  onChange={setGenreCodes}
+                />
+              )}
               <FieldDescription>
                 {t("profileEdit.taxonomyHelp", { count: genreCodes.length, max: GENRE_MAX_COUNT })}
               </FieldDescription>
@@ -3877,11 +4018,12 @@ function bpsToPercentText(bps: number | null): string {
   return bps == null ? "" : String(bps / 100);
 }
 
-function percentTextToBps(text: string): number | null {
+function percentTextToBps(text: string): number | null | undefined {
   const trimmed = text.trim();
   if (trimmed === "") return null;
+  if (!/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(trimmed)) return undefined;
   const percent = Number(trimmed);
-  if (Number.isNaN(percent)) return null;
+  if (!Number.isFinite(percent)) return undefined;
   return Math.round(percent * 100);
 }
 

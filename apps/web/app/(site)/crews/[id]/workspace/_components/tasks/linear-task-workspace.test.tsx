@@ -12,6 +12,10 @@ const state = vi.hoisted(() => ({
   locale: "en-US",
   layout: "board",
   account: "alice",
+  projectFailed: false,
+  projectMissing: false,
+  projectFetching: false,
+  listFailed: false,
   failed: false,
   missing: false,
   retry: vi.fn(),
@@ -61,28 +65,40 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
     }),
     useCrewTaskSummary: () => ({ data: {} }),
     useCrewTaskProject: () => ({
-      data: {
-        cycles: [],
-        fields: [],
-        labels: [],
-        workflowStates: [],
-        views: [
-          {
-            id: "default",
-            name: "issues",
-            layout: state.layout,
-            filters: {},
-            sorts: [],
-            visibleFields: [],
-            groupBy: "status",
-            completedMode: "all",
-            showSubIssues: true,
-            showEmptyGroups: false,
+      isError: state.projectFailed,
+      error: new Error("Project refresh unavailable"),
+      isFetching: state.projectFetching,
+      refetch: state.retry,
+      data: state.projectMissing
+        ? undefined
+        : {
+            cycles: [],
+            fields: [],
+            labels: [],
+            workflowStates: [],
+            views: [
+              {
+                id: "default",
+                name: "issues",
+                layout: state.layout,
+                filters: {},
+                sorts: [],
+                visibleFields: [],
+                groupBy: "status",
+                completedMode: "all",
+                showSubIssues: true,
+                showEmptyGroups: false,
+              },
+            ],
           },
-        ],
-      },
     }),
-    useCrewTaskView: () => ({ data: [], workflowCounts: {} }),
+    useCrewTaskView: () => ({
+      data: [],
+      workflowCounts: {},
+      isError: state.listFailed,
+      error: new Error("Task list unavailable"),
+      refetch: state.retry,
+    }),
   };
 });
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ useUserDisplays: () => ({}) }));
@@ -120,6 +136,10 @@ vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./task-dialogs", () => ({ SubmitTaskDialog: () => null }));
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
+  state.projectFailed = false;
+  state.projectMissing = false;
+  state.projectFetching = false;
+  state.listFailed = false;
   if (root) act(() => root.unmount());
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
@@ -146,6 +166,9 @@ async function render(deeplinkTaskId?: string | null, reuse = false) {
         canEditCrewInfo={false}
         members={[]}
         isOwner={false}
+        canReview={false}
+        canSubmitAssigned={false}
+        canComment={false}
       />
     )
   );
@@ -290,5 +313,49 @@ it("offers a retry when task details fail before any data loads", async () => {
       .find((button) => button.textContent === "Retry")!
       .click()
   );
+  expect(state.retry).toHaveBeenCalledOnce();
+});
+
+it("shows task-list failure and retries without claiming an empty successful load", async () => {
+  state.listFailed = true;
+  await render();
+  expect(document.body.textContent).toContain("Task list unavailable");
+  const retry = [...document.querySelectorAll("button")].find((b) => b.textContent === "Retry")!;
+  await act(async () => retry.click());
+  expect(state.retry).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the task editor draft when project configuration refresh fails", async () => {
+  state.locale = "en-US";
+  await render("task-1");
+  const button = (label: string) =>
+    [...document.querySelectorAll("button")].find((b) => b.textContent === label)!;
+  act(() => button("Edit draft").click());
+  const draft = button("Private task draft");
+  state.projectFailed = true;
+  await render("task-1", true);
+  expect(button("Private task draft")).toBe(draft);
+  expect(document.body.textContent).toContain("Project refresh unavailable");
+  await act(async () => button(en.crewTaskProject.retry).click());
+  expect(state.retry).toHaveBeenCalledOnce();
+  state.projectFetching = true;
+  await render("task-1", true);
+  expect(button(en.crewTaskProject.retry).disabled).toBe(true);
+  state.projectFetching = false;
+  state.projectFailed = false;
+  await render("task-1", true);
+  expect(button("Private task draft")).toBe(draft);
+});
+
+it("offers retry when the initial project configuration load fails", async () => {
+  state.locale = "en-US";
+  state.projectFailed = true;
+  state.projectMissing = true;
+  await render();
+  const retry = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent === en.crewTaskProject.retry
+  );
+  expect(retry).toBeDefined();
+  await act(async () => retry!.click());
   expect(state.retry).toHaveBeenCalledOnce();
 });

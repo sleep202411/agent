@@ -58,9 +58,18 @@ export default function AllIpsScreen() {
   const hasDataRef = useRef(false);
   // Guards onEndReached from firing a second page-2 fetch before the first
   // resolves (FlatList can call onEndReached repeatedly during a fling).
-  const loadingMoreRef = useRef(false);
+  const loadingMoreRef = useRef<object | null>(null);
+  const replacingRef = useRef(false);
+  const sequenceRef = useRef(0);
+  const filterKey = JSON.stringify([selectedGenreCode, selectedRegionCode, selectedTypeCode]);
+  const loadedFilterRef = useRef<string | null>(null);
 
   const loadFirstPage = useCallback(async () => {
+    const seq = ++sequenceRef.current;
+    replacingRef.current = true;
+    loadingMoreRef.current = null;
+    setLoadingMore(false);
+    setRefreshing(false);
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
@@ -70,6 +79,8 @@ export default function AllIpsScreen() {
         regionCode: selectedRegionCode,
         typeCode: selectedTypeCode,
       });
+      if (seq !== sequenceRef.current) return;
+      loadedFilterRef.current = filterKey;
       hasDataRef.current = true;
       setIps(page.items);
       setNextCursor(page.nextCursor);
@@ -77,16 +88,26 @@ export default function AllIpsScreen() {
       setTypeTags(page.typeTags);
       setRegions((current) => mergeRegions(current, page.regions));
     } catch (loadError) {
-      if (!hasDataRef.current) {
+      if (seq === sequenceRef.current && !hasDataRef.current) {
         setError(loadError instanceof Error ? loadError.message : t("ips.loadErrorFallback"));
       }
     } finally {
-      setLoading(false);
+      if (seq === sequenceRef.current) {
+        replacingRef.current = false;
+        setLoading(false);
+      }
     }
-  }, [selectedGenreCode, selectedRegionCode, selectedTypeCode, t]);
+  }, [selectedGenreCode, selectedRegionCode, selectedTypeCode, t, filterKey]);
 
   useEffect(() => {
+    // Synchronize the catalog read and its loading indicators with the selected filters.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadFirstPage();
+    return () => {
+      sequenceRef.current += 1;
+      loadingMoreRef.current = null;
+      replacingRef.current = false;
+    };
   }, [loadFirstPage, browseVersion]);
 
   const genreChips = useMemo(
@@ -113,8 +134,16 @@ export default function AllIpsScreen() {
   const hasActiveFilters = Boolean(selectedGenreCode || selectedRegionCode || selectedTypeCode);
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMoreRef.current) return;
-    loadingMoreRef.current = true;
+    if (
+      !nextCursor ||
+      replacingRef.current ||
+      loadingMoreRef.current ||
+      loadedFilterRef.current !== filterKey
+    )
+      return;
+    const seq = sequenceRef.current;
+    const operation = {};
+    loadingMoreRef.current = operation;
     setLoadingMore(true);
     try {
       const page = await getIpCatalogPage({
@@ -124,26 +153,40 @@ export default function AllIpsScreen() {
         regionCode: selectedRegionCode,
         typeCode: selectedTypeCode,
       });
+      if (seq !== sequenceRef.current) return;
       setIps((current) => {
         const seen = new Set(current.map((ip) => ip.id));
-        return [...current, ...page.items.filter((ip) => !seen.has(ip.id))];
+        return [
+          ...current,
+          ...page.items.filter((ip) => {
+            if (seen.has(ip.id)) return false;
+            seen.add(ip.id);
+            return true;
+          }),
+        ];
       });
       setNextCursor(page.nextCursor);
       setGenres(page.genres);
       setTypeTags(page.typeTags);
       setRegions((current) => mergeRegions(current, page.regions));
+    } catch {
+      // Preserve the loaded catalog and cursor for the next pagination retry.
     } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
+      if (loadingMoreRef.current === operation) {
+        loadingMoreRef.current = null;
+        setLoadingMore(false);
+      }
     }
-  }, [nextCursor, selectedGenreCode, selectedRegionCode, selectedTypeCode]);
+  }, [nextCursor, selectedGenreCode, selectedRegionCode, selectedTypeCode, filterKey]);
 
   const onRefresh = useCallback(async () => {
+    const pending = loadFirstPage();
+    const seq = sequenceRef.current;
     setRefreshing(true);
     try {
-      await loadFirstPage();
+      await pending;
     } finally {
-      setRefreshing(false);
+      if (seq === sequenceRef.current) setRefreshing(false);
     }
   }, [loadFirstPage]);
 

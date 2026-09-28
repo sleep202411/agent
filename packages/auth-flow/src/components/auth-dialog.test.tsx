@@ -18,14 +18,21 @@ const transport: AuthTransport = {
   request: vi.fn(async () => ({ status: 500, body: {} })),
 };
 
-async function mountDialog() {
+async function mountDialog(initialInviteCode?: string) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
 
   await act(async () => {
     root!.render(
-      <AuthDialog open onOpenChange={() => {}} t={t} transport={transport} onSuccess={() => {}} />
+      <AuthDialog
+        initialInviteCode={initialInviteCode}
+        open
+        onOpenChange={() => {}}
+        t={t}
+        transport={transport}
+        onSuccess={() => {}}
+      />
     );
   });
 
@@ -63,4 +70,24 @@ describe("AuthDialog identifier input", () => {
 
     expect(input.value).toBe("505421473@qq.com");
   });
+});
+
+it("keeps invitation entry collapsed below login without taking focus", async () => {
+  const identifier = await mountDialog();
+  const optional = document.querySelector<HTMLInputElement>("#auth-optional-invite")!;
+  expect(optional).not.toBeNull();
+  expect(optional.closest("details")?.open).toBe(false);
+  expect(document.activeElement).toBe(identifier);
+  expect(
+    identifier.compareDocumentPosition(optional) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
+  expect(optional.required).toBe(false);
+});
+
+it("shows a referral-link prefill without moving focus from sign-in", async () => {
+  const identifier = await mountDialog("REF123");
+  const optional = document.querySelector<HTMLInputElement>("#auth-optional-invite")!;
+  expect(optional.value).toBe("REF123");
+  expect(optional.closest("details")?.open).toBe(true);
+  expect(document.activeElement).toBe(identifier);
 });

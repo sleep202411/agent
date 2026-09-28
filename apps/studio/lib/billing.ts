@@ -225,8 +225,8 @@ export interface CheckInStatus {
 }
 
 /** Today's daily check-in status + the streak reward cycle. */
-export function getCheckInStatus() {
-  return api.get<CheckInStatus>("/aurora/billing/check-in/status");
+export function getCheckInStatus(signal?: AbortSignal) {
+  return api.get<CheckInStatus>("/aurora/billing/check-in/status", { signal });
 }
 
 export interface CheckInResult {

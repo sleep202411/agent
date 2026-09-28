@@ -81,6 +81,12 @@ export function assertPaymentReady(channel: CheckoutChannel): void {
     }
     return;
   }
+  if (channel === "apple_iap" && isChinaRegion) {
+    if (isProductionApp && !hasStoreKitIapNative()) {
+      throw new Error(missingPaymentKeyMessage(channel));
+    }
+    return;
+  }
   if ((channel === "apple_iap" || channel === "google_play_iap") && !revenueCatApiKey(channel)) {
     throw new Error(missingPaymentKeyMessage(channel));
   }

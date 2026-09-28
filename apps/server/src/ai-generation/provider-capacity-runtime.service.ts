@@ -32,6 +32,23 @@ const DEFAULT_LEASE_SECONDS = 10 * 60;
 const LEASE_TTL_MARGIN_MS = 60_000;
 const FAILURE_WINDOW_SECONDS = 10 * 60;
 
+// Every member shares this key, so a shorter job must not expire longer leases.
+const EXTEND_LEASE_TTL_SCRIPT = `
+local desired_ttl = ttl + ${LEASE_TTL_MARGIN_MS}
+if redis.call('PTTL', key) < desired_ttl then
+  redis.call('PEXPIRE', key, desired_ttl)
+end
+`;
+
+const HEARTBEAT_LEASE_SCRIPT = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+redis.call('ZADD', key, now + ttl, ARGV[3])
+${EXTEND_LEASE_TTL_SCRIPT}
+return 1
+`;
+
 const ACTIVE_LEASE_SCRIPT = `
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
@@ -45,7 +62,7 @@ redis.call('ZREMRANGEBYSCORE', key, '-inf', now)
 local existing = redis.call('ZSCORE', key, member)
 if existing then
   redis.call('ZADD', key, expires_at, member)
-  redis.call('PEXPIRE', key, ttl + ${LEASE_TTL_MARGIN_MS})
+  ${EXTEND_LEASE_TTL_SCRIPT}
   return {1, 0, redis.call('ZCARD', key)}
 end
 
@@ -63,7 +80,7 @@ if count >= limit then
 end
 
 redis.call('ZADD', key, expires_at, member)
-redis.call('PEXPIRE', key, ttl + ${LEASE_TTL_MARGIN_MS})
+${EXTEND_LEASE_TTL_SCRIPT}
 return {1, 0, count + 1}
 `;
 
@@ -149,14 +166,13 @@ export class ProviderCapacityRuntimeService {
     const descriptor = this.descriptor(job);
     if (!descriptor?.capacity.maxConcurrentRequests || !this.redis) return;
     try {
-      await this.redis.zadd(
+      await this.redis.eval(
+        HEARTBEAT_LEASE_SCRIPT,
+        1,
         this.activeKey(descriptor),
-        String(Date.now() + this.leaseTtlMs(job)),
+        Date.now(),
+        this.leaseTtlMs(job),
         job.id,
-      );
-      await this.redis.pexpire(
-        this.activeKey(descriptor),
-        this.leaseTtlMs(job) + LEASE_TTL_MARGIN_MS,
       );
     } catch (err) {
       this.logger.warn(

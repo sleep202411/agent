@@ -1,5 +1,5 @@
-import { Stack, useRouter } from "expo-router";
-import { useState } from "react";
+import { Stack, useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -36,10 +36,24 @@ export default function AccountSecurityScreen() {
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string>();
 
+  const lifetime = useRef(0);
+  const focused = useRef<number | null>(null);
+  const saving = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      focused.current = auth.generation;
+      return () => {
+        focused.current = null;
+        lifetime.current += 1;
+      };
+    }, [auth.generation])
+  );
+
   const passwordsMatch = password === confirm;
   const canSubmit = isValidAccountPassword(password) && passwordsMatch && !busy;
 
   async function handleSubmit() {
+    if (focused.current === null || saving.current) return;
     if (!isValidAccountPassword(password)) {
       setLocalError(t("accountSecurity.invalidPassword"));
       return;
@@ -49,20 +63,31 @@ export default function AccountSecurityScreen() {
       return;
     }
 
+    const owner = lifetime.current;
+    const current = () => focused.current === auth.generation && lifetime.current === owner;
+    saving.current = true;
     const previous = oldPassword.trim();
     setLocalError(undefined);
     setBusy(true);
     try {
       await auth.saveAccountPassword(password, previous || undefined);
+      if (!current()) return;
       // Dismiss first, then leave — RN Alert has no callback if buttons are omitted.
       Alert.alert(t("accountSecurity.savedTitle"), t("accountSecurity.savedBody"), [
-        { text: t("common.ok"), onPress: () => router.back() },
+        {
+          text: t("common.ok"),
+          onPress: () => {
+            if (current()) router.back();
+          },
+        },
       ]);
     } catch (error) {
+      if (!current()) return;
       const message = error instanceof Error ? error.message : t("accountSecurity.failed");
       setLocalError(message);
       Alert.alert(t("accountSecurity.failed"), message);
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
@@ -92,6 +117,7 @@ export default function AccountSecurityScreen() {
             {t("accountSecurity.oldPassword")}
           </ThemedText>
           <TextInput
+            editable={!busy}
             autoCapitalize="none"
             onChangeText={(value) => {
               setOldPassword(value);
@@ -115,6 +141,7 @@ export default function AccountSecurityScreen() {
             {t("accountSecurity.newPassword")}
           </ThemedText>
           <TextInput
+            editable={!busy}
             autoCapitalize="none"
             onChangeText={(value) => {
               setPassword(value);
@@ -138,6 +165,7 @@ export default function AccountSecurityScreen() {
             {t("accountSecurity.confirmPassword")}
           </ThemedText>
           <TextInput
+            editable={!busy}
             autoCapitalize="none"
             onChangeText={(value) => {
               setConfirm(value);

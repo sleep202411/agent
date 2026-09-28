@@ -132,11 +132,9 @@ async function executeTask(taskId: string) {
           timeout: 360_000,
         });
 
-    const storagePath = Array.isArray(response)
-      ? String(response[0] ?? "")
-      : typeof response === "string"
-        ? response
-        : "";
+    const result = Array.isArray(response) ? response[0] : response;
+    const storagePath = typeof result === "string" ? result.trim() : "";
+    if (!storagePath) throw new Error("No image result returned");
     const url = buildOssUrl(storagePath);
 
     const output: TaskOutput = { url, storagePath };

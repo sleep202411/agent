@@ -1,3 +1,12 @@
+import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
+import { assertRecruitedTaskAssignees } from '../task-recruitment';
+import { assertDeliveryTemplateEditable } from './task-delivery-template';
+import {
+  overdueTaskPredicate,
+  revisionDeadline,
+  taskDeadlineRisk,
+} from './task-deadline';
+import { isDeepStrictEqual } from 'node:util';
 import {
   readTaskDeliveryTemplate,
   validateProfessionalDelivery,
@@ -35,6 +44,7 @@ import {
   Prisma,
   ProjectMemberRole,
   ProjectMemberStatus,
+  StoryProductionSpecStatus,
 } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { DocumentStateBuilder } from '../../documents/document-crdt';
@@ -44,9 +54,11 @@ import { NotificationService } from '../../notification';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import type {
   CreateCrewTaskCommentInput,
+  CreateCrewTaskKindTemplateInput,
   CreateCrewTaskInput,
   ListCrewTaskTimelineQuery,
   ReviewCrewTaskInput,
+  SetTaskDeliveryFolderInput,
   SubmitCrewTaskInput,
   UpdateCrewTaskInput,
   UpdateCrewTaskCommentInput,
@@ -112,6 +124,11 @@ const taskInclude = {
   },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
+  deliveryFolder: {
+    include: {
+      folder: { select: { id: true, name: true } },
+    },
+  },
   submissions: {
     include: {
       canvasVersion: {
@@ -157,6 +174,11 @@ const taskCardInclude = {
   },
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
+  deliveryFolder: {
+    include: {
+      folder: { select: { id: true, name: true } },
+    },
+  },
   dependenciesAsBlocked: {
     where: { blockingTask: { deletedAt: null } },
     include: { blockingTask: { select: taskReferenceSelect } },
@@ -569,18 +591,18 @@ export class CrewTasksService {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${crewId}`})::bigint)
       `;
-      const [activeCount, duplicate, afterState, last] = await Promise.all([
-        tx.crewTaskWorkflowState.count({
+      const [activeCount, duplicate, afterState, last] = [
+        await tx.crewTaskWorkflowState.count({
           where: { crewId, archived: false },
         }),
-        tx.crewTaskWorkflowState.findFirst({
+        await tx.crewTaskWorkflowState.findFirst({
           where: {
             crewId,
             name: { equals: input.name, mode: 'insensitive' },
           },
           select: { id: true },
         }),
-        input.afterStateId
+        await (input.afterStateId
           ? tx.crewTaskWorkflowState.findFirst({
               where: {
                 id: input.afterStateId,
@@ -588,12 +610,12 @@ export class CrewTasksService {
                 archived: false,
               },
             })
-          : null,
-        tx.crewTaskWorkflowState.aggregate({
+          : null),
+        await tx.crewTaskWorkflowState.aggregate({
           where: { crewId, archived: false },
           _max: { position: true },
         }),
-      ]);
+      ];
       if (activeCount >= MAX_ACTIVE_WORKFLOW_STATES) {
         throw new ConflictException({
           code: 'CREW_TASK_WORKFLOW_LIMIT',
@@ -897,6 +919,25 @@ export class CrewTasksService {
           taskCount,
         });
       }
+      const views = await tx.crewTaskView.findMany({
+        where: { crewId: current.crewId },
+        select: { id: true, filters: true },
+      });
+      for (const view of views) {
+        const filters = CrewTaskViewFiltersSchema.parse(view.filters);
+        if (!filters.workflowStateIds?.includes(stateId)) continue;
+        await tx.crewTaskView.update({
+          where: { id: view.id },
+          data: {
+            filters: {
+              ...filters,
+              workflowStateIds: filters.workflowStateIds.filter(
+                (id) => id !== stateId,
+              ),
+            },
+          },
+        });
+      }
       await tx.crewTaskWorkflowState.delete({ where: { id: stateId } });
       await tx.crewTaskWorkflowState.updateMany({
         where: {
@@ -1160,11 +1201,26 @@ export class CrewTasksService {
     });
     if (!current) throw new NotFoundException('Task label not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
-    await this.manageTaskWrite(current.crewId, userId, (tx) =>
-      tx.crewTaskLabel.delete({
-        where: { id: labelId },
-      }),
-    );
+    await this.manageTaskWrite(current.crewId, userId, async (tx) => {
+      const views = await tx.crewTaskView.findMany({
+        where: { crewId: current.crewId },
+        select: { id: true, filters: true },
+      });
+      for (const view of views) {
+        const filters = CrewTaskViewFiltersSchema.parse(view.filters);
+        if (!filters.labelIds?.includes(labelId)) continue;
+        await tx.crewTaskView.update({
+          where: { id: view.id },
+          data: {
+            filters: {
+              ...filters,
+              labelIds: filters.labelIds.filter((id) => id !== labelId),
+            },
+          },
+        });
+      }
+      await tx.crewTaskLabel.delete({ where: { id: labelId } });
+    });
     await this.conversations.broadcastCrewTaskProjectChange(
       current.crewId,
       'label',
@@ -1227,45 +1283,49 @@ export class CrewTasksService {
         message: 'Only select fields can define options.',
       });
     }
-    if (input.options) {
-      const allowed = new Set(input.options.map((option) => option.id));
-      const values = await this.prisma.crewTaskFieldValue.findMany({
-        where: { fieldId },
-        select: { value: true },
-      });
-      const used = new Set(
-        values.flatMap((row) =>
-          Array.isArray(row.value)
-            ? row.value.filter(
-                (value): value is string => typeof value === 'string',
-              )
-            : typeof row.value === 'string'
-              ? [row.value]
-              : [],
-        ),
-      );
-      const removedInUse = [...used].filter(
-        (optionId) => !allowed.has(optionId),
-      );
-      if (removedInUse.length > 0) {
-        throw new ConflictException({
-          code: 'CREW_TASK_FIELD_OPTION_IN_USE',
-          message:
-            'Clear or replace values that use an option before deleting that option.',
-          optionIds: removedInUse,
+    const result = await this.manageTaskWrite(
+      current.crewId,
+      userId,
+      async (tx) => {
+        if (input.options) {
+          const allowed = new Set(input.options.map((option) => option.id));
+          const values = await tx.crewTaskFieldValue.findMany({
+            where: { fieldId },
+            select: { value: true },
+          });
+          const used = new Set(
+            values.flatMap((row) =>
+              Array.isArray(row.value)
+                ? row.value.filter(
+                    (value): value is string => typeof value === 'string',
+                  )
+                : typeof row.value === 'string'
+                  ? [row.value]
+                  : [],
+            ),
+          );
+          const removedInUse = [...used].filter(
+            (optionId) => !allowed.has(optionId),
+          );
+          if (removedInUse.length > 0) {
+            throw new ConflictException({
+              code: 'CREW_TASK_FIELD_OPTION_IN_USE',
+              message:
+                'Clear or replace values that use an option before deleting that option.',
+              optionIds: removedInUse,
+            });
+          }
+        }
+        return tx.crewTaskFieldDefinition.updateMany({
+          where: { id: fieldId, updatedAt: new Date(input.expectedUpdatedAt) },
+          data: {
+            name: input.name,
+            description: input.description,
+            options: input.options,
+            required: input.required,
+          },
         });
-      }
-    }
-    const result = await this.manageTaskWrite(current.crewId, userId, (tx) =>
-      tx.crewTaskFieldDefinition.updateMany({
-        where: { id: fieldId, updatedAt: new Date(input.expectedUpdatedAt) },
-        data: {
-          name: input.name,
-          description: input.description,
-          options: input.options,
-          required: input.required,
-        },
-      }),
+      },
     );
     if (result.count !== 1) {
       throw new ConflictException({
@@ -1603,14 +1663,37 @@ export class CrewTasksService {
       },
     });
     const more = rows.length > query.limit;
+    const evaluatedAt = new Date();
     const items = rows
       .slice(0, query.limit)
       .map(({ workflowState, ...task }) => ({
         ...task,
         workflowState,
         status: workflowState.semantic,
+        deadlineRisk: taskDeadlineRisk(
+          workflowState.semantic,
+          task.dueAt,
+          evaluatedAt,
+        ),
       }));
     return { items, nextCursor: more ? items.at(-1)!.id : null };
+  }
+
+  private async assertTaskListCursor(
+    where: Prisma.CrewTaskWhereInput,
+    cursor?: string,
+  ) {
+    if (!cursor) return;
+    const row = await this.prisma.crewTask.findFirst({
+      where: { AND: [where, { id: cursor }] },
+      select: { id: true },
+    });
+    if (!row)
+      throw new BadRequestException({
+        code: 'CREW_TASK_CURSOR_INVALID',
+        message:
+          'The task cursor is invalid for the current view. Restart from the first page.',
+      });
   }
 
   async list(crewId: string, userId: string, query: ListCrewTasksQuery) {
@@ -1628,6 +1711,7 @@ export class CrewTasksService {
       view.filters,
       query,
     );
+    await this.assertTaskListCursor(where, query.cursor);
     const orderBy = taskViewOrderBy(view.sorts);
     const [rows, total, workflowCounts] = await Promise.all([
       this.prisma.crewTask.findMany({
@@ -1671,27 +1755,46 @@ export class CrewTasksService {
     query: ListCrewTaskOptionsQuery,
   ) {
     await this.authorization.require(crewId, userId, 'tasks.view');
+    if (query.recruitmentOnly) {
+      await this.authorization.require(crewId, userId, 'tasks.manage');
+    }
     const normalized = query.query?.trim();
-    const rows = await this.prisma.crewTask.findMany({
-      where: {
-        deletedAt: null,
-        crewId,
-        ...(query.excludeTaskId ? { id: { not: query.excludeTaskId } } : {}),
-        ...(query.activeOnly
-          ? {
-              workflowState: {
-                semantic: {
-                  notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
-                },
+    const where: Prisma.CrewTaskWhereInput = {
+      deletedAt: null,
+      crewId,
+      ...(query.excludeTaskId ? { id: { not: query.excludeTaskId } } : {}),
+      ...(query.activeOnly
+        ? {
+            workflowState: {
+              semantic: {
+                notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
               },
-            }
-          : {}),
-        ...(normalized
-          ? {
-              OR: taskSearchWhere(normalized),
-            }
-          : {}),
-      },
+            },
+          }
+        : {}),
+      ...(query.recruitmentOnly
+        ? {
+            assignees: { none: {} },
+            workflowState: {
+              semantic: {
+                notIn: [
+                  CrewTaskStatus.approved,
+                  CrewTaskStatus.cancelled,
+                  CrewTaskStatus.submitted,
+                ],
+              },
+            },
+          }
+        : {}),
+      ...(normalized
+        ? {
+            OR: taskSearchWhere(normalized),
+          }
+        : {}),
+    };
+    await this.assertTaskListCursor(where, query.cursor);
+    const rows = await this.prisma.crewTask.findMany({
+      where,
       select: {
         id: true,
         number: true,
@@ -1724,7 +1827,8 @@ export class CrewTasksService {
 
   async summary(crewId: string, userId: string) {
     await this.authorization.require(crewId, userId, 'tasks.view');
-    const [statusGroups, myActive] = await Promise.all([
+    const overdueWhere = { crewId, deletedAt: null, ...overdueTaskPredicate() };
+    const [statusGroups, myActive, overdue, myOverdue] = await Promise.all([
       this.prisma.crewTaskWorkflowState.findMany({
         where: { crewId },
         select: {
@@ -1744,6 +1848,10 @@ export class CrewTasksService {
           assignees: { some: { userId } },
         },
       }),
+      this.prisma.crewTask.count({ where: overdueWhere }),
+      this.prisma.crewTask.count({
+        where: { ...overdueWhere, assignees: { some: { userId } } },
+      }),
     ]);
     const byStatus = Object.fromEntries(
       Object.values(CrewTaskStatus).map((status) => [status, 0]),
@@ -1759,6 +1867,8 @@ export class CrewTasksService {
         byStatus.submitted +
         byStatus.revision_requested,
       myActive,
+      overdue,
+      myOverdue,
       pendingReview: byStatus.submitted,
       completed: byStatus.approved,
       byStatus,
@@ -1815,6 +1925,66 @@ export class CrewTasksService {
           : 0,
       ),
     );
+  }
+
+  /** Minimal assignment quote; no private scope, interview or negotiation history. */
+  async recruitmentTerms(taskId: string, userId: string, applicantId: string) {
+    const task = await this.requireTask(taskId);
+    await this.authorization.require(task.crewId, userId, 'tasks.manage');
+    const positions = await this.prisma.crewPosition.findMany({
+      where: { taskId, crewId: task.crewId },
+      select: { id: true },
+    });
+    if (!positions.length) return { required: false, items: [] };
+    const applications = await this.prisma.crewApplication.findMany({
+      where: {
+        crewId: task.crewId,
+        applicantId,
+        status: 'approved',
+        termsVersion: { gt: 0 },
+        positionId: { in: positions.map((position) => position.id) },
+        position: {
+          memberPositions: {
+            some: {
+              member: {
+                userId: applicantId,
+                status: 'active',
+                removedAt: null,
+              },
+            },
+          },
+        },
+      },
+      select: {
+        termsVersion: true,
+        terms: {
+          select: {
+            version: true,
+            confirmedAt: true,
+            feePeriod: true,
+            currency: true,
+            feeAmount: true,
+          },
+        },
+      },
+    });
+    return {
+      required: true,
+      items: applications.flatMap((app) =>
+        app.terms
+          .filter(
+            (term) =>
+              term.version === app.termsVersion &&
+              term.confirmedAt &&
+              term.feePeriod === 'project',
+          )
+          .map((term) => ({
+            version: term.version,
+            currency: term.currency,
+            feeAmount: term.feeAmount.toString(),
+          })),
+      ),
+    };
   }
 
   async get(taskId: string, userId: string) {
@@ -1921,6 +2091,7 @@ export class CrewTasksService {
           revisionLimit: input.revisionLimit,
           cycleId: input.cycleId,
           episodeId: input.episodeId,
+          taskKind: input.taskKind ?? null,
           rank: (planningSequence._max.rank ?? new Prisma.Decimal(0)).plus(
             1024,
           ),
@@ -2000,12 +2171,45 @@ export class CrewTasksService {
     return this.toDtoWithUsage(task);
   }
 
-  async update(taskId: string, userId: string, input: UpdateCrewTaskInput) {
+  async close(taskId: string, userId: string, raw: CloseCrewTaskInput) {
+    const input = CloseCrewTaskSchema.parse(raw);
+    const task = await this.requireTask(taskId);
+    await this.authorization.require(task.crewId, userId, 'tasks.manage');
+    const state =
+      task.workflowState.semantic === CrewTaskStatus.cancelled
+        ? task.workflowState
+        : await this.prisma.crewTaskWorkflowState.findFirst({
+            where: {
+              crewId: task.crewId,
+              semantic: CrewTaskStatus.cancelled,
+              archived: false,
+            },
+            orderBy: { id: 'asc' },
+          });
+    if (!state)
+      throw new ConflictException(
+        'An active cancellation workflow column is required.',
+      );
+    return this.update(
+      taskId,
+      userId,
+      { expectedVersion: input.expectedVersion, workflowStateId: state.id },
+      input,
+    );
+  }
+
+  async update(
+    taskId: string,
+    userId: string,
+    input: UpdateCrewTaskInput,
+    closure?: CloseCrewTaskInput,
+  ) {
     const current = await this.requireTask(taskId);
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
     if (
-      current.workflowState.semantic === CrewTaskStatus.approved ||
-      current.workflowState.semantic === CrewTaskStatus.cancelled
+      !closure &&
+      (current.workflowState.semantic === CrewTaskStatus.approved ||
+        current.workflowState.semantic === CrewTaskStatus.cancelled)
     ) {
       throw new ConflictException({
         message: 'Completed or cancelled tasks cannot be edited.',
@@ -2032,6 +2236,29 @@ export class CrewTasksService {
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-update:${taskId}`})::bigint)
       `;
         const locked = await this.requireActiveTaskTx(tx, taskId);
+        if (closure) {
+          const retry = await tx.crewTaskTimelineItem.findFirst({
+            where: {
+              taskId,
+              kind: 'task.updated',
+              payload: {
+                path: ['closure', 'requestId'],
+                equals: closure.requestId,
+              },
+            },
+          });
+          if (retry) {
+            const payload = retry.payload as Record<string, unknown>;
+            if (
+              retry.actorUserId !== userId ||
+              !isDeepStrictEqual(payload.closure, closure)
+            )
+              throw new ConflictException(
+                'The closure request ID was already used with different details.',
+              );
+            return locked;
+          }
+        }
         // Membership projections and canvas metadata share the document writer's
         // project boundary. Acquire it before changing either projection.
         if (
@@ -2084,6 +2311,14 @@ export class CrewTasksService {
               },
             })
           : null;
+        if (
+          closure &&
+          nextWorkflowState?.semantic !== CrewTaskStatus.cancelled
+        ) {
+          throw new ConflictException(
+            'The cancellation workflow column changed. Refresh and retry.',
+          );
+        }
         if (input.workflowStateId && !nextWorkflowState) {
           throw new BadRequestException({
             message: 'The selected workflow column is unavailable.',
@@ -2152,6 +2387,7 @@ export class CrewTasksService {
         const addedAssigneeIds: string[] = [];
         const removedAssigneeIds: string[] = [];
         if (uniqueAssigneeIds) {
+          await assertRecruitedTaskAssignees(tx, taskId, input.assignees!);
           const crewMembers = await tx.crewMember.findMany({
             where: {
               crewId: locked.crewId,
@@ -2271,23 +2507,21 @@ export class CrewTasksService {
           locked.canvasDocumentId &&
           (input.title !== undefined || input.description !== undefined)
         ) {
-          await Promise.all([
-            tx.platformProject.update({
-              where: { id: locked.canvasProjectId },
-              data: {
-                name: input.title,
-                description: input.description,
-              },
-            }),
-            tx.studioDocument.update({
-              where: { id: locked.canvasDocumentId },
-              data: {
-                title: input.title,
-                updatedById: userId,
-                version: { increment: 1 },
-              },
-            }),
-          ]);
+          await tx.platformProject.update({
+            where: { id: locked.canvasProjectId },
+            data: {
+              name: input.title,
+              description: input.description,
+            },
+          });
+          await tx.studioDocument.update({
+            where: { id: locked.canvasDocumentId },
+            data: {
+              title: input.title,
+              updatedById: userId,
+              version: { increment: 1 },
+            },
+          });
         }
         if (input.labelIds) {
           await tx.crewTaskLabelAssignment.deleteMany({ where: { taskId } });
@@ -2444,6 +2678,7 @@ export class CrewTasksService {
             revisionLimit: input.revisionLimit,
             cycleId: input.cycleId,
             episodeId: input.episodeId,
+            taskKind: input.taskKind,
             parentId: input.parentId,
             workflowStateId: nextWorkflowState?.id,
             cancelledAt:
@@ -2460,6 +2695,12 @@ export class CrewTasksService {
           changedFields,
           addedAssigneeUserIds: addedAssigneeIds,
           removedAssigneeUserIds: removedAssigneeIds,
+          ...(closure
+            ? {
+                closure,
+                closureOutcome: 'cancelled_without_financial_settlement',
+              }
+            : {}),
         });
 
         for (const assigneeId of addedAssigneeIds) {
@@ -3021,6 +3262,15 @@ export class CrewTasksService {
           throw new ConflictException(
             'The task is not accepting delivery-template changes.',
           );
+        const acceptedCommitment = await tx.crewTaskCommitment.findFirst({
+          where: { taskId, acceptedAt: { not: null } },
+          select: { id: true },
+        });
+        assertDeliveryTemplateEditable({
+          status: current.workflowState.semantic,
+          hasSubmission: current.submissions.length > 0,
+          hasAcceptedCommitment: Boolean(acceptedCommitment),
+        });
         const before = await readTaskDeliveryTemplate(tx, taskId);
         if (input.category) {
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:delivery-catalog:${input.category.id}`},0))`;
@@ -3065,6 +3315,80 @@ export class CrewTasksService {
       userId,
     );
     return result;
+  }
+
+  async setDeliveryFolder(
+    taskId: string,
+    userId: string,
+    input: SetTaskDeliveryFolderInput,
+  ) {
+    const task = await this.requireTask(taskId);
+    const context = await this.authorization.requireMembership(
+      task.crewId,
+      userId,
+    );
+    const isAssignee = task.assignees.some((a) => a.userId === userId);
+    const canSubmit = context.permissions.includes('tasks.submit_assigned');
+    const canManage = context.permissions.includes('tasks.manage');
+    if (!canSubmit || (!isAssignee && !canManage)) {
+      throw new ForbiddenException({
+        message:
+          'Only a task assignee or crew manager can set the delivery folder.',
+      });
+    }
+
+    let resolvedFolderId: string;
+    const updated = await this.authorizedTaskWrite(
+      task.crewId,
+      async (tx) => {
+        const currentTask = await this.requireActiveTaskTx(tx, taskId);
+        const currentContext = await this.authorization.requireMembership(
+          currentTask.crewId,
+          userId,
+          tx,
+        );
+        if (
+          !currentContext.permissions.includes('tasks.submit_assigned') ||
+          (!currentTask.assignees.some((a) => a.userId === userId) &&
+            !currentContext.permissions.includes('tasks.manage'))
+        ) {
+          throw new ForbiddenException({
+            message:
+              'Only a task assignee or crew manager can set the delivery folder.',
+          });
+        }
+      },
+      async (tx) => {
+        const locked = await this.requireActiveTaskTx(tx, taskId);
+        resolvedFolderId = await taskDeliveryFolderTx(
+          tx,
+          this.assetAccess,
+          locked,
+          userId,
+          input.deliveryFolderId ?? undefined,
+        );
+        return tx.crewTask.findUniqueOrThrow({
+          where: { id: taskId },
+          include: taskInclude,
+        });
+      },
+    );
+
+    await this.conversations.broadcastCrewTaskChange(
+      updated.crewId,
+      updated.id,
+      'updated',
+      userId,
+    );
+    if (resolvedFolderId!) {
+      await this.conversations.broadcastCrewAssetChange(
+        updated.crewId,
+        resolvedFolderId,
+        'updated',
+        userId,
+      );
+    }
+    return this.toDtoWithUsage(updated);
   }
 
   async submit(taskId: string, userId: string, input: SubmitCrewTaskInput) {
@@ -3243,6 +3567,7 @@ export class CrewTasksService {
           userId,
           input.deliveryFolderId,
         );
+        const deliveryPayload = professionalDelivery ?? null;
         const submission = await tx.crewTaskSubmission.create({
           data: {
             taskId,
@@ -3250,7 +3575,9 @@ export class CrewTasksService {
             submittedByUserId: userId,
             note: input.note,
             canvasVersionId,
-            ...(professionalDelivery ? { professionalDelivery } : {}),
+            ...(deliveryPayload
+              ? { professionalDelivery: deliveryPayload }
+              : {}),
             assets: {
               create: [...new Set(input.assetNodeIds)].map((assetNodeId) => ({
                 assetNodeId,
@@ -3358,8 +3685,24 @@ export class CrewTasksService {
         if (!latest) {
           throw new ConflictException({ message: 'No submission to review.' });
         }
+        if (latest.id !== input.expectedSubmissionId) {
+          throw new ConflictException({
+            code: 'CREW_TASK_SUBMISSION_CHANGED',
+            message:
+              'A newer submission is available. Refresh the task and review it before deciding.',
+          });
+        }
         const now = new Date();
         const approved = input.decision === 'approve';
+        if (approved && input.revisionDueAt !== undefined)
+          throw new BadRequestException(
+            'Only a revision request can extend the deadline.',
+          );
+        const nextDueAt = revisionDeadline(
+          locked.dueAt,
+          input.revisionDueAt,
+          now,
+        );
         if (
           !approved &&
           locked.revisionLimit != null &&
@@ -3403,6 +3746,19 @@ export class CrewTasksService {
             userId,
             latest.assets.map((asset) => asset.assetNodeId),
           );
+
+          const taskMeta = locked.metadata as Record<string, unknown> | null;
+          const clipId =
+            typeof taskMeta?.clipId === 'string' ? taskMeta.clipId : null;
+          if (clipId) {
+            await this.bindDeliveredMediaToClip(tx, {
+              task: locked,
+              submission: latest,
+              userId,
+              clipId,
+              preferredAssetNodeId: input.bindAssetNodeId,
+            });
+          }
           for (const assignee of locked.assignees.filter(
             (candidate) =>
               candidate.rewardAmountMinor != null &&
@@ -3443,6 +3799,7 @@ export class CrewTasksService {
                 workflowStateId: targetWorkflowState.id,
                 submittedAt: null,
                 revisionRoundsUsed: { increment: 1 },
+                ...(nextDueAt ? { dueAt: nextDueAt } : {}),
                 version: { increment: 1 },
               },
           include: taskInclude,
@@ -3456,6 +3813,14 @@ export class CrewTasksService {
             submissionId: latest.id,
             versionNumber: latest.versionNumber,
             note: input.note,
+            ...(nextDueAt
+              ? {
+                  deadlineChange: {
+                    from: locked.dueAt?.toISOString() ?? null,
+                    to: nextDueAt.toISOString(),
+                  },
+                }
+              : {}),
             revisionRound: approved ? undefined : locked.revisionRoundsUsed + 1,
             revisionLimit: locked.revisionLimit,
             productionVersionId: productionVersion?.id,
@@ -3630,6 +3995,133 @@ export class CrewTasksService {
    * independent changes from other approved task branches; replacing the
    * production JSON snapshot would lose those changes.
    */
+  private async bindDeliveredMediaToClip(
+    tx: Prisma.TransactionClient,
+    params: {
+      task: TaskRow;
+      submission: TaskRow['submissions'][number];
+      userId: string;
+      clipId: string;
+      preferredAssetNodeId?: string;
+    },
+  ) {
+    const { task, submission, userId, clipId, preferredAssetNodeId } = params;
+
+    // 1. Resolve StoryStoryboardClip
+    const clip = await tx.storyStoryboardClip.findFirst({
+      where: {
+        id: clipId,
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      include: {
+        project: { select: { id: true, archivedAt: true } },
+      },
+    });
+
+    if (!clip || clip.project.archivedAt != null) {
+      return;
+    }
+
+    // 2. Resolve delivered assets with their MediaAsset details
+    const assetNodeIds = submission.assets.map((a) => a.assetNode.id);
+    if (!assetNodeIds.length) return;
+
+    const assetNodes = await tx.crewAssetNode.findMany({
+      where: { id: { in: assetNodeIds }, status: 'active', kind: 'file' },
+      include: { mediaAsset: true },
+    });
+
+    // 3. Pick primary asset:
+    // If preferredAssetNodeId is provided and exists in delivered set, use it.
+    // Otherwise fallback to priority order from professionalDelivery.answers:
+    // a. answer to video_with_subtitle
+    // b. answer to final_video
+    // c. answer to video_without_subtitle
+    // d. first asset whose MediaAsset.contentType starts with "video/"
+    let chosenAssetNode: (typeof assetNodes)[number] | undefined;
+
+    if (preferredAssetNodeId) {
+      chosenAssetNode = assetNodes.find(
+        (node) => node.id === preferredAssetNodeId && node.mediaAssetId != null,
+      );
+      if (!chosenAssetNode) {
+        console.warn(
+          `Preferred assetNode ${preferredAssetNodeId} not found among delivered assets; falling back to default priority.`,
+        );
+      }
+    }
+
+    if (!chosenAssetNode) {
+      const answers =
+        (
+          submission.professionalDelivery as {
+            answers?: Record<string, string | string[]>;
+          } | null
+        )?.answers ?? {};
+
+      const assetIdForSlot = (slot: string): string | undefined => {
+        const v = answers[slot];
+        if (Array.isArray(v)) return v[0];
+        return typeof v === 'string' ? v : undefined;
+      };
+
+      const findBySlotKey = (slotKey: string) => {
+        const id = assetIdForSlot(slotKey);
+        return id
+          ? assetNodes.find(
+              (node) => node.id === id && node.mediaAssetId != null,
+            )
+          : undefined;
+      };
+
+      chosenAssetNode =
+        findBySlotKey('video_with_subtitle') ??
+        findBySlotKey('final_video') ??
+        findBySlotKey('video_without_subtitle') ??
+        assetNodes.find(
+          (node) =>
+            node.mediaAsset?.contentType?.startsWith('video/') &&
+            node.mediaAssetId != null,
+        );
+    }
+
+    if (!chosenAssetNode || !chosenAssetNode.mediaAssetId) return;
+
+    const latest = await tx.storyStoryboardClipMediaVersion.findFirst({
+      where: { storyboardClipId: clip.id },
+      orderBy: { versionNumber: 'desc' },
+      select: { versionNumber: true },
+    });
+
+    const newVersionNumber = (latest?.versionNumber ?? 0) + 1;
+
+    const mediaVersion = await tx.storyStoryboardClipMediaVersion.create({
+      data: {
+        storyProjectId: clip.storyProjectId,
+        storyChapterId: clip.storyChapterId,
+        storyboardClipId: clip.id,
+        versionNumber: newVersionNumber,
+        mediaAssetId: chosenAssetNode.mediaAssetId,
+        sourceFingerprint: clip.sourceFingerprint,
+        generationSnapshot: {
+          version: 1,
+          source: 'crew_task_delivery',
+          taskId: task.id,
+          taskNumber: task.number,
+          submissionId: submission.id,
+          assetNodeId: chosenAssetNode.id,
+        },
+        createdByUserId: userId,
+      },
+      select: { id: true },
+    });
+
+    await tx.storyStoryboardClip.update({
+      where: { id: clip.id },
+      data: { selectedMediaVersionId: mediaVersion.id },
+    });
+  }
+
   private async mergeSubmissionIntoProductionTx(
     tx: Prisma.TransactionClient,
     task: TaskRow,
@@ -3858,8 +4350,8 @@ export class CrewTasksService {
       .map((item) => item.mediaAssetId);
 
     await lockCrewAssetUploads(tx, uploadIds);
-    const [nodes, uploadedMedia, alreadyClaimed] = await Promise.all([
-      tx.crewAssetNode.findMany({
+    const [nodes, uploadedMedia, alreadyClaimed] = [
+      await tx.crewAssetNode.findMany({
         where: {
           id: { in: existingIds },
           crewId,
@@ -3870,7 +4362,7 @@ export class CrewTasksService {
         },
         select: { id: true },
       }),
-      tx.mediaAsset.findMany({
+      await tx.mediaAsset.findMany({
         where: {
           id: { in: uploadIds },
           status: MediaAssetStatus.ready,
@@ -3882,13 +4374,13 @@ export class CrewTasksService {
           metadata: true,
         },
       }),
-      tx.crewAssetNode.findMany({
+      await tx.crewAssetNode.findMany({
         where: {
           mediaAssetId: { in: uploadIds },
         },
         select: { mediaAssetId: true },
       }),
-    ]);
+    ];
     if (nodes.length !== existingIds.length) {
       throw new BadRequestException({
         message: 'One or more attached crew assets are unavailable.',
@@ -3983,8 +4475,7 @@ export class CrewTasksService {
     existing: TimelineRow,
     input: CreateCrewTaskCommentInput,
   ): void {
-    const sameMentions =
-      JSON.stringify(existing.mentions) === JSON.stringify(input.mentions);
+    const sameMentions = isDeepStrictEqual(existing.mentions, input.mentions);
     const sameAttachments =
       existing.attachments.length === input.attachments.length &&
       input.attachments.every((attachment, index) => {
@@ -3994,6 +4485,7 @@ export class CrewTasksService {
           : stored?.mediaAssetId === attachment.mediaAssetId;
       });
     if (
+      existing.deletedAt !== null ||
       existing.kind !== 'comment' ||
       existing.body !== input.body ||
       existing.replyToId !== (input.replyToId ?? null) ||
@@ -4385,6 +4877,63 @@ export class CrewTasksService {
     });
     return taskDto(task, usage._sum.internalCredits ?? 0);
   }
+
+  async listTaskKindTemplates(crewId: string, userId: string) {
+    await this.authorization.require(crewId, userId, 'tasks.view');
+    const items = await this.prisma.crewTaskKindTemplate.findMany({
+      where: { crewId },
+      orderBy: [{ kind: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+    });
+    return {
+      items: items.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        name: row.name,
+        title: row.title,
+        description: row.description,
+      })),
+    };
+  }
+
+  async createTaskKindTemplate(
+    crewId: string,
+    userId: string,
+    input: CreateCrewTaskKindTemplateInput,
+  ) {
+    await this.authorization.require(crewId, userId, 'tasks.manage');
+    const row = await this.prisma.crewTaskKindTemplate.create({
+      data: {
+        crewId,
+        kind: input.kind,
+        name: input.name,
+        title: input.title,
+        description: input.description,
+        createdByUserId: userId,
+      },
+    });
+    return {
+      id: row.id,
+      kind: row.kind,
+      name: row.name,
+      title: row.title,
+      description: row.description,
+    };
+  }
+
+  async deleteTaskKindTemplate(
+    crewId: string,
+    userId: string,
+    templateId: string,
+  ) {
+    await this.authorization.require(crewId, userId, 'tasks.manage');
+    const existing = await this.prisma.crewTaskKindTemplate.findFirst({
+      where: { id: templateId, crewId },
+    });
+    if (!existing) throw new NotFoundException('Task template not found.');
+    await this.prisma.crewTaskKindTemplate.delete({
+      where: { id: templateId },
+    });
+  }
 }
 
 function taskViewWhere(
@@ -4450,16 +4999,7 @@ function taskViewWhere(
     });
   }
   if (filters.unassigned) clauses.push({ assignees: { none: {} } });
-  if (filters.overdue) {
-    clauses.push({
-      dueAt: { lt: new Date() },
-      workflowState: {
-        semantic: {
-          notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
-        },
-      },
-    });
-  }
+  if (filters.overdue) clauses.push(overdueTaskPredicate());
   return {
     crewId,
     ...(clauses.length ? { AND: clauses } : {}),
@@ -4547,12 +5087,14 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     number: task.number,
     title: task.title,
     description: task.description,
+    taskKind: task.taskKind,
     status: task.workflowState.semantic,
     workflowStateId: task.workflowStateId,
     workflowState: taskWorkflowStateDto(task.workflowState),
     priority: task.priority,
     startAt: task.startAt?.toISOString() ?? null,
     dueAt: task.dueAt?.toISOString() ?? null,
+    deadlineRisk: taskDeadlineRisk(task.workflowState.semantic, task.dueAt),
     estimatePoints: task.estimatePoints,
     computeBudgetPoints: task.computeBudgetPoints,
     computeUsedPoints,
@@ -4596,6 +5138,16 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
           status: task.episode.status,
         }
       : null,
+    deliveryFolder: task.deliveryFolder?.folder
+      ? {
+          id: task.deliveryFolder.folder.id,
+          name: task.deliveryFolder.folder.name,
+        }
+      : null,
+    deliveryFields:
+      ((task.metadata as Record<string, unknown> | null)?.deliveryFields as
+        | Array<{ type: string; required: boolean }>
+        | undefined) ?? null,
     labels: task.labels
       .map(({ label }) => taskLabelDto(label))
       .sort((a, b) => a.name.localeCompare(b.name)),

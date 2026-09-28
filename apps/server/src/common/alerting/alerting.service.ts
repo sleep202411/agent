@@ -234,7 +234,7 @@ export class AlertingService {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      const text = await response.text().catch(() => '');
+      const text = await response.text();
       if (!response.ok) {
         throw new Error(
           `Feishu webhook HTTP ${response.status}: ${truncate(text, 300)}`,

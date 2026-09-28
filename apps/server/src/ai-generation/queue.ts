@@ -32,6 +32,7 @@ export type AiQueueName =
 export interface AiQueueJobData {
   jobId: string;
   op?: 'start' | 'poll';
+  nextPollAt?: number;
 }
 
 /**
@@ -39,9 +40,18 @@ export interface AiQueueJobData {
  * null` because it issues BRPOPLPUSH-style blocking commands that
  * shouldn't be auto-reconnected mid-block.
  */
-export function createAiRedisConnection(): Redis {
+export function createAiRedisConnection(blocking = true): Redis {
   const url = requiredEnv('REDIS_URL');
-  return new IORedis(url, { maxRetriesPerRequest: null });
+  return new IORedis(
+    url,
+    blocking
+      ? { maxRetriesPerRequest: null }
+      : {
+          maxRetriesPerRequest: 1,
+          enableOfflineQueue: false,
+          commandTimeout: 5_000,
+        },
+  );
 }
 
 export function createAiQueue(
@@ -56,9 +66,10 @@ export function createAiQueue(
       removeOnComplete: { age: 24 * 60 * 60, count: 10_000 },
       removeOnFail: { age: 7 * 24 * 60 * 60, count: 5_000 },
       // BullMQ-side retry attempts. We layer our own retry on top
-      // for finer-grained backoff (the worker requeues with custom
+      // for provider errors (the worker requeues with custom
       // delays based on error type), so this is a safety cap.
-      attempts: 1,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 1_000 },
     },
   });
 }

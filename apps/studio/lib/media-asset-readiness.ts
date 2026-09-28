@@ -31,14 +31,36 @@ export const mediaAssetReadinessKeys = {
 export async function getMediaAssetReadinessStatuses(
   capability: MediaAssetReadinessCapability,
   assetIds: string[],
-  documentId?: string | null
+  documentId?: string | null,
+  signal?: AbortSignal
 ): Promise<Record<string, MediaAssetReadinessResult>> {
-  const unique = [...new Set(assetIds)].filter(Boolean).slice(0, 100);
-  if (unique.length === 0) return {};
+  signal?.throwIfAborted();
+  const unique = [...new Set(assetIds)].filter(Boolean);
+  const entries: [string, MediaAssetReadinessResult][] = [];
+  for (let offset = 0; offset < unique.length; offset += 100) {
+    const batch = await readReadinessBatch(
+      capability,
+      unique.slice(offset, offset + 100),
+      documentId,
+      signal
+    );
+    entries.push(...Object.entries(batch));
+  }
+  return Object.fromEntries(entries);
+}
+
+async function readReadinessBatch(
+  capability: MediaAssetReadinessCapability,
+  unique: string[],
+  documentId?: string | null,
+  signal?: AbortSignal
+): Promise<Record<string, MediaAssetReadinessResult>> {
+  signal?.throwIfAborted();
 
   const res = await fetch("/aurora/media/asset-readiness/status", {
     method: "POST",
     credentials: "include",
+    signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ capability, assetIds: unique, documentId: documentId ?? undefined }),
   });
@@ -46,24 +68,28 @@ export async function getMediaAssetReadinessStatuses(
   let json: Partial<StatusResponse> & {
     code?: number | string;
     data?: StatusResponse;
-    message?: string;
+    message?: string | { message?: string };
     msg?: string;
   } = {};
   try {
-    json = await res.json();
+    const body: unknown = await res.json();
+    if (body && typeof body === "object" && !Array.isArray(body)) json = body;
   } catch {
     /* non-JSON body: fall through to HTTP error handling */
   }
 
+  signal?.throwIfAborted();
+  const upstreamMessage =
+    typeof json.message === "string" ? json.message : json.message?.message || json.msg;
   if (!res.ok) {
     if (res.status === 401) {
       window.dispatchEvent(new CustomEvent("fizz:unauthorized"));
     }
-    throw new Error(json.message || json.msg || `Media asset readiness failed: HTTP ${res.status}`);
+    throw new Error(upstreamMessage || `Media asset readiness failed: HTTP ${res.status}`);
   }
 
   if (json.code != null && json.code !== 200 && json.code !== "SUCCESS") {
-    throw new Error(json.msg || json.message || "Media asset readiness failed");
+    throw new Error(upstreamMessage || "Media asset readiness failed");
   }
 
   const response = json.data ?? (json as StatusResponse);
@@ -72,7 +98,11 @@ export async function getMediaAssetReadinessStatuses(
   }
   const matching = response.assets.filter(
     (asset) =>
-      asset.capability === capability && MEDIA_ASSET_READINESS_STATUSES.includes(asset.status)
+      asset &&
+      typeof asset.assetId === "string" &&
+      unique.includes(asset.assetId) &&
+      asset.capability === capability &&
+      MEDIA_ASSET_READINESS_STATUSES.includes(asset.status)
   );
   return Object.fromEntries(matching.map((asset) => [asset.assetId, asset]));
 }
@@ -96,7 +126,8 @@ export async function requestMediaAssetReadinessCheck(
     msg?: string;
   } = {};
   try {
-    json = await res.json();
+    const body: unknown = await res.json();
+    if (body && typeof body === "object" && !Array.isArray(body)) json = body;
   } catch {
     /* non-JSON body: fall through to HTTP error handling */
   }

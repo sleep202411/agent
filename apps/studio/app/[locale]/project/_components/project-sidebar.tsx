@@ -8,7 +8,9 @@ import {
   IconBlocks,
   IconBook2,
   IconFolder,
+  IconMasksTheater,
   IconHistory,
+  IconId,
   IconLibraryPhoto,
   IconPuzzle,
   IconShare3,
@@ -59,6 +61,9 @@ export function ProjectSidebar({
   const t = useTranslations("project");
   const tShell = useTranslations("shell");
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const actorsOpen = useProjectUIStore((s) => s.actorsOpen);
+  const openActors = useProjectUIStore((s) => s.openActors);
+  const closeActors = useProjectUIStore((s) => s.closeActors);
   const crewAssetsOpen = useProjectUIStore((s) => s.crewAssetsOpen);
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
@@ -70,7 +75,9 @@ export function ProjectSidebar({
   const openNodes = useProjectUIStore((s) => s.openNodes);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
+  const overviewOpen = useProjectUIStore((s) => s.overviewOpen);
   const toggleHistory = useProjectUIStore((s) => s.toggleHistory);
+  const toggleOverview = useProjectUIStore((s) => s.toggleOverview);
   const toggleSections = useProjectUIStore((s) => s.toggleSections);
   const toggleSkills = useProjectUIStore((s) => s.toggleSkills);
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
@@ -112,6 +119,14 @@ export function ProjectSidebar({
 
   const items = [
     {
+      icon: IconId,
+      iconClassName: undefined,
+      label: t("sidebar.overview"),
+      active: overviewOpen,
+      disabledReason: undefined,
+      onClick: toggleOverview,
+    },
+    {
       icon: IconBook2,
       iconClassName: undefined,
       label: t("sidebar.chapters"),
@@ -144,6 +159,18 @@ export function ProjectSidebar({
             active: crewAssetsOpen,
             disabledReason: undefined,
             onClick: () => (crewAssetsOpen ? closeCrewAssets() : openCrewAssets()),
+          },
+        ]
+      : []),
+    ...(crewAssetsEnabled && activeMode === "canvas"
+      ? [
+          {
+            icon: IconMasksTheater,
+            iconClassName: undefined,
+            label: t("sidebar.aiActors"),
+            active: actorsOpen,
+            disabledReason: undefined,
+            onClick: () => (actorsOpen ? closeActors() : openActors()),
           },
         ]
       : []),

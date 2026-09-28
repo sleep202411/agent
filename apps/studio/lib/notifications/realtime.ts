@@ -19,17 +19,26 @@ export function openNotificationsRealtime(
   }
 ) {
   let closed = false;
+  const controller = new AbortController();
   const client = new Ably.Realtime({
     autoConnect: false,
     closeOnUnload: true,
     authCallback: (_params, callback) => {
+      if (closed) {
+        callback("Notification subscription closed", null);
+        return;
+      }
       void api
         .get<ConversationRealtimeGrantDTO>("/aurora/conversations/realtime-token", {
           requestScope: "user",
           cache: "no-store",
+          signal: controller.signal,
         })
         .then(
-          (grant) => callback(null, grant.tokenRequest as Ably.TokenRequest),
+          (grant) => {
+            if (closed) callback("Notification subscription closed", null);
+            else callback(null, grant.tokenRequest as Ably.TokenRequest);
+          },
           (error: unknown) => callback(error instanceof Error ? error.message : String(error), null)
         );
     },
@@ -52,6 +61,7 @@ export function openNotificationsRealtime(
     close() {
       if (closed) return;
       closed = true;
+      controller.abort();
       channel.unsubscribe();
       client.close();
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import {
@@ -12,6 +12,8 @@ import {
   IconVideoOff,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { useAuth } from "@/app/_components/auth-provider";
+import { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
@@ -36,8 +38,10 @@ import {
 import { AuthorizeProjectDialog } from "./authorize-project-dialog";
 
 const authKeys = {
-  grants: (characterId: string) => ["fizzstudio", "characters", "grants", characterId] as const,
-  outputs: (characterId: string) => ["fizzstudio", "characters", "outputs", characterId] as const,
+  grants: (characterId: string, viewerId: string) =>
+    ["fizzstudio", "characters", "grants", characterId, viewerId] as const,
+  outputs: (characterId: string, viewerId: string) =>
+    ["fizzstudio", "characters", "outputs", characterId, viewerId] as const,
 };
 
 /** Pending takedown scope for the confirm dialog. */
@@ -63,6 +67,23 @@ function OutputThumb({ url, mimeType }: { url: string; mimeType: string }) {
  * / all "Take down" — a physical block). The subject owns this surface.
  */
 export function RealPersonAuthorizations({ characterId }: { characterId: string }) {
+  const { user } = useAuth();
+  const viewerId = user?.id == null ? "" : String(user.id);
+  return (
+    <AuthorizationContent
+      key={JSON.stringify([characterId, viewerId])}
+      characterId={characterId}
+      viewerId={viewerId}
+    />
+  );
+}
+function AuthorizationContent({
+  characterId,
+  viewerId,
+}: {
+  characterId: string;
+  viewerId: string;
+}) {
   const t = useTranslations("characters");
   const tc = useTranslations("common");
   const queryClient = useQueryClient();
@@ -73,17 +94,26 @@ export function RealPersonAuthorizations({ characterId }: { characterId: string 
   const [revokingProjectId, setRevokingProjectId] = useState<string | null>(null);
 
   const grantsQuery = useQuery({
-    queryKey: authKeys.grants(characterId),
-    queryFn: () => listProjectGrants(characterId),
+    queryKey: authKeys.grants(characterId, viewerId),
+    queryFn: ({ signal }) => listProjectGrants(characterId, signal),
+    enabled: Boolean(viewerId),
     staleTime: 30_000,
   });
   const outputsQuery = useQuery({
-    queryKey: authKeys.outputs(characterId),
-    queryFn: () => listLikenessOutputs(characterId),
+    queryKey: authKeys.outputs(characterId, viewerId),
+    queryFn: ({ signal }) => listLikenessOutputs(characterId, undefined, signal),
+    enabled: Boolean(viewerId),
     staleTime: 30_000,
   });
 
-  const grants = useMemo(() => grantsQuery.data ?? [], [grantsQuery.data]);
+  const denied = (error: unknown) =>
+    error instanceof ApiRequestError && [401, 403].includes(error.status);
+  const grantsDenied = denied(grantsQuery.error);
+  const outputsDenied = denied(outputsQuery.error);
+  const grants = useMemo(
+    () => (grantsDenied ? [] : (grantsQuery.data ?? [])),
+    [grantsQuery.data, grantsDenied]
+  );
   const activeGrantProjectIds = useMemo(
     () => new Set(grants.filter((g) => g.status === "active").map((g) => g.projectId)),
     [grants]
@@ -98,38 +128,72 @@ export function RealPersonAuthorizations({ characterId }: { characterId: string 
 
   const outputsByProject = useMemo(() => {
     const groups = new Map<string, LikenessOutputItem[]>();
-    for (const item of outputsQuery.data ?? []) {
+    for (const item of outputsDenied ? [] : (outputsQuery.data ?? [])) {
       const list = groups.get(item.projectId) ?? [];
       list.push(item);
       groups.set(item.projectId, list);
     }
     return [...groups.entries()];
-  }, [outputsQuery.data]);
+  }, [outputsQuery.data, outputsDenied]);
 
+  const active = useRef<AbortController | null>(null);
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      active.current?.abort();
+      active.current = null;
+    };
+  }, []);
+  const start = () => {
+    if (!mounted.current || !viewerId || active.current) return null;
+    const claim = new AbortController();
+    active.current = claim;
+    return claim;
+  };
+  const current = (claim: AbortController) => mounted.current && active.current === claim;
   const applyGrant = (grant: ProjectGrantDto) => {
-    queryClient.setQueryData<ProjectGrantDto[]>(authKeys.grants(characterId), (prev) => {
+    if (!mounted.current) return;
+    queryClient.setQueryData<ProjectGrantDto[]>(authKeys.grants(characterId, viewerId), (prev) => {
       const rest = (prev ?? []).filter((g) => g.projectId !== grant.projectId);
       return [grant, ...rest];
     });
-    void queryClient.invalidateQueries({ queryKey: authKeys.grants(characterId) });
+    void queryClient.invalidateQueries({ queryKey: authKeys.grants(characterId, viewerId) });
   };
 
   const withdraw = async (grant: ProjectGrantDto) => {
-    if (revokingProjectId) return;
+    const claim = start();
+    if (!claim) return;
+    if (grantsDenied) {
+      active.current = null;
+      return;
+    }
     setRevokingProjectId(grant.projectId);
     try {
-      await revokeProjectGrant(characterId, grant.projectId);
-      await queryClient.invalidateQueries({ queryKey: authKeys.grants(characterId) });
+      await revokeProjectGrant(characterId, grant.projectId, claim.signal);
+      if (!current(claim)) return;
+      await queryClient.invalidateQueries({ queryKey: authKeys.grants(characterId, viewerId) });
+      if (!current(claim)) return;
       toast.success(t("grantWithdrawn", { project: grant.projectName }));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : tc("error"));
+      if (current(claim)) toast.error(error instanceof Error ? error.message : tc("error"));
     } finally {
-      setRevokingProjectId(null);
+      if (current(claim)) {
+        active.current = null;
+        setRevokingProjectId(null);
+      }
     }
   };
 
   const confirmTakedown = async () => {
-    if (!pendingTakedown || takedownBusy) return;
+    if (!pendingTakedown) return;
+    const claim = start();
+    if (!claim) return;
+    if (outputsDenied) {
+      active.current = null;
+      return;
+    }
     setTakedownBusy(true);
     try {
       const scope =
@@ -138,14 +202,19 @@ export function RealPersonAuthorizations({ characterId }: { characterId: string 
           : pendingTakedown.kind === "project"
             ? { projectId: pendingTakedown.projectId }
             : { jobId: pendingTakedown.jobId };
-      const { blocked } = await takedownLikenessOutputs(characterId, scope);
-      await queryClient.invalidateQueries({ queryKey: authKeys.outputs(characterId) });
+      const { blocked } = await takedownLikenessOutputs(characterId, scope, claim.signal);
+      if (!current(claim)) return;
+      await queryClient.invalidateQueries({ queryKey: authKeys.outputs(characterId, viewerId) });
+      if (!current(claim)) return;
       toast.success(t("takedownDone", { count: blocked }));
       setPendingTakedown(null);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : tc("error"));
+      if (current(claim)) toast.error(error instanceof Error ? error.message : tc("error"));
     } finally {
-      setTakedownBusy(false);
+      if (current(claim)) {
+        active.current = null;
+        setTakedownBusy(false);
+      }
     }
   };
 
@@ -171,7 +240,11 @@ export function RealPersonAuthorizations({ characterId }: { characterId: string 
             <h3 className="text-sm font-medium">{t("grantsTitle")}</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">{t("grantsHint")}</p>
           </div>
-          <Button variant="secondary" onClick={() => setAuthorizeOpen(true)}>
+          <Button
+            variant="secondary"
+            disabled={grantsDenied || takedownBusy || revokingProjectId !== null}
+            onClick={() => setAuthorizeOpen(true)}
+          >
             <IconPlus data-icon="inline-start" />
             {t("authorizeProject")}
           </Button>
@@ -216,7 +289,7 @@ export function RealPersonAuthorizations({ characterId }: { characterId: string 
                         size="sm"
                         variant="ghost"
                         onClick={() => void withdraw(grant)}
-                        disabled={revokingProjectId === grant.projectId}
+                        disabled={revokingProjectId !== null || takedownBusy}
                       >
                         {revokingProjectId === grant.projectId ? (
                           <IconLoader2 data-icon="inline-start" className="animate-spin" />
@@ -362,14 +435,14 @@ export function RealPersonAuthorizations({ characterId }: { characterId: string 
             <Button
               variant="ghost"
               onClick={() => setPendingTakedown(null)}
-              disabled={takedownBusy}
+              disabled={takedownBusy || revokingProjectId !== null}
             >
               {tc("cancel")}
             </Button>
             <Button
               variant="destructive"
               onClick={() => void confirmTakedown()}
-              disabled={takedownBusy}
+              disabled={takedownBusy || revokingProjectId !== null}
             >
               {takedownBusy ? (
                 <IconLoader2 data-icon="inline-start" className="animate-spin" />

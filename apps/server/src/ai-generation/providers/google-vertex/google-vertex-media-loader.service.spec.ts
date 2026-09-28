@@ -22,6 +22,74 @@ describe('GoogleVertexMediaLoaderService', () => {
     jest.restoreAllMocks();
   });
 
+  it.each([503, 302, 200])(
+    'cancels an unread rejected response (%s)',
+    async (status) => {
+      const cancel = jest.fn();
+      global.fetch = jest.fn().mockResolvedValue(
+        new Response(new ReadableStream({ cancel }), {
+          status,
+          headers: {
+            'content-length': '999',
+            location: 'https://untrusted.example/image.png',
+          },
+        }),
+      );
+      const loader = new GoogleVertexMediaLoaderService(
+        new GoogleVertexConfigService(),
+      );
+      await expect(
+        loader.loadImages(['https://media.example.com/reference.png'], {
+          allowWebp: true,
+          maxBytes: 10,
+        }),
+      ).rejects.toThrow();
+      expect(cancel).toHaveBeenCalledTimes(1);
+    },
+  );
+  it.each(['rejected', 'pending'])(
+    'reports oversized media even when cancellation is %s',
+    async (mode) => {
+      const cancel = jest.fn(() =>
+        mode === 'rejected'
+          ? Promise.reject(new Error('cleanup failed'))
+          : new Promise<void>(() => {}),
+      );
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array(11));
+        },
+        cancel,
+      });
+      global.fetch = jest.fn().mockResolvedValue(new Response(body));
+      const loader = new GoogleVertexMediaLoaderService(
+        new GoogleVertexConfigService(),
+      );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const outcome = await Promise.race([
+          loader
+            .loadImages(['https://media.example.com/large.png'], {
+              allowWebp: true,
+              maxBytes: 10,
+            })
+            .then(
+              () => 'unexpected success',
+              (error: Error) => error.message,
+            ),
+          new Promise<string>((resolve) => {
+            timer = setTimeout(() => resolve('still waiting for cleanup'), 100);
+          }),
+        ]);
+        expect(outcome).toContain('exceeds 10 bytes');
+        expect(cancel).toHaveBeenCalledTimes(1);
+        expect(body.locked).toBe(false);
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  );
+
   it('downloads trusted HTTPS image bytes and converts them to inline base64', async () => {
     global.fetch = jest.fn().mockResolvedValue(
       new Response(Buffer.from('image-bytes'), {

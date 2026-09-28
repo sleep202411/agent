@@ -310,7 +310,9 @@ ledger view (hash/metadata only), force-revoke (admin_takedown), provider-sync i
   SLA — the wizard never hard-blocks on it.
 - Typed failure surfacing: face_mismatch / multi_face / moderation rejections verbatim to the UI.
 - `CreateAsset` moderation strategy is config-controlled via
-  `BYTEPLUS_ASSETS_MODERATION_STRATEGY` (`Skip` current operational default; `Default` rollback).
+  `BYTEPLUS_ASSETS_MODERATION_STRATEGY` (`Skip` operational default for global/com;
+  `Default` enables provider pre-review). CN defaults to `Default` and rejects `Skip`
+  at startup, following #16. Remove any CN `Skip` override before deploying.
   BytePlus baseline content safety still applies.
 
 ### 2.3 What we deliberately do NOT build (target-state, no hedging)

@@ -19,7 +19,9 @@
  * dialog closes; the buyer sees the proposal card with Accept /
  * Decline buttons.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { CURRENT_CELL } from "@/src/lib/region/cell";
 import { IconLoader2, IconSparkles } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { SERVICE_TIERS, UNLIMITED_REVISIONS, type ServiceTier } from "@repo/shared/creator-service";
@@ -40,7 +42,6 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import {
   ConversationApiError,
@@ -64,8 +65,7 @@ const COM_CURRENCIES: CurrencyCode[] = [
 const CN_CURRENCIES: CurrencyCode[] = ["CNY"];
 
 function defaultCurrencyForCell(): CurrencyCode {
-  const banner = env.BANNER_BASE_URL ?? "";
-  return /\.cn|\.aliyuncs\.com/.test(banner) ? "CNY" : "USD";
+  return CURRENT_CELL === "cn" ? "CNY" : "USD";
 }
 
 function allowedCurrenciesForCell(): CurrencyCode[] {
@@ -78,11 +78,30 @@ interface SendProposalDialogProps {
   conversationId: string;
 }
 
-export function SendProposalDialog({
+export function SendProposalDialog(props: SendProposalDialogProps) {
+  const { user } = useCurrentUser();
+  return (
+    <SendProposalDialogContent
+      key={JSON.stringify([props.open, props.conversationId, user?.id])}
+      {...props}
+    />
+  );
+}
+
+function SendProposalDialogContent({
   open,
   onOpenChange,
   conversationId,
 }: SendProposalDialogProps) {
+  const active = useRef(false);
+  const admitted = useRef(false);
+  const intent = useRef<{ serialized: string; key: string } | null>(null);
+  useLayoutEffect(() => {
+    active.current = open;
+    return () => {
+      active.current = false;
+    };
+  }, [open]);
   const t = useTranslations("messages");
   const tc = useTranslations("common");
   const defaultCurrency = useMemo(() => defaultCurrencyForCell(), []);
@@ -91,57 +110,80 @@ export function SendProposalDialog({
   const [tier, setTier] = useState<ServiceTier>("standard");
   const [currency, setCurrency] = useState<CurrencyCode>(defaultCurrency);
   const [priceText, setPriceText] = useState("");
-  const [deliveryDays, setDeliveryDays] = useState(7);
-  const [revisions, setRevisions] = useState<number>(1);
+  const [deliveryText, setDeliveryText] = useState("7");
+  const [revisionsText, setRevisionsText] = useState("1");
   const [scopeText, setScopeText] = useState("");
   const [note, setNote] = useState("");
-
-  // Reset on open so a previous attempt doesn't leak in.
-  // Intentional setState-in-effect — `open` false→true is the
-  // trigger; key-prop remount would lose parent's hold.
-  useEffect(() => {
-    if (!open) return;
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setTier("standard");
-    setCurrency(defaultCurrency);
-    setPriceText("");
-    setDeliveryDays(7);
-    setRevisions(1);
-    setScopeText("");
-    setNote("");
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, defaultCurrency]);
 
   const send = useSendProposal(conversationId);
 
   const isZero = ZERO_DECIMAL_CURRENCIES.has(currency);
   const priceStep = isZero ? "1" : "0.01";
-  const unlimited = revisions === UNLIMITED_REVISIONS;
+  const unlimited = revisionsText === String(UNLIMITED_REVISIONS);
+  const deliveryDays = Number(deliveryText);
+  const revisions = Number(revisionsText);
 
   const priceNumber = Number(priceText.trim());
-  const priceValid = Number.isFinite(priceNumber) && priceNumber >= 0;
+  const priceValid =
+    priceText.trim() !== "" &&
+    Number.isFinite(priceNumber) &&
+    priceNumber >= 0 &&
+    priceNumber <= 100_000_000;
 
   const submit = async () => {
+    if (!active.current || admitted.current) return;
     if (!priceValid) {
       toast.error(t("proposalPriceInvalid"));
       return;
     }
+    const invalidField =
+      !deliveryText.trim() ||
+      !Number.isInteger(deliveryDays) ||
+      deliveryDays < 1 ||
+      deliveryDays > 365
+        ? t("proposalDelivery")
+        : !unlimited &&
+            (!revisionsText.trim() ||
+              !Number.isInteger(revisions) ||
+              revisions < 0 ||
+              revisions > 200)
+          ? t("proposalRevisions")
+          : null;
+    if (invalidField) {
+      toast.error(t("proposalNumberInvalid", { field: invalidField }));
+      return;
+    }
+    admitted.current = true;
     try {
-      await send.mutateAsync({
+      const body = {
         note: note.trim() || undefined,
         packageTier: tier,
         price: priceNumber,
         currency,
-        deliveryDays: clamp(deliveryDays, 1, 365),
-        revisions: unlimited ? UNLIMITED_REVISIONS : clamp(revisions, 0, 200),
+        deliveryDays,
+        revisions,
         scope: scopeText
           .split("\n")
           .map((s) => s.trim())
           .filter(Boolean),
-      });
+      };
+      const serialized = JSON.stringify(body);
+      if (!intent.current || intent.current.serialized !== serialized) {
+        intent.current = {
+          serialized,
+          key:
+            globalThis.crypto?.randomUUID?.() ??
+            `proposal-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        };
+      }
+      await send.mutateAsync({ ...body, clientKey: intent.current.key });
+
+      if (!active.current) return;
+      intent.current = null;
       toast.success(t("proposalSentToast"));
       onOpenChange(false);
     } catch (err) {
+      if (!active.current) return;
       if (err instanceof ConversationApiError) {
         const detail =
           typeof err.body === "object" && err.body && "message" in err.body
@@ -154,6 +196,8 @@ export function SendProposalDialog({
       } else {
         toast.error(err instanceof Error ? err.message : t("proposalSendFailed"));
       }
+    } finally {
+      if (active.current) admitted.current = false;
     }
   };
 
@@ -215,8 +259,8 @@ export function SendProposalDialog({
                 inputMode="numeric"
                 min={1}
                 max={365}
-                value={deliveryDays}
-                onChange={(e) => setDeliveryDays(clamp(Number(e.target.value) || 0, 1, 365))}
+                value={deliveryText}
+                onChange={(e) => setDeliveryText(e.target.value)}
               />
             </Field>
 
@@ -229,15 +273,17 @@ export function SendProposalDialog({
                   min={0}
                   max={200}
                   disabled={unlimited}
-                  value={unlimited ? "" : revisions}
-                  onChange={(e) => setRevisions(clamp(Number(e.target.value) || 0, 0, 200))}
+                  value={unlimited ? "" : revisionsText}
+                  onChange={(e) => setRevisionsText(e.target.value)}
                   placeholder={unlimited ? "∞" : "0"}
                   className="flex-1"
                 />
                 <label className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground">
                   <Checkbox
                     checked={unlimited}
-                    onCheckedChange={(v) => setRevisions(v === true ? UNLIMITED_REVISIONS : 0)}
+                    onCheckedChange={(v) =>
+                      setRevisionsText(v === true ? String(UNLIMITED_REVISIONS) : "0")
+                    }
                     className="size-3.5"
                   />
                   {t("revisionsUnlimited")}
@@ -289,8 +335,4 @@ export function SendProposalDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-function clamp(n: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, n));
 }

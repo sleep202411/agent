@@ -72,18 +72,17 @@ function scopedService(
       callback(tx),
     ),
   };
+  const project = {
+    id: PROJECT_ID,
+    workspaceId: WORKSPACE_ID,
+    frameProfile: 'landscape_16_9',
+    defaultLocale: 'zh-CN',
+    title: 'Branching Film Test',
+    summary: 'A branching interactive film.',
+    coverAssetId: cover?.coverAssetId ?? null,
+  };
   const permissions = {
-    requireProject: jest.fn().mockResolvedValue({
-      project: {
-        id: PROJECT_ID,
-        workspaceId: WORKSPACE_ID,
-        frameProfile: 'landscape_16_9',
-        defaultLocale: 'zh-CN',
-        title: 'Branching Film Test',
-        summary: 'A branching interactive film.',
-        coverAssetId: cover?.coverAssetId ?? null,
-      },
-    }),
+    requireProject: jest.fn().mockResolvedValue({ project }),
   };
   const assetUrls = {
     resolveVariant: jest.fn(
@@ -92,6 +91,7 @@ function scopedService(
   };
   return {
     contentHash,
+    project,
     prisma,
     tx,
     assetUrls,
@@ -179,6 +179,84 @@ function previewSequences(draft: Draft) {
 }
 
 describe('StoryWorkingPreviewService', () => {
+  it('identifies an invalid choice effect and its canvas destination', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    draft.storyBible.stateVariables = [
+      {
+        key: 'flags.asked',
+        name: { 'zh-CN': '已询问' },
+        valueType: 'boolean',
+        initialValue: false,
+      },
+    ];
+    const node = draft.graph.nodes[0];
+    if (node.exit.kind !== 'choice') throw new Error('Choice fixture missing.');
+    node.exit.choices[1].effects = [
+      { kind: 'add', key: 'flags.asked', amount: 1 },
+    ];
+
+    const preview = await scopedService(draft).service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      uuidAt(9),
+    );
+
+    expect(preview.runtime).toBeNull();
+    const diagnostic = preview.diagnostics[0];
+    expect(diagnostic).toMatchObject({
+      code: 'STORY_WORKING_PREVIEW_EFFECT_TYPE_MISMATCH',
+      entityType: 'node',
+      entityId: node.nodeId,
+      chapterId: uuidAt(9),
+    });
+    expect(diagnostic?.details).toEqual({
+      kind: 'state-effect-type',
+      nodeTitle:
+        node.kind === 'decision'
+          ? node.exit.prompt['zh-CN']
+          : node.name || node.nodeId,
+      choiceLabel: node.exit.choices[1].label['zh-CN'],
+      effectIndex: 1,
+      variableName: '已询问',
+      operation: 'add',
+      variableType: 'boolean',
+    });
+    expect(preview.diagnostics[0]?.message).toContain(
+      'add requires a number variable',
+    );
+  });
+
+  it('gives chapter and whole-story previews distinct stable build identities', async () => {
+    const { service } = scopedService(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
+    const whole = await service.getWorkingPreview(USER as never, PROJECT_ID);
+    const chapter = await service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      uuidAt(9),
+    );
+    const repeated = await service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      uuidAt(9),
+    );
+    expect(chapter.runtime).not.toBeNull();
+    expect(chapter.runtime?.buildId).not.toBe(whole.runtime?.buildId);
+    expect(repeated.runtime?.buildId).toBe(chapter.runtime?.buildId);
+  });
+
+  it('replaces the preview identity after project presentation metadata changes', async () => {
+    const { service, project } = scopedService(
+      buildInteractiveFilmTestBundle().draftContent,
+    );
+    const first = await service.getWorkingPreview(USER as never, PROJECT_ID);
+    project.title = 'Updated title';
+    const second = await service.getWorkingPreview(USER as never, PROJECT_ID);
+    expect(second.runtime?.metadata).not.toEqual(first.runtime?.metadata);
+    expect(second.runtime?.buildId).not.toBe(first.runtime?.buildId);
+  });
+
   it.each([1, 2])(
     'preserves %i untouched options and plays an unfilmed scene as text for four seconds',
     async (optionCount) => {
@@ -193,7 +271,10 @@ describe('StoryWorkingPreviewService', () => {
             name: 'The rain',
             description: 'A cat waits.\nThe door opens.',
             interactions: [],
-            exit: { kind: 'auto', nextNodeId: 'choice' },
+            exit: {
+              kind: 'auto',
+              routes: [{ target: { kind: 'node', nodeId: 'choice' } }],
+            },
           },
           {
             kind: 'decision',
@@ -205,7 +286,7 @@ describe('StoryWorkingPreviewService', () => {
               choices: Array.from({ length: optionCount }, (_, index) => ({
                 choiceId: `option:${index + 1}`,
                 label: {},
-                nextNodeId: null,
+                target: null,
               })),
             },
           },
@@ -290,12 +371,12 @@ describe('StoryWorkingPreviewService', () => {
               {
                 choiceId: 'stay',
                 label: { 'en-US': 'Stay' },
-                nextNodeId: 'last',
+                target: { kind: 'node', nodeId: 'last' },
               },
               {
                 choiceId: 'leave',
                 label: { 'en-US': 'Leave' },
-                nextNodeId: null,
+                target: null,
               },
             ],
           },
@@ -305,7 +386,7 @@ describe('StoryWorkingPreviewService', () => {
           nodeId: 'last',
           clipKey: 'LAST',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     };
@@ -379,6 +460,59 @@ describe('StoryWorkingPreviewService', () => {
     expect(tx.storyStoryboardSequence.findMany).toHaveBeenCalledTimes(1);
   });
 
+  it('starts a clicked scene in that chapter even when the chapter entry is empty', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const foreignNodeId = draft.graph.nodes[0]?.nodeId;
+    const chapterNodeIds = draft.graph.nodes
+      .map((node) => node.nodeId)
+      .filter((nodeId) => nodeId !== foreignNodeId);
+    const clickedNodeId = chapterNodeIds[1];
+    if (!foreignNodeId || !clickedNodeId)
+      throw new Error('Fixture nodes missing.');
+    draft.graph.entryNodeId = null;
+    const chapterId = uuidAt(9);
+    const { service, tx } = scopedService(draft);
+    tx.storyChapter.findMany.mockResolvedValue([
+      {
+        id: chapterId,
+        rank: 0,
+        nodeIds: chapterNodeIds,
+        entryNodeId: null,
+      },
+      {
+        id: uuidAt(10),
+        rank: 1,
+        nodeIds: [foreignNodeId],
+        entryNodeId: foreignNodeId,
+      },
+    ]);
+
+    const fromClick = await service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      chapterId,
+      clickedNodeId,
+    );
+    const fromChapter = await service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+      chapterId,
+    );
+
+    expect(fromClick.runtime).toMatchObject({
+      graph: { entrySceneId: clickedNodeId },
+    });
+    expect(fromChapter.runtime).toMatchObject({
+      graph: { entrySceneId: chapterNodeIds[0] },
+    });
+    expect(fromClick.runtime).not.toMatchObject({
+      graph: { entrySceneId: foreignNodeId },
+    });
+    expect(fromChapter.runtime).not.toMatchObject({
+      graph: { entrySceneId: foreignNodeId },
+    });
+  });
+
   it('does not block Preview on an unfinished player choice', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const choiceNode = draft.graph.nodes.find(
@@ -438,16 +572,8 @@ describe('StoryWorkingPreviewService', () => {
       schemaVersion: 2,
       channel: 'preview',
       gameId: PROJECT_ID,
-      buildId: `preview:${canonicalJsonHash({
-        projectId: PROJECT_ID,
-        draftContentHash: contentHash,
-        videoSnapshotHash: preview.videoSnapshotHash,
-      })}`,
-      contentVersion: `preview:${canonicalJsonHash({
-        projectId: PROJECT_ID,
-        draftContentHash: contentHash,
-        videoSnapshotHash: preview.videoSnapshotHash,
-      })}`,
+      buildId: expect.stringMatching(/^preview:[a-f0-9]{64}$/) as unknown,
+      contentVersion: preview.runtime?.buildId,
       graph: { entrySceneId: draft.graph.entryNodeId },
     });
     expect(preview.diagnostics).toEqual([]);
@@ -691,6 +817,7 @@ describe('StoryWorkingPreviewController', () => {
       USER,
       PROJECT_ID,
       undefined,
+      undefined,
     );
   });
 
@@ -711,6 +838,26 @@ describe('StoryWorkingPreviewController', () => {
       USER,
       PROJECT_ID,
       chapterId,
+      undefined,
+    );
+  });
+
+  it('forwards the scene whose play button was pressed', () => {
+    const service = { getWorkingPreview: jest.fn().mockResolvedValue(null) };
+    const controller = new StoryWorkingPreviewController(service as never);
+    const chapterId = uuidAt(9);
+
+    void controller.getWorkingPreview(
+      USER as never,
+      { projectId: PROJECT_ID },
+      { chapterId, sceneId: 'clip:S01A' },
+    );
+
+    expect(service.getWorkingPreview).toHaveBeenCalledWith(
+      USER,
+      PROJECT_ID,
+      chapterId,
+      'clip:S01A',
     );
   });
 });

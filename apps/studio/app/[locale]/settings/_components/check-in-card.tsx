@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconCalendarCheck, IconBolt } from "@tabler/icons-react";
@@ -22,15 +22,28 @@ export const CHECK_IN_STATUS_KEY = ["fizzstudio", "billing", "check-in"] as cons
  * `compact` trims it to a single inline row for the home surface.
  */
 export function CheckInCard({ compact = false }: { compact?: boolean }) {
-  const t = useTranslations("settings");
   const { user } = useAuth();
+  if (user?.id == null) return null;
+  return <AccountCheckInCard key={String(user.id)} userId={user.id} compact={compact} />;
+}
+
+function AccountCheckInCard({ userId, compact }: { userId: string | number; compact: boolean }) {
+  const t = useTranslations("settings");
+  const { isCurrentAccount } = useAuth();
   const queryClient = useQueryClient();
   const [claiming, setClaiming] = useState(false);
+  const active = useRef(false);
+  const pending = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   const { data } = useQuery({
-    queryKey: CHECK_IN_STATUS_KEY,
-    queryFn: () => getCheckInStatus(),
-    enabled: Boolean(user),
+    queryKey: [...CHECK_IN_STATUS_KEY, String(userId)],
+    queryFn: ({ signal }) => getCheckInStatus(signal),
     staleTime: 30_000,
   });
 
@@ -39,22 +52,26 @@ export function CheckInCard({ compact = false }: { compact?: boolean }) {
   const todayIndex = (data.nextStreakDay - 1) % data.rewards.length;
 
   async function claim() {
-    if (claiming || data?.checkedInToday) return;
+    const isCurrent = () => active.current && isCurrentAccount(userId);
+    if (!isCurrent() || pending.current || data?.checkedInToday) return;
+    pending.current = true;
     setClaiming(true);
     try {
       const result = await dailyCheckIn();
+      if (!isCurrent()) return;
       const amount = Number(result.granted.amount).toLocaleString();
       toast.success(
         result.alreadyCheckedIn ? t("checkIn.alreadyToday") : t("checkIn.success", { amount })
       );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey }),
-        queryClient.invalidateQueries({ queryKey: CHECK_IN_STATUS_KEY }),
+        queryClient.invalidateQueries({ queryKey: [...CHECK_IN_STATUS_KEY, String(userId)] }),
       ]);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("checkIn.error"));
+      if (isCurrent()) toast.error(error instanceof Error ? error.message : t("checkIn.error"));
     } finally {
-      setClaiming(false);
+      pending.current = false;
+      if (isCurrent()) setClaiming(false);
     }
   }
 

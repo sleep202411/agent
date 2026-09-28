@@ -174,3 +174,44 @@ describe('BytePlus video task failure mapping', () => {
     expect(error.userMessage).toBe('Generation failed. Please try again.');
   });
 });
+
+describe('Seedance async task continuity', () => {
+  it('polls the same accepted task through queued and running to completed without resubmission', async () => {
+    const { adapter, client } = adapterWith({});
+    client.getVideoTask
+      .mockResolvedValueOnce({ body: { status: 'queued' } })
+      .mockResolvedValueOnce({ body: { status: 'running' } })
+      .mockResolvedValueOnce({
+        body: {
+          status: 'succeeded',
+          content: { video_url: 'https://cdn.example.com/result.mp4' },
+        },
+      });
+    const start = await adapter.startGeneration(
+      'seedance-2-5',
+      { prompt: 'A harbor.' },
+      { jobId: 'continuity' } as never,
+    );
+    if (start.kind !== 'pending') throw new Error('Expected accepted task');
+    await expect(
+      adapter.pollStatus(start.providerJobId),
+    ).resolves.toMatchObject({ kind: 'pending', progress: 0.2 });
+    await expect(
+      adapter.pollStatus(start.providerJobId),
+    ).resolves.toMatchObject({ kind: 'pending', progress: 0.55 });
+    await expect(
+      adapter.pollStatus(start.providerJobId),
+    ).resolves.toMatchObject({
+      kind: 'completed',
+      outputs: [
+        expect.objectContaining({
+          providerUrl: 'https://cdn.example.com/result.mp4',
+        }),
+      ],
+    });
+    expect(client.createVideoTask).toHaveBeenCalledTimes(1);
+    expect(client.getVideoTask).toHaveBeenCalledTimes(3);
+    for (let call = 1; call <= 3; call++)
+      expect(client.getVideoTask).toHaveBeenNthCalledWith(call, {}, 'task-25');
+  });
+});

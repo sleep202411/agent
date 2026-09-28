@@ -8,6 +8,7 @@ import type { CanvasNodeShape } from "@/lib/canvas-core/types";
 import { ApiRequestError } from "@/lib/api";
 import { CanvasGenerationProvider, useGeneration } from "./use-canvas-generation";
 import {
+  cancelFizzAiJob,
   submitFizzAiJob,
   getFizzAiJob,
   listFizzAiJobs,
@@ -16,9 +17,20 @@ import {
   type GenerationState,
 } from "./generation-api";
 
-const mocks = vi.hoisted(() => ({ getGraph: vi.fn(), connected: false, userId: "owner" }));
+const mocks = vi.hoisted(() => ({
+  getGraph: vi.fn(),
+  fields: vi.fn(),
+  probe: vi.fn(),
+  connected: false,
+  userId: "owner",
+  documentId: "document",
+  canGenerate: true,
+}));
 vi.mock("@/lib/canvas-core/canvas-graph-context", () => ({
   useCanvasGraphContext: mocks.getGraph,
+}));
+vi.mock("./probe-media-duration", () => ({
+  probeMediaDurationSeconds: (...args: unknown[]) => mocks.probe(...args),
 }));
 const translate = (key: string) => key;
 vi.mock("next-intl", () => ({ useTranslations: () => translate }));
@@ -51,11 +63,12 @@ vi.mock("@/lib/project-skill-runtime", () => ({
 }));
 vi.mock("./generation-api", async (original) => ({
   ...(await original<typeof import("./generation-api")>()),
+  cancelFizzAiJob: vi.fn(),
   submitFizzAiJob: vi.fn(),
   getFizzAiJob: vi.fn(),
   listFizzAiJobs: vi.fn(),
   promptRequired: () => false,
-  referenceFieldsForMode: () => [],
+  referenceFieldsForMode: () => mocks.fields(),
   validateModelGenerationInput: () => [],
   generationInputHasBlockingIssues: () => false,
 }));
@@ -104,7 +117,12 @@ function Harness() {
   }, [render]);
   return (
     <QueryClientProvider client={client}>
-      <CanvasGenerationProvider catalog={catalog} context={context} projectSkills={projectSkills}>
+      <CanvasGenerationProvider
+        catalog={catalog}
+        context={{ ...context, documentId: mocks.documentId }}
+        projectSkills={projectSkills}
+        canGenerate={mocks.canGenerate}
+      >
         <Controls />
       </CanvasGenerationProvider>
     </QueryClientProvider>
@@ -116,8 +134,12 @@ async function mount() {
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  mocks.fields.mockReturnValue([]);
+  mocks.probe.mockResolvedValue(null);
   mocks.connected = false;
   mocks.userId = "owner";
+  mocks.documentId = "document";
+  mocks.canGenerate = true;
   nodes = [
     {
       id: "node",
@@ -215,6 +237,13 @@ describe("canvas task lifecycle", () => {
     expect(state()).toMatchObject({ status: "done", outputs: [{ assetId: "asset" }] });
     expect(submitFizzAiJob).toHaveBeenCalledTimes(1);
   });
+  it("hydrates outputs for a card persisted as done before its output read completed", async () => {
+    nodes[0].data.generation = { status: "done", jobId: "job-1" };
+    vi.mocked(listFizzAiJobs).mockResolvedValue({ jobs: [job], nextCursor: null });
+    await mount();
+    expect(state()).toMatchObject({ status: "done", outputs: [{ assetId: "asset" }] });
+    expect(listFizzAiJobs).toHaveBeenCalledWith(expect.objectContaining({ ids: ["job-1"] }));
+  });
   it("unblocks an old card after a failed lookup recovers and confirms no job exists", async () => {
     vi.useFakeTimers();
     nodes[0].data.generation = { status: "submitting" };
@@ -308,4 +337,203 @@ describe("canvas task lifecycle", () => {
       expect.objectContaining({ ids: ["job-1"], limit: 100 })
     );
   });
+});
+
+describe("duration preflight races", () => {
+  it("does not submit or recreate a card deleted while metadata is loading", async () => {
+    mocks.fields.mockReturnValue([{ field: "video", kind: "video" }]);
+    nodes[0]!.data.references = { video: [{ id: "ref", url: "old.mp4" }] };
+    let finish!: (value: number) => void;
+    mocks.probe.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    await mount();
+    let pending!: ReturnType<typeof actions.submit>;
+    act(() => {
+      pending = actions.submit("node");
+    });
+    expect(mocks.probe).toHaveBeenCalled();
+    nodes = [];
+    await act(async () => {
+      finish(12);
+      await pending;
+    });
+    expect(submitFizzAiJob).not.toHaveBeenCalled();
+    expect(nodes).toEqual([]);
+  });
+});
+
+describe("submission scope ownership", () => {
+  it.each(["account", "document", "authority"])(
+    "cancels preflight and retained callbacks on %s change",
+    async (change) => {
+      mocks.fields.mockReturnValue([{ field: "video", kind: "video" }]);
+      nodes[0]!.data.references = { video: [{ id: "ref", url: "old.mp4" }] };
+      let finish!: (value: number) => void;
+      mocks.probe.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          })
+      );
+      await mount();
+      const oldSubmit = actions.submit;
+      act(() => oldSubmit("node"));
+      const signal = mocks.probe.mock.calls[0][2] as AbortSignal;
+      if (change === "account") mocks.userId = "replacement";
+      if (change === "document") mocks.documentId = "replacement";
+      if (change === "authority") mocks.canGenerate = false;
+      await mount();
+      expect(signal.aborted).toBe(true);
+      await act(async () => {
+        finish(12);
+      });
+      act(() => oldSubmit("node"));
+      expect(submitFizzAiJob).not.toHaveBeenCalled();
+      expect(mocks.probe).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it("suppresses an abandoned failure and preserves a replacement pending claim", async () => {
+    let rejectOld!: (error: Error) => void;
+    vi.mocked(submitFizzAiJob).mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectOld = reject;
+        })
+    );
+    await mount();
+    act(() => actions.submit("node"));
+    mocks.userId = "replacement";
+    nodes[0]!.data.generation = undefined;
+    await mount();
+    vi.mocked(submitFizzAiJob).mockImplementationOnce(() => new Promise(() => {}));
+    act(() => actions.submit("node"));
+    const replacement = state();
+    await act(async () => {
+      rejectOld(new Error("abandoned"));
+    });
+    expect(state()).toEqual(replacement);
+    act(() => actions.submit("node"));
+    expect(submitFizzAiJob).toHaveBeenCalledTimes(2);
+  });
+});
+
+it("ignores an abandoned acknowledgement before hydration or wallet refresh", async () => {
+  let acknowledge!: (value: never) => void;
+  vi.mocked(submitFizzAiJob).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        acknowledge = resolve;
+      })
+  );
+  await mount();
+  act(() => actions.submit("node"));
+  mocks.userId = "replacement";
+  nodes[0]!.data.generation = undefined;
+  await mount();
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  await act(async () => {
+    acknowledge({ request_id: "old-job", status: "queued" } as never);
+  });
+  expect(state()).toBeUndefined();
+  expect(getFizzAiJob).not.toHaveBeenCalled();
+  expect(invalidate).not.toHaveBeenCalled();
+});
+
+describe("recovery and cancellation ownership", () => {
+  it("starts replacement recovery without applying a previous viewer's result", async () => {
+    let finish!: (value: { jobs: FizzAiJobView[]; nextCursor: null }) => void;
+    nodes[0]!.data.generation = { status: "generating", jobId: "job-1" };
+    vi.mocked(listFizzAiJobs).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    const fetchQuery = vi.spyOn(client, "fetchQuery");
+    await mount();
+    mocks.userId = "replacement";
+    await mount();
+    expect(listFizzAiJobs).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      finish({ jobs: [job], nextCursor: null });
+    });
+    expect(state().status).toBe("generating");
+    const keys = fetchQuery.mock.calls.map(([options]) => options.queryKey);
+    expect(keys.some((key) => key[0] === "canvas-jobs" && key[1] === "owner")).toBe(true);
+    expect(keys.some((key) => key[0] === "canvas-jobs" && key[1] === "replacement")).toBe(true);
+  });
+
+  it("deduplicates cancellation and ignores a late result after account replacement", async () => {
+    let finish!: (value: FizzAiJobView) => void;
+    nodes[0]!.data.generation = { status: "generating", jobId: "job-1" };
+    vi.mocked(cancelFizzAiJob).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    await mount();
+    const oldCancel = actions.cancel;
+    act(() => {
+      oldCancel("node");
+      oldCancel("node");
+    });
+    expect(cancelFizzAiJob).toHaveBeenCalledTimes(1);
+    mocks.userId = "replacement";
+    await mount();
+    await act(async () => {
+      finish(job);
+    });
+    expect(state().status).toBe("generating");
+    act(() => oldCancel("node"));
+    expect(cancelFizzAiJob).toHaveBeenCalledTimes(1);
+  });
+});
+
+it("shows failed reads for an accepted job and clears after automatic recovery without submission", async () => {
+  vi.useFakeTimers();
+  mocks.connected = true;
+  nodes[0].data.generation = { status: "generating", jobId: "job-1" };
+  vi.mocked(listFizzAiJobs).mockRejectedValue(new Error("network unavailable"));
+  await mount();
+  expect(actions.statusUnavailable("job-1")).toBe(true);
+  expect(actions.statusUnavailable("other-job")).toBe(false);
+  expect(state()).toMatchObject({ status: "generating", jobId: "job-1" });
+  vi.mocked(listFizzAiJobs).mockResolvedValue({ jobs: [job], nextCursor: null });
+  await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  expect(actions.statusUnavailable("job-1")).toBe(false);
+  expect(state().status).toBe("done");
+  expect(submitFizzAiJob).not.toHaveBeenCalled();
+});
+
+it("does not leak failed-read feedback into another document", async () => {
+  nodes[0].data.generation = { status: "generating", jobId: "job-1" };
+  vi.mocked(listFizzAiJobs).mockRejectedValue(new Error("offline"));
+  await mount();
+  expect(actions.statusUnavailable("job-1")).toBe(true);
+  mocks.documentId = "another-document";
+  nodes = [];
+  await mount();
+  expect(actions.statusUnavailable("job-1")).toBe(false);
+  expect(submitFizzAiJob).not.toHaveBeenCalled();
+});
+
+it("keeps missing accepted jobs marked unavailable after a successful empty lookup", async () => {
+  vi.useFakeTimers();
+  mocks.connected = true;
+  nodes[0].data.generation = { status: "generating", jobId: "job-1" };
+  vi.mocked(listFizzAiJobs).mockResolvedValue({ jobs: [], nextCursor: null });
+  await mount();
+  expect(actions.statusUnavailable("job-1")).toBe(true);
+  expect(state()).toMatchObject({ status: "generating", jobId: "job-1" });
+  vi.mocked(listFizzAiJobs).mockResolvedValue({ jobs: [job], nextCursor: null });
+  await act(async () => vi.advanceTimersByTimeAsync(15_000));
+  expect(actions.statusUnavailable("job-1")).toBe(false);
+  expect(state().status).toBe("done");
+  expect(submitFizzAiJob).not.toHaveBeenCalled();
 });

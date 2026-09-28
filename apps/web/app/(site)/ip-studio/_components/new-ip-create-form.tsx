@@ -85,14 +85,26 @@ export function NewIpCreateDialog({ open, onOpenChange }: NewIpCreateDialogProps
  */
 export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
   const t = useTranslations("newIpCreate");
+  const commonT = useTranslations("common");
   const router = useRouter();
   const pathname = usePathname() ?? "/";
   const defaultSourceLocale = localeFromPathname(pathname);
 
-  const [name, setName] = useState("");
+  const [name, setNameState] = useState("");
   const [genreCodes, setGenreCodes] = useState<string[]>([]);
   const [region, setRegion] = useState("");
-  const [description, setDescription] = useState("");
+  const [description, setDescriptionState] = useState("");
+  // Async analysis must consult the latest draft, including edits made while it runs.
+  const nameRef = useRef("");
+  const descriptionRef = useRef("");
+  const setName = (value: string) => {
+    nameRef.current = value;
+    setNameState(value);
+  };
+  const setDescription = (value: string) => {
+    descriptionRef.current = value;
+    setDescriptionState(value);
+  };
   const create = useCreateIpCommerceIp();
   const creating = create.isPending;
   const sparkAnalyze = useNewIpSparkAnalyze();
@@ -171,12 +183,12 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
       // Apply only fields the backend returned. Don't overwrite values the
       // user has already typed, unless they explicitly clear them.
-      if (result.name && !name.trim()) {
-        setName(result.name);
+      if (result.name && !nameRef.current.trim()) {
+        setName(result.name.slice(0, NAME_MAX_LENGTH));
         markAi("name");
       }
-      if (result.description && !description.trim()) {
-        setDescription(result.description);
+      if (result.description && !descriptionRef.current.trim()) {
+        setDescription(result.description.slice(0, DESCRIPTION_MAX_LENGTH));
         markAi("description");
       }
       setAnalyzeStatus("success");
@@ -299,14 +311,28 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
           <Field>
             <FieldLabel required>{t("fieldGenres")}</FieldLabel>
-            <TaxonomyPicker
-              items={genreOptions}
-              selectedCodes={genreCodes}
-              max={8}
-              loading={taxonomy.isLoading}
-              emptyLabel={t("taxonomyEmpty")}
-              onChange={setGenreCodes}
-            />
+            {taxonomy.isError ? (
+              <div role="alert" className="space-y-2">
+                <p className="text-sm text-destructive">{t("taxonomyLoadFailed")}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={taxonomy.isFetching}
+                  onClick={() => void taxonomy.refetch()}
+                >
+                  {commonT("retry")}
+                </Button>
+              </div>
+            ) : (
+              <TaxonomyPicker
+                items={genreOptions}
+                selectedCodes={genreCodes}
+                max={8}
+                loading={taxonomy.isLoading}
+                emptyLabel={t("taxonomyEmpty")}
+                onChange={setGenreCodes}
+              />
+            )}
             <FieldDescription>
               {t("taxonomyHelp", { count: genreCodes.length, max: 8 })}
             </FieldDescription>

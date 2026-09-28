@@ -79,6 +79,8 @@ export class DocumentProvider {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pendingSnapshotCrdt: Uint8Array | null = null;
   private pendingUpdates: Uint8Array[] = [];
+  /** Retain sent edits until acknowledgement; reconnects replay the same receipt. */
+  private readonly unacknowledged = new Map<string, Extract<ClientFrame, { event: "operation" }>>();
   private status: ConnectionStatus = "connecting";
   private readonly statusListeners = new Set<(s: ConnectionStatus) => void>();
   // Round-trip latency of the app-level ping → heartbeat, for the connection
@@ -160,6 +162,8 @@ export class DocumentProvider {
     this.awareness.destroy();
     void this.idb.destroy();
     this.doc.destroy();
+    this.pendingUpdates = [];
+    this.unacknowledged.clear();
   }
 
   // ── connection lifecycle ────────────────────────────────────────────────
@@ -176,14 +180,17 @@ export class DocumentProvider {
     }
     this.ws = socket;
     socket.onopen = () => {
+      if (this.destroyed || this.ws !== socket) return;
       this.reconnectAttempt = 0;
       this.startPing();
       // The gateway pushes document_snapshot + operations_sync on connect.
     };
     socket.onmessage = (event) => {
+      if (this.destroyed || this.ws !== socket) return;
       if (typeof event.data === "string") this.handleFrame(event.data);
     };
     socket.onclose = () => {
+      if (this.destroyed || this.ws !== socket) return;
       this.stopPing();
       if (this.ws === socket) this.ws = null;
       if (this.destroyed) return;
@@ -289,6 +296,9 @@ export class DocumentProvider {
         this.applySync(frame.data);
         break;
       case "operation_ack":
+        if (frame.data.operation.clientMutationId) {
+          this.unacknowledged.delete(frame.data.operation.clientMutationId);
+        }
         this.lastAckedSequence = Math.max(this.lastAckedSequence, frame.data.operation.sequence);
         break;
       case "document_operation":
@@ -353,6 +363,10 @@ export class DocumentProvider {
     if (toApply.length > 0) {
       Y.applyUpdate(this.doc, Y.mergeUpdates(toApply), REMOTE);
     }
+
+    // The server deduplicates by idempotencyKey, including a commit whose ack
+    // was lost when the previous socket closed.
+    for (const operation of this.unacknowledged.values()) this.sendFrame(operation);
 
     if (firstSync) {
       // First sync reconstructs the FULL server state (crdtState + the tail from
@@ -422,7 +436,7 @@ export class DocumentProvider {
     // Skip server-applied updates (echo) and offline-cache loads (the first-sync
     // delta carries those, not live ops).
     if (origin === REMOTE || origin === this.idb) return;
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    if (this.status === "synced" && this.ws?.readyState === WebSocket.OPEN) {
       this.sendOperation(update);
     } else {
       // Edits made while disconnected are queued and flushed on reconnect.
@@ -442,14 +456,18 @@ export class DocumentProvider {
   };
 
   private sendOperation(update: Uint8Array): void {
-    this.sendFrame({
+    const mutationId = newClientMutationId();
+    const frame: Extract<ClientFrame, { event: "operation" }> = {
       event: "operation",
       data: {
         operationType: "yjs_update",
         yjsUpdateBase64: bytesToBase64(update),
-        clientMutationId: newClientMutationId(),
+        clientMutationId: mutationId,
+        idempotencyKey: mutationId,
       },
-    });
+    };
+    this.unacknowledged.set(mutationId, frame);
+    this.sendFrame(frame);
   }
 
   /**

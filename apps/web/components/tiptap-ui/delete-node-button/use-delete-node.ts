@@ -218,6 +218,7 @@ export function useDeleteNode(config?: UseDeleteNodeConfig) {
   useHotkeys(
     DELETE_NODE_SHORTCUT_KEY,
     (event) => {
+      if (!editor?.isFocused) return;
       if (handleDeleteNode()) {
         event.preventDefault();
       }

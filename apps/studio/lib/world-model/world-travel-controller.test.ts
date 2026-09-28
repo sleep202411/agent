@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CreateWorldTravelRuntimeInput, WorldTravelRuntime } from "./world-travel-runtime";
 
 const api = vi.hoisted(() => ({
@@ -62,6 +62,7 @@ function createController(harness: ReturnType<typeof createRuntimeHarness>) {
 }
 
 describe("WorldTravelController", () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.clearAllMocks();
     api.createWorldSession.mockResolvedValue({
@@ -194,4 +195,126 @@ describe("WorldTravelController", () => {
 
     await controller.dispose();
   });
+  it.each(["pause", "resume"] as const)(
+    "does not revive an ended session after delayed %s",
+    async (action) => {
+      const harness = createRuntimeHarness();
+      const controller = createController(harness);
+      await controller.start();
+      if (action === "resume") await controller.pause();
+      let finish!: () => void;
+      vi.mocked(harness.runtime[action]).mockImplementationOnce(
+        () =>
+          new Promise<void>((r) => {
+            finish = r;
+          })
+      );
+      const pending = controller[action]();
+      await controller.end();
+      finish();
+      await pending;
+      expect(controller.state.phase).toBe("ended");
+    }
+  );
+  it("ignores provider events after ending", async () => {
+    const harness = createRuntimeHarness();
+    const controller = createController(harness);
+    await controller.start();
+    await controller.end();
+    const ended = controller.state;
+    harness.events()?.onStatusChange?.("PLAYING");
+    harness.events()?.onFirstFrame?.("late.jpg");
+    harness.events()?.onError?.(new Error("late"));
+    expect(controller.state).toEqual(ended);
+    expect(api.reportWorldTravelStatus).not.toHaveBeenCalled();
+  });
+  it.each(["heartbeat", "token"])("ignores delayed %s failure after ending", async (kind) => {
+    vi.useFakeTimers();
+    let reject!: (e: Error) => void;
+    const request = kind === "heartbeat" ? api.heartbeatWorldSession : api.refreshWorldSessionToken;
+    request.mockImplementationOnce(
+      () =>
+        new Promise((_r, j) => {
+          reject = j;
+        })
+    );
+    if (kind === "token")
+      api.heartbeatWorldSession.mockResolvedValue({ alive: true, heartbeatIntervalSeconds: 30 });
+    const harness = createRuntimeHarness();
+    const controller = createController(harness);
+    await controller.start();
+    await vi.advanceTimersByTimeAsync(kind === "heartbeat" ? 30_000 : 45_000);
+    await controller.end();
+    reject(new Error("late network error"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controller.state.phase).toBe("ended");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it.each(["create", "factory", "start", "bind"])(
+    "releases resources when ending during %s",
+    async (stage) => {
+      let release!: () => void;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const harness = createRuntimeHarness();
+      if (stage === "create")
+        api.createWorldSession.mockImplementationOnce(async () => {
+          await gate;
+          return {
+            id: SESSION_ID,
+            providerKey: "fal:happy-oyster",
+            heartbeatIntervalSeconds: 30,
+            maxExperienceSeconds: 90,
+            connection: { tokenExpiresIn: 60 },
+          };
+        });
+      if (stage === "factory") {
+        const factory = harness.factory.getMockImplementation()!;
+        harness.factory.mockImplementationOnce(async (input) => {
+          await gate;
+          return factory(input);
+        });
+      }
+      if (stage === "start")
+        vi.mocked(harness.runtime.start).mockImplementationOnce(async () => {
+          await gate;
+          return {
+            providerTravelId: "encrypted-travel",
+            firstFrameUrl: null,
+            maxExperienceSeconds: 90,
+          };
+        });
+      if (stage === "bind")
+        api.bindWorldTravel.mockImplementationOnce(async () => {
+          await gate;
+          return { id: TRAVEL_ID };
+        });
+      const controller = createController(harness);
+      const start = controller.start();
+      const operation =
+        stage === "create"
+          ? api.createWorldSession
+          : stage === "factory"
+            ? harness.factory
+            : stage === "start"
+              ? harness.runtime.start
+              : api.bindWorldTravel;
+      await vi.waitFor(() => expect(operation).toHaveBeenCalled());
+      let ended = false;
+      const end = controller.end().then(() => {
+        ended = true;
+      });
+      for (let turn = 0; turn < 5; turn += 1) await Promise.resolve();
+      const endedBeforeAcquisitionSettled = ended;
+      release();
+      await Promise.all([start, end]);
+      expect(endedBeforeAcquisitionSettled).toBe(false);
+      expect(controller.state.phase).toBe("ended");
+      expect(api.closeWorldSession).toHaveBeenCalledOnce();
+      if (stage !== "create") expect(harness.runtime.dispose).toHaveBeenCalledOnce();
+      if (stage !== "bind") expect(api.bindWorldTravel).not.toHaveBeenCalled();
+    }
+  );
 });

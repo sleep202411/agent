@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
 /**
  * Right-side Sheet drawer with full position info + applicants
  * triage. Owner-only — handles every position management action:
@@ -64,6 +66,7 @@ import {
   type CurrencyCode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
+import { PositionInvitationsPanel } from "@/app/(site)/crews/_components/position-invitations-panel";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import type { LookupUserDTO } from "@repo/shared/users";
@@ -153,15 +156,17 @@ function PositionDetailSession({
       rejected: rejected.length,
     };
 
-  const handleFreezeToggle = () => {
+  const changeStatus = (status: "open" | "frozen") => {
     if (!begin()) return;
     updatePosition.mutate(
-      { positionId: position.id, status: isFrozen ? "open" : "frozen" },
+      { positionId: position.id, status },
       {
         onSettled,
         onSuccess: () => {
           if (!alive.current) return;
-          toast.success(isFrozen ? t("unfreezeSuccess") : t("closeJobSuccess", { name: label }));
+          toast.success(
+            status === "open" ? t("unfreezeSuccess") : t("closeJobSuccess", { name: label })
+          );
           setConfirmFreeze(false);
         },
         onError: (err) => {
@@ -299,7 +304,11 @@ function PositionDetailSession({
                       size="sm"
                       disabled={applicationInbox.isFetching}
                       onClick={() =>
-                        void (applicationInbox.isFetchNextPageError
+                        void (applicationInbox.isFetchNextPageError &&
+                        !isCrewCursorError(
+                          applicationInbox.error,
+                          "CREW_APPLICATION_CURSOR_INVALID"
+                        )
                           ? applicationInbox.fetchNextPage()
                           : applicationInbox.refetch())
                       }
@@ -370,6 +379,7 @@ function PositionDetailSession({
                 ) : null}
               </Section>
             ) : null}
+            {canManage && position.taskId && <PositionInvitationsPanel positionId={position.id} />}
           </SheetBody>
 
           {canManage ? (
@@ -408,7 +418,7 @@ function PositionDetailSession({
                       variant="outline"
                       color="muted"
                       size="sm"
-                      onClick={() => handleFreezeToggle()}
+                      onClick={() => changeStatus("open")}
                       disabled={busy}
                     >
                       <IconLockOpen className="size-3.5" />
@@ -470,7 +480,7 @@ function PositionDetailSession({
               disabled={busy}
               onClick={(e) => {
                 e.preventDefault();
-                handleFreezeToggle();
+                changeStatus("frozen");
               }}
             >
               {busy ? <IconLoader2 className="size-4 animate-spin" /> : null}

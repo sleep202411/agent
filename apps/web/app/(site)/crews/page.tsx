@@ -11,18 +11,12 @@
  * navigates to the new crew's workspace.
  */
 
-import Link from "next/link";
+import { isCrewCursorError } from "./_hooks/api";
+import { CrewSectionNavigation } from "./_components/crew-section-navigation";
 import { CrewWorkspace } from "./_components/crew-workspace";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  IconBriefcase,
-  IconEye,
-  IconLoader2,
-  IconListCheck,
-  IconPlus,
-  IconUsers,
-} from "@tabler/icons-react";
+import { IconBriefcase, IconEye, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -52,7 +46,11 @@ export default function CrewsPage() {
   const myCrews = useMyCrews(Boolean(user));
   const myCrewItems = useMemo(() => {
     if (!user) return [];
-    const memberships = [...(myCrews.data?.founded ?? []), ...(myCrews.data?.joined ?? [])];
+    const memberships = [
+      ...(myCrews.data?.community ?? []),
+      ...(myCrews.data?.founded ?? []),
+      ...(myCrews.data?.joined ?? []),
+    ];
     return [...new Map(memberships.map((crew) => [crew.id, crew])).values()];
   }, [user, myCrews.data]);
   const requestedCrew = searchParams.get("crew");
@@ -79,6 +77,7 @@ export default function CrewsPage() {
     data,
     isLoading,
     isError,
+    error,
     isFetching,
     isFetchNextPageError,
     isFetchingNextPage,
@@ -86,6 +85,7 @@ export default function CrewsPage() {
     fetchNextPage,
     refetch,
   } = useCrewList(24);
+  const cursorInvalid = isCrewCursorError(error, "CREW_CURSOR_INVALID");
   const { data: kycStatus, refetch: refetchKycStatus } = useKycAuthStatus({
     enabled: isCnRegion,
   });
@@ -127,40 +127,7 @@ export default function CrewsPage() {
 
       <div className="mx-auto max-w-[1800px] px-4 pb-24 pt-8 sm:px-6">
         <div className="min-w-0">
-          {/* Tabs — crews vs positions. URL state via `?view=positions`
-              so refreshes / shared links keep the same surface. */}
-          <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-border">
-            <PlazaTab
-              label={tCrew("myCrewsTitle")}
-              icon={IconUsers}
-              active={view === "mine"}
-              onClick={() => setView("mine")}
-            />
-            <Link
-              href={localizePath("/crews/tasks", locale)}
-              className="inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
-            >
-              <IconListCheck className="size-4" />
-              {tCrew("myTasksTab")}
-            </Link>
-            <Link
-              href={localizePath("/crews/income", locale)}
-              className="inline-flex min-h-11 items-center px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
-            >
-              {tCrew("myIncomeTab")}
-            </Link>
-            <PlazaTab
-              label={tCrew("allCrewsTitle")}
-              icon={IconUsers}
-              active={view === "crews"}
-              onClick={() => setView("crews")}
-            />
-            <PlazaTab
-              label={tCrew("allPositionsTab")}
-              icon={IconBriefcase}
-              active={view === "positions"}
-              onClick={() => setView("positions")}
-            />
+          <CrewSectionNavigation active={view} onViewChange={setView}>
             <div className="ml-auto shrink-0 pb-2">
               <Button
                 type="button"
@@ -177,7 +144,7 @@ export default function CrewsPage() {
                 {tCrew("createStudio")}
               </Button>
             </div>
-          </div>
+          </CrewSectionNavigation>
 
           {view === "mine" ? (
             <section aria-label={tCrew("myCrewsTitle")}>
@@ -193,6 +160,12 @@ export default function CrewsPage() {
                         key={`${user.id}:${selectedCrew.id}`}
                         id={selectedCrew.id}
                         embedded
+                        communityOnly={
+                          !!myCrews.data?.community?.some((crew) => crew.id === selectedCrew.id) &&
+                          ![...(myCrews.data?.founded ?? []), ...(myCrews.data?.joined ?? [])].some(
+                            (crew) => crew.id === selectedCrew.id
+                          )
+                        }
                       />
                     </div>
                   ) : null}
@@ -240,11 +213,17 @@ export default function CrewsPage() {
                   role="alert"
                   className="mt-6 flex items-center justify-center gap-3 text-sm text-muted-foreground"
                 >
-                  <span>{tc("loadFailed")}</span>
+                  <span>
+                    {error instanceof Error && error.message.trim()
+                      ? error.message
+                      : tc("loadFailed")}
+                  </span>
                   <Button
                     variant="outline"
                     disabled={isFetching}
-                    onClick={() => void (isFetchNextPageError ? fetchNextPage() : refetch())}
+                    onClick={() =>
+                      void (isFetchNextPageError && !cursorInvalid ? fetchNextPage() : refetch())
+                    }
                   >
                     {tc("retry")}
                   </Button>
@@ -275,38 +254,6 @@ export default function CrewsPage() {
         </div>
       </div>
     </div>
-  );
-}
-
-// ─── Tab pill ────────────────────────────────────────
-
-function PlazaTab({
-  label,
-  icon: Icon,
-  active,
-  onClick,
-}: {
-  label: string;
-  icon: typeof IconUsers;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "relative inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold transition-colors",
-        active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      <Icon className="size-4" />
-      {label}
-      {active ? (
-        <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-primary" />
-      ) : null}
-    </button>
   );
 }
 

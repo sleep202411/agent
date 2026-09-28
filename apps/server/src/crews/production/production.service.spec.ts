@@ -111,7 +111,7 @@ function build() {
   );
   const authorization = {
     require: jest.fn().mockResolvedValue({
-      isOwner: true,
+      isOwner: false,
       policyKeys: [],
       permissions: [
         'production.view',
@@ -229,16 +229,76 @@ describe('CrewProductionService', () => {
     });
   });
 
-  it.each([null, '01910d50-4c88-7c78-92d4-16892c06e010'])(
-    'rejects retired single-project link writes (%s)',
-    async (projectId) => {
+  it('links a team Studio project without replacing the internal production project', async () => {
+    const t = build();
+    const projectId = '01910d50-4c88-7c78-92d4-16892c06e010';
+    t.prisma.crew.findFirstOrThrow.mockResolvedValue({ studioProjectId: null });
+    t.prisma.platformProject.findFirst.mockResolvedValue({
+      id: projectId,
+      name: 'Episode canvas',
+      workspace: {
+        id: 'team-1',
+        name: 'Animation team',
+        defaultForUserId: null,
+      },
+      studioCrew: null,
+      productionCrew: { id: 'another-crew' },
+      crewTaskCanvas: { id: 'task-canvas' },
+    });
+
+    const result = await t.service.linkStudioProject(CREW_ID, USER_ID, {
+      projectId,
+    });
+
+    expect(t.prisma.crew.update).toHaveBeenCalledWith({
+      where: { id: CREW_ID },
+      data: { studioProjectId: projectId },
+    });
+    expect(result.studioProject).toMatchObject({
+      id: projectId,
+      name: 'Episode canvas',
+    });
+  });
+
+  it.each(['crew', 'project'] as const)(
+    'rejects a link when %s authority is withdrawn during admission',
+    async (scope) => {
       const t = build();
+      const check =
+        scope === 'crew'
+          ? t.authorization.require
+          : t.workspacePermissions.requireProjectRole;
+      check
+        .mockResolvedValueOnce(undefined as never)
+        .mockRejectedValueOnce(new Error('Access revoked'));
       await expect(
-        t.service.linkStudioProject(CREW_ID, USER_ID, { projectId }),
-      ).rejects.toThrow('Single-project linking has been replaced');
+        t.service.linkStudioProject(CREW_ID, USER_ID, {
+          projectId: '01910d50-4c88-7c78-92d4-16892c06e010',
+        }),
+      ).rejects.toThrow('Access revoked');
       expect(t.prisma.crew.update).not.toHaveBeenCalled();
+      expect(t.prisma.crewProductionActivity.create).not.toHaveBeenCalled();
+      expect(
+        t.conversations.broadcastCrewTaskProjectChange,
+      ).not.toHaveBeenCalled();
     },
   );
+
+  it('rejects the transaction and suppresses broadcasts if unlink authority changes during its write', async () => {
+    const t = build();
+    t.prisma.crew.findFirstOrThrow.mockResolvedValue({
+      studioProjectId: 'old-project',
+    });
+    t.prisma.crew.update.mockImplementation(() => {
+      t.authorization.require.mockRejectedValue(new Error('Access revoked'));
+    });
+    await expect(
+      t.service.linkStudioProject(CREW_ID, USER_ID, { projectId: null }),
+    ).rejects.toThrow('Access revoked');
+    expect(
+      t.conversations.broadcastCrewTaskProjectChange,
+    ).not.toHaveBeenCalled();
+  });
 
   it.each([
     ['en-US', 'Production goal'],
@@ -291,7 +351,7 @@ describe('CrewProductionService', () => {
 
     expect(overview.capabilities).toEqual({
       manage: true,
-      linkWorkspace: true,
+      linkWorkspace: false,
     });
     expect(overview.project).toMatchObject({
       status: CrewProductionStatus.backlog,

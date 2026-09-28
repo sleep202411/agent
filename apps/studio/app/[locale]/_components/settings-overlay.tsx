@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconChartBar,
@@ -48,34 +48,45 @@ const SECTIONS: Record<SettingsSection, React.ComponentType> = {
   billing: BillingSettingsPage,
 };
 
+function subscribeSettingsHash(sync: () => void) {
+  window.addEventListener("hashchange", sync);
+  return () => window.removeEventListener("hashchange", sync);
+}
+
 export function SettingsOverlay() {
   const t = useTranslations("settings");
   const { user, loading, requireAuth } = useAuth();
-  const [section, setSection] = useState<SettingsSection | null>(null);
-
-  useEffect(() => {
-    const sync = () => setSection(parseSettingsHash(window.location.hash));
-    sync();
-    window.addEventListener("hashchange", sync);
-    return () => window.removeEventListener("hashchange", sync);
-  }, []);
+  const section = useSyncExternalStore(
+    subscribeSettingsHash,
+    () => parseSettingsHash(window.location.hash),
+    () => null
+  );
+  const resumingLogin = useRef(false);
 
   const close = useCallback(() => {
     // Drop the hash without adding a history entry or scrolling.
     history.replaceState(null, "", window.location.pathname + window.location.search);
-    setSection(null);
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
   }, []);
 
   // Settings is a signed-in surface (account / billing / team). A signed-out
   // user reaching a #settings hash (link or refresh) gets the sign-in dialog
   // instead of a broken modal; the section reopens automatically after login.
   useEffect(() => {
-    if (!section || loading || user) return;
+    if (user) {
+      resumingLogin.current = false;
+      return;
+    }
+    if (!section || loading || resumingLogin.current) return;
     const target = section;
-    // Drop the hash URL (no setState — `open` is already false without a user,
-    // so the modal stays hidden); then prompt sign-in and reopen on success.
+    // Remove the settings request while login is pending. Only successful
+    // login restores it; an unrelated later session must not reopen it.
     history.replaceState(null, "", window.location.pathname + window.location.search);
-    requireAuth(() => openSettings(target));
+    requireAuth(() => {
+      // Login's session refetch may finish after its success callback.
+      resumingLogin.current = true;
+      openSettings(target);
+    });
   }, [section, user, loading, requireAuth]);
 
   const open = section != null && !!user;

@@ -51,9 +51,13 @@ export function useWindowSize(): WindowSizeState {
     if (typeof window === "undefined") return;
 
     const vp = window.visualViewport;
-    if (!vp) return;
-
-    const { width = 0, height = 0, offsetTop = 0, offsetLeft = 0, scale = 0 } = vp;
+    const { width, height, offsetTop, offsetLeft, scale } = vp ?? {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      offsetTop: 0,
+      offsetLeft: 0,
+      scale: 1,
+    };
 
     setWindowSize((prevState) => {
       if (
@@ -73,15 +77,16 @@ export function useWindowSize(): WindowSizeState {
   const handleViewportChange = useThrottledCallback(updateViewport, 200);
 
   useEffect(() => {
-    const visualViewport = window.visualViewport;
-    if (!visualViewport) return;
+    const visualViewport = window.visualViewport ?? window;
 
     visualViewport.addEventListener("resize", handleViewportChange);
+    visualViewport.addEventListener("scroll", handleViewportChange);
 
     handleViewportChange();
 
     return () => {
       visualViewport.removeEventListener("resize", handleViewportChange);
+      visualViewport.removeEventListener("scroll", handleViewportChange);
     };
   }, [handleViewportChange]);
 

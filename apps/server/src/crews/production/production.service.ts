@@ -215,10 +215,134 @@ export class CrewProductionService {
     input: LinkCrewStudioProjectInput,
   ) {
     await this.authorization.require(crewId, userId, 'production.manage');
-    void input;
-    throw new BadRequestException(
-      'Single-project linking has been replaced. Link a workspace from Crew instead.',
+    if (input.projectId) {
+      await this.workspacePermissions.requireProjectRole(
+        userId,
+        input.projectId,
+        ProjectMemberRole.editor,
+      );
+    }
+
+    let linked: {
+      id: string;
+      name: string;
+      workspace: { id: string; name: string };
+    } | null;
+    try {
+      linked = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-workspace:${crewId}`})::bigint)`;
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-project:${crewId}`})::bigint)
+        `;
+        const recheckAuthority = async () => {
+          await this.authorization.require(
+            crewId,
+            userId,
+            'production.manage',
+            tx,
+          );
+          if (input.projectId) {
+            await this.workspacePermissions.requireProjectRole(
+              userId,
+              input.projectId,
+              ProjectMemberRole.editor,
+              tx,
+            );
+          }
+        };
+        await recheckAuthority();
+        const crew = await tx.crew.findFirstOrThrow({
+          where: { id: crewId, deletedAt: null },
+          select: { studioProjectId: true, studioWorkspaceId: true },
+        });
+        let project: {
+          id: string;
+          name: string;
+          workspace: { id: string; name: string };
+        } | null = null;
+
+        if (input.projectId) {
+          const candidate = await tx.platformProject.findFirst({
+            where: { id: input.projectId, status: 'active', deletedAt: null },
+            select: {
+              id: true,
+              name: true,
+              workspace: { select: { id: true, name: true } },
+              studioCrew: { select: { id: true, name: true } },
+            },
+          });
+          if (!candidate)
+            throw new NotFoundException('Studio project not found.');
+          if (candidate.studioCrew && candidate.studioCrew.id !== crewId) {
+            throw new ConflictException({
+              code: 'CREW_STUDIO_PROJECT_ALREADY_LINKED',
+              message: `This project is already linked to ${candidate.studioCrew.name}.`,
+            });
+          }
+          project = candidate;
+        }
+
+        if (
+          crew.studioProjectId !== (project?.id ?? null) ||
+          crew.studioWorkspaceId
+        ) {
+          await tx.crew.update({
+            where: { id: crewId },
+            data: {
+              studioProjectId: project?.id ?? null,
+              ...(crew.studioWorkspaceId ? { studioWorkspaceId: null } : {}),
+            },
+          });
+          await tx.crewProductionActivity.create({
+            data: {
+              crewId,
+              kind: CrewProductionActivityKind.properties_changed,
+              payload: {
+                changes: [
+                  {
+                    field: 'studio_project_id',
+                    from: crew.studioProjectId,
+                    to: project?.id ?? null,
+                  },
+                  ...(crew.studioWorkspaceId
+                    ? [
+                        {
+                          field: 'studio_workspace_id',
+                          from: crew.studioWorkspaceId,
+                          to: null,
+                        },
+                      ]
+                    : []),
+                ],
+              },
+              createdByUserId: userId,
+            },
+          });
+        }
+        await recheckAuthority();
+        return project;
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException({
+          code: 'CREW_STUDIO_PROJECT_ALREADY_LINKED',
+          message: 'This Studio project is already linked to another crew.',
+        });
+      }
+      throw error;
+    }
+
+    await this.conversations.broadcastCrewTaskProjectChange(
+      crewId,
+      'production_project',
+      crewId,
+      'updated',
+      userId,
     );
+    return { studioProject: linked ? studioProjectSummary(linked) : null };
   }
 
   async updateDocument(
@@ -779,11 +903,7 @@ export class CrewProductionService {
   async deleteEpisode(episodeId: string, userId: string) {
     const episode = await this.prisma.crewEpisode.findUnique({
       where: { id: episodeId },
-      include: {
-        _count: {
-          select: { tasks: true, deliveries: true },
-        },
-      },
+      select: { crewId: true },
     });
     if (!episode) throw new NotFoundException('Episode not found.');
     await this.authorization.require(
@@ -791,14 +911,32 @@ export class CrewProductionService {
       userId,
       'production.manage',
     );
-    if (episode._count.tasks > 0 || episode._count.deliveries > 0) {
-      throw new ConflictException({
-        code: 'CREW_EPISODE_NOT_EMPTY',
-        message:
-          'Move its tasks and preserve or replace its delivery history before deleting this episode.',
+    await this.prisma.$transaction(async (tx) => {
+      // The parent row lock also blocks new task/delivery foreign-key links.
+      // Read counts only after acquiring it, so committed history is preserved.
+      await tx.$executeRaw`
+        SELECT id FROM crew_episodes WHERE id = ${episodeId}::uuid FOR UPDATE
+      `;
+      const current = await tx.crewEpisode.findUnique({
+        where: { id: episodeId },
+        include: { _count: { select: { tasks: true, deliveries: true } } },
       });
-    }
-    await this.prisma.crewEpisode.delete({ where: { id: episodeId } });
+      if (!current) throw new NotFoundException('Episode not found.');
+      await this.authorization.require(
+        current.crewId,
+        userId,
+        'production.manage',
+        tx,
+      );
+      if (current._count.tasks > 0 || current._count.deliveries > 0) {
+        throw new ConflictException({
+          code: 'CREW_EPISODE_NOT_EMPTY',
+          message:
+            'Move its tasks and preserve or replace its delivery history before deleting this episode.',
+        });
+      }
+      await tx.crewEpisode.delete({ where: { id: episodeId } });
+    });
     await this.conversations.broadcastCrewTaskProjectChange(
       episode.crewId,
       'episode',
@@ -854,6 +992,24 @@ export class CrewProductionService {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:episode-delivery:${episodeId}`})::bigint)
       `;
+      await tx.$executeRaw`
+        SELECT id FROM crew_episodes WHERE id = ${episodeId}::uuid FOR UPDATE
+      `;
+      const current = await tx.crewEpisode.findUnique({
+        where: { id: episodeId },
+      });
+      if (!current) throw new NotFoundException('Episode not found.');
+      await this.authorization.require(
+        current.crewId,
+        userId,
+        'production.deliver',
+        tx,
+      );
+      if (current.status === CrewEpisodeStatus.cancelled) {
+        throw new ConflictException({
+          message: 'A cancelled episode cannot accept a delivery.',
+        });
+      }
       const aggregate = await tx.crewEpisodeDelivery.aggregate({
         where: { episodeId },
         _max: { versionNumber: true },
@@ -917,6 +1073,17 @@ export class CrewProductionService {
       'production.review',
     );
     await this.prisma.$transaction(async (tx) => {
+      // Task creation, reassignment and status changes use this same lock.
+      // Hold it through the decision so the incomplete-task check stays valid.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${current.crewId}`}, 0))
+      `;
+      await this.authorization.require(
+        current.crewId,
+        userId,
+        'production.review',
+        tx,
+      );
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:episode-delivery:${current.episodeId}`})::bigint)
       `;

@@ -68,12 +68,12 @@ function release(): InteractiveFilmRelease {
             {
               choiceId: 'choose.truth',
               label: { 'en-US': 'Truth' },
-              nextNodeId: 'clip.truth',
+              target: { kind: 'node', nodeId: 'clip.truth' },
             },
             {
               choiceId: 'choose.echo',
               label: { 'en-US': 'Echo' },
-              nextNodeId: 'clip.echo',
+              target: { kind: 'node', nodeId: 'clip.echo' },
             },
           ],
         },
@@ -214,7 +214,10 @@ describe('Story Runtime Manifest v2 compiler', () => {
         endMs: 2_000,
         branchAtMs: 2_200,
         outcomes: {
-          success: { kind: 'goto', nodeId: 'clip.truth' },
+          success: {
+            kind: 'goto',
+            target: { kind: 'node', nodeId: 'clip.truth' },
+          },
           failure: { kind: 'continue' },
         },
       },
@@ -253,6 +256,46 @@ describe('Story Runtime Manifest v2 compiler', () => {
     const swipe = scene.gestures.find((gesture) => gesture.kind === 'swipe');
     expect(swipe).toBeDefined();
     expect(swipe && 'branchAtMs' in swipe).toBe(false);
+  });
+
+  it('pauses a hold hotspot at its start and drops the timeout route', () => {
+    const value = release();
+    value.nodes[0].interactions = [
+      {
+        kind: 'hotspot',
+        interactionId: 'wait',
+        label: { 'en-US': 'Wait' },
+        trigger: { kind: 'tap' },
+        rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+        startMs: 1_000,
+        endMs: 2_000,
+        timing: 'hold',
+        outcomes: {
+          success: { kind: 'continue' },
+          timeout: { kind: 'continue' },
+        },
+      },
+    ];
+    const result = compile(value);
+    const scene = result.manifest?.graph.nodes.find(
+      (node) => node.kind === 'scene' && node.sceneId === 'clip.start',
+    );
+    if (!scene || scene.kind !== 'scene') {
+      throw new Error(
+        `Scene is missing: ${JSON.stringify(result.diagnostics)}`,
+      );
+    }
+    expect(scene.gestures[0]).toMatchObject({
+      kind: 'tap',
+      holdFrame: true,
+      activeWindow: { startMs: 1_000, endMs: 2_000 },
+    });
+    expect(scene.gestures[0]).not.toHaveProperty('branchAtMs');
+    expect(
+      scene.eventBindings.some(
+        (binding) => binding.on.type === 'gesture.timed-out',
+      ),
+    ).toBe(false);
   });
 
   it('lowers hotspot triggers and outcome routes without fake scene branches', () => {
@@ -294,7 +337,10 @@ describe('Story Runtime Manifest v2 compiler', () => {
         startMs: 2_000,
         endMs: 3_000,
         outcomes: {
-          success: { kind: 'goto', nodeId: 'clip.truth' },
+          success: {
+            kind: 'goto',
+            target: { kind: 'node', nodeId: 'clip.truth' },
+          },
           timeout: { kind: 'seek', timeMs: 1_500 },
         },
       },
@@ -387,5 +433,120 @@ describe('Story Runtime Manifest v2 compiler', () => {
         }),
       ]),
     );
+  });
+
+  it('emits session state, choice effects, visibleWhen, and named endings', () => {
+    const value = release();
+    value.stateVariables = [
+      {
+        key: 'favorability.lin',
+        name: { 'en-US': 'Lin' },
+        valueType: 'number',
+        initialValue: 0,
+      },
+    ];
+    value.endings = [
+      {
+        endingId: 'ending.together',
+        title: { 'en-US': 'Together' },
+        kind: 'success',
+      },
+    ];
+    const start = value.nodes[0];
+    if (!start || start.exit.kind !== 'choice') {
+      throw new Error('Expected choice start');
+    }
+    start.exit.choices[0] = {
+      ...start.exit.choices[0],
+      effects: [{ kind: 'add', key: 'favorability.lin', amount: 20 }],
+    };
+    start.exit.choices[1] = {
+      ...start.exit.choices[1],
+      visibleWhen: {
+        kind: 'compare',
+        variableKey: 'favorability.lin',
+        operator: 'at-least',
+        value: 10,
+      },
+    };
+    start.onEnterEffects = [{ kind: 'set', key: 'favorability.lin', value: 1 }];
+    const echo = value.nodes[2];
+    if (!echo || echo.exit.kind !== 'auto') {
+      throw new Error('Expected auto echo');
+    }
+    echo.exit.routes = [
+      { target: { kind: 'ending', endingId: 'ending.together' } },
+    ];
+    const result = compile(value);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.manifest?.stateDefinitions).toEqual([
+      {
+        key: 'favorability.lin',
+        name: { 'en-US': 'Lin' },
+        valueType: 'number',
+        scope: 'session',
+        initialValue: 0,
+        sensitive: false,
+      },
+    ]);
+    expect(result.manifest?.endings.map((ending) => ending.endingId)).toEqual(
+      expect.arrayContaining(['ending.together', 'film.complete']),
+    );
+    const startNode = result.manifest?.graph.nodes.find(
+      (node) => node.sceneId === 'clip.start',
+    );
+    const enter = startNode?.eventBindings.find(
+      (binding) => binding.bindingId === 'binding:clip.start:enter',
+    );
+    expect(enter?.routes[0]?.actions[0]).toMatchObject({
+      kind: 'state.set',
+      path: 'favorability.lin',
+    });
+    const selected = startNode?.eventBindings.find(
+      (binding) => binding.bindingId === 'binding:clip.start:choice-selected',
+    );
+    expect(selected?.routes[0]?.actions).toEqual([
+      expect.objectContaining({
+        kind: 'state.increment',
+        path: 'favorability.lin',
+      }),
+      expect.objectContaining({
+        kind: 'scene.goto',
+        sceneId: 'clip.truth',
+      }),
+    ]);
+    const echoNode = result.manifest?.graph.nodes.find(
+      (node) => node.sceneId === 'clip.echo',
+    );
+    const echoEnded = echoNode?.eventBindings.find((binding) =>
+      binding.routes.some((route) =>
+        route.actions.some(
+          (action) =>
+            action.kind === 'ending.complete' &&
+            action.endingId === 'ending.together',
+        ),
+      ),
+    );
+    expect(echoEnded).toBeDefined();
+    const choiceRenderer =
+      startNode?.kind === 'scene'
+        ? startNode.renderers.find(
+            (renderer) => renderer.instanceId === 'renderer:clip.start:choice',
+          )
+        : undefined;
+    expect(choiceRenderer?.config).toMatchObject({
+      choices: [
+        expect.objectContaining({ choiceId: 'choose.truth' }),
+        expect.objectContaining({
+          choiceId: 'choose.echo',
+          visibleWhen: {
+            kind: 'compare',
+            operator: 'at-least',
+            left: { kind: 'state', path: 'favorability.lin' },
+            right: { kind: 'literal', value: 10 },
+          },
+        }),
+      ],
+    });
   });
 });

@@ -12,6 +12,7 @@ import {
   IconCircle,
   IconCube,
   IconDots,
+  IconCategory,
   IconFlag3,
   IconMovie,
   IconSparkles,
@@ -25,12 +26,16 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
+  CREW_TASK_KIND_MESSAGE_KEYS,
+  CREW_TASK_KINDS,
   useCreateCrewTask,
   useCrewEpisodes,
+  useCrewTaskKindTemplates,
   useDraftCrewTask,
   type CrewMemberDTO,
   type CrewTaskDraftDTO,
   type CrewTaskDTO,
+  type CrewTaskKind,
   type CrewTaskPriority,
   type CrewTaskProjectDTO,
   type CrewTaskViewDTO,
@@ -70,6 +75,7 @@ export function TaskQuickCreate({
   const locale = useLocale() as "en-US" | "zh-CN" | "zh-HK";
   const create = useCreateCrewTask(crewId);
   const episodes = useCrewEpisodes(crewId);
+  const templates = useCrewTaskKindTemplates(crewId, open);
   const draftTask = useDraftCrewTask(crewId);
   const { reset: resetCreate } = create;
   const { reset: resetDraft } = draftTask;
@@ -81,6 +87,7 @@ export function TaskQuickCreate({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<CrewTaskPriority>("normal");
+  const [taskKind, setTaskKind] = useState<CrewTaskKind | "">("");
   const [workflowStateId, setWorkflowStateId] = useState<string | null>(null);
   const [assigneeUserId, setAssigneeUserId] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
@@ -97,6 +104,7 @@ export function TaskQuickCreate({
     setTitle("");
     setDescription("");
     setPriority("normal");
+    setTaskKind("");
     setWorkflowStateId(null);
     setAssigneeUserId("");
     setLabelIds([]);
@@ -119,9 +127,14 @@ export function TaskQuickCreate({
   const activeCycle = project.cycles.find((cycle) => cycle.status === "active") ?? null;
   const defaultCycleId = useMemo(() => {
     const filtered = activeView.filters.cycleIds ?? [];
-    if (filtered.length === 1) return filtered[0] ?? "";
+    if (filtered.length === 1) {
+      const filteredCycle = project.cycles.find(
+        (cycle) => cycle.id === filtered[0] && cycle.status !== "cancelled"
+      );
+      if (filteredCycle) return filteredCycle.id;
+    }
     return activeCycle?.id ?? "";
-  }, [activeCycle?.id, activeView.filters.cycleIds]);
+  }, [activeCycle?.id, activeView.filters.cycleIds, project.cycles]);
   const defaultWorkflowStateId = useMemo(() => {
     if (
       presetWorkflowStateId &&
@@ -176,6 +189,7 @@ export function TaskQuickCreate({
     setTitle("");
     setDescription("");
     setPriority("normal");
+    setTaskKind("");
     setWorkflowStateId(null);
     setAssigneeUserId("");
     setLabelIds([]);
@@ -243,6 +257,7 @@ export function TaskQuickCreate({
         description: description.trim(),
         workflowStateId: resolvedWorkflowStateId,
         priority,
+        ...(taskKind ? { taskKind } : {}),
         dueAt: dateEndIso(dueDate || null),
         startAt: dateStartIso(draft?.startDate ?? null),
         estimatePoints: draft?.estimatePoints ?? null,
@@ -368,6 +383,27 @@ export function TaskQuickCreate({
               options={project.workflowStates
                 .filter((state) => !state.archived)
                 .map((state) => ({ value: state.id, label: workflowStateLabel(state, projectT) }))}
+            />
+            <SelectChip
+              icon={<IconCategory className="size-3.5" />}
+              value={taskKind}
+              label={taskKind ? t(CREW_TASK_KIND_MESSAGE_KEYS[taskKind]) : t("taskKindLabel")}
+              ariaLabel={t("taskKindLabel")}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                const next = value as CrewTaskKind | "";
+                setTaskKind(next);
+                if (!next || title.trim()) return;
+                const template = (templates.data?.items ?? []).find((item) => item.kind === next);
+                if (template?.title) setTitle(template.title);
+              }}
+              options={[
+                { value: "", label: t("taskKindUnset") },
+                ...CREW_TASK_KINDS.map((kind) => ({
+                  value: kind,
+                  label: t(CREW_TASK_KIND_MESSAGE_KEYS[kind]),
+                })),
+              ]}
             />
             <SelectChip
               icon={<IconFlag3 className="size-3.5" />}

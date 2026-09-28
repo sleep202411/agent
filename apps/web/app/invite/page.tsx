@@ -52,6 +52,18 @@ function getPollInterval(pollCount: number): number {
 // ─── Page ──────────────────────────────────────────────────────────
 
 export default function InvitePage() {
+  const params = useSearchParams();
+  const locale = useLocale();
+  const scope = JSON.stringify([
+    params?.get("code"),
+    params?.get("projectId"),
+    params?.get("worldId"),
+    locale,
+  ]);
+  return <InviteFlow key={scope} />;
+}
+
+function InviteFlow() {
   const t = useTranslations("invite");
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -97,6 +109,7 @@ export default function InvitePage() {
 
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCountRef = useRef(0);
+  const flowActiveRef = useRef(true);
 
   // Stop polling; called on unmount + on any successful navigation.
   const stopPolling = useCallback(() => {
@@ -106,13 +119,20 @@ export default function InvitePage() {
     }
   }, []);
 
-  useEffect(() => () => stopPolling(), [stopPolling]);
+  useEffect(() => {
+    flowActiveRef.current = true;
+    return () => {
+      flowActiveRef.current = false;
+      stopPolling();
+    };
+  }, [stopPolling]);
 
   // Navigate to the crew workspace. If worldId is still unknown, try one
   // more detail fetch to resolve it before redirecting — the legacy page
   // does the same bail-out.
   const goToWorkspace = useCallback(
     async (pid: string, wid: string) => {
+      if (!flowActiveRef.current) return;
       stopPolling();
       if (!pid) {
         router.push("/");
@@ -129,6 +149,7 @@ export default function InvitePage() {
           // Soft fail — still navigate, workspace can resolve its own worldId.
         }
       }
+      if (!flowActiveRef.current) return;
       // Destination mirrors legacy `/project/workspace?projectId=X&worldId=Y`
       // which renders the storyboard editor in the studio workspace
       // (not `/crews/[id]/workspace`, which is the team dashboard).
@@ -160,14 +181,16 @@ export default function InvitePage() {
   }, []);
 
   const startPolling = useCallback(() => {
-    if (pollCountRef.current >= MAX_POLL_COUNT) return;
+    if (!flowActiveRef.current || pollCountRef.current >= MAX_POLL_COUNT) return;
 
     const interval = getPollInterval(pollCountRef.current);
     pollTimerRef.current = setTimeout(async () => {
+      if (!flowActiveRef.current) return;
       pollCountRef.current += 1;
       const pid = projectId;
       if (!pid) return;
       const resolvedWorldId = await checkProjectJoined(pid);
+      if (!flowActiveRef.current) return;
       if (resolvedWorldId !== null) {
         void goToWorkspace(pid, resolvedWorldId || worldId);
       } else if (pollCountRef.current < MAX_POLL_COUNT) {
@@ -217,42 +240,46 @@ export default function InvitePage() {
 
   // ─── Actions ────────────────────────────────────────────────────
   const handleApply = async () => {
-    if (applying || !inviteCode) return;
+    if (!flowActiveRef.current || applying || !inviteCode) return;
     setApplying(true);
     try {
       await backendApi.post(
         `/api/user/projectMember/applyInvite/${encodeURIComponent(inviteCode)}`
       );
+      if (!flowActiveRef.current) return;
       setUiState("applied");
       pollCountRef.current = 0;
       startPolling();
     } catch (err) {
+      if (!flowActiveRef.current) return;
       if (isUnauthorized(err)) {
         promptSignIn();
         return;
       }
       toast.error(t("applyFailed"));
     } finally {
-      setApplying(false);
+      if (flowActiveRef.current) setApplying(false);
     }
   };
 
   const handleManualCheck = async () => {
-    if (checking || !projectId) return;
+    if (!flowActiveRef.current || checking || !projectId) return;
     setChecking(true);
     try {
       const resolvedWorldId = await checkProjectJoined(projectId);
+      if (!flowActiveRef.current) return;
       if (resolvedWorldId !== null) {
         void goToWorkspace(projectId, resolvedWorldId || worldId);
       } else {
         toast(t("notApproved"));
       }
     } finally {
-      setChecking(false);
+      if (flowActiveRef.current) setChecking(false);
     }
   };
 
   const handleGoHome = () => {
+    flowActiveRef.current = false;
     stopPolling();
     router.push("/");
   };

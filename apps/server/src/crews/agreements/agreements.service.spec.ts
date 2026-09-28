@@ -223,6 +223,7 @@ describe('CrewAgreementsService', () => {
       }),
     ).rejects.toMatchObject({
       response: expect.objectContaining({
+        code: 'CREW_AGREEMENT_CURSOR_INVALID',
         message: expect.stringContaining('cursor is invalid'),
       }),
     });
@@ -526,13 +527,15 @@ describe('CrewAgreementsService', () => {
     });
     t.prisma.crewAgreement.findUnique.mockResolvedValue(sent);
     t.prisma.crewAgreement.update.mockResolvedValue(completed);
-    t.prisma.crewAgreement.findUniqueOrThrow.mockResolvedValue({
-      ...completed,
-      archiveJob: {
-        status: 'pending',
-        attempt: 0,
-      },
-    });
+    t.prisma.crewAgreement.findUniqueOrThrow
+      .mockResolvedValueOnce(sent)
+      .mockResolvedValue({
+        ...completed,
+        archiveJob: {
+          status: 'pending',
+          attempt: 0,
+        },
+      });
 
     await expect(
       t.service.sync(AGREEMENT_ID, MEMBER_ID),

@@ -28,8 +28,6 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", async () => {
       mutateAsync: state.updateProject,
       isPending: false,
     }),
-    useCrewStudioProjectOptions: () => ({ data: undefined, isLoading: false, isError: false }),
-    useLinkCrewStudioProject: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useCreateCrewProductionResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useDeleteCrewProductionResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
   };
@@ -78,18 +76,20 @@ const overview: CrewProductionOverviewDTO = {
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
-function renderHeader(canEditCrewInfo = true) {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+function renderHeader(canEditCrewInfo = true, version = 7, name = "Original crew") {
+  if (!container) {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  }
   act(() =>
     root!.render(
       <ProductionProjectHeader
         crewId="crew-1"
-        crewName="Original crew"
+        crewName={name}
         crewSummary="Original summary"
         crewLogo="logo.jpg"
-        crewVersion={7}
+        crewVersion={version}
         canEditCrewInfo={canEditCrewInfo}
         members={[]}
         displays={new Map()}
@@ -172,4 +172,104 @@ describe("ProductionProjectHeader project identity", () => {
         ?.readOnly
     ).toBe(true);
   });
+});
+
+it.each([
+  ["projectInfo.nameLabel", "New crew name", "name"],
+  ["projectInfo.summaryLabel", "New project summary", "tagline"],
+])("retains a failed %s draft and allows retry without retyping", async (label, draft, field) => {
+  renderHeader();
+  state.updateCrew.mockRejectedValueOnce(new Error("Connection interrupted"));
+  const input = container!.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  await act(async () => {
+    input.focus();
+    changeInput(input, draft);
+  });
+  await act(async () => input.blur());
+  expect(input.value).toBe(draft);
+  expect(state.updateCrew).toHaveBeenCalledTimes(1);
+  await act(async () => input.focus());
+  await act(async () => input.blur());
+  expect(state.updateCrew).toHaveBeenCalledTimes(2);
+  expect(state.updateCrew).toHaveBeenLastCalledWith({
+    id: "crew-1",
+    expectedVersion: 7,
+    [field]: draft,
+  });
+});
+
+it("still lets Escape discard a failed draft without sending another request", async () => {
+  renderHeader();
+  state.updateCrew.mockRejectedValueOnce(new Error("Connection interrupted"));
+  const input = container!.querySelector<HTMLInputElement>(
+    'input[aria-label="projectInfo.nameLabel"]'
+  )!;
+  await act(async () => {
+    input.focus();
+    changeInput(input, "Unsaved name");
+  });
+  await act(async () => input.blur());
+  await act(async () => {
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(input.value).toBe("Original crew");
+  expect(state.updateCrew).toHaveBeenCalledTimes(1);
+});
+
+it("preserves a header draft and its version across refresh and failed retries", async () => {
+  state.updateCrew.mockRejectedValue(new Error("Conflict"));
+  renderHeader();
+  const input = container!.querySelector<HTMLInputElement>(
+    'input[aria-label="projectInfo.nameLabel"]'
+  )!;
+  act(() => {
+    input.focus();
+    changeInput(input, "My draft");
+  });
+  renderHeader(true, 8, "Collaborator name");
+  await act(async () => input.blur());
+  expect(state.updateCrew).toHaveBeenLastCalledWith({
+    id: "crew-1",
+    expectedVersion: 7,
+    name: "My draft",
+  });
+  renderHeader(true, 9, "Another name");
+  expect(input.value).toBe("My draft");
+  await act(async () => {
+    input.focus();
+    input.blur();
+  });
+  expect(state.updateCrew).toHaveBeenLastCalledWith({
+    id: "crew-1",
+    expectedVersion: 7,
+    name: "My draft",
+  });
+  act(() => {
+    input.focus();
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(input.value).toBe("Another name");
+  await act(async () => {
+    input.focus();
+    changeInput(input, "Fresh draft");
+    input.blur();
+  });
+  expect(state.updateCrew).toHaveBeenLastCalledWith({
+    id: "crew-1",
+    expectedVersion: 9,
+    name: "Fresh draft",
+  });
+});
+
+it("does not save an untouched focused field over a background update", async () => {
+  renderHeader();
+  const input = container!.querySelector<HTMLInputElement>(
+    'input[aria-label="projectInfo.nameLabel"]'
+  )!;
+  act(() => input.focus());
+  renderHeader(true, 8, "Collaborator name");
+  await act(async () => input.blur());
+  expect(state.updateCrew).not.toHaveBeenCalled();
+  expect(input.value).toBe("Collaborator name");
 });

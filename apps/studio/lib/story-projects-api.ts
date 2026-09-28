@@ -1,5 +1,13 @@
 import { api, ApiRequestError } from "@/lib/api";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS, type StoryVisualStyleSkillSlug } from "@repo/shared";
+import type {
+  StoryCondition,
+  StoryEndingKind,
+  StoryExitRoute,
+  StoryRouteTarget,
+  StoryStateEffect,
+  StoryStateValueType,
+} from "@repo/shared/story-stats";
 import {
   StoryPlotImportError,
   type StoryPlotImport,
@@ -131,16 +139,40 @@ export function storyBillingBalanceQueryKey(projectId: string) {
   return ["story-studio", "billing-balance", projectId] as const;
 }
 
+export interface StoryBibleStateVariable {
+  key: string;
+  name: Record<string, string>;
+  valueType: StoryStateValueType;
+  initialValue: number | boolean;
+  note?: string;
+}
+
+export interface StoryBibleEnding {
+  endingId: string;
+  title: Record<string, string>;
+  kind: StoryEndingKind;
+}
+
+export type StoryBibleWriterPatch = Partial<{
+  logline: string;
+  synopsis: string;
+  stateVariables: StoryBibleStateVariable[];
+  endings: StoryBibleEnding[];
+}>;
+
 export interface StoryGraphChoice {
   choiceId: string;
   label: Record<string, string>;
-  nextNodeId: string | null;
+  effects?: StoryStateEffect[];
+  visibleWhen?: StoryCondition;
+  target: StoryRouteTarget | null;
 }
 
 export type StoryInteractionAction =
-  | { kind: "continue" }
-  | { kind: "seek"; timeMs: number }
-  | { kind: "goto"; nodeId: string };
+  | { kind: "continue"; effects?: StoryStateEffect[] }
+  | { kind: "pause"; effects?: StoryStateEffect[] }
+  | { kind: "seek"; timeMs: number; effects?: StoryStateEffect[] }
+  | { kind: "goto"; target: StoryRouteTarget; effects?: StoryStateEffect[] };
 
 export type StoryInteractionTrigger =
   | { kind: "tap" }
@@ -177,6 +209,8 @@ export interface StoryHotspotInteraction {
    * window end (legacy cut-on-resolution behavior).
    */
   branchAtMs?: number;
+  /** Omitted means the clip keeps playing through the window. */
+  timing?: "window" | "hold";
   outcomes: StoryInteractionOutcomes;
 }
 
@@ -197,28 +231,18 @@ export interface StoryClipGraphNode {
   name?: string;
   description?: string;
   interactions: StoryHotspotInteraction[];
-  exit: { kind: "auto"; nextNodeId: string | null } | StoryChoiceExit;
-}
-
-export interface StoryWorldGraphNode {
-  /** Authoring price; omitted means free. Currency is community_point. */
-  communityPointPrice?: number;
-  kind: "world";
-  nodeId: string;
-  worldId: string | null;
-  name?: string;
-  entryInstruction?: string;
-  maxExperienceSeconds: 60 | 90 | 120;
-  exit: { kind: "auto"; nextNodeId: string | null };
+  onEnterEffects?: StoryStateEffect[];
+  exit: { kind: "auto"; routes: StoryExitRoute[] } | StoryChoiceExit;
 }
 
 export interface StoryDecisionGraphNode {
   kind: "decision";
   nodeId: string;
+  onEnterEffects?: StoryStateEffect[];
   exit: StoryChoiceExit;
 }
 
-export type StoryGraphNode = StoryClipGraphNode | StoryWorldGraphNode | StoryDecisionGraphNode;
+export type StoryGraphNode = StoryClipGraphNode | StoryDecisionGraphNode;
 
 export interface InteractiveStoryDraftContent {
   storyBible: {
@@ -233,6 +257,8 @@ export interface InteractiveStoryDraftContent {
       /** Voice-clone sample (音色), hard-capped at 5 seconds. */
       voice: { mediaAssetId: string; url: string; durationMs: number } | null;
     }>;
+    stateVariables?: StoryBibleStateVariable[];
+    endings?: StoryBibleEnding[];
   };
   graph: { entryNodeId: string | null; nodes: StoryGraphNode[] };
   productionNotes: string[];
@@ -345,8 +371,18 @@ export interface StoryBuildDiagnostic {
   severity: "error" | "warning";
   code: string;
   message: string;
-  entityType: "revision" | "clip" | "reference" | "choice" | "asset" | null;
+  entityType: "revision" | "node" | "clip" | "reference" | "choice" | "asset" | null;
   entityId: string | null;
+  chapterId?: string;
+  details?: {
+    kind: "state-effect-type";
+    nodeTitle: string;
+    choiceLabel: string | null;
+    effectIndex: number;
+    variableName: string;
+    operation: "add" | "set";
+    variableType: "number" | "boolean";
+  };
 }
 
 export interface StoryBuildPathReport {
@@ -521,11 +557,13 @@ export async function listStoryProjects(query: {
 
 export async function getStoryWorkbench(
   projectId: string,
-  chapterId?: string
+  chapterId?: string,
+  signal?: AbortSignal
 ): Promise<StoryWorkbench> {
   const workbench = await api.get<StoryWorkbench>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/workbench`,
     {
+      signal,
       params: chapterId ? { chapterId } : undefined,
       requestScope: "project",
     }
@@ -587,11 +625,12 @@ export async function archiveStoryChapter(
 
 export async function getStoryCanvasLayout(
   projectId: string,
-  chapterId: string
+  chapterId: string,
+  signal?: AbortSignal
 ): Promise<StoryCanvasLayout> {
   return api.get<StoryCanvasLayout>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/canvas-layout`,
-    { requestScope: "project" }
+    { requestScope: "project", signal }
   );
 }
 
@@ -612,11 +651,12 @@ export async function getStoryCandidateAssets(
 
 export async function addStoryCandidateAsset(
   projectId: string,
-  mediaAssetId: string
+  mediaAssetId: string,
+  signal?: AbortSignal
 ): Promise<StoryCandidateAsset> {
   const value = await api.put<unknown>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/candidate-assets/${encodeURIComponent(mediaAssetId)}`,
-    { requestScope: "project" }
+    { requestScope: "project", signal }
   );
   assertStoryCandidateAsset(value);
   return value;
@@ -773,12 +813,17 @@ export async function getStoryBuild(projectId: string, buildId: string): Promise
 
 export async function getStoryWorkingPreview(
   projectId: string,
-  chapterId?: string
+  chapterId?: string,
+  sceneId?: string
 ): Promise<StoryWorkingPreview> {
+  const params = {
+    ...(chapterId ? { chapterId } : {}),
+    ...(sceneId ? { sceneId } : {}),
+  };
   return api.get<StoryWorkingPreview>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/working-preview`,
     {
-      ...(chapterId ? { params: { chapterId } } : {}),
+      ...(Object.keys(params).length > 0 ? { params } : {}),
       requestScope: "project",
     }
   );

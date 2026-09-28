@@ -1,3 +1,4 @@
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -13,6 +14,12 @@ const state = vi.hoisted(() => ({
   nextPage: vi.fn(),
   patch: vi.fn(),
   owner: false,
+  quoteFee: null as string | null,
+  canReview: false,
+  canSubmitAssigned: true,
+  canComment: true,
+  canWork: true,
+  status: "open" as "open" | "submitted",
   custom: false,
   customValue: "custom-original",
   limit: null as number | null,
@@ -27,10 +34,35 @@ const state = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
+  CREW_TASK_KINDS: [
+    "script",
+    "gameplay",
+    "plot_tree",
+    "art",
+    "storyboard",
+    "voice",
+    "music",
+    "edit",
+    "qa",
+    "other",
+  ],
+  CREW_TASK_KIND_MESSAGE_KEYS: {
+    script: "taskKindScript",
+    gameplay: "taskKindGameplay",
+    plot_tree: "taskKindPlotTree",
+    art: "taskKindArt",
+    storyboard: "taskKindStoryboard",
+    voice: "taskKindVoice",
+    music: "taskKindMusic",
+    edit: "taskKindEdit",
+    qa: "taskKindQa",
+    other: "taskKindOther",
+  },
   useUpdateCrewTaskComment: () => ({ mutateAsync: state.update, isPending: false }),
   useDeleteCrewTaskComment: () => ({ mutateAsync: state.remove, isPending: false }),
   useCreateCrewTaskComment: () => ({ mutateAsync: state.create, isPending: false }),
   useUpdateCrewTask: () => ({ mutateAsync: state.patch, isPending: false }),
+  useSetTaskDeliveryFolder: () => ({ mutateAsync: state.patch, isPending: false }),
   useCrewTaskTimeline: () => ({
     data: { pages: [{ items: state.items }] },
     isError: state.timelineError,
@@ -53,9 +85,27 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useCrewEpisodes: () => ({ data: [] }),
   useCrewTaskOptions: () => ({ data: [] }),
 }));
+const attachmentQuery = vi.hoisted(() => ({
+  data: { items: [] as Array<{ id: string; name: string }> },
+  hasNextPage: false,
+  isLoading: false,
+  isFetching: false,
+  isError: false,
+  isFetchNextPageError: false,
+  error: null as Error | null,
+  fetchNextPage: vi.fn(),
+  refetch: vi.fn(),
+}));
 vi.mock("../../_hooks/use-crew-assets", () => ({
   useCrewAssetContext: () => ({ data: { capabilities: { upload: true } } }),
-  useCrewAssets: () => ({ data: { items: [] } }),
+  useCrewAssets: () => attachmentQuery,
+  useCrewAssetFolders: () => ({
+    data: [] as Array<{ id: string; name: string; permissions: string[] }>,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
   discardPendingCrewAssetUpload: state.discard,
 }));
 vi.mock("@/src/lib/media-upload", () => ({ uploadFileViaSignedUrl: state.upload }));
@@ -63,9 +113,16 @@ vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ displayNameOf: (id: stri
 vi.mock("@/app/(site)/crews/_hooks/use-position-label", () => ({
   useCrewMemberPositionLabel: () => () => "member",
 }));
+vi.mock("@/app/(site)/crews/_components/task-agreed-fee", () => ({
+  TaskAgreedFee: ({ onUse }: { onUse: (currency: "USD", amount: string) => void }) => (
+    <button onClick={() => onUse("USD", state.quoteFee!)}>Use agreed fee</button>
+  ),
+}));
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./delete-task-button", () => ({ DeleteTaskButton: () => null }));
-vi.mock("./task-review-form", () => ({ TaskReviewForm: () => null }));
+vi.mock("./task-review-form", () => ({
+  TaskReviewForm: () => <div data-testid="task-review-form" />,
+}));
 vi.mock("sonner", () => ({ toast: { success: state.success, error: state.error } }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 state.discard.mockResolvedValue(undefined);
@@ -81,7 +138,7 @@ async function render(id = "task", account = "alice") {
           {
             id,
             crewId: "crew",
-            status: "open",
+            status: state.status,
             workflowState: { systemKey: "open", name: "Open" },
             title: state.title,
             description: "",
@@ -96,10 +153,13 @@ async function render(id = "task", account = "alice") {
           } as unknown as CrewTaskDTO
         }
         viewerUserId={account}
-        members={[]}
+        members={state.quoteFee === null ? [] : [{ id: "membership", userId: "member" } as never]}
         displays={new Map()}
         isOwner={state.owner}
-        canWork={true}
+        canReview={state.canReview}
+        canWork={state.canWork}
+        canSubmitAssigned={state.canSubmitAssigned}
+        canComment={state.canComment}
         onSubmit={vi.fn()}
         onReviewed={vi.fn()}
       />
@@ -145,11 +205,22 @@ afterEach(async () => {
   await act(async () => root.unmount());
   root = createRoot(container);
   vi.clearAllMocks();
+  attachmentQuery.data = { items: [] };
+  attachmentQuery.hasNextPage = false;
+  attachmentQuery.isError = false;
+  attachmentQuery.error = null;
+  attachmentQuery.isFetchNextPageError = false;
   state.items = [];
   state.timelineError = false;
   state.pageError = false;
   state.fetching = false;
   state.owner = false;
+  state.quoteFee = null;
+  state.canReview = false;
+  state.canSubmitAssigned = true;
+  state.canComment = true;
+  state.canWork = true;
+  state.status = "open";
   state.custom = false;
   state.customValue = "custom-original";
   state.limit = null;
@@ -553,3 +624,222 @@ vi.mock("@/app/(site)/crews/_components/accountability/task-commitments", () => 
   TaskCommitments: () => null,
 }));
 vi.mock("./task-delivery-template", () => ({ TaskDeliveryTemplatePanel: () => null }));
+
+it.each([
+  [false, true, "submitted", true],
+  [true, false, "submitted", false],
+  [true, true, "submitted", true],
+  [false, false, "submitted", false],
+  [false, true, "open", false],
+] as const)(
+  "review visibility with manage=%s review=%s status=%s",
+  async (manage, review, status, visible) => {
+    state.owner = manage;
+    state.canReview = review;
+    state.status = status;
+    await render();
+    expect(!!container.querySelector('[data-testid="task-review-form"]')).toBe(visible);
+  }
+);
+
+it("removes the review form when review permission is revoked in the same session", async () => {
+  state.owner = true;
+  state.canReview = true;
+  state.status = "submitted";
+  await render();
+  expect(container.querySelector('[data-testid="task-review-form"]')).not.toBeNull();
+  state.canReview = false;
+  await render();
+  expect(container.querySelector('[data-testid="task-review-form"]')).toBeNull();
+});
+
+it.each([
+  [true, true, "open", true],
+  [true, false, "open", false],
+  [false, true, "open", false],
+  [true, true, "submitted", false],
+] as const)(
+  "submission visibility with work=%s submit=%s status=%s",
+  async (work, submit, status, visible) => {
+    state.canWork = work;
+    state.canSubmitAssigned = submit;
+    state.status = status;
+    await render();
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (item) => item.textContent?.trim() === "submit"
+    );
+    expect(!!button).toBe(visible);
+  }
+);
+
+it("removes submission when permission is revoked without changing task access", async () => {
+  await render();
+  const hasSubmit = () =>
+    Array.from(container.querySelectorAll("button")).some(
+      (item) => item.textContent?.trim() === "submit"
+    );
+  expect(hasSubmit()).toBe(true);
+  state.canSubmitAssigned = false;
+  await render();
+  expect(hasSubmit()).toBe(false);
+  expect(field()).not.toBeNull();
+});
+
+it.each([
+  [false, false, "alice", false],
+  [true, false, "bob", false],
+  [false, true, "alice", true],
+  [true, true, "bob", true],
+  [false, true, "bob", false],
+] as const)(
+  "comment controls with manage=%s comment=%s viewer=%s",
+  async (manage, allowed, viewer, canEdit) => {
+    comment();
+    state.owner = manage;
+    state.canComment = allowed;
+    await render("task", viewer);
+    expect(!!field()).toBe(allowed);
+    expect(row().textContent).toContain("original");
+    expect(!!row().querySelector('[aria-label="editComment"]')).toBe(canEdit);
+    expect(!!row().querySelector('[aria-label="deleteComment"]')).toBe(canEdit);
+  }
+);
+
+it("removes open comment editors and composer when permission is revoked", async () => {
+  comment();
+  await render();
+  await edit();
+  expect(row().querySelector("textarea")).not.toBeNull();
+  state.canComment = false;
+  await render();
+  expect(field()).toBeNull();
+  expect(row().querySelector("textarea")).toBeNull();
+  expect(row().textContent).toContain("original");
+  expect(state.update).not.toHaveBeenCalled();
+});
+
+it("loads older Crew files for a task comment and submits the chosen attachment", async () => {
+  attachmentQuery.data = { items: [{ id: "new-file", name: "Recent file" }] };
+  attachmentQuery.hasNextPage = true;
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="chooseCrewAsset"]')!.click()
+  );
+  const more = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === "loadMore"
+  );
+  expect(more).toBeDefined();
+  await act(async () => more!.click());
+  expect(attachmentQuery.fetchNextPage).toHaveBeenCalledWith({ cancelRefetch: false });
+  attachmentQuery.data.items.push({ id: "old-file", name: "Older file" });
+  await render();
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((b) => b.textContent?.trim() === "Older file")!
+      .click()
+  );
+  state.create.mockResolvedValue(undefined);
+  await act(async () => send());
+  expect(state.create).toHaveBeenCalledWith(
+    expect.objectContaining({ attachments: [{ source: "asset", assetNodeId: "old-file" }] })
+  );
+});
+it("shows attachment read errors instead of claiming the Crew has no files", async () => {
+  attachmentQuery.isError = true;
+  attachmentQuery.error = new Error("Files unavailable");
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="chooseCrewAsset"]')!.click()
+  );
+  expect(container.textContent).toContain("Files unavailable");
+  expect(container.textContent).not.toContain("noRecentAssets");
+});
+
+it("restarts comment attachment discovery after an invalid cursor", async () => {
+  attachmentQuery.isError = true;
+  attachmentQuery.isFetchNextPageError = true;
+  attachmentQuery.error = new CrewApiError(400, {
+    code: "CREW_ASSET_CURSOR_INVALID",
+    message: "Restart assets",
+  });
+  await render();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="chooseCrewAsset"]')!.click()
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((b) => b.textContent?.trim() === "retry")!
+      .click()
+  );
+  expect(attachmentQuery.refetch).toHaveBeenCalledTimes(1);
+  expect(attachmentQuery.fetchNextPage).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["123.45", 12345],
+  ["0.00", null],
+] as const)("uses agreed fee %s in the actual assignment payload", async (fee, minor) => {
+  state.owner = true;
+  state.quoteFee = fee;
+  state.patch.mockResolvedValue(undefined);
+  await render();
+  await act(async () => textButton("unassigned").click());
+  const panel = document.querySelector('[data-slot="popover-content"]')!;
+  await act(async () => (panel.querySelector('[role="checkbox"]') as HTMLButtonElement).click());
+  await act(async () =>
+    [...panel.querySelectorAll("button")].find((b) => b.textContent === "Use agreed fee")!.click()
+  );
+  await act(async () =>
+    [...panel.querySelectorAll("button")].find((b) => b.textContent === "save")!.click()
+  );
+  expect(state.patch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: expect.objectContaining({
+        assignees: [{ userId: "member", currency: "USD", rewardAmountMinor: minor }],
+      }),
+    })
+  );
+});
+
+vi.mock("@/app/(site)/crews/_components/task-extension-panel", () => ({
+  TaskExtensionPanel: () => null,
+}));
+
+vi.mock("@/app/(site)/crews/_components/task-closure-control", () => ({
+  TaskClosureControl: () => null,
+}));
+
+it("shows the recorded closure reason without relabelling generic status changes", async () => {
+  state.items = [
+    {
+      id: "closure-event",
+      kind: "task.updated",
+      actorUserId: "alice",
+      createdAt: new Date().toISOString(),
+      payload: {
+        closureOutcome: "cancelled_without_financial_settlement",
+        closure: { reason: "Project direction changed" },
+      },
+    } as unknown as CrewTaskTimelineItemDTO,
+  ];
+  await render();
+  expect(container.textContent).toContain("activity.reasonedClosure");
+  expect(container.textContent).toContain("Project direction changed");
+  state.items = [
+    {
+      ...state.items[0]!,
+      payload: { changedFields: { status: "cancelled" } },
+    } as CrewTaskTimelineItemDTO,
+  ];
+  await render();
+  expect(container.textContent).not.toContain("activity.reasonedClosure");
+  expect(container.textContent).not.toContain("Project direction changed");
+});
+
+vi.mock("@/app/(site)/crews/_components/task-feedback-panel", () => ({
+  TaskFeedbackPanel: () => null,
+}));
+
+vi.mock("@/app/(site)/crews/_components/task-dispute-control", () => ({
+  TaskDisputeControl: () => null,
+}));

@@ -80,6 +80,9 @@ function build() {
     crewPayoutEvent: { create: jest.fn().mockResolvedValue({}) },
   };
   const prisma = {
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValue([{ confirmed: '0', reserved: '0', paid: '0' }]),
     crewMember: {
       findFirst: jest
         .fn()
@@ -338,12 +341,9 @@ describe('CrewPayoutsService', () => {
 
   it('reports confirmed, reserved, paid and available amounts in one currency', async () => {
     const t = build();
-    t.prisma.crewEarningEntry.aggregate.mockResolvedValue({
-      _sum: { amountMinor: 2000n },
-    });
-    t.prisma.crewPayoutAllocation.aggregate
-      .mockResolvedValueOnce({ _sum: { amountMinor: 300n } })
-      .mockResolvedValueOnce({ _sum: { amountMinor: 700n } });
+    t.prisma.$queryRaw.mockResolvedValue([
+      { confirmed: '2000', reserved: '300', paid: '700' },
+    ]);
 
     await expect(
       t.service.list(CREW_ID, MEMBER_USER_ID, {
@@ -411,7 +411,10 @@ describe('Personal payout history', () => {
           cursor: PAYOUT_ID,
         }),
       ),
-    ).rejects.toThrow('cursor');
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_PAYOUT_CURSOR_INVALID' },
+      status: 400,
+    });
     expect(f.prisma.crewPayout.findMany).not.toHaveBeenCalled();
   });
 });

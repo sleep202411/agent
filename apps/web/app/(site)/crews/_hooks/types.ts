@@ -86,6 +86,19 @@ export interface CreateCrewInput {
   socialLinks?: SocialLink[];
   showcaseWorks?: ShowcaseWork[];
   productionTemplateLocale?: "en-US" | "zh-CN" | "zh-HK";
+  productionKind?: "interactive_film" | "series";
+  studioWorkspaceId?: string | null;
+  createStudioWorkspace?: { name: string };
+  plotTree?: unknown;
+  storyboardClipsByNode?: Record<
+    string,
+    Array<{
+      clipId: string;
+      title: string;
+      order: number;
+      durationSeconds: number | null;
+    }>
+  >;
 }
 
 export interface UpdateCrewInput extends Partial<
@@ -112,6 +125,8 @@ export interface SalaryInput {
 }
 
 export interface CreatePositionInput {
+  taskId?: string;
+  recruitmentVisibility?: "public" | "private";
   positionType: string;
   description: string;
   targetCount: number;
@@ -129,7 +144,9 @@ export interface CreatePositionInput {
   closeDate?: string | null;
 }
 
-export interface UpdatePositionInput extends Partial<CreatePositionInput> {
+export interface UpdatePositionInput extends Partial<
+  Omit<CreatePositionInput, "taskId" | "recruitmentVisibility">
+> {
   status?: "open" | "frozen";
 }
 
@@ -165,6 +182,41 @@ export type CrewTaskStatus =
   | "revision_requested"
   | "approved"
   | "cancelled";
+export type CrewTaskKind =
+  | "script"
+  | "gameplay"
+  | "plot_tree"
+  | "art"
+  | "storyboard"
+  | "voice"
+  | "music"
+  | "edit"
+  | "qa"
+  | "other";
+export const CREW_TASK_KINDS: CrewTaskKind[] = [
+  "script",
+  "gameplay",
+  "plot_tree",
+  "art",
+  "storyboard",
+  "voice",
+  "music",
+  "edit",
+  "qa",
+  "other",
+];
+export const CREW_TASK_KIND_MESSAGE_KEYS: Record<CrewTaskKind, string> = {
+  script: "taskKindScript",
+  gameplay: "taskKindGameplay",
+  plot_tree: "taskKindPlotTree",
+  art: "taskKindArt",
+  storyboard: "taskKindStoryboard",
+  voice: "taskKindVoice",
+  music: "taskKindMusic",
+  edit: "taskKindEdit",
+  qa: "taskKindQa",
+  other: "taskKindOther",
+};
 export type CrewTaskPriority = "low" | "normal" | "high" | "urgent";
 export type CrewTaskViewLayout = "list" | "board";
 export type CrewTaskCompletedMode = "all" | "recent" | "hidden";
@@ -263,6 +315,14 @@ export interface CrewTaskViewDTO {
   createdByUserId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CrewTaskKindTemplateDTO {
+  id: string;
+  kind: CrewTaskKind;
+  name: string;
+  title: string;
+  description: string;
 }
 
 export interface CrewTaskProjectDTO {
@@ -445,6 +505,7 @@ export interface CrewTaskDTO {
   number: number;
   title: string;
   description: string;
+  taskKind?: CrewTaskKind | null;
   status: CrewTaskStatus;
   workflowStateId: string;
   workflowState: CrewTaskWorkflowStateDTO;
@@ -473,6 +534,8 @@ export interface CrewTaskDTO {
   cycle: CrewTaskCycleDTO | null;
   episodeId: string | null;
   episode: Pick<CrewEpisodeDTO, "id" | "number" | "title" | "status"> | null;
+  deliveryFolder: { id: string; name: string } | null;
+  deliveryFields?: Array<{ type: string; required: boolean }> | null;
   labels: CrewTaskLabelDTO[];
   version: number;
   canvasProjectId: string | null;
@@ -604,6 +667,7 @@ export interface UpdateCrewTaskInput {
   customFieldValues?: Array<{ fieldId: string; value: CrewTaskCustomValue }>;
   labelIds?: string[];
   workflowStateId?: string;
+  taskKind?: CrewTaskKind | null;
   assignees?: CreateCrewTaskInput["assignees"];
 }
 
@@ -641,6 +705,7 @@ export interface CreateCrewTaskInput {
   blockedByTaskIds?: string[];
   customFieldValues?: Array<{ fieldId: string; value: CrewTaskCustomValue }>;
   labelIds?: string[];
+  taskKind?: CrewTaskKind | null;
   assignees: Array<{
     userId: string;
     currency: "CNY" | "USD";
@@ -809,31 +874,6 @@ export interface CrewStudioProjectSummaryDTO {
   id: string;
   name: string;
   workspace: { id: string; name: string };
-}
-
-export type CrewStudioProjectDisabledReason = "already_linked" | "insufficient_permission";
-
-export interface CrewStudioProjectOptionDTO {
-  id: string;
-  name: string;
-  description: string | null;
-  selected: boolean;
-  selectable: boolean;
-  disabledReason: CrewStudioProjectDisabledReason | null;
-  linkedCrewName: string | null;
-}
-
-export interface CrewStudioProjectOptionsDTO {
-  linkedProjectId: string | null;
-  workspaces: Array<{
-    id: string;
-    name: string;
-    projects: CrewStudioProjectOptionDTO[];
-  }>;
-}
-
-export interface LinkCrewStudioProjectResult {
-  studioProject: CrewStudioProjectSummaryDTO | null;
 }
 
 export interface UpdateCrewProductionProjectInput {

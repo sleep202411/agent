@@ -1,3 +1,4 @@
+import { CDN_PURGE_LOCK_TTL_MS } from './media-worker-leases';
 import {
   Injectable,
   Logger,
@@ -26,7 +27,6 @@ import {
 
 const DEFAULT_INTERVAL_MS = 15_000;
 const DEFAULT_BATCH_SIZE = 25;
-const LOCK_TTL_MS = 2 * 60_000;
 
 type PurgeActionRow = MediaModerationAction & {
   placement: MediaObjectPlacement | null;
@@ -38,7 +38,8 @@ export class CdnPurgeWorkerService
 {
   private readonly logger = new Logger(CdnPurgeWorkerService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -47,6 +48,7 @@ export class CdnPurgeWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopped) return;
     if (process.env.MEDIA_CDN_PURGE_WORKER_ENABLED === 'false') return;
     const intervalMs = positiveInt(
       process.env.MEDIA_CDN_PURGE_WORKER_INTERVAL_MS,
@@ -59,66 +61,68 @@ export class CdnPurgeWorkerService
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.draining;
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
+    if (this.stopped) return;
+    if (this.draining) return this.draining;
+    this.draining = this.drain(batch).finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(batch: number): Promise<void> {
     try {
-      const claimed = await this.claim(batch);
-      for (const row of claimed) {
+      for (
+        let processed = 0;
+        processed < batch && !this.stopped;
+        processed += 1
+      ) {
+        const [row] = await this.claim(1);
+        if (!row || this.stopped) break;
         await this.purgeOne(row);
       }
     } catch (err) {
       this.logger.warn(`CDN purge drain failed: ${errorText(err)}`);
-    } finally {
-      this.draining = false;
     }
   }
 
   private async claim(batch: number): Promise<PurgeActionRow[]> {
     const now = new Date();
-    const lockCutoff = new Date(now.getTime() - LOCK_TTL_MS);
-    const candidates = await this.prisma.mediaModerationAction.findMany({
-      where: {
-        actionType: MediaModerationActionType.purge_cdn,
-        status: {
-          in: [
-            MediaModerationActionStatus.pending,
-            MediaModerationActionStatus.failed,
-          ],
-        },
-        deadAt: null,
-        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-        AND: [
-          {
-            OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }],
-          },
+    const lockCutoff = new Date(now.getTime() - CDN_PURGE_LOCK_TTL_MS);
+    const eligibility = {
+      actionType: MediaModerationActionType.purge_cdn,
+      status: {
+        in: [
+          MediaModerationActionStatus.pending,
+          MediaModerationActionStatus.failed,
         ],
       },
+      deadAt: null,
+      OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      AND: [
+        {
+          OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }],
+        },
+      ],
+    };
+    const candidates = await this.prisma.mediaModerationAction.findMany({
+      where: eligibility,
       orderBy: { createdAt: 'asc' },
       take: batch,
       select: { id: true },
     });
-    if (candidates.length === 0) return [];
+    if (this.stopped || candidates.length === 0) return [];
 
     const ids = candidates.map((row) => row.id);
     await this.prisma.mediaModerationAction.updateMany({
-      where: {
-        id: { in: ids },
-        actionType: MediaModerationActionType.purge_cdn,
-        status: {
-          in: [
-            MediaModerationActionStatus.pending,
-            MediaModerationActionStatus.failed,
-          ],
-        },
-        deadAt: null,
-        OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }],
-      },
+      where: { ...eligibility, id: { in: ids } },
       data: { lockedAt: now, lockedBy: POD_ID },
     });
 
@@ -126,6 +130,7 @@ export class CdnPurgeWorkerService
       where: {
         id: { in: ids },
         lockedBy: POD_ID,
+        lockedAt: now,
         deadAt: null,
       },
       include: { placement: true },
@@ -160,6 +165,7 @@ export class CdnPurgeWorkerService
           where: {
             id: row.id,
             lockedBy: POD_ID,
+            lockedAt: row.lockedAt,
             status: {
               in: [
                 MediaModerationActionStatus.pending,
@@ -209,6 +215,7 @@ export class CdnPurgeWorkerService
         where: {
           id: row.id,
           lockedBy: POD_ID,
+          lockedAt: row.lockedAt,
           status: {
             in: [
               MediaModerationActionStatus.pending,

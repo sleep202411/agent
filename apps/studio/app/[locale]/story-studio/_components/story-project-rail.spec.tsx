@@ -63,8 +63,10 @@ describe("StoryProjectRail", () => {
     );
     expect(items.map((item) => item.textContent?.trim())).toEqual([
       "sidebar.world",
+      "sidebar.stats",
       "sidebar.catalog",
       "chapters.action",
+      "sidebar.analytics",
       "label",
       "share",
     ]);
@@ -87,6 +89,9 @@ describe("StoryProjectRail", () => {
     await act(async () => byText("chapters.action")?.click());
     expect(useStoryProjectUiStore.getState().sidePanel).toBe("chapters");
 
+    await act(async () => byText("sidebar.stats")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBe("stats");
+
     await act(async () => byText("share")?.click());
     expect(useStoryProjectUiStore.getState().shareOpen).toBe(true);
     expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
@@ -105,6 +110,11 @@ describe("StoryProjectRail", () => {
     await act(async () => byText("sidebar.world")?.click());
     expect(useStoryProjectUiStore.getState().sidePanel).toBe("world");
     await act(async () => byText("sidebar.world")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
+
+    await act(async () => byText("sidebar.stats")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBe("stats");
+    await act(async () => byText("sidebar.stats")?.click());
     expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
 
     await act(async () => byText("sidebar.catalog")?.click());

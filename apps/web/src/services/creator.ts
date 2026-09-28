@@ -5,7 +5,6 @@
  */
 
 import { api } from "@/src/lib/api";
-import { defaultLocale, locales, type Locale } from "@/src/i18n/config";
 
 /**
  * Per-row info block as returned by `/user/list/user/info`. Mirrors the
@@ -58,36 +57,18 @@ export interface CreatorListResult {
   total: number;
 }
 
-function getAcceptLanguage(): Locale {
-  if (typeof document !== "undefined") {
-    const htmlLang = document.documentElement.lang;
-    if (htmlLang && locales.includes(htmlLang as Locale)) return htmlLang as Locale;
-  }
-  return defaultLocale;
-}
-
 /**
  * List users for the talent market. Backend expects
  * `application/x-www-form-urlencoded`, not JSON, and returns the page
  * data in `body.data` plus the total row count in `body.sum`. The
- * shared api client only surfaces `body.data`, so this call drops down
- * to raw `fetch` to keep `sum` for pagination.
+ * shared API client uses raw mode to retain `sum` for pagination while
+ * still rejecting HTTP and business-envelope errors.
  */
 export async function listCreators(params: CreatorListPayload = {}): Promise<CreatorListResult> {
-  const form = new URLSearchParams();
-  if (params.page !== undefined) form.append("page", String(params.page));
-  if (params.pageSize !== undefined) form.append("pageSize", String(params.pageSize));
-  const res = await fetch("/user/list/user/info", {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "accept-language": getAcceptLanguage(),
-    },
-    body: form.toString(),
+  const body = await api.post<{ data?: CreatorRow[]; sum?: number }>("/user/list/user/info", {
+    form: { page: params.page, pageSize: params.pageSize },
+    raw: true,
   });
-  if (!res.ok) return { list: [], total: 0 };
-  const body = (await res.json()) as { data?: CreatorRow[]; sum?: number };
   return { list: Array.isArray(body.data) ? body.data : [], total: body.sum ?? 0 };
 }
 
@@ -96,7 +77,7 @@ export async function listCreators(params: CreatorListPayload = {}): Promise<Cre
  * nickname server-side). Backend signature: `POST /user/search/users`
  * (`queryOtherUserInfo`) with `key` / `page` / `pageSize` as query params
  * (Spring `@RequestParam`), no body. Same `{ data, sum }` envelope as the
- * list endpoint, so we drop to raw `fetch` to keep `sum` for pagination —
+ * list endpoint, so we use raw API mode to keep `sum` for pagination —
  * mirroring `listCreators`. Rows map through the same `toCreator`, which
  * tolerates both `{ level, info }` and flat-info shapes.
  */
@@ -105,17 +86,10 @@ export async function searchCreators(params: {
   page?: number;
   pageSize?: number;
 }): Promise<CreatorListResult> {
-  const qs = new URLSearchParams();
-  qs.append("key", params.key);
-  if (params.page !== undefined) qs.append("page", String(params.page));
-  if (params.pageSize !== undefined) qs.append("pageSize", String(params.pageSize));
-  const res = await fetch(`/user/search/users?${qs.toString()}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "accept-language": getAcceptLanguage() },
-  });
-  if (!res.ok) return { list: [], total: 0 };
-  const body = (await res.json()) as { data?: CreatorRow[]; sum?: number; total?: number };
+  const body = await api.post<{ data?: CreatorRow[]; sum?: number; total?: number }>(
+    "/user/search/users",
+    { params, raw: true }
+  );
   const list = Array.isArray(body.data) ? body.data : [];
   return { list, total: body.sum ?? body.total ?? list.length };
 }

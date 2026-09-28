@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useQuery } from "@tanstack/react-query";
 import { backendApi, type Paginated } from "@/src/lib/api";
 
@@ -29,8 +30,9 @@ export const myProductsKeys = {
   page: (page: number, pageSize: number) => [...myProductsKeys.all, { page, pageSize }] as const,
 };
 
-async function fetchMyProducts(page: number, pageSize: number) {
+async function fetchMyProducts(page: number, pageSize: number, signal: AbortSignal) {
   return backendApi.post<Paginated<MyProduct>>("/api/user/world/list/myproduct", {
+    signal,
     data: { page, pageSize },
   });
 }
@@ -49,9 +51,12 @@ export function useMyProducts({
   page = 1,
   pageSize = 8,
 }: { page?: number; pageSize?: number } = {}) {
+  const { user } = useCurrentUser();
+  const viewer = user?.id ?? null;
   const query = useQuery({
-    queryKey: myProductsKeys.page(page, pageSize),
-    queryFn: () => fetchMyProducts(page, pageSize),
+    queryKey: [...myProductsKeys.page(page, pageSize), viewer],
+    enabled: !!viewer,
+    queryFn: ({ signal }) => fetchMyProducts(page, pageSize, signal),
   });
 
   return {
@@ -60,5 +65,6 @@ export function useMyProducts({
     isLoading: query.isLoading,
     isError: query.isError,
     error: query.error,
+    retry: query.refetch,
   };
 }

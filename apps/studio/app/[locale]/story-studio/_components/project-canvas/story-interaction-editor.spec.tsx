@@ -1,3 +1,4 @@
+import { TooltipProvider } from "@/components/ui/tooltip";
 // @vitest-environment jsdom
 
 import { act, useState } from "react";
@@ -6,6 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StoryClipGraphNode } from "@/lib/story-projects-api";
 import { StoryInteractionEditor } from "./story-interaction-editor";
 import type { StoryInteractionDraft } from "./story-interaction-types";
+
+const coverageFixture = vi.hoisted(() => ({
+  value: null as { previewVideoUrl: string; durationMs: number } | null,
+}));
+vi.mock("./story-canvas-storyboard-coverage", () => ({
+  useStoryboardNodeCoverage: () => coverageFixture.value,
+}));
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -62,6 +70,7 @@ describe("StoryInteractionEditor", () => {
   let root: Root;
 
   beforeEach(() => {
+    coverageFixture.value = null;
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     container = document.createElement("div");
     document.body.append(container);
@@ -81,20 +90,57 @@ describe("StoryInteractionEditor", () => {
     requiredElement(
       document.body.querySelector<HTMLButtonElement>('button[aria-label="newHotspot"]')
     );
-    expect(
-      requiredElement(document.body.querySelector<HTMLInputElement>('[data-position-field="x"]'))
-        .value
-    ).toBe("35.0");
-    expect(
-      requiredElement(document.body.querySelector<HTMLInputElement>('[data-position-field="y"]'))
-        .value
-    ).toBe("31.0");
+    expect(document.body.querySelector("[data-position-field]")).toBeNull();
     expect(document.body.textContent).toContain("0:00.0–0:02.0");
 
     const action = requiredElement(
       document.body.querySelector<HTMLSelectElement>('select[aria-label="successOutcome"]')
     );
     expect(action.value).toBe("continue");
+  });
+
+  it("moves an explicit branch time forward when the active window grows past it", async () => {
+    await renderEditor(root, [draft({ branchAtSeconds: 3 })]);
+    await changeEnd(5);
+    expect(document.body.querySelector<HTMLInputElement>("[data-branch-at]")?.value).toBe("5.0");
+  });
+
+  it("preserves a later branch time and keeps implicit branch times following the window", async () => {
+    await renderEditor(root, [draft({ branchAtSeconds: 8 })]);
+    await changeEnd(5);
+    expect(document.body.querySelector<HTMLInputElement>("[data-branch-at]")?.value).toBe("8.0");
+    await act(async () =>
+      root.render(
+        <TooltipProvider>
+          <ControlledEditor key="implicit" initialDrafts={[draft()]} onClose={vi.fn()} />
+        </TooltipProvider>
+      )
+    );
+    await changeEnd(5);
+    await changeEnd(2);
+    expect(document.body.querySelector<HTMLInputElement>("[data-branch-at]")?.value).toBe("2.0");
+  });
+
+  it("fits an explicit branch time to measured media even when its active window already fits", async () => {
+    coverageFixture.value = { previewVideoUrl: "https://example.test/clip.mp4", durationMs: 0 };
+    await renderEditor(root, [draft({ branchAtSeconds: 8 })]);
+    const video = requiredElement(document.body.querySelector("video"));
+    Object.defineProperty(video, "duration", { value: 5 });
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(document.body.querySelector<HTMLInputElement>("[data-branch-at]")?.value).toBe("5.0");
+  });
+
+  it("keeps storyboard timing when the preview is only the first clip", async () => {
+    coverageFixture.value = { previewVideoUrl: "https://example.test/clip.mp4", durationMs: 20000 };
+    await renderEditor(root, [draft({ endSeconds: 10, branchAtSeconds: 18 })]);
+    const video = requiredElement(document.body.querySelector("video"));
+    Object.defineProperty(video, "duration", { value: 5 });
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata"));
+    });
+    expect(document.body.querySelector<HTMLInputElement>("[data-branch-at]")?.value).toBe("18.0");
   });
 
   it("portals the modal workspace outside the canvas container", async () => {
@@ -203,7 +249,13 @@ describe("StoryInteractionEditor", () => {
       );
     }
 
-    await act(async () => root.render(<ClosableEditor />));
+    await act(async () =>
+      root.render(
+        <TooltipProvider>
+          <ClosableEditor />
+        </TooltipProvider>
+      )
+    );
     const launch = buttonWithText(container, "Launch editor");
     launch.focus();
     await click(launch);
@@ -216,7 +268,11 @@ describe("StoryInteractionEditor", () => {
 
 async function renderEditor(root: Root, initialDrafts: StoryInteractionDraft[] = []) {
   await act(async () => {
-    root.render(<ControlledEditor initialDrafts={initialDrafts} onClose={vi.fn()} />);
+    root.render(
+      <TooltipProvider>
+        <ControlledEditor initialDrafts={initialDrafts} onClose={vi.fn()} />
+      </TooltipProvider>
+    );
   });
 }
 
@@ -248,6 +304,7 @@ function draft(overrides: Partial<StoryInteractionDraft> = {}): StoryInteraction
     startSeconds: 0,
     endSeconds: 2,
     branchAtSeconds: null,
+    timing: "window",
     trigger: { kind: "tap" },
     outcomes: { success: { kind: "goto", targetNodeId: "second" } },
     ...overrides,
@@ -260,7 +317,10 @@ function clip(nodeId: string, clipKey: string, nextNodeId: string | null): Story
     nodeId,
     clipKey,
     interactions: [],
-    exit: { kind: "auto", nextNodeId },
+    exit: {
+      kind: "auto",
+      routes: [{ target: nextNodeId ? { kind: "node" as const, nodeId: nextNodeId } : null }],
+    },
   };
 }
 
@@ -281,5 +341,23 @@ async function click(element: Element): Promise<void> {
   await act(async () => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await Promise.resolve();
+  });
+}
+
+async function changeEnd(value: number) {
+  const label = [...document.body.querySelectorAll("label")].find(
+    (label) => label.querySelector("span")?.textContent === "end"
+  );
+  const input = requiredElement(label?.querySelector("input") ?? null);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      String(value)
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    // React 17+ listens for `focusout` (bubbling), not `blur` (non-bubbling),
+    // when handling onBlur. Dispatching `blur` alone never reaches the handler,
+    // so TimeField's blur-commit never fires.
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
   });
 }

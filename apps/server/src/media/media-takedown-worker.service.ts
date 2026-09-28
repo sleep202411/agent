@@ -56,7 +56,8 @@ export class MediaTakedownWorkerService
 {
   private readonly logger = new Logger(MediaTakedownWorkerService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -64,6 +65,7 @@ export class MediaTakedownWorkerService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopped) return;
     if (process.env.MEDIA_TAKEDOWN_WORKER_ENABLED === 'false') return;
     const intervalMs = positiveInt(
       process.env.MEDIA_TAKEDOWN_WORKER_INTERVAL_MS,
@@ -76,67 +78,74 @@ export class MediaTakedownWorkerService
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.draining;
   }
 
   async drainOnce(batch = DEFAULT_BATCH_SIZE): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
+    if (this.stopped) return;
+    if (this.draining) return this.draining;
+    this.draining = this.drain(batch).finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(batch: number): Promise<void> {
     try {
-      const claimed = await this.claim(batch);
-      for (const row of claimed) {
+      for (
+        let processed = 0;
+        processed < batch && !this.stopped;
+        processed += 1
+      ) {
+        const [row] = await this.claim(1);
+        if (!row || this.stopped) break;
         await this.runOne(row);
       }
     } catch (err) {
       this.logger.warn(`Takedown drain failed: ${errorText(err)}`);
-    } finally {
-      this.draining = false;
     }
   }
 
   private async claim(batch: number): Promise<MediaModerationAction[]> {
     const now = new Date();
     const lockCutoff = new Date(now.getTime() - LOCK_TTL_MS);
-    const candidates = await this.prisma.mediaModerationAction.findMany({
-      where: {
-        actionType: MediaModerationActionType.restrict_visibility,
-        status: {
-          in: [
-            MediaModerationActionStatus.pending,
-            MediaModerationActionStatus.failed,
-          ],
-        },
-        deadAt: null,
-        OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
-        AND: [{ OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }] }],
+    const eligibility = {
+      actionType: MediaModerationActionType.restrict_visibility,
+      status: {
+        in: [
+          MediaModerationActionStatus.pending,
+          MediaModerationActionStatus.failed,
+        ],
       },
+      deadAt: null,
+      OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+      AND: [{ OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }] }],
+    };
+    const candidates = await this.prisma.mediaModerationAction.findMany({
+      where: eligibility,
       orderBy: { createdAt: 'asc' },
       take: batch,
       select: { id: true },
     });
-    if (candidates.length === 0) return [];
+    if (this.stopped || candidates.length === 0) return [];
 
     const ids = candidates.map((row) => row.id);
     await this.prisma.mediaModerationAction.updateMany({
-      where: {
-        id: { in: ids },
-        actionType: MediaModerationActionType.restrict_visibility,
-        status: {
-          in: [
-            MediaModerationActionStatus.pending,
-            MediaModerationActionStatus.failed,
-          ],
-        },
-        deadAt: null,
-        OR: [{ lockedAt: null }, { lockedAt: { lt: lockCutoff } }],
-      },
+      where: { ...eligibility, id: { in: ids } },
       data: { lockedAt: now, lockedBy: MEDIA_ACTION_POD_ID },
     });
 
     return this.prisma.mediaModerationAction.findMany({
-      where: { id: { in: ids }, lockedBy: MEDIA_ACTION_POD_ID, deadAt: null },
+      where: {
+        id: { in: ids },
+        lockedBy: MEDIA_ACTION_POD_ID,
+        lockedAt: now,
+        deadAt: null,
+      },
       orderBy: { createdAt: 'asc' },
     });
   }
@@ -320,6 +329,7 @@ export class MediaTakedownWorkerService
         where: {
           id: row.id,
           lockedBy: MEDIA_ACTION_POD_ID,
+          lockedAt: row.lockedAt,
           status: {
             in: [
               MediaModerationActionStatus.pending,
@@ -373,6 +383,7 @@ export class MediaTakedownWorkerService
       where: {
         id: row.id,
         lockedBy: MEDIA_ACTION_POD_ID,
+        lockedAt: row.lockedAt,
         status: {
           in: [
             MediaModerationActionStatus.pending,

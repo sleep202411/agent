@@ -6,6 +6,14 @@ import {
 import { ProjectSkillResolutionSnapshotSchema } from '@repo/agent-skills';
 import { z } from 'zod';
 
+// Named interfaces keep declaration emit anchored to public workspace exports
+// instead of expanding a shared schema into its nested Zod installation.
+type SkillMountSnapshotSchema = typeof ProjectSkillResolutionSnapshotSchema;
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- A named interface prevents TS2742 during declaration emit; a type alias does not.
+interface PortableSkillMountSnapshotSchema extends SkillMountSnapshotSchema {}
+const skillMountSnapshotSchema: PortableSkillMountSnapshotSchema =
+  ProjectSkillResolutionSnapshotSchema;
+
 // Re-declare the wire shape at the Nest boundary: agent-protocol and this app
 // intentionally run distinct physical Zod builds, whose schema instances are
 // not structurally assignable even though their parsed values are identical.
@@ -60,7 +68,7 @@ export const AgentOsStartCommandSchema = z
       .array(z.string().uuid())
       .max(32)
       .optional(),
-    skillMountSnapshot: ProjectSkillResolutionSnapshotSchema,
+    skillMountSnapshot: skillMountSnapshotSchema,
   })
   .strict()
   .superRefine((command, context) => {
@@ -124,7 +132,7 @@ const AgentOsContinuationCommandBaseSchema = z.object({
   workbenchMode: z.string().trim().min(1).max(64),
   workbenchContext: z.record(z.string(), z.string()).optional(),
   permissionMode: z.enum(['ask', 'smart', 'full']).default('smart'),
-  skillMountSnapshot: ProjectSkillResolutionSnapshotSchema,
+  skillMountSnapshot: skillMountSnapshotSchema,
 });
 
 /**

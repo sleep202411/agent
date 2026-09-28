@@ -1,5 +1,7 @@
 "use client";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 // 每日签到 config page for the /billing sub-app. Single admin-editable config:
 // enable/disable + the streak reward cycle (credits by consecutive-day index).
 
@@ -40,7 +42,7 @@ export function BillingCheckInPanel({
   const [enabled, setEnabled] = useState(initialConfig?.enabled ? "on" : "off");
   const [rewardsText, setRewardsText] = useState((initialConfig?.rewards ?? []).join(", "));
   const [updatedAt, setUpdatedAt] = useState(initialConfig?.updatedAt ?? null);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [saved, setSaved] = useState(false);
 
@@ -53,21 +55,24 @@ export function BillingCheckInPanel({
       setError("奖励周期必须是一组正整数，例如 10,10,10,10,10,10,50");
       return;
     }
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return;
     setError(null);
     setSaved(false);
     try {
       const data = await mutateEnvelope<CheckInConfigData>(
         "/api/admin/billing/check-in/config",
         { enabled: enabled === "on", rewards: parsed },
-        "PATCH"
+        "PATCH",
+        operation.signal
       );
+      if (!operation.current()) return;
       setUpdatedAt(data.updatedAt);
       setSaved(true);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
@@ -96,7 +101,7 @@ export function BillingCheckInPanel({
         </div>
         <form onSubmit={save} className="mt-4 grid gap-4">
           <FormLabel label="状态" help="关闭后用户无法签到。">
-            <Select value={enabled} onChange={setEnabled}>
+            <Select disabled={loading} value={enabled} onChange={setEnabled}>
               <option value="off">关闭</option>
               <option value="on">开启</option>
             </Select>
@@ -106,6 +111,7 @@ export function BillingCheckInPanel({
             help="逗号分隔的一组正整数，按连续签到天数循环。例如 100,188,288,388,488,588,888 表示连续 7 天递增、第 7 天 888，之后循环。"
           >
             <TextInput
+              disabled={loading}
               value={rewardsText}
               onChange={(event) => setRewardsText(event.target.value)}
               placeholder="100,188,288,388,488,588,888"

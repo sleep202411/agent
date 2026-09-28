@@ -543,24 +543,36 @@ export class CrewAccountabilityService {
     crewId: string,
     userId: string,
   ) {
-    // Review-accepted deliverables are the evidence, not simply being added to a Crew.
-    return (
-      (await tx.crewTask.count({
+    // Approved tasks establish team evidence for their retained assignees.
+    if (
+      await tx.crewTask.count({
         where: {
           crewId,
           deletedAt: null,
           workflowState: { semantic: 'approved' },
-          OR: [
-            {
-              submissions: {
-                some: { submittedByUserId: userId, reviewedAt: { not: null } },
-              },
-            },
-            { assignees: { some: { userId } } },
-          ],
+          assignees: { some: { userId } },
         },
-      })) > 0
-    );
+      })
+    )
+      return true;
+
+    // For a former assignee/submitter, only the final reviewed version of an
+    // approved task qualifies. Earlier reviewed versions may be revision requests.
+    const [row] = await tx.$queryRaw<Array<{ contributed: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM crew_tasks t
+        JOIN crew_task_workflow_states w ON w.id = t.workflow_state_id AND w.crew_id = t.crew_id
+        JOIN LATERAL (
+          SELECT s.submitted_by_user_id, s.reviewed_at
+          FROM crew_task_submissions s WHERE s.task_id = t.id
+          ORDER BY s.version_number DESC LIMIT 1
+        ) latest ON true
+        WHERE t.crew_id = ${crewId} AND t.deleted_at IS NULL
+          AND w.semantic = 'approved' AND latest.reviewed_at IS NOT NULL
+          AND latest.submitted_by_user_id = ${userId}
+      ) AS contributed
+    `;
+    return row?.contributed ?? false;
   }
 
   async feedback(
@@ -637,9 +649,14 @@ export class CrewAccountabilityService {
       where: { id, subjectUserId: userId, respondedAt: null },
       data: { response, respondedAt: new Date() },
     });
-    if (!updated.count && feedback.response !== response)
+    // A competing identical request may have answered after our initial read.
+    // Compare the committed winner, never the stale unanswered snapshot.
+    const saved = await this.prisma.crewPeerFeedback.findUniqueOrThrow({
+      where: { id },
+    });
+    if (!updated.count && saved.response !== response)
       throw new ConflictException('A response has already been recorded.');
-    return this.prisma.crewPeerFeedback.findUniqueOrThrow({ where: { id } });
+    return saved;
   }
 
   async recognize(crewId: string, _subjectUserId: string, userId: string) {

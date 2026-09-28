@@ -31,6 +31,12 @@ import {
   UpdateCrewAssetNodeSchema,
   type UpdateCrewAssetNodeInput,
 } from './dto';
+import {
+  LinkCrewStudioMediaSchema,
+  type LinkCrewStudioMediaInput,
+  SetCrewAssetStudioLinkSchema,
+  type SetCrewAssetStudioLinkInput,
+} from '../dto';
 import { CrewAssetAccessService } from './asset-access.service';
 
 @Controller('crews/:crewId/assets')
@@ -56,6 +62,51 @@ export class CrewAssetsController {
       parseIdParam(crewIdRaw, 'crewId'),
       user.userId,
       query,
+    );
+  }
+
+  @Get('studio-media-options')
+  listStudioMediaOptions(
+    @Param('crewId') crewIdRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Query('projectId') projectId?: string,
+    @Query('storyProjectId') storyProjectId?: string,
+  ) {
+    return this.assets.listStudioMediaOptions(
+      parseIdParam(crewIdRaw, 'crewId'),
+      user.userId,
+      { projectId, storyProjectId },
+    );
+  }
+
+  @Post('link-studio-media')
+  @HttpCode(HttpStatus.CREATED)
+  linkStudioMedia(
+    @Param('crewId') crewIdRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(LinkCrewStudioMediaSchema))
+    body: LinkCrewStudioMediaInput,
+  ) {
+    return this.assets.linkStudioMedia(
+      parseIdParam(crewIdRaw, 'crewId'),
+      user.userId,
+      body,
+    );
+  }
+
+  @Patch(':nodeId/studio-link')
+  setStudioLink(
+    @Param('crewId') crewIdRaw: string,
+    @Param('nodeId') nodeId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(SetCrewAssetStudioLinkSchema))
+    body: SetCrewAssetStudioLinkInput,
+  ) {
+    return this.assets.setStudioLink(
+      parseIdParam(crewIdRaw, 'crewId'),
+      user.userId,
+      nodeId,
+      body,
     );
   }
 

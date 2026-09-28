@@ -1,3 +1,5 @@
+import { extendPrismaQueries } from '../common/__tests__/prisma-query-extension';
+import { assertOutboxTestDatabase } from '../conversations/outbox-test-database';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -5,10 +7,12 @@ import { NotificationService } from './notification.service';
 import { NotificationController } from './notification.controller';
 import type { PrismaService } from '../infra/db/db.module';
 
-const suite =
-  process.env.NOTIFICATION_POSTGRES_INTEGRATION === '1'
-    ? describe
-    : describe.skip;
+const connectionString =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.NOTIFICATION_POSTGRES_INTEGRATION === '1'
+    ? process.env.NOTIFICATION_TEST_DATABASE_URL
+    : undefined);
+const suite = connectionString ? describe : describe.skip;
 
 suite('notifications against local Postgres', () => {
   let db: PrismaClient;
@@ -19,28 +23,24 @@ suite('notifications against local Postgres', () => {
   const actor = { userId: owner, userName: 'Test', nickName: 'Test' };
 
   beforeAll(() => {
-    const connectionString = process.env.NOTIFICATION_TEST_DATABASE_URL;
-    if (
-      !connectionString ||
-      !['localhost', '127.0.0.1'].includes(new URL(connectionString).hostname)
-    ) {
-      throw new Error(
-        'NOTIFICATION_TEST_DATABASE_URL must explicitly point to local Postgres',
-      );
-    }
+    assertOutboxTestDatabase(connectionString!);
     db = new PrismaClient({
-      adapter: new PrismaPg({ connectionString, max: 4 }),
+      adapter: new PrismaPg({
+        connectionString,
+        max: 4,
+        options: '-c timezone=UTC',
+      }),
     });
     service = new NotificationService(db as PrismaService);
     controller = new NotificationController(service);
   });
   afterEach(async () => {
-    await db.notification.deleteMany({
+    await db?.notification.deleteMany({
       where: { userId: { in: [owner, stranger] } },
     });
   });
   afterAll(async () => {
-    await db.$disconnect();
+    await db?.$disconnect();
   });
 
   async function seed() {
@@ -132,7 +132,7 @@ suite('notifications against local Postgres', () => {
   });
 
   it('a failed outbox insert rolls back the notification', async () => {
-    const failingDb = db.$extends({
+    const failingDb = extendPrismaQueries(db, {
       query: {
         notificationOutbox: {
           create: () => {

@@ -44,6 +44,7 @@ vi.mock("@/app/(site)/creators/_components/center/dialogs/level-apply-dialog", (
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   CrewApiError: class extends Error {},
+  crewApi: { get: vi.fn().mockResolvedValue([]) },
   useCreateCrew: () => ({ mutate: state.create, isPending: false }),
   useUpdateCrew: () => ({ mutate: state.update, isPending: false }),
 }));

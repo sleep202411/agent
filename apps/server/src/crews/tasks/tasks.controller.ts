@@ -1,3 +1,4 @@
+import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
 import { TaskDeliveryTemplateInput } from './task-delivery-template';
 import {
   Body,
@@ -9,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Res,
 } from '@nestjs/common';
@@ -21,6 +23,8 @@ import { z } from 'zod';
 import {
   CreateCrewTaskSchema,
   type CreateCrewTaskInput,
+  CreateCrewTaskKindTemplateSchema,
+  type CreateCrewTaskKindTemplateInput,
   DraftCrewTaskSchema,
   type DraftCrewTaskInput,
   CreateCrewTaskCommentSchema,
@@ -29,6 +33,8 @@ import {
   type ListCrewTaskTimelineQuery,
   ReviewCrewTaskSchema,
   type ReviewCrewTaskInput,
+  SetTaskDeliveryFolderSchema,
+  type SetTaskDeliveryFolderInput,
   SubmitCrewTaskSchema,
   type SubmitCrewTaskInput,
   UpdateCrewTaskSchema,
@@ -82,6 +88,15 @@ export class CrewTasksController {
     private readonly taskDrafts: CrewTaskDraftService,
   ) {}
 
+  @Post('crew-tasks/:taskId/close')
+  close(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(CloseCrewTaskSchema)) body: CloseCrewTaskInput,
+  ) {
+    return this.tasks.close(parseIdParam(taskId, 'taskId'), user.userId, body);
+  }
+
   @Get('crew-task-center')
   taskCenter(
     @CurrentUser() user: AuthUser,
@@ -94,6 +109,46 @@ export class CrewTasksController {
   @Get('crews/:crewId/task-project')
   project(@Param('crewId') crewId: string, @CurrentUser() user: AuthUser) {
     return this.tasks.getProject(parseIdParam(crewId, 'crewId'), user.userId);
+  }
+
+  @Get('crews/:crewId/task-kind-templates')
+  listTaskKindTemplates(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.listTaskKindTemplates(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+    );
+  }
+
+  @Post('crews/:crewId/task-kind-templates')
+  @HttpCode(HttpStatus.CREATED)
+  createTaskKindTemplate(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(CreateCrewTaskKindTemplateSchema))
+    body: CreateCrewTaskKindTemplateInput,
+  ) {
+    return this.tasks.createTaskKindTemplate(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+      body,
+    );
+  }
+
+  @Delete('crews/:crewId/task-kind-templates/:templateId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteTaskKindTemplate(
+    @Param('crewId') crewId: string,
+    @Param('templateId') templateId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.tasks.deleteTaskKindTemplate(
+      parseIdParam(crewId, 'crewId'),
+      user.userId,
+      parseIdParam(templateId, 'templateId'),
+    );
   }
 
   @Post('crews/:crewId/task-views')
@@ -385,6 +440,24 @@ export class CrewTasksController {
     );
   }
 
+  @Get('crew-tasks/:taskId/recruitment-terms')
+  recruitmentTerms(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Query(
+      new ZodValidationPipe(
+        z.object({ applicantId: z.string().min(1).max(128) }).strict(),
+      ),
+    )
+    query: { applicantId: string },
+  ) {
+    return this.tasks.recruitmentTerms(
+      parseIdParam(taskId, 'taskId'),
+      user.userId,
+      query.applicantId,
+    );
+  }
+
   @Get('crew-tasks/:taskId')
   get(@Param('taskId') taskId: string, @CurrentUser() user: AuthUser) {
     return this.tasks.get(parseIdParam(taskId, 'taskId'), user.userId);
@@ -509,6 +582,20 @@ export class CrewTasksController {
     input: z.infer<typeof TaskDeliveryTemplateInput>,
   ) {
     return this.tasks.setDeliveryTemplate(
+      parseIdParam(id, 'taskId'),
+      user.userId,
+      input,
+    );
+  }
+
+  @Put('crew-tasks/:taskId/delivery-folder')
+  setDeliveryFolder(
+    @Param('taskId') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(SetTaskDeliveryFolderSchema))
+    input: SetTaskDeliveryFolderInput,
+  ) {
+    return this.tasks.setDeliveryFolder(
       parseIdParam(id, 'taskId'),
       user.userId,
       input,

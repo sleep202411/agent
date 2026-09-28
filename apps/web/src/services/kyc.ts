@@ -48,7 +48,8 @@ export interface CertifyQueryResponse {
 
 // ─── API ──────────────────────────────────────────────
 
-export const getNeedAuth = () => api.get<KycAuthStatus>("/user/needAuth");
+export const getNeedAuth = (signal?: AbortSignal) =>
+  api.get<KycAuthStatus>("/user/needAuth", { signal });
 
 export const certifyInit = (data: CertifyInitRequest) =>
   api.postForm<CertifyInitResponse>("/user/certify/init/web", {

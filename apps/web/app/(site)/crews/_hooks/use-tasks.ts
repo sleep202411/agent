@@ -1,4 +1,5 @@
 "use client";
+import { useEffect } from "react";
 import type { CrewProfessionalDeliveryInput } from "./types";
 
 import {
@@ -29,6 +30,7 @@ import type {
   CrewTaskFieldType,
   CrewTaskLabelDTO,
   CrewTaskCycleDTO,
+  CrewTaskKindTemplateDTO,
   CrewTaskProjectDTO,
   CrewTaskSummaryDTO,
   CrewTaskViewDTO,
@@ -49,8 +51,25 @@ export function useCrewTaskProject(crewId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.taskProject(crewId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
-    queryFn: () =>
-      crewApi.get<CrewTaskProjectDTO>(`/crews/${encodeURIComponent(crewId)}/task-project`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewTaskProjectDTO>(`/crews/${encodeURIComponent(crewId)}/task-project`, {
+        signal,
+        cache: "no-store",
+      }),
+  });
+}
+
+export function useCrewTaskKindTemplates(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
+  return useQuery({
+    queryKey: [...crewKeys.taskKindTemplates(crewId), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
+    queryFn: ({ signal }) =>
+      crewApi.get<{ items: CrewTaskKindTemplateDTO[] }>(
+        `/crews/${encodeURIComponent(crewId)}/task-kind-templates`,
+        { signal, cache: "no-store" }
+      ),
   });
 }
 
@@ -69,8 +88,10 @@ export function useCrewTaskView(
     queryKey: [...crewKeys.taskView(crewId, input), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId) && Boolean(input.viewId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewTaskPageDTO>(`/crews/${encodeURIComponent(crewId)}/tasks`, {
+        signal,
+        cache: "no-store",
         query: {
           viewId: input.viewId,
           query: input.query || undefined,
@@ -81,6 +102,10 @@ export function useCrewTaskView(
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
+  useCompleteTaskPages(
+    result,
+    enabled && Boolean(accountUserId) && Boolean(crewId) && Boolean(input.viewId)
+  );
   return {
     ...result,
     data: result.data?.pages.flatMap((page) => page.items) ?? [],
@@ -94,6 +119,7 @@ export function useCrewTaskOptions(
   input: {
     query?: string;
     excludeTaskId?: string;
+    recruitmentOnly?: boolean;
     activeOnly?: boolean;
     limit?: number;
   } = {},
@@ -105,10 +131,13 @@ export function useCrewTaskOptions(
     queryKey: [...crewKeys.taskOptions(crewId, input), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewTaskOptionPageDTO>(`/crews/${encodeURIComponent(crewId)}/task-options`, {
+        signal,
+        cache: "no-store",
         query: {
           ...input,
+          recruitmentOnly: input.recruitmentOnly ? "true" : undefined,
           activeOnly: input.activeOnly ? "true" : undefined,
           cursor: pageParam,
           limit: input.limit ?? 30,
@@ -116,6 +145,7 @@ export function useCrewTaskOptions(
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
+  useCompleteTaskPages(result, enabled && Boolean(accountUserId) && Boolean(crewId));
   return {
     ...result,
     data: result.data?.pages.flatMap((page) => page.items) ?? [],
@@ -128,8 +158,11 @@ export function useCrewTaskSummary(crewId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.taskSummary(crewId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
-    queryFn: () =>
-      crewApi.get<CrewTaskSummaryDTO>(`/crews/${encodeURIComponent(crewId)}/task-summary`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewTaskSummaryDTO>(`/crews/${encodeURIComponent(crewId)}/task-summary`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
@@ -140,8 +173,10 @@ export function useCrewTaskActivity(crewId: string, enabled = true) {
     queryKey: [...crewKeys.taskActivity(crewId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewTaskActivityPageDTO>(`/crews/${encodeURIComponent(crewId)}/task-activity`, {
+        signal,
+        cache: "no-store",
         query: { cursor: pageParam, limit: 30 },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
@@ -654,7 +689,11 @@ export function useCrewTask(taskId: string, enabled = true) {
   return useQuery({
     queryKey: [...crewKeys.task(taskId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(taskId),
-    queryFn: () => crewApi.get<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}`),
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}`, {
+        signal,
+        cache: "no-store",
+      }),
   });
 }
 
@@ -665,8 +704,10 @@ export function useCrewTaskTimeline(taskId: string, enabled = true) {
     queryKey: [...crewKeys.taskTimeline(taskId), accountUserId],
     enabled: Boolean(accountUserId) && enabled && Boolean(taskId),
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       crewApi.get<CrewTaskTimelinePageDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/timeline`, {
+        signal,
+        cache: "no-store",
         query: { cursor: pageParam, limit: 30 },
       }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
@@ -805,6 +846,38 @@ export function useDeleteCrewTaskComment(taskId: string) {
   });
 }
 
+export function useSetTaskDeliveryFolder(crewId: string) {
+  const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
+    mutationFn: ({
+      taskId,
+      deliveryFolderId,
+    }: {
+      taskId: string;
+      deliveryFolderId: string | null;
+    }) =>
+      crewApi.put<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/delivery-folder`, {
+        body: { deliveryFolderId },
+      }),
+    onSuccess: (task, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.assets(crewId), accountUserId));
+      qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(task.id), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
+    },
+  });
+}
+
 export function useSubmitCrewTask(crewId: string) {
   const qc = useQueryClient();
   const { user } = useCurrentUser();
@@ -855,15 +928,27 @@ export function useReviewCrewTask(crewId: string) {
     onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       taskId,
+      expectedSubmissionId,
       decision,
       note,
+      revisionDueAt,
+      bindAssetNodeId,
     }: {
       taskId: string;
+      expectedSubmissionId: string;
       decision: "approve" | "request_revision";
       note: string;
+      revisionDueAt?: string;
+      bindAssetNodeId?: string;
     }) =>
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/review`, {
-        body: { decision, note },
+        body: {
+          decision,
+          note,
+          expectedSubmissionId,
+          ...(revisionDueAt !== undefined ? { revisionDueAt } : {}),
+          ...(bindAssetNodeId !== undefined ? { bindAssetNodeId } : {}),
+        },
       }),
     onSuccess: (task, _variables, origin) => {
       if (!origin?.accountUserId) return;
@@ -882,4 +967,19 @@ export function useReviewCrewTask(crewId: string) {
       qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
     },
   });
+}
+
+function useCompleteTaskPages(
+  query: {
+    hasNextPage: boolean;
+    isFetching: boolean;
+    isError: boolean;
+    fetchNextPage: () => Promise<unknown>;
+  },
+  enabled: boolean
+) {
+  const { hasNextPage, isFetching, isError, fetchNextPage } = query;
+  useEffect(() => {
+    if (enabled && hasNextPage && !isFetching && !isError) void fetchNextPage();
+  }, [enabled, hasNextPage, isFetching, isError, fetchNextPage]);
 }

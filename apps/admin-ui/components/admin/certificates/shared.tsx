@@ -106,6 +106,7 @@ export async function requestEnvelope<T>(url: string, init?: RequestInit): Promi
     message?: string;
     data?: T;
   } | null;
+  init?.signal?.throwIfAborted();
   if (!response.ok || payload?.code !== 200) {
     throw new Error(payload?.msg ?? payload?.message ?? `请求失败：${response.status}`);
   }

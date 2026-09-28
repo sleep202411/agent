@@ -110,6 +110,19 @@ export type AgentOsModelPreferencesBody = z.infer<
   typeof AgentOsModelPreferencesBodySchema
 >;
 
+// Named interfaces keep declaration emit anchored to public workspace exports
+// instead of expanding a shared schema into its nested Zod installation.
+type ApprovalResponseTextSchema = typeof AgentApprovalResponseTextSchema;
+type DisplayLocaleSchema = typeof AgentDisplayLocaleSchema;
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- A named interface prevents TS2742 during declaration emit; a type alias does not.
+interface PortableApprovalResponseTextSchema extends ApprovalResponseTextSchema {}
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- A named interface prevents TS2742 during declaration emit; a type alias does not.
+interface PortableDisplayLocaleSchema extends DisplayLocaleSchema {}
+const approvalResponseTextSchema: PortableApprovalResponseTextSchema =
+  AgentApprovalResponseTextSchema;
+const displayLocaleSchema: PortableDisplayLocaleSchema =
+  AgentDisplayLocaleSchema;
+
 export const AgentOsApprovalBodySchema = z
   .object({
     /** Durable pending approval being answered. */
@@ -118,9 +131,9 @@ export const AgentOsApprovalBodySchema = z
     responseId: z.string().uuid(),
     decision: z.enum(['approve', 'reject']),
     /** Display copy only; structured decision is the authorization authority. */
-    responseText: AgentApprovalResponseTextSchema,
+    responseText: approvalResponseTextSchema,
     /** Selects server-owned durable Assistant acknowledgement copy. */
-    locale: AgentDisplayLocaleSchema,
+    locale: displayLocaleSchema,
     conversationId: z.string().uuid(),
     projectId: z.string().uuid(),
     /** Required — must match the profile used for the run resume. */

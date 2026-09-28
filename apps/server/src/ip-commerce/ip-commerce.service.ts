@@ -1,5 +1,9 @@
+import { createCrewTx } from '../crews/create-crew';
+import { hasCrewCreatePass } from '../integrations/java/user-level-gates';
+import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import { ConversationsService } from '../conversations/conversations.service';
 import { joinCrewFanTx } from '../crews/fan-community';
+import { publishersFromAssignments } from './ip-publishers.service';
 import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import {
   BadRequestException,
@@ -46,7 +50,6 @@ import {
   MediaAssetVariantStatus,
   MediaAssetVisibility,
   MediaObjectPlacementStatus,
-  MediaStorageProvider,
   Prisma,
   WalletAccountStatus,
   WalletBalanceKind,
@@ -171,7 +174,6 @@ const IP_MEDIA_UPLOAD_LIMITS: Record<MediaAssetKind, number> = {
   [MediaAssetKind.document]: 20 * 1024 * 1024,
   [MediaAssetKind.other]: 20 * 1024 * 1024,
 };
-const DEFAULT_AZURE_BLOB_CONTAINER = 'foundry-outputs';
 
 /// Admin-editable platform default for the creator revenue share (basis points
 /// of each sale routed to the creator pool). Seeded at 5000 (50%) by migration.
@@ -291,6 +293,10 @@ const ipInclude = {
     where: { isPublic: true, removedAt: null },
     orderBy: { displayOrder: 'asc' },
   },
+  publisherAssignments: {
+    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    include: { publisher: true },
+  },
 } satisfies Prisma.IpInclude;
 
 type IpWithCommerce = Prisma.IpGetPayload<{
@@ -383,6 +389,10 @@ const adminIpInclude = {
   contributors: {
     where: { removedAt: null },
     orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+  },
+  publisherAssignments: {
+    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    include: { publisher: true },
   },
   aclGrants: {
     where: { revokedAt: null },
@@ -672,45 +682,52 @@ export class IpCommerceService {
     const code =
       normalizeTaxonomyCodes(input.code ? [input.code] : [], 1)[0] ??
       generateTaxonomyCode(input.type as IpTaxonomyTermType, localizations);
-
-    const existing = await this.prisma.ipTaxonomyTerm.findUnique({
-      where: {
-        type_code: {
-          type: input.type as IpTaxonomyTermType,
-          code,
-        },
-      },
-      select: { id: true },
-    });
-    if (existing) {
-      throw new ConflictException({
+    const conflict = () =>
+      new ConflictException({
         code: 'IP_TAXONOMY_TERM_CODE_EXISTS',
         msg: `Taxonomy code already exists: ${code}.`,
       });
-    }
-
-    const term = await this.prisma.ipTaxonomyTerm.create({
-      data: {
-        type: input.type as IpTaxonomyTermType,
-        code,
-        status: input.status as IpTaxonomyTermStatus,
-        displayOrder: input.displayOrder,
-        createdById: user.userId,
-        updatedById: user.userId,
-        archivedAt:
-          input.status === IpTaxonomyTermStatus.archived ? new Date() : null,
-        localizations: {
-          createMany: {
-            data: localizations,
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.ipTaxonomyTerm.findUnique({
+          where: {
+            type_code: { type: input.type as IpTaxonomyTermType, code },
           },
-        },
-      },
-      include: adminTaxonomyTermInclude,
-    });
-
-    return {
-      term: adminTaxonomyTermDto(term, input.localizations[0]?.locale),
-    };
+          select: { id: true },
+        });
+        if (existing) throw conflict();
+        const term = await tx.ipTaxonomyTerm.create({
+          data: {
+            type: input.type as IpTaxonomyTermType,
+            code,
+            status: input.status as IpTaxonomyTermStatus,
+            displayOrder: input.displayOrder,
+            createdById: user.userId,
+            updatedById: user.userId,
+            archivedAt:
+              input.status === IpTaxonomyTermStatus.archived
+                ? new Date()
+                : null,
+            localizations: { createMany: { data: localizations } },
+          },
+          include: adminTaxonomyTermInclude,
+        });
+        return {
+          term: adminTaxonomyTermDto(term, input.localizations[0]?.locale),
+        };
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        const existing = await this.prisma.ipTaxonomyTerm.findUnique({
+          where: {
+            type_code: { type: input.type as IpTaxonomyTermType, code },
+          },
+          select: { id: true },
+        });
+        if (existing) throw conflict();
+      }
+      throw error;
+    }
   }
 
   async updateAdminTaxonomyTerm(
@@ -718,45 +735,32 @@ export class IpCommerceService {
     termId: string,
     input: UpdateAdminIpTaxonomyTermInput,
   ) {
-    const existing = await this.prisma.ipTaxonomyTerm.findUnique({
-      where: { id: termId },
-      select: { id: true },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'IP_TAXONOMY_TERM_NOT_FOUND',
-        msg: 'Taxonomy term not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ip_taxonomy_terms WHERE id=${termId}::uuid FOR UPDATE`;
+      const existing = await tx.ipTaxonomyTerm.findUnique({
+        where: { id: termId },
+        select: { id: true },
       });
-    }
-
-    const term = await this.prisma.$transaction(async (tx) => {
+      if (!existing)
+        throw new NotFoundException({
+          code: 'IP_TAXONOMY_TERM_NOT_FOUND',
+          msg: 'Taxonomy term not found.',
+        });
       const localizations = input.localizations
         ? normalizeAdminTaxonomyLocalizations(input.localizations)
         : [];
-
-      if (localizations.length) {
-        for (const localization of localizations) {
-          await tx.ipTaxonomyTermLocalization.upsert({
-            where: {
-              termId_locale: {
-                termId,
-                locale: localization.locale,
-              },
-            },
-            create: {
-              termId,
-              ...localization,
-            },
-            update: {
-              label: localization.label,
-              description: localization.description,
-              aliases: localization.aliases,
-            },
-          });
-        }
+      for (const localization of localizations) {
+        await tx.ipTaxonomyTermLocalization.upsert({
+          where: { termId_locale: { termId, locale: localization.locale } },
+          create: { termId, ...localization },
+          update: {
+            label: localization.label,
+            description: localization.description,
+            aliases: localization.aliases,
+          },
+        });
       }
-
-      return tx.ipTaxonomyTerm.update({
+      const term = await tx.ipTaxonomyTerm.update({
         where: { id: termId },
         data: {
           ...(input.status !== undefined
@@ -775,20 +779,22 @@ export class IpCommerceService {
         },
         include: adminTaxonomyTermInclude,
       });
+      return {
+        term: adminTaxonomyTermDto(term, input.localizations?.[0]?.locale),
+      };
     });
-
-    return {
-      term: adminTaxonomyTermDto(term, input.localizations?.[0]?.locale),
-    };
   }
 
   // -------------------------------------------------------------------------
   // IP discovery placements (IP Plaza hero / for-you / pinned recommendations)
   // -------------------------------------------------------------------------
 
-  async listAdminDiscovery(query: ListAdminIpDiscoveryQuery) {
+  async listAdminDiscovery(
+    query: ListAdminIpDiscoveryQuery,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
     const locale = normalizeLocale(query.locale);
-    const rows = await this.prisma.ipDiscoveryRecommendation.findMany({
+    const rows = await tx.ipDiscoveryRecommendation.findMany({
       where: {
         ...(query.placementKey
           ? { placementKey: query.placementKey as IpDiscoveryPlacementKey }
@@ -895,47 +901,48 @@ export class IpCommerceService {
     recommendationId: string,
     input: UpdateAdminIpDiscoveryInput,
   ) {
-    const existing = await this.prisma.ipDiscoveryRecommendation.findUnique({
-      where: { id: recommendationId },
-      select: {
-        id: true,
-        placementKey: true,
-        status: true,
-        imageAssetId: true,
-        ipId: true,
-      },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
-        msg: 'Discovery recommendation not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ip_discovery_recommendations WHERE id=${recommendationId}::uuid FOR UPDATE`;
+      const existing = await tx.ipDiscoveryRecommendation.findUnique({
+        where: { id: recommendationId },
+        select: {
+          id: true,
+          placementKey: true,
+          status: true,
+          imageAssetId: true,
+          ipId: true,
+        },
       });
-    }
-
-    if (input.ipId !== undefined && input.ipId !== existing.ipId) {
-      const ip = await this.prisma.ip.findFirst({
-        where: { id: input.ipId, deletedAt: null },
-        select: { id: true },
-      });
-      if (!ip) {
+      if (!existing) {
         throw new NotFoundException({
-          code: 'IP_NOT_FOUND',
-          msg: 'IP not found.',
+          code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
+          msg: 'Discovery recommendation not found.',
         });
       }
-    }
 
-    const nextStatus = input.status ?? existing.status;
-    const nextIpId = input.ipId ?? existing.ipId;
-    const nextPlacementKey =
-      (input.placementKey as IpDiscoveryPlacementKey | undefined) ??
-      existing.placementKey;
-    const nextImageAssetId =
-      input.imageAssetId !== undefined
-        ? input.imageAssetId
-        : existing.imageAssetId;
+      if (input.ipId !== undefined && input.ipId !== existing.ipId) {
+        const ip = await tx.ip.findFirst({
+          where: { id: input.ipId, deletedAt: null },
+          select: { id: true },
+        });
+        if (!ip) {
+          throw new NotFoundException({
+            code: 'IP_NOT_FOUND',
+            msg: 'IP not found.',
+          });
+        }
+      }
 
-    const rec = await this.prisma.$transaction(async (tx) => {
+      const nextStatus = input.status ?? existing.status;
+      const nextIpId = input.ipId ?? existing.ipId;
+      const nextPlacementKey =
+        (input.placementKey as IpDiscoveryPlacementKey | undefined) ??
+        existing.placementKey;
+      const nextImageAssetId =
+        input.imageAssetId !== undefined
+          ? input.imageAssetId
+          : existing.imageAssetId;
+
       if (input.localizations?.length) {
         for (const localization of normalizeDiscoveryLocalizations(
           input.localizations,
@@ -978,7 +985,7 @@ export class IpCommerceService {
         });
       }
 
-      return tx.ipDiscoveryRecommendation.update({
+      const rec = await tx.ipDiscoveryRecommendation.update({
         where: { id: recommendationId },
         data: {
           ...(input.placementKey !== undefined
@@ -1015,57 +1022,71 @@ export class IpCommerceService {
         },
         include: adminIpDiscoveryInclude,
       });
+      return {
+        recommendation: adminIpDiscoveryDto(
+          rec,
+          input.localizations?.[0]?.locale,
+        ),
+      };
     });
-
-    return {
-      recommendation: adminIpDiscoveryDto(
-        rec,
-        input.localizations?.[0]?.locale,
-      ),
-    };
   }
 
   async deleteAdminDiscovery(user: AuthUser, recommendationId: string) {
-    const existing = await this.prisma.ipDiscoveryRecommendation.findUnique({
-      where: { id: recommendationId },
-      select: { id: true, placementKey: true, ipId: true },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
-        msg: 'Discovery recommendation not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ip_discovery_recommendations WHERE id=${recommendationId}::uuid FOR UPDATE`;
+      const existing = await tx.ipDiscoveryRecommendation.findUnique({
+        where: { id: recommendationId },
+        select: { id: true, placementKey: true, ipId: true },
       });
-    }
-
-    await this.prisma.ipDiscoveryRecommendation.delete({
-      where: { id: recommendationId },
+      if (!existing)
+        throw new NotFoundException({
+          code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
+          msg: 'Discovery recommendation not found.',
+        });
+      await tx.ipDiscoveryRecommendation.delete({
+        where: { id: recommendationId },
+      });
+      return {
+        deleted: true,
+        id: existing.id,
+        placementKey: existing.placementKey,
+        ipId: existing.ipId,
+        deletedById: user.userId,
+      };
     });
-
-    return {
-      deleted: true,
-      id: existing.id,
-      placementKey: existing.placementKey,
-      ipId: existing.ipId,
-      deletedById: user.userId,
-    };
   }
 
   async reorderAdminDiscovery(
     user: AuthUser,
     input: ReorderAdminIpDiscoveryInput,
   ) {
-    await this.prisma.$transaction(async (tx) => {
+    if (
+      !input.orderedIds.length ||
+      new Set(input.orderedIds).size !== input.orderedIds.length
+    )
+      throw new BadRequestException(
+        'Discovery order must contain distinct recommendation IDs.',
+      );
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<
+        { id: string }[]
+      >`SELECT id FROM ip_discovery_recommendations WHERE id IN (${Prisma.join(input.orderedIds.map((id) => Prisma.sql`${id}::uuid`))}) AND placement_key::text=${input.placementKey} ORDER BY id FOR UPDATE`;
+      if (locked.length !== input.orderedIds.length)
+        throw new BadRequestException(
+          'Every recommendation must exist in the selected placement.',
+        );
       for (let index = 0; index < input.orderedIds.length; index += 1) {
-        await tx.ipDiscoveryRecommendation.updateMany({
-          where: {
-            id: input.orderedIds[index],
-            placementKey: input.placementKey as IpDiscoveryPlacementKey,
+        await tx.ipDiscoveryRecommendation.update({
+          where: { id: input.orderedIds[index] },
+          data: {
+            sortOrder: index,
+            updatedById: user.userId,
+            version: { increment: 1 },
           },
-          data: { sortOrder: index, updatedById: user.userId },
         });
       }
+      return this.listAdminDiscovery({ placementKey: input.placementKey }, tx);
     });
-    return this.listAdminDiscovery({ placementKey: input.placementKey });
   }
 
   async listPublicDiscovery(
@@ -1086,6 +1107,7 @@ export class IpCommerceService {
         ],
         // P1.1 drift guard: only render placements whose IP is still displayable.
         ip: {
+          channelType: query.channelType,
           status: IpPublicationStatus.published,
           listingVisibility: IpListingVisibility.public,
           deletedAt: null,
@@ -1154,9 +1176,9 @@ export class IpCommerceService {
     const asset = await this.prisma.mediaAsset.create({
       data: {
         kind: assetKind,
-        storageProvider: MediaStorageProvider.azure_blob,
-        bucket: azureBlobContainerName(),
-        region: azureBlobRegion(),
+        storageProvider: uploaded.provider,
+        bucket: uploaded.bucket,
+        region: uploaded.region,
         objectKey: uploaded.storagePath,
         contentType: file.mimetype || 'application/octet-stream',
         sizeBytes: BigInt(uploaded.bytes),
@@ -2172,14 +2194,54 @@ export class IpCommerceService {
     const sourceLocale = normalizeLocale(input.sourceLocale);
     const summary = input.summary?.trim() || input.title;
 
+    const fingerprint = createHash('sha256')
+      .update(
+        JSON.stringify({
+          title: input.title,
+          summary: input.summary?.trim() || null,
+          genreCodes: input.genreCodes,
+          tagCodes: input.tagCodes ?? [],
+          sourceLocale,
+          productionKind: input.productionKind ?? 'series',
+          studioWorkspaceId: input.studioWorkspaceId ?? null,
+          region: input.region ?? null,
+        }),
+      )
+      .digest('hex');
     const ip = await this.prisma.$transaction(async (tx) => {
+      if (input.idempotencyKey) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`ip:create:${user.userId}:${input.idempotencyKey}`}, 0))`;
+        const previous = await tx.ip.findUnique({
+          where: {
+            createdById_creationKey: {
+              createdById: user.userId,
+              creationKey: input.idempotencyKey,
+            },
+          },
+          include: adminIpInclude,
+        });
+        if (previous) {
+          if (previous.creationFingerprint !== fingerprint)
+            throw new ConflictException(
+              'This creation request key was already used with different inputs.',
+            );
+          if (previous.deletedAt)
+            throw new ConflictException(
+              'The IP created by this request has been deleted.',
+            );
+          return previous;
+        }
+      }
       const created = await tx.ip.create({
         data: {
+          channelType: 'ip',
           status: IpPublicationStatus.draft,
           listingVisibility: IpListingVisibility.private,
           sourceLocale,
           region: input.region ?? null,
           createdById: user.userId,
+          creationKey: input.idempotencyKey ?? null,
+          creationFingerprint: input.idempotencyKey ? fingerprint : null,
           localizations: {
             create: {
               locale: sourceLocale,
@@ -2191,6 +2253,31 @@ export class IpCommerceService {
           },
         },
       });
+
+      // Private IP drafts must not create a public Crew or bypass certification.
+      if (hasCrewCreatePass(user.levelIds)) {
+        const crew = await createCrewTx(
+          tx,
+          this.conversations,
+          user.userId,
+          {
+            name: input.title,
+            description: summary,
+            logo: '',
+            genres: [],
+            styles: [],
+            socialLinks: [],
+            showcaseWorks: [],
+            productionTemplateLocale: input.sourceLocale,
+            productionKind: input.productionKind ?? 'series',
+            ...(input.studioWorkspaceId
+              ? { studioWorkspaceId: input.studioWorkspaceId }
+              : { createStudioWorkspace: { name: input.title } }),
+          },
+          'unlisted',
+        );
+        await tx.$executeRaw`INSERT INTO ip_crew_origins (ip_id, crew_id, linked_by_id) VALUES (${created.id}::uuid, ${crew.id}, ${user.userId})`;
+      }
 
       await replaceIpTaxonomyAssignmentsTx(tx, {
         ipId: created.id,
@@ -2267,6 +2354,7 @@ export class IpCommerceService {
     const tagCodes = input.tagCodes;
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       if (
         title !== undefined ||
         summary !== undefined ||
@@ -2366,6 +2454,7 @@ export class IpCommerceService {
     this.assertExpectedVersion(input.expectedVersion, ip.version);
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       const coverAssetId = await this.resolveMediaAssetPatchTx(tx, {
         assetId: input.coverAssetId,
         kind: MediaAssetKind.image,
@@ -2543,6 +2632,7 @@ export class IpCommerceService {
     for (let attempt = 0; ; attempt += 1) {
       try {
         const updated = await this.prisma.$transaction(async (tx) => {
+          await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
           const maxEpisode = await tx.ipEpisode.aggregate({
             where: { ipId: ip.id },
             _max: { episodeNo: true, sortOrder: true },
@@ -2658,6 +2748,7 @@ export class IpCommerceService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       if (
         input.episodeNo !== undefined &&
         input.episodeNo !== episode.episodeNo
@@ -2769,32 +2860,34 @@ export class IpCommerceService {
     episodeId: string,
   ) {
     const ip = await this.findCreatorIpForMutation(user, ipId);
-    const episode = await this.prisma.ipEpisode.findFirst({
-      where: { id: episodeId, ipId: ip.id, deletedAt: null },
-      include: {
-        _count: {
-          select: {
-            purchaseOrders: true,
-            entitlements: true,
-          },
-        },
-      },
-    });
-    if (!episode) {
-      throw new NotFoundException({
-        code: 'IP_EPISODE_NOT_FOUND',
-        msg: 'Episode not found.',
-      });
-    }
-    if (episode._count.purchaseOrders || episode._count.entitlements) {
-      throw new BadRequestException({
-        code: 'IP_EPISODE_HAS_ORDERS',
-        msg: 'Episode already has orders or entitlements and cannot be deleted.',
-      });
-    }
-
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      // Serialize deletion with grants before reading protected-use counts.
+      await tx.$queryRaw`SELECT id FROM ips WHERE id=${ip.id}::uuid FOR UPDATE`;
+      const episode = await tx.ipEpisode.findFirst({
+        where: { id: episodeId, ipId: ip.id, deletedAt: null },
+        include: {
+          _count: {
+            select: {
+              purchaseOrders: true,
+              entitlements: true,
+            },
+          },
+        },
+      });
+      if (!episode) {
+        throw new NotFoundException({
+          code: 'IP_EPISODE_NOT_FOUND',
+          msg: 'Episode not found.',
+        });
+      }
+      if (episode._count.purchaseOrders || episode._count.entitlements) {
+        throw new BadRequestException({
+          code: 'IP_EPISODE_HAS_ORDERS',
+          msg: 'Episode already has orders or entitlements and cannot be deleted.',
+        });
+      }
+
       await tx.ipPriceRule.updateMany({
         where: {
           ipId: ip.id,
@@ -2857,6 +2950,7 @@ export class IpCommerceService {
     const now = new Date();
     const status = input.status as IpPriceRuleStatus;
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       await tx.ipPriceRule.updateMany({
         where: {
           ipId: ip.id,
@@ -2984,6 +3078,7 @@ export class IpCommerceService {
 
     const now = new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockCreatorIpSnapshotTx(tx, ip.id, ip.version);
       await tx.ipReviewSubmission.updateMany({
         where: {
           targetType: IpReviewTargetType.ip,
@@ -3272,94 +3367,103 @@ export class IpCommerceService {
     const targetType = input.targetType as IpTargetType;
     // The dialog sends the encoded public id; entitlements store the raw id.
     const targetUserId = decodeUserId(input.userId);
-    const now = new Date();
-    const ip = await this.prisma.ip.findFirst({
-      where: { id: input.ipId, deletedAt: null },
-      include: {
-        episodes: {
-          where: input.episodeId ? { id: input.episodeId } : undefined,
-          include: {
-            localizations: {
-              where: { archivedAt: null },
-              orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ips WHERE id = ${input.ipId}::uuid FOR SHARE`;
+      const ip = await tx.ip.findFirst({
+        where: { id: input.ipId, deletedAt: null },
+        include: {
+          episodes: {
+            where: {
+              deletedAt: null,
+              ...(input.episodeId ? { id: input.episodeId } : {}),
+            },
+            include: {
+              localizations: {
+                where: { archivedAt: null },
+                orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+              },
             },
           },
-        },
-        localizations: {
-          where: { archivedAt: null },
-          orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
-        },
-      },
-    });
-    if (!ip) {
-      throw new NotFoundException({
-        code: 'IP_NOT_FOUND',
-        msg: 'IP not found.',
-      });
-    }
-    if (targetType === IpTargetType.episode) {
-      const episode = ip.episodes.find((item) => item.id === input.episodeId);
-      if (!episode) {
-        throw new NotFoundException({
-          code: 'IP_EPISODE_NOT_FOUND',
-          msg: 'Episode not found for this IP.',
-        });
-      }
-    }
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const existing = await findCurrentOrPendingEntitlementTx(tx, {
-        userId: targetUserId,
-        ipId: ip.id,
-        targetType,
-        episodeId: input.episodeId ?? null,
-        now,
-      });
-      if (existing) {
-        return {
-          entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
-            where: { id: existing.id },
-            include: commerceEntitlementInclude,
-          }),
-          alreadyGranted: true,
-        };
-      }
-
-      const entitlement = await tx.ipContentEntitlement.create({
-        data: {
-          userId: targetUserId,
-          ipId: ip.id,
-          episodeId:
-            targetType === IpTargetType.episode
-              ? (input.episodeId ?? null)
-              : null,
-          targetType,
-          status: IpEntitlementStatus.active,
-          sourceType: 'admin_grant',
-          sourceId: randomUUID(),
-          startsAt: input.startsAt ?? now,
-          endsAt: input.endsAt ?? null,
-          metadata: {
-            reason: input.reason,
-            grantedById: user.userId,
-            grantedByName: user.userName ?? user.email ?? null,
+          localizations: {
+            where: { archivedAt: null },
+            orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
           },
         },
       });
-      await ensureCollectionItemTx(tx, targetUserId, entitlement);
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+      if (targetType === IpTargetType.episode) {
+        const episode = ip.episodes.find((item) => item.id === input.episodeId);
+        if (!episode) {
+          throw new NotFoundException({
+            code: 'IP_EPISODE_NOT_FOUND',
+            msg: 'Episode not found for this IP.',
+          });
+        }
+      }
+
+      const result = await (async () => {
+        const existing = await findCurrentOrPendingEntitlementTx(tx, {
+          userId: targetUserId,
+          ipId: ip.id,
+          targetType,
+          episodeId: input.episodeId ?? null,
+        });
+        if (existing) {
+          return {
+            entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
+              where: { id: existing.id },
+              include: commerceEntitlementInclude,
+            }),
+            alreadyGranted: true,
+          };
+        }
+
+        const [{ now }] = await tx.$queryRaw<
+          Array<{ now: Date }>
+        >`SELECT clock_timestamp() AS now`;
+        const entitlement = await tx.ipContentEntitlement.create({
+          data: {
+            userId: targetUserId,
+            ipId: ip.id,
+            episodeId:
+              targetType === IpTargetType.episode
+                ? (input.episodeId ?? null)
+                : null,
+            targetType,
+            status: IpEntitlementStatus.active,
+            sourceType: 'admin_grant',
+            sourceId: randomUUID(),
+            startsAt: input.startsAt ?? now,
+            endsAt: input.endsAt ?? null,
+            metadata: {
+              reason: input.reason,
+              grantedById: user.userId,
+              grantedByName: user.userName ?? user.email ?? null,
+            },
+          },
+        });
+        await ensureCollectionItemTx(tx, targetUserId, entitlement);
+        return {
+          entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
+            where: { id: entitlement.id },
+            include: commerceEntitlementInclude,
+          }),
+          alreadyGranted: false,
+        };
+      })();
       return {
-        entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
-          where: { id: entitlement.id },
-          include: commerceEntitlementInclude,
-        }),
-        alreadyGranted: false,
+        entitlement: commerceEntitlementDto(
+          result.entitlement,
+          ip.sourceLocale,
+        ),
+        alreadyGranted: result.alreadyGranted,
       };
     });
-
-    return {
-      entitlement: commerceEntitlementDto(result.entitlement, ip.sourceLocale),
-      alreadyGranted: result.alreadyGranted,
-    };
   }
 
   async revokeAdminEntitlement(
@@ -3367,43 +3471,48 @@ export class IpCommerceService {
     entitlementId: string,
     input: RevokeAdminIpEntitlementInput,
   ) {
-    const entitlement = await this.prisma.ipContentEntitlement.findUnique({
-      where: { id: entitlementId },
-      include: commerceEntitlementInclude,
-    });
-    if (!entitlement) {
-      throw new NotFoundException({
-        code: 'IP_ENTITLEMENT_NOT_FOUND',
-        msg: 'IP entitlement not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ip_content_entitlements WHERE id = ${entitlementId}::uuid FOR UPDATE`;
+      const entitlement = await tx.ipContentEntitlement.findUnique({
+        where: { id: entitlementId },
+        include: commerceEntitlementInclude,
       });
-    }
-    if (entitlement.status === IpEntitlementStatus.revoked) {
-      return {
-        entitlement: commerceEntitlementDto(
-          entitlement,
-          entitlement.ip.sourceLocale,
-        ),
-        alreadyRevoked: true,
-      };
-    }
-    if (entitlement.status !== IpEntitlementStatus.active) {
-      throw new BadRequestException({
-        code: 'IP_ENTITLEMENT_NOT_ACTIVE',
-        msg: 'Only active IP entitlements can be revoked.',
-      });
-    }
+      if (!entitlement) {
+        throw new NotFoundException({
+          code: 'IP_ENTITLEMENT_NOT_FOUND',
+          msg: 'IP entitlement not found.',
+        });
+      }
+      if (entitlement.status === IpEntitlementStatus.revoked) {
+        return {
+          entitlement: commerceEntitlementDto(
+            entitlement,
+            entitlement.ip.sourceLocale,
+          ),
+          alreadyRevoked: true,
+        };
+      }
+      if (entitlement.status !== IpEntitlementStatus.active) {
+        throw new BadRequestException({
+          code: 'IP_ENTITLEMENT_NOT_ACTIVE',
+          msg: 'Only active IP entitlements can be revoked.',
+        });
+      }
 
-    const now = new Date();
-    const updated = await this.prisma.$transaction(async (tx) => {
+      const [{ now }] = await tx.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT clock_timestamp() AS now`;
       const row = await tx.ipContentEntitlement.update({
         where: { id: entitlement.id },
         data: {
           status: IpEntitlementStatus.revoked,
           revokedAt: now,
           endsAt:
-            entitlement.endsAt && entitlement.endsAt < now
+            now <= entitlement.startsAt
               ? entitlement.endsAt
-              : now,
+              : entitlement.endsAt && entitlement.endsAt < now
+                ? entitlement.endsAt
+                : now,
           metadata: {
             ...(isRecord(entitlement.metadata) ? entitlement.metadata : {}),
             revokeReason: input.reason,
@@ -3424,13 +3533,37 @@ export class IpCommerceService {
           removedAt: now,
         },
       });
-      return row;
+      return {
+        entitlement: commerceEntitlementDto(row, row.ip.sourceLocale),
+        alreadyRevoked: false,
+      };
     });
+  }
 
-    return {
-      entitlement: commerceEntitlementDto(updated, updated.ip.sourceLocale),
-      alreadyRevoked: false,
-    };
+  async updateAdminIpChannel(
+    user: AuthUser,
+    ipId: string,
+    input: { channelType: 'ip' | 'community'; expectedVersion: number },
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.ip.updateMany({
+        where: { id: ipId, deletedAt: null, version: input.expectedVersion },
+        data: {
+          channelType: input.channelType,
+          updatedById: user.userId,
+          version: { increment: 1 },
+        },
+      });
+      if (result.count !== 1)
+        throw new ConflictException(
+          'Channel changed or no longer exists. Refresh and retry.',
+        );
+      const ip = await tx.ip.findUniqueOrThrow({
+        where: { id: ipId },
+        include: adminIpInclude,
+      });
+      return { channelType: ip.channelType };
+    });
   }
 
   async updateAdminIpPublication(
@@ -3438,140 +3571,148 @@ export class IpCommerceService {
     ipId: string,
     input: UpdateAdminIpPublicationInput,
   ) {
-    const ip = await this.prisma.ip.findFirst({
-      where: { id: ipId, deletedAt: null },
-      include: adminIpInclude,
-    });
-    if (!ip) {
-      throw new NotFoundException({
-        code: 'IP_NOT_FOUND',
-        msg: 'IP not found.',
-      });
-    }
-
-    const now = new Date();
-    const nextStatus = input.status as IpPublicationStatus;
-    const scheduledAt =
-      input.scheduledAt === null ? null : (input.scheduledAt ?? ip.scheduledAt);
-    if (nextStatus === IpPublicationStatus.scheduled) {
-      if (!scheduledAt) {
-        throw new BadRequestException({
-          code: 'IP_SCHEDULE_REQUIRED',
-          msg: 'scheduledAt is required when scheduling an IP.',
-        });
-      }
-      if (scheduledAt <= now) {
-        throw new BadRequestException({
-          code: 'IP_SCHEDULE_IN_PAST',
-          msg: 'scheduledAt must be in the future.',
-        });
-      }
-    }
-    if (
-      nextStatus === IpPublicationStatus.published ||
-      nextStatus === IpPublicationStatus.scheduled
-    ) {
-      assertIpReadyForPublication(ip);
-      const openReportCount = await this.prisma.ipContentReport.count({
-        where: {
-          ipId: ip.id,
-          status: { in: [IpReportStatus.submitted, IpReportStatus.triaged] },
-        },
-      });
-      if (openReportCount > 0) {
-        throw new BadRequestException({
-          code: 'IP_PUBLISH_OPEN_REPORTS',
-          msg: `Resolve ${openReportCount} open IP report(s) before publishing.`,
-        });
-      }
-    }
-
-    const nextVisibility =
-      input.listingVisibility ??
-      defaultVisibilityForStatus(nextStatus, ip.listingVisibility);
-    const actionType = moderationActionForPublicationStatus(nextStatus);
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const updateResult = await tx.ip.updateMany({
-        where: {
-          id: ip.id,
-          deletedAt: null,
-          ...(input.expectedVersion !== undefined
-            ? { version: input.expectedVersion }
-            : {}),
-        },
-        data: {
-          status: nextStatus,
-          listingVisibility: nextVisibility,
-          scheduledAt:
-            nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
-          publishedAt:
-            nextStatus === IpPublicationStatus.published
-              ? (ip.publishedAt ?? now)
-              : ip.publishedAt,
-          suspendedAt:
-            nextStatus === IpPublicationStatus.suspended
-              ? (ip.suspendedAt ?? now)
-              : nextStatus === IpPublicationStatus.approved ||
-                  nextStatus === IpPublicationStatus.published
-                ? null
-                : ip.suspendedAt,
-          archivedAt:
-            nextStatus === IpPublicationStatus.archived
-              ? (ip.archivedAt ?? now)
-              : ip.archivedAt,
-          updatedById: user.userId,
-          version: { increment: 1 },
-        },
-      });
-      if (updateResult.count !== 1) {
-        throw new ConflictException({
-          code: 'IP_VERSION_CONFLICT',
-          msg: 'IP was updated by another operator. Refresh and retry.',
-        });
-      }
-
-      await syncIpLocalizationStatusForPublication(tx, ip.id, nextStatus);
-      // Episodes created while the IP was still draft stay `draft` until this
-      // handoff — creators cannot publish them themselves. Mirror IP
-      // localization sync so the first (pre-review) episode goes live with the IP.
-      await syncIpEpisodeStatusForPublication(tx, ip.id, nextStatus, {
-        now,
-        scheduledAt:
-          nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
-      });
-      await settleIpReviewSubmissionsForPublication(tx, {
-        ipId: ip.id,
-        reviewerId: user.userId,
-        status: nextStatus,
-        reason: input.reason,
-        now,
-      });
-
-      const updatedIp = await tx.ip.findUniqueOrThrow({
-        where: { id: ip.id },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ips WHERE id=${ipId}::uuid FOR UPDATE`;
+      const ip = await tx.ip.findFirst({
+        where: { id: ipId, deletedAt: null },
         include: adminIpInclude,
       });
-      await tx.ipModerationAction.create({
-        data: {
-          targetType: IpModerationTargetType.ip,
-          targetId: ip.id,
-          actionType,
-          actorUserId: user.userId,
-          reason: input.reason,
-          before: moderationSnapshot(ip) as Prisma.InputJsonValue,
-          after: moderationSnapshot(updatedIp) as Prisma.InputJsonValue,
-          startsAt:
-            nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
-          metadata: {
-            source: 'admin_ip_commerce_publication',
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+
+      const [{ now }] = await tx.$queryRaw<
+        { now: Date }[]
+      >`SELECT clock_timestamp() AS now`;
+      const nextStatus = input.status as IpPublicationStatus;
+      const scheduledAt =
+        input.scheduledAt === null
+          ? null
+          : (input.scheduledAt ?? ip.scheduledAt);
+      if (nextStatus === IpPublicationStatus.scheduled) {
+        if (!scheduledAt) {
+          throw new BadRequestException({
+            code: 'IP_SCHEDULE_REQUIRED',
+            msg: 'scheduledAt is required when scheduling an IP.',
+          });
+        }
+        if (scheduledAt <= now) {
+          throw new BadRequestException({
+            code: 'IP_SCHEDULE_IN_PAST',
+            msg: 'scheduledAt must be in the future.',
+          });
+        }
+      }
+      if (
+        nextStatus === IpPublicationStatus.published ||
+        nextStatus === IpPublicationStatus.scheduled
+      ) {
+        assertIpReadyForPublication(ip);
+        const openReportCount = await tx.ipContentReport.count({
+          where: {
+            ipId: ip.id,
+            status: {
+              in: [IpReportStatus.submitted, IpReportStatus.triaged],
+            },
           },
-        },
-      });
+        });
+        if (openReportCount > 0) {
+          throw new BadRequestException({
+            code: 'IP_PUBLISH_OPEN_REPORTS',
+            msg: `Resolve ${openReportCount} open IP report(s) before publishing.`,
+          });
+        }
+      }
 
-      return updatedIp;
+      const nextVisibility =
+        input.listingVisibility ??
+        defaultVisibilityForStatus(nextStatus, ip.listingVisibility);
+      const actionType = moderationActionForPublicationStatus(nextStatus);
+      const updated = await (async () => {
+        const updateResult = await tx.ip.updateMany({
+          where: {
+            id: ip.id,
+            deletedAt: null,
+            ...(input.expectedVersion !== undefined
+              ? { version: input.expectedVersion }
+              : {}),
+          },
+          data: {
+            status: nextStatus,
+            listingVisibility: nextVisibility,
+            scheduledAt:
+              nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
+            publishedAt:
+              nextStatus === IpPublicationStatus.published
+                ? (ip.publishedAt ?? now)
+                : ip.publishedAt,
+            suspendedAt:
+              nextStatus === IpPublicationStatus.suspended
+                ? (ip.suspendedAt ?? now)
+                : nextStatus === IpPublicationStatus.approved ||
+                    nextStatus === IpPublicationStatus.published
+                  ? null
+                  : ip.suspendedAt,
+            archivedAt:
+              nextStatus === IpPublicationStatus.archived
+                ? (ip.archivedAt ?? now)
+                : ip.archivedAt,
+            updatedById: user.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (updateResult.count !== 1) {
+          throw new ConflictException({
+            code: 'IP_VERSION_CONFLICT',
+            msg: 'IP was updated by another operator. Refresh and retry.',
+          });
+        }
+
+        await syncIpLocalizationStatusForPublication(tx, ip.id, nextStatus);
+        // Episodes created while the IP was still draft stay `draft` until this
+        // handoff — creators cannot publish them themselves. Mirror IP
+        // localization sync so the first (pre-review) episode goes live with the IP.
+        await syncIpEpisodeStatusForPublication(tx, ip.id, nextStatus, {
+          now,
+          scheduledAt:
+            nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
+        });
+        await settleIpReviewSubmissionsForPublication(tx, {
+          ipId: ip.id,
+          reviewerId: user.userId,
+          status: nextStatus,
+          reason: input.reason,
+          now,
+        });
+
+        const updatedIp = await tx.ip.findUniqueOrThrow({
+          where: { id: ip.id },
+          include: adminIpInclude,
+        });
+        await tx.ipModerationAction.create({
+          data: {
+            targetType: IpModerationTargetType.ip,
+            targetId: ip.id,
+            actionType,
+            actorUserId: user.userId,
+            reason: input.reason,
+            before: moderationSnapshot(ip) as Prisma.InputJsonValue,
+            after: moderationSnapshot(updatedIp) as Prisma.InputJsonValue,
+            startsAt:
+              nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
+            metadata: {
+              source: 'admin_ip_commerce_publication',
+            },
+          },
+        });
+
+        return updatedIp;
+      })();
+      return { ip: adminIpDetailDto(updated, ip.sourceLocale) };
     });
-
-    return { ip: adminIpDetailDto(updated, ip.sourceLocale) };
   }
 
   async resolveAdminReport(
@@ -3579,63 +3720,75 @@ export class IpCommerceService {
     reportId: string,
     input: ResolveAdminIpReportInput,
   ) {
-    const report = await this.prisma.ipContentReport.findUnique({
-      where: { id: reportId },
-      include: {
-        ip: true,
-        episode: true,
-      },
-    });
-    if (!report) {
-      throw new NotFoundException({
-        code: 'IP_REPORT_NOT_FOUND',
-        msg: 'IP report not found.',
+    return this.prisma.$transaction(async (tx) => {
+      const target = await tx.ipContentReport.findUnique({
+        where: { id: reportId },
+        select: { ipId: true, episodeId: true },
       });
-    }
-
-    const now = new Date();
-    const actionType = input.actionType as IpModerationActionType | undefined;
-    if (actionType) {
-      await this.applyModerationAction(user, report, actionType, {
-        reason: input.reason ?? input.resolutionNote ?? 'Report resolved.',
-        now,
-      });
-    }
-
-    const updated = await this.prisma.ipContentReport.update({
-      where: { id: report.id },
-      data: {
-        status: input.status as IpReportStatus,
-        resolvedById: user.userId,
-        resolutionNote: input.resolutionNote,
-        resolvedAt:
-          input.status === IpReportStatus.triaged ? report.resolvedAt : now,
-        metadata: {
-          ...(isRecord(report.metadata) ? report.metadata : {}),
-          actionType: actionType ?? null,
+      if (target?.ipId)
+        await tx.$queryRaw`SELECT id FROM ips WHERE id=${target.ipId}::uuid FOR UPDATE`;
+      if (target?.episodeId)
+        await tx.$queryRaw`SELECT id FROM ip_episodes WHERE id=${target.episodeId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM ip_content_reports WHERE id=${reportId}::uuid FOR UPDATE`;
+      const report = await tx.ipContentReport.findUnique({
+        where: { id: reportId },
+        include: {
+          ip: true,
+          episode: true,
         },
-      },
-      include: {
-        ip: {
-          include: {
-            localizations: {
-              where: { archivedAt: null },
-              orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+      });
+      if (!report) {
+        throw new NotFoundException({
+          code: 'IP_REPORT_NOT_FOUND',
+          msg: 'IP report not found.',
+        });
+      }
+
+      const [{ now }] = await tx.$queryRaw<
+        { now: Date }[]
+      >`SELECT clock_timestamp() AS now`;
+      const actionType = input.actionType as IpModerationActionType | undefined;
+      if (actionType) {
+        await this.applyModerationAction(tx, user.userId, report, actionType, {
+          reason: input.reason ?? input.resolutionNote ?? 'Report resolved.',
+          now,
+        });
+      }
+
+      const updated = await tx.ipContentReport.update({
+        where: { id: report.id },
+        data: {
+          status: input.status as IpReportStatus,
+          resolvedById: user.userId,
+          resolutionNote: input.resolutionNote,
+          resolvedAt:
+            input.status === IpReportStatus.triaged ? report.resolvedAt : now,
+          metadata: {
+            ...(isRecord(report.metadata) ? report.metadata : {}),
+            actionType: actionType ?? null,
+          },
+        },
+        include: {
+          ip: {
+            include: {
+              localizations: {
+                where: { archivedAt: null },
+                orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+              },
+            },
+          },
+          episode: {
+            include: {
+              localizations: {
+                where: { archivedAt: null },
+                orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
+              },
             },
           },
         },
-        episode: {
-          include: {
-            localizations: {
-              where: { archivedAt: null },
-              orderBy: [{ locale: 'asc' }, { updatedAt: 'desc' }],
-            },
-          },
-        },
-      },
+      });
+      return { report: adminReportDto(updated, report.ip?.sourceLocale) };
     });
-
-    return { report: adminReportDto(updated, report.ip?.sourceLocale) };
   }
 
   async recordIpView(
@@ -3682,7 +3835,7 @@ export class IpCommerceService {
     let recorded = false;
 
     try {
-      await this.prisma.$transaction(async (tx) => {
+      recorded = await this.prisma.$transaction(async (tx) => {
         if (input.idempotencyKey) {
           await tx.$executeRaw`
             SELECT pg_advisory_xact_lock(hashtext(${`ip:view:${input.idempotencyKey}`})::bigint)
@@ -3691,7 +3844,7 @@ export class IpCommerceService {
             where: { idempotencyKey: input.idempotencyKey },
             select: { id: true },
           });
-          if (existing) return;
+          if (existing) return false;
         }
 
         await tx.ipViewEvent.create({
@@ -3706,10 +3859,15 @@ export class IpCommerceService {
           },
         });
         await this.incrementViewAggregateTx(tx, ipId, actor.actorKind, now);
-        recorded = true;
+        return true;
       });
     } catch (error) {
-      if (!isUniqueViolation(error)) throw error;
+      if (!isUniqueViolation(error) || !input.idempotencyKey) throw error;
+      const existing = await this.prisma.ipViewEvent.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        select: { id: true },
+      });
+      if (!existing) throw error;
     }
 
     return {
@@ -3768,14 +3926,16 @@ export class IpCommerceService {
           { crewId: string }[]
         >`SELECT crew_id AS "crewId" FROM ip_crew_origins WHERE ip_id = ${ipId}::uuid`;
         if (origin)
-          conversationId = (
-            await joinCrewFanTx(
-              tx,
-              this.conversations,
-              origin.crewId,
-              actor.userId,
-            )
-          ).id;
+          conversationId =
+            (
+              await joinCrewFanTx(
+                tx,
+                this.conversations,
+                origin.crewId,
+                actor.userId,
+                true,
+              )
+            )?.id ?? null;
       }
       const existing = await tx.ipLike.findUnique({
         where: { ipId_userId: { ipId, userId: actor.userId } },
@@ -4773,6 +4933,10 @@ export class IpCommerceService {
         };
       }
 
+      // Keep availability valid until the order/entitlement commits. Creator
+      // deletion and publication changes take an exclusive lock on this row.
+      await tx.$queryRaw`SELECT id FROM ips WHERE id=${input.ipId}::uuid FOR SHARE`;
+
       const ip = await tx.ip.findFirst({
         where: {
           id: input.ipId,
@@ -4839,7 +5003,6 @@ export class IpCommerceService {
         ipId: input.ipId,
         targetType: input.targetType,
         episodeId: input.episodeId ?? null,
-        now,
       });
       if (existingEntitlement) {
         await ensureCollectionItemTx(tx, user.userId, existingEntitlement);
@@ -5263,6 +5426,28 @@ export class IpCommerceService {
     };
   }
 
+  private async lockCreatorIpSnapshotTx(
+    tx: Prisma.TransactionClient,
+    ipId: string,
+    version: number,
+  ) {
+    // Preflight reads do not protect against another save committing before
+    // this transaction. Lock the parent before touching any child rows, then
+    // verify the snapshot used for validation is still current.
+    const [current] = await tx.$queryRaw<Array<{ version: number }>>`
+      SELECT version FROM ips
+      WHERE id = ${ipId}::uuid AND deleted_at IS NULL
+      FOR UPDATE
+    `;
+    if (!current) {
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    }
+    this.assertExpectedVersion(version, current.version);
+  }
+
   private assertExpectedVersion(expected: number | undefined, actual: number) {
     if (expected === undefined || expected === actual) return;
     throw new ConflictException({
@@ -5348,7 +5533,8 @@ export class IpCommerceService {
   }
 
   private async applyModerationAction(
-    user: AuthUser,
+    tx: Prisma.TransactionClient,
+    actorId: string,
     report: {
       id: string;
       targetType: IpTargetType;
@@ -5390,24 +5576,24 @@ export class IpCommerceService {
 
     let after: unknown = before;
     if (targetType === IpModerationTargetType.ip && report.ipId) {
-      after = await this.prisma.ip.update({
+      after = await tx.ip.update({
         where: { id: report.ipId },
         data: ipPublicationPatchForModeration(actionType, input.now),
       });
     }
     if (targetType === IpModerationTargetType.episode && report.episodeId) {
-      after = await this.prisma.ipEpisode.update({
+      after = await tx.ipEpisode.update({
         where: { id: report.episodeId },
         data: episodePublicationPatchForModeration(actionType, input.now),
       });
     }
 
-    await this.prisma.ipModerationAction.create({
+    await tx.ipModerationAction.create({
       data: {
         targetType,
         targetId,
         actionType,
-        actorUserId: user.userId,
+        actorUserId: actorId,
         reason: input.reason,
         before: moderationSnapshot(before) as Prisma.InputJsonValue,
         after: moderationSnapshot(after) as Prisma.InputJsonValue,
@@ -6090,9 +6276,12 @@ async function findCurrentOrPendingEntitlementTx(
     ipId: string;
     targetType: IpTargetType;
     episodeId: string | null;
-    now: Date;
   },
 ) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ip:entitlement:${input.userId}:${input.ipId}`})::bigint)`;
+  const [{ now }] = await tx.$queryRaw<
+    Array<{ now: Date }>
+  >`SELECT clock_timestamp() AS now`;
   const titleEntitlement = await tx.ipContentEntitlement.findFirst({
     where: {
       userId: input.userId,
@@ -6100,7 +6289,7 @@ async function findCurrentOrPendingEntitlementTx(
       targetType: IpTargetType.ip,
       episodeId: null,
       status: IpEntitlementStatus.active,
-      ...currentOrPendingEntitlementWhere(input.now),
+      ...currentOrPendingEntitlementWhere(now),
     },
   });
   if (titleEntitlement) return titleEntitlement;
@@ -6113,7 +6302,7 @@ async function findCurrentOrPendingEntitlementTx(
       episodeId: input.episodeId,
       targetType: IpTargetType.episode,
       status: IpEntitlementStatus.active,
-      ...currentOrPendingEntitlementWhere(input.now),
+      ...currentOrPendingEntitlementWhere(now),
     },
   });
 }
@@ -6191,23 +6380,11 @@ async function debitCommunityPointTx(
     orderNo: string;
   },
 ) {
-  const account = await tx.walletAccount.upsert({
-    where: {
-      ownerType_ownerId_currency_balanceKind: {
-        ownerType: WalletOwnerType.user,
-        ownerId: input.userId,
-        currency: WalletCurrencyType.community_point,
-        balanceKind: WalletBalanceKind.consumable,
-      },
-    },
-    create: {
-      ownerType: WalletOwnerType.user,
-      ownerId: input.userId,
-      currency: WalletCurrencyType.community_point,
-      balanceKind: WalletBalanceKind.consumable,
-      status: WalletAccountStatus.active,
-    },
-    update: {},
+  const account = await ensureWalletAccount(tx, {
+    ownerType: WalletOwnerType.user,
+    ownerId: input.userId,
+    currency: WalletCurrencyType.community_point,
+    balanceKind: WalletBalanceKind.consumable,
   });
   await tx.$executeRaw`
     SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)
@@ -6369,23 +6546,11 @@ async function creditWithdrawableCommunityPointTx(
   // Withdrawable accounts are only ever created here (always active); nothing
   // closes them in the earning-only loop, so a status gate that could roll back
   // the buyer's purchase is intentionally omitted.
-  const account = await tx.walletAccount.upsert({
-    where: {
-      ownerType_ownerId_currency_balanceKind: {
-        ownerType: WalletOwnerType.user,
-        ownerId: input.userId,
-        currency: WalletCurrencyType.community_point,
-        balanceKind: WalletBalanceKind.withdrawable,
-      },
-    },
-    create: {
-      ownerType: WalletOwnerType.user,
-      ownerId: input.userId,
-      currency: WalletCurrencyType.community_point,
-      balanceKind: WalletBalanceKind.withdrawable,
-      status: WalletAccountStatus.active,
-    },
-    update: {},
+  const account = await ensureWalletAccount(tx, {
+    ownerType: WalletOwnerType.user,
+    ownerId: input.userId,
+    currency: WalletCurrencyType.community_point,
+    balanceKind: WalletBalanceKind.withdrawable,
   });
   await tx.$executeRaw`
     SELECT pg_advisory_xact_lock(hashtext(${`wallet:account:${account.id}`})::bigint)
@@ -6472,6 +6637,7 @@ function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {
   const search = query.q?.trim();
   return {
     deletedAt: null,
+    channelType: query.channelType,
     status: query.status as IpPublicationStatus | undefined,
     listingVisibility: query.listingVisibility as
       | IpListingVisibility
@@ -6803,6 +6969,7 @@ function publicIpRankBaseFilterSql(
         AND localization.archived_at IS NULL
         AND localization.status::text IN (${Prisma.join(PUBLIC_LOCALIZATION_STATUSES)})
     )
+    ${query.channelType ? Prisma.sql`AND ip.channel_type::text = ${query.channelType}` : Prisma.empty}
     ${genreFilter}
     ${tagFilter}
     ${regionFilter}
@@ -7583,6 +7750,7 @@ function adminIpSummaryDto(
   return {
     id: title.id,
     roomNumber: title.roomNumber,
+    channelType: title.channelType,
     slug: copy.value?.slug ?? null,
     title: copy.value?.title ?? title.id,
     subtitle: copy.value?.subtitle ?? null,
@@ -7593,6 +7761,10 @@ function adminIpSummaryDto(
     ageRating: title.ageRating,
     sourceLocale: title.sourceLocale,
     ...taxonomy,
+    publishers: publishersFromAssignments(
+      title.publisherAssignments,
+      requestedLocale,
+    ),
     version: title.version,
     coverAsset: assetDto(copy.value?.coverAsset ?? title.coverAsset),
     trailerAsset: assetDto(title.trailerAsset),
@@ -7642,11 +7814,17 @@ function creatorIpSummaryDto(
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
+    createdById: title.createdById,
     roomNumber: title.roomNumber,
+    channelType: title.channelType,
     title: copy.value?.title ?? title.id,
     summary: copy.value?.summary ?? '',
     description: copy.value?.description ?? null,
     ...taxonomy,
+    publishers: publishersFromAssignments(
+      title.publisherAssignments,
+      requestedLocale,
+    ),
     localization: copy.meta,
     status: title.status,
     listingVisibility: title.listingVisibility,
@@ -7735,6 +7913,11 @@ function adminIpDetailDto(
     ...adminIpSummaryDto(title, requestedLocale),
     description: titleCopy.value?.description ?? null,
     copyrightOwner: title.copyrightOwner,
+    publishers: publishersFromAssignments(
+      title.publisherAssignments,
+      requestedLocale,
+      { activeOnly: false },
+    ),
     rightsSummary: title.rightsSummary,
     aiDisclosure: title.aiDisclosure,
     episodes: title.episodes.map((episode) => {
@@ -8145,18 +8328,16 @@ async function settleIpReviewSubmissionsForPublication(
     data: reviewPatch,
   });
 
-  await Promise.all(
-    submissions.map((submission) =>
-      tx.ipReviewEvent.create({
-        data: {
-          submissionId: submission.id,
-          eventType,
-          actorUserId: input.reviewerId,
-          message: input.reason,
-        },
-      }),
-    ),
-  );
+  for (const submission of submissions) {
+    await tx.ipReviewEvent.create({
+      data: {
+        submissionId: submission.id,
+        eventType,
+        actorUserId: input.reviewerId,
+        message: input.reason,
+      },
+    });
+  }
 }
 
 function moderationActionForPublicationStatus(status: IpPublicationStatus) {
@@ -8383,6 +8564,7 @@ function ipDto(
   return {
     id: title.id,
     roomNumber: title.roomNumber,
+    channelType: title.channelType,
     slug: copy.value?.slug ?? null,
     status: title.status,
     listingVisibility: title.listingVisibility,
@@ -8410,6 +8592,10 @@ function ipDto(
       isPublic: contributor.isPublic,
       displayOrder: contributor.displayOrder,
     })),
+    publishers: publishersFromAssignments(
+      title.publisherAssignments,
+      requestedLocale,
+    ),
     rightsSummary: title.rightsSummary,
     aiDisclosure: title.aiDisclosure,
     coverAsset: assetDto(copy.value?.coverAsset ?? title.coverAsset),
@@ -8856,25 +9042,6 @@ function deriveAssetTitle(objectKey: string | null): string {
     '',
   );
   return sanitizeFilename(stripped || base) || 'Source material';
-}
-
-function azureBlobContainerName() {
-  return (
-    cleanSegment(process.env.AZURE_BLOB_CONTAINER) ??
-    DEFAULT_AZURE_BLOB_CONTAINER
-  );
-}
-
-function azureBlobRegion() {
-  return (
-    cleanSegment(process.env.AZURE_BLOB_REGION) ??
-    cleanSegment(process.env.AZURE_STORAGE_REGION)
-  );
-}
-
-function cleanSegment(value: string | undefined): string | null {
-  const trimmed = value?.trim();
-  return trimmed || null;
 }
 
 function userBlockDto(block: {

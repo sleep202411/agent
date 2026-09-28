@@ -1,5 +1,5 @@
-import IconMovie from "@tabler/icons-react-native/icons/IconMovie";
-import IconX from "@tabler/icons-react-native/icons/IconX";
+import IconMovie from "@tabler/icons-react-native/IconMovie";
+import IconX from "@tabler/icons-react-native/IconX";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 

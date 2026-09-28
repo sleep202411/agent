@@ -80,7 +80,7 @@ export function useProjectAssets(projectId: string): {
   const { user } = useAuth();
   const context = useQuery({
     queryKey: ["project-crew-assets", projectId, "context", user?.id],
-    queryFn: () => getProjectCrewAssetContext(projectId),
+    queryFn: ({ signal }) => getProjectCrewAssetContext(projectId, signal),
     enabled: Boolean(projectId && user?.id),
     staleTime: 30_000,
     retry: false,
@@ -90,9 +90,9 @@ export function useProjectAssets(projectId: string): {
   // Distinct key from ProjectCrewAssetLibrary's infinite query so cache shapes
   // never collide (infinite pages vs a single page).
   const crewList = useQuery({
-    queryKey: ["project-crew-assets", projectId, "all-folders", user?.id],
+    queryKey: ["project-crew-assets", projectId, "all-folders", user?.id, context.data?.crew?.id],
     queryFn: async ({ signal }) => ({ items: await listAllProjectCrewAssets(projectId, signal) }),
-    enabled: Boolean(projectId) && Boolean(context.data?.crew),
+    enabled: Boolean(projectId && user?.id && context.data?.crew),
     staleTime: 30_000,
     retry: false,
   });

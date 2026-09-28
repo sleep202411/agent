@@ -1,6 +1,57 @@
+import {
+  ProjectStoryboardChildrenController,
+  StoryStoryboardChildrenController,
+} from './storyboard/storyboard-children.controller';
+import { StoryboardChildrenService } from './storyboard/storyboard-children.service';
+import { ProjectTaskTemplateService } from './templates/project-task-template.service';
+import {
+  ProjectTaskTemplatesAdminController,
+  TaskTemplatesAdminAliasController,
+} from './templates/project-task-templates-admin.controller';
+import {
+  CrewApplicationAmendmentsController,
+  CrewAmendmentSettlementQueueController,
+  CrewApplicationAmendmentsService,
+} from './application-amendments';
+import {
+  CrewTaskFeedbackAppealsService,
+  CrewTaskFeedbackAppealsController,
+} from './accountability/task-feedback-appeals';
+import { CrewTaskOverdueWorker } from './tasks/task-overdue.worker';
+import {
+  CrewDisputeAttachmentsService,
+  CrewDisputeAttachmentsController,
+  CrewDisputeAttachmentsAdminController,
+} from './tasks/dispute-attachments';
+import {
+  CrewTaskDisputesService,
+  CrewTaskDisputesController,
+  CrewTaskDisputesAdminController,
+} from './tasks/task-disputes';
+import {
+  CrewTaskExtensionsController,
+  CrewTaskExtensionsService,
+} from './tasks/task-extensions';
+import {
+  CrewApplicationInterviewsController,
+  CrewApplicationInterviewsService,
+} from './application-interviews';
+import {
+  CrewPositionInvitationsController,
+  CrewPositionInvitationsService,
+} from './position-invitations';
+import {
+  CrewApplicationTermsController,
+  CrewApplicationTermsService,
+} from './application-terms';
+import {
+  CrewTaskFeedbackController,
+  CrewTaskFeedbackService,
+} from './accountability/task-feedback';
 import { StoryAccessModule } from '../story-studio/story-access.module';
 import { StoryCrewAssetsController } from './assets/story-crew-assets.controller';
 import { CrewStudioWorkspaceService } from './production/studio-workspace.service';
+import { CrewStudioWorkspaceController } from './production/studio-workspace.controller';
 import { CrewAccountabilityController } from './accountability/accountability.controller';
 import { CrewAccountabilityService } from './accountability/accountability.service';
 import {
@@ -32,6 +83,7 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { WorkspacesModule } from '../workspaces';
 import { ApplicationsController } from './applications.controller';
 import { ApplicationsService } from './applications.service';
+import { CrewQualificationsService } from './crew-qualifications.service';
 import {
   CrewAssetsController,
   ProjectCrewAssetsController,
@@ -94,6 +146,19 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewApplicationAmendmentsController,
+    CrewAmendmentSettlementQueueController,
+    CrewTaskFeedbackAppealsController,
+    CrewDisputeAttachmentsController,
+    CrewDisputeAttachmentsAdminController,
+    CrewTaskDisputesController,
+    CrewTaskDisputesAdminController,
+    CrewTaskExtensionsController,
+    CrewApplicationInterviewsController,
+    CrewPositionInvitationsController,
+    CrewApplicationTermsController,
+    CrewTaskFeedbackController,
+    CrewStudioWorkspaceController,
     StoryCrewAssetsController,
     CrewAccountabilityController,
     CrewTrustAppealController,
@@ -119,8 +184,23 @@ import { CrewProductionService } from './production/production.service';
     CrewAgreementsController,
     CrewEarningsController,
     CrewPayoutsController,
+    ProjectTaskTemplatesAdminController,
+    TaskTemplatesAdminAliasController,
+    ProjectStoryboardChildrenController,
+    StoryStoryboardChildrenController,
   ],
   providers: [
+    StoryboardChildrenService,
+    CrewApplicationAmendmentsService,
+    CrewTaskFeedbackAppealsService,
+    CrewTaskOverdueWorker,
+    CrewDisputeAttachmentsService,
+    CrewTaskDisputesService,
+    CrewTaskExtensionsService,
+    CrewApplicationInterviewsService,
+    CrewPositionInvitationsService,
+    CrewApplicationTermsService,
+    CrewTaskFeedbackService,
     CrewStudioWorkspaceService,
     CrewAccountabilityService,
     CrewTrustAppealService,
@@ -130,6 +210,7 @@ import { CrewProductionService } from './production/production.service';
     CrewsService,
     PositionsService,
     ApplicationsService,
+    CrewQualificationsService,
     MembersService,
     CrewAssetsService,
     CrewAssetUploadCleanupWorker,
@@ -145,8 +226,13 @@ import { CrewProductionService } from './production/production.service';
     BoldSignAgreementProvider,
     CrewEarningsService,
     CrewPayoutsService,
+    ProjectTaskTemplateService,
   ],
   // The scope-agnostic InvitesController redeems crew link tokens.
-  exports: [CrewAssetAccessModule, CrewInviteLinksService],
+  exports: [
+    CrewAssetAccessModule,
+    CrewInviteLinksService,
+    ProjectTaskTemplateService,
+  ],
 })
 export class CrewsModule {}

@@ -4,6 +4,7 @@
 // Owner identities are looked up separately through the existing user directory.
 
 import { useEffect, useState } from "react";
+import { useAdminSessionRequests } from "../admin-session-boundary";
 import { IconCrown, IconExternalLink, IconUsers, IconWallet } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -47,6 +48,7 @@ export function MemberWorkspacesDrawer({
   canWrite: boolean;
   onClose: () => void;
 }) {
+  const requests = useAdminSessionRequests();
   const [rows, setRows] = useState<AdminWorkspaceRow[]>([]);
   const [owners, setOwners] = useState<Record<string, LegacyIdentity>>({});
   const [loading, setLoading] = useState(false);
@@ -63,7 +65,8 @@ export function MemberWorkspacesDrawer({
   // the panel would show B's name over A's workspaces.
   useEffect(() => {
     if (!userId) return;
-    let cancelled = false;
+    const operation = requests.begin();
+    if (!operation) return;
 
     void (async () => {
       setRows([]);
@@ -72,9 +75,10 @@ export function MemberWorkspacesDrawer({
       setError(null);
       try {
         const data = await requestEnvelope<AdminBillingWorkspacesData>(
-          `/api/admin/billing/workspaces?relatedUserId=${encodeURIComponent(userId)}&limit=50`
+          `/api/admin/billing/workspaces?relatedUserId=${encodeURIComponent(userId)}&limit=50`,
+          operation.signal
         );
-        if (cancelled) return;
+        if (!operation.current()) return;
         const items = data?.items ?? [];
         setRows(items);
 
@@ -85,9 +89,10 @@ export function MemberWorkspacesDrawer({
         if (ids.length === 0) return;
         try {
           const identities = await requestEnvelope<{ items: LegacyIdentity[] }>(
-            `/api/admin/legacy-points/users-by-ids?ids=${encodeURIComponent(ids.join(","))}`
+            `/api/admin/legacy-points/users-by-ids?ids=${encodeURIComponent(ids.join(","))}`,
+            operation.signal
           );
-          if (cancelled) return;
+          if (!operation.current()) return;
           setOwners(
             Object.fromEntries((identities?.items ?? []).map((item) => [item.userId, item]))
           );
@@ -95,18 +100,19 @@ export function MemberWorkspacesDrawer({
           /* names stay unresolved; the ids are still shown */
         }
       } catch (err) {
-        if (cancelled) return;
+        if (!operation.current()) return;
         setError(toErrorMessage(err));
         setRows([]);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (operation.current()) setLoading(false);
+        operation.release();
       }
     })();
 
     return () => {
-      cancelled = true;
+      operation.cancel();
     };
-  }, [userId]);
+  }, [userId, requests]);
 
   function applyBalance(workspaceId: string, availableBalance: string) {
     setGranting((current) =>
@@ -242,7 +248,7 @@ export function MemberWorkspacesDrawer({
         </SheetContent>
       </Sheet>
 
-      {granting ? (
+      {granting && canWrite ? (
         <WorkspaceGrantDialog
           key={granting.id}
           workspace={granting}
@@ -251,7 +257,7 @@ export function MemberWorkspacesDrawer({
         />
       ) : null}
 
-      {grantingWorkspacePlan ? (
+      {grantingWorkspacePlan && canWrite ? (
         <GrantMembershipDialog
           open
           workspace={grantingWorkspacePlan}

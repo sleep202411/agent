@@ -427,12 +427,21 @@ describe('CrewEarningsService', () => {
 });
 
 describe('Personal cross-Crew earnings', () => {
+  it('accepts a Crew filter but rejects empty identifiers', () => {
+    expect(
+      ListMyCrewEarningsQuerySchema.parse({
+        currency: 'USD',
+        crewId: 'project',
+      }).crewId,
+    ).toBe('project');
+    expect(
+      ListMyCrewEarningsQuerySchema.safeParse({ currency: 'USD', crewId: ' ' })
+        .success,
+    ).toBe(false);
+  });
+
   it('rejects caller-selected beneficiaries and crew-wide scope', () => {
-    for (const extra of [
-      { userId: 'someone-else' },
-      { scope: 'crew' },
-      { crewId: 'private' },
-    ]) {
+    for (const extra of [{ userId: 'someone-else' }, { scope: 'crew' }]) {
       expect(
         ListMyCrewEarningsQuerySchema.safeParse({ currency: 'USD', ...extra })
           .success,

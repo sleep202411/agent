@@ -3,6 +3,7 @@
 // Search and adjust workspace compute wallets; grants share one dialog.
 
 import { useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconSearch, IconUsers, IconWallet } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,25 +35,26 @@ export function BillingWorkspaceWalletPanel({
 }) {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<AdminWorkspaceRow[]>(initialRows);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [target, setTarget] = useState<AdminWorkspaceRow | null>(null);
 
   async function search() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
       const params = new URLSearchParams({ limit: "30" });
       if (query.trim()) params.set("query", query.trim());
       const data = await requestEnvelope<AdminBillingWorkspacesData>(
-        `/api/admin/billing/workspaces?${params.toString()}`
+        `/api/admin/billing/workspaces?${params.toString()}`,
+        operation.signal
       );
-      setRows(data.items);
+      if (operation.current()) setRows(data.items);
     } catch (err) {
-      setError(toErrorMessage(err));
-      setRows([]);
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
@@ -157,7 +159,7 @@ export function BillingWorkspaceWalletPanel({
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={!canWrite || row.status !== "active"}
+                    disabled={loading || !canWrite || row.status !== "active"}
                     title={canWrite ? undefined : "需要 billing.write 权限"}
                     onClick={() => setTarget(row)}
                   >
@@ -170,7 +172,7 @@ export function BillingWorkspaceWalletPanel({
         </table>
       </div>
 
-      {target ? (
+      {target && canWrite ? (
         <WorkspaceGrantDialog
           key={target.id}
           workspace={target}

@@ -3,7 +3,6 @@ import {
   type StoryBuildCompilerInput,
   type StoryBuildNodeTimelineInput,
   type StoryBuildSegmentInput,
-  type StoryBuildWorldInput,
 } from './story-build-compiler';
 import {
   InteractiveStoryDraftContentSchema,
@@ -13,7 +12,6 @@ import {
 
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000001';
 const BUILD_ID = '0197f4a2-0800-7000-8000-000000000002';
-const WORLD_ID = '0197f4a2-0800-7000-8000-000000000003';
 
 function draft(): InteractiveStoryDraftContent {
   return {
@@ -38,12 +36,12 @@ function draft(): InteractiveStoryDraftContent {
               {
                 choiceId: 'left',
                 label: { 'en-US': 'Left' },
-                nextNodeId: 'left',
+                target: { kind: 'node', nodeId: 'left' },
               },
               {
                 choiceId: 'right',
                 label: { 'en-US': 'Right' },
-                nextNodeId: 'right',
+                target: { kind: 'node', nodeId: 'right' },
               },
             ],
           },
@@ -53,14 +51,14 @@ function draft(): InteractiveStoryDraftContent {
           nodeId: 'left',
           clipKey: 'LEFT',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
         {
           kind: 'clip',
           nodeId: 'right',
           clipKey: 'RIGHT',
           interactions: [],
-          exit: { kind: 'auto', nextNodeId: null },
+          exit: { kind: 'auto', routes: [{ target: null }] },
         },
       ],
     },
@@ -152,7 +150,10 @@ describe('compileStoryBuild', () => {
     const opening = content.graph.nodes[0];
     const exit = opening.exit;
     if (exit.kind !== 'choice') throw new Error('Expected choice fixture');
-    opening.exit = { kind: 'auto', nextNodeId: 'decision:routes' };
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: 'decision:routes' } }],
+    };
     content.graph.nodes.push({
       kind: 'decision',
       nodeId: 'decision:routes',
@@ -215,7 +216,7 @@ describe('compileStoryBuild', () => {
         { kind: 'scene.goto', sceneId: 'right' },
       ]);
     }
-    exit.choices[0].nextNodeId = null;
+    exit.choices[0].target = null;
     const saved = InteractiveStoryDraftContentSchema.parse(content);
     expect(
       saved.graph.nodes.find((node) => node.nodeId === 'decision:routes')?.exit,
@@ -381,8 +382,14 @@ describe('compileStoryBuild', () => {
     if (!opening || opening.kind !== 'clip' || !left || left.kind !== 'clip') {
       throw new Error('Loop fixture clips are missing.');
     }
-    opening.exit = { kind: 'auto', nextNodeId: left.nodeId };
-    left.exit = { kind: 'auto', nextNodeId: opening.nodeId };
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: left.nodeId } }],
+    };
+    left.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: opening.nodeId } }],
+    };
     content.graph.nodes = [opening, left];
 
     const preview = compileStoryBuild(
@@ -435,7 +442,10 @@ describe('compileStoryBuild', () => {
       nodeId: 'orphan',
       clipKey: 'ORPHAN',
       interactions: [],
-      exit: { kind: 'auto', nextNodeId: 'orphan' },
+      exit: {
+        kind: 'auto',
+        routes: [{ target: { kind: 'node', nodeId: 'orphan' } }],
+      },
     });
     const result = compileStoryBuild(input({ draft: content }));
     expect(result.runtime).not.toBeNull();
@@ -449,105 +459,6 @@ describe('compileStoryBuild', () => {
     );
     expect(result.includedGraphNodeIds).not.toContain('orphan');
   });
-
-  it('compiles a ready world node as a first-class runtime scene', () => {
-    const content = draft();
-    const opening = content.graph.nodes[0];
-    if (!opening || opening.kind !== 'clip')
-      throw new Error('Opening clip fixture is missing.');
-    opening.exit = { kind: 'auto', nextNodeId: 'world' };
-    content.graph.nodes = [
-      opening,
-      {
-        kind: 'world',
-        nodeId: 'world',
-        worldId: WORLD_ID,
-        name: 'Rain world',
-        entryInstruction: 'Continue through the gate.',
-        maxExperienceSeconds: 90,
-        exit: { kind: 'auto', nextNodeId: 'left' },
-      },
-      content.graph.nodes[1],
-    ];
-    const worlds: StoryBuildWorldInput[] = [
-      { graphNodeId: 'world', worldId: WORLD_ID, status: 'ready' },
-    ];
-
-    const result = compileStoryBuild(
-      input({
-        draft: content,
-        timelines: [timeline('opening'), timeline('left')],
-        worlds,
-      }),
-    );
-
-    expect(
-      result.diagnostics.filter((item) => item.severity === 'error'),
-    ).toEqual([]);
-    expect(result.pathReport.durationMinMs).toBe(100_000);
-    expect(result.runtime?.rendererRequirements).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ rendererId: 'core.world-model' }),
-      ]),
-    );
-    expect(result.runtime?.graph.nodes).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'scene',
-          renderers: expect.arrayContaining([
-            expect.objectContaining({
-              rendererId: 'core.world-model',
-              config: expect.objectContaining({
-                projectId: PROJECT_ID,
-                worldId: WORLD_ID,
-                maxExperienceSeconds: 90,
-              }) as unknown,
-            }),
-          ]) as unknown,
-        }),
-      ]),
-    );
-  });
-
-  it('blocks playtest when a referenced world is not ready', () => {
-    const content = draft();
-    const opening = content.graph.nodes[0];
-    if (!opening || opening.kind !== 'clip')
-      throw new Error('Opening clip fixture is missing.');
-    opening.exit = { kind: 'auto', nextNodeId: 'world' };
-    content.graph.nodes = [
-      opening,
-      {
-        kind: 'world',
-        nodeId: 'world',
-        worldId: WORLD_ID,
-        maxExperienceSeconds: 60,
-        exit: { kind: 'auto', nextNodeId: null },
-      },
-    ];
-
-    const result = compileStoryBuild(
-      input({
-        channel: 'preview',
-        draft: content,
-        timelines: [timeline('opening')],
-        worlds: [
-          { graphNodeId: 'world', worldId: WORLD_ID, status: 'generating' },
-        ],
-      }),
-    );
-
-    expect(result.runtime).toBeNull();
-    expect(result.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          code: 'STORY_BUILD_WORLD_NOT_READY',
-          severity: 'error',
-          entityId: 'world',
-        }),
-      ]),
-    );
-  });
 });
 
 describe('Community Points compilation', () => {
@@ -556,8 +467,11 @@ describe('Community Points compilation', () => {
     const opening = content.graph.nodes[0];
     const exit = opening.exit;
     if (exit.kind !== 'choice') throw new Error('Expected choice fixture');
-    exit.choices[1].nextNodeId = exit.choices[0].nextNodeId;
-    opening.exit = { kind: 'auto', nextNodeId: 'decision:routes' };
+    exit.choices[1].target = exit.choices[0].target;
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: 'decision:routes' } }],
+    };
     content.graph.nodes.push({
       kind: 'decision',
       nodeId: 'decision:routes',

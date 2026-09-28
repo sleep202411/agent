@@ -1,3 +1,8 @@
+import { ChannelSubmissionsAdminController } from './channel-submissions-admin.controller';
+import {
+  ChannelSubmissionsService,
+  ChannelSubmissionsController,
+} from './channel-submissions';
 import {
   IpGameAssociationController,
   IpGameAssociationService,
@@ -38,7 +43,17 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { WorkspacesModule } from '../workspaces';
 import { IpCommerceAdminController } from './ip-commerce-admin.controller';
 import { IpCommerceController } from './ip-commerce.controller';
+import {
+  IpKnowledgeController,
+  IpKnowledgeService,
+} from './ip-knowledge.controller';
+import { IpGenerationTemplatesController } from './ip-generation-templates.controller';
+import { IpGenerationJobsController } from './ip-generation-jobs.controller';
+import { IpGenerationJobsService } from './ip-generation-jobs.service';
+import { IpGenerationTemplatesService } from './ip-generation-templates.service';
+import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { IpCommerceService } from './ip-commerce.service';
+import { IpPublishersService } from './ip-publishers.service';
 import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
 
 @Module({
@@ -49,8 +64,11 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     WorkspacesModule,
     EntitlementsModule,
     LegacyMysqlModule,
+    AiGenerationModule,
   ],
   controllers: [
+    ChannelSubmissionsAdminController,
+    ChannelSubmissionsController,
     IpGameAssociationController,
     ViewerAssistanceController,
     IpStageApplicationsController,
@@ -64,11 +82,15 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpEpisodeFeedbackController,
     IpCommentsAdminController,
     IpCommerceController,
+    IpKnowledgeController,
+    IpGenerationTemplatesController,
+    IpGenerationJobsController,
     IpCommerceAdminController,
     CreatorEarningsController,
     CreatorTrustController,
   ],
   providers: [
+    ChannelSubmissionsService,
     IpGameAssociationService,
     IpStageApplicationsService,
     CrewAuthorizationService,
@@ -77,9 +99,17 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpCommentsService,
     IpEpisodeFeedbackService,
     IpCommerceService,
+    IpPublishersService,
+    IpKnowledgeService,
+    IpGenerationTemplatesService,
+    IpGenerationJobsService,
     LegacyCnVideoResolverService,
     CreatorEarningsService,
   ],
-  exports: [IpCommerceService],
+  exports: [
+    IpCommerceService,
+    IpGenerationTemplatesService,
+    IpKnowledgeService,
+  ],
 })
 export class IpCommerceModule {}

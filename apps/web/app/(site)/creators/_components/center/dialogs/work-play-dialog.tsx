@@ -93,7 +93,6 @@ export function WorkPlayDialog({ open, onOpenChange, work }: WorkPlayDialogProps
               <IconLoader2 className="size-6 animate-spin" />
             </div>
           ) : showVideo ? (
-            // eslint-disable-next-line jsx-a11y/media-has-caption
             <video
               src={signedUrl}
               controls

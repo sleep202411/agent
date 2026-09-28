@@ -1,4 +1,6 @@
 "use client";
+
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { useTaskDeliveryTemplate, TaskDeliveryFields } from "./task-delivery-template";
 
 import { useEffect, useRef, useState } from "react";
@@ -58,6 +60,14 @@ export function SubmitTaskDialog({
     open
   );
   const assets = assetQuery.data?.items ?? [];
+  const missingRequiredFields =
+    template.data?.definition.fields.filter((field) => {
+      if (!field.required) return false;
+      const answer = answers[field.key];
+      return field.type === "text"
+        ? typeof answer !== "string" || !answer.trim()
+        : !Array.isArray(answer) || !answer.some((id) => assetIds.includes(id));
+    }) ?? [];
 
   const [context, setContext] = useState({
     open,
@@ -105,7 +115,8 @@ export function SubmitTaskDialog({
       !task ||
       pendingGeneration.current !== null ||
       template.isPending ||
-      template.isError
+      template.isError ||
+      missingRequiredFields.length > 0
     )
       return;
     const requestGeneration = generation.current;
@@ -234,7 +245,12 @@ export function SubmitTaskDialog({
                     color="muted"
                     size="sm"
                     disabled={saving || assetQuery.isFetching}
-                    onClick={() => void assetQuery.refetch()}
+                    onClick={() =>
+                      void (assetQuery.isFetchNextPageError &&
+                      !isCrewCursorError(assetQuery.error, "CREW_ASSET_CURSOR_INVALID")
+                        ? assetQuery.fetchNextPage({ cancelRefetch: false })
+                        : assetQuery.refetch())
+                    }
                   >
                     {common("retry")}
                   </Button>
@@ -245,29 +261,45 @@ export function SubmitTaskDialog({
                   {t("noRecentAssets")}
                 </p>
               ) : (
-                assets.map((asset) => (
-                  <label
-                    key={asset.id}
-                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-xs hover:bg-muted/50"
-                  >
-                    <Checkbox
-                      disabled={saving}
-                      checked={assetIds.includes(asset.id)}
-                      onCheckedChange={() =>
-                        setAssetIds((current) =>
-                          current.includes(asset.id)
-                            ? current.filter((id) => id !== asset.id)
-                            : [...current, asset.id]
-                        )
-                      }
-                    />
-                    <IconFile className="size-3.5 text-muted-foreground" />
-                    <span className="truncate">{asset.name}</span>
-                  </label>
-                ))
+                assets.map((asset) => {
+                  const isChecked = assetIds.includes(asset.id);
+                  return (
+                    <div
+                      key={asset.id}
+                      className="flex flex-col gap-1.5 rounded px-2 py-2 text-xs hover:bg-muted/50"
+                    >
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <Checkbox
+                          disabled={saving}
+                          checked={isChecked}
+                          onCheckedChange={() => {
+                            setAssetIds((current) =>
+                              current.includes(asset.id)
+                                ? current.filter((id) => id !== asset.id)
+                                : [...current, asset.id]
+                            );
+                          }}
+                        />
+                        <IconFile className="size-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate font-medium">{asset.name}</span>
+                      </label>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
+          {assetQuery.hasNextPage && !assetQuery.isFetchNextPageError && (
+            <Button
+              variant="outline"
+              color="muted"
+              size="sm"
+              disabled={saving || assetQuery.isFetching}
+              onClick={() => void assetQuery.fetchNextPage({ cancelRefetch: false })}
+            >
+              {assetQuery.isFetchingNextPage ? common("loading") : common("loadMore")}
+            </Button>
+          )}
           {template.isPending ? <p role="status">{deliveryT("loading")}</p> : null}
           {template.error ? (
             <div role="alert">
@@ -289,13 +321,22 @@ export function SubmitTaskDialog({
               assets={assets.filter((asset) => assetIds.includes(asset.id))}
             />
           ) : null}
+          {missingRequiredFields.length > 0 ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {deliveryT("missingRequiredFields", {
+                fields: missingRequiredFields.map((field) => field.label).join(", "),
+              })}
+            </p>
+          ) : null}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("cancel")}
           </Button>
           <Button
-            disabled={saving || template.isPending || template.isError}
+            disabled={
+              saving || template.isPending || template.isError || missingRequiredFields.length > 0
+            }
             loading={saving}
             onClick={() => void submit()}
             icon={<IconSend />}

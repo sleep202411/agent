@@ -64,6 +64,7 @@ function jsonValuesEqual(left: ExperienceJsonValue, right: ExperienceJsonValue):
 export const ExperienceStateDefinitionSchema = z
   .object({
     key: ExperienceStatePathSchema,
+    name: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
     valueType: ExperienceStateValueTypeSchema,
     scope: ExperienceStateScopeSchema,
     initialValue: ExperienceJsonValueSchema,

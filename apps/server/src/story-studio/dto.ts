@@ -785,8 +785,25 @@ export interface StoryBuildDiagnosticDto {
   severity: 'error' | 'warning';
   code: string;
   message: string;
-  entityType: 'revision' | 'clip' | 'reference' | 'choice' | 'asset' | null;
+  entityType:
+    | 'revision'
+    | 'node'
+    | 'clip'
+    | 'reference'
+    | 'choice'
+    | 'asset'
+    | null;
   entityId: string | null;
+  chapterId?: string;
+  details?: {
+    kind: 'state-effect-type';
+    nodeTitle: string;
+    choiceLabel: string | null;
+    effectIndex: number;
+    variableName: string;
+    operation: 'add' | 'set';
+    variableType: 'number' | 'boolean';
+  };
 }
 
 export interface StoryBuildPathReportDto {

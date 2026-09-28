@@ -1457,6 +1457,12 @@ export interface FizzAiPointEstimateInput {
   referenceImageCount?: number;
   /** Combined duration of all attached reference videos. */
   referenceVideoSeconds?: number;
+  /**
+   * Provider contract where an 'auto' duration follows the reference videos'
+   * combined length (Seedance 2.5 edit). Must mirror the server-side quote
+   * flag so the displayed estimate always matches the wallet hold.
+   */
+  outputDurationFollowsReferenceVideos?: boolean;
   resolution?: string;
 }
 
@@ -1479,6 +1485,7 @@ export function estimateModelSellPoints(
       referenceImageCount: input.referenceImageCount,
       referenceMedia: input.referenceMedia,
       referenceVideoSeconds: input.referenceVideoSeconds,
+      outputDurationFollowsReferenceVideos: input.outputDurationFollowsReferenceVideos,
       resolution: input.resolution,
       hasMask: input.hasMask,
     });
@@ -1667,17 +1674,20 @@ export async function getFizzAiJob(id: string): Promise<FizzAiJobView> {
   });
 }
 
-export async function listFizzAiJobs(input: {
-  limit?: number;
-  sourceSurface?: string;
-  type?: FizzAiJobType;
-  ids?: string[];
-  projectId?: string;
-  storyProjectId?: string;
-  documentId?: string;
-  documentBlockId?: string;
-  idempotencyKey?: string;
-}): Promise<FizzAiJobListResponse> {
+export async function listFizzAiJobs(
+  input: {
+    limit?: number;
+    sourceSurface?: string;
+    type?: FizzAiJobType;
+    ids?: string[];
+    projectId?: string;
+    storyProjectId?: string;
+    documentId?: string;
+    documentBlockId?: string;
+    idempotencyKey?: string;
+  },
+  options: { signal?: AbortSignal; headers?: HeadersInit } = {}
+): Promise<FizzAiJobListResponse> {
   const params = new URLSearchParams();
   if (input.limit) params.set("limit", String(input.limit));
   if (input.sourceSurface) params.set("sourceSurface", input.sourceSurface);
@@ -1694,6 +1704,7 @@ export async function listFizzAiJobs(input: {
   }
   const query = params.toString();
   return api.get<FizzAiJobListResponse>(`/aurora/ai/jobs${query ? `?${query}` : ""}`, {
+    ...options,
     requestScope:
       input.documentId || input.projectId || input.storyProjectId ? "project" : "workspace",
     timeout: 15_000,

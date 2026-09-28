@@ -46,6 +46,7 @@ const state = vi.hoisted(() => ({
   detailError: null as Error | null,
   detailFetching: false,
   detailRefetches: 0,
+  membersRefetchError: false,
   membersLoading: false,
   membersError: null as Error | null,
   membersFetching: false,
@@ -130,6 +131,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   }),
   useCrewMembers: () => ({
     data: [],
+    isRefetchError: state.membersRefetchError,
     isLoading: state.membersLoading,
     isError: state.membersError !== null,
     error: state.membersError,
@@ -148,12 +150,6 @@ vi.mock("@/app/(site)/crews/_hooks/use-production", () => ({
   useCrewProductionOverview: () => ({
     data: { studioProject: null, capabilities: { manage: true } },
   }),
-  useCrewStudioProjectOptions: () => ({
-    data: { workspaces: [] },
-    isLoading: false,
-    isError: false,
-  }),
-  useLinkCrewStudioProject: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/app/(site)/crews/_hooks/use-crew-permissions", () => ({
@@ -172,6 +168,13 @@ vi.mock("@/app/(site)/crews/[id]/workspace/_hooks/use-anchor-deeplink", () => ({
 vi.mock("@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation", () => ({
   useCrewConversation: () => state.chatThread,
 }));
+
+vi.mock(
+  "@/app/(site)/crews/[id]/workspace/_components/workbench/crew-studio-workspace-picker",
+  () => ({
+    CrewStudioWorkspacePicker: () => <button aria-label="Link workspace">Link workspace</button>,
+  })
+);
 
 // Panes and dialogs are stubbed: this suite is about which one mounts,
 // not what each renders.
@@ -358,6 +361,7 @@ beforeEach(() => {
   state.detailError = null;
   state.detailFetching = false;
   state.detailRefetches = 0;
+  state.membersRefetchError = false;
   state.membersLoading = false;
   state.membersError = null;
   state.membersFetching = false;
@@ -373,7 +377,7 @@ afterEach(() => {
 });
 
 describe("crew workspace tabs", () => {
-  it("keeps one crew header and canvas action mounted while switching surfaces", () => {
+  it("keeps one crew header and workspace action mounted while switching surfaces", () => {
     render();
     const header = document.querySelector('header[aria-label="Crew header"]');
     expect(header).not.toBeNull();
@@ -650,4 +654,35 @@ describe("crew workspace with an unresolvable chat thread", () => {
     expect(pane()).toBe("chat");
     expect(nav.replaced).toEqual([]);
   });
+});
+
+it.each(["detail", "members"] as const)(
+  "preserves the mounted workspace on transient %s refresh failure",
+  (source) => {
+    nav.search = new URLSearchParams("tab=tasks");
+    render();
+    const original = document.querySelector("[data-pane]");
+    expect(original).not.toBeNull();
+    if (source === "detail")
+      state.detailError = new CrewApiError(503, { message: "Refresh offline" });
+    else {
+      state.membersError = new CrewApiError(503, { message: "Refresh offline" });
+      state.membersRefetchError = true;
+    }
+    reload();
+    expect(document.querySelector("[data-pane]")).toBe(original);
+    expect(document.body.textContent).toContain("Refresh offline");
+    click(button("Retry"));
+    expect(source === "detail" ? state.detailRefetches : state.membersRefetches).toBe(1);
+  }
+);
+
+it("still removes cached workspace content when access is denied during refresh", () => {
+  nav.search = new URLSearchParams("tab=tasks");
+  render();
+  state.membersError = new CrewApiError(403, { message: "Access revoked" });
+  state.membersRefetchError = true;
+  reload();
+  expect(pane()).toBeNull();
+  expect(document.body.textContent).toContain("This workspace is for crew members");
 });

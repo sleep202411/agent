@@ -1,5 +1,6 @@
 "use client";
 
+import { useComposerSubmission } from "./use-composer-submission";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -87,7 +88,8 @@ export function useVideoGeneration() {
   const [model, setModel] = useState<FizzAiModel | undefined>(undefined);
   const [settings, setSettings] = useState<ModelSettings>({});
   const [mode, setMode] = useState<string | undefined>(undefined);
-  const [submitting, setSubmitting] = useState(false);
+  const operation = useComposerSubmission();
+  const { submitting } = operation;
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
 
@@ -152,6 +154,9 @@ export function useVideoGeneration() {
                 : 0),
             0
           ) || undefined,
+      // Seedance 2.5 edit keeps the source video's duration — the auto quote
+      // follows the combined reference-video length (mirrors the server hold).
+      outputDurationFollowsReferenceVideos: settings.omniReferenceTaskType === "edit",
     });
     return estimate?.sellPoints ?? null;
   }, [model, readyUploads, settings]);
@@ -166,12 +171,13 @@ export function useVideoGeneration() {
 
   const submit = async (): Promise<{ ok: boolean }> => {
     if (!model || !canSubmit) return { ok: false };
-    setSubmitting(true);
+    const run = operation.start();
+    if (!run) return { ok: false };
     setSubmitError(null);
     setValidationIssues([]);
     if (cost != null && wallet && wallet.available < BigInt(Math.ceil(cost))) {
       setSubmitError(t("error.insufficientCredits"));
-      setSubmitting(false);
+      operation.finish(run);
       return { ok: false };
     }
 
@@ -200,12 +206,14 @@ export function useVideoGeneration() {
         promptDocument: buildPromptDocument(prompt, bindings),
         referenceBindings: bindings.length ? bindings : undefined,
       });
+      if (!operation.isCurrent(run)) return { ok: false };
       if (!result.ok) {
         setSubmitError(result.error ?? t("error.generationFailed"));
         return { ok: false };
       }
       return { ok: true };
     } catch (error) {
+      if (!operation.isCurrent(run)) return { ok: false };
       setSubmitError(
         error instanceof ReferenceInputError
           ? tc(error.messageKey)
@@ -213,7 +221,7 @@ export function useVideoGeneration() {
       );
       return { ok: false };
     } finally {
-      setSubmitting(false);
+      operation.finish(run);
     }
   };
 

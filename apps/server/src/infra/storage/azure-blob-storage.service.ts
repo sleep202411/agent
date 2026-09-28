@@ -503,6 +503,7 @@ export class AzureBlobStorageService extends OutputStorageService {
     // Idempotent: if the blob already sits in quarantine (and the source is
     // gone), a retry is a no-op success.
     if (await this.blobExists(target)) {
+      await this.assertCompletedCopy(target);
       await this.deleteBlobIfExists(ref);
       return { ...target, relocated: true };
     }
@@ -536,6 +537,7 @@ export class AzureBlobStorageService extends OutputStorageService {
     }
     // Idempotent: object already back at its public location.
     if (await this.blobExists(original)) {
+      await this.assertCompletedCopy(original);
       await this.deleteBlobIfExists(current);
       return { ...original, relocated: true };
     }
@@ -618,6 +620,20 @@ export class AzureBlobStorageService extends OutputStorageService {
       await new Promise<void>((resolve) =>
         setTimeout(resolve, COPY_STATUS_POLL_MS),
       );
+    }
+  }
+
+  /** A retry may find the destination of an interrupted asynchronous copy.
+   * Existence alone does not establish that it is safe to delete the source. */
+  private async assertCompletedCopy(ref: StorageObjectRef): Promise<void> {
+    const properties = await this.containerClient(ref.bucket)
+      .getBlobClient(ref.storageKey)
+      .getProperties();
+    if (properties.copyStatus && properties.copyStatus !== 'success') {
+      throw new ServiceUnavailableException({
+        code: 'AZURE_BLOB_COPY_INCOMPLETE',
+        message: `Azure Blob destination copy is ${properties.copyStatus}; source retained.`,
+      });
     }
   }
 

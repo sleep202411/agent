@@ -59,6 +59,7 @@ function CommentPanel({
   const [pending, setPending] = useState(true);
   const operation = useRef<AbortController | null>(null);
   const request = useRef<{ body: string; id: string } | null>(null);
+  const failedCursor = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -90,6 +91,7 @@ function CommentPanel({
     operation.current = controller;
     setPending(true);
     setError(null);
+    failedCursor.current = undefined;
     try {
       await action(controller.signal);
     } catch (error) {
@@ -105,8 +107,10 @@ function CommentPanel({
 
   function load(cursor?: string) {
     void run(async (signal) => {
+      failedCursor.current = cursor;
       const result = await commentsApi.list(ipId, signal, cursor);
-      if (!signal.aborted)
+      if (!signal.aborted) {
+        failedCursor.current = undefined;
         setPage((previous) =>
           cursor
             ? {
@@ -117,6 +121,7 @@ function CommentPanel({
               }
             : result
         );
+      }
     });
   }
 
@@ -206,7 +211,7 @@ function CommentPanel({
               <button
                 type="button"
                 disabled={pending}
-                onClick={() => load()}
+                onClick={() => load(failedCursor.current)}
                 className="ml-2 underline"
               >
                 {t("retry")}

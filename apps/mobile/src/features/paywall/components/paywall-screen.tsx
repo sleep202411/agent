@@ -7,7 +7,6 @@ import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -27,7 +26,6 @@ import { Colors, Spacing } from "@/constants/theme";
 import { fetchCommunityPointBalance } from "@/data/ip-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
-import { toHref } from "@/lib/navigation";
 
 import {
   COMPUTE_RECHARGE_DEFAULT,
@@ -291,11 +289,9 @@ export function PaywallScreen() {
   const locale = useLocale();
   const auth = useAuth();
   const theme = useTheme();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     category?: string | string[];
-    returnPath?: string | string[];
   }>();
 
   const rawCategory = paramValue(params.category);
@@ -548,38 +544,22 @@ export function PaywallScreen() {
       </View>
       <Pressable
         accessibilityRole="button"
-        disabled={!product || actionsLocked}
-        onPress={() => void buy()}
+        disabled={!product}
+        onPress={notifyUnavailable}
         style={[
           styles.payButton,
           stackedFooter && styles.payButtonFull,
-          (!product || actionsLocked) && styles.payButtonDisabled,
+          !product && styles.payButtonDisabled,
         ]}
       >
-        {busy ? (
-          <ActivityIndicator color="#FFFFFF" />
-        ) : (
-          <ThemedText type="smallBold" style={styles.payLabel}>
-            {pointsCheckout
-              ? t("paywall.buyNow")
-              : membership
-                ? `${t("paywall.membership.subscribe")} · ${product?.displayPrice ?? ""}`
-                : `${t("paywall.payNow")} ${product?.displayPrice ?? ""}`}
-          </ThemedText>
-        )}
+        <ThemedText type="smallBold" style={styles.payLabel}>
+          {pointsCheckout
+            ? t("paywall.buyNow")
+            : membership
+              ? `${t("paywall.membership.subscribe")} · ${product?.displayPrice ?? ""}`
+              : `${t("paywall.payNow")} ${product?.displayPrice ?? ""}`}
+        </ThemedText>
       </Pressable>
-      {canRestore ? (
-        <Pressable
-          accessibilityRole="button"
-          disabled={actionsLocked}
-          onPress={() => void restore()}
-          style={styles.restore}
-        >
-          <ThemedText type="small" themeColor="textSecondary" style={styles.restoreLabel}>
-            {restoring ? t("paywall.restoring") : t("paywall.restore")}
-          </ThemedText>
-        </Pressable>
-      ) : null}
     </View>
   );
 
@@ -602,7 +582,11 @@ export function PaywallScreen() {
           <ThemedText type="small" themeColor="textSecondary" style={styles.unsupportedBody}>
             {t("paywall.unsupportedBody")}
           </ThemedText>
-          <Pressable accessibilityRole="button" onPress={goWeb} style={styles.payButton}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={notifyUnavailable}
+            style={styles.payButton}
+          >
             <ThemedText type="smallBold" style={styles.payLabel}>
               {t("paywall.continueWeb")}
             </ThemedText>
@@ -1029,9 +1013,7 @@ const styles = StyleSheet.create({
     flexDirection: "column",
   },
   footerCopyStacked: {
-    flexBasis: "auto",
     flexGrow: 0,
-    flexShrink: 0,
   },
   footerCopy: {
     flex: 1,
@@ -1144,14 +1126,8 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   restore: {
-    alignItems: "center",
-    alignSelf: "center",
-    justifyContent: "center",
-    minHeight: 44,
+    alignSelf: "flex-start",
     paddingVertical: Spacing.one,
-  },
-  restoreLabel: {
-    textDecorationLine: "underline",
   },
   unsupported: {
     flex: 1,

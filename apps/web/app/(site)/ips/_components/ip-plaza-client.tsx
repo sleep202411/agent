@@ -58,6 +58,8 @@ export function IpPlazaClient() {
     data: listData,
     isLoading: loading,
     isError,
+    error,
+    isFetching,
     refetch,
     fetchNextPage,
     hasNextPage,
@@ -72,7 +74,10 @@ export function IpPlazaClient() {
   });
   const { data: taxonomyData } = useIpCommerceTaxonomyTerms({ type: "genre", locale });
   const { data: tagData } = useIpCommerceTaxonomyTerms({ type: "tag", locale });
-  const { data: heroData } = useIpCommerceDiscovery({ placementKey: "ip_plaza_hero", locale });
+  const { data: heroData } = useIpCommerceDiscovery({
+    placementKey: "ip_plaza_hero",
+    locale,
+  });
   const { data: forYouData } = useIpCommerceDiscovery({
     placementKey: "ip_plaza_for_you",
     locale,
@@ -129,7 +134,7 @@ export function IpPlazaClient() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const node = loadMoreRef.current;
-    if (!node || !hasNextPage) return;
+    if (!node || !hasNextPage || isError) return;
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -142,7 +147,7 @@ export function IpPlazaClient() {
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, isError]);
 
   const categoryOptions = useMemo(
     () => [
@@ -162,7 +167,7 @@ export function IpPlazaClient() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="-mt-16">
+      <div className="relative">
         <IPCinematicHero
           loading={loading}
           slides={heroProjects.slice(0, 5)}
@@ -285,12 +290,15 @@ export function IpPlazaClient() {
             <div className="flex min-h-[100vh] items-center justify-center text-sm text-muted-foreground">
               {t("loading")}
             </div>
-          ) : isError ? (
+          ) : isError && projects.length === 0 ? (
             <div className="flex min-h-[100vh] flex-col items-center justify-center text-center text-muted-foreground">
               <IconRefresh className="mb-3 size-10 opacity-30" />
-              <p className="text-sm">{commonT("loadFailed")}</p>
+              <p className="text-sm">
+                {error instanceof Error ? error.message : commonT("loadFailed")}
+              </p>
               <button
                 type="button"
+                disabled={isFetching}
                 onClick={() => void refetch()}
                 className="mt-3 text-xs text-primary hover:underline"
               >
@@ -299,6 +307,22 @@ export function IpPlazaClient() {
             </div>
           ) : projects.length > 0 ? (
             <>
+              {isError && (
+                <div
+                  role="alert"
+                  className="mb-4 flex items-center gap-3 text-sm text-muted-foreground"
+                >
+                  <p>{error instanceof Error ? error.message : commonT("loadFailed")}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isFetching}
+                    onClick={() => void refetch()}
+                  >
+                    {commonT("retry")}
+                  </Button>
+                </div>
+              )}
               <div className="grid auto-rows-fr grid-cols-2 gap-6 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                 {projects.map((project) => (
                   <IPPlazaCard key={project.id} project={project} />
@@ -361,9 +385,11 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
   const trailer = ipPreviewVideoUrl(ip);
   const primaryGenre = ip.genres[0] ?? "";
   const ownerName = ip.copyrightOwner?.trim() || t("anonymousOwner");
+  const coCreators = buildPlazaCoCreators(ip, ownerName);
 
   return {
     id: ip.id,
+    channelType: ip.channelType,
     roomNumber: ip.roomNumber,
     name: ip.title || t("detailUntitled"),
     subtitle: ip.subtitle || primaryGenre,
@@ -373,6 +399,8 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     ownerId: ip.createdById ?? "",
     ownerName,
     ownerAvatar: "",
+    coCreators,
+    publishers: ip.publishers ?? [],
     genres: ip.genres,
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,
@@ -382,6 +410,33 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     eyebrow: primaryGenre || t("featured"),
     region: ip.region ?? "",
   };
+}
+
+function buildPlazaCoCreators(ip: IpCommerceIp, ownerName: string): PlazaProject["coCreators"] {
+  const ordered: PlazaProject["coCreators"] = [];
+  const seen = new Set<string>();
+
+  if (ip.createdById) {
+    seen.add(`user:${ip.createdById}`);
+    ordered.push({
+      id: `owner:${ip.createdById}`,
+      userId: ip.createdById,
+      displayName: ownerName,
+    });
+  }
+
+  for (const contributor of ip.contributors ?? []) {
+    const key = contributor.userId ? `user:${contributor.userId}` : `contributor:${contributor.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push({
+      id: contributor.id,
+      userId: contributor.userId,
+      displayName: contributor.displayName?.trim() || ownerName,
+    });
+  }
+
+  return ordered.slice(0, 3);
 }
 
 function discoveryToPlazaProject(

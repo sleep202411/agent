@@ -1,12 +1,12 @@
 /**
- * Lightweight per-user sliding-window rate limiter backed by Redis.
+ * Lightweight per-user fixed-window rate limiter backed by Redis.
  *
- * Stateless wrapper around `INCR + EXPIRE`. Bucket key includes the
+ * Atomic counter and expiry admission. Bucket key includes the
  * current window so we never need to manually evict — Redis TTL drops
  * the row when the window rolls over.
  *
  * Usage:
- *   await rateLimit.guard({ bucket: 'user-lookup', userId, max: 30, windowSec: 60 });
+ *   await rateLimit.guard({ bucket: 'user-lookup', actorId: userId, max: 30, windowSec: 60 });
  *   // throws HttpException 429 if exceeded
  *
  * Why per-user not per-IP: production traffic is mostly behind
@@ -34,6 +34,16 @@ export interface RateLimitArgs {
   windowSec: number;
 }
 
+const REDIS_ADMISSION_TIMEOUT_MS = 1_000;
+
+const ADMIT_COUNTER = `
+local count = redis.call('INCR', KEYS[1])
+if redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`;
+
 @Injectable()
 export class RateLimitService {
   private readonly logger = new Logger(RateLimitService.name);
@@ -53,9 +63,23 @@ export class RateLimitService {
     const key = `ratelimit:${args.bucket}:${args.actorId}:${windowStart}`;
 
     let count: number;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      count = await this.redis.incr(key);
-      if (count === 1) await this.redis.expire(key, args.windowSec + 5);
+      // The shared client queues offline commands indefinitely.
+      if (this.redis.status !== 'ready') {
+        throw new Error('Redis is not ready');
+      }
+      // One operation prevents interruption between increment and expiry.
+      // Also repair counters left without TTL by the former two-call path.
+      count = (await Promise.race([
+        this.redis.eval(ADMIT_COUNTER, 1, key, args.windowSec + 5),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Redis rate-limit admission timed out')),
+            REDIS_ADMISSION_TIMEOUT_MS,
+          );
+        }),
+      ])) as number;
     } catch (err) {
       // Fail-open on Redis errors: rate limit is a defense-in-depth
       // measure, not the primary access control. Better to serve
@@ -63,6 +87,8 @@ export class RateLimitService {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`rate-limit redis error (failing open): ${msg}`);
       return { remaining: args.max, resetInSec: args.windowSec };
+    } finally {
+      clearTimeout(timer);
     }
 
     const remaining = Math.max(0, args.max - count);

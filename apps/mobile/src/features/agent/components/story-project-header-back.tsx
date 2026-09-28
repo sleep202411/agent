@@ -1,4 +1,4 @@
-import IconChevronLeft from "@tabler/icons-react-native/icons/IconChevronLeft";
+import IconChevronLeft from "@tabler/icons-react-native/IconChevronLeft";
 import { useRouter } from "expo-router";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 

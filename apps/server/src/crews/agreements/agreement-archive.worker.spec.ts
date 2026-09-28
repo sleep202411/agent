@@ -6,6 +6,10 @@ import {
 import { CrewAgreementArchiveWorker } from './agreement-archive.worker';
 import { hostname } from 'node:os';
 
+jest.mock('../../infra/storage/storage-provider-registry.service', () => ({
+  StorageProviderRegistry: class {},
+}));
+
 const AGREEMENT_ID = '01910d50-4c88-7c78-92d4-16892c06a001';
 const LOCKED_AT = new Date('2026-07-29T12:00:00.000Z');
 
@@ -99,6 +103,56 @@ function build() {
 }
 
 describe('CrewAgreementArchiveWorker', () => {
+  it.each(['claim', 'archive'] as const)(
+    'finishes active work but stops new claims during shutdown at %s',
+    async (stage) => {
+      const { worker } = build();
+      const internals = worker as unknown as {
+        claim(batch: number): Promise<unknown[]>;
+        archiveOne(job: unknown): Promise<void>;
+      };
+      let release!: () => void;
+      let entered!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const pause = async () => {
+        entered();
+        await waiting;
+      };
+      const claim = jest
+        .spyOn(internals, 'claim')
+        .mockImplementation(async () => {
+          if (stage === 'claim') await pause();
+          return [archiveJob()];
+        });
+      const archive = jest
+        .spyOn(internals, 'archiveOne')
+        .mockImplementation(async () => {
+          if (stage === 'archive') await pause();
+        });
+      const drain = worker.drainOnce();
+      await started;
+      let stopped = false;
+      const shutdown = Promise.resolve(worker.onModuleDestroy()).then(() => {
+        stopped = true;
+      });
+      await Promise.resolve();
+      const endedEarly = stopped;
+      release();
+      await Promise.all([drain, shutdown]);
+      expect(endedEarly).toBe(false);
+      expect(claim).toHaveBeenCalledTimes(1);
+      expect(archive).toHaveBeenCalledTimes(1);
+      await worker.drainOnce();
+      worker.onApplicationBootstrap();
+      expect(claim).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it.each([false, true])(
     'commits publication only with the original lease (displaced=%s)',
     async (displaced) => {

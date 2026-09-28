@@ -1,6 +1,6 @@
-import IconLayoutGrid from "@tabler/icons-react-native/icons/IconLayoutGrid";
-import IconMessageCircle from "@tabler/icons-react-native/icons/IconMessageCircle";
-import IconScript from "@tabler/icons-react-native/icons/IconScript";
+import IconLayoutGrid from "@tabler/icons-react-native/IconLayoutGrid";
+import IconMessageCircle from "@tabler/icons-react-native/IconMessageCircle";
+import IconScript from "@tabler/icons-react-native/IconScript";
 import { Tabs, useLocalSearchParams } from "expo-router";
 import { StyleSheet } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

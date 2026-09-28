@@ -42,7 +42,8 @@ export function canvasNodeGeometry(
   node: Pick<Node, "type" | "data"> | { type?: string | null; data?: Record<string, unknown> }
 ): CanvasNodeGeometry {
   if (node.type === "storyCanvas") return storyNodeGeometry(node.data);
-  return GEOMETRY_BY_TYPE[node.type ?? ""] ?? FALLBACK_GEOMETRY;
+  const type = node.type ?? "";
+  return Object.hasOwn(GEOMETRY_BY_TYPE, type) ? GEOMETRY_BY_TYPE[type] : FALLBACK_GEOMETRY;
 }
 
 /**

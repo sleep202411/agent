@@ -62,6 +62,81 @@ describe("reference-video per-second pricing", () => {
   });
 });
 
+describe("reference-following auto duration (Seedance 2.5 edit)", () => {
+  it("quotes an explicit 'auto' at the reference videos' combined length, rounded up", () => {
+    const result = estimateProductModelPoints({
+      policy: seedance25Pricing,
+      resolution: "720p",
+      duration: "auto",
+      referenceVideoSeconds: 10.4,
+      outputDurationFollowsReferenceVideos: true,
+    });
+
+    // Output 11s + input 10.4s, both at the 720p video-input rate of 23/s.
+    expect(result.selection.seconds).toBe(11);
+    expect(result.basePoints).toBe(253);
+    expect(result.referenceVideoSurchargePoints).toBeCloseTo(239.2, 6);
+    expect(result.sellPoints).toBe(493);
+  });
+
+  it("clamps the reference length into the provider's [min, max] window", () => {
+    const result = estimateProductModelPoints({
+      policy: seedance25Pricing,
+      resolution: "720p",
+      duration: "auto",
+      referenceVideoSeconds: 2,
+      outputDurationFollowsReferenceVideos: true,
+    });
+
+    expect(result.selection.seconds).toBe(4);
+  });
+
+  it("keeps the ceiling fallback when no reference seconds are known", () => {
+    const result = estimateProductModelPoints({
+      policy: seedance25Pricing,
+      resolution: "720p",
+      duration: "auto",
+      outputDurationFollowsReferenceVideos: true,
+    });
+
+    expect(result.selection.seconds).toBe(30);
+  });
+
+  it("leaves ordinary 'auto' jobs on the ceiling", () => {
+    const result = estimateProductModelPoints({
+      policy: seedance25Pricing,
+      resolution: "720p",
+      duration: "auto",
+      referenceVideoSeconds: 10,
+    });
+
+    expect(result.selection.seconds).toBe(30);
+  });
+
+  it("never overrides an explicit numeric duration", () => {
+    const result = estimateProductModelPoints({
+      policy: seedance25Pricing,
+      resolution: "720p",
+      duration: "8",
+      referenceVideoSeconds: 10,
+      outputDurationFollowsReferenceVideos: true,
+    });
+
+    expect(result.selection.seconds).toBe(8);
+  });
+
+  it("quotes an absent duration at defaultSeconds regardless of the flag", () => {
+    const result = estimateProductModelPoints({
+      policy: seedance25Pricing,
+      resolution: "720p",
+      referenceVideoSeconds: 10,
+      outputDurationFollowsReferenceVideos: true,
+    });
+
+    expect(result.selection.seconds).toBe(5);
+  });
+});
+
 describe("native-audio per-second pricing", () => {
   const veoPricing: AiProductPricingPolicy = {
     mode: "per_second_matrix",

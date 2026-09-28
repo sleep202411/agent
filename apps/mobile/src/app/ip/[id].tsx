@@ -1,4 +1,6 @@
 import { EpisodeFeedback } from "@/components/episode-feedback";
+import { IpKnowledgeChat } from "@/components/ip-knowledge-chat";
+import { IpGenerationPanel } from "@/components/ip-generation-panel";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
@@ -571,6 +573,8 @@ export default function IpDetailScreen() {
 
         <View style={styles.body}>
           {playing?.episodeId && <EpisodeFeedback ipId={ip.id} episodeId={playing.episodeId} />}
+          <IpKnowledgeChat ipId={ip.id} ipTitle={ip.title} />
+          <IpGenerationPanel ipId={ip.id} />
           <View style={styles.titleBlock}>
             <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
               {ip.title}

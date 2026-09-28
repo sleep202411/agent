@@ -29,7 +29,7 @@ export const PROJECT_SKILL_SCOPES = [
   "qa",
 ] as const;
 export const ProjectSkillScopeSchema = z.enum(PROJECT_SKILL_SCOPES);
-export type ProjectSkillScope = z.infer<typeof ProjectSkillScopeSchema>;
+export type ProjectSkillScope = (typeof PROJECT_SKILL_SCOPES)[number];
 
 const PromptPolicySchema = z
   .object({

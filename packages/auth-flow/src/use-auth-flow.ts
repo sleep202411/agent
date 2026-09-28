@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { AuthClient, toAuthError } from "./client";
 import { authError, type AuthError } from "./errors";
 import { clearPendingCode, readPendingCode, writePendingCode } from "./pending-code";
-import { armResendDeadline, readResendDeadline, secondsUntil } from "./resend-clock";
+import { armResendDeadline, claimCodeSend, readResendDeadline, secondsUntil } from "./resend-clock";
 import { clearSessionCookie } from "./session";
 import type { AuthTransport } from "./transport";
 import type { AuthMode, AuthSession } from "./types";
@@ -161,7 +161,15 @@ export function useAuthFlow(options: UseAuthFlowOptions): AuthFlowController {
   // reading `state` directly would act on a snapshot from before the call.
   const stateRef = useRef(state);
   stateRef.current = state;
-  const inFlight = useRef(false);
+  const inFlight = useRef<symbol | null>(null);
+  const flowVersion = useRef(0);
+  useEffect(
+    () => () => {
+      flowVersion.current += 1;
+      inFlight.current = null;
+    },
+    []
+  );
   const notified = useRef(false);
   const modeRef = useRef(state.mode);
   modeRef.current = state.mode;
@@ -208,7 +216,8 @@ export function useAuthFlow(options: UseAuthFlowOptions): AuthFlowController {
    */
   const resetFlow = useCallback(() => {
     notified.current = false;
-    inFlight.current = false;
+    inFlight.current = null;
+    flowVersion.current += 1;
     dispatch({
       type: "reset",
       now: Date.now(),
@@ -240,15 +249,17 @@ export function useAuthFlow(options: UseAuthFlowOptions): AuthFlowController {
   const run = useCallback(
     async (task: () => Promise<void>, onFailure?: (error: AuthError) => AuthFlowEvent) => {
       if (inFlight.current) return;
-      inFlight.current = true;
+      const operation = Symbol();
+      inFlight.current = operation;
       dispatch({ type: "request_started" });
       try {
         await task();
       } catch (thrown) {
+        if (inFlight.current !== operation) return;
         const error = toAuthError(thrown);
         dispatch(onFailure ? onFailure(error) : { type: "request_failed", error });
       } finally {
-        inFlight.current = false;
+        if (inFlight.current === operation) inFlight.current = null;
       }
     },
     []
@@ -291,20 +302,25 @@ export function useAuthFlow(options: UseAuthFlowOptions): AuthFlowController {
       dispatch({ type: "tick", now, resendAvailableAt: deadline });
       return;
     }
+    if (inFlight.current) return;
+    const release = claimCodeSend();
+    if (!release) return;
+    const version = flowVersion.current;
     const mode = current.mode;
     void run(async () => {
-      if (mode === "reset") await client.sendResetCode(result.value);
-      else await client.sendCode(result.value);
-      const at = Date.now();
-      // Arm the tab-wide deadline BEFORE the state update: from here on
-      // no remount, no mode switch and no reopen can produce a send.
-      armResendDeadline(at + current.resendCooldown * 1000);
-      // Outlives this mount, so a dialog dismissed while the SMS is in
-      // the user's hand reopens on the code step instead of behind a
-      // countdown with no way back to it.
-      writePendingCode({ account: result.value, mode });
-      dispatch({ type: "code_sent", account: result.value, at });
-      callbacks.current.onEvent?.({ type: "code_sent", kind: result.value.kind });
+      try {
+        if (mode === "reset") await client.sendResetCode(result.value);
+        else await client.sendCode(result.value);
+        const at = Date.now();
+        // A sent code still owns its cooldown and recovery record after dismissal.
+        armResendDeadline(at + current.resendCooldown * 1000);
+        writePendingCode({ account: result.value, mode });
+        if (flowVersion.current !== version) return;
+        dispatch({ type: "code_sent", account: result.value, at });
+        callbacks.current.onEvent?.({ type: "code_sent", kind: result.value.kind });
+      } finally {
+        release();
+      }
     });
   }, [client, run]);
 

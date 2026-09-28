@@ -1,3 +1,4 @@
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -5,12 +6,19 @@ import type { CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { SubmitTaskDialog } from "./task-dialogs";
 
 const submit = vi.hoisted(() => vi.fn());
+const delivery = vi.hoisted(() => ({
+  data: null as import("@/app/(site)/crews/_hooks/types").CrewDeliveryTemplateDTO | null,
+}));
 const assetQuery = vi.hoisted(() => ({
   data: { items: [{ id: "asset-1", name: "Output" }] },
   isLoading: false,
   isFetching: false,
   error: null as Error | null,
   refetch: vi.fn(),
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  isFetchNextPageError: false,
+  fetchNextPage: vi.fn(),
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useSubmitCrewTask: () => ({ mutateAsync: submit, isPending: false }),
@@ -57,8 +65,12 @@ afterEach(() => {
   root = undefined;
   host?.remove();
   vi.resetAllMocks();
+  delivery.data = null;
   assetQuery.error = null;
   assetQuery.isLoading = false;
+  assetQuery.hasNextPage = false;
+  assetQuery.isFetchingNextPage = false;
+  assetQuery.isFetchNextPageError = false;
   assetQuery.data = { items: [{ id: "asset-1", name: "Output" }] };
 });
 
@@ -163,7 +175,133 @@ it("keeps loaded attachments and exposes a failed refresh for retry", async () =
   expect(assetQuery.refetch).toHaveBeenCalledTimes(1);
 });
 
-vi.mock("./task-delivery-template", () => ({
-  useTaskDeliveryTemplate: () => ({ data: null, isPending: false, isError: false }),
-  TaskDeliveryFields: () => null,
+vi.mock("./task-delivery-template", async (original) => ({
+  ...(await original<typeof import("./task-delivery-template")>()),
+  useTaskDeliveryTemplate: () => ({ data: delivery.data, isPending: false, isError: false }),
 }));
+
+it("loads and submits attachments beyond the first page without losing earlier selections", async () => {
+  assetQuery.hasNextPage = true;
+  render("task-1");
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  const more = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === "loadMore"
+  );
+  expect(more).toBeDefined();
+  await act(async () => more!.click());
+  expect(assetQuery.fetchNextPage).toHaveBeenCalledWith({ cancelRefetch: false });
+  assetQuery.data = {
+    items: [
+      { id: "asset-1", name: "Output" },
+      { id: "asset-101", name: "Older output" },
+    ],
+  };
+  assetQuery.hasNextPage = false;
+  render("task-1");
+  expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
+  act(() => document.querySelectorAll<HTMLButtonElement>('[role="checkbox"]')[1]!.click());
+  submit.mockResolvedValue({ id: "task-1" });
+  await act(async () => clickSubmit());
+  expect(submit).toHaveBeenCalledWith({
+    taskId: "task-1",
+    note: "",
+    assetNodeIds: ["asset-1", "asset-101"],
+  });
+});
+
+it("retries the failed asset page and keeps the selected attachments", async () => {
+  render("task-1");
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  assetQuery.hasNextPage = true;
+  assetQuery.isFetchNextPageError = true;
+  assetQuery.error = new Error("Next page unavailable");
+  render("task-1");
+  expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
+  await act(async () =>
+    [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "retry")!.click()
+  );
+  expect(assetQuery.fetchNextPage).toHaveBeenCalledWith({ cancelRefetch: false });
+  expect(assetQuery.refetch).not.toHaveBeenCalled();
+});
+it("disables loading more attachments while a request is in flight", () => {
+  assetQuery.hasNextPage = true;
+  assetQuery.isFetching = true;
+  assetQuery.isFetchingNextPage = true;
+  render("task-1");
+  const more = [...document.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === "loading"
+  )!;
+  expect(more.disabled).toBe(true);
+  assetQuery.isFetching = false;
+});
+
+it("restarts expired asset pagination without losing the delivery draft", async () => {
+  render("task-1");
+  act(() => {
+    fill("Delivery draft");
+    document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click();
+  });
+  assetQuery.hasNextPage = true;
+  assetQuery.isFetchNextPageError = true;
+  assetQuery.error = new CrewApiError(400, {
+    code: "CREW_ASSET_CURSOR_INVALID",
+    message: "Restart assets",
+  });
+  render("task-1");
+  await act(async () =>
+    [...document.querySelectorAll("button")].find((b) => b.textContent?.trim() === "retry")!.click()
+  );
+  expect(assetQuery.refetch).toHaveBeenCalledTimes(1);
+  expect(assetQuery.fetchNextPage).not.toHaveBeenCalled();
+  expect(document.querySelector("textarea")!.value).toBe("Delivery draft");
+  expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
+});
+
+it("requires nonblank text and a still-attached file, preserving answers after validation failures", async () => {
+  delivery.data = {
+    categoryId: "cat",
+    version: 1,
+    definition: {
+      name: "Delivery",
+      fields: [
+        { key: "summary", instructions: "", label: "Summary", type: "text", required: true },
+        { key: "files", instructions: "", label: "Files", type: "attachment", required: true },
+        { key: "extra", instructions: "", label: "Optional", type: "text", required: false },
+      ],
+    },
+  };
+  render("task-1");
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  expect(document.body.textContent).toContain("missingRequiredFields");
+  const answer = (text: string) => {
+    const input = document.querySelector('textarea[aria-label="Summary"]')!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  act(() => answer("   "));
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  act(() => answer("Complete storyboard"));
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  const boxes = document.querySelectorAll<HTMLButtonElement>('[role="checkbox"]');
+  act(() => boxes[1]!.click());
+  act(() => boxes[0]!.click()); // Removing the file invalidates its required answer.
+  act(clickSubmit);
+  expect(submit).not.toHaveBeenCalled();
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  submit.mockResolvedValue({ id: "task-1" });
+  await act(async () => clickSubmit());
+  expect(submit).toHaveBeenCalledWith(
+    expect.objectContaining({
+      assetNodeIds: ["asset-1"],
+      professionalDelivery: {
+        categoryId: "cat",
+        version: 1,
+        answers: { summary: "Complete storyboard", files: ["asset-1"] },
+      },
+    })
+  );
+});

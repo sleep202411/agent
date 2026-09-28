@@ -50,11 +50,12 @@ interface Bounds {
 export async function layoutCanvasTidyGraph(
   request: CanvasTidyLayoutRequest
 ): Promise<CanvasTidyPosition[]> {
-  const elk = await getElk();
+  const requestedEngine = getElk();
   try {
+    const elk = await requestedEngine;
     return await withTimeout(runCanvasTidyGraph(request, elk), LAYOUT_TIMEOUT_MS);
   } catch (error) {
-    resetElkLayoutEngine();
+    resetElkLayoutEngine(requestedEngine);
     throw error;
   }
 }
@@ -347,7 +348,9 @@ async function createElkLayoutEngine(): Promise<ElkLayoutEngine> {
   return createBrowserElkLayoutEngine();
 }
 
-function resetElkLayoutEngine(): void {
+function resetElkLayoutEngine(expected: Promise<ElkLayoutEngine>): void {
+  // A late failure from a retired worker must not terminate a newer retry.
+  if (elkPromise !== expected) return;
   const current = elkPromise;
   elkPromise = null;
   void current?.then((engine) => engine.terminateWorker?.()).catch(() => undefined);

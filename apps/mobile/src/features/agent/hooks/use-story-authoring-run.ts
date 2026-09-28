@@ -6,8 +6,10 @@ import {
   type StoryAgentRunDto,
 } from "../api/story-agent-runs-api";
 import { isAgentOsId } from "../lib/ids";
+import { useStoryRequestScope } from "./use-story-request-scope";
 
 const POLL_MS = 1_500;
+const READ_RETRY_MS = 5_000;
 
 /**
  * Polls the chapter's Story authoring-run head while Agent OS is in flight or
@@ -21,7 +23,7 @@ export function useStoryAuthoringRun(
   const [run, setRun] = useState<StoryAgentRunDto | null>(null);
   const projectOk = isAgentOsId(projectId);
   const chapterOk = isAgentOsId(chapterId);
-  const identity = `${projectId}:${chapterId}`;
+  const identity = useStoryRequestScope(`${projectId}:${chapterId}`);
   const [previousIdentity, setPreviousIdentity] = useState(identity);
   if (previousIdentity !== identity) {
     setPreviousIdentity(identity);
@@ -29,31 +31,35 @@ export function useStoryAuthoringRun(
   }
 
   useEffect(() => {
-    if (!projectOk || !chapterOk) {
+    if (!identity.enabled || !projectOk || !chapterOk) {
       return;
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const tick = async () => {
       try {
-        const next = await getActiveStoryAgentRun(projectId, chapterId);
+        const next = await getActiveStoryAgentRun(projectId, chapterId, controller.signal);
         if (cancelled) return;
         setRun(next);
         const keepGoing = agentBusy || next?.status === "authoring" || next?.status === "applying";
         if (keepGoing) timer = setTimeout(() => void tick(), POLL_MS);
       } catch {
-        if (!cancelled && agentBusy) timer = setTimeout(() => void tick(), POLL_MS);
+        // A failed read cannot establish that the run is finished. Recover even
+        // when the Agent is idle; a successful terminal/empty read stops polling.
+        if (!cancelled) timer = setTimeout(() => void tick(), POLL_MS);
       }
     };
 
     void tick();
     return () => {
       cancelled = true;
+      controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [agentBusy, chapterId, chapterOk, projectId, projectOk]);
+  }, [agentBusy, chapterId, chapterOk, projectId, projectOk, identity]);
 
   return run;
 }
@@ -66,7 +72,7 @@ export function useStoryAgentRunById(
   const [run, setRun] = useState<StoryAgentRunDto | null>(null);
   const projectOk = isAgentOsId(projectId);
   const runOk = isAgentOsId(runId);
-  const identity = `${projectId}:${runId}`;
+  const identity = useStoryRequestScope(`${projectId}:${runId}`);
   const [previousIdentity, setPreviousIdentity] = useState(identity);
   if (previousIdentity !== identity) {
     setPreviousIdentity(identity);
@@ -74,21 +80,28 @@ export function useStoryAgentRunById(
   }
 
   useEffect(() => {
-    if (!projectOk || !runOk || !runId) {
+    if (!identity.enabled || !projectOk || !runOk || !runId) {
       return;
     }
     let cancelled = false;
-    void getStoryAgentRun(projectId, runId)
-      .then((next) => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      try {
+        const next = await getStoryAgentRun(projectId, runId, controller.signal);
         if (!cancelled) setRun(next);
-      })
-      .catch(() => {
-        if (!cancelled) setRun(null);
-      });
+      } catch {
+        // Retry only the read, never the approval or generation it describes.
+        if (!cancelled) timer = setTimeout(() => void load(), READ_RETRY_MS);
+      }
+    };
+    void load();
     return () => {
       cancelled = true;
+      controller.abort();
+      if (timer) clearTimeout(timer);
     };
-  }, [projectId, projectOk, runId, runOk]);
+  }, [projectId, projectOk, runId, runOk, identity]);
 
   return run;
 }

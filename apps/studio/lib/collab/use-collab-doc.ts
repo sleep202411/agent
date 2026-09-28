@@ -34,7 +34,11 @@ export function useCollabDoc(
   user: CollabUser | null,
   rootSchema: RootSchema
 ): CollabDocHandle {
-  const [provider, setProvider] = useState<DocumentProvider | null>(null);
+  const [connection, setConnection] = useState<{
+    documentId: string;
+    provider: DocumentProvider;
+  } | null>(null);
+  const provider = connection?.documentId === documentId ? (connection?.provider ?? null) : null;
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   const [rtt, setRtt] = useState<number | null>(null);
 
@@ -44,11 +48,11 @@ export function useCollabDoc(
     // surfaced via state for consumers to bind to — not memoized during render.
     /* eslint-disable react-hooks/set-state-in-effect */
     if (!documentId) {
-      setProvider(null);
+      setConnection(null);
       return;
     }
     const next = new DocumentProvider({ documentId, rootSchema });
-    setProvider(next);
+    setConnection({ documentId, provider: next });
     setStatus(next.getStatus());
     setRtt(next.getRtt());
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -69,7 +73,7 @@ export function useCollabDoc(
   // the initial user too (provider transitions null → instance here), so the
   // connection effect never depends on `user`.
   useEffect(() => {
-    if (provider && user) provider.setAwarenessField("user", { ...user });
+    if (provider) provider.setAwarenessField("user", user ? { ...user } : null);
   }, [provider, user]);
 
   return {

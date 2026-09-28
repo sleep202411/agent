@@ -41,12 +41,9 @@ const pool = createDiskCachePool({
 });
 
 /** Staging files of downloads that are still running — orphans they are not. */
+const activeStagingNames = new Set<string>();
 function liveStagingFileNames(): Set<string> {
-  const names = new Set<string>();
-  for (const entry of inFlightDownloads.values()) {
-    names.add(entry.stagingName);
-  }
-  return names;
+  return new Set(activeStagingNames);
 }
 
 /** Replaces the pin set — one chapter is loaded at a time. */
@@ -132,18 +129,20 @@ type InFlightDownload = {
   controller: AbortController;
   progress: DownloadProgressState;
   stagingName: string;
+  users: Set<(fraction: number) => void>;
 };
 
 /**
  * In-flight downloads by absolute source URI. A second request for a clip that
  * is already downloading joins the first instead of racing it onto the same
- * path — and therefore also inherits the first caller's abort signal.
+ * path. Each caller retains its own cancellation and progress lifetime.
  */
 const inFlightDownloads = new Map<string, InFlightDownload>();
+const publications = new Map<string, Promise<void>>();
 
 export type EnsureMediaCachedOptions = {
   signal?: AbortSignal;
-  /** 0–1 of this clip's bytes; never called for a caller that joined a download. */
+  /** 0–1 of this clip's bytes while this caller remains active. */
   onProgress?: (fraction: number) => void;
 };
 
@@ -155,6 +154,7 @@ export function ensureMediaCached(
   sourceUri: string,
   options: EnsureMediaCachedOptions = {}
 ): Promise<string> {
+  if (options.signal?.aborted) return Promise.reject(new Error("Media download cancelled"));
   const absolute = absolutizeExperienceMediaUri(sourceUri) ?? sourceUri.trim();
   const existing = peekCachedMediaUri(absolute);
   if (existing) {
@@ -165,35 +165,72 @@ export function ensureMediaCached(
   const pending = inFlightDownloads.get(absolute);
   // An aborted entry is still registered until its native cancel round-trips;
   // joining it would hand this caller a rejection that is not about its request.
-  if (pending && !pending.controller.signal.aborted) return pending.promise;
+  if (pending && !pending.controller.signal.aborted) return joinDownload(pending, options);
 
   const controller = new AbortController();
   const progress: DownloadProgressState = { bytesWritten: 0, totalBytes: -1 };
   const staging = nextStagingFileFor(absolute);
-  const forwardAbort = () => controller.abort();
-  options.signal?.addEventListener("abort", forwardAbort);
-
-  const promise = downloadToCache(
-    absolute,
-    staging,
-    controller,
-    progress,
-    options.onProgress
-  ).finally(() => {
-    options.signal?.removeEventListener("abort", forwardAbort);
-    // Only retire our own entry: an aborted download can be superseded by a
-    // fresh attempt for the same clip before this settles.
+  activeStagingNames.add(staging.name);
+  const users = new Set<(fraction: number) => void>();
+  const promise = downloadToCache(absolute, staging, controller, progress, (fraction) => {
+    for (const notify of users) notify(fraction);
+  }).finally(() => {
+    activeStagingNames.delete(staging.name);
     if (inFlightDownloads.get(absolute)?.controller === controller) {
       inFlightDownloads.delete(absolute);
     }
   });
-  inFlightDownloads.set(absolute, {
-    promise,
-    controller,
-    progress,
-    stagingName: staging.name,
+  const entry = { promise, controller, progress, stagingName: staging.name, users };
+  inFlightDownloads.set(absolute, entry);
+  return joinDownload(entry, options);
+}
+
+function waitForDownload<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (value: T | undefined, error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      if (error !== undefined) reject(error);
+      else resolve(value as T);
+    };
+    const abort = () => finish(undefined, new Error("Media download cancelled"));
+    signal?.addEventListener("abort", abort, { once: true });
+    promise.then(
+      (value) => finish(value),
+      (error) => finish(undefined, error)
+    );
+    if (signal?.aborted) abort();
   });
-  return promise;
+}
+
+function joinDownload(entry: InFlightDownload, options: EnsureMediaCachedOptions): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const notify = (fraction: number) => {
+      if (!settled) options.onProgress?.(fraction);
+    };
+    const finish = (value: string | undefined, error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      entry.users.delete(notify);
+      options.signal?.removeEventListener("abort", abort);
+      entry.controller.signal.removeEventListener("abort", abort);
+      if (entry.users.size === 0) entry.controller.abort();
+      if (error !== undefined) reject(error);
+      else resolve(value!);
+    };
+    const abort = () => finish(undefined, new Error("Media download cancelled"));
+    entry.users.add(notify);
+    options.signal?.addEventListener("abort", abort, { once: true });
+    entry.controller.signal.addEventListener("abort", abort, { once: true });
+    entry.promise.then(
+      (value) => finish(value),
+      (error) => finish(undefined, error)
+    );
+    if (options.signal?.aborted || entry.controller.signal.aborted) abort();
+  });
 }
 
 async function downloadToCache(
@@ -204,15 +241,18 @@ async function downloadToCache(
   onProgress?: (fraction: number) => void
 ): Promise<string> {
   const playable = await resolvePlayableMediaUrl(absolute, controller.signal);
+  if (controller.signal.aborted) throw new Error("Media download cancelled");
   if (playable.startsWith("file://")) return playable;
 
   pool.ensureDirectory();
   const destination = cacheFileFor(absolute);
 
+  let finished = false;
   let stalled = false;
   let lastProgressAtMs = Date.now();
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
   const armStallTimer = () => {
+    if (finished || controller.signal.aborted) return;
     if (stallTimer !== null) clearTimeout(stallTimer);
     stallTimer = setTimeout(() => {
       // Timers do not run while the app is suspended and fire late on resume, so
@@ -232,7 +272,7 @@ async function downloadToCache(
   // Coming back from the background is not evidence of a stalled transfer: JS was
   // suspended, so no progress could have been reported. Start the window over.
   const unsubscribeAppActive = subscribeAppActive((active) => {
-    if (!active) return;
+    if (!active || finished || controller.signal.aborted) return;
     lastProgressAtMs = Date.now();
     armStallTimer();
   });
@@ -245,6 +285,7 @@ async function downloadToCache(
       idempotent: true,
       signal: controller.signal,
       onProgress: ({ bytesWritten, totalBytes }) => {
+        if (finished || controller.signal.aborted) return;
         progress.bytesWritten = bytesWritten;
         progress.totalBytes = totalBytes;
         lastProgressAtMs = Date.now();
@@ -252,11 +293,29 @@ async function downloadToCache(
         onProgress?.(downloadFraction(progress));
       },
     });
+    if (controller.signal.aborted) throw new Error("Media download cancelled");
     if (!output.exists || output.size <= 0) {
       throw new Error("Media download produced an empty file");
     }
-    deleteQuietly(destination);
-    await output.move(destination);
+    const previous = publications.get(absolute);
+    let release!: () => void;
+    const publication = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    publications.set(absolute, publication);
+    try {
+      await previous;
+      if (controller.signal.aborted) throw new Error("Media download cancelled");
+      deleteQuietly(destination);
+      await output.move(destination);
+      if (controller.signal.aborted) {
+        deleteQuietly(destination);
+        throw new Error("Media download cancelled");
+      }
+    } finally {
+      release();
+      if (publications.get(absolute) === publication) publications.delete(absolute);
+    }
     pool.touch(destination.name);
     onProgress?.(1);
     // Protect the file we just wrote so a concurrent eviction cannot drop it
@@ -273,6 +332,7 @@ async function downloadToCache(
     }
     throw error;
   } finally {
+    finished = true;
     unsubscribeAppActive();
     if (stallTimer !== null) clearTimeout(stallTimer);
   }
@@ -296,6 +356,7 @@ function downloadFraction(progress: DownloadProgressState): number {
  * bytes.
  */
 export async function resolvePlaybackUri(sourceUri: string, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) throw new Error("Media download cancelled");
   const absolute = absolutizeExperienceMediaUri(sourceUri) ?? sourceUri.trim();
   const cached = peekCachedMediaUri(absolute);
   if (cached) {
@@ -307,8 +368,9 @@ export async function resolvePlaybackUri(sourceUri: string, signal?: AbortSignal
   if (inFlight) {
     if (downloadFraction(inFlight.progress) >= DOWNLOAD_JOIN_THRESHOLD) {
       try {
-        return await inFlight.promise;
+        return await joinDownload(inFlight, { signal });
       } catch {
+        if (signal?.aborted) throw new Error("Media download cancelled");
         // Joined download failed — stream it below.
       }
     } else {
@@ -316,7 +378,9 @@ export async function resolvePlaybackUri(sourceUri: string, signal?: AbortSignal
       // Let the cancellation settle before re-resolving: the download may have
       // been in its signing step, and that shared sign task is only retired once
       // it rejects. Re-resolving now would join the rejection we just caused.
-      await inFlight.promise.catch(() => undefined);
+      await waitForDownload(inFlight.promise, signal).catch((error) => {
+        if (signal?.aborted) throw error;
+      });
     }
   }
   return resolvePlayableMediaUrl(sourceUri, signal);

@@ -57,6 +57,36 @@ it("retains loaded comments and a specific error when refreshing fails", async (
   expect(container.textContent).toContain("Hello");
   expect(container.textContent).toContain("Network unavailable");
 });
+it.each(["retry", "refresh"])("recovers a failed next page using %s", async (action) => {
+  vi.mocked(commentsApi.list)
+    .mockResolvedValueOnce({ items: [row], nextCursor: "page-two" })
+    .mockResolvedValueOnce({
+      items: [{ ...row, id: "second", body: "Second page" }],
+      nextCursor: "page-three",
+    })
+    .mockRejectedValueOnce(new Error("Page unavailable"))
+    .mockImplementationOnce(async (_ip, _signal, cursor) =>
+      cursor === "page-three"
+        ? { items: [{ ...row, id: "third", body: "Third page" }], nextCursor: null }
+        : { items: [row], nextCursor: "page-two" }
+    );
+  await render();
+  await act(async () => click("more"));
+  await act(async () => click("more"));
+  expect(container.textContent).toContain("Second page");
+  await act(async () => click(action));
+  expect(vi.mocked(commentsApi.list).mock.calls[3]![2]).toBe(
+    action === "retry" ? "page-three" : undefined
+  );
+  expect(container.textContent).toContain("Hello");
+  if (action === "retry") {
+    expect(container.textContent).toContain("Second page");
+    expect(container.textContent).toContain("Third page");
+  } else {
+    expect(container.textContent).not.toContain("Second page");
+  }
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+});
 it("aborts abandoned reads and ignores their delayed results", async () => {
   let finish!: (v: { items: (typeof row)[]; nextCursor: null }) => void;
   let signal!: AbortSignal;
@@ -151,7 +181,7 @@ it("reclaims the comment column and retains its draft when reopened", async () =
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-expanded="true"]')!.click()
   );
-  expect(container.querySelector("aside")!.className).toContain("lg:w-12");
+  expect(container.querySelector("aside")!.className).toContain("lg:w-8");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="expand"]')!.click()
   );

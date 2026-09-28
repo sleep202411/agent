@@ -73,10 +73,15 @@ export class CdnPurgeProvider {
         body: JSON.stringify(toPayload(input)),
         signal: controller.signal,
       });
-      const payload = (await response.json().catch(() => null)) as Record<
-        string,
-        unknown
-      > | null;
+      // Reading failures (including aborts) must reach the worker's retry path.
+      // Only JSON syntax is optional: some gateways acknowledge with no body.
+      const text = await response.text();
+      let payload: Record<string, unknown> | null;
+      try {
+        payload = JSON.parse(text) as Record<string, unknown> | null;
+      } catch {
+        payload = null;
+      }
       if (!response.ok) {
         throw new Error(
           `CDN purge gateway failed with HTTP ${response.status}: ${errorMessage(payload)}`,

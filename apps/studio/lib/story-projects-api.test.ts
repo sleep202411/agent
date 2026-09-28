@@ -281,6 +281,26 @@ describe("current-draft Story production routes", () => {
       requestScope: "project",
     });
   });
+
+  it("sends the clicked scene with the chapter being played", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      draftRevision: 18,
+      contentHash: "b".repeat(64),
+      videoSnapshotHash: "a".repeat(64),
+      runtimeSchemaVersion: 2,
+      runtime: null,
+      diagnostics: [],
+      pathReport: null,
+      sources: [],
+    });
+
+    await getStoryWorkingPreview("project-1", "chapter-1", "clip:scene-1");
+
+    expect(api.get).toHaveBeenCalledWith("/aurora/story-projects/project-1/working-preview", {
+      params: { chapterId: "chapter-1", sceneId: "clip:scene-1" },
+      requestScope: "project",
+    });
+  });
 });
 
 function storyProject(): StoryProjectSummary {

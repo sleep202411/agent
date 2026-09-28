@@ -28,10 +28,8 @@ import {
 import type { AuthUser } from '../auth';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import { PrismaService } from '../infra/db/db.module';
-import {
-  PlatformAuditLogService,
-  WorkspacePermissionService,
-} from '../workspaces';
+import { PlatformAuditLogService } from '../workspaces/audit-log.service';
+import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import type { CreateInviteInput, AssignableRole } from './dto';
 import { generateInviteToken } from './invite-token';
 import {
@@ -81,23 +79,29 @@ export class WorkspaceInvitesService {
     const role = ROLE_MAP[input.role];
     const { token, tokenHash } = generateInviteToken();
     const expiresAt = new Date(Date.now() + input.expiresInDays * MS_PER_DAY);
-    const invite = await this.prisma.workspaceInvite.create({
-      data: {
-        workspaceId,
-        role,
-        tokenHash,
-        status: WorkspaceInviteStatus.pending,
-        invitedById: actor.userId,
-        expiresAt,
-      },
-    });
-    await this.audit.record({
-      workspaceId,
-      actorUserId: actor.userId,
-      action: 'workspace.invite.created',
-      entityType: 'workspace_invite',
-      entityId: invite.id,
-      after: { role, expiresAt: expiresAt.toISOString() },
+    const invite = await this.prisma.$transaction(async (tx) => {
+      const invite = await tx.workspaceInvite.create({
+        data: {
+          workspaceId,
+          role,
+          tokenHash,
+          status: WorkspaceInviteStatus.pending,
+          invitedById: actor.userId,
+          expiresAt,
+        },
+      });
+      await this.audit.record(
+        {
+          workspaceId,
+          actorUserId: actor.userId,
+          action: 'workspace.invite.created',
+          entityType: 'workspace_invite',
+          entityId: invite.id,
+          after: { role, expiresAt: expiresAt.toISOString() },
+        },
+        tx,
+      );
+      return invite;
     });
     return {
       inviteId: invite.id,
@@ -173,13 +177,15 @@ export class WorkspaceInvitesService {
       where: { id: invite.workspaceId, deletedAt: null },
       select: { name: true },
     });
+    let currentRole: WorkspaceMemberRole | undefined;
     const existingAccess = workspace
       ? await existingInviteAccess(async () => {
-          await this.permissions.requireWorkspaceRole(
+          const member = await this.permissions.requireWorkspaceRole(
             user.userId,
             invite.workspaceId,
             WorkspaceMemberRole.viewer,
           );
+          currentRole = member.role;
           return {
             scope: 'workspace' as const,
             workspaceId: invite.workspaceId,
@@ -189,6 +195,7 @@ export class WorkspaceInvitesService {
       : null;
     return {
       existingAccess,
+      currentRole,
       scope: 'workspace',
       targetName: workspace?.name ?? 'a team',
       role: invite.role,
@@ -319,8 +326,18 @@ export class WorkspaceInvitesService {
         created = true;
       });
     } catch (err) {
-      // Raced a concurrent accept by the same user — they're a member now.
       if (!isUniqueViolation(err)) throw err;
+      // A unique failure can roll back any write in the transaction. Only an
+      // independently committed access grant makes this an idempotent success.
+      const hasAccess = await existingInviteAccess(async () => {
+        await this.permissions.requireWorkspaceRole(
+          user.userId,
+          invite.workspaceId,
+          WorkspaceMemberRole.viewer,
+        );
+        return true;
+      });
+      if (!hasAccess) throw err;
     }
 
     // Record the accept regardless of whether this call created the row or

@@ -73,6 +73,7 @@ function providerHost(apiBaseUrl: string): string {
 
 class HappyOysterTravelRuntime implements WorldTravelRuntime {
   private ended = false;
+  private endPromise: Promise<void> | null = null;
   private readonly unsubscribe: Array<() => void>;
 
   constructor(
@@ -137,9 +138,22 @@ class HappyOysterTravelRuntime implements WorldTravelRuntime {
   }
 
   async end() {
+    if (this.endPromise) return this.endPromise;
     if (this.ended) return;
     this.ended = true;
-    if (this.travel.can("end")) await this.travel.end();
+    // Share the in-flight result; failed cleanup must remain retryable.
+    this.endPromise = Promise.resolve()
+      .then(async () => {
+        if (this.travel.can("end")) await this.travel.end();
+      })
+      .catch((error) => {
+        this.ended = false;
+        throw error;
+      })
+      .finally(() => {
+        this.endPromise = null;
+      });
+    return this.endPromise;
   }
 
   async dispose() {

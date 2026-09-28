@@ -2,7 +2,13 @@ import { ExperienceGameSummarySchema } from "@repo/shared/experience-runtime";
 import { TextGameSummaryListSchema } from "@repo/shared/text-game";
 
 export type TvGameKind = "text-game" | "interactive-film";
-export type TvGame = { id: string; title: string; href: string; coverUrl?: string };
+export type TvGame = {
+  id: string;
+  title: string;
+  href: string;
+  coverUrl?: string;
+  creatorId?: string;
+};
 
 /** These public player catalogs own publication; game identities are never IP identities. */
 export function parseTvGames(kind: TvGameKind, data: unknown): TvGame[] {
@@ -13,6 +19,7 @@ export function parseTvGames(kind: TvGameKind, data: unknown): TvGame[] {
       .map((row) => ({
         id: `${kind}:${row.gameId}`,
         title: row.name?.trim() || row.gameId,
+        creatorId: row.creatorId ?? undefined,
         coverUrl: publicCover(row.posterUrl),
         href: `/play/${kind}/${encodeURIComponent(row.gameId)}`,
       }));
@@ -21,13 +28,13 @@ export function parseTvGames(kind: TvGameKind, data: unknown): TvGame[] {
   const games: TvGame[] = [];
   for (const row of data) {
     if (!row || typeof row !== "object" || Array.isArray(row)) continue;
-    // Some Java DTOs include lifecycle fields outside the public summary contract.
-    // Never strip explicit withdrawal evidence and then advertise the game.
-    if ((row.status != null && row.status !== "published") || row.offlineAt != null) continue;
+    // The public catalog can retain offlineAt after republication. Current
+    // published status owns availability; without it, retain withdrawal protection.
+    if (row.status != null ? row.status !== "published" : row.offlineAt != null) continue;
     const parsed = ExperienceGameSummarySchema.safeParse({
       gameId: row.gameId,
       title: row.title,
-      coverUrl: row.coverUrl,
+      coverUrl: publicCover(row.coverUrl),
       currentVersion: row.currentVersion,
       updatedAt: row.updatedAt,
     });
@@ -35,6 +42,7 @@ export function parseTvGames(kind: TvGameKind, data: unknown): TvGame[] {
     games.push({
       id: `${kind}:${parsed.data.gameId}`,
       title: parsed.data.title,
+      creatorId: publicCreatorId(row.creatorId),
       coverUrl: publicCover(parsed.data.coverUrl),
       href: `/play/${kind}/${encodeURIComponent(parsed.data.gameId)}`,
     });
@@ -52,4 +60,11 @@ function publicCover(value: unknown): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function publicCreatorId(value: unknown): string | undefined {
+  if (typeof value === "number" && (!Number.isSafeInteger(value) || value <= 0)) return undefined;
+  if (typeof value !== "number" && typeof value !== "string") return undefined;
+  const id = String(value);
+  return /^[1-9]\d*$/.test(id) ? id : undefined;
 }

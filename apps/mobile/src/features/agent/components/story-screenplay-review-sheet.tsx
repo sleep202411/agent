@@ -1,5 +1,5 @@
-import IconFileDescription from "@tabler/icons-react-native/icons/IconFileDescription";
-import IconX from "@tabler/icons-react-native/icons/IconX";
+import IconFileDescription from "@tabler/icons-react-native/IconFileDescription";
+import IconX from "@tabler/icons-react-native/IconX";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 

@@ -4,10 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
 import {
+  TaskDeliveryTemplatePanel,
   DeliveryReferencePrices,
   TaskDeliveryFields,
   useTaskDeliveryTemplate,
 } from "./task-delivery-template";
+import type { CrewTaskDTO } from "@/app/(site)/crews/_hooks/types";
+import type { ReactNode } from "react";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 const state = vi.hoisted(() => ({ account: "a" }));
 vi.mock("@/src/hooks/use-user", () => ({
@@ -15,6 +18,27 @@ vi.mock("@/src/hooks/use-user", () => ({
 }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { get: vi.fn(), post: vi.fn() } }));
+vi.mock("@/components/ui/native-select", () => ({
+  NativeSelect: ({
+    value,
+    onChange,
+    disabled,
+    children,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    disabled: boolean;
+    children: ReactNode;
+  }) => (
+    // eslint-disable-next-line no-restricted-syntax -- Test adapter for the themed select.
+    <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+      {children}
+    </select>
+  ),
+  NativeSelectOption: ({ value, children }: { value: string; children: ReactNode }) => (
+    <option value={value}>{children}</option>
+  ),
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root, container: HTMLDivElement, client: QueryClient;
 beforeEach(() => {
@@ -139,4 +163,158 @@ it("shows separate exact reference amounts and their units without implying comp
     )
   );
   expect(container.textContent).toBe("");
+});
+
+it("keeps the task version from template selection through refresh and conflict retry", async () => {
+  const category = { id: "category", version: 1, definition: { name: "Animation", fields: [] } };
+  vi.mocked(crewApi.get).mockImplementation(async (url) =>
+    url.includes("delivery-catalog") ? { items: [category], nextCursor: null } : null
+  );
+  vi.mocked(crewApi.post).mockRejectedValue(new Error("Task changed; refresh first"));
+  const render = async (version: number) => {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <TaskDeliveryTemplatePanel
+            task={
+              {
+                id: "task",
+                crewId: "crew",
+                version,
+                status: "open",
+                submissions: [],
+              } as unknown as CrewTaskDTO
+            }
+            canManage
+          />
+        </QueryClientProvider>
+      )
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  };
+  await render(7);
+  await act(async () => {
+    const select = container.querySelector("select")!;
+    select.value = "category:1";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await render(8);
+  const save = () =>
+    Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "save"
+    )!;
+  await act(async () => save().click());
+  expect(crewApi.post).toHaveBeenLastCalledWith(
+    "/crew-tasks/task/delivery-template",
+    expect.objectContaining({
+      body: { expectedVersion: 7, category: { id: "category", version: 1 } },
+    })
+  );
+  expect(container.textContent).toContain("Task changed; refresh first");
+  expect(container.querySelector("select")!.value).toBe("category:1");
+  await render(9);
+  await act(async () => save().click());
+  expect(vi.mocked(crewApi.post).mock.calls[1]?.[1]?.body).toEqual({
+    expectedVersion: 7,
+    category: { id: "category", version: 1 },
+  });
+  await act(async () => {
+    const select = container.querySelector("select")!;
+    select.value = "";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => save().click());
+  expect(vi.mocked(crewApi.post).mock.calls[2]?.[1]?.body).toEqual({
+    expectedVersion: 9,
+    category: null,
+  });
+});
+
+it.each([
+  "in_progress",
+  "revision_requested",
+  "submitted",
+  "approved",
+  "cancelled",
+  "open-with-submission",
+])("keeps agreed template visible but hides editing for %s", async (status) => {
+  const definition = { name: "Agreed animation", fields: [] };
+  vi.mocked(crewApi.get).mockImplementation(async (url) =>
+    url.includes("delivery-catalog")
+      ? { items: [{ id: "category", version: 1, definition }], nextCursor: null }
+      : { categoryId: "category", version: 1, definition }
+  );
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <TaskDeliveryTemplatePanel
+          canManage
+          task={
+            {
+              id: "task",
+              crewId: "crew",
+              version: 1,
+              status: status === "open-with-submission" ? "open" : status,
+              submissions: status === "open-with-submission" ? [{ id: "submission" }] : [],
+            } as unknown as CrewTaskDTO
+          }
+        />
+      </QueryClientProvider>
+    )
+  );
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  expect(container.textContent).toContain("Agreed animation");
+  expect(container.textContent).toContain("requirementsLocked");
+  expect(container.querySelector("select")).toBeNull();
+  expect(
+    [...container.querySelectorAll("button")].some((button) => button.textContent === "save")
+  ).toBe(false);
+  expect(crewApi.post).not.toHaveBeenCalled();
+});
+it("removes a pending template edit when refreshed task state locks requirements", async () => {
+  vi.mocked(crewApi.get).mockImplementation(async (url) =>
+    url.includes("delivery-catalog")
+      ? {
+          items: [{ id: "category", version: 1, definition: { name: "Animation", fields: [] } }],
+          nextCursor: null,
+        }
+      : null
+  );
+  const render = async (status: string) => {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <TaskDeliveryTemplatePanel
+            canManage
+            task={
+              {
+                id: "task",
+                crewId: "crew",
+                version: 1,
+                status,
+                submissions: [],
+              } as unknown as CrewTaskDTO
+            }
+          />
+        </QueryClientProvider>
+      )
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  };
+  await render("open");
+  await act(async () => {
+    const select = container.querySelector("select")!;
+    select.value = "category:1";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await render("in_progress");
+  expect(container.querySelector("select")).toBeNull();
+  expect(container.textContent).toContain("requirementsLocked");
+  expect(crewApi.post).not.toHaveBeenCalled();
 });

@@ -44,10 +44,16 @@ import {
   ListAdminIpOrdersQuerySchema,
   ListAdminIpRevenueQuerySchema,
   ListIpTaxonomyTermsQuerySchema,
+  ListAdminIpPublishersQuerySchema,
+  AdminIpPublisherParamsSchema,
+  CreateAdminIpPublisherSchema,
+  UpdateAdminIpPublisherSchema,
+  SetAdminIpPublishersSchema,
   RevokeAdminIpEntitlementSchema,
   ResolveAdminIpReportSchema,
   UpdateAdminIpTaxonomyTermSchema,
   UpdateAdminIpPublicationSchema,
+  UpdateIpChannelSchema,
   UpdateAdminIpRevenueConfigSchema,
   UpdateIpCommerceSettingSchema,
   IpCommerceSettingParamsSchema,
@@ -70,6 +76,11 @@ import {
   type ListAdminIpOrdersQuery,
   type ListAdminIpRevenueQuery,
   type ListIpTaxonomyTermsQuery,
+  type ListAdminIpPublishersQuery,
+  type AdminIpPublisherParams,
+  type CreateAdminIpPublisherInput,
+  type UpdateAdminIpPublisherInput,
+  type SetAdminIpPublishersInput,
   type RevokeAdminIpEntitlementInput,
   type ResolveAdminIpReportInput,
   type UpdateAdminIpTaxonomyTermInput,
@@ -80,6 +91,7 @@ import {
   type IpOrderParams,
 } from './dto';
 import { IpCommerceService } from './ip-commerce.service';
+import { IpPublishersService } from './ip-publishers.service';
 
 @Public()
 @UseGuards(AdminAuthGuard, AdminPermissionGuard)
@@ -87,6 +99,7 @@ import { IpCommerceService } from './ip-commerce.service';
 export class IpCommerceAdminController {
   constructor(
     private readonly ipCommerce: IpCommerceService,
+    private readonly publishers: IpPublishersService,
     private readonly adminAuth: AdminAuthService,
   ) {}
 
@@ -253,6 +266,107 @@ export class IpCommerceAdminController {
       code: 200,
       data,
     };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
+  @Get('publishers')
+  async listPublishers(
+    @Query(new ZodValidationPipe(ListAdminIpPublishersQuerySchema))
+    query: ListAdminIpPublishersQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.publishers.listAdmin(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Post('publishers')
+  async createPublisher(
+    @CurrentAdmin() admin: AdminActor,
+    @Body(new ZodValidationPipe(CreateAdminIpPublisherSchema))
+    body: CreateAdminIpPublisherInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.publishers.createAdmin(
+      adminToAuthUser(admin),
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.publisher.create',
+      resourceType: 'ip_publisher',
+      resourceId: data.publisher.id,
+      metadata: {
+        code: data.publisher.code,
+        status: data.publisher.status,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('publishers/:publisherId')
+  async updatePublisher(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(AdminIpPublisherParamsSchema))
+    params: AdminIpPublisherParams,
+    @Body(new ZodValidationPipe(UpdateAdminIpPublisherSchema))
+    body: UpdateAdminIpPublisherInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.publishers.updateAdmin(
+      adminToAuthUser(admin),
+      params.publisherId,
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.publisher.update',
+      resourceType: 'ip_publisher',
+      resourceId: params.publisherId,
+      metadata: {
+        status: body.status ?? null,
+        displayOrder: body.displayOrder ?? null,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return { code: 200, data };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('ips/:ipId/publishers')
+  async setIpPublishers(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(IpParamsSchema)) params: IpParams,
+    @Body(new ZodValidationPipe(SetAdminIpPublishersSchema))
+    body: SetAdminIpPublishersInput,
+    @Req() request: Request,
+  ) {
+    const data = await this.publishers.setForIp(
+      adminToAuthUser(admin),
+      params.ipId,
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.publishers.set',
+      resourceType: 'ip',
+      resourceId: params.ipId,
+      metadata: { publisherIds: body.publisherIds },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return { code: 200, data };
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpRead)
@@ -466,6 +580,37 @@ export class IpCommerceAdminController {
     return {
       code: 200,
       data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Patch('ips/:ipId/channel')
+  async updateChannel(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(IpParamsSchema)) params: IpParams,
+    @Body(new ZodValidationPipe(UpdateIpChannelSchema))
+    body: { channelType: 'ip' | 'community'; expectedVersion: number },
+    @Req() request: Request,
+  ) {
+    await this.ipCommerce.updateAdminIpChannel(
+      adminToAuthUser(admin),
+      params.ipId,
+      body,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.channel.update',
+      resourceType: 'ip',
+      resourceId: params.ipId,
+      metadata: { channelType: body.channelType },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data: await this.ipCommerce.getAdminIp(params.ipId, {}),
     };
   }
 

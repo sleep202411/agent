@@ -86,6 +86,19 @@ export class BytePlusAssetsConfigService {
       mediaAssetRegistrationEnabled;
     const acrExpiresAtRaw = process.env.BYTEPLUS_ACR_EXPIRES_AT?.trim() || null;
     const acrExpiresAt = acrExpiresAtRaw ? new Date(acrExpiresAtRaw) : null;
+    const isChina =
+      (process.env.NEXT_PUBLIC_SITE_REGION ?? process.env.SITE_REGION) === 'cn';
+    const assetModerationStrategy = assetModerationStrategyEnv(
+      process.env.BYTEPLUS_ASSETS_MODERATION_STRATEGY,
+      isChina ? 'Default' : 'Skip',
+    );
+    // CN must not disable content checks, including asset pre-filtering.
+    // Reject stale deployment overrides rather than silently ignoring them.
+    if (isChina && assetModerationStrategy === 'Skip') {
+      throw new Error(
+        'BYTEPLUS_ASSETS_MODERATION_STRATEGY=Skip is not allowed in the cn deployment; use Default',
+      );
+    }
 
     this.value = {
       realPersonEnabled,
@@ -102,10 +115,7 @@ export class BytePlusAssetsConfigService {
       service: 'ark',
       apiVersion:
         process.env.BYTEPLUS_ASSETS_API_VERSION?.trim() || '2024-01-01',
-      assetModerationStrategy: assetModerationStrategyEnv(
-        process.env.BYTEPLUS_ASSETS_MODERATION_STRATEGY,
-        'Skip',
-      ),
+      assetModerationStrategy,
       requestTimeoutMs: 30_000,
       acrExpiresAt,
       enrollmentTokenKey:

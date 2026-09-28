@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { CrewApplicationStatus } from '@prisma/client';
 import { ListCrewApplicationsQuerySchema } from './dto';
 import { ApplicationsService } from './applications.service';
@@ -94,6 +94,13 @@ describe('ApplicationsService owner inbox', () => {
     });
 
     expect(t.crewApplication.findMany).toHaveBeenCalledWith({
+      include: {
+        interviewEvents: {
+          orderBy: { version: 'desc' },
+          take: 1,
+          select: { state: true, version: true, scheduledAt: true },
+        },
+      },
       where: { crewId: CREW_ID, positionId: POSITION_ID },
       orderBy: [{ status: 'asc' }, { createdAt: 'desc' }, { id: 'desc' }],
       take: 2,
@@ -127,7 +134,10 @@ describe('ApplicationsService owner inbox', () => {
         cursor: 'application-other',
         positionId: POSITION_ID,
       }),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_APPLICATION_CURSOR_INVALID' },
+      status: 400,
+    });
     expect(t.crewApplication.findMany).not.toHaveBeenCalled();
   });
 
@@ -139,7 +149,91 @@ describe('ApplicationsService owner inbox', () => {
       t.service.getForOwner(CREW_ID, 'application-missing', OWNER_ID),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(t.crewApplication.findFirst).toHaveBeenCalledWith({
+      include: {
+        interviewEvents: {
+          orderBy: { version: 'desc' },
+          take: 1,
+          select: { state: true, version: true, scheduledAt: true },
+        },
+      },
       where: { id: 'application-missing', crewId: CREW_ID },
     });
+  });
+});
+
+describe('applicant-owned application history', () => {
+  const fixture = () => {
+    const db = {
+      crewApplication: {
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(2),
+      },
+    };
+    return {
+      db,
+      service: new ApplicationsService(
+        db as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      ),
+    };
+  };
+  it('scopes results and counts to the authenticated applicant, with bounded pages', async () => {
+    const f = fixture();
+    f.db.crewApplication.findMany.mockResolvedValue([
+      {
+        ...application('a', 'rejected'),
+        crew: { name: 'Crew' },
+        position: { positionType: 'Writer', taskId: 'task' },
+      },
+      {
+        ...application('b', 'rejected'),
+        crew: { name: 'Crew' },
+        position: { positionType: 'Writer', taskId: 'task' },
+      },
+    ]);
+    const result = await f.service.listMine('applicant', {
+      limit: 1,
+      status: 'rejected',
+    });
+    expect(f.db.crewApplication.findMany).toHaveBeenCalledWith({
+      include: {
+        crew: { select: { name: true } },
+        position: { select: { positionType: true, taskId: true } },
+        interviewEvents: {
+          orderBy: { version: 'desc' },
+          take: 1,
+          select: { state: true, version: true, scheduledAt: true },
+        },
+      },
+      where: { applicantId: 'applicant', status: 'rejected' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 2,
+    });
+    expect(f.db.crewApplication.count).toHaveBeenCalledWith({
+      where: { applicantId: 'applicant', status: 'rejected' },
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      crewName: 'Crew',
+      positionType: 'Writer',
+      taskId: 'task',
+    });
+    expect(result.nextCursor).toBe('a');
+  });
+  it('rejects another applicant’s cursor without reading any application page', async () => {
+    const f = fixture();
+    f.db.crewApplication.findFirst.mockResolvedValue(null);
+    await expect(
+      f.service.listMine('applicant', { limit: 20, cursor: 'foreign' }),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(f.db.crewApplication.findFirst).toHaveBeenCalledWith({
+      where: { applicantId: 'applicant', id: 'foreign' },
+      select: { id: true },
+    });
+    expect(f.db.crewApplication.findMany).not.toHaveBeenCalled();
   });
 });

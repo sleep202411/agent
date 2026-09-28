@@ -1,7 +1,10 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import {
   createContext,
+  memo,
   useCallback,
   useContext,
   useEffect,
@@ -13,16 +16,21 @@ import {
 } from "react";
 import {
   applyNodeChanges,
+  BaseEdge,
+  EdgeLabelRenderer,
+  getBezierPath,
   Handle,
   MiniMap,
   Position,
   ReactFlowProvider,
   useEdgesState,
+  useNodesInitialized,
   useNodesState,
   useReactFlow,
   useStore,
   type Connection,
   type Edge,
+  type EdgeProps,
   type FinalConnectionState,
   type NodeChange,
   type NodeProps,
@@ -34,28 +42,30 @@ import {
   IconArrowDown,
   IconArrowLeft,
   IconArrowUp,
-  IconChevronDown,
   IconDownload,
   IconFocusCentered,
   IconGitBranch,
   IconLoader2,
   IconMovie,
+  IconPlayerPlay,
   IconPlus,
   IconRefresh,
   IconTrash,
-  IconWorld,
   IconX,
 } from "@tabler/icons-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
+import { storyChapterWorkbenchQueryKey } from "../../_lib/use-story-chapter-workbench";
+import { useStoryPreviewNavigation } from "../../_lib/use-story-preview-navigation";
 import { StoryProjectSidePanelShell } from "../story-project-side-panel";
 import { StoryProjectWorkState } from "../story-project-work-state";
 import {
+  StoryboardCoverageStore,
   StoryCanvasStoryboardCoverageContext,
   storyboardCoverageByNode,
+  storyboardStillUrl,
   useStoryboardNodeCoverage,
 } from "./story-canvas-storyboard-coverage";
 import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
@@ -82,16 +92,11 @@ import {
 import type { MediaManualPlaybackLease } from "@/components/media/media-preview-coordinator";
 import { StudioVideoPlayer, type StudioVideoSource } from "@/components/media/studio-video-player";
 import { resolveCanvasVideoControlDensity } from "@/components/media/studio-video-player-model";
-import { WorldModelExperienceRenderer } from "@/components/experience-runtime/world-model-experience-renderer";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
-import { GlassRim } from "@/components/ui/glass-rim";
 import { Link } from "@/i18n/navigation";
 import { canonicalJsonString } from "@/lib/canonical-json";
-import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
-import { listWorlds, worldModelQueryKeys } from "@/lib/world-model-api";
 import {
-  addStoryCandidateAsset,
   canvasLayoutRevisionConflict,
   draftRevisionConflict,
   getStoryCanvasLayout,
@@ -104,15 +109,15 @@ import {
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
   type InteractiveStoryDraftContent,
-  type StoryCandidateAsset,
-  type StoryCanvasPosition,
+  type StoryBibleEnding,
+  type StoryBibleWriterPatch,
   type StoryCanvasLayout,
+  type StoryCanvasPosition,
   type StoryClipGraphNode,
   type StoryGraphNode,
   type StoryInteractionAction,
   type StoryInteractionOutcomes,
   type StoryInteractionTrigger,
-  type StoryWorldGraphNode,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
 import {
@@ -121,17 +126,21 @@ import {
   storyDecisionCanvasNodeId,
   type StoryCanvasEdge,
   type StoryCanvasNode,
+  type StoryCanvasNodeData,
 } from "./story-project-canvas-model";
-import {
-  reconcileStoryCanvasSelectedIds,
-  resolveStoryCanvasNodeClick,
-} from "./story-project-canvas-selection";
+import { resolveStoryCanvasNodeClick } from "./story-project-canvas-selection";
 import {
   CLOSED_STORY_CANVAS_INSPECTOR,
   reconcileStoryCanvasInspectorTarget,
   storyCanvasInspectorNodeId,
   storyNodeInspectorTarget,
 } from "./story-canvas-inspector-target";
+import {
+  resolveStoryCanvasCamera,
+  storyCanvasHydrationSelection,
+  storyCanvasInspectorToRestore,
+  storyCanvasViewKey,
+} from "./story-canvas-view-state";
 import {
   confirmsOwnCanvasLayoutWrite,
   layoutPayloadSignature,
@@ -156,20 +165,34 @@ import {
 import { useLastDefinedData } from "./use-last-defined-data";
 import {
   addChoiceOption,
+  applyStoryBiblePatch,
   connectSceneContinuation,
   createDecisionNode,
   materializeStoryDecisionNodes,
   connectChoiceTarget,
+  createStoryEndingForAutoRoute,
+  createStoryEndingForChoice,
   createClipNode,
-  createWorldNode,
   moveChoiceOption,
+  putStoryEnding,
   removeChoiceOption,
+  removeStoryEnding,
   replaceStoryNodeInteractions,
+  setAutoRoutes,
+  setEntryNode,
+  setNodeOnEnterEffects,
+  updateChoiceStats,
   updateStoryClipMeta,
-  updateStoryWorldNode,
   updateChoiceExitPrompt,
   updateChoiceOptionLabel,
 } from "./story-project-canvas-mutations";
+import type { StoryCondition, StoryRouteTarget, StoryStateEffect } from "@repo/shared/story-stats";
+import {
+  StoryChoiceAttachmentBar,
+  storyGraphNodePickerItems,
+  storyGraphNodePickerTitles,
+} from "./story-stats-editors";
+
 import {
   canConnectStoryCompletion,
   choiceIdFromHandle,
@@ -178,6 +201,7 @@ import {
 } from "./story-project-canvas-connections";
 import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
+import { cacheStoryWorkbenchDraft } from "./story-workbench-cache";
 import {
   StoryConnectionCreator,
   type StoryConnectionCreationKind,
@@ -188,15 +212,12 @@ import {
   resolveStoryNodeCreationMenuPlacement,
   type StoryNodeCreationMenuPlacement,
 } from "./story-node-creator-model";
-import type { StoryCandidateAssetUploadState } from "./story-candidate-asset-picker-dialog";
-import { useStoryCandidateAssets } from "./use-story-candidate-assets";
 import { StoryNodeInspector } from "./story-node-inspector";
 import {
   StoryCommunityPriceButton,
   StoryCommunityPriceLabel,
 } from "./story-community-price-dialog";
 import { updateStoryCommunityPointPrice } from "./story-community-price";
-import { StoryWorldBindingControl, StoryWorldNodeEditor } from "./story-world-node-editor";
 import { StoryInteractionEditor } from "./story-interaction-editor";
 import { migrateLegacyStoryHotspotIds } from "./story-interaction-ids";
 import type {
@@ -205,10 +226,7 @@ import type {
   StoryInteractionOutcomesDraft,
   StoryInteractionTriggerDraft,
 } from "./story-interaction-types";
-import {
-  applyActiveStoryCanvasCapabilities,
-  STORY_WORLD_EXPERIENCE_AVAILABLE,
-} from "./story-world-feature-policy";
+import { stripRetiredStoryWorldNodes } from "@repo/shared/strip-retired-story-world-nodes";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
 import { StoryPlotImportDialog } from "./story-plot-import-dialog";
 import {
@@ -245,42 +263,80 @@ type StoryCanvasChoiceContextValue = {
   updateChoice: (sourceNodeId: string, choiceId: string, label: string) => void;
   moveChoice: (sourceNodeId: string, choiceId: string, direction: "up" | "down") => void;
   removeChoice: (sourceNodeId: string, choiceId: string) => void;
-};
-type StoryCanvasWorldContextValue = {
-  projectId: string;
-  worlds: WorldModelWorld[];
-  loading: boolean;
-  error: string | null;
-  canEdit: boolean;
-  canGenerate: boolean;
-  candidateAssets: StoryCandidateAsset[];
-  candidateAssetsLoading: boolean;
-  candidateAssetsError: string | null;
-  node: (nodeId: string) => StoryWorldGraphNode | null;
-  retry: () => void;
-  retryCandidateAssets: () => void;
-  uploadCandidateAsset: (
-    file: File,
-    onState: (state: StoryCandidateAssetUploadState) => void,
-    signal: AbortSignal
-  ) => Promise<StoryCandidateAsset>;
-  update: (
-    nodeId: string,
-    patch: Partial<
-      Pick<StoryWorldGraphNode, "worldId" | "entryInstruction" | "maxExperienceSeconds">
-    >
+  stateVariables: InteractiveStoryDraftContent["storyBible"]["stateVariables"];
+  endings: StoryBibleEnding[];
+  nodes: Array<{ nodeId: string; title: string }>;
+  locale: string;
+  patchChoice: (
+    sourceNodeId: string,
+    choiceId: string,
+    patch: {
+      effects?: StoryStateEffect[] | null;
+      visibleWhen?: StoryCondition | null;
+      target?: StoryRouteTarget | null;
+    }
   ) => void;
-  run: (nodeId: string, worldId: string) => void;
-};
-type StoryWorldRunState = {
-  worldId: string;
-  entryInstruction?: string;
-  maxExperienceSeconds: 60 | 90 | 120;
+  createEndingForChoice: (sourceNodeId: string, choiceId: string) => void;
+  updateEnding: (endingId: string, patch: Pick<StoryBibleEnding, "title">) => void;
+  deleteEnding: (endingId: string) => void;
 };
 
-const NODE_TYPES = { storyCanvas: StoryGraphNodeCard };
+const NODE_TYPES = { storyCanvas: memo(StoryGraphNodeCard) };
+
+/**
+ * HTML labels instead of React Flow's SVG `EdgeText`. That path measures
+ * every label with `getBBox` when edges mount during a pan.
+ */
+function StoryCanvasFlowEdge({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  label,
+  style,
+  markerEnd,
+  markerStart,
+  interactionWidth,
+}: EdgeProps<StoryCanvasEdge>) {
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX,
+    sourceY,
+    sourcePosition,
+    targetX,
+    targetY,
+    targetPosition,
+  });
+  const text = typeof label === "string" && label.trim() ? label : null;
+  return (
+    <>
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={style}
+        markerEnd={markerEnd}
+        markerStart={markerStart}
+        interactionWidth={interactionWidth}
+      />
+      {text ? (
+        <EdgeLabelRenderer>
+          <div
+            className="nodrag nopan pointer-events-none absolute rounded-md bg-[oklch(0.24_0_0)] px-1.5 py-0.5 text-[10px] font-semibold text-white/70"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+          >
+            {text}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
+}
+
+const EDGE_TYPES = { storyCanvas: StoryCanvasFlowEdge };
 const DEFAULT_EDGE_OPTIONS = {
-  type: "default",
+  type: "storyCanvas",
   interactionWidth: 28,
   style: { stroke: "rgba(255,255,255,0.25)", strokeWidth: 1.5 },
 };
@@ -294,10 +350,13 @@ const STORY_CANVAS_TIDY_LAYOUT = {
   lanes: [],
 } satisfies CanvasTidyLayoutOptions<StoryCanvasNode>;
 const MAX_PLAYER_CHOICES = 6;
+const NO_STORY_VARIABLES: StoryCanvasChoiceContextValue["stateVariables"] = [];
+const NO_STORY_ENDINGS: StoryBibleEnding[] = [];
 
 const StoryCanvasFocusContext = createContext<string | null>(null);
+/** Scene-card play buttons call back into the canvas's preview navigation. */
+const StoryCanvasPreviewContext = createContext<((nodeId: string) => void) | null>(null);
 const StoryCanvasChoiceContext = createContext<StoryCanvasChoiceContextValue | null>(null);
-const StoryCanvasWorldContext = createContext<StoryCanvasWorldContextValue | null>(null);
 
 function StoryCanvasReactFlow({
   onInteractionStart,
@@ -315,19 +374,26 @@ function StoryCanvasReactFlow({
 export function StoryProjectCanvas({
   projectId,
   requestedChapterId,
+  requestedFocusNodeId,
 }: {
   projectId: string;
   requestedChapterId?: string;
+  requestedFocusNodeId?: string;
 }) {
   // The XYFlow store belongs to the project shell, not to an individual
   // chapter. Chapter projections are swapped inside the mounted shell so a
   // query-param navigation cannot tear down the viewport and flash the cold
   // loading surface.
-  const scopeKey = projectId;
+  const { user } = useAuth();
+  const scopeKey = JSON.stringify([projectId, user?.id ?? null]);
 
   return (
     <ReactFlowProvider key={scopeKey}>
-      <StoryProjectCanvasInner projectId={projectId} requestedChapterId={requestedChapterId} />
+      <StoryProjectCanvasInner
+        projectId={projectId}
+        requestedChapterId={requestedChapterId}
+        requestedFocusNodeId={requestedFocusNodeId}
+      />
     </ReactFlowProvider>
   );
 }
@@ -335,16 +401,30 @@ export function StoryProjectCanvas({
 function StoryProjectCanvasInner({
   projectId,
   requestedChapterId,
+  requestedFocusNodeId,
 }: {
   projectId: string;
   requestedChapterId?: string;
+  requestedFocusNodeId?: string;
 }) {
+  const { user } = useAuth();
+  const interfaceLocale = useLocale();
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
-  const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
+  const { fitView, getViewport, screenToFlowPosition, setViewport } = useReactFlow<
+    StoryCanvasNode,
+    StoryCanvasEdge
+  >();
+  const nodesInitialized = useNodesInitialized();
   const queryClient = useQueryClient();
+  const { openPreviewFromScene } = useStoryPreviewNavigation(projectId);
+  const previewFromScene = useCallback(
+    (nodeId: string) => void openPreviewFromScene(nodeId),
+    [openPreviewFromScene]
+  );
   const [content, setContent] = useState<InteractiveStoryDraftContent | null>(null);
+  const [cameraTick, setCameraTick] = useState(0);
   const [contentChapterId, setContentChapterId] = useState<string | null>(null);
   // Inspector + share live in the shared store so the layout rail's World and
   // Share buttons can drive them; the canvas stays the only writer otherwise.
@@ -360,7 +440,6 @@ function StoryProjectCanvasInner({
   const setSidePanel = useStoryProjectUiStore((state) => state.setSidePanel);
   const setDraftBarrier = useStoryProjectUiStore((state) => state.setDraftBarrier);
   const setFoundationWriter = useStoryProjectUiStore((state) => state.setFoundationWriter);
-  const [worldRun, setWorldRun] = useState<StoryWorldRunState | null>(null);
   const [interactionEditorNodeId, setInteractionEditorNodeId] = useState<string | null>(null);
   const [mutationBarrier] = useState(() => createStoryCanvasMutationBarrier());
   const focusedNodeId = storyCanvasInspectorNodeId(inspectorTarget);
@@ -420,6 +499,9 @@ function StoryProjectCanvasInner({
   const canvasNodesRef = useRef<StoryCanvasNode[]>([]);
   const canvasSectionRef = useRef<HTMLElement>(null);
   const hasFittedInitialCanvasRef = useRef(false);
+  const activeCanvasViewKeyRef = useRef<string | null>(null);
+  const pendingFitRef = useRef(false);
+  const appliedFocusRef = useRef<string | null>(null);
   const pendingCanvasSelectionRef = useRef<string | null>(null);
   const requestedCanvasFocusRef = useRef<string | null>(null);
   const marqueeSelectionActiveRef = useRef(false);
@@ -485,6 +567,23 @@ function StoryProjectCanvasInner({
     [setInspectorTarget]
   );
 
+  const writeCanvasView = useCallback(
+    (key: string, viewport = getViewport()) => {
+      if (!hasFittedInitialCanvasRef.current) return;
+      const state = useStoryProjectUiStore.getState();
+      state.saveCanvasView(key, {
+        viewport,
+        selectedNodeIds: [...latestCanvasSelectionRef.current],
+        inspectorTarget: state.inspectorTarget,
+      });
+    },
+    [getViewport]
+  );
+  const writeCanvasViewRef = useRef(writeCanvasView);
+  useEffect(() => {
+    writeCanvasViewRef.current = writeCanvasView;
+  }, [writeCanvasView]);
+
   const onCanvasSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams<StoryCanvasNode, StoryCanvasEdge>) => {
       const selectedNodeIds = selectedNodes.map((node) => node.id);
@@ -494,8 +593,10 @@ function StoryProjectCanvasInner({
         pendingCanvasSelectionRef.current = null;
       }
       if (!marqueeSelectionActiveRef.current) reconcileCanvasFocus(selectedNodeIds);
+      const viewKey = activeCanvasViewKeyRef.current;
+      if (viewKey) writeCanvasView(viewKey);
     },
-    [reconcileCanvasFocus]
+    [reconcileCanvasFocus, writeCanvasView]
   );
 
   const onCanvasSelectionStart = useCallback(() => {
@@ -508,34 +609,43 @@ function StoryProjectCanvasInner({
   }, [reconcileCanvasFocus]);
 
   const workbenchQueryKey = useMemo(
-    () => storyProjectionQueryKey("workbench", projectId, requestedChapterId ?? null),
-    [projectId, requestedChapterId]
+    () =>
+      storyProjectionQueryKey("workbench", projectId, requestedChapterId ?? null, user?.id ?? null),
+    [projectId, requestedChapterId, user?.id]
   );
   const workbenchQuery = useQuery({
     ...storyProjectionQueryOptions({
       kind: "workbench",
       projectId,
       chapterId: requestedChapterId ?? null,
-      queryFn: () => getStoryWorkbench(projectId, requestedChapterId),
+      viewerId: user?.id ?? null,
+      queryFn: ({ signal }) => getStoryWorkbench(projectId, requestedChapterId, signal),
     }),
   });
   // Prefer the URL target over kept-previous workbench data. Otherwise the
   // layout query remains pinned to the old chapter until the workbench read
   // finishes, extending the transition and allowing mismatched projections.
   const resolvedChapterId = requestedChapterId ?? workbenchQuery.data?.chapter.id ?? null;
+  const canvasViewKey = resolvedChapterId ? storyCanvasViewKey(projectId, resolvedChapterId) : null;
   // Workspace ownership is legacy metadata used only by media APIs that have
   // not migrated yet. It comes from the authorized project, never ambient UI.
   const workspaceId = workbenchQuery.data?.project.workspaceId ?? null;
+  useLayoutEffect(() => {
+    const previous = activeCanvasViewKeyRef.current;
+    if (previous && previous !== canvasViewKey) writeCanvasView(previous);
+    activeCanvasViewKeyRef.current = canvasViewKey;
+  }, [canvasViewKey, writeCanvasView]);
   const layoutQueryKey = useMemo(
-    () => storyProjectionQueryKey("canvas-layout", projectId, resolvedChapterId),
-    [projectId, resolvedChapterId]
+    () => storyProjectionQueryKey("canvas-layout", projectId, resolvedChapterId, user?.id ?? null),
+    [projectId, resolvedChapterId, user?.id]
   );
   const layoutQuery = useQuery(
     storyProjectionQueryOptions({
       kind: "canvas-layout",
       projectId,
       chapterId: resolvedChapterId,
-      queryFn: () => getStoryCanvasLayout(projectId, resolvedChapterId as string),
+      viewerId: user?.id ?? null,
+      queryFn: ({ signal }) => getStoryCanvasLayout(projectId, resolvedChapterId as string, signal),
     })
   );
   /**
@@ -606,27 +716,21 @@ function StoryProjectCanvasInner({
   }, [liveDraftReady, draftRevision, saveState, conflict, videoSnapshotHash, setLiveDraft]);
   useEffect(() => () => setLiveDraft(null), [setLiveDraft]);
   const authoringLocale = project?.defaultLocale ?? "en-US";
-  const worldsQuery = useQuery({
-    queryKey: worldModelQueryKeys.worlds(projectId),
-    queryFn: () => listWorlds(projectId),
-    enabled: Boolean(workspaceId) && STORY_WORLD_EXPERIENCE_AVAILABLE,
-    staleTime: 10_000,
-    refetchInterval: (query) =>
-      query.state.data?.some((world) => world.status === "generating") ? 3_000 : false,
-  });
 
   const cacheSavedDraft = useCallback(
     (saved: StoryWorkbench["draft"]) => {
-      queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
-        current && saved.revision >= current.draft.revision ? { ...current, draft: saved } : current
-      );
+      const queryKeys: QueryKey[] = [workbenchQueryKey];
       if (resolvedChapterId) {
+        queryKeys.push(
+          storyChapterWorkbenchQueryKey(projectId, resolvedChapterId, user?.id ?? null)
+        );
         void queryClient.invalidateQueries({
           queryKey: storyProductionKeys.storyboard(projectId, resolvedChapterId),
         });
       }
+      cacheStoryWorkbenchDraft(queryClient, queryKeys, saved);
     },
-    [projectId, queryClient, resolvedChapterId, workbenchQueryKey]
+    [projectId, queryClient, resolvedChapterId, user?.id, workbenchQueryKey]
   );
 
   useLayoutEffect(() => {
@@ -681,7 +785,7 @@ function StoryProjectCanvasInner({
     hydratedChapterIdRef.current = workbench.chapter.id;
     revisionRef.current = workbench.draft.revision;
     setDraftRevision(workbench.draft.revision);
-    const adoptedContent = applyActiveStoryCanvasCapabilities(
+    const adoptedContent = stripRetiredStoryWorldNodes(
       materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(workbench.draft.content))
     );
     savedSignatureRef.current = canonicalJsonString(workbench.draft.content);
@@ -1072,7 +1176,6 @@ function StoryProjectCanvasInner({
 
   const projectionCopy = {
     clip: t("projection.clip"),
-    world: t("projection.world"),
     decision: t("projection.decision"),
   };
   // The storyboard is the node's production truth: the same query the board
@@ -1088,6 +1191,10 @@ function StoryProjectCanvasInner({
     () => storyboardCoverageByNode(storyboardQuery.data ?? []),
     [storyboardQuery.data]
   );
+  const coverageStore = useRef(new StoryboardCoverageStore()).current;
+  useLayoutEffect(() => {
+    coverageStore.replace(storyboardCoverage);
+  }, [coverageStore, storyboardCoverage]);
 
   const model = useMemo(
     () =>
@@ -1097,7 +1204,7 @@ function StoryProjectCanvasInner({
             project?.defaultLocale ?? "en-US",
             projectionCopy,
             project?.frameProfile,
-            STORY_WORLD_EXPERIENCE_AVAILABLE ? (worldsQuery.data ?? []) : []
+            interfaceLocale
           )
         : null,
     // Translation values are primitives. Depending on them keeps the model
@@ -1106,11 +1213,10 @@ function StoryProjectCanvasInner({
     [
       content,
       project?.defaultLocale,
+      interfaceLocale,
       project?.frameProfile,
       projectionCopy.clip,
       projectionCopy.decision,
-      projectionCopy.world,
-      worldsQuery.data,
     ]
   );
   const editPolicy = resolveStoryCanvasEditPolicy({
@@ -1135,7 +1241,39 @@ function StoryProjectCanvasInner({
   });
   const canEdit = editPolicy.canEditContent;
   const canMutateCanvasLayout = editPolicy.canEditLayout;
-  const choiceContext: StoryCanvasChoiceContextValue = {
+  const updateEnding = (endingId: string, patch: Pick<StoryBibleEnding, "title">) => {
+    applyGraphMutation(
+      (current) => {
+        const ending = (current.storyBible.endings ?? []).find(
+          (candidate) => candidate.endingId === endingId
+        );
+        return ending ? putStoryEnding(current, { ...ending, ...patch }) : current;
+      },
+      { mergeKey: `ending:${endingId}:${Object.keys(patch).join(",")}:${authoringLocale}` }
+    );
+  };
+  const deleteEnding = (endingId: string) => {
+    applyGraphMutation((current) => removeStoryEnding(current, endingId));
+  };
+  const choicePickerNodes = useMemo(
+    () =>
+      content
+        ? storyGraphNodePickerItems(
+            content.graph.nodes,
+            "",
+            storyGraphNodePickerTitles(
+              content.graph.nodes,
+              t("nodeKinds.clip"),
+              t("nodeKinds.decision")
+            )
+          )
+        : [],
+    [content, t]
+  );
+  const choiceStateVariables = content?.storyBible.stateVariables ?? NO_STORY_VARIABLES;
+  const choiceEndings = content?.storyBible.endings ?? NO_STORY_ENDINGS;
+  const choiceRuntimeRef = useRef<StoryCanvasChoiceContextValue>(null!);
+  choiceRuntimeRef.current = {
     setCommunityPointPrice: async (nodeId, price) => {
       if (!mutationBarrier.permits("content")) throw new Error(t("communityPrice.unavailable"));
       const current = latestContentRef.current;
@@ -1179,11 +1317,67 @@ function StoryProjectCanvasInner({
     removeChoice: (sourceNodeId, choiceId) => {
       applyGraphMutation((current) => removeChoiceOption(current, sourceNodeId, choiceId));
     },
+    stateVariables: choiceStateVariables,
+    endings: choiceEndings,
+    nodes: choicePickerNodes,
+    locale: authoringLocale,
+    patchChoice: (sourceNodeId, choiceId, patch) => {
+      applyGraphMutation((current) => updateChoiceStats(current, sourceNodeId, choiceId, patch), {
+        mergeKey: `choice-stats:${sourceNodeId}:${choiceId}`,
+      });
+    },
+    createEndingForChoice: (sourceNodeId, choiceId) => {
+      applyGraphMutation((current) =>
+        createStoryEndingForChoice(
+          current,
+          sourceNodeId,
+          choiceId,
+          authoringLocale,
+          t("stats.untitledEnding")
+        )
+      );
+    },
+    updateEnding,
+    deleteEnding,
   };
-  const candidateAssets = useStoryCandidateAssets({
-    projectId,
-    canEdit: canMutateCanvasLayout,
-  });
+  // The facade stays stable across storyboard refetches. Methods read the ref,
+  // so an upload does not rebuild every visible card.
+  const choiceContext = useMemo<StoryCanvasChoiceContextValue>(
+    () => ({
+      setCommunityPointPrice: (nodeId, price) =>
+        choiceRuntimeRef.current.setCommunityPointPrice(nodeId, price),
+      canEditContent: canEdit,
+      canCreateOption: canMutateCanvasLayout,
+      start: (sourceNodeId) => choiceRuntimeRef.current.start(sourceNodeId),
+      updatePrompt: (sourceNodeId, prompt) =>
+        choiceRuntimeRef.current.updatePrompt(sourceNodeId, prompt),
+      updateChoice: (sourceNodeId, choiceId, label) =>
+        choiceRuntimeRef.current.updateChoice(sourceNodeId, choiceId, label),
+      moveChoice: (sourceNodeId, choiceId, direction) =>
+        choiceRuntimeRef.current.moveChoice(sourceNodeId, choiceId, direction),
+      removeChoice: (sourceNodeId, choiceId) =>
+        choiceRuntimeRef.current.removeChoice(sourceNodeId, choiceId),
+      stateVariables: choiceStateVariables,
+      endings: choiceEndings,
+      nodes: choicePickerNodes,
+      locale: authoringLocale,
+      patchChoice: (sourceNodeId, choiceId, patch) =>
+        choiceRuntimeRef.current.patchChoice(sourceNodeId, choiceId, patch),
+      createEndingForChoice: (sourceNodeId, choiceId) =>
+        choiceRuntimeRef.current.createEndingForChoice(sourceNodeId, choiceId),
+      updateEnding: (endingId, patch) => choiceRuntimeRef.current.updateEnding(endingId, patch),
+      deleteEnding: (endingId) => choiceRuntimeRef.current.deleteEnding(endingId),
+    }),
+    [
+      authoringLocale,
+      canEdit,
+      canMutateCanvasLayout,
+      choiceEndings,
+      choicePickerNodes,
+      choiceStateVariables,
+    ]
+  );
+
   useLayoutEffect(() => {
     mutationBarrier.update({
       canEditContent: canEdit,
@@ -1191,27 +1385,6 @@ function StoryProjectCanvasInner({
       canManageProduction: editPolicy.canManageProduction,
     });
   }, [canEdit, canMutateCanvasLayout, editPolicy.canManageProduction, mutationBarrier]);
-  const uploadWorldOpeningFrame = async (
-    file: File,
-    onState: (state: StoryCandidateAssetUploadState) => void,
-    signal: AbortSignal
-  ): Promise<StoryCandidateAsset> => {
-    if (!canMutateCanvasLayout) {
-      throw new Error(t("production.errors.action"));
-    }
-    const uploaded = await uploadFileViaSignedUrl(file, {
-      kind: "ai_reference_image",
-      scope: { storyProjectId: projectId },
-      onProgress: (progress) => onState({ stage: "uploading", progress }),
-      signal,
-    });
-    if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
-    onState({ stage: "processing" });
-    const candidate = await addStoryCandidateAsset(projectId, uploaded.mediaAssetId);
-    await candidateAssets.refresh();
-    if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
-    return candidate;
-  };
 
   useEffect(() => {
     canvasNodesRef.current = canvasNodes;
@@ -1245,8 +1418,8 @@ function StoryProjectCanvasInner({
       requestedCanvasFocusRef.current = null;
       latestCanvasSelectionRef.current = [];
       hasFittedInitialCanvasRef.current = false;
+      pendingFitRef.current = false;
       setLayoutConflict(null);
-      setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
       layoutHydratedChapterIdRef.current = workbenchProjection.chapter.id;
     }
     const latestDesiredLayout = latestDesiredLayoutRef.current;
@@ -1282,10 +1455,17 @@ function StoryProjectCanvasInner({
     };
     const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
     const pendingSelection = pendingCanvasSelectionRef.current;
-    const selectedNodeIds = reconcileStoryCanvasSelectedIds(
+    const hydrating = !layoutHydratedRef.current;
+    const rememberedView =
+      useStoryProjectUiStore.getState().canvasViews[
+        storyCanvasViewKey(projectId, workbenchProjection.chapter.id)
+      ];
+    const selectedNodeIds = storyCanvasHydrationSelection(
       model.nodes.map((node) => node.id),
-      new Set(canvasNodesRef.current.filter((node) => node.selected).map((node) => node.id)),
-      pendingSelection
+      canvasNodesRef.current.filter((node) => node.selected).map((node) => node.id),
+      rememberedView?.selectedNodeIds ?? [],
+      pendingSelection,
+      !hydrating
     );
     if (pendingSelection && selectedNodeIds.has(pendingSelection)) {
       pendingCanvasSelectionRef.current = null;
@@ -1313,6 +1493,9 @@ function StoryProjectCanvasInner({
       layoutSavedSignatureRef.current = layoutPayloadSignature(initialLayout);
       canvasNodesRef.current = initialNodes;
       setCanvasNodes(initialNodes);
+      setInspectorTarget(
+        storyCanvasInspectorToRestore(rememberedView?.inspectorTarget, selectedNodeIds)
+      );
       reconcileFocusAfterModel(initialNodes);
       return;
     }
@@ -1354,6 +1537,7 @@ function StoryProjectCanvasInner({
     history,
     layoutProjection,
     model,
+    projectId,
     setCanvasNodes,
     setInspectorTarget,
     workbenchProjection,
@@ -1667,6 +1851,7 @@ function StoryProjectCanvasInner({
           !focusedNodeId || edge.source === focusedNodeId || edge.target === focusedNodeId;
         return {
           ...edge,
+          type: "storyCanvas" as const,
           zIndex: related ? 2 : 0,
           style: {
             ...DEFAULT_EDGE_OPTIONS.style,
@@ -1699,13 +1884,57 @@ function StoryProjectCanvasInner({
 
   useEffect(() => {
     if (!canvasNodes.length || hasFittedInitialCanvasRef.current) return;
+    const saved = canvasViewKey
+      ? (useStoryProjectUiStore.getState().canvasViews[canvasViewKey] ?? null)
+      : null;
+    const restore = !pendingFitRef.current && saved !== null;
+    if (restore && saved) {
+      hasFittedInitialCanvasRef.current = true;
+      pendingFitRef.current = false;
+      void setViewport(saved.viewport, { duration: 0 });
+      return;
+    }
     const timer = window.setTimeout(() => {
       if (hasFittedInitialCanvasRef.current) return;
       hasFittedInitialCanvasRef.current = true;
+      pendingFitRef.current = false;
       void fitView({ padding: 0.16, duration: 420, maxZoom: 0.78 });
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [canvasNodes.length, fitView]);
+  }, [cameraTick, canvasNodes.length, canvasViewKey, fitView, setViewport]);
+
+  useEffect(() => {
+    if (
+      !requestedFocusNodeId ||
+      !resolvedChapterId ||
+      contentChapterId !== resolvedChapterId ||
+      !nodesInitialized
+    ) {
+      return;
+    }
+    const focusKey = `${resolvedChapterId}:${requestedFocusNodeId}`;
+    if (appliedFocusRef.current === focusKey) return;
+    if (!canvasNodes.some((node) => node.id === requestedFocusNodeId)) return;
+    appliedFocusRef.current = focusKey;
+    hasFittedInitialCanvasRef.current = true;
+    setSidePanel(null);
+    selectCanvasNodeExclusively(requestedFocusNodeId);
+    void fitView({
+      nodes: [{ id: requestedFocusNodeId }],
+      padding: 0.45,
+      duration: 450,
+      maxZoom: 0.85,
+    });
+  }, [
+    canvasNodes,
+    contentChapterId,
+    fitView,
+    nodesInitialized,
+    requestedFocusNodeId,
+    resolvedChapterId,
+    selectCanvasNodeExclusively,
+    setSidePanel,
+  ]);
 
   const closeCreatorMenu = useCallback(() => setCreatorMenu(null), []);
 
@@ -1778,7 +2007,7 @@ function StoryProjectCanvasInner({
           nodePositions: currentSnapshot.nodePositions,
         }) !== layoutPayloadSignature(nextLayout);
 
-      const restoredContent = applyActiveStoryCanvasCapabilities(
+      const restoredContent = stripRetiredStoryWorldNodes(
         materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(snapshot.content))
       );
       latestContentRef.current = restoredContent;
@@ -1842,7 +2071,7 @@ function StoryProjectCanvasInner({
     if (!mutationBarrier.permits("content")) return false;
     const current = latestContentRef.current;
     if (!current) return false;
-    const normalizedNext = applyActiveStoryCanvasCapabilities(
+    const normalizedNext = stripRetiredStoryWorldNodes(
       materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(next))
     );
     if (normalizedNext === current) return false;
@@ -1858,16 +2087,12 @@ function StoryProjectCanvasInner({
   // Story-bible edits arrive from the overview dock through the registered
   // foundationWriter while this canvas is mounted, keeping the canvas the
   // draft's only writer (autosave, undo history).
-  const updateFoundation = (field: "logline" | "synopsis", value: string) => {
+  const updateFoundation = (patch: StoryBibleWriterPatch) => {
     const current = latestContentRef.current;
     if (!current || !mutationBarrier.permits("content")) return;
-    commitContent(
-      {
-        ...current,
-        storyBible: { ...current.storyBible, [field]: value },
-      },
-      { mergeKey: `foundation:${field}` }
-    );
+    commitContent(applyStoryBiblePatch(current, patch), {
+      mergeKey: `foundation:${Object.keys(patch).sort().join(":")}`,
+    });
   };
   const updateFoundationRef = useRef(updateFoundation);
   useLayoutEffect(() => {
@@ -1909,16 +2134,13 @@ function StoryProjectCanvasInner({
 
   const createStoryElement = (kind: StoryNodeCreationKind, position: StoryCanvasPosition) => {
     if (!content || !mutationBarrier.permits("layout")) return;
-    if (kind === "world" && !STORY_WORLD_EXPERIENCE_AVAILABLE) return;
     try {
       const result =
         kind === "decision"
           ? createDecisionNode(content, authoringLocale, {
               labels: [1, 2].map((number) => t("interactionCard.defaultOption", { number })),
             })
-          : kind === "world"
-            ? createWorldNode(content)
-            : createClipNode(content);
+          : createClipNode(content);
       const nextContent = result.content;
       const createdCanvasNodeId = result.created.nodeId;
 
@@ -1996,7 +2218,7 @@ function StoryProjectCanvasInner({
         history.capture(snapshot);
         refreshHistoryState();
       }
-      const adopted = applyActiveStoryCanvasCapabilities(
+      const adopted = stripRetiredStoryWorldNodes(
         materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(saved.draft.content))
       );
       const importedNodes = adopted.graph.nodes.filter((node) =>
@@ -2042,6 +2264,8 @@ function StoryProjectCanvasInner({
       });
       persistLayoutWithPendingPositions(adopted);
       hasFittedInitialCanvasRef.current = false;
+      pendingFitRef.current = true;
+      setCameraTick((tick) => tick + 1);
       setGraphError(null);
       toast.success(t(mode === "replace" ? "plotImport.replaced" : "plotImport.added"));
     } catch (error) {
@@ -2308,7 +2532,7 @@ function StoryProjectCanvasInner({
     revisionRef.current = conflict.current.revision;
     setDraftRevision(conflict.current.revision);
     savedSignatureRef.current = canonicalJsonString(conflict.current.content);
-    const activeContent = applyActiveStoryCanvasCapabilities(
+    const activeContent = stripRetiredStoryWorldNodes(
       materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(conflict.current.content))
     );
     latestContentRef.current = activeContent;
@@ -2385,11 +2609,14 @@ function StoryProjectCanvasInner({
   };
 
   // Hand the canvas-owned save and story-bible bridges to the shared chrome
-  // while mounted, then reset them on unmount.
+  // while mounted, then reset them on unmount. Snapshot the camera first: the
+  // reset closes the inspector, and that open inspector is part of the view.
   useEffect(() => {
     setDraftBarrier(withSavedDraftSnapshot);
-    setFoundationWriter((field, value) => updateFoundationRef.current(field, value));
+    setFoundationWriter((patch) => updateFoundationRef.current(patch));
     return () => {
+      const key = activeCanvasViewKeyRef.current;
+      if (key) writeCanvasViewRef.current(key);
       setDraftBarrier(null);
       setFoundationWriter(null);
       setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
@@ -2428,44 +2655,11 @@ function StoryProjectCanvasInner({
     );
   }
 
-  const worldContext: StoryCanvasWorldContextValue = {
-    projectId,
-    worlds: worldsQuery.data ?? [],
-    loading: worldsQuery.isLoading,
-    error: worldsQuery.isError
-      ? storyApiErrorMessage(worldsQuery.error, commonT("errors.generic"))
-      : null,
-    canEdit: canMutateCanvasLayout,
-    canGenerate: editPolicy.canManageProduction,
-    candidateAssets: candidateAssets.items,
-    candidateAssetsLoading: candidateAssets.loading,
-    candidateAssetsError: candidateAssets.failed
-      ? candidateAssets.error || t("worldNode.firstFrameCandidateLoadError")
-      : null,
-    node: (nodeId) => {
-      const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-      return node?.kind === "world" ? node : null;
-    },
-    retry: () => void worldsQuery.refetch(),
-    retryCandidateAssets: () => void candidateAssets.refresh(),
-    uploadCandidateAsset: uploadWorldOpeningFrame,
-    update: (nodeId, patch) =>
-      applyGraphMutation((current) => updateStoryWorldNode(current, nodeId, patch), {
-        mergeKey: `world-node:${nodeId}:${Object.keys(patch).sort().join(",")}`,
-      }),
-    run: (nodeId, worldId) => {
-      const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-      if (node?.kind !== "world") return;
-      const entryInstruction = node.entryInstruction?.trim();
-      setWorldRun({
-        worldId,
-        entryInstruction: entryInstruction || undefined,
-        maxExperienceSeconds: node.maxExperienceSeconds,
-      });
-    },
-  };
+  const openingCamera = resolveStoryCanvasCamera(
+    canvasViewKey ? (useStoryProjectUiStore.getState().canvasViews[canvasViewKey] ?? null) : null
+  );
   return (
-    <StoryCanvasStoryboardCoverageContext.Provider value={storyboardCoverage}>
+    <StoryCanvasStoryboardCoverageContext.Provider value={coverageStore}>
       <main className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--canvas-background)] text-white">
         {inspectorOpen ? (
           <StoryProjectSidePanelShell label={t("inspector.eyebrow")}>
@@ -2476,6 +2670,11 @@ function StoryProjectCanvasInner({
               onUpdateClipMeta={(nodeId, patch) =>
                 applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
                   mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
+                })
+              }
+              onSetChapterStart={(nodeId) =>
+                applyGraphMutation((current) => setEntryNode(current, nodeId), {
+                  mergeKey: `chapter-start:${nodeId}`,
                 })
               }
               canEdit={canMutateCanvasLayout}
@@ -2492,6 +2691,30 @@ function StoryProjectCanvasInner({
                 )}
               onConnectChapter={connectChapterTarget}
               onEditInteractions={setInteractionEditorNodeId}
+              locale={authoringLocale}
+              onSetOnEnterEffects={(nodeId, effects) =>
+                applyGraphMutation((current) => setNodeOnEnterEffects(current, nodeId, effects), {
+                  mergeKey: `on-enter:${nodeId}`,
+                })
+              }
+              onSetAutoRoutes={(nodeId, routes) =>
+                applyGraphMutation((current) => setAutoRoutes(current, nodeId, routes), {
+                  mergeKey: `auto-routes:${nodeId}`,
+                })
+              }
+              onCreateEndingForRoute={(nodeId, routeIndex) =>
+                applyGraphMutation((current) =>
+                  createStoryEndingForAutoRoute(
+                    current,
+                    nodeId,
+                    routeIndex,
+                    authoringLocale,
+                    t("stats.untitledEnding")
+                  )
+                )
+              }
+              onUpdateEnding={updateEnding}
+              onDeleteEnding={deleteEnding}
               onDeleteSelected={() => {
                 if (focusedNode) deleteStoryElements({ nodes: [focusedNode], edges: [] });
               }}
@@ -2500,40 +2723,6 @@ function StoryProjectCanvasInner({
         ) : null}
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="relative min-w-0 flex-1">
-            {worldRun ? (
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-label={t("worldNode.run")}
-                className="fixed inset-0 z-[200] bg-black"
-              >
-                <WorldModelExperienceRenderer
-                  config={{
-                    projectId,
-                    worldId: worldRun.worldId,
-                    entryInstruction: worldRun.entryInstruction,
-                    maxExperienceSeconds: worldRun.maxExperienceSeconds,
-                    autoplay: true,
-                  }}
-                  active
-                  onCompleted={() => setWorldRun(null)}
-                  onError={(error) => {
-                    toast.error(storyApiErrorMessage(error, t("worldNode.runError")));
-                    setWorldRun(null);
-                  }}
-                />
-                <button
-                  type="button"
-                  aria-label={t("worldNode.exitRun")}
-                  title={t("worldNode.exitRun")}
-                  onClick={() => setWorldRun(null)}
-                  className="absolute top-5 right-5 grid size-11 place-items-center rounded-full border border-white/12 bg-black/55 text-white/78 backdrop-blur-xl transition hover:bg-white/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-                >
-                  <IconX className="size-5" />
-                </button>
-              </div>
-            ) : null}
-
             <section
               ref={canvasSectionRef}
               // Inspectors are floating overlays over the canvas region.
@@ -2549,7 +2738,7 @@ function StoryProjectCanvasInner({
               <CanvasBackdrop />
               <MediaHoverPreviewProvider>
                 <StoryCanvasChoiceContext.Provider value={choiceContext}>
-                  <StoryCanvasWorldContext.Provider value={worldContext}>
+                  <StoryCanvasPreviewContext.Provider value={previewFromScene}>
                     <StoryCanvasFocusContext.Provider value={focusedNodeId}>
                       <StoryCanvasReactFlow
                         nodes={layeredCanvasNodes}
@@ -2648,13 +2837,18 @@ function StoryProjectCanvasInner({
                           openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
                         }}
                         onMoveStart={closeCreatorMenu}
+                        onMoveEnd={(_event, viewport) => {
+                          const viewKey = activeCanvasViewKeyRef.current;
+                          if (viewKey) writeCanvasView(viewKey, viewport);
+                        }}
                         nodeTypes={NODE_TYPES}
+                        edgeTypes={EDGE_TYPES}
                         defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
                         colorMode="dark"
                         proOptions={{ hideAttribution: true }}
                         minZoom={0.16}
                         maxZoom={1.4}
-                        defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+                        defaultViewport={openingCamera.defaultViewport}
                         nodesDraggable={canMutateCanvasLayout}
                         nodesConnectable={canMutateCanvasLayout}
                         edgesReconnectable={false}
@@ -2662,8 +2856,9 @@ function StoryProjectCanvasInner({
                         deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
                         selectNodesOnDrag
                         zoomOnDoubleClick={false}
-                        fitView={canvasNodes.length > 0}
+                        fitView={openingCamera.fitView && canvasNodes.length > 0}
                         fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+                        onlyRenderVisibleElements
                         className="relative z-10"
                         style={{ backgroundColor: "transparent" }}
                       >
@@ -2672,7 +2867,7 @@ function StoryProjectCanvasInner({
                             pannable
                             position="bottom-left"
                             className={cn(
-                              "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
+                              "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.92)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)]",
                               // Clear the full-width canvas's left inspector overlay.
                               inspectorOpen ? "left-[452px]!" : "left-20!"
                             )}
@@ -2693,7 +2888,7 @@ function StoryProjectCanvasInner({
                         />
                       </StoryCanvasReactFlow>
                     </StoryCanvasFocusContext.Provider>
-                  </StoryCanvasWorldContext.Provider>
+                  </StoryCanvasPreviewContext.Provider>
                 </StoryCanvasChoiceContext.Provider>
               </MediaHoverPreviewProvider>
 
@@ -2757,6 +2952,7 @@ function StoryProjectCanvasInner({
                           rect: draft.rect,
                           startMs: Math.round(draft.startSeconds * 1_000),
                           endMs: Math.round(draft.endSeconds * 1_000),
+                          timing: draft.timing,
                           ...(draft.branchAtSeconds !== null
                             ? { branchAtMs: Math.round(draft.branchAtSeconds * 1_000) }
                             : {}),
@@ -2824,6 +3020,7 @@ function storyInteractionDrafts(
     startSeconds: interaction.startMs / 1_000,
     endSeconds: interaction.endMs / 1_000,
     branchAtSeconds: interaction.branchAtMs !== undefined ? interaction.branchAtMs / 1_000 : null,
+    timing: interaction.timing ?? "window",
     trigger: storyInteractionTriggerDraft(interaction.trigger),
     outcomes: storyInteractionOutcomesDraft(interaction.outcomes),
   }));
@@ -2856,16 +3053,24 @@ function storyInteractionTriggerDraft(
 function storyInteractionActionDocument(
   action: StoryInteractionActionDraft
 ): StoryInteractionAction {
-  if (action.kind === "goto") return { kind: "goto", nodeId: action.targetNodeId };
+  if (action.kind === "goto")
+    return { kind: "goto", target: { kind: "node", nodeId: action.targetNodeId } };
   if (action.kind === "seek") {
     return { kind: "seek", timeMs: Math.round(action.timeSeconds * 1_000) };
   }
+  if (action.kind === "pause") return { kind: "pause" };
   return { kind: "continue" };
 }
 
 function storyInteractionActionDraft(action: StoryInteractionAction): StoryInteractionActionDraft {
-  if (action.kind === "goto") return { kind: "goto", targetNodeId: action.nodeId };
+  if (action.kind === "goto") {
+    return {
+      kind: "goto",
+      targetNodeId: action.target.kind === "node" ? action.target.nodeId : "",
+    };
+  }
   if (action.kind === "seek") return { kind: "seek", timeSeconds: action.timeMs / 1_000 };
+  if (action.kind === "pause") return { kind: "pause" };
   return { kind: "continue" };
 }
 
@@ -2938,14 +3143,151 @@ function StoryPortHandle({
   );
 }
 
+function ChoiceOptionRow({
+  choice,
+  index,
+  choiceCount,
+  sourceNodeId,
+  isConnectable,
+}: {
+  choice: NonNullable<StoryCanvasNodeData["choices"]>[number];
+  index: number;
+  choiceCount: number;
+  sourceNodeId: string;
+  isConnectable: boolean;
+}) {
+  const t = useTranslations("storyStudio.canvas");
+  const tStats = useTranslations("storyStudio.canvas.stats");
+  const choiceContext = useContext(StoryCanvasChoiceContext);
+  const destination = choice.targetEndingTitle
+    ? tStats("endingArrow", { title: choice.targetEndingTitle })
+    : choice.targetNodeId
+      ? `→ ${choice.targetTitle ?? t("interactionCard.linkedTarget")}`
+      : t("interactionCard.unconnected");
+  return (
+    <div className="border-b border-white/[0.055] last:border-b-0">
+      <div className="group/choice relative grid min-h-14 grid-cols-[32px_minmax(0,1fr)_auto_auto_26px] items-center gap-2 px-3 text-xs transition-colors hover:bg-white/[0.035] focus-within:bg-white/[0.045]">
+        <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
+          {String(index + 1).padStart(2, "0")}
+        </span>
+        <StoryCanvasTextInput
+          value={choice.label}
+          disabled={!choiceContext?.canEditContent}
+          maxLength={4_000}
+          placeholder={t("interactionCard.untitledOption")}
+          aria-label={t("interactionCard.optionPlaceholder")}
+          onValueChange={(value) =>
+            choiceContext?.updateChoice(sourceNodeId, choice.choiceId, value)
+          }
+          className={cn(
+            "nodrag nopan nowheel w-full min-w-0 bg-transparent py-2 text-[12px] font-medium outline-none placeholder:text-white/36 disabled:cursor-default",
+            choice.label.trim() ? "text-white/78" : "text-white/36"
+          )}
+        />
+        {choice.targetNodeId ? (
+          <StoryCommunityPriceLabel price={choice.communityPointPrice} />
+        ) : (
+          <span />
+        )}
+        <span className="max-w-[118px] truncate rounded-lg bg-white/[0.055] px-2 py-1.5 text-xs text-white/42 group-hover/choice:hidden group-focus-within/choice:hidden">
+          {destination}
+        </span>
+        {choiceContext?.canEditContent ? (
+          <span className="nodrag nopan hidden items-center gap-1 group-hover/choice:flex group-focus-within/choice:flex">
+            <button
+              type="button"
+              disabled={index === 0}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                choiceContext.moveChoice(sourceNodeId, choice.choiceId, "up");
+              }}
+              className="grid size-8 place-items-center rounded-lg text-white/70 transition hover:bg-white/[0.12] hover:text-white disabled:opacity-25"
+              aria-label={t("inspector.moveChoiceUp")}
+            >
+              <IconArrowUp className="size-[18px]" stroke={1.9} />
+            </button>
+            <button
+              type="button"
+              disabled={index === choiceCount - 1}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                choiceContext.moveChoice(sourceNodeId, choice.choiceId, "down");
+              }}
+              className="grid size-8 place-items-center rounded-lg text-white/70 transition hover:bg-white/[0.12] hover:text-white disabled:opacity-25"
+              aria-label={t("inspector.moveChoiceDown")}
+            >
+              <IconArrowDown className="size-[18px]" stroke={1.9} />
+            </button>
+            <button
+              type="button"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                choiceContext.removeChoice(sourceNodeId, choice.choiceId);
+              }}
+              className="grid size-8 place-items-center rounded-lg text-white/70 transition hover:bg-white/[0.12] hover:text-[#ff9b9e]"
+              aria-label={t("inspector.removeChoice")}
+            >
+              <IconTrash className="size-[18px]" stroke={1.9} />
+            </button>
+          </span>
+        ) : null}
+        <span
+          className="pointer-events-none relative flex h-full items-center justify-end"
+          aria-hidden="true"
+        >
+          <span className="h-px w-4 bg-[#5b9dff]/55" />
+        </span>
+        <StoryPortHandle
+          id={`choice:${choice.choiceId}`}
+          type="source"
+          position={Position.Right}
+          isConnectable={isConnectable && choice.targetNodeId === null}
+          emphasized
+          color={STORY_PORT_COLORS.choice}
+          label={t("ports.choiceOption", {
+            label: choice.label.trim() || t("interactionCard.untitledOption"),
+          })}
+          className="-right-2.25!"
+        />
+      </div>
+      {choiceContext ? (
+        <StoryChoiceAttachmentBar
+          effects={choice.effects ?? []}
+          visibleWhen={choice.visibleWhen}
+          variables={choiceContext.stateVariables ?? []}
+          locale={choiceContext.locale}
+          canEdit={choiceContext.canEditContent}
+          onEffectsChange={(effects) =>
+            choiceContext.patchChoice(sourceNodeId, choice.choiceId, { effects })
+          }
+          onVisibleWhenChange={(visibleWhen) =>
+            choiceContext.patchChoice(sourceNodeId, choice.choiceId, {
+              visibleWhen: visibleWhen ?? null,
+            })
+          }
+          target={choice.target}
+          nodes={choiceContext.nodes.filter((node) => node.nodeId !== sourceNodeId)}
+          endings={choiceContext.endings}
+          onTargetChange={(target) =>
+            choiceContext.patchChoice(sourceNodeId, choice.choiceId, { target })
+          }
+          onCreateEnding={() => choiceContext.createEndingForChoice(sourceNodeId, choice.choiceId)}
+          onUpdateEnding={choiceContext.updateEnding}
+          onDeleteEnding={choiceContext.deleteEnding}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<StoryCanvasNode>) {
   const t = useTranslations("storyStudio.canvas");
   const focusedNodeId = useContext(StoryCanvasFocusContext);
+  const previewFromScene = useContext(StoryCanvasPreviewContext);
   const choiceContext = useContext(StoryCanvasChoiceContext);
-  const worldContext = useContext(StoryCanvasWorldContext);
-  const [worldEditorOpen, setWorldEditorOpen] = useState(false);
-  const isWorld = data.kind === "world";
-  const worldEditorId = `story-world-editor-${data.nodeId}`;
   const interactionSourceNodeId = data.kind === "decision" ? data.sourceNodeId : undefined;
   const interactionChoices = data.kind === "decision" ? (data.choices ?? []) : [];
   const interactionChoiceCount = interactionChoices.length;
@@ -2955,62 +3297,86 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
     data.kind === "clip" && coverage?.previewVideoUrl
       ? { src: coverage.previewVideoUrl, type: "video/mp4" }
       : undefined;
-  const previewSource = currentVideoSource;
+  const stillUrl = data.kind === "clip" ? storyboardStillUrl(coverage) : null;
   const mediaPreview = useMediaHoverPreview({
     ownerId: id,
-    enabled: Boolean(previewSource),
+    enabled: Boolean(currentVideoSource),
     canActivate: canActivateCanvasMediaPreview,
     canClaimManual: canClaimCanvasManualPlayback,
   });
   const previewFocused = focusedNodeId === id;
+  const playVideo =
+    Boolean(currentVideoSource) && (previewFocused || mediaPreview.isAutoPreviewActive);
   const geometry = canvasNodeGeometry({ type: "storyCanvas", data });
-  const worldNode = isWorld ? (worldContext?.node(data.nodeId) ?? null) : null;
   return (
     <div className="relative pt-10" data-story-node-id={id}>
       <FrostedPanel
         rim={false}
+        blur={false}
         className={cn(
-          "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-2 rounded-full px-3 text-[13px] font-semibold text-white shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-xl"
+          "pointer-events-auto absolute top-0 left-0 z-10 inline-flex h-8 items-center gap-1.5 rounded-full py-1 pr-2.5 pl-1 text-[13px] font-semibold text-white shadow-[0_8px_18px_rgba(0,0,0,0.28)]",
+          data.chapterStart && "shadow-[0_8px_18px_rgba(143,101,255,0.38)]"
         )}
-        style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+        style={{
+          backgroundColor: data.chapterStart ? "#8f65ff" : "oklch(0.32 0 0)",
+        }}
       >
         <span
           className={cn(
-            "grid size-6 place-items-center rounded-full",
-            data.kind === "decision" && "text-[#a9ceff]"
+            "grid size-6 shrink-0 place-items-center rounded-full",
+            !data.chapterStart && data.kind === "decision" && "text-[#a9ceff]"
           )}
           style={{
-            backgroundColor:
-              data.kind === "decision" ? "rgba(91,157,255,0.2)" : "rgba(255,255,255,0.22)",
+            backgroundColor: data.chapterStart
+              ? "rgba(255,255,255,0.22)"
+              : data.kind === "decision"
+                ? "rgba(91,157,255,0.2)"
+                : "rgba(255,255,255,0.22)",
           }}
         >
           {data.kind === "clip" ? <IconMovie className="size-3.5" stroke={2} /> : null}
-          {isWorld ? <IconWorld className="size-3.5" stroke={2} /> : null}
           {data.kind === "decision" ? <IconGitBranch className="size-3.5" stroke={2} /> : null}
         </span>
         {t(`nodeKinds.${data.kind}`)}
+        {data.chapterStart ? (
+          <span className="text-[11px] font-semibold text-white/88">{t("chapterStart.badge")}</span>
+        ) : null}
       </FrostedPanel>
-      {choiceContext && data.kind !== "decision" ? (
-        <div className="absolute top-0 right-0 z-10">
-          <StoryCommunityPriceButton
-            title={data.title}
-            price={data.communityPointPrice}
-            disabled={!choiceContext.canEditContent}
-            onSave={(price) => choiceContext.setCommunityPointPrice(data.nodeId, price)}
-          />
+      {data.kind === "clip" || (choiceContext && data.kind !== "decision") ? (
+        <div className="absolute top-0 right-0 z-10 flex items-start gap-1.5">
+          {data.kind === "clip" && previewFromScene ? (
+            <button
+              type="button"
+              aria-label={t("previewFromScene")}
+              title={t("previewFromScene")}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                previewFromScene(data.nodeId);
+              }}
+              className="nodrag nopan grid size-7 cursor-default place-items-center rounded-full bg-[oklch(0.32_0_0)] text-white/85 shadow-[0_8px_18px_rgba(0,0,0,0.28)] transition hover:bg-[oklch(0.38_0_0)] hover:text-white disabled:opacity-50"
+            >
+              <IconPlayerPlay className="size-3.5" stroke={2} />
+            </button>
+          ) : null}
+          {choiceContext ? (
+            <StoryCommunityPriceButton
+              title={data.title}
+              price={data.communityPointPrice}
+              disabled={!choiceContext.canEditContent}
+              onSave={(price) => choiceContext.setCommunityPointPrice(data.nodeId, price)}
+            />
+          ) : null}
         </div>
       ) : null}
       <article
         {...mediaPreview.hoverProps}
         className={cn(
-          "relative isolate overflow-visible rounded-[22px] bg-popover/95 shadow-[0_24px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl backdrop-saturate-150 transition-[background-color,box-shadow] duration-200",
-          selected
-            ? "bg-accent/95 shadow-[0_30px_100px_rgba(0,0,0,0.62)]"
-            : "hover:bg-muted/95 hover:shadow-[0_28px_90px_rgba(0,0,0,0.56)]"
+          "relative overflow-visible rounded-[22px] bg-[oklch(0.215_0_0)] shadow-[0_12px_28px_rgba(0,0,0,0.38)] [contain:layout_style]",
+          selected ? "bg-accent" : "hover:bg-[oklch(0.235_0_0)]"
         )}
         style={{ width: geometry.width, minHeight: geometry.minHeight }}
       >
-        <GlassRim width={selected ? "1.5px" : "1px"} className="z-20" />
         <StoryPortHandle
           id="in"
           type="target"
@@ -3019,7 +3385,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           color={STORY_PORT_COLORS.flow}
           label={t("ports.input")}
           className="-left-1.75!"
-          style={isWorld ? { top: geometry.minHeight / 2 } : undefined}
         />
         {data.exitKind === "auto" ? (
           <StoryPortHandle
@@ -3030,26 +3395,13 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             label={t("ports.completion")}
             isConnectable={isConnectable && canConnectStoryCompletion(data)}
             className="-right-1.75!"
-            style={isWorld ? { top: geometry.minHeight / 2 } : undefined}
           />
         ) : null}
         {data.kind === "clip" ? (
-          coverage?.thumbnailUrl && !currentVideoSource ? (
-            <div
-              className="relative overflow-hidden rounded-t-[22px] bg-black/15"
-              style={{ aspectRatio: data.frameAspectRatio }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- storyboard media thumbnail */}
-              <img
-                src={coverage.thumbnailUrl}
-                alt=""
-                draggable={false}
-                className="size-full select-none object-cover"
-              />
-            </div>
-          ) : (
+          playVideo ? (
             <StoryVideoPreview
               source={currentVideoSource}
+              poster={stillUrl}
               interactive={previewFocused}
               frameAspectRatio={data.frameAspectRatio}
               ariaLabel={t("production.node.videoPreview")}
@@ -3060,62 +3412,45 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
               onManualPlaybackStop={mediaPreview.releaseManualPlayback}
               className="rounded-t-[22px]"
             />
-          )
-        ) : null}
-        {isWorld ? (
-          <div className="group/world relative aspect-video overflow-hidden rounded-t-[22px] bg-white/[0.025]">
-            {data.world?.firstFrameUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- provider-owned world preview
+          ) : stillUrl ? (
+            <div
+              className="relative overflow-hidden rounded-t-[22px] bg-black/15"
+              style={{ aspectRatio: data.frameAspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- storyboard media thumbnail */}
               <img
-                src={data.world.firstFrameUrl}
+                src={stillUrl}
                 alt=""
                 draggable={false}
+                decoding="async"
+                fetchPriority="low"
                 className="size-full select-none object-cover"
               />
-            ) : null}
-            {!data.worldId && worldNode && worldContext ? (
-              <div className="absolute inset-0 z-10 grid place-items-center bg-black/10">
-                <StoryWorldBindingControl
-                  node={worldNode}
-                  worlds={worldContext.worlds}
-                  loading={worldContext.loading}
-                  error={worldContext.error}
-                  canEdit={worldContext.canEdit}
-                  compact={false}
-                  onRetry={worldContext.retry}
-                  onUpdate={(worldId) => worldContext.update(worldNode.nodeId, { worldId })}
-                />
-              </div>
-            ) : !data.world?.firstFrameUrl ? (
-              <div className="grid size-full place-items-center">
-                <span className="grid size-12 place-items-center rounded-2xl bg-white/[0.06] text-white/38">
-                  <IconWorld className="size-6" stroke={1.5} />
-                </span>
-              </div>
-            ) : null}
-            {data.worldId && worldNode && worldContext ? (
-              <div className="absolute top-2 right-2 z-20">
-                <StoryWorldBindingControl
-                  node={worldNode}
-                  worlds={worldContext.worlds}
-                  loading={worldContext.loading}
-                  error={worldContext.error}
-                  canEdit={worldContext.canEdit}
-                  compact
-                  onRetry={worldContext.retry}
-                  onUpdate={(worldId) => worldContext.update(worldNode.nodeId, { worldId })}
-                />
-              </div>
-            ) : null}
-            <div className="absolute right-2 bottom-2 rounded-full bg-black/60 px-2.5 py-1 text-[10px] font-semibold text-white/70 backdrop-blur-xl">
-              {data.world ? t(`worldNode.status.${data.world.status}`) : t("worldNode.unbound")}
             </div>
-          </div>
+          ) : (
+            <StoryVideoPreview
+              interactive={false}
+              frameAspectRatio={data.frameAspectRatio}
+              ariaLabel={t("production.node.videoPreview")}
+              emptyLabel={t(
+                !coverage
+                  ? "production.node.noSequence"
+                  : currentVideoSource
+                    ? "production.node.videoIdle"
+                    : "production.node.noMedia"
+              )}
+              autoPreviewActive={false}
+              manualPlaybackOwned={false}
+              onManualPlaybackStart={mediaPreview.acquireManualPlayback}
+              onManualPlaybackStop={mediaPreview.releaseManualPlayback}
+              className="rounded-t-[22px]"
+            />
+          )
         ) : null}
         <div
           className={cn(
             "p-3",
-            (data.kind === "clip" || isWorld) && "border-t border-white/[0.065] bg-white/[0.025]"
+            data.kind === "clip" && "border-t border-white/[0.065] bg-white/[0.025]"
           )}
         >
           {data.kind === "clip" ? (
@@ -3141,46 +3476,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                     ready: coverage.ready,
                     total: coverage.total,
                   })}
-                </p>
-              ) : null}
-            </>
-          ) : isWorld ? (
-            <>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-[15px] font-semibold text-white/90">{data.title}</h2>
-                  <p className="mt-1 text-[10px] text-white/38">
-                    {data.maxExperienceSeconds
-                      ? t("worldNode.duration", { seconds: data.maxExperienceSeconds })
-                      : null}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-controls={worldEditorId}
-                  aria-expanded={worldEditorOpen}
-                  aria-label={t(
-                    worldEditorOpen ? "worldNode.collapseEditor" : "worldNode.expandEditor"
-                  )}
-                  title={t(worldEditorOpen ? "worldNode.collapseEditor" : "worldNode.expandEditor")}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setWorldEditorOpen((open) => !open);
-                  }}
-                  className="nodrag nopan nowheel grid size-8 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-white/58 transition hover:bg-white/[0.11] hover:text-white/82 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/45"
-                >
-                  <IconChevronDown
-                    className={cn(
-                      "size-4 transition-transform duration-200",
-                      worldEditorOpen && "rotate-180"
-                    )}
-                  />
-                </button>
-              </div>
-              {data.summary ? (
-                <p className="mt-3 line-clamp-2 text-[11px] leading-[18px] text-white/46">
-                  {data.summary}
                 </p>
               ) : null}
             </>
@@ -3234,8 +3529,11 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                         {interaction.label}
                       </span>
                       <span className="mt-0.5 block text-xs text-white/34 tabular-nums">
-                        {formatInteractionTime(interaction.startMs)}–
-                        {formatInteractionTime(interaction.endMs)} · {triggerLabel}
+                        {interaction.timing === "hold"
+                          ? `${t("interactionAnchors.timingHold")} ${formatInteractionTime(interaction.endMs)}`
+                          : `${formatInteractionTime(interaction.startMs)}–${formatInteractionTime(interaction.endMs)}`}
+                        {" · "}
+                        {triggerLabel}
                       </span>
                     </span>
                     <span className="flex max-w-[132px] flex-col items-end gap-1">
@@ -3244,13 +3542,15 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                         const actionLabel =
                           value.action.kind === "continue"
                             ? t("interactionAnchors.continueCurrent")
-                            : value.action.kind === "seek"
-                              ? t("interactionAnchors.seekCurrent", {
-                                  time: formatInteractionTime(value.action.timeMs),
-                                })
-                              : t("interactionAnchors.gotoTarget", {
-                                  target: value.targetTitle ?? t("interactionCard.linkedTarget"),
-                                });
+                            : value.action.kind === "pause"
+                              ? t("interactionAnchors.stayOnFrame")
+                              : value.action.kind === "seek"
+                                ? t("interactionAnchors.seekCurrent", {
+                                    time: formatInteractionTime(value.action.timeMs),
+                                  })
+                                : t("interactionAnchors.gotoTarget", {
+                                    target: value.targetTitle ?? t("interactionCard.linkedTarget"),
+                                  });
                         const outcomeLabel = t(`interactionAnchors.outcomes.${outcome}`);
                         return (
                           <span
@@ -3316,106 +3616,14 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
               />
               <div className="border-y border-white/[0.065]">
                 {interactionChoices.map((choice, index) => (
-                  <div
+                  <ChoiceOptionRow
                     key={choice.choiceId}
-                    className="group/choice relative grid min-h-14 grid-cols-[32px_minmax(0,1fr)_auto_auto_26px] items-center gap-2 border-b border-white/[0.055] px-3 text-xs transition-colors last:border-b-0 hover:bg-white/[0.035] focus-within:bg-white/[0.045]"
-                  >
-                    <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <StoryCanvasTextInput
-                      value={choice.label}
-                      disabled={!choiceContext?.canEditContent}
-                      maxLength={4_000}
-                      placeholder={t("interactionCard.untitledOption")}
-                      aria-label={t("interactionCard.optionPlaceholder")}
-                      onValueChange={(value) =>
-                        choiceContext?.updateChoice(interactionSourceNodeId, choice.choiceId, value)
-                      }
-                      className={cn(
-                        "nodrag nopan nowheel w-full min-w-0 bg-transparent py-2 text-[12px] font-medium outline-none placeholder:text-white/36 disabled:cursor-default",
-                        choice.label.trim() ? "text-white/78" : "text-white/36"
-                      )}
-                    />
-                    {choice.targetNodeId ? (
-                      <StoryCommunityPriceLabel price={choice.communityPointPrice} />
-                    ) : (
-                      <span />
-                    )}
-                    <span className="max-w-[118px] truncate rounded-lg bg-white/[0.055] px-2 py-1.5 text-[10px] text-white/42 group-hover/choice:hidden group-focus-within/choice:hidden">
-                      {choice.targetNodeId
-                        ? `→ ${choice.targetTitle ?? t("interactionCard.linkedTarget")}`
-                        : t("interactionCard.unconnected")}
-                    </span>
-                    {choiceContext?.canEditContent ? (
-                      <span className="nodrag nopan hidden items-center gap-0.5 group-hover/choice:flex group-focus-within/choice:flex">
-                        <button
-                          type="button"
-                          disabled={index === 0}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            choiceContext.moveChoice(
-                              interactionSourceNodeId,
-                              choice.choiceId,
-                              "up"
-                            );
-                          }}
-                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
-                          aria-label={t("inspector.moveChoiceUp")}
-                        >
-                          <IconArrowUp className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          disabled={index === interactionChoices.length - 1}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            choiceContext.moveChoice(
-                              interactionSourceNodeId,
-                              choice.choiceId,
-                              "down"
-                            );
-                          }}
-                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
-                          aria-label={t("inspector.moveChoiceDown")}
-                        >
-                          <IconArrowDown className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            choiceContext.removeChoice(interactionSourceNodeId, choice.choiceId);
-                          }}
-                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-[#ff9b9e]"
-                          aria-label={t("inspector.removeChoice")}
-                        >
-                          <IconTrash className="size-3" />
-                        </button>
-                      </span>
-                    ) : null}
-                    <span
-                      className="pointer-events-none relative flex h-full items-center justify-end"
-                      aria-hidden="true"
-                    >
-                      <span className="h-px w-4 bg-[#5b9dff]/55" />
-                    </span>
-                    <StoryPortHandle
-                      id={`choice:${choice.choiceId}`}
-                      type="source"
-                      position={Position.Right}
-                      isConnectable={isConnectable && choice.targetNodeId === null}
-                      emphasized
-                      color={STORY_PORT_COLORS.choice}
-                      label={t("ports.choiceOption", {
-                        label: choice.label.trim() || t("interactionCard.untitledOption"),
-                      })}
-                      className="-right-2.25!"
-                    />
-                  </div>
+                    choice={choice}
+                    index={index}
+                    choiceCount={interactionChoices.length}
+                    sourceNodeId={interactionSourceNodeId}
+                    isConnectable={isConnectable}
+                  />
                 ))}
               </div>
               {interactionChoiceCount < MAX_PLAYER_CHOICES && choiceContext?.canCreateOption ? (
@@ -3435,36 +3643,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             </section>
           ) : null}
         </div>
-        {worldEditorOpen && worldNode && worldContext ? (
-          <div
-            id={worldEditorId}
-            className="nodrag nopan nowheel border-t border-white/[0.07] p-4"
-            aria-label={t("worldNode.bindingTitle")}
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            <StoryWorldNodeEditor
-              key={`${worldNode.nodeId}:${worldNode.worldId ?? "unbound"}`}
-              projectId={worldContext.projectId}
-              node={worldNode}
-              world={
-                worldNode.worldId
-                  ? (worldContext.worlds.find((world) => world.id === worldNode.worldId) ?? null)
-                  : null
-              }
-              canEdit={worldContext.canEdit}
-              canGenerate={worldContext.canGenerate}
-              candidateAssets={worldContext.candidateAssets}
-              candidateAssetsLoading={worldContext.candidateAssetsLoading}
-              candidateAssetsError={worldContext.candidateAssetsError}
-              onRetryCandidateAssets={worldContext.retryCandidateAssets}
-              onUploadCandidateAsset={worldContext.uploadCandidateAsset}
-              onUpdate={worldContext.update}
-              onRun={(worldId) => worldContext.run(worldNode.nodeId, worldId)}
-            />
-          </div>
-        ) : null}
       </article>
     </div>
   );
@@ -3472,6 +3650,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
 
 function StoryVideoPreview({
   source,
+  poster,
   interactive,
   frameAspectRatio,
   ariaLabel,
@@ -3483,6 +3662,7 @@ function StoryVideoPreview({
   className,
 }: {
   source?: StudioVideoSource;
+  poster?: string | null;
   interactive: boolean;
   frameAspectRatio?: string;
   ariaLabel: string;
@@ -3502,6 +3682,7 @@ function StoryVideoPreview({
         interactive ? (
           <StoryInteractiveVideoPreview
             source={source}
+            poster={poster}
             ariaLabel={ariaLabel}
             autoPreviewActive={autoPreviewActive}
             manualPlaybackOwned={manualPlaybackOwned}
@@ -3509,7 +3690,7 @@ function StoryVideoPreview({
             onManualPlaybackStop={onManualPlaybackStop}
           />
         ) : (
-          <StoryPassiveVideoPreview source={source} active={autoPreviewActive} />
+          <StoryPassiveVideoPreview source={source} poster={poster} active={autoPreviewActive} />
         )
       ) : (
         <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
@@ -3528,6 +3709,7 @@ function StoryVideoPreview({
 
 function StoryInteractiveVideoPreview({
   source,
+  poster,
   ariaLabel,
   autoPreviewActive,
   manualPlaybackOwned,
@@ -3535,6 +3717,7 @@ function StoryInteractiveVideoPreview({
   onManualPlaybackStop,
 }: {
   source: StudioVideoSource;
+  poster?: string | null;
   ariaLabel: string;
   autoPreviewActive: boolean;
   manualPlaybackOwned: boolean;
@@ -3550,6 +3733,7 @@ function StoryInteractiveVideoPreview({
     >
       <StudioVideoPlayer
         source={source}
+        poster={poster ?? undefined}
         ariaLabel={ariaLabel}
         controlDensity={controlDensity}
         autoPreviewActive={autoPreviewActive}
@@ -3565,9 +3749,11 @@ function StoryInteractiveVideoPreview({
 
 function StoryPassiveVideoPreview({
   source,
+  poster,
   active,
 }: {
   source: StudioVideoSource;
+  poster?: string | null;
   active: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -3605,10 +3791,11 @@ function StoryPassiveVideoPreview({
     <video
       ref={videoRef}
       src={source.src}
+      poster={poster ?? undefined}
       muted
       draggable={false}
       playsInline
-      preload="metadata"
+      preload="none"
       tabIndex={-1}
       aria-hidden="true"
       data-auto-preview={active ? "true" : undefined}

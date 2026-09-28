@@ -63,6 +63,7 @@ class ExperienceAudioHost {
   readonly #active = new Map<string, ActivePlayback>();
   #queue: Promise<void> = Promise.resolve();
   #disposed = false;
+  readonly #downloads = new AbortController();
 
   constructor(
     manifest: ExperienceRuntimeManifest,
@@ -91,11 +92,15 @@ class ExperienceAudioHost {
       .then(async () => {
         for (const effect of effects) await this.#apply(effect);
       })
-      .catch((error: unknown) => this.#onError(runtimeErrorMessage(error)));
+      .catch((error: unknown) => {
+        if (!this.#disposed) this.#onError(runtimeErrorMessage(error));
+      });
   }
 
   async dispose(): Promise<void> {
     this.#disposed = true;
+    this.#downloads.abort();
+    this.#buffers.clear();
     this.#active.forEach((playback) => {
       playback.source.onended = null;
       try {
@@ -103,8 +108,8 @@ class ExperienceAudioHost {
       } catch {
         // The source may already have ended; cleanup below remains identical.
       }
-      playback.source.disconnect();
-      playback.gain.disconnect();
+      disconnectAudioNode(playback.source);
+      disconnectAudioNode(playback.gain);
     });
     this.#active.clear();
     await this.#context.close();
@@ -153,7 +158,7 @@ class ExperienceAudioHost {
   async #play(effect: Extract<AudioEffect, { kind: "audio.play" }>): Promise<void> {
     const cue = this.#manifest.audio?.cues.find((candidate) => candidate.cueId === effect.cueId);
     if (!cue) throw new Error(`Unknown audio cue ${effect.cueId}`);
-    if (!this.#acceptConcurrency(cue)) return;
+    if (!this.#acceptConcurrency(cue, false)) return;
     const asset = this.#manifest.assets.find(
       (candidate): candidate is ExperienceAudioAsset =>
         candidate.assetId === effect.assetId && candidate.kind === "audio"
@@ -169,6 +174,7 @@ class ExperienceAudioHost {
     if (!variant) throw new Error(`Audio asset ${asset.assetId} has no playable variant`);
     const buffer = await this.#loadBuffer(variant.uri, variant.sha256);
     if (this.#disposed) return;
+    if (!this.#acceptConcurrency(cue)) return;
 
     const source = this.#context.createBufferSource();
     const gain = this.#context.createGain();
@@ -201,14 +207,15 @@ class ExperienceAudioHost {
     this.#refreshDucking();
   }
 
-  #acceptConcurrency(cue: ExperienceAudioCue): boolean {
+  #acceptConcurrency(cue: ExperienceAudioCue, stopOverflow = true): boolean {
     const concurrency = cue.concurrency;
     if (!concurrency) return true;
     const group = [...this.#active.values()].filter(
-      (playback) => playback.cue.concurrency?.groupId === concurrency.groupId
+      (playback) => !playback.stopping && playback.cue.concurrency?.groupId === concurrency.groupId
     );
     if (group.length < concurrency.maxInstances) return true;
     if (concurrency.overflowBehavior === "reject-new") return false;
+    if (!stopOverflow) return true;
     const victim =
       concurrency.overflowBehavior === "stop-oldest"
         ? group.reduce((oldest, item) => (item.startedAt < oldest.startedAt ? item : oldest))
@@ -242,8 +249,8 @@ class ExperienceAudioHost {
   #finishPlayback(key: string): void {
     const playback = this.#active.get(key);
     if (!playback) return;
-    playback.source.disconnect();
-    playback.gain.disconnect();
+    disconnectAudioNode(playback.source);
+    disconnectAudioNode(playback.gain);
     this.#active.delete(key);
     this.#refreshDucking();
   }
@@ -292,25 +299,33 @@ class ExperienceAudioHost {
   }
 
   async #loadBuffer(uri: string, expectedSha256: string): Promise<AudioBuffer> {
-    const existing = this.#buffers.get(uri);
+    const key = JSON.stringify([uri, expectedSha256]);
+    const existing = this.#buffers.get(key);
     if (existing) return existing;
     const pending = (async () => {
-      const response = await fetch(uri, { cache: "force-cache" });
+      const response = await fetch(uri, { cache: "force-cache", signal: this.#downloads.signal });
+      this.#assertActive();
       if (!response.ok)
         throw new Error(`Audio asset could not be loaded (HTTP ${response.status})`);
       const bytes = await response.arrayBuffer();
+      this.#assertActive();
       const digest = await sha256(bytes);
+      this.#assertActive();
       if (digest !== expectedSha256)
         throw new Error(`Audio asset ${uri} failed integrity validation`);
       return this.#context.decodeAudioData(bytes.slice(0));
     })();
-    this.#buffers.set(uri, pending);
+    this.#buffers.set(key, pending);
     try {
       return await pending;
     } catch (error) {
-      this.#buffers.delete(uri);
+      this.#buffers.delete(key);
       throw error;
     }
+  }
+
+  #assertActive(): void {
+    if (this.#disposed) throw new Error("Audio host disposed");
   }
 
   #requireBus(busId: string): GainNode {
@@ -328,4 +343,12 @@ async function sha256(value: ArrayBuffer): Promise<string> {
 function runtimeErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message;
   return "Unknown audio runtime error";
+}
+
+function disconnectAudioNode(node: Pick<AudioNode, "disconnect">): void {
+  try {
+    node.disconnect();
+  } catch {
+    // The node may already be detached; remaining nodes still need cleanup.
+  }
 }

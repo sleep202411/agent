@@ -65,6 +65,7 @@ export class CrewInvitationsService {
       : null;
     if (query.cursor && !cursor) {
       throw new BadRequestException({
+        code: 'CREW_INVITATION_CURSOR_INVALID',
         message:
           'The invitations cursor is invalid for this crew. Restart from the first page.',
       });
@@ -112,6 +113,7 @@ export class CrewInvitationsService {
       : null;
     if (query.cursor && !cursor) {
       throw new BadRequestException({
+        code: 'CREW_INVITATION_CURSOR_INVALID',
         message:
           'The invitations cursor is invalid for this account. Restart from the first page.',
       });

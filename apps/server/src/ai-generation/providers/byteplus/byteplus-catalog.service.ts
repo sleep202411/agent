@@ -1,3 +1,4 @@
+import { providerBindingAdmissionEligible } from '../../provider-catalog-eligibility';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
@@ -26,6 +27,7 @@ import { BytePlusConfigService } from './byteplus-config.service';
 interface BytePlusCatalogCache {
   expiresAt: number;
   models: AiModelDefinition[];
+  lookupModels: AiModelDefinition[];
   runtimeByModelId: Map<string, BytePlusImageRuntimeConfig>;
   runtimeByEndpointId: Map<string, BytePlusImageRuntimeConfig>;
 }
@@ -34,6 +36,7 @@ interface BytePlusCatalogCache {
 export class BytePlusCatalogService {
   private readonly logger = new Logger(BytePlusCatalogService.name);
   private cache: BytePlusCatalogCache | null = null;
+  private cacheRead: Promise<BytePlusCatalogCache> | null = null;
 
   constructor(
     private readonly configService: BytePlusConfigService,
@@ -48,7 +51,7 @@ export class BytePlusCatalogService {
   async getModel(modelId: string): Promise<AiModelDefinition | null> {
     const cache = await this.getCache();
     return (
-      cache.models.find(
+      cache.lookupModels.find(
         (model) =>
           model.id === modelId ||
           model.deployment === modelId ||
@@ -59,7 +62,9 @@ export class BytePlusCatalogService {
 
   async getRuntimeConfig(
     modelId: string,
+    options?: { forSubmission?: boolean },
   ): Promise<BytePlusImageRuntimeConfig | null> {
+    if (options?.forSubmission && !(await this.getModel(modelId))) return null;
     const cache = await this.getCache();
     return (
       cache.runtimeByModelId.get(modelId) ??
@@ -71,26 +76,50 @@ export class BytePlusCatalogService {
 
   private async getCache(): Promise<BytePlusCatalogCache> {
     if (this.cache && this.cache.expiresAt > Date.now()) return this.cache;
+    if (this.cacheRead) return this.cacheRead;
+    const pending = this.loadCache().finally(() => {
+      if (this.cacheRead === pending) this.cacheRead = null;
+    });
+    this.cacheRead = pending;
+    return pending;
+  }
+
+  private async loadCache(): Promise<BytePlusCatalogCache> {
     const config = this.configService.config;
     const runtimeByModelId = new Map<string, BytePlusImageRuntimeConfig>();
     const runtimeByEndpointId = new Map<string, BytePlusImageRuntimeConfig>();
-    const entries = await this.dbRuntimeConfigs();
-    const models = entries.map((entry) => {
-      const model = toBytePlusImageModelDefinition({
-        config: entry.runtime,
-        modelId: entry.modelId,
-        source: 'byteplus-config',
-        ops: entry.ops,
-      });
-      runtimeByModelId.set(model.id, entry.runtime);
-      runtimeByModelId.set(model.deployment, entry.runtime);
-      runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
-      runtimeByModelId.set(
-        `byteplus/${entry.runtime.endpointId}`,
-        entry.runtime,
-      );
-      runtimeByEndpointId.set(entry.runtime.endpointId, entry.runtime);
-      return model;
+    const entries = (await this.dbRuntimeConfigs()).sort(
+      (a, b) => Number(b.admissionEligible) - Number(a.admissionEligible),
+    );
+    const seenModelIds = new Set<string>();
+    const lookupModels = entries
+      .map((entry) => {
+        const model = toBytePlusImageModelDefinition({
+          config: entry.runtime,
+          modelId: entry.modelId,
+          source: 'byteplus-config',
+          ops: entry.ops,
+        });
+        if (!runtimeByModelId.has(model.id))
+          runtimeByModelId.set(model.id, entry.runtime);
+        if (!runtimeByModelId.has(model.deployment))
+          runtimeByModelId.set(model.deployment, entry.runtime);
+        if (!runtimeByModelId.has(entry.runtime.endpointId))
+          runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
+        if (!runtimeByModelId.has(`byteplus/${entry.runtime.endpointId}`))
+          runtimeByModelId.set(
+            `byteplus/${entry.runtime.endpointId}`,
+            entry.runtime,
+          );
+        if (!runtimeByEndpointId.has(entry.runtime.endpointId))
+          runtimeByEndpointId.set(entry.runtime.endpointId, entry.runtime);
+        return model;
+      })
+      .filter((_model, index) => entries[index].admissionEligible);
+    const models = lookupModels.filter((model) => {
+      if (seenModelIds.has(model.id)) return false;
+      seenModelIds.add(model.id);
+      return true;
     });
 
     if (config.enabled && entries.length === 0) {
@@ -102,6 +131,7 @@ export class BytePlusCatalogService {
     this.cache = {
       expiresAt: Date.now() + config.catalogRefreshMs,
       models,
+      lookupModels,
       runtimeByModelId,
       runtimeByEndpointId,
     };
@@ -170,6 +200,7 @@ export class BytePlusCatalogService {
         outputPolicy: row.canonicalModel.outputPolicy as AiJsonValue,
       });
       return {
+        admissionEligible: providerBindingAdmissionEligible(row),
         runtime,
         modelId: row.canonicalModel.slug,
         ops: {
@@ -191,6 +222,7 @@ export class BytePlusCatalogService {
 }
 
 type BytePlusRuntimeEntry = {
+  admissionEligible: boolean;
   runtime: BytePlusImageRuntimeConfig;
   modelId: string;
   ops: NonNullable<AiModelDefinition['ops']>;

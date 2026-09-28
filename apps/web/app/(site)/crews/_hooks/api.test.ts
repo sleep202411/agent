@@ -13,7 +13,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { CrewApiError, crewApi } from "./api";
+import { CrewApiError, crewApi, isCrewCursorError } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -170,4 +170,15 @@ describe("Crew request options", () => {
     controller.abort();
     await result;
   });
+});
+
+it.each([
+  [new CrewApiError(400, { code: "CREW_CURSOR_INVALID" }), true],
+  [new CrewApiError(403, { code: "CREW_CURSOR_INVALID" }), false],
+  [new CrewApiError(400, { code: "OTHER" }), false],
+  [new CrewApiError(400, null), false],
+  [new CrewApiError(400, "CREW_CURSOR_INVALID"), false],
+  [new Error("CREW_CURSOR_INVALID"), false],
+])("only restarts pagination for the endpoint's structured rejection (%s)", (error, expected) => {
+  expect(isCrewCursorError(error, "CREW_CURSOR_INVALID")).toBe(expected);
 });

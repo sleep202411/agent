@@ -4,11 +4,24 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CreateCrewJobDialog } from "./create-crew-job-dialog";
 const state = vi.hoisted(() => ({
   account: "alice",
+  canLink: true,
+  taskError: false,
   save: vi.fn(),
   create: vi.fn(),
   close: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
+}));
+vi.mock("../_hooks/use-crew-permissions", () => ({
+  useCrewPermissions: () => ({ can: () => state.canLink }),
+}));
+vi.mock("../_hooks/use-tasks", () => ({
+  useCrewTaskOptions: () => ({
+    data: [{ id: "task-one", number: 1, title: "Storyboard" }],
+    isSuccess: true,
+    isError: state.taskError,
+    refetch: vi.fn(),
+  }),
 }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: state.account } }),
@@ -68,6 +81,8 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   state.account = "alice";
+  state.canLink = true;
+  state.taskError = false;
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -219,4 +234,198 @@ it("blocks duplicate creation and ignores completion after closing", async () =>
     handlers.onSettled?.();
   });
   expect(state.close).not.toHaveBeenCalled();
+});
+
+async function numberInput(selector: string, value: string) {
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>(selector)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it.each(["1.5", "99.9"])("does not advance with fractional headcount %s", async (value) => {
+  await render();
+  await numberInput('input[max="99"]', value);
+  await next();
+  expect(container.querySelector('input[max="99"]')).not.toBeNull();
+  expect(state.save).not.toHaveBeenCalled();
+});
+it.each(["1.5", "60.9"])("does not submit fractional duration %s", async (value) => {
+  await render();
+  await next();
+  await next();
+  await numberInput('input[max="60"]', value);
+  await save();
+  expect(state.save).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("createJobDurationError");
+});
+it("preserves the values of exponent-form headcount and duration", async () => {
+  await render();
+  await numberInput('input[max="99"]', "1e1");
+  await next();
+  await next();
+  await numberInput('input[max="60"]', "2e1");
+  await save();
+  expect(state.save.mock.calls[0]?.[0]).toMatchObject({ targetCount: 10, durationMonths: 20 });
+});
+it("allows correcting fractional values and retains optional blank duration", async () => {
+  await render();
+  await numberInput('input[max="99"]', "1.5");
+  await numberInput('input[max="99"]', "2");
+  await next();
+  await next();
+  await numberInput('input[max="60"]', "1.5");
+  await numberInput('input[max="60"]', "");
+  await save();
+  expect(state.save.mock.calls[0]?.[0]).toMatchObject({ targetCount: 2, durationMonths: null });
+});
+
+it("blocks fractional headcount when creating a new position too", async () => {
+  await act(async () =>
+    root.render(<CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" />)
+  );
+  await act(async () => {
+    const select = container.querySelector("select")!;
+    select.value = "director";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await type("New position");
+  await numberInput('input[max="99"]', "1.5");
+  await next();
+  expect(container.querySelector('input[max="99"]')).not.toBeNull();
+  expect(container.textContent).toContain("createJobNumberError");
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+async function createWithTask() {
+  await act(async () =>
+    root.render(<CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" />)
+  );
+  await act(async () => {
+    const selects = container.querySelectorAll("select");
+    for (const [select, value] of [
+      [selects[0], "director"],
+      [selects[1], "task-one"],
+    ] as const) {
+      select!.value = value;
+      select!.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  await type("Recruit storyboard creator");
+}
+it("publishes an explicitly selected task link", async () => {
+  await createWithTask();
+  await next();
+  await next();
+  await save();
+  expect(state.create.mock.calls[0]?.[0]).toMatchObject({ taskId: "task-one" });
+});
+it.each(["permission", "read"])("blocks a selected task after %s loss", async (reason) => {
+  await createWithTask();
+  await next();
+  await next();
+  if (reason === "permission") state.canLink = false;
+  else state.taskError = true;
+  await act(async () =>
+    root.render(<CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" />)
+  );
+  await save();
+  expect(state.create).not.toHaveBeenCalled();
+});
+it("does not submit an immutable task link when editing", async () => {
+  await render(true, "crew", { ...position, taskId: "existing" });
+  await next();
+  await next();
+  await save();
+  expect(state.save.mock.calls[0]?.[0]).not.toHaveProperty("taskId");
+});
+
+it("publishes private visibility only with the explicitly linked task", async () => {
+  await createWithTask();
+  await act(async () => {
+    const select = container.querySelectorAll("select")[2]!;
+    select.value = "private";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await next();
+  await next();
+  await save();
+  expect(state.create.mock.calls[0]?.[0]).toMatchObject({
+    taskId: "task-one",
+    recruitmentVisibility: "private",
+  });
+});
+
+it("clears private visibility when removing the task link", async () => {
+  await createWithTask();
+  await act(async () => {
+    const visibility = container.querySelectorAll("select")[2]!;
+    visibility.value = "private";
+    visibility.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => {
+    const task = container.querySelectorAll("select")[1]!;
+    task.value = "none";
+    task.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await next();
+  await next();
+  await save();
+  expect(state.create.mock.calls[0]?.[0]).not.toHaveProperty("taskId");
+  expect(state.create.mock.calls[0]?.[0]).not.toHaveProperty("recruitmentVisibility");
+});
+
+async function salaryInput(placeholder: string, value: string) {
+  await act(async () => {
+    const input = container.querySelector<HTMLInputElement>(`input[placeholder="${placeholder}"]`)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it.each([
+  ["createJobSalaryMinPlaceholder", "-1"],
+  ["createJobSalaryMaxPlaceholder", "-1"],
+  ["createJobSalaryMinPlaceholder", "100000001"],
+  ["createJobSalaryMaxPlaceholder", "100000001"],
+])("blocks an invalid one-sided salary in %s (%s)", async (field, value) => {
+  await render();
+  await next();
+  await next();
+  await salaryInput("createJobSalaryMinPlaceholder", "");
+  await salaryInput("createJobSalaryMaxPlaceholder", "");
+  await salaryInput(field, value);
+  await save();
+  expect(state.save).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("createJobSalaryAmountError");
+});
+it.each(["0", "100000000", "123.45", ""])(
+  "preserves valid one-sided or blank salary %s",
+  async (value) => {
+    await render();
+    await next();
+    await next();
+    await salaryInput("createJobSalaryMinPlaceholder", value);
+    await salaryInput("createJobSalaryMaxPlaceholder", "");
+    await save();
+    expect(state.save).toHaveBeenCalledTimes(1);
+    expect(state.save.mock.calls[0][0].salary).toMatchObject({
+      min: value === "" ? null : Number(value),
+      max: null,
+    });
+  }
+);
+it("allows correcting a rejected amount without losing the rest of the draft", async () => {
+  await render();
+  await type("Updated role");
+  await next();
+  await next();
+  await salaryInput("createJobSalaryMinPlaceholder", "-10");
+  await save();
+  expect(state.save).not.toHaveBeenCalled();
+  await salaryInput("createJobSalaryMinPlaceholder", "150");
+  await save();
+  expect(state.save.mock.calls[0][0]).toMatchObject({
+    description: "Updated role",
+    salary: { min: 150, max: 200 },
+  });
 });

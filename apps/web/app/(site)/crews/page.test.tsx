@@ -2,11 +2,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import CrewsPage from "./page";
+import { CrewApiError } from "./_hooks/api";
 
 const feed = vi.hoisted(() => ({
   data: {
     pages: [{ items: [{ id: "crew", name: "Loaded Crew", createdAt: "2026-01-01" }] }],
   } as unknown,
+  error: null as Error | null,
   isLoading: false,
   isError: true,
   isFetching: false,
@@ -24,6 +26,7 @@ const mine = vi.hoisted(() => ({
     | {
         founded: Array<{ id: string; name: string; createdAt: string }>;
         joined: Array<{ id: string; name: string; createdAt: string }>;
+        community?: Array<{ id: string; name: string; createdAt: string }>;
       },
   isPending: false,
   isError: false,
@@ -47,7 +50,11 @@ vi.mock("./_hooks/use-position-label", () => ({
   useTranslatePositionValue: () => (value: string) => value,
 }));
 vi.mock("./_components/crew-workspace", () => ({
-  CrewWorkspace: ({ id }: { id: string }) => <div data-workspace={id}>Private Crew</div>,
+  CrewWorkspace: ({ id, communityOnly }: { id: string; communityOnly?: boolean }) => (
+    <div data-workspace={id} data-community={communityOnly}>
+      Private Crew
+    </div>
+  ),
 }));
 vi.mock("./_components/create-crew-dialog", () => ({ CreateCrewDialog: () => null }));
 vi.mock("./_components/positions-tab", () => ({ PositionsTab: () => null }));
@@ -56,6 +63,7 @@ vi.mock("@/app/_components/kyc-gate-dialog", () => ({ KycGateDialog: () => null 
 let root: Root;
 beforeEach(() => {
   navigation.search = "";
+  feed.error = null;
   session.user = null;
   mine.data = undefined;
   mine.isError = false;
@@ -107,6 +115,23 @@ it("moves the membership list into My Crews and opens the selected workspace", (
   expect(container.textContent).not.toContain("Private Crew");
   expect(container.textContent).toContain("myCrewsSignIn");
 });
+it("opens a persisted fan-only Crew in community mode without needing URL channel hints", () => {
+  session.user = { id: "fan" };
+  const crew = { id: "fans", name: "Fan Crew", createdAt: "2026-01-01" };
+  mine.data = { founded: [], joined: [], community: [crew] };
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() => root.render(<CrewsPage />));
+  expect(container.querySelector('[data-workspace="fans"]')?.getAttribute("data-community")).toBe(
+    "true"
+  );
+  mine.data = { founded: [], joined: [crew], community: [crew] };
+  act(() => root.render(<CrewsPage />));
+  expect(container.querySelectorAll('[data-workspace="fans"]')).toHaveLength(1);
+  expect(container.querySelector('[data-workspace="fans"]')?.getAttribute("data-community")).toBe(
+    "false"
+  );
+});
 it("preserves other URL filters when selecting My Crews", () => {
   navigation.search = "from=invite";
   const container = document.createElement("div");
@@ -117,5 +142,31 @@ it("preserves other URL filters when selecting My Crews", () => {
   )!;
   act(() => tab.click());
   expect(navigation.replace).toHaveBeenCalledWith("?from=invite&view=mine", { scroll: false });
-  expect(container.querySelector("a")?.getAttribute("href")).toBe("/en-US/crews/tasks");
+  expect(container.querySelector('a[href="/en-US/crews/tasks"]')).not.toBeNull();
+  expect(container.querySelector('a[href="/en-US/crews/applications"]')).not.toBeNull();
+});
+
+it("restarts the Crew feed when its continuation cursor is no longer visible", () => {
+  feed.isFetchNextPageError = true;
+  feed.error = new CrewApiError(400, { code: "CREW_CURSOR_INVALID" });
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() => root.render(<CrewsPage />));
+  expect(container.textContent).toContain("Loaded Crew");
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "retry"
+  )!;
+  act(() => retry.click());
+  expect(feed.refetch).toHaveBeenCalledTimes(1);
+  expect(feed.fetchNextPage).not.toHaveBeenCalled();
+});
+
+it("shows the server's actionable Crew-list error instead of replacing it with a generic failure", () => {
+  feed.error = new CrewApiError(403, { message: "Crew access has been suspended" });
+  const container = document.createElement("div");
+  root = createRoot(container);
+  act(() => root.render(<CrewsPage />));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+    "Crew access has been suspended"
+  );
 });

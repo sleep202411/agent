@@ -25,6 +25,17 @@
 # ============================================================================
 set -euo pipefail
 
+# Validate the requested target before loading signing config or changing files.
+usage() {
+  echo "usage: build-release.sh <global|cn|all> <ios|android|all>" >&2
+  exit 2
+}
+[ "$#" -eq 2 ] || usage
+REGION="$1"
+PLATFORM="$2"
+case "$REGION" in global|cn|all) ;; *) usage ;; esac
+case "$PLATFORM" in ios|android|all) ;; *) usage ;; esac
+
 MOBILE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$MOBILE_DIR"
 
@@ -56,9 +67,6 @@ if [ -d "$ROOT_NM" ] && [ ! -e "$ROOT_NM/expo-router" ]; then
   ln -s ../apps/mobile/node_modules/expo-router "$ROOT_NM/expo-router"
   echo "  [hoisting-guard] symlinked expo-router at repo root"
 fi
-
-REGION="${1:?usage: build-release.sh <global|cn|all> <ios|android|all>}"
-PLATFORM="${2:?usage: build-release.sh <global|cn|all> <ios|android|all>}"
 
 VER="$(node -p "require('./app.config.js')({config:{}}).version")"
 BUILD="$(node -p "require('./app.config.js')({config:{}}).ios.buildNumber")"

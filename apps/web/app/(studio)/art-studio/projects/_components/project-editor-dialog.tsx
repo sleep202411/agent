@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { IconLoader2, IconUpload, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
 import {
@@ -64,20 +73,45 @@ const emptyForm: FormState = {
 
 type FormErrors = Partial<Record<keyof Omit<FormState, "imagePath">, string>>;
 
-function validateForm(form: FormState, t: (key: string) => string): FormErrors {
+function validateForm(
+  form: FormState,
+  dictionaries: ProjectDictionaries,
+  t: (key: string) => string
+): FormErrors {
   const errors: FormErrors = {};
-  if (!form.type) errors.type = t("validateType");
+  if (
+    !form.type ||
+    !Number.isSafeInteger(Number(form.type)) ||
+    !dictionaries.typeOptions.some((option) => String(option.value) === form.type)
+  )
+    errors.type = t("validateType");
   if (!form.name.trim()) errors.name = t("validateName");
   if (!form.description.trim()) errors.description = t("validateDescription");
-  if (!form.episode || Number(form.episode) <= 0) errors.episode = t("validateEpisode");
-  if (!form.chapterLength || Number(form.chapterLength) <= 0)
+  if (!form.episode || !Number.isSafeInteger(Number(form.episode)) || Number(form.episode) <= 0)
+    errors.episode = t("validateEpisode");
+  if (
+    !form.chapterLength ||
+    !Number.isSafeInteger(Number(form.chapterLength)) ||
+    Number(form.chapterLength) <= 0
+  )
     errors.chapterLength = t("validateDuration");
-  if (!form.aspectRatioType) errors.aspectRatioType = t("validateSize");
-  if (!form.stylePainting) errors.stylePainting = t("validateStyle");
+  if (!dictionaries.sizeOptions.some((option) => option.value === form.aspectRatioType))
+    errors.aspectRatioType = t("validateSize");
+  if (!dictionaries.styleOptions.some((option) => option.id === form.stylePainting))
+    errors.stylePainting = t("validateStyle");
   return errors;
 }
 
-export function ProjectEditorDialog({
+export function ProjectEditorDialog(props: ProjectEditorDialogProps) {
+  const { user } = useCurrentUser();
+  return (
+    <ProjectEditorForm
+      key={JSON.stringify([user?.id, props.worldId, props.project?.id])}
+      {...props}
+    />
+  );
+}
+function ProjectEditorForm({
   open,
   worldId,
   project,
@@ -86,24 +120,79 @@ export function ProjectEditorDialog({
 }: ProjectEditorDialogProps) {
   const t = useTranslations("project");
   const tc = useTranslations("common");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dictionaries, setDictionaries] = useState<ProjectDictionaries | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
+  const initialForm = (): FormState =>
+    project
+      ? {
+          name: String(project.name ?? ""),
+          description: String(project.description ?? ""),
+          type: project.type != null ? String(project.type) : "",
+          episode: project.episode != null ? String(project.episode) : "",
+          chapterLength: project.chapterLength != null ? String(project.chapterLength) : "",
+          stylePainting: project.stylePainting != null ? String(project.stylePainting) : "",
+          aspectRatioType: project.aspectRatioType != null ? String(project.aspectRatioType) : "",
+          imagePath: String(project.imagePath ?? ""),
+        }
+      : emptyForm;
+  const [form, setForm] = useState<FormState>(initialForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const fileRef = useRef<HTMLInputElement>(null);
+  const [openScope, setOpenScope] = useState({ open });
+  if (openScope.open !== open) {
+    setOpenScope({ open });
+    setForm(initialForm());
+    setErrors({});
+    setUploading(false);
+    setSaving(false);
+    setDictionaries(null);
+    setConfigError(null);
+    setLoading(open);
+  }
+  const active = useRef(false);
+  const operation = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    active.current = openScope.open;
+    return () => {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+    };
+  }, [openScope]);
+  const begin = () => {
+    if (!active.current || operation.current) return null;
+    const run = new AbortController();
+    operation.current = run;
+    return run;
+  };
+  const owns = (run: AbortController) =>
+    active.current && operation.current === run && !run.signal.aborted;
+  const close = (next: boolean) => {
+    if (!next) {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+    }
+    onOpenChange(next);
+  };
 
   useEffect(() => {
     if (!open) return;
     let active = true;
+    const controller = new AbortController();
     setLoading(true);
-    fetchProjectDictionaries()
+    setConfigError(null);
+    fetchProjectDictionaries(controller.signal)
       .then((data) => {
         if (active) setDictionaries(data);
       })
       .catch((error) => {
+        if (!active) return;
         console.error("[ProjectEditorDialog] 加载项目字典失败:", error);
+        setConfigError(error instanceof Error ? error.message : t("loadConfigFailed"));
         toast.error(t("loadConfigFailed"));
       })
       .finally(() => {
@@ -111,27 +200,9 @@ export function ProjectEditorDialog({
       });
     return () => {
       active = false;
+      controller.abort();
     };
   }, [open, t]);
-
-  useEffect(() => {
-    if (!open) return;
-    setErrors({});
-    if (!project) {
-      setForm(emptyForm);
-      return;
-    }
-    setForm({
-      name: String(project.name ?? ""),
-      description: String(project.description ?? ""),
-      type: project.type != null ? String(project.type) : "",
-      episode: project.episode != null ? String(project.episode) : "",
-      chapterLength: project.chapterLength != null ? String(project.chapterLength) : "",
-      stylePainting: project.stylePainting != null ? String(project.stylePainting) : "",
-      aspectRatioType: project.aspectRatioType != null ? String(project.aspectRatioType) : "",
-      imagePath: String(project.imagePath ?? ""),
-    });
-  }, [open, project]);
 
   const selectedStyle = useMemo(
     () => dictionaries?.styleOptions.find((item) => item.id === form.stylePainting),
@@ -158,29 +229,48 @@ export function ProjectEditorDialog({
 
   const handleUpload = async (file?: File | null) => {
     if (!file) return;
+    const run = begin();
+    if (!run) return;
     setUploading(true);
     try {
       const uploaded = await uploadWorkspaceFile(file, {
+        signal: run.signal,
         uploadType: "WORLD",
+        accept: "image/*",
         sourceType: "LOCAL",
       });
-      setField("imagePath", uploaded.path);
+      if (!owns(run)) return;
+      setForm((previous) => ({ ...previous, imagePath: uploaded.path }));
       toast.success(t("coverUploadSuccess"));
     } catch (error) {
+      if (!owns(run)) return;
       console.error("[ProjectEditorDialog] 上传失败:", error);
       toast.error(error instanceof Error ? error.message : t("coverUploadFailed"));
     } finally {
-      setUploading(false);
+      if (owns(run)) {
+        operation.current = null;
+        setUploading(false);
+      }
     }
   };
 
   const handleSave = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    if (!worldId) return;
-    const nextErrors = validateForm(form, t);
+    if (
+      !worldId ||
+      loading ||
+      !dictionaries ||
+      configError !== null ||
+      !active.current ||
+      operation.current
+    )
+      return;
+    const nextErrors = validateForm(form, dictionaries, t);
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
 
+    const run = begin();
+    if (!run) return;
     setSaving(true);
     const payload = {
       ...(project?.id ? { id: project.id } : {}),
@@ -196,26 +286,33 @@ export function ProjectEditorDialog({
     };
 
     try {
-      const saved = project?.id
+      await (project?.id
         ? await backendApi.post<ProjectOptionItem>("/api/user/world/update/worldproduct", {
+            signal: run.signal,
             data: payload,
           })
         : await backendApi.post<ProjectOptionItem>("/api/user/world/create/worldproduct", {
+            signal: run.signal,
             data: payload,
-          });
+          }));
+      if (!owns(run)) return;
       toast.success(project?.id ? t("projectUpdateSuccess") : t("projectCreateSuccess"));
       onSaved(payload as ProjectOptionItem);
       onOpenChange(false);
     } catch (error) {
+      if (!owns(run)) return;
       console.error("[ProjectEditorDialog] 保存失败:", error);
       toast.error(project?.id ? t("projectUpdateFailed") : t("projectCreateFailed"));
     } finally {
-      setSaving(false);
+      if (owns(run)) {
+        operation.current = null;
+        setSaving(false);
+      }
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent className="gap-0 p-0 sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>{project?.id ? t("editProject") : t("newProject")}</DialogTitle>
@@ -228,13 +325,22 @@ export function ProjectEditorDialog({
           </div>
         ) : (
           <form id="project-editor-form" onSubmit={handleSave}>
-            <div className="max-h-[60vh] overflow-y-auto p-4">
+            <div
+              inert={saving || uploading || loading || !dictionaries || configError !== null}
+              className="max-h-[60vh] overflow-y-auto p-4"
+            >
               <FieldGroup>
                 {/* Type + Name */}
                 <div className="flex gap-4">
                   <Field className="flex-1">
                     <FieldLabel>{t("projectType")}</FieldLabel>
-                    <Select value={form.type} onValueChange={(v) => setField("type", v)}>
+                    <Select
+                      disabled={
+                        saving || uploading || loading || !dictionaries || configError !== null
+                      }
+                      value={form.type}
+                      onValueChange={(v) => setField("type", v)}
+                    >
                       <SelectTrigger aria-invalid={Boolean(errors.type)}>
                         <SelectValue placeholder={t("projectTypePlaceholder")} />
                       </SelectTrigger>
@@ -359,6 +465,9 @@ export function ProjectEditorDialog({
                 <Field>
                   <FieldLabel>{t("videoSize")}</FieldLabel>
                   <Select
+                    disabled={
+                      saving || uploading || loading || !dictionaries || configError !== null
+                    }
                     value={form.aspectRatioType}
                     onValueChange={(v) => setField("aspectRatioType", v)}
                   >
@@ -392,6 +501,9 @@ export function ProjectEditorDialog({
                       const active = style.id === form.stylePainting;
                       return (
                         <button
+                          disabled={
+                            saving || uploading || loading || !dictionaries || configError !== null
+                          }
                           key={style.id}
                           type="button"
                           onClick={() => setField("stylePainting", String(style.id))}
@@ -427,15 +539,13 @@ export function ProjectEditorDialog({
             </div>
 
             <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                color="muted"
-                onClick={() => onOpenChange(false)}
-              >
+              <Button type="button" variant="outline" color="muted" onClick={() => close(false)}>
                 {tc("cancel")}
               </Button>
-              <Button type="submit" disabled={saving || loading || uploading}>
+              <Button
+                type="submit"
+                disabled={saving || loading || uploading || !dictionaries || configError !== null}
+              >
                 {saving && <IconLoader2 className="size-3.5 animate-spin" />}
                 {tc("confirm")}
               </Button>

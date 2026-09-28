@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconCopy, IconMask, IconTrash, IconUserPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { useAuth } from "@/app/_components/auth-provider";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,8 +21,7 @@ import {
   type CreatedCastingInvite,
 } from "@/lib/characters-api";
 
-const errMsg = (e: unknown, fallback: string) =>
-  e instanceof ApiRequestError ? e.message : fallback;
+const errMsg = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
@@ -53,6 +53,27 @@ export function CastingManager({
   projectId: string;
   canManage: boolean;
 }) {
+  const { user } = useAuth();
+  const viewerId = user?.id == null ? "" : String(user.id);
+  return (
+    <CastingManagerContent
+      key={JSON.stringify([viewerId, projectId, canManage])}
+      viewerId={viewerId}
+      projectId={projectId}
+      canManage={canManage}
+    />
+  );
+}
+
+function CastingManagerContent({
+  viewerId,
+  projectId,
+  canManage,
+}: {
+  viewerId: string;
+  projectId: string;
+  canManage: boolean;
+}) {
   const t = useTranslations("characters");
   const tc = useTranslations("common");
   const queryClient = useQueryClient();
@@ -61,41 +82,91 @@ export function CastingManager({
   const [value, setValue] = useState("");
   const [created, setCreated] = useState<CreatedCastingInvite | null>(null);
 
-  const invitesKey = ["casting-invites", projectId] as const;
-  const { data: invites } = useQuery({
+  const invitesKey = ["casting-invites", projectId, viewerId] as const;
+  const query = useQuery({
     queryKey: invitesKey,
-    queryFn: () => listCastingInvites(projectId),
-    enabled: canManage,
+    queryFn: ({ signal }) => listCastingInvites(projectId, signal),
+    enabled: Boolean(viewerId) && canManage,
+    retry: false,
   });
+  const denied = query.error instanceof ApiRequestError && [401, 403].includes(query.error.status);
+  const invites = denied ? undefined : query.data;
   const invalidate = () => queryClient.invalidateQueries({ queryKey: invitesKey });
-
-  const createMut = useMutation({
-    mutationFn: () =>
-      createCastingInvite(
-        projectId,
-        mode === "user" ? { inviteeUserId: value.trim() } : { inviteeContact: value.trim() }
-      ),
-    onSuccess: async (invite) => {
-      setValue("");
-      setCreated(invite);
-      void invalidate();
-      const copied = await copyToClipboard(castingAcceptUrl(invite.token));
-      toast.success(copied ? t("castingLinkCreatedCopied") : t("castingLinkCreated"));
-    },
-    onError: (e) => toast.error(errMsg(e, t("castingCreateFailed"))),
-  });
-
-  const revokeMut = useMutation({
-    mutationFn: (inviteId: string) => revokeCastingInvite(projectId, inviteId),
-    onSuccess: (_data, inviteId) => {
-      if (created?.id === inviteId) setCreated(null);
-      void invalidate();
-      toast.success(t("castingRevoked"));
-    },
-    onError: (e) => toast.error(errMsg(e, t("castingRevokeFailed"))),
-  });
-
-  if (!canManage) return null;
+  const mounted = useRef(false);
+  const active = useRef<AbortController | null>(null);
+  const [pending, setPending] = useState(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      active.current?.abort();
+      active.current = null;
+    };
+  }, []);
+  function runAction<R>(
+    execute: (signal: AbortSignal) => Promise<R>,
+    success: (result: R, current: () => boolean) => void | Promise<void>,
+    failure: string
+  ) {
+    if (!mounted.current || !viewerId || !canManage || denied || active.current) return;
+    const claim = new AbortController();
+    active.current = claim;
+    setPending(true);
+    const current = () => mounted.current && active.current === claim;
+    void (async () => {
+      try {
+        const result = await execute(claim.signal);
+        if (current()) await success(result, current);
+      } catch (error) {
+        if (current()) toast.error(errMsg(error, failure));
+      } finally {
+        if (current()) {
+          active.current = null;
+          setPending(false);
+        }
+      }
+    })();
+  }
+  const createInvite = () =>
+    runAction(
+      (signal) =>
+        createCastingInvite(
+          projectId,
+          mode === "user" ? { inviteeUserId: value.trim() } : { inviteeContact: value.trim() },
+          signal
+        ),
+      async (invite, current) => {
+        setValue("");
+        setCreated(invite);
+        void invalidate();
+        const copied = await copyToClipboard(castingAcceptUrl(invite.token));
+        if (current())
+          toast.success(copied ? t("castingLinkCreatedCopied") : t("castingLinkCreated"));
+      },
+      t("castingCreateFailed")
+    );
+  const revokeInvite = (id: string) =>
+    runAction(
+      (signal) => revokeCastingInvite(projectId, id, signal),
+      () => {
+        if (created?.id === id) setCreated(null);
+        void invalidate();
+        toast.success(t("castingRevoked"));
+      },
+      t("castingRevokeFailed")
+    );
+  const copyInvite = () => {
+    if (!created) return;
+    runAction(
+      () => copyToClipboard(castingAcceptUrl(created.token)),
+      (ok) => {
+        if (ok) toast.success(tc("copied"));
+        else toast.error(t("castingCopyFailed"));
+      },
+      t("castingCopyFailed")
+    );
+  };
+  if (!canManage || !viewerId) return null;
 
   const statusLabels: Record<CastingInviteStatus, string> = {
     pending: t("castingStatusPending"),
@@ -127,6 +198,7 @@ export function CastingManager({
           <button
             key={id}
             type="button"
+            disabled={pending || denied}
             onClick={() => setMode(id)}
             className={cn(
               "h-7 flex-1 rounded-full text-xs font-medium transition-colors",
@@ -142,24 +214,25 @@ export function CastingManager({
         className="flex items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          if (value.trim() && !createMut.isPending) createMut.mutate();
+          if (value.trim()) createInvite();
         }}
       >
         <Input
           placeholder={
             mode === "user" ? t("castingUserPlaceholder") : t("castingContactPlaceholder")
           }
+          disabled={pending || denied}
           value={value}
           onChange={(event) => setValue(event.target.value)}
           className="flex-1"
         />
-        <Button type="submit" disabled={!value.trim() || createMut.isPending}>
+        <Button type="submit" disabled={!value.trim() || pending || denied}>
           <IconUserPlus className="size-4" />
           {t("castingInvite")}
         </Button>
       </form>
 
-      {created && (
+      {created && !denied && (
         <div className="flex items-center gap-2 rounded-lg bg-input/30 px-2.5 py-1.5">
           <code className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
             {castingAcceptUrl(created.token)}
@@ -168,11 +241,8 @@ export function CastingManager({
             type="button"
             size="sm"
             variant="secondary"
-            onClick={async () => {
-              const ok = await copyToClipboard(castingAcceptUrl(created.token));
-              if (ok) toast.success(tc("copied"));
-              else toast.error(t("castingCopyFailed"));
-            }}
+            disabled={pending}
+            onClick={copyInvite}
           >
             <IconCopy className="size-4" />
             {tc("copy")}
@@ -205,7 +275,8 @@ export function CastingManager({
               {invite.status === "pending" && (
                 <button
                   type="button"
-                  onClick={() => revokeMut.mutate(invite.id)}
+                  disabled={pending || denied}
+                  onClick={() => revokeInvite(invite.id)}
                   className="flex size-7 items-center justify-center rounded-md text-white/55 outline-none transition-colors hover:bg-white/[0.08] hover:text-white"
                   aria-label={t("castingRevoke")}
                 >

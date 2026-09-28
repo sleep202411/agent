@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { type StoryGraphNode } from "@/lib/story-projects-api";
+import { storyAutoFallbackNodeId, storyRouteNodeId } from "@repo/shared/story-stats";
 import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
@@ -59,7 +60,8 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
         <div key={chapter.id} className="mt-4">
           <div className="space-y-0.5">
             {catalogRows.map(({ node, sceneNumber: rowSceneNumber }) => {
-              const isEnding = node.exit.kind === "auto" && node.exit.nextNodeId === null;
+              const isEnding =
+                node.exit.kind === "auto" && storyAutoFallbackNodeId(node.exit) === null;
               return (
                 <div key={node.nodeId}>
                   <Link
@@ -97,14 +99,16 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
                         <Link
                           key={choice.choiceId}
                           href={
-                            choice.nextNodeId ? rowHref(choice.nextNodeId) : rowHref(node.nodeId)
+                            storyRouteNodeId(choice.target)
+                              ? rowHref(storyRouteNodeId(choice.target)!)
+                              : rowHref(node.nodeId)
                           }
                           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white transition hover:bg-white/[0.07]"
                         >
                           <span className="truncate">{localized(choice.label, locale)}</span>
                           <span className="shrink-0 text-white/70">
-                            {choice.nextNodeId
-                              ? `→ ${nodeNames.get(choice.nextNodeId) ?? choice.nextNodeId}`
+                            {storyRouteNodeId(choice.target)
+                              ? `→ ${nodeNames.get(storyRouteNodeId(choice.target)!) ?? storyRouteNodeId(choice.target)}`
                               : t("interactionCard.unconnected")}
                           </span>
                         </Link>
@@ -123,8 +127,7 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
 
 function nodeTitle(node: StoryGraphNode, choiceLabel: string): string {
   if (node.kind === "decision") return choiceLabel;
-  if (node.kind === "clip") return node.name?.trim() || node.clipKey;
-  return node.name?.trim() || node.worldId || node.nodeId;
+  return node.name?.trim() || node.clipKey;
 }
 
 function localized(values: Record<string, string> | undefined, locale: string): string {

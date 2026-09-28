@@ -1,15 +1,18 @@
+import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { CrewAccountabilityService } from './accountability.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewTasksService } from '../tasks/tasks.service';
 import type { PrismaService } from '../../infra/db/db.module';
 
-const suite =
-  process.env.CREW_ACCOUNTABILITY_POSTGRES_INTEGRATION === '1'
-    ? describe
-    : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.CREW_ACCOUNTABILITY_POSTGRES_INTEGRATION === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const suite = databaseUrl ? describe : describe.skip;
 suite('Crew accountability on isolated PostgreSQL', () => {
   let db: PrismaClient;
   let service: CrewAccountabilityService;
@@ -24,15 +27,21 @@ suite('Crew accountability on isolated PostgreSQL', () => {
   const oldApprovers = process.env.CREW_COMPLETION_REWARD_APPROVER_IDS;
   let number = 0;
   beforeAll(async () => {
-    const url = process.env.DATABASE_URL;
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
-      !url ||
-      !['127.0.0.1', 'localhost'].includes(new URL(url).hostname) ||
-      !new URL(url).pathname.endsWith('_test')
+      !['localhost', '127.0.0.1'].includes(url.hostname) ||
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw new Error('Use a dedicated local *_test database.');
+      throw new Error('Named loopback test database required');
     db = new PrismaClient({
-      adapter: new PrismaPg({ connectionString: url, max: 6 }),
+      adapter: new PrismaPg({
+        connectionString: databaseUrl,
+        max: 6,
+        options: '-c timezone=UTC',
+      }),
     });
     const prisma = db as PrismaService;
     authorization = new CrewAuthorizationService(prisma);
@@ -93,6 +102,57 @@ suite('Crew accountability on isolated PostgreSQL', () => {
     // Keep the dedicated test DB for inspection; no broad cleanup on shared DBs.
     await db?.$disconnect();
   });
+  it('accepts two identical overlapping replies with a single stored response', async () => {
+    const subject = randomUUID();
+    const row = await db.crewPeerFeedback.create({
+      data: {
+        crewId,
+        authorUserId: leader,
+        subjectUserId: subject,
+        rating: 5,
+        comment: 'Great work',
+      },
+    });
+    let readers = 0;
+    let release!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const replies = new CrewAccountabilityService(
+      {
+        crewPeerFeedback: {
+          findUnique: async (args: Prisma.CrewPeerFeedbackFindUniqueArgs) => {
+            const value = await db.crewPeerFeedback.findUnique(args);
+            if (++readers === 2) release();
+            await barrier;
+            return value;
+          },
+          updateMany: (args: Prisma.CrewPeerFeedbackUpdateManyArgs) =>
+            db.crewPeerFeedback.updateMany(args),
+          findUniqueOrThrow: (
+            args: Prisma.CrewPeerFeedbackFindUniqueOrThrowArgs,
+          ) => db.crewPeerFeedback.findUniqueOrThrow(args),
+        },
+      } as never,
+      authorization,
+      {} as never,
+    );
+    const results = await Promise.all([
+      replies.respond(row.id, subject, 'Thank you'),
+      replies.respond(row.id, subject, 'Thank you'),
+    ]);
+    expect(results[0]).toEqual(results[1]);
+    expect(results[0]).toMatchObject({
+      response: 'Thank you',
+      respondedAt: expect.any(Date) as unknown,
+    });
+    await expect(
+      service.respond(row.id, subject, 'Replacement'),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      await db.crewPeerFeedback.findUnique({ where: { id: row.id } }),
+    ).toEqual(results[0]);
+  });
   async function task(userId: string) {
     return db.crewTask.create({
       data: {
@@ -134,6 +194,83 @@ suite('Crew accountability on isolated PostgreSQL', () => {
       },
     });
   }
+  it.each([false, true])(
+    'requires the approved submission, not an earlier changes-requested version (approved=%s)',
+    async (approved) => {
+      const creator = randomUUID();
+      await db.crewMember.create({
+        data: {
+          id: randomUUID(),
+          crewId,
+          userId: creator,
+          joinedVia: 'invitation',
+        },
+      });
+      const t = await task(bob);
+      const now = new Date();
+      await db.crewTaskSubmission.createMany({
+        data: [
+          {
+            taskId: t.id,
+            versionNumber: 1,
+            submittedByUserId: creator,
+            reviewedByUserId: leader,
+            reviewedAt: new Date(now.getTime() - 1000),
+            reviewNote: 'Changes needed',
+          },
+          {
+            taskId: t.id,
+            versionNumber: 2,
+            submittedByUserId: approved ? creator : bob,
+            reviewedByUserId: leader,
+            reviewedAt: now,
+            reviewNote: 'Approved',
+          },
+        ],
+      });
+      await db.crewTask.update({
+        where: { id: t.id },
+        data: {
+          workflowStateId: states.get('approved')!,
+          approvedAt: now,
+          approvedByUserId: leader,
+        },
+      });
+      await db.crewProductionPage.update({
+        where: { crewId },
+        data: { status: 'completed' },
+      });
+      const send = service.feedback(crewId, creator, {
+        subjectUserId: bob,
+        rating: 5,
+        comment: 'Project feedback',
+      });
+      if (approved)
+        await expect(send).resolves.toMatchObject({ authorUserId: creator });
+      else await expect(send).rejects.toMatchObject({ status: 403 });
+      const receive = service.feedback(crewId, bob, {
+        subjectUserId: creator,
+        rating: 5,
+        comment: 'Project feedback',
+      });
+      if (approved)
+        await expect(receive).resolves.toMatchObject({
+          subjectUserId: creator,
+        });
+      else await expect(receive).rejects.toMatchObject({ status: 400 });
+      // This fixture must not alter the completed-project test's target selection.
+      await db.crewPeerFeedback.deleteMany({
+        where: {
+          crewId,
+          OR: [{ authorUserId: creator }, { subjectUserId: creator }],
+        },
+      });
+      await db.crewProductionPage.update({
+        where: { crewId },
+        data: { status: 'backlog' },
+      });
+    },
+  );
   it('serializes competing acceptances and retains the original commitment after handover', async () => {
     const t = await task(alice);
     const results = await Promise.allSettled(
@@ -298,7 +435,7 @@ suite('Crew accountability on isolated PostgreSQL', () => {
       }),
     ).toBeNull();
     const feedback = await db.crewPeerFeedback.findFirstOrThrow({
-      where: { crewId },
+      where: { crewId, authorUserId: alice, subjectUserId: bob },
     });
     await service.respond(feedback.id, bob, 'Thank you; received.');
     await expect(

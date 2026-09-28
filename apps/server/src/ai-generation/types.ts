@@ -166,8 +166,17 @@ export interface AiRoutingPolicySnapshot {
   providerCapacity?: AiProviderCapacitySnapshot;
 }
 
+export interface AiExecutionBindingIdentity {
+  deployment: string;
+  canonicalModelId: string;
+  providerAccountId: string;
+  providerBindingId: string;
+  providerEndpointId: string;
+}
+
 export interface AiRoutingSnapshot {
   version: '2026-05-27';
+  executionBindingIdentity?: AiExecutionBindingIdentity;
   routeId: string;
   presetId: string;
   requestedModelId: string;
@@ -336,6 +345,7 @@ export interface AiJobError {
     | 'PROVIDER_5XX'
     | 'PROVIDER_TIMEOUT'
     | 'PROVIDER_CONTENT_FILTER'
+    | 'PROVIDER_REFERENCE_DOWNLOAD'
     | 'OUTPUT_EXPIRED'
     | 'OSS_UPLOAD_FAILED'
     | 'BILLING_SETTLEMENT_FAILED'

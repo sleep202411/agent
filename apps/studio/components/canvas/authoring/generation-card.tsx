@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GenerationEstimate } from "./generation-estimate";
 import { useTranslations } from "next-intl";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
@@ -76,7 +77,7 @@ import {
 import { useOperationLabel } from "@/lib/canvas-authoring/use-labels";
 import { ValidationAlertDialog } from "./validation-alert-dialog";
 import { ProjectSkillDetailDialog } from "@/components/project-skills/project-skill-detail-dialog";
-import { downloadCanvasMedia } from "./download-media";
+import { useCanvasMediaDownload } from "./use-canvas-media-download";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
@@ -292,24 +293,6 @@ function AudioPreview({ src, title }: { src: string; title: string }) {
   );
 }
 
-/** Live ETA countdown (whole seconds) while a job runs. */
-function useCountdown(seconds: number | undefined, active: boolean): number | null {
-  const [remaining, setRemaining] = useState<number | null>(null);
-  useEffect(() => {
-    if (!active || seconds == null) return;
-    const end = Date.now() + seconds * 1000;
-    const tick = () => setRemaining(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
-    const first = window.setTimeout(tick, 0);
-    const timer = window.setInterval(tick, 1000);
-    return () => {
-      window.clearTimeout(first);
-      window.clearInterval(timer);
-    };
-  }, [seconds, active]);
-  if (!active || seconds == null) return null;
-  return remaining;
-}
-
 /** Mode-specific prompt hints — generic prompt placeholder gives no guidance
  *  for ops where the prompt has a particular job (e.g. relight = the lighting).
  *  Maps a mode to the translation key for its placeholder. */
@@ -340,6 +323,7 @@ function GenerationCard({
   dragging,
   modality,
 }: NodeProps<GenerationNodeType> & { modality: GenerationModality }) {
+  const downloadCanvasMedia = useCanvasMediaDownload();
   const t = useTranslations("canvasOps");
   const tc = useTranslations("common");
   const ts = useTranslations("project.skills");
@@ -358,6 +342,7 @@ function GenerationCard({
     disabledReason: generationDisabledReason,
     preflightIssues,
     clearPreflightIssues,
+    statusUnavailable,
   } = useGeneration();
   const validationIssues = preflightIssues(id);
   const spawnComposedOp = useSpawnComposedOperation();
@@ -424,7 +409,6 @@ function GenerationCard({
     generation?.status === "submitting" ||
     generation?.status === "queued" ||
     generation?.status === "generating";
-  const eta = useCountdown(generation?.etaSeconds, generation?.status === "generating");
 
   const model = useMemo(
     () => catalog?.models.find((m) => m.id === data.modelId),
@@ -674,6 +658,10 @@ function GenerationCard({
         },
         referenceImageCount: uploadedReferenceCount || undefined,
         referenceVideoSeconds: referenceVideoSeconds || undefined,
+        // Seedance 2.5 edit keeps the source video's duration — the auto
+        // quote follows the combined reference-video length (mirrors the
+        // server hold).
+        outputDurationFollowsReferenceVideos: settings.omniReferenceTaskType === "edit",
       })?.sellPoints ?? null
     );
   }, [model, settings, refFields, references, data.prompt]);
@@ -1045,16 +1033,20 @@ function GenerationCard({
           ) : busy ? (
             <>
               <IconLoader2 className="size-7 animate-spin text-white/50" stroke={1.8} />
-              <p className="text-sm text-white/55">
-                {generation?.status === "submitting"
-                  ? t("statusSubmitting")
-                  : generation?.status === "queued"
-                    ? generation.queuePosition != null
-                      ? t("statusQueuedPosition", { position: generation.queuePosition })
-                      : t("statusQueued")
-                    : eta != null
-                      ? t("statusGeneratingEta", { eta })
-                      : t("statusGenerating")}
+              <p role="status" className="px-4 text-center text-sm text-white/55">
+                {statusUnavailable(generation?.jobId) ? (
+                  t("statusReadUnavailable")
+                ) : generation?.status === "submitting" ? (
+                  t("statusSubmitting")
+                ) : generation?.status === "queued" ? (
+                  generation.queuePosition != null ? (
+                    t("statusQueuedPosition", { position: generation.queuePosition })
+                  ) : (
+                    t("statusQueued")
+                  )
+                ) : (
+                  <GenerationEstimate seconds={generation?.etaSeconds} />
+                )}
               </p>
             </>
           ) : generation?.status === "failed" || generation?.status === "uncertain" ? (

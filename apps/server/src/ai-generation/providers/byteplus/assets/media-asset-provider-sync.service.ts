@@ -1,3 +1,4 @@
+import { requireNonReceiptAsset } from '../../../../media/media-receipt-policy';
 import {
   Injectable,
   Logger,
@@ -87,6 +88,7 @@ export class MediaAssetProviderSyncService
   private workers: Worker[] = [];
   private sweepTimer: NodeJS.Timeout | null = null;
   private sweeping = false;
+  private stopping = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -127,6 +129,7 @@ export class MediaAssetProviderSyncService
   }
 
   async onApplicationShutdown(): Promise<void> {
+    this.stopping = true;
     if (this.sweepTimer) clearInterval(this.sweepTimer);
     await Promise.allSettled(this.workers.map((worker) => worker.close()));
     await Promise.allSettled([
@@ -147,37 +150,60 @@ export class MediaAssetProviderSyncService
         id: mediaAssetId,
         deletedAt: null,
         status: MediaAssetStatus.ready,
+        moderationStatus: { not: 'blocked' },
         kind: { in: [...SUPPORTED_MEDIA_KINDS] },
       },
-      select: { id: true },
+      select: { id: true, metadata: true },
     });
     if (!asset) return null;
+    requireNonReceiptAsset(asset.metadata);
 
     const groupId = await this.ensureAigcMediaAssetGroup();
     if (!groupId) return null;
 
-    const existing = await this.prisma.aiProviderMediaAssetMirror.findUnique({
-      where: {
-        mediaAssetId_providerAssetGroupId: {
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM media_assets WHERE id = ${mediaAssetId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM ai_provider_media_asset_groups WHERE id = ${groupId}::uuid FOR SHARE`;
+      const current = await tx.mediaAsset.findFirst({
+        where: {
+          id: mediaAssetId,
+          deletedAt: null,
+          status: MediaAssetStatus.ready,
+          moderationStatus: { not: 'blocked' },
+          kind: { in: [...SUPPORTED_MEDIA_KINDS] },
+        },
+        select: { id: true, metadata: true },
+      });
+      const group = await tx.aiProviderMediaAssetGroup.findFirst({
+        where: { id: groupId, status: AiProviderAssetGroupStatus.active },
+        select: { id: true },
+      });
+      if (!current || !group) return null;
+      requireNonReceiptAsset(current.metadata);
+      const existing = await tx.aiProviderMediaAssetMirror.findUnique({
+        where: {
+          mediaAssetId_providerAssetGroupId: {
+            mediaAssetId,
+            providerAssetGroupId: groupId,
+          },
+        },
+        select: { id: true },
+      });
+      if (existing) return { id: existing.id, created: false };
+      const mirror = await tx.aiProviderMediaAssetMirror.create({
+        data: {
           mediaAssetId,
           providerAssetGroupId: groupId,
+          status: AiProviderExternalAssetStatus.pending,
+          processingDeadline: new Date(Date.now() + PROCESSING_DEADLINE_MS),
         },
-      },
-      select: { id: true, status: true },
+        select: { id: true },
+      });
+      return { id: mirror.id, created: true };
     });
-    if (existing) return existing.id;
-
-    const mirror = await this.prisma.aiProviderMediaAssetMirror.create({
-      data: {
-        mediaAssetId,
-        providerAssetGroupId: groupId,
-        status: AiProviderExternalAssetStatus.pending,
-        processingDeadline: new Date(Date.now() + PROCESSING_DEADLINE_MS),
-      },
-      select: { id: true },
-    });
-    await this.enqueueRegister(mirror.id, priority);
-    return mirror.id;
+    if (!result) return null;
+    if (result.created) await this.enqueueRegister(result.id, priority);
+    return result.id;
   }
 
   /**
@@ -196,11 +222,13 @@ export class MediaAssetProviderSyncService
         id: mediaAssetId,
         deletedAt: null,
         status: MediaAssetStatus.ready,
+        moderationStatus: { not: 'blocked' },
         kind: { in: [...SUPPORTED_MEDIA_KINDS] },
       },
-      select: { id: true },
+      select: { id: true, metadata: true },
     });
     if (!asset) return null;
+    requireNonReceiptAsset(asset.metadata);
 
     const groupId = await this.ensureAigcMediaAssetGroup();
     if (!groupId) return null;
@@ -233,11 +261,39 @@ export class MediaAssetProviderSyncService
 
     if (row.status === AiProviderExternalAssetStatus.failed) {
       const failedRow = row;
-      const nextStatus = failedRow.externalAssetId
-        ? AiProviderExternalAssetStatus.processing
-        : AiProviderExternalAssetStatus.pending;
-      const processingDeadline = new Date(Date.now() + PROCESSING_DEADLINE_MS);
-      await this.prisma.$transaction(async (tx) => {
+      const eligible = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM media_assets WHERE id = ${mediaAssetId}::uuid FOR UPDATE`;
+        await tx.$queryRaw`SELECT id FROM ai_provider_media_asset_groups WHERE id = ${groupId}::uuid FOR SHARE`;
+        await tx.$queryRaw`SELECT id FROM ai_provider_media_asset_mirrors WHERE id = ${failedRow.id}::uuid FOR UPDATE`;
+        const asset = await tx.mediaAsset.findFirst({
+          where: {
+            id: mediaAssetId,
+            deletedAt: null,
+            status: MediaAssetStatus.ready,
+            moderationStatus: { not: 'blocked' },
+            kind: { in: [...SUPPORTED_MEDIA_KINDS] },
+          },
+          select: { id: true, metadata: true },
+        });
+        const group = await tx.aiProviderMediaAssetGroup.findFirst({
+          where: { id: groupId, status: AiProviderAssetGroupStatus.active },
+          select: { id: true },
+        });
+        if (!asset || !group) return false;
+        requireNonReceiptAsset(asset.metadata);
+        const current = await tx.aiProviderMediaAssetMirror.findUnique({
+          where: { id: failedRow.id },
+          include: MIRROR_INCLUDE,
+        });
+        if (!current) return false;
+        if (current.status !== AiProviderExternalAssetStatus.failed)
+          return true;
+        const nextStatus = current.externalAssetId
+          ? AiProviderExternalAssetStatus.processing
+          : AiProviderExternalAssetStatus.pending;
+        const processingDeadline = new Date(
+          Date.now() + PROCESSING_DEADLINE_MS,
+        );
         const { count } = await tx.aiProviderMediaAssetMirror.updateMany({
           where: {
             id: failedRow.id,
@@ -252,9 +308,10 @@ export class MediaAssetProviderSyncService
           },
         });
         if (count === 0) return false;
-        await this.emitMediaAssetEvent(tx, failedRow, nextStatus, null);
+        await this.emitMediaAssetEvent(tx, current, nextStatus, null);
         return true;
       });
+      if (!eligible) return null;
       row = await this.prisma.aiProviderMediaAssetMirror.findUnique({
         where: { id: failedRow.id },
         include: MIRROR_INCLUDE,
@@ -262,15 +319,17 @@ export class MediaAssetProviderSyncService
       if (!row) return null;
     }
 
+    // Minute-bucketed id: repeated manual kicks within the same minute dedupe
+    // onto one job instead of stacking. Colons are forbidden (see enqueue*).
     const manualBucket = Math.floor(Date.now() / 60_000);
     if (row.status === AiProviderExternalAssetStatus.pending) {
       await this.enqueueRegister(
         row.id,
         REGISTER_PRIORITY_FOREGROUND,
-        `register:${row.id}:manual:${manualBucket}`,
+        `register-${row.id}-manual-${manualBucket}`,
       );
     } else if (row.status === AiProviderExternalAssetStatus.processing) {
-      await this.enqueuePoll(row.id, `poll:${row.id}:manual:${manualBucket}`);
+      await this.enqueuePoll(row.id, `poll-${row.id}-manual-${manualBucket}`);
     }
     return mediaProviderAssetStatusDto(row);
   }
@@ -344,37 +403,66 @@ export class MediaAssetProviderSyncService
       return null;
     }
 
-    const group = await this.prisma.aiProviderMediaAssetGroup.upsert({
-      where: {
-        provider_groupType_projectName: {
+    const group = await this.prisma.aiProviderMediaAssetGroup
+      .upsert({
+        where: {
+          provider_groupType_projectName: {
+            provider: PROVIDER_KEY,
+            groupType: AiProviderAssetGroupType.aigc,
+            projectName,
+          },
+        },
+        create: {
           provider: PROVIDER_KEY,
+          externalGroupId,
           groupType: AiProviderAssetGroupType.aigc,
           projectName,
+          status: AiProviderAssetGroupStatus.active,
         },
-      },
-      create: {
-        provider: PROVIDER_KEY,
-        externalGroupId,
-        groupType: AiProviderAssetGroupType.aigc,
-        projectName,
-        status: AiProviderAssetGroupStatus.active,
-      },
-      update: {},
-      select: { id: true, externalGroupId: true },
-    });
+        update: {},
+        select: { id: true, externalGroupId: true, status: true },
+      })
+      .catch(async (error: unknown) => {
+        // The provider already created this group; a failed local publication
+        // must still request cleanup, without masking the original DB failure.
+        try {
+          await this.enqueueCriticalTeardown({
+            externalAssetIds: [],
+            externalGroupIds: [externalGroupId],
+          });
+        } catch {
+          this.logger.warn(
+            `Unable to queue orphan provider group cleanup: ${externalGroupId}`,
+          );
+        }
+        throw error;
+      });
     if (group.externalGroupId !== externalGroupId) {
+      // Group-identity drift cleanup is best-effort: a queue/Redis fault must
+      // not 500 the user-facing readiness request — the periodic teardown
+      // reconciler (reconcileTeardowns) will pick the orphan up.
       await this.enqueueCriticalTeardown({
         externalAssetIds: [],
         externalGroupIds: [externalGroupId],
+      }).catch((error: unknown) => {
+        this.logger.warn(
+          `Unable to queue drifted provider group cleanup: ${externalGroupId}: ${String(
+            error instanceof Error ? error.message : error,
+          )}`,
+        );
       });
     }
-    return group.id;
+    return group.status === AiProviderAssetGroupStatus.active ? group.id : null;
   }
 
+  // Custom job ids must not contain ':' — BullMQ treats it as a Redis key
+  // separator and REJECTS the add synchronously (which 500s the user-facing
+  // readiness request). The legacy `a:b:c` 3-segment form is still tolerated
+  // for old repeatable jobs, but only as a deprecated compatibility window.
   private async enqueueRegister(
     mirrorId: string,
     priority = REGISTER_PRIORITY_FOREGROUND,
-    jobId = `register:${mirrorId}:${Date.now()}`,
+    jobId = `register-${mirrorId}-${Date.now()}`,
   ): Promise<void> {
     await this.queue().add(
       'register',
@@ -385,7 +473,7 @@ export class MediaAssetProviderSyncService
 
   private async enqueuePoll(
     mirrorId: string,
-    jobId = `poll:${mirrorId}:${Date.now()}`,
+    jobId = `poll-${mirrorId}-${Date.now()}`,
   ): Promise<void> {
     await this.queue().add(
       'poll',
@@ -418,11 +506,12 @@ export class MediaAssetProviderSyncService
   }
 
   private processAssetsJob: Processor<MediaAssetsJobData> = async (job) => {
+    if (this.stopping) return;
     const row = await this.prisma.aiProviderMediaAssetMirror.findUnique({
       where: { id: job.data.mirrorId },
       include: MIRROR_INCLUDE,
     });
-    if (!row) return;
+    if (this.stopping || !row) return;
     if (row.assetGroup.status !== AiProviderAssetGroupStatus.active) return;
 
     if (job.data.op === 'register') {
@@ -469,26 +558,45 @@ export class MediaAssetProviderSyncService
       return;
     }
 
-    const applied = await this.prisma.$transaction(async (tx) => {
-      const { count } = await tx.aiProviderMediaAssetMirror.updateMany({
-        where: { id: row.id, status: AiProviderExternalAssetStatus.pending },
-        data: {
-          status: AiProviderExternalAssetStatus.processing,
-          externalAssetId: createdId,
-          statusReason: null,
-          processingDeadline: new Date(Date.now() + PROCESSING_DEADLINE_MS),
-          lastSyncedAt: new Date(),
-        },
+    const applied = await this.prisma
+      .$transaction(async (tx) => {
+        const { count } = await tx.aiProviderMediaAssetMirror.updateMany({
+          where: {
+            id: row.id,
+            status: AiProviderExternalAssetStatus.pending,
+            updatedAt: row.updatedAt,
+            externalAssetId: row.externalAssetId,
+          },
+          data: {
+            status: AiProviderExternalAssetStatus.processing,
+            externalAssetId: createdId,
+            statusReason: null,
+            processingDeadline: new Date(Date.now() + PROCESSING_DEADLINE_MS),
+            lastSyncedAt: new Date(),
+          },
+        });
+        if (count === 0) return false;
+        await this.emitMediaAssetEvent(
+          tx,
+          row,
+          AiProviderExternalAssetStatus.processing,
+          null,
+        );
+        return true;
+      })
+      .catch(async (error: unknown) => {
+        try {
+          await this.enqueueCriticalTeardown({
+            externalAssetIds: [createdId],
+            externalGroupIds: [],
+          });
+        } catch {
+          this.logger.warn(
+            `Unable to queue orphan provider asset cleanup: ${createdId}`,
+          );
+        }
+        throw error;
       });
-      if (count === 0) return false;
-      await this.emitMediaAssetEvent(
-        tx,
-        row,
-        AiProviderExternalAssetStatus.processing,
-        null,
-      );
-      return true;
-    });
     if (!applied) {
       await this.enqueueCriticalTeardown({
         externalAssetIds: [createdId],
@@ -500,7 +608,11 @@ export class MediaAssetProviderSyncService
   }
 
   private async poll(row: MirrorRow): Promise<void> {
-    if (!row.externalAssetId) return;
+    if (
+      row.status !== AiProviderExternalAssetStatus.processing ||
+      !row.externalAssetId
+    )
+      return;
     let record: BytePlusAssetRecord;
     try {
       record = await this.client.getAsset(row.externalAssetId);
@@ -576,7 +688,11 @@ export class MediaAssetProviderSyncService
   };
 
   private async reconcileTeardowns(): Promise<void> {
-    if (!this.configService.config.mediaAssetRegistrationEnabled) return;
+    if (
+      this.stopping ||
+      !this.configService.config.mediaAssetRegistrationEnabled
+    )
+      return;
     const graceCutoff = new Date(Date.now() - TEARDOWN_REENQUEUE_GRACE_MS);
     try {
       const assets = await this.prisma.aiProviderMediaAssetMirror.findMany({
@@ -588,6 +704,7 @@ export class MediaAssetProviderSyncService
         select: { externalAssetId: true },
         take: 100,
       });
+      if (this.stopping) return;
       const groups = await this.prisma.aiProviderMediaAssetGroup.findMany({
         where: {
           status: AiProviderAssetGroupStatus.disabled,
@@ -596,7 +713,7 @@ export class MediaAssetProviderSyncService
         select: { externalGroupId: true },
         take: 100,
       });
-      if (assets.length === 0 && groups.length === 0) return;
+      if (this.stopping || (assets.length === 0 && groups.length === 0)) return;
       await this.enqueueCriticalTeardown({
         externalAssetIds: assets
           .map((asset) => asset.externalAssetId)
@@ -613,9 +730,10 @@ export class MediaAssetProviderSyncService
   }
 
   private async reportBackpressure(): Promise<void> {
+    if (this.stopping) return;
     try {
       const waiting = await this.queue().getWaitingCount();
-      if (waiting >= BACKPRESSURE_WARN_DEPTH) {
+      if (!this.stopping && waiting >= BACKPRESSURE_WARN_DEPTH) {
         const drainMinutes = Math.ceil(waiting / CREATE_ASSET_LIMITER.max);
         this.logger.warn(
           `ai-media-assets registration backlog: ${waiting} queued (~${drainMinutes} min to drain at ${CREATE_ASSET_LIMITER.max}/min)`,
@@ -628,6 +746,7 @@ export class MediaAssetProviderSyncService
 
   private async sweepStaleMirrors(): Promise<void> {
     if (
+      this.stopping ||
       this.sweeping ||
       !this.configService.config.mediaAssetRegistrationEnabled
     ) {
@@ -649,6 +768,7 @@ export class MediaAssetProviderSyncService
         take: 50,
       });
       for (const row of stuck) {
+        if (this.stopping) return;
         await this.transition(row, AiProviderExternalAssetStatus.failed, {
           statusReason: 'stale',
         });
@@ -673,17 +793,19 @@ export class MediaAssetProviderSyncService
       processingDeadline?: Date;
     },
   ): Promise<void> {
+    if (
+      row.status !== AiProviderExternalAssetStatus.pending &&
+      row.status !== AiProviderExternalAssetStatus.processing
+    )
+      return;
     const updatedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.aiProviderMediaAssetMirror.updateMany({
         where: {
           id: row.id,
-          status: {
-            in: [
-              AiProviderExternalAssetStatus.pending,
-              AiProviderExternalAssetStatus.processing,
-            ],
-          },
+          status: row.status,
+          updatedAt: row.updatedAt,
+          externalAssetId: row.externalAssetId,
         },
         data: {
           status,

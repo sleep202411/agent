@@ -59,7 +59,7 @@ function storyDraftWithInteractionIds(ids: string[]): InteractiveStoryDraftConte
             endMs: 1_000,
             outcomes: { success: { kind: "continue" } },
           })),
-          exit: { kind: "auto", nextNodeId: null },
+          exit: { kind: "auto", routes: [{ target: null }] },
         },
       ],
     },

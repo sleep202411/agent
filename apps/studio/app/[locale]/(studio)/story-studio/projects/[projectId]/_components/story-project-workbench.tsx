@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -53,10 +55,11 @@ export function StoryProjectWorkbench({
   stage: WorkbenchStage;
   earningsWebBase?: string;
 }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio");
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "workbench", projectId],
-    queryFn: () => getStoryWorkbench(projectId),
+    queryKey: ["story-studio", "workbench", projectId, user?.id ?? null],
+    queryFn: ({ signal }) => getStoryWorkbench(projectId, undefined, signal),
     retry: false,
   });
   const workspaceId = workbenchQuery.data?.project.workspaceId ?? null;
@@ -571,7 +574,7 @@ interface AuthoredDecision {
 function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecision[] {
   const decisions = new Map<string, AuthoredDecision>();
   for (const node of content.graph.nodes) {
-    if (node.kind === "world" || node.exit.kind !== "choice") continue;
+    if (node.exit.kind !== "choice") continue;
     const sourceLabel = node.kind === "clip" ? node.name?.trim() || node.clipKey : node.nodeId;
     const existing = decisions.get(node.exit.decisionId);
     if (existing) {
@@ -584,7 +587,12 @@ function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecisi
       options: node.exit.choices.map((choice) => ({
         id: choice.choiceId,
         label: choice.label,
-        nextNodeId: choice.nextNodeId,
+        nextNodeId:
+          choice.target?.kind === "node"
+            ? choice.target.nodeId
+            : choice.target?.kind === "ending"
+              ? choice.target.endingId
+              : null,
       })),
     });
   }

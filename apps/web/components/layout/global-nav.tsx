@@ -145,7 +145,11 @@ export function GlobalNav() {
     if (next === locale) return;
     setCurrentLocale(next);
     setLanguage(next);
-    router.replace(localizePath(stripLocalePrefix(pathname), next));
+    router.replace(
+      localizePath(stripLocalePrefix(pathname), next) +
+        window.location.search +
+        window.location.hash
+    );
   };
 
   useGSAP(

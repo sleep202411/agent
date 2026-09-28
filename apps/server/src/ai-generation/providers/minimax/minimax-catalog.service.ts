@@ -1,3 +1,4 @@
+import { providerBindingAdmissionEligible } from '../../provider-catalog-eligibility';
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../infra/db/db.module';
@@ -27,6 +28,7 @@ import {
 interface MiniMaxCatalogCache {
   expiresAt: number;
   models: AiModelDefinition[];
+  lookupModels: AiModelDefinition[];
   runtimeByModelId: Map<string, MiniMaxRuntimeConfig>;
 }
 
@@ -38,6 +40,7 @@ interface MiniMaxCatalogCache {
 export class MiniMaxCatalogService {
   private readonly logger = new Logger(MiniMaxCatalogService.name);
   private cache: MiniMaxCatalogCache | null = null;
+  private cacheRead: Promise<MiniMaxCatalogCache> | null = null;
 
   constructor(
     private readonly configService: MiniMaxConfigService,
@@ -52,7 +55,7 @@ export class MiniMaxCatalogService {
   async getModel(modelId: string): Promise<AiModelDefinition | null> {
     const cache = await this.getCache();
     return (
-      cache.models.find(
+      cache.lookupModels.find(
         (model) =>
           model.id === modelId ||
           model.deployment === modelId ||
@@ -64,7 +67,9 @@ export class MiniMaxCatalogService {
 
   async getRuntimeConfig(
     modelId: string,
+    options?: { forSubmission?: boolean },
   ): Promise<MiniMaxRuntimeConfig | null> {
+    if (options?.forSubmission && !(await this.getModel(modelId))) return null;
     const cache = await this.getCache();
     return (
       cache.runtimeByModelId.get(modelId) ??
@@ -75,27 +80,59 @@ export class MiniMaxCatalogService {
 
   private async getCache(): Promise<MiniMaxCatalogCache> {
     if (this.cache && this.cache.expiresAt > Date.now()) return this.cache;
+    if (this.cacheRead) return this.cacheRead;
+    const pending = this.loadCache().finally(() => {
+      if (this.cacheRead === pending) this.cacheRead = null;
+    });
+    this.cacheRead = pending;
+    return pending;
+  }
 
+  private async loadCache(): Promise<MiniMaxCatalogCache> {
     const config = this.configService.config;
     const runtimeByModelId = new Map<string, MiniMaxRuntimeConfig>();
-    const entries = await this.dbRuntimeConfigs();
-    const models = entries.map((entry) => {
-      const model = toMiniMaxModelDefinition({
-        config: entry.runtime,
-        modelId: entry.modelId,
-        source: 'minimax-config',
-        ops: entry.ops,
-      });
-      runtimeByModelId.set(model.id, entry.runtime);
-      runtimeByModelId.set(model.deployment, entry.runtime);
-      runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
-      runtimeByModelId.set(
-        `minimax/${entry.runtime.endpointId}`,
-        entry.runtime,
-      );
-      runtimeByModelId.set(MINIMAX_H3_MODEL_ID, entry.runtime);
-      runtimeByModelId.set(MINIMAX_H3_ENDPOINT, entry.runtime);
-      return model;
+    const entries = (await this.dbRuntimeConfigs()).sort(
+      (a, b) => Number(b.admissionEligible) - Number(a.admissionEligible),
+    );
+    const seenModelIds = new Set<string>();
+    const lookupModels = entries
+      .map((entry) => {
+        const model = toMiniMaxModelDefinition({
+          config: entry.runtime,
+          modelId: entry.modelId,
+          source: 'minimax-config',
+          ops: entry.ops,
+        });
+        if (!runtimeByModelId.has(model.id))
+          runtimeByModelId.set(model.id, entry.runtime);
+        if (!runtimeByModelId.has(model.deployment))
+          runtimeByModelId.set(model.deployment, entry.runtime);
+        if (!runtimeByModelId.has(entry.runtime.endpointId))
+          runtimeByModelId.set(entry.runtime.endpointId, entry.runtime);
+        if (!runtimeByModelId.has(`minimax/${entry.runtime.endpointId}`))
+          runtimeByModelId.set(
+            `minimax/${entry.runtime.endpointId}`,
+            entry.runtime,
+          );
+        if (
+          (model.id === MINIMAX_H3_MODEL_ID ||
+            entry.runtime.endpointId === MINIMAX_H3_ENDPOINT) &&
+          !runtimeByModelId.has(MINIMAX_H3_MODEL_ID)
+        )
+          runtimeByModelId.set(MINIMAX_H3_MODEL_ID, entry.runtime);
+        if (
+          (model.id === MINIMAX_H3_MODEL_ID ||
+            entry.runtime.endpointId === MINIMAX_H3_ENDPOINT) &&
+          !runtimeByModelId.has(MINIMAX_H3_ENDPOINT)
+        )
+          runtimeByModelId.set(MINIMAX_H3_ENDPOINT, entry.runtime);
+        return model;
+      })
+      .filter((_model, index) => entries[index].admissionEligible);
+    const models = lookupModels.filter((model) => {
+      if (seenModelIds.has(model.id)) return false;
+      seenModelIds.add(model.id);
+      return true;
     });
 
     if (config.enabled && entries.length === 0) {
@@ -107,6 +144,7 @@ export class MiniMaxCatalogService {
     this.cache = {
       expiresAt: Date.now() + 30_000,
       models,
+      lookupModels,
       runtimeByModelId,
     };
     return this.cache;
@@ -170,6 +208,7 @@ export class MiniMaxCatalogService {
         outputPolicy: row.canonicalModel.outputPolicy as AiJsonValue,
       });
       return {
+        admissionEligible: providerBindingAdmissionEligible(row),
         runtime,
         modelId: row.canonicalModel.slug,
         ops: {
@@ -191,6 +230,7 @@ export class MiniMaxCatalogService {
 }
 
 type MiniMaxRuntimeEntry = {
+  admissionEligible: boolean;
   runtime: MiniMaxRuntimeConfig;
   modelId: string;
   ops: NonNullable<AiModelDefinition['ops']>;

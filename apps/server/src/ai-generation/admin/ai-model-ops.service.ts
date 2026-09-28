@@ -27,6 +27,11 @@ import type {
   UpdateProviderBindingInput,
 } from './ai-model-ops.dto';
 
+const UNARCHIVED_BINDING_WHERE = {
+  archivedAt: null,
+  status: { not: AiControlPlaneStatus.archived },
+} satisfies Prisma.AiProviderModelBindingWhereInput;
+
 const ADMIN_MEDIA_ASSET_INCLUDE = {
   placements: {
     where: { deletedAt: null },
@@ -174,32 +179,35 @@ export class AiModelOpsService {
     adminId: string,
     input: UpdateAdminAiProviderInput,
   ) {
-    const existing = await this.prisma.aiProviderAccount.findFirst({
-      where: { id: providerAccountId, archivedAt: null },
-      select: {
-        id: true,
-        provider: true,
-      },
-    });
-    if (!existing) throw new NotFoundException('供应商账号不存在或已归档。');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_provider_accounts WHERE id=${providerAccountId}::uuid FOR UPDATE`;
+      const existing = await tx.aiProviderAccount.findFirst({
+        where: { id: providerAccountId, archivedAt: null },
+        select: {
+          id: true,
+          provider: true,
+        },
+      });
+      if (!existing) throw new NotFoundException('供应商账号不存在或已归档。');
 
-    const data: Prisma.AiProviderAccountUpdateInput = {
-      updatedByAdminId: adminId,
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.rateLimitPolicy !== undefined
-        ? { rateLimitPolicy: input.rateLimitPolicy as Prisma.InputJsonValue }
-        : {}),
-      ...(input.quotaPolicy !== undefined
-        ? { quotaPolicy: input.quotaPolicy as Prisma.InputJsonValue }
-        : {}),
-    };
+      const data: Prisma.AiProviderAccountUpdateInput = {
+        updatedByAdminId: adminId,
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.rateLimitPolicy !== undefined
+          ? { rateLimitPolicy: input.rateLimitPolicy as Prisma.InputJsonValue }
+          : {}),
+        ...(input.quotaPolicy !== undefined
+          ? { quotaPolicy: input.quotaPolicy as Prisma.InputJsonValue }
+          : {}),
+      };
 
-    const account = await this.prisma.aiProviderAccount.update({
-      where: { id: providerAccountId },
-      data,
-      include: providerAccountInclude(),
+      const account = await tx.aiProviderAccount.update({
+        where: { id: providerAccountId },
+        data,
+        include: providerAccountInclude(),
+      });
+      return serializeProviderAccount(account);
     });
-    return serializeProviderAccount(account);
   }
 
   async listCanonicalModels(query: ListAdminAiModelsQuery) {
@@ -249,59 +257,70 @@ export class AiModelOpsService {
     adminId: string,
     input: UpdateCanonicalModelInput,
   ) {
-    const data: Prisma.AiCanonicalModelUpdateInput = {
-      updatedByAdminId: adminId,
-      ...(input.displayName !== undefined
-        ? { displayName: input.displayName }
-        : {}),
-      ...(input.family !== undefined ? { family: input.family } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.description !== undefined
-        ? { description: input.description }
-        : {}),
-      ...(input.generationModes !== undefined
-        ? { generationModes: input.generationModes as Prisma.InputJsonValue }
-        : {}),
-      ...(input.parameterPolicy !== undefined
-        ? { parameterPolicy: input.parameterPolicy as Prisma.InputJsonValue }
-        : {}),
-      ...(input.outputPolicy !== undefined
-        ? { outputPolicy: input.outputPolicy as Prisma.InputJsonValue }
-        : {}),
-      ...(input.entitlementPolicy !== undefined
-        ? {
-            entitlementPolicy: input.entitlementPolicy as Prisma.InputJsonValue,
-          }
-        : {}),
-      ...(input.billingPolicy !== undefined
-        ? { billingPolicy: input.billingPolicy as Prisma.InputJsonValue }
-        : {}),
-      ...(input.queuePolicy !== undefined
-        ? { queuePolicy: input.queuePolicy as Prisma.InputJsonValue }
-        : {}),
-      ...(input.uiPolicy !== undefined
-        ? { uiPolicy: input.uiPolicy as Prisma.InputJsonValue }
-        : {}),
-      ...(input.observabilityPolicy !== undefined
-        ? {
-            observabilityPolicy:
-              input.observabilityPolicy as Prisma.InputJsonValue,
-          }
-        : {}),
-      ...(input.metadata !== undefined
-        ? { metadata: input.metadata as Prisma.InputJsonValue }
-        : {}),
-    };
-    const model = await this.prisma.aiCanonicalModel.update({
-      where: { id: modelId },
-      data,
-      include: {
-        _count: {
-          select: { bindings: true, jobs: true },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_canonical_models WHERE id=${modelId}::uuid FOR UPDATE`;
+      if (
+        !(await tx.aiCanonicalModel.findFirst({
+          where: { id: modelId, archivedAt: null },
+          select: { id: true },
+        }))
+      )
+        throw new NotFoundException('Canonical model not found or archived.');
+      const data: Prisma.AiCanonicalModelUpdateInput = {
+        updatedByAdminId: adminId,
+        ...(input.displayName !== undefined
+          ? { displayName: input.displayName }
+          : {}),
+        ...(input.family !== undefined ? { family: input.family } : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
+        ...(input.generationModes !== undefined
+          ? { generationModes: input.generationModes as Prisma.InputJsonValue }
+          : {}),
+        ...(input.parameterPolicy !== undefined
+          ? { parameterPolicy: input.parameterPolicy as Prisma.InputJsonValue }
+          : {}),
+        ...(input.outputPolicy !== undefined
+          ? { outputPolicy: input.outputPolicy as Prisma.InputJsonValue }
+          : {}),
+        ...(input.entitlementPolicy !== undefined
+          ? {
+              entitlementPolicy:
+                input.entitlementPolicy as Prisma.InputJsonValue,
+            }
+          : {}),
+        ...(input.billingPolicy !== undefined
+          ? { billingPolicy: input.billingPolicy as Prisma.InputJsonValue }
+          : {}),
+        ...(input.queuePolicy !== undefined
+          ? { queuePolicy: input.queuePolicy as Prisma.InputJsonValue }
+          : {}),
+        ...(input.uiPolicy !== undefined
+          ? { uiPolicy: input.uiPolicy as Prisma.InputJsonValue }
+          : {}),
+        ...(input.observabilityPolicy !== undefined
+          ? {
+              observabilityPolicy:
+                input.observabilityPolicy as Prisma.InputJsonValue,
+            }
+          : {}),
+        ...(input.metadata !== undefined
+          ? { metadata: input.metadata as Prisma.InputJsonValue }
+          : {}),
+      };
+      const model = await tx.aiCanonicalModel.update({
+        where: { id: modelId },
+        data,
+        include: {
+          _count: {
+            select: { bindings: true, jobs: true },
+          },
         },
-      },
+      });
+      return serializeCanonicalModel(model);
     });
-    return serializeCanonicalModel(model);
   }
 
   async listProviderBindings(query: ListAdminAiProviderBindingsQuery) {
@@ -361,52 +380,55 @@ export class AiModelOpsService {
     adminId: string,
     input: CreateProviderEndpointInput,
   ) {
-    const providerAccount = await this.prisma.aiProviderAccount.findFirst({
-      where: { id: input.providerAccountId, archivedAt: null },
-      select: { id: true, provider: true },
-    });
-    if (!providerAccount) {
-      throw new NotFoundException('供应商账号不存在或已归档。');
-    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_provider_accounts WHERE id=${input.providerAccountId}::uuid FOR UPDATE`;
+      const providerAccount = await tx.aiProviderAccount.findFirst({
+        where: { id: input.providerAccountId, archivedAt: null },
+        select: { id: true, provider: true },
+      });
+      if (!providerAccount) {
+        throw new NotFoundException('供应商账号不存在或已归档。');
+      }
 
-    const duplicate = await this.prisma.aiProviderEndpoint.findFirst({
-      where: {
-        providerAccountId: input.providerAccountId,
-        endpointId: input.endpointId,
-        archivedAt: null,
-      },
-      select: { id: true },
-    });
-    if (duplicate) {
-      throw new BadRequestException(`供应商端点已存在：${input.endpointId}`);
-    }
+      const duplicate = await tx.aiProviderEndpoint.findFirst({
+        where: {
+          providerAccountId: input.providerAccountId,
+          endpointId: input.endpointId,
+        },
+        select: { id: true },
+      });
+      if (duplicate) {
+        throw new BadRequestException(`供应商端点已存在：${input.endpointId}`);
+      }
 
-    const endpoint = await this.prisma.aiProviderEndpoint.create({
-      data: {
-        providerAccountId: providerAccount.id,
-        provider: providerAccount.provider,
-        endpointId: input.endpointId,
-        displayName: input.displayName ?? null,
-        modality: input.modality,
-        status: input.status,
-        healthStatus: input.healthStatus,
-        supportedModes: input.supportedModes as Prisma.InputJsonValue,
-        providerInputSchema: input.providerInputSchema as Prisma.InputJsonValue,
-        providerOutputSchema:
-          input.providerOutputSchema as Prisma.InputJsonValue,
-        maxConcurrentRequests: input.maxConcurrentRequests ?? null,
-        maxRequestsPerMinute: input.maxRequestsPerMinute ?? null,
-        requestTimeoutSeconds: input.requestTimeoutSeconds ?? null,
-        cooldownSeconds: input.cooldownSeconds ?? null,
-        failureThreshold: input.failureThreshold ?? null,
-        catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
-        disabledReason: input.disabledReason ?? null,
-        createdByAdminId: adminId,
-        updatedByAdminId: adminId,
-      },
-      include: providerEndpointInclude(),
+      const endpoint = await tx.aiProviderEndpoint.create({
+        data: {
+          providerAccountId: providerAccount.id,
+          provider: providerAccount.provider,
+          endpointId: input.endpointId,
+          displayName: input.displayName ?? null,
+          modality: input.modality,
+          status: input.status,
+          healthStatus: input.healthStatus,
+          supportedModes: input.supportedModes as Prisma.InputJsonValue,
+          providerInputSchema:
+            input.providerInputSchema as Prisma.InputJsonValue,
+          providerOutputSchema:
+            input.providerOutputSchema as Prisma.InputJsonValue,
+          maxConcurrentRequests: input.maxConcurrentRequests ?? null,
+          maxRequestsPerMinute: input.maxRequestsPerMinute ?? null,
+          requestTimeoutSeconds: input.requestTimeoutSeconds ?? null,
+          cooldownSeconds: input.cooldownSeconds ?? null,
+          failureThreshold: input.failureThreshold ?? null,
+          catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
+          disabledReason: input.disabledReason ?? null,
+          createdByAdminId: adminId,
+          updatedByAdminId: adminId,
+        },
+        include: providerEndpointInclude(),
+      });
+      return serializeProviderEndpoint(endpoint);
     });
-    return serializeProviderEndpoint(endpoint);
   }
 
   async updateProviderEndpoint(
@@ -414,138 +436,166 @@ export class AiModelOpsService {
     adminId: string,
     input: UpdateProviderEndpointInput,
   ) {
-    const existing = await this.prisma.aiProviderEndpoint.findFirst({
-      where: { id: endpointId, archivedAt: null },
-      select: { id: true },
-    });
-    if (!existing) throw new NotFoundException('供应商端点不存在或已归档。');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_provider_endpoints WHERE id=${endpointId}::uuid FOR UPDATE`;
+      const existing = await tx.aiProviderEndpoint.findFirst({
+        where: { id: endpointId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!existing) throw new NotFoundException('供应商端点不存在或已归档。');
 
-    const endpoint = await this.prisma.aiProviderEndpoint.update({
-      where: { id: endpointId },
-      data: {
-        ...(input.displayName !== undefined
-          ? { displayName: input.displayName ?? null }
-          : {}),
-        ...(input.status !== undefined ? { status: input.status } : {}),
-        ...(input.healthStatus !== undefined
-          ? { healthStatus: input.healthStatus }
-          : {}),
-        ...(input.supportedModes !== undefined
-          ? { supportedModes: input.supportedModes as Prisma.InputJsonValue }
-          : {}),
-        ...(input.providerInputSchema !== undefined
-          ? {
-              providerInputSchema:
-                input.providerInputSchema as Prisma.InputJsonValue,
-            }
-          : {}),
-        ...(input.providerOutputSchema !== undefined
-          ? {
-              providerOutputSchema:
-                input.providerOutputSchema as Prisma.InputJsonValue,
-            }
-          : {}),
-        ...(input.maxConcurrentRequests !== undefined
-          ? { maxConcurrentRequests: input.maxConcurrentRequests }
-          : {}),
-        ...(input.maxRequestsPerMinute !== undefined
-          ? { maxRequestsPerMinute: input.maxRequestsPerMinute }
-          : {}),
-        ...(input.requestTimeoutSeconds !== undefined
-          ? { requestTimeoutSeconds: input.requestTimeoutSeconds }
-          : {}),
-        ...(input.cooldownSeconds !== undefined
-          ? { cooldownSeconds: input.cooldownSeconds }
-          : {}),
-        ...(input.failureThreshold !== undefined
-          ? { failureThreshold: input.failureThreshold }
-          : {}),
-        ...(input.catalogSnapshot !== undefined
-          ? { catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue }
-          : {}),
-        ...(input.disabledReason !== undefined
-          ? { disabledReason: input.disabledReason ?? null }
-          : {}),
-        updatedByAdminId: adminId,
-      },
-      include: providerEndpointInclude(),
+      const endpoint = await tx.aiProviderEndpoint.update({
+        where: { id: endpointId },
+        data: {
+          ...(input.displayName !== undefined
+            ? { displayName: input.displayName ?? null }
+            : {}),
+          ...(input.status !== undefined ? { status: input.status } : {}),
+          ...(input.healthStatus !== undefined
+            ? { healthStatus: input.healthStatus }
+            : {}),
+          ...(input.supportedModes !== undefined
+            ? { supportedModes: input.supportedModes as Prisma.InputJsonValue }
+            : {}),
+          ...(input.providerInputSchema !== undefined
+            ? {
+                providerInputSchema:
+                  input.providerInputSchema as Prisma.InputJsonValue,
+              }
+            : {}),
+          ...(input.providerOutputSchema !== undefined
+            ? {
+                providerOutputSchema:
+                  input.providerOutputSchema as Prisma.InputJsonValue,
+              }
+            : {}),
+          ...(input.maxConcurrentRequests !== undefined
+            ? { maxConcurrentRequests: input.maxConcurrentRequests }
+            : {}),
+          ...(input.maxRequestsPerMinute !== undefined
+            ? { maxRequestsPerMinute: input.maxRequestsPerMinute }
+            : {}),
+          ...(input.requestTimeoutSeconds !== undefined
+            ? { requestTimeoutSeconds: input.requestTimeoutSeconds }
+            : {}),
+          ...(input.cooldownSeconds !== undefined
+            ? { cooldownSeconds: input.cooldownSeconds }
+            : {}),
+          ...(input.failureThreshold !== undefined
+            ? { failureThreshold: input.failureThreshold }
+            : {}),
+          ...(input.catalogSnapshot !== undefined
+            ? {
+                catalogSnapshot: input.catalogSnapshot as Prisma.InputJsonValue,
+              }
+            : {}),
+          ...(input.disabledReason !== undefined
+            ? { disabledReason: input.disabledReason ?? null }
+            : {}),
+          updatedByAdminId: adminId,
+        },
+        include: providerEndpointInclude(),
+      });
+      return serializeProviderEndpoint(endpoint);
     });
-    return serializeProviderEndpoint(endpoint);
   }
 
   async archiveProviderEndpoint(endpointId: string, adminId: string) {
-    const endpoint = await this.prisma.aiProviderEndpoint.findFirst({
-      where: { id: endpointId, archivedAt: null },
-      include: { _count: { select: { bindings: true } } },
-    });
-    if (!endpoint) throw new NotFoundException('供应商端点不存在或已归档。');
-    if (endpoint._count.bindings > 0) {
-      throw new BadRequestException(
-        '该端点仍存在 Provider 绑定，请先归档绑定后再删除端点。',
-      );
-    }
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ai_provider_endpoints WHERE id=${endpointId}::uuid FOR UPDATE`;
+      const endpoint = await tx.aiProviderEndpoint.findFirst({
+        where: { id: endpointId, archivedAt: null },
+        include: {
+          _count: { select: { bindings: { where: UNARCHIVED_BINDING_WHERE } } },
+        },
+      });
+      if (!endpoint) throw new NotFoundException('供应商端点不存在或已归档。');
+      if (endpoint._count.bindings > 0) {
+        throw new BadRequestException(
+          '该端点仍存在 Provider 绑定，请先归档绑定后再删除端点。',
+        );
+      }
 
-    const archived = await this.prisma.aiProviderEndpoint.update({
-      where: { id: endpointId },
-      data: {
-        status: AiControlPlaneStatus.archived,
-        archivedAt: new Date(),
-        updatedByAdminId: adminId,
-      },
-      include: providerEndpointInclude(),
+      const archived = await tx.aiProviderEndpoint.update({
+        where: { id: endpointId },
+        data: {
+          status: AiControlPlaneStatus.archived,
+          archivedAt: new Date(),
+          updatedByAdminId: adminId,
+        },
+        include: providerEndpointInclude(),
+      });
+      return serializeProviderEndpoint(archived);
     });
-    return serializeProviderEndpoint(archived);
   }
 
   async createProviderBinding(
     adminId: string,
     input: CreateProviderBindingInput,
   ) {
-    const [endpoint, canonicalModel] = await Promise.all([
-      this.prisma.aiProviderEndpoint.findUniqueOrThrow({
-        where: { id: input.providerEndpointId },
-        include: { providerAccount: true },
-      }),
-      this.prisma.aiCanonicalModel.findUniqueOrThrow({
-        where: { id: input.canonicalModelId },
-        select: { id: true, modality: true, archivedAt: true },
-      }),
-    ]);
-    if (canonicalModel.archivedAt) {
-      throw new BadRequestException('Cannot bind an archived canonical model.');
-    }
-    if (canonicalModel.modality !== endpoint.modality) {
-      throw new BadRequestException(
-        `Canonical model modality ${canonicalModel.modality} does not match endpoint modality ${endpoint.modality}.`,
-      );
-    }
-    const existing = await this.prisma.aiProviderModelBinding.findFirst({
-      where: {
-        providerAccountId: endpoint.providerAccountId,
-        endpointId: endpoint.endpointId,
-        archivedAt: null,
-      },
-      select: { id: true },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT a.id FROM ai_provider_accounts a JOIN ai_provider_endpoints e ON e.provider_account_id=a.id WHERE e.id=${input.providerEndpointId}::uuid FOR SHARE OF a`;
+      await tx.$queryRaw`SELECT id FROM ai_provider_endpoints WHERE id=${input.providerEndpointId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM ai_canonical_models WHERE id=${input.canonicalModelId}::uuid FOR SHARE`;
+      const [endpoint, canonicalModel] = [
+        await tx.aiProviderEndpoint.findUniqueOrThrow({
+          where: { id: input.providerEndpointId },
+          include: { providerAccount: true },
+        }),
+        await tx.aiCanonicalModel.findUniqueOrThrow({
+          where: { id: input.canonicalModelId },
+          select: { id: true, modality: true, archivedAt: true, status: true },
+        }),
+      ];
+      if (
+        endpoint.archivedAt ||
+        endpoint.status === AiControlPlaneStatus.archived ||
+        endpoint.providerAccount.archivedAt ||
+        endpoint.providerAccount.status === AiControlPlaneStatus.archived
+      )
+        throw new BadRequestException(
+          'Cannot bind an archived provider endpoint or account.',
+        );
+      if (
+        canonicalModel.archivedAt ||
+        canonicalModel.status === AiControlPlaneStatus.archived
+      ) {
+        throw new BadRequestException(
+          'Cannot bind an archived canonical model.',
+        );
+      }
+      if (canonicalModel.modality !== endpoint.modality) {
+        throw new BadRequestException(
+          `Canonical model modality ${canonicalModel.modality} does not match endpoint modality ${endpoint.modality}.`,
+        );
+      }
+      const existing = await tx.aiProviderModelBinding.findFirst({
+        where: {
+          providerAccountId: endpoint.providerAccountId,
+          endpointId: endpoint.endpointId,
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new BadRequestException(
+          'This provider endpoint already has a binding. Edit or restore its existing route; historical bindings cannot be replaced.',
+        );
+      }
+      const data = providerBindingDataFromEndpoint(endpoint, input, adminId);
+      const binding = await tx.aiProviderModelBinding.create({
+        data: {
+          ...data,
+          createdByAdminId: adminId,
+        },
+        include: {
+          providerAccount: true,
+          providerEndpoint: true,
+          canonicalModel: true,
+          _count: { select: { jobs: true } },
+        },
+      });
+      return serializeProviderBinding(binding);
     });
-    if (existing) {
-      throw new BadRequestException(
-        'This provider endpoint is already bound. Archive the existing binding before creating a new route.',
-      );
-    }
-    const data = providerBindingDataFromEndpoint(endpoint, input, adminId);
-    const binding = await this.prisma.aiProviderModelBinding.create({
-      data: {
-        ...data,
-        createdByAdminId: adminId,
-      },
-      include: {
-        providerAccount: true,
-        providerEndpoint: true,
-        canonicalModel: true,
-        _count: { select: { jobs: true } },
-      },
-    });
-    return serializeProviderBinding(binding);
   }
 
   async updateProviderBinding(
@@ -553,24 +603,64 @@ export class AiModelOpsService {
     adminId: string,
     input: UpdateProviderBindingInput,
   ) {
-    const binding = await this.prisma.aiProviderModelBinding.update({
-      where: { id: bindingId },
-      data: {
-        status: input.status,
-        priority: input.priority,
-        weight: input.weight,
-        disabledReason:
-          input.disabledReason !== undefined ? input.disabledReason : undefined,
-        updatedByAdminId: adminId,
-      },
-      include: {
-        providerAccount: true,
-        providerEndpoint: true,
-        canonicalModel: true,
-        _count: { select: { jobs: true } },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const target = await tx.aiProviderModelBinding.findUnique({
+        where: { id: bindingId },
+        select: {
+          providerEndpointId: true,
+          canonicalModelId: true,
+          providerAccountId: true,
+        },
+      });
+      if (!target)
+        throw new NotFoundException('Provider binding not found or archived.');
+      await tx.$queryRaw`SELECT id FROM ai_provider_accounts WHERE id=${target.providerAccountId}::uuid FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM ai_provider_endpoints WHERE id=${target.providerEndpointId}::uuid FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM ai_canonical_models WHERE id=${target.canonicalModelId}::uuid FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM ai_provider_model_bindings WHERE id=${bindingId}::uuid FOR UPDATE`;
+      const current = await tx.aiProviderModelBinding.findFirst({
+        where: { id: bindingId, archivedAt: null },
+        include: {
+          providerAccount: true,
+          providerEndpoint: true,
+          canonicalModel: true,
+        },
+      });
+      if (!current)
+        throw new NotFoundException('Provider binding not found or archived.');
+      if (
+        (input.status ?? current.status) !== AiControlPlaneStatus.archived &&
+        (current.providerAccount.archivedAt ||
+          current.providerAccount.status === AiControlPlaneStatus.archived ||
+          current.providerEndpoint.archivedAt ||
+          current.providerEndpoint.status === AiControlPlaneStatus.archived ||
+          current.canonicalModel.archivedAt ||
+          current.canonicalModel.status === AiControlPlaneStatus.archived)
+      )
+        throw new BadRequestException(
+          'Cannot restore or edit a route whose provider, endpoint or model is archived.',
+        );
+      const binding = await tx.aiProviderModelBinding.update({
+        where: { id: bindingId },
+        data: {
+          status: input.status,
+          priority: input.priority,
+          weight: input.weight,
+          disabledReason:
+            input.disabledReason !== undefined
+              ? input.disabledReason
+              : undefined,
+          updatedByAdminId: adminId,
+        },
+        include: {
+          providerAccount: true,
+          providerEndpoint: true,
+          canonicalModel: true,
+          _count: { select: { jobs: true } },
+        },
+      });
+      return serializeProviderBinding(binding);
     });
-    return serializeProviderBinding(binding);
   }
 
   async listJobs(query: ListAdminAiJobsQuery) {
@@ -782,7 +872,7 @@ function providerAccountInclude() {
 function providerEndpointInclude() {
   return {
     providerAccount: true,
-    _count: { select: { bindings: true } },
+    _count: { select: { bindings: { where: UNARCHIVED_BINDING_WHERE } } },
   } satisfies Prisma.AiProviderEndpointInclude;
 }
 

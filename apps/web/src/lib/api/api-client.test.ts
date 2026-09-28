@@ -164,3 +164,104 @@ describe("request cancellation and deadlines", () => {
     await expected;
   });
 });
+
+describe("request configuration preservation", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each(["request", "upload"] as const)(
+    "preserves query, fragment and all header forms for %s",
+    async (kind) => {
+      for (const headers of [
+        new Headers({ "Accept-Language": "zh-CN", "X-Proof": "proof" }),
+        [
+          ["Accept-Language", "zh-CN"],
+          ["X-Proof", "proof"],
+        ] as [string, string][],
+        { "Accept-Language": "zh-CN", "X-Proof": "proof" },
+      ]) {
+        const fetcher = vi
+          .fn()
+          .mockResolvedValue(new Response(JSON.stringify({ code: 200, data: "ok" })));
+        vi.stubGlobal("fetch", fetcher);
+        const config = { headers, params: { page: 2, search: "a & b", ignored: undefined } };
+        const path = "/api/example?keep=yes&page=1#preview";
+        if (kind === "request") await api.get(path, config);
+        else await api.upload(path, new File(["x"], "file.txt"), "file", config);
+        const [url, init] = fetcher.mock.calls[0] as [string, RequestInit];
+        expect(url).toContain("/api/example?keep=yes&page=2&search=a+%26+b#preview");
+        const sent = new Headers(init.headers);
+        expect(sent.get("accept-language")).toBe("zh-CN");
+        expect(sent.get("x-proof")).toBe("proof");
+        expect(sent.has("content-type")).toBe(kind === "request");
+      }
+    }
+  );
+});
+
+it.each([
+  { code: 403, success: true },
+  { code: 200, success: false },
+])("rejects conflicting response statuses: %j", async (status) => {
+  const body = { ...status, message: "Operation denied", data: { id: "untrusted" } };
+  const mock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(body)));
+  vi.stubGlobal("fetch", mock);
+  for (const raw of [false, true]) {
+    await expect(api.post("/user/test", { raw })).rejects.toMatchObject({
+      message: "Operation denied",
+      code: status.code,
+    });
+  }
+  expect(mock).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  { code: 403, success: true },
+  { code: 200, success: false },
+])("rejects conflicting multipart statuses: %j", async (status) => {
+  const mock = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(JSON.stringify({ ...status, message: "Upload denied", data: "wrong" }))
+    );
+  vi.stubGlobal("fetch", mock);
+  await expect(api.upload("/user/test", new File(["test"], "test.txt"))).rejects.toMatchObject({
+    message: "Upload denied",
+    code: status.code,
+  });
+  expect(mock).toHaveBeenCalledTimes(1);
+});
+
+it.each([{ success: true }, { code: 200 }, { code: "SUCCESS" }, { code: 200, success: true }])(
+  "retains supported success responses: %j",
+  async (status) => {
+    const body = { ...status, data: { id: "accepted" } };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => new Response(JSON.stringify(body)))
+    );
+    await expect(api.get("/user/test")).resolves.toEqual(body.data);
+    await expect(api.get("/user/test", { raw: true })).resolves.toEqual(body);
+  }
+);
+
+it("retains unauthorized handling when success conflicts with code 401", async () => {
+  const { setUnauthorizedHandler } = await import("./api-client");
+  const handler = vi.fn();
+  setUnauthorizedHandler(handler);
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ code: 401, success: true, message: "Sign in again" }))
+      )
+  );
+  try {
+    await expect(api.post("/user/test")).rejects.toMatchObject({
+      status: 401,
+      message: "Sign in again",
+    });
+    expect(handler).toHaveBeenCalledTimes(1);
+  } finally {
+    setUnauthorizedHandler(null);
+  }
+});

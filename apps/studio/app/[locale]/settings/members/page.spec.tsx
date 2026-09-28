@@ -16,6 +16,7 @@ import MembersSettingsPage from "./page";
  */
 
 const workspace = vi.hoisted(() => ({
+  viewerId: "a",
   active: null as WorkspaceRef | null,
   loading: false,
   pathname: "/settings/members",
@@ -23,6 +24,9 @@ const workspace = vi.hoisted(() => ({
   getStoryWorkbench: vi.fn(),
 }));
 
+vi.mock("@/app/_components/auth-provider", () => ({
+  useAuth: () => ({ user: { id: workspace.viewerId } }),
+}));
 vi.mock("@/i18n/navigation", () => ({ usePathname: () => workspace.pathname }));
 vi.mock("@/lib/collab/projects-api", () => ({ getProject: workspace.getProject }));
 vi.mock("@/lib/story-projects-api", () => ({ getStoryWorkbench: workspace.getStoryWorkbench }));
@@ -70,6 +74,7 @@ describe("MembersSettingsPage", () => {
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    workspace.viewerId = "a";
     workspace.active = PERSONAL;
     workspace.loading = false;
     workspace.pathname = "/settings/members";
@@ -130,7 +135,7 @@ describe("MembersSettingsPage", () => {
       expect(manager?.dataset.scope).toBe("project");
       expect(manager?.dataset.scopeId).toBe("canvas-123");
       expect(manager?.dataset.canManage).toBe("false");
-      expect(workspace.getProject).toHaveBeenCalledWith("canvas-123");
+      expect(workspace.getProject).toHaveBeenCalledWith("canvas-123", expect.any(AbortSignal));
     }
   );
 
@@ -176,5 +181,19 @@ describe("MembersSettingsPage", () => {
     expect(
       container.querySelector<HTMLElement>('[data-testid="members-manager"]')?.dataset.scope
     ).toBe("project");
+  });
+  it("cancels abandoned project permission reads and isolates the next viewer", async () => {
+    workspace.pathname = "/project/canvas-123";
+    workspace.getProject.mockImplementation(() => new Promise(() => {}));
+    await render();
+    const oldSignal = workspace.getProject.mock.calls.at(-1)![1];
+    workspace.viewerId = "b";
+    workspace.getProject.mockResolvedValue({ name: "Viewer B project", role: "viewer" });
+    await render();
+    expect(oldSignal.aborted).toBe(true);
+    expect(workspace.getProject).toHaveBeenCalledTimes(2);
+    expect(
+      container.querySelector<HTMLElement>('[data-testid="members-manager"]')?.dataset.canManage
+    ).toBe("false");
   });
 });

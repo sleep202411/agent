@@ -15,6 +15,60 @@ import {
   storyModelSchemaDefaults,
 } from './story-production-generation.service';
 
+describe('batch dispatch tolerates materialization version bumps', () => {
+  const service = new StoryProductionGenerationService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  ) as unknown as {
+    assertTargetCanGenerate(target: unknown, command: unknown): void;
+  };
+  const target = {
+    status: 'current',
+    version: 3,
+    generationKind: 'video',
+    prompt: 'A storyboard clip.',
+  };
+
+  it('rejects a stale version for direct creator submissions', () => {
+    expect(() =>
+      service.assertTargetCanGenerate(target, {
+        expectedVersion: 2,
+        requestedOutputKind: 'video',
+      }),
+    ).toThrow(ConflictException);
+  });
+
+  it('accepts a stale version for trusted batch dispatch', () => {
+    // Same-sequence materializations bump sibling clip versions between
+    // quote and dispatch; the paid batch must proceed against the live target.
+    expect(() =>
+      service.assertTargetCanGenerate(target, {
+        expectedVersion: 2,
+        requestedOutputKind: 'video',
+        batchAdmission: { itemId: 'item-1', leaseOwner: 'worker-1' },
+      }),
+    ).not.toThrow();
+  });
+
+  it('still rejects archived targets for batch dispatch', () => {
+    expect(() =>
+      service.assertTargetCanGenerate(
+        { ...target, status: 'archived' },
+        {
+          expectedVersion: 3,
+          requestedOutputKind: 'video',
+          batchAdmission: { itemId: 'item-1', leaseOwner: 'worker-1' },
+        },
+      ),
+    ).toThrow(ConflictException);
+  });
+});
+
 describe('Story production generation model constraints', () => {
   const imageOnlyVideo = () =>
     toAiModelDefinition(
@@ -47,13 +101,15 @@ describe('Story production generation model constraints', () => {
     expect(resolved.id).toBe('text-video');
   });
 
-  it('reports the missing source frame when no text-to-video model is available', async () => {
+  it('reports the mode mismatch when only an image-to-video model is available', async () => {
+    // The canonical mode authority now rejects the i2v-only model at
+    // selection time with actionable copy — before billing, before the
+    // provider can 422 on the missing image_url.
     await expect(
       resolveDefaultVideoModel([imageOnlyVideo()]),
     ).rejects.toMatchObject({
       response: {
-        code: 'STORY_GENERATION_MODEL_INPUT_REQUIRED',
-        fields: ['startFrame'],
+        code: 'STORY_GENERATION_MODEL_MODE_UNSUPPORTED',
       },
     });
   });

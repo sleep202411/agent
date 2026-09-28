@@ -1,0 +1,90 @@
+.toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+}
+.modes {
+  display: flex;
+  gap: 4px;
+}
+.mode,
+.create {
+  min-height: 44px;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+.mode {
+  color: rgb(255 255 255 / 65%);
+  background: transparent;
+}
+.mode {
+  padding: 0 16px;
+  border-radius: 8px;
+}
+.mode[aria-pressed="true"] {
+  color: white;
+  background: rgb(255 255 255 / 10%);
+}
+.mode:hover {
+  color: white;
+  background: rgb(255 255 255 / 5%);
+}
+.create {
+  grid-column: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: #e52227;
+  color: white;
+}
+.create:hover {
+  background: #c91c21;
+}
+.plus {
+  font-size: 20px;
+  font-weight: 400;
+}
+.toolbar button:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 3px;
+}
+@media (max-width: 767px) {
+  .toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .mode {
+    padding: 0 10px;
+  }
+  .create {
+    grid-column: 2;
+    grid-row: 1;
+    padding: 0 12px;
+  }
+}
+@media (max-width: 359px) {
+  .toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .create {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+}

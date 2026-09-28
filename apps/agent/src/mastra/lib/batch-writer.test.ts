@@ -1,3 +1,4 @@
+import { assertLegacyRedisTestTarget } from "./postgres-test-fixture";
 /**
  * BatchWriter integration tests — require a live Redis at REDIS_URL.
  * Defaults to redis://localhost:16379, a non-standard port to avoid clobbering
@@ -21,8 +22,27 @@ const ctx: StoryosContext = {
 
 type RoleData = { name: string; description: string };
 
-beforeAll(() => {
+beforeAll(async () => {
+  assertLegacyRedisTestTarget(TEST_REDIS_URL);
   process.env.REDIS_URL = TEST_REDIS_URL;
+  const redis = getRedis();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      redis.ping(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Local test Redis unavailable after 2 seconds")),
+          2000
+        );
+      }),
+    ]);
+  } catch (error) {
+    redis.disconnect();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 });
 
 beforeEach(async () => {

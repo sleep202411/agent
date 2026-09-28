@@ -191,7 +191,7 @@ function RowList({
   untitled,
   andMoreLabel,
 }: {
-  rows: Array<{ key: string; title: string; note?: string }>;
+  rows: { key: string; title: string; note?: string }[];
   tone: "neutral" | "danger";
   heading: string;
   untitled: string;

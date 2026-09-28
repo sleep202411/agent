@@ -1,5 +1,5 @@
 "use client";
-import { IpProductionStage } from "@/app/(site)/ips/_components/ip-production-stage";
+import { ChannelBadge } from "@/components/channel-badge";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -268,7 +268,7 @@ export function TvIpList({
                       </span>
                     )}
                     {item.genre && <span className="truncate">{item.genre}</span>}
-                    <IpProductionStage ipId={item.id} compact showLabel />
+                    <ChannelBadge category={item.channelType} />
                   </span>
                 </span>
                 {active && item.trailer && (

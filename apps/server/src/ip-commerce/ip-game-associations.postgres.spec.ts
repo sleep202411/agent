@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { ForbiddenException } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
@@ -23,7 +24,7 @@ const databaseUrl =
     let releaseId: string;
     const user = { userId: `game-owner-${randomUUID()}` };
     beforeAll(async () => {
-      const url = new URL(databaseUrl!);
+      const url = postgresFixtureUrl(databaseUrl!);
       if (
         !['localhost', '127.0.0.1'].includes(url.hostname) ||
         !(

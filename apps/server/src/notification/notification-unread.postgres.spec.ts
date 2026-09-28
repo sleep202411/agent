@@ -1,13 +1,16 @@
+import { assertOutboxTestDatabase } from '../conversations/outbox-test-database';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, Prisma } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import type { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from './notification.service';
 
-const suite =
-  process.env.NOTIFICATION_POSTGRES_INTEGRATION === '1'
-    ? describe
-    : describe.skip;
+const connectionString =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.NOTIFICATION_POSTGRES_INTEGRATION === '1'
+    ? process.env.NOTIFICATION_TEST_DATABASE_URL
+    : undefined);
+const suite = connectionString ? describe : describe.skip;
 
 suite('Unread Crew markers against local PostgreSQL', () => {
   let db: PrismaClient;
@@ -15,15 +18,7 @@ suite('Unread Crew markers against local PostgreSQL', () => {
   const owner = `unread-test-${randomUUID()}`;
   const stranger = `unread-test-${randomUUID()}`;
   beforeAll(async () => {
-    const connectionString = process.env.NOTIFICATION_TEST_DATABASE_URL;
-    if (
-      !connectionString ||
-      !['127.0.0.1', 'localhost'].includes(new URL(connectionString).hostname)
-    ) {
-      throw new Error(
-        'NOTIFICATION_TEST_DATABASE_URL must explicitly point to local PostgreSQL',
-      );
-    }
+    assertOutboxTestDatabase(connectionString!);
     db = new PrismaClient({
       adapter: new PrismaPg({
         connectionString,
@@ -104,6 +99,36 @@ suite('Unread Crew markers against local PostgreSQL', () => {
     expect(await service.unreadCrews(stranger)).toEqual([
       { crewId: 'crew-a', count: 1 },
     ]);
+  });
+
+  it('marks only the visited Crew for its recipient and retains later arrivals', async () => {
+    const crewId = `visit-${randomUUID()}`;
+    const selected = Array.from({ length: 125 }, () => row({ crewId }));
+    const otherCrew = row({ crewId: `${crewId}-other` });
+    const otherUser = row({ crewId }, stranger);
+    const system = row({ crewId }, owner, 'system.notice');
+    const later = {
+      ...row({ crewId }),
+      createdAt: new Date(Date.now() + 60_000),
+    };
+    await db.notification.createMany({
+      data: [...selected, otherCrew, otherUser, system, later],
+    });
+    expect(await service.markCrewRead(owner, crewId)).toBe(125);
+    expect(await service.markCrewRead(owner, crewId)).toBe(0);
+    expect(
+      await db.notification.count({
+        where: { id: { in: selected.map((r) => r.id) }, readAt: { not: null } },
+      }),
+    ).toBe(125);
+    expect(
+      await db.notification.count({
+        where: {
+          id: { in: [otherCrew.id, otherUser.id, system.id, later.id] },
+          readAt: null,
+        },
+      }),
+    ).toBe(4);
   });
 
   it('ignores missing, empty and non-string identifiers', async () => {

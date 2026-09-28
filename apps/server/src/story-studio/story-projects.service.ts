@@ -93,6 +93,10 @@ import {
   StoryPlotImportError,
 } from './story-plot-import';
 import {
+  exportPlotTreeFromDraft,
+  type StoryPlotTreeExportResult,
+} from './story-plot-tree-export';
+import {
   commitStoryChapterGraph,
   mergeChapterDraftIntoStory,
   persistStoryChapterGraphRepair,
@@ -477,6 +481,68 @@ export class StoryProjectsService {
             })
           : null,
     };
+  }
+
+  async getPlotTree(
+    user: AuthUser,
+    projectId: string,
+  ): Promise<StoryPlotTreeExportResult> {
+    await this.requireProject(user, projectId, 'story.read', {
+      allowArchived: true,
+    });
+    const project = await this.loadProjectSummary(projectId);
+    const draft = project.draft;
+    if (!draft) throwDraftNotFound();
+    if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
+      throw unsupportedStorySchema('draft', draft.schemaVersion);
+    }
+    const content = parseDraftContent(draft.content, 'STORY_DRAFT_CORRUPT');
+
+    const sequences = await this.prisma.storyStoryboardSequence.findMany({
+      where: {
+        storyProjectId: projectId,
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      include: {
+        clips: {
+          where: { status: { not: StoryProductionSpecStatus.archived } },
+          orderBy: { rank: 'asc' },
+        },
+      },
+    });
+
+    const storyboardClipsByNode: Record<
+      string,
+      Array<{
+        clipId: string;
+        title: string;
+        order: number;
+        durationSeconds: number | null;
+      }>
+    > = {};
+
+    for (const seq of sequences) {
+      if (!storyboardClipsByNode[seq.plotNodeId]) {
+        storyboardClipsByNode[seq.plotNodeId] = [];
+      }
+      seq.clips.forEach((clip, index) => {
+        storyboardClipsByNode[seq.plotNodeId].push({
+          clipId: clip.id,
+          title: clip.title,
+          order: index,
+          durationSeconds: clip.durationMs
+            ? Math.round(clip.durationMs / 1000)
+            : null,
+        });
+      });
+    }
+
+    return exportPlotTreeFromDraft(
+      projectId,
+      project.title,
+      content,
+      storyboardClipsByNode,
+    );
   }
 
   async get(
@@ -2117,14 +2183,23 @@ export class StoryProjectsService {
       row.content,
       'STORY_DRAFT_CORRUPT',
     );
-    const chapterNodeIds = new Set(stringArray(chapter.nodeIds));
+    const membership = stringArray(chapter.nodeIds);
+    const chapterNodeIds = new Set(membership);
+    const nodes = projectContent.graph.nodes.filter((node) =>
+      chapterNodeIds.has(node.nodeId),
+    );
+    const entryNodeId =
+      chapter.entryNodeId &&
+      nodes.some((node) => node.nodeId === chapter.entryNodeId)
+        ? chapter.entryNodeId
+        : (membership.find((nodeId) =>
+            nodes.some((node) => node.nodeId === nodeId),
+          ) ?? null);
     const content = {
       ...projectContent,
       graph: {
-        entryNodeId: chapter.entryNodeId,
-        nodes: projectContent.graph.nodes.filter((node) =>
-          chapterNodeIds.has(node.nodeId),
-        ),
+        entryNodeId,
+        nodes,
       },
     };
     return {

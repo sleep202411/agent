@@ -100,6 +100,8 @@ export interface CreatePaymentIntentResult {
 }
 
 export interface CreateProviderRefundInput {
+  /** Original captured order amount, required by WeChat for partial refunds. */
+  originalAmountMinor?: bigint;
   requestId: string;
   providerPaymentIntentId: string;
   amountMinor: bigint;

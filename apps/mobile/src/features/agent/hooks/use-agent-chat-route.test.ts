@@ -1,0 +1,139 @@
+import { act, createElement, StrictMode, useLayoutEffect } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useAgentChatRoute } from "./use-agent-chat-route";
+const auth = vi.hoisted(() => ({ token: "alice", enabled: true }));
+vi.mock("@/auth/use-auth", () => ({
+  useAuth: () => ({
+    status: auth.enabled ? "authenticated" : "anonymous",
+    user: { id: "alice" },
+    session: { token: { tokenName: "satoken", tokenValue: auth.token } },
+  }),
+}));
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const send = vi.fn<() => Promise<boolean>>();
+const restore = vi.fn<() => Promise<void>>();
+let root: Root | undefined;
+let hook: ReturnType<typeof useAgentChatRoute>;
+let chapterId = "chapter-a";
+let projectId = "project-a";
+let query = "";
+let prefill = "Initial draft";
+function Probe() {
+  const observed = useAgentChatRoute({
+    projectId,
+    chapterId,
+    query,
+    prefill,
+    workbenchMode: "story",
+    configured: true,
+    send,
+    restore,
+  });
+  useLayoutEffect(() => {
+    hook = observed;
+  }, [observed]);
+  return null;
+}
+async function render(strict = false) {
+  root ??= createRoot(document.createElement("div"));
+  await act(async () =>
+    root!.render(
+      strict ? createElement(StrictMode, null, createElement(Probe)) : createElement(Probe)
+    )
+  );
+}
+beforeEach(() => {
+  send.mockResolvedValue(true);
+  restore.mockResolvedValue(undefined);
+});
+afterEach(async () => {
+  await act(async () => root?.unmount());
+  root = undefined;
+  auth.token = "alice";
+  auth.enabled = true;
+  chapterId = "chapter-a";
+  projectId = "project-a";
+  query = "";
+  prefill = "Initial draft";
+  vi.resetAllMocks();
+});
+it("restores on credential changes, clears private drafts and rejects retained edits", async () => {
+  await render();
+  const oldEdit = hook.setDraft;
+  const previousReset = hook.scrollResetKey;
+  await act(async () => hook.setDraft("Private text"));
+  auth.token = "bob";
+  await render();
+  expect(hook.draft).toBe("");
+  expect(restore).toHaveBeenCalledTimes(2);
+  expect(hook.scrollResetKey).not.toBe(previousReset);
+  await act(async () => oldEdit("Old edit"));
+  expect(hook.draft).toBe("");
+});
+it("consumes an initial query once without resending it on chapter or account changes", async () => {
+  query = "Generate story";
+  await render();
+  await render();
+  expect(send).toHaveBeenCalledTimes(1);
+  chapterId = "chapter-b";
+  await render();
+  expect(hook.draft).toBe("");
+  auth.token = "bob";
+  await render();
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(restore).toHaveBeenCalledTimes(2);
+  query = "Another request";
+  await render();
+  expect(send).toHaveBeenCalledTimes(2);
+});
+it("does not duplicate query admission under StrictMode effect replay", async () => {
+  query = "Generate story";
+  await render(true);
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(restore).not.toHaveBeenCalled();
+});
+it("keeps a failed initial query editable without overwriting newer text", async () => {
+  query = "Failed query";
+  prefill = "";
+  send.mockResolvedValueOnce(false);
+  await render();
+  expect(hook.draft).toBe("Failed query");
+  let resolve!: (accepted: boolean) => void;
+  send.mockReturnValueOnce(
+    new Promise<boolean>((done) => {
+      resolve = done;
+    })
+  );
+  query = "Next query";
+  await render();
+  await act(async () => hook.setDraft("New text"));
+  await act(async () => resolve(false));
+  expect(hook.draft).toBe("New text");
+});
+it("uses a new destination's prefill and clears an explicitly removed prefill", async () => {
+  await render();
+  await act(async () => hook.setDraft("Old project draft"));
+  projectId = "project-b";
+  prefill = "New destination";
+  await render();
+  expect(hook.draft).toBe("New destination");
+  prefill = "";
+  await render();
+  expect(hook.draft).toBe("");
+});
+it("waits for authentication before the first query and does not replay it on relogin", async () => {
+  auth.enabled = false;
+  query = "Generate story";
+  await render();
+  expect(send).not.toHaveBeenCalled();
+  auth.enabled = true;
+  await render();
+  expect(send).toHaveBeenCalledTimes(1);
+  auth.enabled = false;
+  await render();
+  auth.enabled = true;
+  await render();
+  expect(send).toHaveBeenCalledTimes(1);
+  expect(restore).toHaveBeenCalledTimes(1);
+});

@@ -1,5 +1,6 @@
 "use client";
 
+import { PlaySessionReportView } from "../interactive-film/_components/play-session-report";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useStoryCommunityAccess } from "./story-community-access";
 import {
@@ -9,6 +10,7 @@ import {
 } from "@repo/experience-player-react";
 import type { ExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
 import { useTranslations } from "@/src/i18n/i18n";
+import { createHttpPlaySessionReporter } from "@/src/lib/play-session-reporter.http";
 
 export function ExperienceRuntimePlayer({
   runtime,
@@ -23,6 +25,7 @@ export function ExperienceRuntimePlayer({
 }) {
   const t = useTranslations("experiencePlayer");
   const commerce = useStoryCommunityAccess(runtime, locale);
+  const playSessionReporter = useMemo(() => createHttpPlaySessionReporter(), []);
   const checkpointKey = `story-access-resume:${runtime.gameId}:${runtime.buildId}`;
   const readCheckpoint = useMemo(() => createCheckpointReader(checkpointKey), [checkpointKey]);
   const checkpoint = useSyncExternalStore(subscribeCheckpoint, readCheckpoint, serverCheckpoint);
@@ -93,6 +96,10 @@ export function ExperienceRuntimePlayer({
         randomSeed={randomSeed}
         copy={copy}
         coverUrl={coverUrl}
+        playSessionReporter={playSessionReporter}
+        endingExtra={(sessionId) =>
+          sessionId ? <PlaySessionReportView sessionId={sessionId} /> : null
+        }
       />
       {commerce.dialog}
     </>

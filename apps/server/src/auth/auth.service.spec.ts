@@ -1,5 +1,12 @@
 import { AuthService } from './auth.service';
+import { ForbiddenException } from '@nestjs/common';
 import type { AuthUser } from './auth.types';
+import type { EmergencyAccessBlockService } from './emergency-access-block.service';
+
+const allowAll = () =>
+  ({
+    assertAllowed: () => Promise.resolve(),
+  }) as unknown as EmergencyAccessBlockService;
 
 /**
  * Regression guard for the prod login-loop fix: a browser can carry a stale
@@ -12,7 +19,7 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
   let calls: string[];
 
   beforeEach(() => {
-    svc = new AuthService();
+    svc = new AuthService(allowAll());
     calls = [];
     // Stub the per-token Java check: only a token containing FRESH resolves.
     jest
@@ -107,5 +114,177 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
   it('falls back to the whole cookie when no satoken is present', async () => {
     await svc.validateToken('sessionid=abc');
     expect(calls).toEqual(['sessionid=abc']);
+  });
+});
+
+it('checks the emergency blocklist even when Java authentication is cached', async () => {
+  const block = { assertAllowed: jest.fn().mockResolvedValue(undefined) };
+  const service = new AuthService(
+    block as unknown as EmergencyAccessBlockService,
+  );
+  const java = jest.spyOn(
+    service as unknown as {
+      validateSatoken: () => Promise<AuthUser | null>;
+    },
+    'validateSatoken',
+  );
+  java.mockResolvedValue({ userId: '16591' });
+  try {
+    await service.validateToken('satoken=fixture');
+    block.assertAllowed.mockRejectedValue(new ForbiddenException());
+    await expect(
+      service.validateToken('satoken=fixture'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(java).toHaveBeenCalledTimes(1);
+    expect(block.assertAllowed).toHaveBeenCalledTimes(2);
+  } finally {
+    service.onModuleDestroy();
+  }
+});
+
+describe('Auth refresh snapshot ownership', () => {
+  let service: AuthService;
+  const oldUser = { userId: '42', levelIds: [13] };
+  const newUser = { userId: '42', levelIds: [] };
+  function gate() {
+    let resolve!: (user: AuthUser | null) => void;
+    const promise = new Promise<AuthUser | null>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  }
+  beforeEach(() => {
+    service = new AuthService(allowAll());
+  });
+  afterEach(() => service.onModuleDestroy());
+  function remote() {
+    return jest.spyOn(
+      service as unknown as { validateSatoken: () => Promise<AuthUser | null> },
+      'validateSatoken',
+    );
+  }
+  it.each([false, true])(
+    'prevents an older refresh from overwriting a newer snapshot (older bypass=%s)',
+    async (bypassCache) => {
+      const old = gate();
+      const current = gate();
+      const check = remote()
+        .mockReturnValueOnce(old.promise)
+        .mockReturnValueOnce(current.promise);
+      const first = service.validateToken('satoken=fixture', { bypassCache });
+      const second = service.validateToken('satoken=fixture', {
+        bypassCache: true,
+      });
+      current.resolve(newUser);
+      await expect(second).resolves.toEqual(newUser);
+      old.resolve(oldUser);
+      await first;
+      await expect(service.validateToken('satoken=fixture')).resolves.toEqual(
+        newUser,
+      );
+      expect(check).toHaveBeenCalledTimes(2);
+    },
+  );
+  it('makes normal readers await a forced refresh instead of returning a stale cache', async () => {
+    const current = gate();
+    const check = remote()
+      .mockResolvedValueOnce(oldUser)
+      .mockReturnValueOnce(current.promise);
+    await service.validateToken('satoken=fixture');
+    const refresh = service.validateToken('satoken=fixture', {
+      bypassCache: true,
+    });
+    const ordinary = service.validateToken('satoken=fixture');
+    current.resolve(newUser);
+    await expect(Promise.all([refresh, ordinary])).resolves.toEqual([
+      newUser,
+      newUser,
+    ]);
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+  it('does not revive an older success after a newer rejected refresh', async () => {
+    const old = gate();
+    const check = remote()
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(newUser);
+    const first = service.validateToken('satoken=fixture');
+    await expect(
+      service.validateToken('satoken=fixture', { bypassCache: true }),
+    ).resolves.toBeNull();
+    old.resolve(oldUser);
+    await first;
+    await expect(service.validateToken('satoken=fixture')).resolves.toEqual(
+      newUser,
+    );
+    expect(check).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('Auth verification status parsing', () => {
+  let service: AuthService;
+  const originalUrl = process.env.JAVA_CONTENT_URL;
+  beforeEach(() => {
+    process.env.JAVA_CONTENT_URL = 'http://fixture';
+    service = new AuthService(allowAll());
+  });
+  afterEach(() => {
+    service.onModuleDestroy();
+    if (originalUrl === undefined) delete process.env.JAVA_CONTENT_URL;
+    else process.env.JAVA_CONTENT_URL = originalUrl;
+  });
+  it.each(['', 'unknown', 'False', '0', 'TRUE', 0, 1, null])(
+    'does not treat malformed status %s as clearance',
+    async (needAuth) => {
+      jest
+        .spyOn(
+          service as unknown as { getJson: () => Promise<unknown> },
+          'getJson',
+        )
+        .mockResolvedValue({ success: true, data: { needAuth } });
+      await expect(
+        service.needsRealNameVerification('satoken=fixture'),
+      ).resolves.toBeNull();
+    },
+  );
+  it.each([true, false, 'true', 'false'])(
+    'retains the supported %s status',
+    async (needAuth) => {
+      jest
+        .spyOn(
+          service as unknown as { getJson: () => Promise<unknown> },
+          'getJson',
+        )
+        .mockResolvedValue({ success: true, data: { needAuth } });
+      await expect(
+        service.needsRealNameVerification('satoken=fixture'),
+      ).resolves.toBe(needAuth === true || needAuth === 'true');
+    },
+  );
+  it.each([
+    { success: false, needAuth: false },
+    { code: 302, data: { needAuth: false } },
+    { success: true, code: 500, info: { needAuth: false } },
+  ])('rejects an explicitly failed envelope %j', async (body) => {
+    jest
+      .spyOn(
+        service as unknown as { getJson: () => Promise<unknown> },
+        'getJson',
+      )
+      .mockResolvedValue(body);
+    await expect(
+      service.needsRealNameVerification('satoken=fixture'),
+    ).resolves.toBeNull();
+  });
+  it('preserves the existing unwrapped boolean contract', async () => {
+    jest
+      .spyOn(
+        service as unknown as { getJson: () => Promise<unknown> },
+        'getJson',
+      )
+      .mockResolvedValue({ needAuth: false });
+    await expect(
+      service.needsRealNameVerification('satoken=fixture'),
+    ).resolves.toBe(false);
   });
 });

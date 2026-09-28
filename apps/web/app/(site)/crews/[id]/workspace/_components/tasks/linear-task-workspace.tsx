@@ -1,5 +1,6 @@
 "use client";
 
+import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { TrustAppealLink } from "./trust-appeal-link";
 import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import {
@@ -73,6 +74,9 @@ interface LinearTaskWorkspaceProps {
   canEditCrewInfo: boolean;
   members: CrewMemberDTO[];
   isOwner: boolean;
+  canReview: boolean;
+  canSubmitAssigned: boolean;
+  canComment: boolean;
   viewerUserId?: string;
   deeplinkTaskId?: string | null;
   onSelectedTaskChange?: (taskId: string | null) => void;
@@ -93,6 +97,9 @@ function LinearTaskSession({
   canEditCrewInfo,
   members,
   isOwner,
+  canReview,
+  canSubmitAssigned,
+  canComment,
   viewerUserId,
   deeplinkTaskId,
   onSelectedTaskChange,
@@ -288,15 +295,31 @@ function LinearTaskSession({
     }
   };
 
-  if (projectQuery.isError) {
-    return <LoadingState label={projectQuery.error.message} />;
-  }
+  const projectError = projectQuery.isError ? (
+    <div role="alert" className="flex shrink-0 items-center gap-3 p-3 text-sm text-destructive">
+      <p>{projectQuery.error.message}</p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={projectQuery.isFetching}
+        onClick={() => void projectQuery.refetch()}
+      >
+        {t("retry")}
+      </Button>
+    </div>
+  ) : null;
+  const projectUnavailable =
+    projectQuery.error instanceof CrewApiError &&
+    [401, 403, 404].includes(projectQuery.error.status);
+  if (projectQuery.isError && (!project || projectUnavailable)) return projectError;
   if (projectQuery.isLoading || !project || !activeView || !effectiveView) {
     return <LoadingState label={t("loading")} />;
   }
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#090a0c] text-[#e8e9ec]">
+      {projectError}
       <header className="shrink-0 border-b border-white/[0.065] bg-[#0b0c0f]">
         <nav
           className="flex h-10 items-center gap-1.5 overflow-x-auto border-t border-white/[0.045] px-3"
@@ -594,9 +617,19 @@ function LinearTaskSession({
             />
           </div>
           <main className="min-h-0 flex-1 overflow-auto">
+            {tasksQuery.isError && (
+              <div role="alert" className="space-y-2 p-4 text-sm text-destructive">
+                <p>
+                  {tasksQuery.error instanceof Error ? tasksQuery.error.message : t("loadFailed")}
+                </p>
+                <Button disabled={tasksQuery.isFetching} onClick={() => void tasksQuery.refetch()}>
+                  {t("retry")}
+                </Button>
+              </div>
+            )}
             {tasksQuery.isLoading ? (
               <LoadingState label={t("loadingIssues")} />
-            ) : (
+            ) : tasksQuery.isError && !tasks.length ? null : (
               <TaskProjectView
                 tasks={tasks}
                 workflowCounts={tasksQuery.workflowCounts}
@@ -706,6 +739,9 @@ function LinearTaskSession({
               task={taskQuery.data}
               members={members}
               isOwner={isOwner}
+              canReview={canReview}
+              canSubmitAssigned={canSubmitAssigned}
+              canComment={canComment}
               canWork={
                 isOwner ||
                 Boolean(
@@ -773,16 +809,18 @@ function LinearTaskSession({
           setWorkflowEditor({ state, afterStateId: null });
         }}
       />
-      <SubmitTaskDialog
-        open={Boolean(submitTask)}
-        onOpenChange={(open) => !open && setSubmitTask(null)}
-        crewId={crewId}
-        task={submitTask}
-        onSubmitted={(taskId) => {
-          setSubmitTask(null);
-          selectTask(taskId);
-        }}
-      />
+      {canSubmitAssigned && (
+        <SubmitTaskDialog
+          open={Boolean(submitTask)}
+          onOpenChange={(open) => !open && setSubmitTask(null)}
+          crewId={crewId}
+          task={submitTask}
+          onSubmitted={(taskId) => {
+            setSubmitTask(null);
+            selectTask(taskId);
+          }}
+        />
+      )}
     </div>
   );
 }

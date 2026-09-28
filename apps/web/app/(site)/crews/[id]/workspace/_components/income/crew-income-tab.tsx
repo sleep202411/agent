@@ -1,5 +1,10 @@
 "use client";
 
+import { useCrewExpensesSummary } from "@/app/(site)/crews/_hooks/use-expenses";
+import { AmendmentFinancePanel } from "@/app/(site)/crews/_components/amendment-finance-panel";
+
+import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
+
 import { useLayoutEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import {
@@ -261,6 +266,10 @@ function IncomeSession({
         </nav>
       </header>
 
+      <ProjectSpendSummary crewId={crewId} canView={canViewCrewLedger} locale={locale} />
+
+      {canApproveEarning && <AmendmentFinancePanel crewId={crewId} />}
+
       {view === "earnings" ? (
         <EarningsLedger
           crewId={crewId}
@@ -390,9 +399,9 @@ function EarningsLedger({
         <Metric
           label={t("metrics.confirmedAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={summary?.byStatus.posted.amountMinor ?? "0"}
+            <SummaryMoney
+              value={summary?.byStatus?.posted?.amountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -400,9 +409,9 @@ function EarningsLedger({
         <Metric
           label={t("metrics.pendingAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={summary?.byStatus.pending.amountMinor ?? "0"}
+            <SummaryMoney
+              value={summary?.byStatus?.pending?.amountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -410,9 +419,9 @@ function EarningsLedger({
         <Metric
           label={t("metrics.monthAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={summary?.postedThisMonthAmountMinor ?? "0"}
+            <SummaryMoney
+              value={summary?.postedThisMonthAmountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -552,9 +561,9 @@ function PayoutLedger({
         <Metric
           label={t("metrics.availableAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={query.summary?.availableAmountMinor ?? "0"}
+            <SummaryMoney
+              value={query.summary?.availableAmountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -562,9 +571,9 @@ function PayoutLedger({
         <Metric
           label={t("metrics.reservedAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={query.summary?.reservedAmountMinor ?? "0"}
+            <SummaryMoney
+              value={query.summary?.reservedAmountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -572,9 +581,9 @@ function PayoutLedger({
         <Metric
           label={t("metrics.paidAmount")}
           value={
-            <MoneyAmount
-              currency={CREW_CURRENCY}
-              value={query.summary?.paidAmountMinor ?? "0"}
+            <SummaryMoney
+              value={query.summary?.paidAmountMinor}
+              failed={query.isError}
               locale={locale}
             />
           }
@@ -1420,7 +1429,13 @@ function ResultState({
         className="mt-3"
         icon={<IconRefresh />}
         disabled={query.isFetching}
-        onClick={() => void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())}
+        onClick={() =>
+          void (query.isFetchNextPageError &&
+          !isCrewCursorError(query.error, "CREW_EARNING_CURSOR_INVALID") &&
+          !isCrewCursorError(query.error, "CREW_PAYOUT_CURSOR_INVALID")
+            ? query.fetchNextPage()
+            : query.refetch())
+        }
       >
         {t("retry")}
       </Button>
@@ -1621,6 +1636,23 @@ function SourceIcon({ source }: { source: CrewEarningSourceType }) {
   return <Icon className="size-3 shrink-0" />;
 }
 
+/** Never present an absent, malformed or failed financial snapshot as a zero balance. */
+function SummaryMoney({
+  value,
+  failed,
+  locale,
+}: {
+  value: unknown;
+  failed: boolean;
+  locale: string;
+}) {
+  const t = useTranslations("crewIncome");
+  if (failed || typeof value !== "string" || !/^-?\d+$/.test(value)) {
+    return <span className="text-sm text-muted-foreground">{t("metrics.unavailable")}</span>;
+  }
+  return <MoneyAmount currency={CREW_CURRENCY} value={value} locale={locale} />;
+}
+
 function MoneyAmount({
   value,
   currency,
@@ -1652,4 +1684,83 @@ function formatDateTime(value: string, locale: string) {
 }
 function eventKey(action: string) {
   return action.split(".").at(-1) ?? "unknown";
+}
+
+function ProjectSpendSummary({
+  crewId,
+  canView,
+  locale,
+}: {
+  crewId: string;
+  canView: boolean;
+  locale: string;
+}) {
+  const t = useTranslations("crewIncome");
+  const { data, isLoading, isError, error } = useCrewExpensesSummary(crewId, canView);
+
+  if (!canView) return null;
+
+  if (isLoading) {
+    return (
+      <div className="mt-4 rounded-lg border border-white/[0.065] bg-white/[0.015] p-3.5">
+        <p className="text-[11px] text-[#737983]">{t("spendSummaryHeading")}…</p>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3.5">
+        <p className="text-[11px] text-red-400">
+          {error instanceof Error ? error.message : t("loadFailed")}
+        </p>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  const currencies = (["CNY", "USD"] as const).filter((c) => {
+    const rewards = BigInt(data.taskRewardsByCurrency[c] ?? "0");
+    const reimbursements = BigInt(data.reimbursementsByCurrency[c] ?? "0");
+    const total = BigInt(data.totalByCurrency[c] ?? "0");
+    return rewards > 0n || reimbursements > 0n || total > 0n;
+  });
+
+  if (currencies.length === 0) return null;
+
+  return (
+    <div className="mt-4 space-y-3">
+      {currencies.map((currency) => (
+        <div
+          key={currency}
+          className="rounded-lg border border-white/[0.065] bg-white/[0.015] p-3.5"
+        >
+          <div className="mb-2 text-[11px] font-medium text-[#858b95]">
+            {t("spendSummaryHeading")} · {currency}
+          </div>
+          <div className="grid grid-cols-3 gap-3 border-t border-white/[0.05] pt-2">
+            <div>
+              <div className="text-[10px] text-[#737983]">{t("spendSummaryTaskRewards")}</div>
+              <div className="mt-0.5 text-[14px] font-semibold tracking-[-0.02em] tabular-nums text-[#f1f2f4]">
+                {formatCrewMoney(data.taskRewardsByCurrency[currency] ?? "0", locale, currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#737983]">{t("spendSummaryReimbursements")}</div>
+              <div className="mt-0.5 text-[14px] font-semibold tracking-[-0.02em] tabular-nums text-[#f1f2f4]">
+                {formatCrewMoney(data.reimbursementsByCurrency[currency] ?? "0", locale, currency)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-[#737983]">{t("spendSummaryTotal")}</div>
+              <div className="mt-0.5 text-[14px] font-semibold tracking-[-0.02em] tabular-nums text-[#f1f2f4]">
+                {formatCrewMoney(data.totalByCurrency[currency] ?? "0", locale, currency)}
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }

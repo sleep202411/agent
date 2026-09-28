@@ -33,6 +33,7 @@ import {
   useProjectSections,
 } from "@/app/[locale]/project/_components/project-sections-context";
 import { ProjectSectionsPanel } from "@/app/[locale]/project/_components/project-sections-panel";
+import { ProjectOverviewPanel } from "@/app/[locale]/project/_components/project-overview-panel";
 import { WorkbenchPanelContent } from "@/app/[locale]/project/_components/workbench-panel-content";
 import { CreditsBadge } from "@/app/_components/credits-badge";
 import { CollabAvatars } from "@/app/[locale]/canvas/_components/collab-presence";
@@ -63,7 +64,9 @@ export default function ProjectLayout({
   const copilotOpen = useProjectUIStore((s) => s.copilotOpen);
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
+  const overviewOpen = useProjectUIStore((s) => s.overviewOpen);
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const actorsOpen = useProjectUIStore((s) => s.actorsOpen);
   const crewAssetsOpen = useProjectUIStore((s) => s.crewAssetsOpen);
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
@@ -98,7 +101,9 @@ export default function ProjectLayout({
     (nodesOpen && nodesEnabled) ||
     assetsOpen ||
     crewAssetsOpen ||
+    (actorsOpen && activeMode === "canvas") ||
     historyOpen ||
+    overviewOpen ||
     sectionsOpen ||
     skillsOpen ||
     Boolean(selectedShotId);
@@ -131,6 +136,14 @@ export default function ProjectLayout({
       setName(previous);
       toast.error(t("renameFailed"));
     });
+  };
+
+  /** The overview panel saves the name through its own PATCH; mirror the
+   *  committed value so the header's inline input stays in sync. */
+  const commitNameFromPanel = (next: string) => {
+    dirtyRef.current = false;
+    committedRef.current = next;
+    setName(next);
   };
 
   const projectHeader = (
@@ -205,6 +218,7 @@ export default function ProjectLayout({
                       activeMode={activeMode}
                       canEdit={canEdit}
                       projectId={projectId}
+                      onNameCommitted={commitNameFromPanel}
                     />
                   }
                   panelOpen={leftDrawerOpen}
@@ -479,10 +493,12 @@ function ProjectPanelContent({
   activeMode,
   canEdit,
   projectId,
+  onNameCommitted,
 }: {
   activeMode: string;
   canEdit: boolean;
   projectId: string;
+  onNameCommitted: (name: string) => void;
 }) {
   const { activeSection } = useProjectSections();
   const sbRouter = useRouter();
@@ -500,6 +516,7 @@ function ProjectPanelContent({
       canEdit={canEdit}
       crewProjectId={projectId}
       sectionsPanel={<ProjectSectionsPanel />}
+      overviewPanel={<ProjectOverviewPanel onNameCommitted={onNameCommitted} />}
       onOpenOnCanvas={onOpenOnCanvas}
     />
   );

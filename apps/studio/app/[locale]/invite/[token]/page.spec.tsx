@@ -13,6 +13,8 @@ const state = vi.hoisted(() => ({
   replace: vi.fn(),
   selectWorkspace: vi.fn(),
   signIn: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
 }));
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: { name?: string }) =>
@@ -30,7 +32,7 @@ vi.mock("@/lib/collab/sharing-api", () => ({
   previewInvite: state.preview,
   acceptInvite: state.accept,
 }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: state.success, error: state.error } }));
 
 const target: AcceptedInvite = {
   scope: "project",
@@ -114,7 +116,7 @@ describe("invite entry for existing members", () => {
     state.preview.mockResolvedValue(preview(null));
     await render();
     await click("acceptInvitation");
-    expect(state.accept).toHaveBeenCalledWith("invite-token");
+    expect(state.accept).toHaveBeenCalledWith("invite-token", expect.any(AbortSignal));
     expect(state.replace).toHaveBeenCalledWith("/project/project?ws=project-workspace");
   });
   it("does not offer entry for expired invitations without current access", async () => {
@@ -136,4 +138,72 @@ describe("invite entry for existing members", () => {
     expect(container.textContent).toContain("acceptInvitation");
     expect(container.textContent).not.toContain("alreadyJoinedTitle");
   });
+  it("admits acceptance once and suppresses navigation after account change", async () => {
+    state.preview.mockResolvedValue(preview(null));
+    let resolve!: (value: AcceptedInvite) => void;
+    state.accept.mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolve = r;
+        })
+    );
+    await render();
+    const button = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "acceptInvitation"
+    )!;
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+    expect(state.accept).toHaveBeenCalledTimes(1);
+    const signal = state.accept.mock.calls[0][1] as AbortSignal;
+    state.user = { id: "replacement" };
+    await render();
+    expect(signal.aborted).toBe(true);
+    await act(async () => resolve(target));
+    expect(state.replace).not.toHaveBeenCalled();
+    expect(state.selectWorkspace).not.toHaveBeenCalled();
+    expect(state.success).not.toHaveBeenCalled();
+  });
+  it("cancels old previews when the invitation changes", async () => {
+    state.preview.mockImplementation(() => new Promise(() => {}));
+    await render();
+    const signal = state.preview.mock.calls[0][1] as AbortSignal;
+    state.preview.mockResolvedValue(preview(null));
+    params = Promise.resolve({ token: "replacement-token" });
+    await render();
+    expect(signal.aborted).toBe(true);
+    expect(state.preview).toHaveBeenLastCalledWith("replacement-token", expect.any(AbortSignal));
+  });
+  it("prevents duplicate navigation for existing access", async () => {
+    state.preview.mockResolvedValue(preview(target));
+    await render();
+    const button = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent === "enterProject"
+    )!;
+    await act(async () => {
+      button.click();
+      button.click();
+    });
+    expect(state.replace).toHaveBeenCalledTimes(1);
+  });
+});
+
+it("shows current workspace membership instead of accepting an admin invitation", async () => {
+  const existing: AcceptedInvite = {
+    scope: "workspace",
+    workspaceId: "workspace",
+    targetName: "Team",
+  };
+  state.preview.mockResolvedValue({
+    ...preview(existing),
+    scope: "workspace",
+    role: "admin",
+    currentRole: "editor",
+  });
+  await render();
+  expect(container.textContent).toContain("alreadyWorkspaceMember: Team");
+  expect(container.textContent).not.toContain("acceptInvitation");
+  await click("enterWorkspace");
+  expect(state.accept).not.toHaveBeenCalled();
 });

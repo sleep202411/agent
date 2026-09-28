@@ -5,6 +5,7 @@ import { useSelectedLayoutSegment } from "next/navigation";
 import { StoryChaptersDock } from "@/app/[locale]/story-studio/_components/story-chapters-dock";
 import { StoryProjectCatalog } from "@/app/[locale]/story-studio/_components/story-project-catalog";
 import { StoryWorldDock } from "@/app/[locale]/story-studio/_components/story-world-dock";
+import { StoryStatsDock } from "@/app/[locale]/story-studio/_components/story-stats-dock";
 import { isProductionStepSegment } from "../_lib/production-steps";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
@@ -54,6 +55,12 @@ export function StoryProjectSidePanel({ projectId }: { projectId: string }) {
       return (
         <StoryProjectSidePanelShell label={t("sidebar.world")}>
           <StoryWorldDock projectId={projectId} />
+        </StoryProjectSidePanelShell>
+      );
+    case "stats":
+      return (
+        <StoryProjectSidePanelShell label={t("sidebar.stats")}>
+          <StoryStatsDock projectId={projectId} />
         </StoryProjectSidePanelShell>
       );
     case "chapters":

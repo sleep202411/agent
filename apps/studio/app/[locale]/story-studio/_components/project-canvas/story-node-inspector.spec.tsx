@@ -12,6 +12,7 @@ vi.mock("./story-node-storyboard-panel", () => ({
 }));
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
 
@@ -57,35 +58,30 @@ describe("StoryNodeInspector film authoring", () => {
     expect(onEditInteractions).toHaveBeenCalledWith("second");
   });
 
-  it("does not render a side inspector for a world node", async () => {
-    const content: InteractiveStoryDraftContent = {
-      storyBible: { logline: "", synopsis: "", characters: [] },
-      graph: {
-        entryNodeId: "world:one",
-        nodes: [
-          {
-            kind: "world",
-            nodeId: "world:one",
-            worldId: null,
-            maxExperienceSeconds: 60,
-            exit: { kind: "auto", nextNodeId: null },
-          },
-        ],
-      },
-      productionNotes: [],
-    };
-    const model = buildStoryCanvasModel(content, "en-US", { world: "World" });
+  it("sets the inspected clip as this chapter's start without being the start already", async () => {
+    const content = linearDraft();
+    const model = buildStoryCanvasModel(content, "en-US", { clip: "Clip" });
+    const onSetChapterStart = vi.fn();
 
     await act(async () => {
       root.render(
         <StoryNodeInspector
           {...inspectorProps(content)}
-          selectedNode={requiredNode(model.nodes, "world:one")}
+          onSetChapterStart={onSetChapterStart}
+          selectedNode={requiredNode(model.nodes, "second")}
         />
       );
     });
 
-    expect(container.innerHTML).toBe("");
+    const setStart = requiredElement(
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("chapterStart.set")
+      ) ?? null,
+      "set chapter start button"
+    );
+    await click(setStart);
+    expect(onSetChapterStart).toHaveBeenCalledWith("second");
+    expect(container.textContent).not.toContain("chapterStart.current");
   });
 });
 
@@ -106,7 +102,10 @@ function clip(nodeId: string, clipKey: string, nextNodeId: string | null) {
     nodeId,
     clipKey,
     interactions: [],
-    exit: { kind: "auto" as const, nextNodeId },
+    exit: {
+      kind: "auto" as const,
+      routes: [{ target: nextNodeId ? { kind: "node" as const, nodeId: nextNodeId } : null }],
+    },
   };
 }
 
@@ -120,7 +119,14 @@ function inspectorProps(
     onCloseNode: vi.fn(),
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
+    onSetChapterStart: vi.fn(),
     onEditInteractions: vi.fn(),
+    locale: "en-US",
+    onSetOnEnterEffects: vi.fn(),
+    onSetAutoRoutes: vi.fn(),
+    onCreateEndingForRoute: vi.fn(),
+    onUpdateEnding: vi.fn(),
+    onDeleteEnding: vi.fn(),
   };
 }
 

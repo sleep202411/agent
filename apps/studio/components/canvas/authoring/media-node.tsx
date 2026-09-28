@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { CanvasVideo } from "@/components/media/canvas-video";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
-import { downloadCanvasMedia } from "./download-media";
+import { useCanvasMediaDownload } from "./use-canvas-media-download";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { PortPlus } from "./ports";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
@@ -42,6 +42,7 @@ function MediaAssetNodeComponent({
   selected,
   kind,
 }: NodeProps<VideoAssetNodeType | AudioAssetNodeType> & { kind: "video" | "audio" }) {
+  const downloadCanvasMedia = useCanvasMediaDownload();
   const t = useTranslations("canvasNodes");
   const tc = useTranslations("common");
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -59,7 +60,7 @@ function MediaAssetNodeComponent({
 
   const onDownload = useCallback(() => {
     void downloadCanvasMedia(src, title, kind);
-  }, [src, title, kind]);
+  }, [src, title, kind, downloadCanvasMedia]);
 
   const commitName = useCallback(
     (name: string) => {
@@ -131,7 +132,10 @@ function MediaAssetNodeComponent({
               event.stopPropagation();
               setViewerOpen(true);
             }}
-            className="nodrag nowheel block aspect-video w-full rounded-xl select-none"
+            // No container-level `nodrag`: the media surface must move the
+            // node (same as image nodes). Interactive children — the play
+            // button and the active <video> — opt out on their own.
+            className="nowheel block aspect-video w-full rounded-xl select-none"
           />
         ) : (
           <div

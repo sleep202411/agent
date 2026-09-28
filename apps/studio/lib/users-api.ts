@@ -18,15 +18,24 @@ export interface PublicUser {
   avatar: string | null;
 }
 
-export async function fetchUsersByIds(ids: string[]): Promise<PublicUser[]> {
-  if (ids.length === 0) return [];
-  const data = await api.get<{ users: PublicUser[] }>("/aurora/users/by-ids", {
-    params: { ids: ids.join(",") },
-  });
-  return data.users.map((user) => ({
-    ...user,
-    avatar: resolveUserAvatarUrl(user.avatar) ?? null,
-  }));
+export async function fetchUsersByIds(ids: string[], signal?: AbortSignal): Promise<PublicUser[]> {
+  signal?.throwIfAborted();
+  const distinct = [...new Set(ids.filter(Boolean))];
+  const users: PublicUser[] = [];
+  for (let offset = 0; offset < distinct.length; offset += 50) {
+    const data = await api.get<{ users: PublicUser[] }>("/aurora/users/by-ids", {
+      params: { ids: distinct.slice(offset, offset + 50).join(",") },
+      signal,
+    });
+    signal?.throwIfAborted();
+    users.push(
+      ...data.users.map((user) => ({
+        ...user,
+        avatar: resolveUserAvatarUrl(user.avatar) ?? null,
+      }))
+    );
+  }
+  return users;
 }
 
 /**
@@ -38,7 +47,7 @@ export function useUsersByIds(ids: string[]): Map<string, PublicUser> {
   const distinct = Array.from(new Set(ids.filter(Boolean))).sort();
   const { data } = useQuery({
     queryKey: ["users-by-ids", distinct],
-    queryFn: () => fetchUsersByIds(distinct),
+    queryFn: ({ signal }) => fetchUsersByIds(distinct, signal),
     enabled: distinct.length > 0,
     staleTime: 5 * 60_000,
   });

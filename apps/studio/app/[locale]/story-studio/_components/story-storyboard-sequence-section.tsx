@@ -7,6 +7,7 @@ import type { StoryStoryboardSequence } from "@/lib/story-production-api";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
 import { StoryClipDetailDialog } from "./story-clip-detail-dialog";
+import { StoryClipVideoReplace } from "./story-clip-video-replace";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
 export interface StorySequenceChoiceOptions {
@@ -20,16 +21,18 @@ export interface StorySequenceChoiceOptions {
  */
 function StoryClipTile({
   clip,
-  sequenceId,
+  sequence,
   scope,
   durationLabel,
   allowGeneration,
+  aspectRatio,
 }: {
   clip: StoryStoryboardSequence["clips"][number];
-  sequenceId: string;
+  sequence: StoryStoryboardSequence;
   scope: { projectId: string; chapterId: string };
   durationLabel: string;
   allowGeneration: boolean;
+  aspectRatio: string;
 }) {
   const t = useTranslations("storyStudio.assetsPage");
   const boardT = useTranslations("storyStudio.storyboardPage");
@@ -41,7 +44,7 @@ function StoryClipTile({
         role="img"
         aria-label={boardT(`clipKind.${clip.kind}`)}
         title={boardT(`clipKind.${clip.kind}`)}
-        className="pointer-events-none absolute top-2 right-2 z-10 grid size-6 place-items-center rounded-md bg-black/50 text-white/75 backdrop-blur-sm"
+        className="pointer-events-none absolute top-2 left-2 z-10 grid size-6 place-items-center rounded-md bg-black/50 text-white/75 backdrop-blur-sm"
       >
         <KindIcon className="size-3.5" stroke={1.8} />
       </span>
@@ -50,7 +53,7 @@ function StoryClipTile({
         target={{
           kind: "storyboard_clip",
           id: clip.id,
-          sequenceId,
+          sequenceId: sequence.id,
           version: clip.version,
           status: clip.status,
           latestGeneration: clip.latestGeneration,
@@ -58,6 +61,8 @@ function StoryClipTile({
         label={clip.title}
         selectedMedia={clip.selectedMediaVersion}
         outputKind={clip.kind}
+        aspectRatio={aspectRatio}
+        playback="inline"
         allowGeneration={allowGeneration && !clip.selectedMediaVersion}
         secondaryAction={
           <button
@@ -72,9 +77,18 @@ function StoryClipTile({
       <p className="mt-1.5 truncate text-[11px] tabular-nums text-white/62">
         {clip.title} · {durationLabel}
       </p>
+      <StoryClipVideoReplace
+        projectId={scope.projectId}
+        chapterId={scope.chapterId}
+        sequence={sequence}
+        clip={clip}
+        enabled={allowGeneration}
+        placement="corner"
+        aspectRatio={aspectRatio}
+      />
       <StoryClipDetailDialog
         clip={clip}
-        sequenceId={sequenceId}
+        sequenceId={sequence.id}
         projectId={scope.projectId}
         chapterId={scope.chapterId}
         open={detailOpen}
@@ -134,9 +148,11 @@ export function StoryStoryboardSequenceSection({
   title,
   description,
   index,
+  clipKey,
   projectId,
   chapterId,
   allowGeneration = true,
+  aspectRatio = "16 / 9",
 }: {
   sequence: StoryStoryboardSequence;
   /** Canonical scene title from StoryDraft, never the sequence cache column. */
@@ -144,12 +160,17 @@ export function StoryStoryboardSequenceSection({
   /** The same node description edited in the Plot Tree, not a generated sequence summary. */
   description: string;
   index: number;
+  /** Automatic clip key such as SCENE_1. Hidden when it is the only title. */
+  clipKey: string;
   projectId: string;
   chapterId: string;
   allowGeneration?: boolean;
+  /** Project overview frame ratio. Missing profiles stay 16:9. */
+  aspectRatio?: string;
 }) {
   const t = useTranslations("storyStudio.storyboardPage");
   const scope = { projectId, chapterId };
+  const readableTitle = title.trim() && title.trim() !== clipKey ? title.trim() : "";
   // Storage and timeline invariants stay in milliseconds; seconds are display-only.
   const seconds = (ms: number) => Number((ms / 1000).toFixed(1));
 
@@ -157,17 +178,16 @@ export function StoryStoryboardSequenceSection({
     <article
       id={`plot-${sequence.plotNodeId}`}
       className="scroll-mt-6 rounded-2xl bg-white/[0.045] p-4 text-white shadow-sm"
-      aria-label={title}
+      aria-label={readableTitle || t("plotNode", { index: index + 1 })}
     >
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
-          {t("plotNode", { index: index + 1 })}
-        </span>
-      </div>
-      <div className="mt-1 flex items-center justify-between gap-3">
-        <div className="min-w-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="text-base font-semibold text-white/94">{title}</h2>
-          <code className="text-xs text-white/62">@{sequence.plotNodeId}</code>
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 className="text-base font-semibold text-white/94">
+            {t("plotNode", { index: index + 1 })}
+          </h2>
+          {readableTitle ? (
+            <span className="min-w-0 truncate text-sm text-white/80">{readableTitle}</span>
+          ) : null}
           <span className="text-xs tabular-nums text-white/62">
             {t("clipCount", { count: sequence.clips.length })} ·{" "}
             {t("seconds", { value: seconds(sequence.durationMs) })}
@@ -181,7 +201,7 @@ export function StoryStoryboardSequenceSection({
             {t("editTimeline")}
           </Link>
         </Button>
-      </div>
+      </header>
       {description.trim() ? (
         <div className="mt-3 max-w-3xl">
           <p className="text-xs font-medium text-muted-foreground">{t("nodeDescription")}</p>
@@ -191,22 +211,27 @@ export function StoryStoryboardSequenceSection({
         </div>
       ) : null}
 
-      {sequence.clips.length === 0 ? (
-        <p className="mt-4 text-sm text-white/64">{t("noClips")}</p>
-      ) : (
-        <div className="mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
-          {sequence.clips.map((clip) => (
-            <StoryClipTile
-              key={clip.id}
-              clip={clip}
-              sequenceId={sequence.id}
-              scope={scope}
-              durationLabel={t("seconds", { value: seconds(clip.durationMs) })}
-              allowGeneration={allowGeneration}
-            />
-          ))}
-        </div>
-      )}
+      <div className="mt-4 flex snap-x snap-mandatory items-start gap-3 overflow-x-auto pb-2">
+        {sequence.clips.map((clip) => (
+          <StoryClipTile
+            key={clip.id}
+            clip={clip}
+            sequence={sequence}
+            scope={scope}
+            durationLabel={t("seconds", { value: seconds(clip.durationMs) })}
+            allowGeneration={allowGeneration}
+            aspectRatio={aspectRatio}
+          />
+        ))}
+        <StoryClipVideoReplace
+          projectId={projectId}
+          chapterId={chapterId}
+          sequence={sequence}
+          enabled={allowGeneration}
+          placement="placeholder"
+          aspectRatio={aspectRatio}
+        />
+      </div>
     </article>
   );
 }

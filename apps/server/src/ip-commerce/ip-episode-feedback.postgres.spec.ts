@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'node:crypto';
@@ -21,7 +22,7 @@ integration('IP episode feedback (local PostgreSQL)', () => {
   const viewer = { userId: 'comment-test-viewer', nickName: 'Viewer' };
 
   beforeAll(async () => {
-    const url = new URL(databaseUrl!);
+    const url = postgresFixtureUrl(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(
@@ -100,10 +101,14 @@ integration('IP episode feedback (local PostgreSQL)', () => {
 
   it('shows the public production stage without audit metadata and rejects private IPs', async () => {
     expect(await publicStage.read({ ipId }, viewer)).toEqual({
-      stage: 'testing',
+      code: 200,
+      data: { stage: 'testing' },
     });
     await prisma.$executeRaw`INSERT INTO ip_production_stages(ip_id,stage,version) VALUES (${ipId}::uuid,'production',1)`;
-    expect(await publicStage.read({ ipId })).toEqual({ stage: 'production' });
+    expect(await publicStage.read({ ipId })).toEqual({
+      code: 200,
+      data: { stage: 'production' },
+    });
     await prisma.ip.update({
       where: { id: ipId },
       data: { listingVisibility: 'private' },
@@ -142,9 +147,9 @@ integration('IP episode feedback (local PostgreSQL)', () => {
       humanIpLikes: '1',
       episodes: [{ episodeId, episodeNo: 1, likes: '1', dislikes: '1' }],
     });
-    await prisma.ipEpisodeLocalization.updateMany({
-      where: { episodeId },
-      data: { archivedAt: new Date() },
+    await prisma.ipEpisode.update({
+      where: { id: episodeId },
+      data: { status: 'draft' },
     });
     expect(
       (await readIpProductionEvidence(prisma as PrismaService, ipId)).episodes,
@@ -156,6 +161,23 @@ integration('IP episode feedback (local PostgreSQL)', () => {
     await expect(
       readIpProductionEvidence(prisma as PrismaService, ipId),
     ).rejects.toThrow('IP not found');
+  });
+
+  it('accepts published fallback episodes without translation records', async () => {
+    await prisma.ipEpisodeLocalization.deleteMany({ where: { episodeId } });
+    expect(await service.vote(ipId, episodeId, viewer, 1)).toEqual({
+      likes: 1,
+      dislikes: 0,
+      mine: 1,
+    });
+    expect(await service.vote(ipId, episodeId, viewer, -1)).toEqual({
+      likes: 0,
+      dislikes: 1,
+      mine: -1,
+    });
+    expect(
+      (await readIpProductionEvidence(prisma as PrismaService, ipId)).episodes,
+    ).toEqual([{ episodeId, episodeNo: 1, likes: '0', dislikes: '1' }]);
   });
 
   it('records repeated votes once, changes preference and clears only the caller vote', async () => {

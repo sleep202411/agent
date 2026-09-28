@@ -12,8 +12,10 @@ import {
   IconDeviceGamepad2,
   IconDeviceMobile,
   IconFileAnalytics,
+  IconFileSettings,
   IconFlag,
   IconBriefcase,
+  IconBuildingStore,
   IconLayoutCards,
   IconMasksTheater,
   IconNews,
@@ -94,6 +96,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     label: "模型运营",
     icon: IconPlugConnected,
     permission: "ai_model_ops.read",
+  },
+  {
+    key: "/ai-actors",
+    href: "/ai-actors",
+    label: "AI演员",
+    icon: IconMasksTheater,
+    permission: "media.read",
   },
   {
     key: "/media",
@@ -321,6 +330,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
       items: [
         { href: "/ip/taxonomy", label: "题材词库", icon: IconTags, permission: "ip.read" },
         {
+          href: "/ip/publishers",
+          label: "发行商库",
+          icon: IconBuildingStore,
+          permission: "ip.read",
+        },
+        {
           href: "/ip/discovery",
           label: "广场运营位",
           icon: IconLayoutCards,
@@ -475,15 +490,27 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           permission: "crew.manage",
         },
         {
+          href: "/crews/disputes",
+          label: "Cases / 争议 / 爭議",
+          icon: IconChecklist,
+          permission: "crew.manage",
+        },
+        {
           href: "/crews/expenses",
-          label: "Expense submissions",
+          label: "报销审核",
           icon: IconChecklist,
           permission: "crew.manage",
         },
         {
           href: "/crews/delivery-catalog",
-          label: "Delivery catalog",
+          label: "交付标准",
           icon: IconChecklist,
+          permission: "crew.manage",
+        },
+        {
+          href: "/crews/task-templates",
+          label: "任务模板",
+          icon: IconFileSettings,
           permission: "crew.manage",
         },
       ],

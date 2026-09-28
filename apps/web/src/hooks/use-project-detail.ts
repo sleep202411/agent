@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect } from "react";
+import { useCurrentUser } from "./use-user";
 import { useParams, useSearchParams } from "next/navigation";
 import { useAppSelector } from "@/src/store";
 import { store } from "@/src/store";
@@ -41,9 +42,8 @@ export function useProjectDetail() {
   const urlWorldId = searchParams?.get("worldId") ?? null;
   const urlEpisodeId = searchParams?.get("episodeId") ?? null;
 
-  const loadedProjectIdRef = useRef<string | null>(null);
-  const loadedWorldIdRef = useRef<string | null>(null);
-  const loadedEpisodesKeyRef = useRef<string | null>(null);
+  const { user } = useCurrentUser();
+  const viewer = user?.id ?? null;
 
   const detail = useAppSelector((s) => selectCurrentInstance(s).detail);
   const isLoading = useAppSelector((s) => selectCurrentInstance(s).isLoading);
@@ -55,80 +55,98 @@ export function useProjectDetail() {
   const episodesVersion = useAppSelector((s) => selectCurrentInstance(s).episodesVersion);
   const worldVersion = useAppSelector((s) => selectCurrentInstance(s).worldVersion);
 
-  useEffect(() => {
-    if (!id || loadedProjectIdRef.current === id) return;
-    loadedProjectIdRef.current = id;
-
-    store.dispatch(reset());
+  useLayoutEffect(() => {
+    if (!id) return;
     store.dispatch(setProjectId(id));
-    store.dispatch(setRouteEpisodeId(urlEpisodeId));
-    if (urlWorldId) store.dispatch(setWorldId(urlWorldId));
+    store.dispatch(reset());
+    if (!viewer) return;
+    const controller = new AbortController();
+    const owns = () =>
+      !controller.signal.aborted && store.getState().project.currentProjectId === id;
     store.dispatch(setLoading(true));
 
     backendApi
-      .post<ProjectDetail>(`/api/user/project/detail/${id}`)
+      .post<ProjectDetail>(`/api/user/project/detail/${id}`, { signal: controller.signal })
       .then((data) => {
+        if (!owns()) return;
         store.dispatch(setDetail(data));
         const detailWorldId = data?.worldId as string | undefined;
         if (detailWorldId) store.dispatch(setWorldId(String(detailWorldId)));
       })
       .catch((err) => {
+        if (!owns()) return;
         store.dispatch(setError(err.message ?? "Load failed"));
       });
-  }, [id, urlWorldId, urlEpisodeId]);
+    return () => controller.abort();
+  }, [id, viewer]);
 
   useEffect(() => {
+    if (!viewer || store.getState().project.currentProjectId !== id) return;
     store.dispatch(setRouteEpisodeId(urlEpisodeId));
     if (!urlEpisodeId) return;
     if (episodes.some((ep) => String(ep.id) === String(urlEpisodeId))) {
       store.dispatch(setActiveEpisodeId(String(urlEpisodeId)));
     }
-  }, [urlEpisodeId, episodes]);
+  }, [id, viewer, urlEpisodeId, episodes]);
 
   useEffect(() => {
-    if (!id) return;
-
-    const key = `${id}:${episodesVersion}`;
-    if (loadedEpisodesKeyRef.current === key) return;
-    loadedEpisodesKeyRef.current = key;
+    if (!id || !viewer) return;
+    const controller = new AbortController();
+    const owns = () =>
+      !controller.signal.aborted && store.getState().project.currentProjectId === id;
 
     store.dispatch(setEpisodesLoading(true));
 
     backendApi
       .post<Paginated<Episode>>("/api/user/world/list/episode", {
+        signal: controller.signal,
         data: { productId: id, page: 1, pageSize: 100 },
       })
       .then((data) => {
+        if (!owns()) return;
         store.dispatch(setEpisodes(data?.list ?? []));
       })
       .catch((err) => {
+        if (!owns()) return;
         store.dispatch(setError(err.message ?? "Failed to load episodes"));
         store.dispatch(setEpisodesLoading(false));
       });
-  }, [id, episodesVersion]);
+    return () => controller.abort();
+  }, [id, viewer, episodesVersion]);
 
   useEffect(() => {
+    if (!id || !viewer || store.getState().project.currentProjectId !== id) return;
+    const current = selectCurrentInstance(store.getState());
     const resolvedWorldId =
-      urlWorldId ?? (detail?.worldId ? String(detail.worldId) : null) ?? worldId;
+      urlWorldId ??
+      (current.detail?.worldId ? String(current.detail.worldId) : null) ??
+      current.worldId;
     if (!resolvedWorldId) return;
 
-    const key = `${resolvedWorldId}:${worldVersion}`;
-    if (loadedWorldIdRef.current === key) return;
-    loadedWorldIdRef.current = key;
+    const controller = new AbortController();
+    const owns = () =>
+      !controller.signal.aborted && store.getState().project.currentProjectId === id;
 
     store.dispatch(setWorldId(resolvedWorldId));
     store.dispatch(setWorldLoading(true));
 
     backendApi
-      .post<Record<string, unknown>>(`/api/user/world/query/world?id=${resolvedWorldId}`)
+      .post<Record<string, unknown>>(
+        `/api/user/world/query/world?id=${encodeURIComponent(resolvedWorldId)}`,
+        { signal: controller.signal }
+      )
       .then((data) => {
+        if (!owns()) return;
         if (data) store.dispatch(setWorldDetail(data));
+        else store.dispatch(setWorldLoading(false));
       })
       .catch((err) => {
+        if (!owns()) return;
         console.error("[useProjectDetail] 加载世界详情失败:", err);
         store.dispatch(setWorldLoading(false));
       });
-  }, [detail?.worldId, urlWorldId, worldId, worldVersion]);
+    return () => controller.abort();
+  }, [id, viewer, detail?.worldId, urlWorldId, worldId, worldVersion]);
 
   return {
     projectId: store.getState().project.currentProjectId ?? id,

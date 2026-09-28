@@ -39,11 +39,10 @@ export function isExperienceGestureAvailable(
   if (!Number.isFinite(sceneTimeMs) || sceneTimeMs < 0) {
     throw new RangeError("Gesture sceneTimeMs must be finite and non-negative");
   }
-  if (
-    gesture.activeWindow &&
-    (sceneTimeMs < gesture.activeWindow.startMs || sceneTimeMs > gesture.activeWindow.endMs)
-  ) {
-    return false;
+  if (gesture.activeWindow) {
+    const beforeStart = sceneTimeMs < gesture.activeWindow.startMs;
+    const afterEnd = sceneTimeMs > gesture.activeWindow.endMs && gesture.holdFrame !== true;
+    if (beforeStart || afterEnd) return false;
   }
   return gesture.enabledWhen
     ? evaluateExperienceCondition(gesture.enabledWhen, state, context)

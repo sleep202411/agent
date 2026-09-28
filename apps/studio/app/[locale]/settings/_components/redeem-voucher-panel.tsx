@@ -34,7 +34,7 @@ export function RedeemVoucherPanel() {
           ? t("redeemCode.alreadyRedeemed")
           : t("redeemCode.success", { amount })
       );
-      setCode("");
+      setCode((current) => (current === code ? "" : current));
       await queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("redeemCode.error"));

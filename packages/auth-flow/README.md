@@ -13,7 +13,9 @@ One "Continue" button, no register/login split:
 2. **code** — 6 cells, resend countdown, back-to-edit → `POST /user/new/login`
    (a brand-new account is created automatically; the response says `isNewUser`)
 3. **profile** — avatar + nickname, skippable, new accounts only
-4. **invite** — optional invite code, skippable, new accounts only
+4. **invite** — only for new accounts with a nonblank code entered below login or supplied by a referral link; explicitly apply it or continue without it. Blank codes finish onboarding immediately.
+
+The invitation field is collapsed beneath the sign-in controls, labeled optional, and never takes initial focus. Referral-link prefills expand it for visibility. Password reset does not display it.
 
 Secondary entry: **use password instead** (`type=pwd`) for legacy accounts. That
 path never auto-registers, which is exactly why it is secondary.

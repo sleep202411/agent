@@ -84,12 +84,8 @@ function parseArgs(argv: string[]): Args {
 
 function assertLocalDatabase(args: Args): void {
   if (args.allowRemote) return;
-  const url = connectionString;
-  if (
-    !url.includes('localhost') &&
-    !url.includes('127.0.0.1') &&
-    !url.includes('[::1]')
-  ) {
+  const hostname = new URL(connectionString).hostname;
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(hostname)) {
     throw new Error(
       'Refusing to run media backfill against a non-local DATABASE_URL. Pass --allow-remote only during an approved maintenance window.',
     );

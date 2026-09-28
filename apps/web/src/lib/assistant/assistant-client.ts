@@ -65,7 +65,8 @@ async function parseError(response: Response) {
 
 export async function fetchMessagesByIds(
   conversationId: string,
-  messageIds: string[]
+  messageIds: string[],
+  signal?: AbortSignal
 ): Promise<AssistantMessage[]> {
   if (messageIds.length === 0) return [];
   const response = await fetch("/aurora/chat/get-messages", {
@@ -73,8 +74,9 @@ export async function fetchMessagesByIds(
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conversationId, messageIds }),
+    signal,
   });
-  if (!response.ok) return [];
+  if (!response.ok) throw new Error(`Failed to get messages: HTTP ${response.status}`);
   const body = (await response.json()) as {
     conversationId: string;
     messages: AssistantMessage[];
@@ -197,23 +199,6 @@ export class AgentBusyError extends Error {
   }
 }
 
-// ─── Save API ─────────────────────────────────────────
-//
-// In the new architecture, the server writes every assistant/user message to
-// Redis as part of submit-message-to-agent (see chat/agent-stream.service +
-// mastra-proxy.persistInboundMessages). There's nothing left for the client
-// to save — the store is already the source of truth.
-//
-// This function is kept as a no-op so existing callers (three thunks in
-// assistantSlice) can be migrated incrementally. We'll delete the call sites
-// in a follow-up sweep.
-export async function saveConversation(
-  _projectId: string,
-  _messages: AssistantMessage[]
-): Promise<void> {
-  // no-op — persistence happens server-side during the stream.
-}
-
 // ─── History API ───────────────────────────────────────
 
 export interface ConversationHistoryResponse {
@@ -254,10 +239,11 @@ export async function fetchConversationHistory(
 // ─── Clear API ─────────────────────────────────────────
 
 export async function clearConversation(projectId: string): Promise<void> {
-  await fetch("/aurora/chat/clear-conversation", {
+  const response = await fetch("/aurora/chat/clear-conversation", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ conversationId: projectId }),
   });
+  if (!response.ok) throw new Error(`Failed to clear conversation: HTTP ${response.status}`);
 }

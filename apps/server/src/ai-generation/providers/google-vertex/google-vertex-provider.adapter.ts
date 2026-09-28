@@ -55,7 +55,7 @@ export class GoogleVertexProviderAdapter implements ProviderAdapter {
     input: Record<string, unknown>,
     context: ProviderGenerationContext,
   ): Promise<StartResult> {
-    const runtime = await this.requireRuntime(modelId);
+    const runtime = await this.requireRuntime(modelId, true);
     let request = mapGoogleVertexProviderRequest(runtime, input, context);
     if (request.kind === 'omni' && request.sourceJobId) {
       request = {
@@ -469,8 +469,11 @@ export class GoogleVertexProviderAdapter implements ProviderAdapter {
 
   private async requireRuntime(
     modelId: string,
+    forSubmission = false,
   ): Promise<GoogleVertexRuntimeConfig> {
-    const runtime = await this.catalog.getRuntimeConfig(modelId);
+    const runtime = await this.catalog.getRuntimeConfig(modelId, {
+      forSubmission,
+    });
     if (!runtime) {
       throw googleVertexError(
         'PROVIDER_NOT_CONFIGURED',

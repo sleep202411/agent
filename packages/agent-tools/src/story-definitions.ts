@@ -7,8 +7,10 @@ import {
   StoryAgentLocalizedTextSchema,
   StoryAgentRunStatusSchema,
   StoryAgentStableIdSchema,
+  StoryAgentStateVariableSchema,
   StoryPatchOperationsSchema,
 } from "@repo/shared/story-agent";
+import { MAX_STORY_STATE_VARIABLES, StoryStateKeySchema } from "@repo/shared/story-stats";
 import { z } from "zod";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 
@@ -24,23 +26,9 @@ const StoryReadGraphNodeSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("decision"),
       nodeId: StoryAgentStableIdSchema,
+      communityPointPrice: z.number().int().min(0).max(2_147_483_647).optional(),
+      onEnterEffects: StoryAgentGraphNodeSchema.shape.onEnterEffects,
       exit: StoryAgentGraphNodeSchema.shape.exit,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("world"),
-      nodeId: StoryAgentStableIdSchema,
-      worldId: z.string().uuid().nullable(),
-      name: z.string().trim().max(120).optional(),
-      entryInstruction: z.string().trim().max(4_000).optional(),
-      maxExperienceSeconds: z.union([z.literal(60), z.literal(90), z.literal(120)]),
-      exit: z
-        .object({
-          kind: z.literal("auto"),
-          nextNodeId: StoryAgentStableIdSchema.nullable(),
-        })
-        .strict(),
     })
     .strict(),
 ]);
@@ -358,6 +346,43 @@ export const StoryUpdateBibleInputSchema = z
       value.productionNotes !== undefined,
     "At least one Story bible change is required."
   );
+
+export const StoryUpdateStateVariablesInputSchema = StoryMutationBaseSchema.extend({
+  upsert: z.array(StoryAgentStateVariableSchema).max(MAX_STORY_STATE_VARIABLES).default([]),
+  removeKeys: z.array(StoryStateKeySchema).max(MAX_STORY_STATE_VARIABLES).default([]),
+})
+  .strict()
+  .superRefine((value, context) => {
+    if (value.upsert.length === 0 && value.removeKeys.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "Upsert or remove at least one state variable.",
+      });
+    }
+    const upsertKeys = value.upsert.map((variable) => variable.key);
+    if (new Set(upsertKeys).size !== upsertKeys.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["upsert"],
+        message: "State variable keys must be unique.",
+      });
+    }
+    if (new Set(value.removeKeys).size !== value.removeKeys.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["removeKeys"],
+        message: "Removed state variable keys must be unique.",
+      });
+    }
+    const overlap = value.removeKeys.find((key) => upsertKeys.includes(key));
+    if (overlap) {
+      context.addIssue({
+        code: "custom",
+        path: ["removeKeys"],
+        message: `State variable ${overlap} cannot be updated and removed together.`,
+      });
+    }
+  });
 
 export const StoryAddSceneInputSchema = StoryMutationBaseSchema.extend({
   afterNodeId: StoryAgentStableIdSchema.nullable().optional(),
@@ -763,6 +788,7 @@ export const STORY_AGENT_OS_TOOLS = [
           logline: z.string(),
           synopsis: z.string(),
           characters: z.array(StoryAgentCharacterSchema),
+          stateVariables: z.array(StoryAgentStateVariableSchema),
         }),
         graph: z.object({
           entryNodeId: StoryAgentStableIdSchema.nullable(),
@@ -811,6 +837,15 @@ export const STORY_AGENT_OS_TOOLS = [
     kind: "command",
     risk: "sensitive",
     inputSchema: StoryUpdateBibleInputSchema,
+    outputSchema: StoryMutationOutputSchema,
+  },
+  {
+    id: "story.updateStateVariables",
+    description:
+      "Atomically create, replace, or remove Story state-variable definitions against baseDraftRevision. Call story.read first. Variables referenced by effects or conditions cannot be removed until those references are updated.",
+    kind: "command",
+    risk: "sensitive",
+    inputSchema: StoryUpdateStateVariablesInputSchema,
     outputSchema: StoryMutationOutputSchema,
   },
   {
@@ -886,7 +921,7 @@ export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.applyPatch",
     description:
-      "Apply canonical StoryPatch operations for complex graph refactors that cannot be expressed by the intent-level Story tools.",
+      "Apply canonical StoryPatch operations for complex graph refactors, including node-entry effects, choice effects, visibility conditions, and conditional routes that cannot be expressed by the intent-level Story tools.",
     kind: "command",
     risk: "critical",
     inputSchema: StoryApplyPatchInputSchema,
@@ -971,6 +1006,15 @@ export const STORY_AGENT_OS_TOOLS = [
     id: "story.generation.cancelBatch",
     description:
       "Cancel a Story generation batch. Undispatched items stop immediately and already-submitted jobs receive best-effort cancellation.",
+    kind: "command",
+    risk: "sensitive",
+    inputSchema: StoryGetGenerationBatchInputSchema,
+    outputSchema: StoryGenerationBatchOutputSchema,
+  },
+  {
+    id: "story.generation.resumeBatch",
+    description:
+      "Resume a blocked or failed Story generation batch from its first unfinished item, reusing the original confirmed per-item quotes. Call this when the creator explicitly asks to continue or retry a paused batch — typically after recharging compute points. The creator's own request in the conversation is the authorization; per-item points are re-reserved by the billing authority at dispatch and the batch re-blocks safely if the balance is still short. Never call it unprompted, and never use it to bypass the confirm approval of a fresh quote.",
     kind: "command",
     risk: "sensitive",
     inputSchema: StoryGetGenerationBatchInputSchema,

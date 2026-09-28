@@ -145,25 +145,6 @@ async function main() {
   console.log(`[sync-legacy] source: ${LEGACY_DIST}`);
   console.log(`[sync-legacy] target: ${PUBLIC_DIR}`);
 
-  // Copy the two asset trees. We blow away the destination first so
-  // stale files from a previous build don't accumulate.
-  for (const [label, { src, dst }] of Object.entries(TARGETS)) {
-    const srcAbs = resolve(LEGACY_DIST, src);
-    const dstAbs = resolve(PUBLIC_DIR, dst);
-    if (!existsSync(srcAbs)) {
-      console.warn(`[sync-legacy] ${label}: source missing (${srcAbs}) — skipping`);
-      continue;
-    }
-    await copyDir(srcAbs, dstAbs);
-    console.log(`[sync-legacy] ${label}: ${srcAbs} → ${dstAbs}`);
-  }
-
-  // Patch step: rewrite hardcoded `https://fizzstudio.<env>` URLs in
-  // the just-copied asset chunks back to the apex. The legacy bundle
-  // builds links from these constants and would otherwise navigate the
-  // user across subdomain (where the satoken cookie may not follow).
-  await rewriteCrossSubdomainUrls(resolve(PUBLIC_DIR, TARGETS.assets.dst));
-
   // Copy index.html with a small `<style>` injection that hides the
   // legacy fizzdragon-web's own AppLayout navbar + footer. The platform
   // is the only consumer of this bundle now (strangler-fig), so legacy
@@ -243,6 +224,26 @@ async function main() {
     fail(`could not find <head> tag in ${indexSrc} — refusing to write legacy.html without prefix-stripper`);
   }
   patched = patched.replace(/<\/head>/i, `${HIDE_CHROME_STYLE}</head>`);
+  // Validate and prepare the HTML before replacing any installed assets.
+  // Copy the two asset trees. We blow away the destination first so
+  // stale files from a previous build don't accumulate.
+  for (const [label, { src, dst }] of Object.entries(TARGETS)) {
+    const srcAbs = resolve(LEGACY_DIST, src);
+    const dstAbs = resolve(PUBLIC_DIR, dst);
+    if (!existsSync(srcAbs)) {
+      console.warn(`[sync-legacy] ${label}: source missing (${srcAbs}) — skipping`);
+      continue;
+    }
+    await copyDir(srcAbs, dstAbs);
+    console.log(`[sync-legacy] ${label}: ${srcAbs} → ${dstAbs}`);
+  }
+
+  // Patch step: rewrite hardcoded `https://fizzstudio.<env>` URLs in
+  // the just-copied asset chunks back to the apex. The legacy bundle
+  // builds links from these constants and would otherwise navigate the
+  // user across subdomain (where the satoken cookie may not follow).
+  await rewriteCrossSubdomainUrls(resolve(PUBLIC_DIR, TARGETS.assets.dst));
+
   const indexDst = resolve(PUBLIC_DIR, "legacy.html");
   await writeFile(indexDst, patched, "utf-8");
   console.log(`[sync-legacy] index: ${indexSrc} → ${indexDst} (chrome hidden, prefix stripper injected)`);

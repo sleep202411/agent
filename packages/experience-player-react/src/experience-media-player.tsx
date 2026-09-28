@@ -166,6 +166,7 @@ export function ExperienceMediaPlayer({
   onPlaybackError,
   onPlaybackHandle,
   onSoundBlocked,
+  onContentSize,
   playbackIdentity,
   copy,
 }: {
@@ -185,6 +186,8 @@ export function ExperienceMediaPlayer({
   /** Called once when the browser refused audible playback and the clip had to
    *  fall back to muted, so the host can offer to turn sound on. */
   onSoundBlocked?: () => void;
+  /** Decoded frame size, used when the manifest omits technical dimensions. */
+  onContentSize?: (size: { width: number; height: number }) => void;
   playbackIdentity: string;
   copy: ExperiencePlayerVideoCopy;
 }) {
@@ -255,22 +258,40 @@ export function ExperienceMediaPlayer({
     // other orientation, and without a fresh registration nothing would start
     // the newly loaded source — leaving a still frame over a stalled element
     // with no `playing` coming to take it down.
+    let disposed = false;
+    let playVersion = 0;
     onPlaybackHandle({
       playbackIdentity: rendered.identity,
-      play: () =>
-        playWithSoundFallback(
-          soundFallbackTarget(player, readinessRef.current!, readinessKey),
+      play: () => {
+        const version = ++playVersion;
+        const assertActive = () => {
+          if (disposed || version !== playVersion) throw mediaReadinessAbort();
+        };
+        return playWithSoundFallback(
+          soundFallbackTarget(player, readinessRef.current!, readinessKey, assertActive),
           mutedRef,
           onSoundBlocked
-        ),
-      pause: () => pauseMediaPlayer(player),
-      seek: (seconds) => seekMediaPlayer(player, seconds),
+        );
+      },
+      pause: () => {
+        if (disposed) return;
+        playVersion++;
+        pauseMediaPlayer(player);
+      },
+      seek: (seconds) => {
+        if (!disposed) seekMediaPlayer(player, seconds);
+      },
       setMuted: (nextMuted) => {
+        if (disposed) return;
         mutedRef.current = nextMuted;
         applyPlayerMuted(player, nextMuted);
       },
     });
-    return () => onPlaybackHandle(null);
+    return () => {
+      disposed = true;
+      playVersion++;
+      onPlaybackHandle(null);
+    };
   }, [onPlaybackHandle, onSoundBlocked, readinessKey, rendered.identity, rendered.uri]);
   return (
     <MediaPlayer
@@ -297,6 +318,7 @@ export function ExperienceMediaPlayer({
         readinessRef.current?.markReady(readinessKey);
         const player = playerRef.current;
         if (player) synchronizePlayerContract(player, renderedDuration, mutedRef.current);
+        reportDecodedContentSize(playerRef.current, onContentSize);
       }}
       // Takes the still frame down, and the reason none of this is on a timer.
       // `playing` is the earliest event that means the element is presenting the
@@ -305,7 +327,10 @@ export function ExperienceMediaPlayer({
       // can uncover a cut that has not been composited yet.
       onPlaying={() => setStillFrameHeld(false)}
       onEnd={onEnd}
-      onTimeUpdate={(detail) => emitValidTimeUpdate(onTimeUpdate, detail.currentTime)}
+      onTimeUpdate={(detail) => {
+        reportDecodedContentSize(playerRef.current, onContentSize);
+        emitValidTimeUpdate(onTimeUpdate, detail.currentTime);
+      }}
       // The element's own decode/source failure. Always fatal, never routine:
       // `MediaErrorDetail` is not a DOM exception and carries no `name` to
       // classify, so it goes straight to the host.
@@ -463,6 +488,15 @@ function holdsStillFrame(capture: StillFrameCapture, held: boolean): boolean {
 /** The `<video>` the provider drives, when the provider has a frame to give.
  *  Audio and the embedded providers do not, and this player only loads `video/*`
  *  anyway, so anything else is treated as nothing to copy. */
+function reportDecodedContentSize(
+  player: MediaPlayerInstance | null,
+  onContentSize: ((size: { width: number; height: number }) => void) | undefined
+): void {
+  const media = providerVideo(player);
+  if (!onContentSize || !media || media.videoWidth <= 0 || media.videoHeight <= 0) return;
+  onContentSize({ width: media.videoWidth, height: media.videoHeight });
+}
+
 function providerVideo(player: MediaPlayerInstance | null): HTMLVideoElement | null {
   const provider = player?.provider;
   if (provider?.type === "video" || provider?.type === "hls" || provider?.type === "dash") {
@@ -481,11 +515,24 @@ export interface ExperienceSoundFallbackTarget {
 function soundFallbackTarget(
   player: MediaPlayerInstance,
   readiness: ExperienceMediaReadinessGate,
-  readinessKey: string
+  readinessKey: string,
+  assertActive: () => void
 ): ExperienceSoundFallbackTarget {
   return {
-    play: () => playMediaPlayerWhenReady(player, readiness, readinessKey),
-    setMuted: (muted) => applyPlayerMuted(player, muted),
+    play: async () => {
+      assertActive();
+      try {
+        await playMediaPlayerWhenReady(player, readiness, readinessKey, assertActive);
+      } catch (error) {
+        assertActive();
+        throw error;
+      }
+      assertActive();
+    },
+    setMuted: (muted) => {
+      assertActive();
+      applyPlayerMuted(player, muted);
+    },
   };
 }
 
@@ -582,9 +629,11 @@ export async function playWithSoundFallback(
 export async function playMediaPlayerWhenReady(
   player: MediaPlayerInstance,
   readiness: ExperienceMediaReadinessGate,
-  readinessKey: string
+  readinessKey: string,
+  assertActive?: () => void
 ): Promise<void> {
   await readiness.wait(readinessKey);
+  assertActive?.();
   const readyMedia = providerMedia(player);
   if (readyMedia) return readyMedia.play();
   return player.play();

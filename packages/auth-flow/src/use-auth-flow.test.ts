@@ -48,6 +48,7 @@ interface Harness {
 const mounted: Array<() => void> = [];
 
 interface MountOptions {
+  request?: AuthTransport["request"];
   initialMode?: AuthMode;
   initialIdentifier?: string;
   initialInviteCode?: string;
@@ -66,6 +67,7 @@ function mount(options?: MountOptions): Harness {
   const transport: AuthTransport = {
     async request(input) {
       requests.push(input);
+      if (options?.request) return options.request(input);
       if (input.path.endsWith("/reset/password")) {
         // A reset is always an EXISTING account; onboarding must not run.
         return { status: 200, body: { code: 200, token: "tok-1", userId: "42" } };
@@ -165,7 +167,7 @@ describe("onSuccess", () => {
   });
 
   it("fires once when the user finishes every step", async () => {
-    const harness = mount();
+    const harness = mount({ initialInviteCode: "REF123" });
     await signIn(harness);
 
     await act(async () => harness.controller.actions.setNickname("Ada"));
@@ -181,7 +183,7 @@ describe("onSuccess", () => {
   });
 
   it("fires once when the user skips every step", async () => {
-    const harness = mount();
+    const harness = mount({ initialInviteCode: "REF123" });
     await signIn(harness);
 
     await act(async () => harness.controller.actions.skipProfile());
@@ -704,5 +706,107 @@ describe("password reset", () => {
       // Normalized on the way out, exactly like the sign-in flow.
       query: { email: "isaac@example.com" },
     });
+  });
+});
+
+describe("pending code-send ownership", () => {
+  function pendingResponse() {
+    let finish!: () => void;
+    const promise = new Promise<{ status: number; body: { code: number } }>((resolve) => {
+      finish = () => resolve({ status: 200, body: { code: 200 } });
+    });
+    return { promise, finish };
+  }
+  it("releases admission after failure so the active flow can retry", async () => {
+    let attempts = 0;
+    const harness = mount({
+      request: () => {
+        attempts += 1;
+        return attempts === 1
+          ? Promise.reject(new Error("offline"))
+          : Promise.resolve({ status: 200, body: { code: 200 } });
+      },
+    });
+    await act(async () => harness.controller.actions.setIdentifier(PHONE));
+    await act(async () => harness.controller.actions.submitIdentifier());
+    expect(harness.controller.state.error).not.toBeNull();
+    await act(async () => harness.controller.actions.submitIdentifier());
+    expect(harness.sends).toHaveLength(2);
+    expect(harness.controller.state.step).toBe("code");
+  });
+  it("admits only one pending code send across mounted dialogs", async () => {
+    const pending = pendingResponse();
+    const first = mount({ request: () => pending.promise });
+    const second = mount();
+    await act(async () => first.controller.actions.setIdentifier(PHONE));
+    await act(async () => second.controller.actions.setIdentifier(OTHER_PHONE));
+    await act(async () => first.controller.actions.submitIdentifier());
+    await act(async () => second.controller.actions.submitIdentifier());
+    const secondCount = second.sends.length;
+    await act(async () => pending.finish());
+    expect(first.sends).toHaveLength(1);
+    expect(secondCount).toBe(0);
+  });
+  it("retains pending-send admission across close and reopen", async () => {
+    const pending = pendingResponse();
+    const harness = mount({ request: () => pending.promise });
+    await act(async () => harness.controller.actions.setIdentifier(PHONE));
+    await act(async () => harness.controller.actions.submitIdentifier());
+    harness.setActive(false);
+    harness.setActive(true);
+    await act(async () => harness.controller.actions.setIdentifier(OTHER_PHONE));
+    await act(async () => harness.controller.actions.submitIdentifier());
+    const count = harness.sends.length;
+    await act(async () => pending.finish());
+    expect(count).toBe(1);
+  });
+  it("keeps a replacement dialog on its own input after an old send completes", async () => {
+    const pending = pendingResponse();
+    const harness = mount({ request: () => pending.promise });
+    await act(async () => harness.controller.actions.setIdentifier(PHONE));
+    await act(async () => harness.controller.actions.submitIdentifier());
+    harness.setActive(false);
+    harness.setActive(true);
+    await act(async () => harness.controller.actions.setIdentifier(OTHER_PHONE));
+    await act(async () => pending.finish());
+    expect(harness.controller.state.step).toBe("identifier");
+    expect(harness.controller.state.identifier).toBe(OTHER_PHONE);
+    expect(harness.events).toEqual([]);
+  });
+});
+
+describe("signing in without an invitation", () => {
+  it("finishes after profile without calling referral binding", async () => {
+    const harness = mount();
+    await signIn(harness);
+    await act(async () => harness.controller.actions.skipProfile());
+    expect(harness.controller.state.step).toBe("done");
+    expect(harness.onSuccess).toHaveBeenCalledTimes(1);
+    expect(harness.events.some((event) => event.type === "invite_bound")).toBe(false);
+  });
+});
+
+describe("optional referral failure recovery", () => {
+  it("retains the authenticated session and can continue after binding fails", async () => {
+    const harness = mount({
+      initialInviteCode: "REF123",
+      request: async (input) =>
+        input.path.endsWith("/login")
+          ? { status: 200, body: { code: 200, token: "tok-1", isNewUser: true, userId: "42" } }
+          : input.path.includes("bind")
+            ? { status: 200, body: { code: 500, msg: "Referral unavailable" } }
+            : { status: 200, body: { code: 200 } },
+    });
+    await signIn(harness);
+    await act(async () => harness.controller.actions.skipProfile());
+    const session = harness.controller.state.session;
+    await act(async () => harness.controller.actions.submitInvite());
+    expect(harness.controller.state.step).toBe("invite");
+    expect(harness.controller.state.error).not.toBeNull();
+    expect(harness.controller.state.session).toEqual(session);
+    expect(harness.onSuccess).not.toHaveBeenCalled();
+    await act(async () => harness.controller.actions.skipInvite());
+    expect(harness.controller.state.step).toBe("done");
+    expect(harness.onSuccess).toHaveBeenCalledExactlyOnceWith(session);
   });
 });

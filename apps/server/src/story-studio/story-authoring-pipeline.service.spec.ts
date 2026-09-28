@@ -13,6 +13,7 @@ import { StoryAuthoringPipelineService } from './story-authoring-pipeline.servic
 import {
   documentFromStorySource,
   SOURCE_PARTITION_SYSTEM,
+  SOURCE_BATCH_SYSTEM,
   SOURCE_BOUNDARY_SYSTEM,
   SOURCE_ROUTING_REPAIR_SYSTEM,
   type StorySourcePartition,
@@ -210,12 +211,27 @@ describe('StoryAuthoringPipelineService', () => {
         return second as never;
       }
       if (call.stage === 'validate') return scopedAudit(call.prompt) as never;
+      // The entry's choice makes source_1 a declared alternative, so the
+      // deterministic linear spine must leave both orphans to the model loop.
       return Object.fromEntries(
         [0, 1, 2, 3].map((i) => [
           `source_${i}`,
           {
             ...SOURCE_BATCH.source_0,
-            exit: { kind: 'auto', nextNodeId: i === 3 ? null : 'source_3' },
+            exit:
+              i === 0
+                ? {
+                    kind: 'choice',
+                    prompt: '选择去向',
+                    choices: [
+                      {
+                        source: { start: 0, end: 0 },
+                        label: '开场',
+                        nextNodeId: 'source_3',
+                      },
+                    ],
+                  }
+                : { kind: 'auto', nextNodeId: i === 3 ? null : 'source_3' },
           },
         ]),
       ) as never;
@@ -238,6 +254,60 @@ describe('StoryAuthoringPipelineService', () => {
       nextNodeId: 'source_1',
     });
     expect(mockedRunStoryAuthoringStage).toHaveBeenCalledTimes(4);
+  });
+
+  it('chains plain orphaned scenes along reading order before the model repair loop', async () => {
+    const source = '开场\n共同对白\n后续对白\n结尾';
+    const batchPrompts: string[] = [];
+    const partitionPrompts: string[] = [];
+    mockedRunStoryAuthoringStage.mockImplementation(async (_model, call) => {
+      await Promise.resolve();
+      if (call.system === SOURCE_PARTITION_SYSTEM) {
+        partitionPrompts.push(call.prompt);
+        return { ...SOURCE_PARTITION, additionalStarts: [0, 1, 2, 3] } as never;
+      }
+      if (call.system === SOURCE_BATCH_SYSTEM) batchPrompts.push(call.prompt);
+      if (call.system === SOURCE_ROUTING_REPAIR_SYSTEM)
+        throw new Error('The spine must prevent this repair call.');
+      if (call.stage === 'validate') return scopedAudit(call.prompt) as never;
+      return Object.fromEntries(
+        [0, 1, 2, 3].map((i) => [
+          `source_${i}`,
+          {
+            ...SOURCE_BATCH.source_0,
+            exit: { kind: 'auto', nextNodeId: i === 3 ? null : 'source_3' },
+          },
+        ]),
+      ) as never;
+    });
+    const result = await new StoryAuthoringPipelineService().compileScript({
+      sourceText: source,
+      document: documentFromStorySource(source),
+      title: '原稿',
+      creativeProfile: CREATIVE_PROFILE,
+      signal: new AbortController().signal,
+    });
+    // The batch stage orphaned source_1/source_2 (everything jumped to
+    // source_3); the deterministic spine restores the reading-order spine
+    // 0→1→2→3 without spending a model repair round.
+    expect(result.screenplay.scenes.map((scene) => scene.exit)).toEqual([
+      { kind: 'auto', nextNodeId: 'source_1' },
+      { kind: 'auto', nextNodeId: 'source_2' },
+      { kind: 'auto', nextNodeId: 'source_3' },
+      { kind: 'auto', nextNodeId: null },
+    ]);
+    // Concurrent batch wiring works from the catalog plus its assigned
+    // passages only; the full <source_blocks> payload stays with the global
+    // (serial, rare) partition call.
+    expect(batchPrompts.length).toBeGreaterThan(0);
+    for (const prompt of batchPrompts) {
+      expect(prompt).toContain('<scene_catalog>');
+      expect(prompt).toContain('<assigned_passages>');
+      expect(prompt).not.toContain('<source_blocks>');
+    }
+    expect(partitionPrompts.length).toBeGreaterThan(0);
+    for (const prompt of partitionPrompts)
+      expect(prompt).toContain('<source_blocks>');
   });
 
   it('reviews every unassigned paragraph before freezing the catalog for wiring', async () => {

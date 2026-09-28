@@ -45,6 +45,7 @@ interface CrewWorkbenchShellProps {
   activeTab: WorkspaceTabId;
   tabs: readonly WorkspaceTab[];
   children: ReactNode;
+  notice?: ReactNode;
   crewId: string;
   crewLogo?: string | null;
   crewName: string;
@@ -63,6 +64,7 @@ export function CrewWorkbenchShell({
   activeTab,
   tabs,
   children,
+  notice,
   crewId,
   crewLogo,
   crewName,
@@ -83,18 +85,19 @@ export function CrewWorkbenchShell({
   return (
     <div
       className={cn(
-        "grid min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[60px_220px_minmax(0,1fr)]",
+        "grid min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-background text-[#f5f5f6] md:grid-cols-[180px_180px_minmax(0,1fr)] xl:grid-cols-[220px_220px_minmax(0,1fr)]",
         embedded ? "h-full" : "h-dvh"
       )}
     >
       <CrewSwitcherRail
+        showNames
         embedded={embedded}
         currentCrew={{ id: crewId, logo: crewLogo ?? "", name: crewName }}
         currentCrewHref={currentCrewHref}
       />
       <aside
         aria-label={tw("globalNavigation")}
-        className="flex min-h-0 flex-col items-stretch border-r border-white/[0.075] bg-[#090a0d] px-1.5 py-2 md:px-2"
+        className="flex min-h-0 flex-col items-stretch border-r border-white/[0.075] bg-background px-1.5 py-2 md:px-2"
       >
         <div className="flex h-10 shrink-0 items-center justify-center gap-3 overflow-hidden md:justify-start md:px-2">
           <CrewLogo logo={crewLogo} name={crewName} crewId={crewId} className="size-8 shrink-0" />
@@ -163,7 +166,7 @@ export function CrewWorkbenchShell({
         ) : null}
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-tl-xl border-l border-white/[0.055] bg-[#07080a]">
+      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-tl-xl border-l border-white/[0.055] bg-background">
         <CrewWorkbenchHeader
           crewId={crewId}
           crewName={crewName}
@@ -174,6 +177,7 @@ export function CrewWorkbenchShell({
           }
           showProductionActions={showTeamChat}
         />
+        {notice}
         <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </section>
     </div>

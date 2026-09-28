@@ -27,6 +27,10 @@ import {
   COPILOT_DOCUMENT_MAX_TEXT_CHARS,
   type StoryVisualStyleSkillSlug,
 } from '@repo/shared';
+import {
+  storyAutoFallbackNodeId,
+  storyRouteNodeId,
+} from '@repo/shared/story-stats';
 import { type StoryAssetPlan } from '@repo/shared/story-production';
 import {
   STORY_AGENT_BRIEF_MAX_CHARS,
@@ -5937,7 +5941,7 @@ export function screenplayForCanonicalChapter(
           `choice "${node.exit.decisionId}" is nested behind another choice.`,
         );
       }
-      cursor = node.exit.nextNodeId;
+      cursor = storyAutoFallbackNodeId(node.exit);
     }
     return failRoute('a choice route ends before reaching a clip.');
   };
@@ -5954,7 +5958,7 @@ export function screenplayForCanonicalChapter(
     choices: exit.choices.map((choice) => ({
       choiceId: choice.choiceId,
       label: choice.label,
-      nextNodeId: resolveChoiceTarget(choice.nextNodeId, visited),
+      nextNodeId: resolveChoiceTarget(storyRouteNodeId(choice.target), visited),
     })),
   });
   const normalizeExit = (
@@ -5963,7 +5967,7 @@ export function screenplayForCanonicalChapter(
     if (node.exit.kind === 'choice') {
       return normalizeChoiceExit(node.exit, new Set([node.nodeId]));
     }
-    let cursor = node.exit.nextNodeId;
+    let cursor = storyAutoFallbackNodeId(node.exit);
     const seen = new Set([node.nodeId]);
     while (cursor !== null) {
       if (seen.has(cursor)) return failRoute('a transition cycle has no clip.');
@@ -5976,7 +5980,7 @@ export function screenplayForCanonicalChapter(
       if (next.exit.kind === 'choice') {
         return normalizeChoiceExit(next.exit, seen);
       }
-      cursor = next.exit.nextNodeId;
+      cursor = storyAutoFallbackNodeId(next.exit);
     }
     return { kind: 'auto', nextNodeId: null };
   };

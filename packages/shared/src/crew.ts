@@ -297,6 +297,8 @@ export interface CrewDTO {
   ownerUserId: string;
   /** User-controlled Crew Hall visibility. */
   listingStatus: CrewListingStatus;
+  productionKind?: "interactive_film" | "series";
+  studioWorkspaceId?: string | null;
   /** Last time the owner made the crew visible in Crew Hall. */
   listedAt: string | null;
   /** Optimistic concurrency token for crew-level edits. */
@@ -313,6 +315,9 @@ export interface CrewDTO {
 }
 
 export interface CrewPositionDTO {
+  recruitmentVisibility?: "public" | "private";
+  /** Immutable recruitment target; absent on older clients. */
+  taskId?: string | null;
   id: string;
   crewId: string;
   positionType: string;
@@ -397,6 +402,11 @@ export interface CrewMembershipDTO {
 }
 
 export interface CrewApplicationDTO {
+  interview?: {
+    state: "not_started" | "proposed" | "confirmed" | "completed" | "cancelled";
+    version: number;
+    scheduledAt: string | null;
+  };
   id: string;
   crewId: string;
   positionId: string;

@@ -77,7 +77,10 @@ export function AuthedWebView({ path, title, nativeShell = true }: AuthedWebView
   // the app's client-side /aurora fetches are authenticated.
   const bootstrapScript = useMemo(() => {
     if (!cookie) return undefined;
-    return `document.cookie = ${JSON.stringify(`${cookie}; path=/; secure; samesite=lax`)}; true;`;
+    // Native user scripts can run again after navigation. Never copy the app
+    // session into a different site's cookie jar (including payment redirects).
+    const trustedOrigin = new URL(webBaseUrl).origin;
+    return `if (window.location.origin === ${JSON.stringify(trustedOrigin)}) { document.cookie = ${JSON.stringify(`${cookie}; path=/; secure; samesite=lax`)}; } true;`;
   }, [cookie]);
 
   // Android hardware back walks the in-webview history before leaving.

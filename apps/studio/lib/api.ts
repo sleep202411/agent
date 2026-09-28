@@ -40,12 +40,17 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
 
 function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
   if (!params) return path;
-  const usp = new URLSearchParams();
+  const hashAt = path.indexOf("#");
+  const fragment = hashAt < 0 ? "" : path.slice(hashAt);
+  const withoutHash = hashAt < 0 ? path : path.slice(0, hashAt);
+  const queryAt = withoutHash.indexOf("?");
+  const base = queryAt < 0 ? withoutHash : withoutHash.slice(0, queryAt);
+  const usp = new URLSearchParams(queryAt < 0 ? "" : withoutHash.slice(queryAt + 1));
   for (const [k, v] of Object.entries(params)) {
     if (v !== undefined) usp.set(k, String(v));
   }
   const qs = usp.toString();
-  return qs ? `${path}${path.includes("?") ? "&" : "?"}${qs}` : path;
+  return `${base}${qs ? `?${qs}` : ""}${fragment}`;
 }
 
 /**
@@ -81,6 +86,27 @@ function resolveRequestLocale(): string {
   return candidate === "zh-CN" || candidate === "zh-HK" || candidate === "en-US"
     ? candidate
     : "en-US";
+}
+
+const HTML_ERROR_BODY = /<\/?(?:html|body|head|script|div|span|style)\b/i;
+const CLOUDFLARE_ERROR_BODY = /cloudflare|cf-error|cf-footer|errorcode[_-]?\d{3}/i;
+
+export function messageFromHttpErrorBody(
+  status: number,
+  rawBody: string,
+  fallback: string
+): string {
+  const trimmed = rawBody.trim();
+  if (!trimmed) return fallback;
+  if (!HTML_ERROR_BODY.test(trimmed) && !CLOUDFLARE_ERROR_BODY.test(trimmed)) {
+    return trimmed;
+  }
+  const matched = /errorcode[_-]?(\d{3})/i.exec(trimmed);
+  const code = Number(matched?.[1] ?? status);
+  if (code === 524 || code === 522 || code === 504) {
+    return `The request timed out at the gateway (HTTP ${code}). The upstream job may still finish.`;
+  }
+  return `The gateway returned HTTP ${Number.isFinite(code) && code > 0 ? code : status}. Try again.`;
 }
 
 function responseErrorDetail(body: Record<string, unknown>): {
@@ -122,13 +148,13 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   const workspaceId = resolveWorkspaceId();
   const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
-  const headers: Record<string, string> = {
+  const headers = new Headers({
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
     "accept-language": resolveRequestLocale(),
     // Default workspace scope; an explicit per-call header still wins.
     ...(requestScope === "workspace" && workspaceId ? { "x-fizz-workspace-id": workspaceId } : {}),
-    ...(customHeaders as Record<string, string>),
-  };
+  });
+  new Headers(customHeaders).forEach((value, key) => headers.set(key, value));
 
   const init: RequestInit = { method, headers, credentials: "include", ...rest };
   if (data !== undefined) init.body = isFormData ? data : JSON.stringify(data);
@@ -143,7 +169,16 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     controller.abort();
   }, timeout);
 
+  const assertActive = () => {
+    if (callerSignal?.aborted) {
+      throw callerSignal.reason instanceof Error
+        ? callerSignal.reason
+        : new DOMException("Request aborted", "AbortError");
+    }
+    if (timedOut) throw new ApiRequestError("NETWORK_ERROR", "Request timed out", 0);
+  };
   try {
+    assertActive();
     let response: Response;
     try {
       response = await fetch(url, { ...init, signal: controller.signal });
@@ -160,6 +195,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
       );
     }
 
+    assertActive();
     if (!response.ok) {
       let message = `HTTP ${response.status}`;
       let code: string | number = `HTTP_${response.status}`;
@@ -172,11 +208,12 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
           message = detail.message ?? message;
           code = detail.code ?? code;
         } catch {
-          if (rawBody.trim()) message = rawBody.trim();
+          message = messageFromHttpErrorBody(response.status, rawBody, message);
         }
       } catch {
         /* ignore */
       }
+      assertActive();
       if (response.status === 401 && typeof window !== "undefined") {
         // Session missing/expired — let the auth provider raise the login dialog.
         window.dispatchEvent(new CustomEvent("fizz:unauthorized"));
@@ -184,12 +221,16 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
       throw new ApiRequestError(code, message, response.status, rawBody);
     }
 
+    if (response.status === 204 || response.status === 205) return undefined as T;
     const body = await response.json();
+    assertActive();
     const numericCode = typeof body.code === "number" ? body.code : null;
     const isSuccess =
-      body.success === true ||
-      (numericCode !== null && numericCode >= 200 && numericCode < 300) ||
-      body.code === "SUCCESS";
+      ("success" in body || "code" in body) &&
+      (!("success" in body) || body.success === true) &&
+      (!("code" in body) ||
+        (numericCode !== null && numericCode >= 200 && numericCode < 300) ||
+        body.code === "SUCCESS");
     if (!isSuccess) {
       const detail = responseErrorDetail(body as Record<string, unknown>);
       throw new ApiRequestError(
@@ -202,6 +243,9 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
     if (raw) return body as T;
     return (Object.prototype.hasOwnProperty.call(body, "data") ? body.data : body) as T;
+  } catch (error) {
+    assertActive();
+    throw error;
   } finally {
     clearTimeout(timer);
     callerSignal?.removeEventListener("abort", abortFromCaller);

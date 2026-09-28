@@ -1,10 +1,10 @@
 import { api } from "@/lib/api-client";
 
 type WalletLedgerData = {
-  accounts?: Array<{
+  accounts?: {
     status?: string;
     availableBalance?: string;
-  }>;
+  }[];
 };
 
 function wholePoints(value: string | undefined): string | null {
@@ -17,10 +17,12 @@ function wholePoints(value: string | undefined): string | null {
  * Returns null when unauthenticated or the ledger cannot be read — the UI
  * shows an em dash, not a fake zero.
  */
-export async function fetchComputeWalletBalance(): Promise<string | null> {
+export async function fetchComputeWalletBalance(signal?: AbortSignal): Promise<string | null> {
   try {
     const data = await api.get<WalletLedgerData>("/billing/wallet-ledger", {
       service: "aurora",
+      signal,
+      cache: "no-store",
       params: { currency: "compute_point", balanceKind: "consumable", limit: 1 },
     });
     const active = (data.accounts ?? []).filter((account) => account.status === "active");

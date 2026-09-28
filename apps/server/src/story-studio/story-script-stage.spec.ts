@@ -42,4 +42,45 @@ describe('canonical Script source extraction', () => {
     );
     doc.destroy();
   });
+
+  it.each(['paragraph', 'heading'])(
+    'rejects unsupported embedded content inside a %s without altering the source',
+    (kind) => {
+      const doc = new Y.Doc();
+      try {
+        const root = doc.getXmlFragment('content');
+        const block = new Y.XmlElement(kind);
+        const text = new Y.XmlText();
+        const embedded = new Y.XmlElement('image');
+        embedded.setAttribute('src', 'https://example.test/reference.png');
+        root.insert(0, [block]);
+        block.insert(0, [text, embedded]);
+        text.insert(0, 'Creator reference:');
+        const original = root.toJSON();
+        expect(() => screenplayDocumentFromXml(root)).toThrow(
+          'Unsupported Script element',
+        );
+        expect(root.toJSON()).toBe(original);
+      } finally {
+        doc.destroy();
+      }
+    },
+  );
+
+  it('keeps ordinary empty text blocks valid', () => {
+    const doc = new Y.Doc();
+    try {
+      const root = doc.getXmlFragment('content');
+      const paragraph = new Y.XmlElement('paragraph');
+      const text = new Y.XmlText();
+      root.insert(0, [new Y.XmlElement('paragraph'), paragraph]);
+      paragraph.insert(0, [text]);
+      text.insert(0, 'Remaining script');
+      expect(screenplayDocumentFromXml(root).blocks).toEqual([
+        { kind: 'paragraph', text: 'Remaining script' },
+      ]);
+    } finally {
+      doc.destroy();
+    }
+  });
 });

@@ -11,13 +11,31 @@
 import { useParams } from "next/navigation";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useCrewDetail } from "@/app/(site)/crews/_hooks/use-crew";
+import { useTranslations } from "@/src/i18n/i18n";
+import { Button } from "@/components/ui/button";
+import { CrewApiError } from "../_hooks/api";
 import { CrewDetail } from "./_components/crew-detail-new";
 
 export default function CrewDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
 
-  const { data: crew, isLoading } = useCrewDetail(id);
+  const tc = useTranslations("common");
+  const { data: crew, isLoading, isError, error, isFetching, refetch } = useCrewDetail(id);
+  const unavailable =
+    isError && error instanceof CrewApiError && [401, 403, 404].includes(error.status);
+  const retry =
+    isError && !unavailable ? (
+      <div
+        role="alert"
+        className="flex items-center justify-center gap-3 p-4 text-sm text-destructive"
+      >
+        <span>{error instanceof Error ? error.message : tc("loadFailed")}</span>
+        <Button variant="outline" disabled={isFetching} onClick={() => void refetch()}>
+          {tc("retry")}
+        </Button>
+      </div>
+    ) : null;
 
   if (isLoading) {
     return (
@@ -27,7 +45,7 @@ export default function CrewDetailPage() {
     );
   }
 
-  if (!crew) {
+  if (unavailable || (!crew && !retry)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-sm text-muted-foreground">
         Not found
@@ -35,5 +53,10 @@ export default function CrewDetailPage() {
     );
   }
 
-  return <CrewDetail crew={crew} />;
+  return (
+    <>
+      {retry}
+      {crew ? <CrewDetail crew={crew} /> : null}
+    </>
+  );
 }

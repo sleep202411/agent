@@ -1,5 +1,5 @@
 import { Stack, useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -25,32 +25,43 @@ export default function GamesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
 
-  const load = useCallback(
-    (signal?: AbortSignal) => {
-      return listPublishedInteractiveFilms({ page: 1, pageSize: 50 })
-        .then((next) => {
-          if (signal?.aborted) return;
-          setGames(next);
-          setError(undefined);
-        })
-        .catch((loadError: unknown) => {
-          if (signal?.aborted) return;
-          setError(loadError instanceof Error ? loadError.message : t("games.loadError"));
-        })
-        .finally(() => {
-          if (signal?.aborted) return;
-          setLoading(false);
-          setRefreshing(false);
-        });
-    },
-    [t]
-  );
+  const scope = useMemo(() => ({ t }), [t]);
+  const lifetime = useRef<{ scope: typeof scope; controller: AbortController | null } | null>(null);
+  const load = useCallback(() => {
+    if (lifetime.current?.scope !== scope) return Promise.resolve();
+    lifetime.current.controller?.abort();
+    const controller = new AbortController();
+    lifetime.current = { scope, controller };
+    const { signal } = controller;
+    return listPublishedInteractiveFilms({ page: 1, pageSize: 50, signal })
+      .then((next) => {
+        if (signal?.aborted) return;
+        setGames(next);
+        setError(undefined);
+      })
+      .catch((loadError: unknown) => {
+        if (signal?.aborted) return;
+        setError(loadError instanceof Error ? loadError.message : t("games.loadError"));
+      })
+      .finally(() => {
+        if (signal?.aborted) return;
+        setLoading(false);
+        setRefreshing(false);
+        if (lifetime.current?.controller === controller)
+          lifetime.current = { scope, controller: null };
+      });
+  }, [t, scope]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+    lifetime.current = { scope, controller: null };
+    void load();
+    return () => {
+      if (lifetime.current?.scope === scope) {
+        lifetime.current.controller?.abort();
+        lifetime.current = null;
+      }
+    };
+  }, [load, scope]);
 
   // Same chrome as `ips.tsx`: transparent native back + page title below it.
   const topPad = insets.top + Spacing.seven;

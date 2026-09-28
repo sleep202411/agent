@@ -1,9 +1,13 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+import { useStoryOperationScope } from "../_lib/use-story-operation-scope";
 import {
   IconArrowUp,
   IconLoader2,
   IconPhotoOff,
+  IconPlayerPause,
+  IconPlayerPlay,
   IconRefresh,
   IconSparkles,
   IconX,
@@ -65,16 +69,38 @@ type GenerationTarget =
       latestGeneration: StoryLatestGeneration | null;
     };
 
-export function StoryProductionGenerationControl({
+export function StoryProductionGenerationControl(
+  props: React.ComponentProps<typeof StoryProductionGenerationControlContent>
+) {
+  const { user } = useAuth();
+  return (
+    <StoryProductionGenerationControlContent
+      key={JSON.stringify([
+        props.scope.projectId,
+        props.scope.chapterId,
+        props.target.kind,
+        props.target.sequenceId,
+        props.target.id,
+        props.purpose ?? "primary",
+        user?.id,
+      ])}
+      {...props}
+    />
+  );
+}
+
+function StoryProductionGenerationControlContent({
   scope,
   target,
   label,
   selectedMedia,
   aspect = "square",
+  aspectRatio,
   secondaryAction,
   outputKind = "image",
   allowGeneration = true,
   mediaLoading = "lazy",
+  playback = "native",
   layout = "stage",
   purpose = "primary",
   modelSelection,
@@ -90,12 +116,16 @@ export function StoryProductionGenerationControl({
   selectedMedia: StoryCreativeMediaVersion | null;
   /** Media-slot shape; character cards use portrait (3:4), scene cards landscape (16:9). */
   aspect?: "square" | "portrait" | "landscape";
+  /** Project frame ratio, e.g. "16 / 9". Overrides `aspect` when set. */
+  aspectRatio?: string;
   /** Extra card-owned action stacked directly under the primary action. */
   secondaryAction?: React.ReactNode;
   /** Which modality this target generates; picks the page-header default. */
   outputKind?: ProductionModality;
   /** Keep below-the-fold generation cards lazy while allowing the gallery's first row to be eager. */
   mediaLoading?: "eager" | "lazy";
+  /** Storyboard slots play in place. Other cards keep the browser controls. */
+  playback?: "native" | "inline";
   /** The compact form places the action beside per-asset model settings. */
   layout?: "stage" | "inline";
   /** Asset generations can create either the canonical image or its three-view sheet. */
@@ -115,6 +145,32 @@ export function StoryProductionGenerationControl({
   /** Missing inputs disable the action without removing it from the workbench. */
   generationDisabledReason?: string;
 }) {
+  const { user } = useAuth();
+  const ownerId = user?.id ?? null;
+  const viewIsCurrent = useStoryOperationScope(
+    JSON.stringify([
+      scope.projectId,
+      scope.chapterId,
+      target.kind,
+      target.sequenceId,
+      target.id,
+      purpose,
+      ownerId,
+    ])
+  );
+  const isCurrent = useStoryOperationScope(
+    JSON.stringify([
+      scope.projectId,
+      scope.chapterId,
+      target.kind,
+      target.sequenceId,
+      target.id,
+      purpose,
+      ownerId,
+      allowGeneration,
+      target.status,
+    ])
+  );
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
   const [submittedGenerations, setSubmittedGenerations] = useState<StoryProductionGeneration[]>([]);
@@ -142,11 +198,11 @@ export function StoryProductionGenerationControl({
       : [];
   const generationQueries = useQueries({
     queries: generationSeeds.map((seed) => ({
-      queryKey: generationQueryKey(scope, target, seed.id),
-      enabled: allowConcurrent ? isGenerationRunning(seed) : true,
+      queryKey: generationQueryKey(scope, target, seed.id, ownerId),
+      enabled: ownerId != null && (allowConcurrent ? isGenerationRunning(seed) : true),
       queryFn: async ({ signal }: { signal: AbortSignal }) => {
         const value = await getGeneration(scope, target, seed.id, signal);
-        if (allowConcurrent) rememberGenerationState(value);
+        if (allowConcurrent && viewIsCurrent()) rememberGenerationState(value);
         return value;
       },
       refetchInterval: (query: { state: { data?: StoryProductionGeneration } }) =>
@@ -156,7 +212,7 @@ export function StoryProductionGenerationControl({
     })),
   });
   const generations = generationSeeds.map((seed, index) => {
-    const key = generationQueryKey(scope, target, seed.id);
+    const key = generationQueryKey(scope, target, seed.id, ownerId);
     return queryGeneration(key, queryClient, generationQueries[index]?.data) ?? seed;
   });
   const generation = newestGeneration(generations);
@@ -186,7 +242,7 @@ export function StoryProductionGenerationControl({
 
   const rememberGeneration = (value: StoryProductionGeneration) => {
     rememberGenerationState(value);
-    queryClient.setQueryData(generationQueryKey(scope, target, value.id), value);
+    queryClient.setQueryData(generationQueryKey(scope, target, value.id, ownerId), value);
   };
 
   const generationDefaults = useStoryProductionGenerationDefaults(scope.projectId, outputKind);
@@ -197,12 +253,15 @@ export function StoryProductionGenerationControl({
     retry: false,
     mutationFn: async ({
       idempotencyKey,
+      isCurrent: admittedIsCurrent,
     }: {
       idempotencyKey: string;
       requestedOutputCount: number;
+      isCurrent: () => boolean;
     }) => {
-      const submit = (version: number) =>
-        createGeneration(
+      const submit = (version: number) => {
+        if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
+        return createGeneration(
           scope,
           { ...target, version },
           effectiveSelection,
@@ -210,13 +269,20 @@ export function StoryProductionGenerationControl({
           purpose,
           idempotencyKey
         );
+      };
+      if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
       return submitGeneration ? submitGeneration(submit) : submit(target.version);
     },
-    onMutate: ({ idempotencyKey, requestedOutputCount }) => {
+    onMutate: ({ idempotencyKey, requestedOutputCount, isCurrent }) => {
       setPendingSubmissions((current) => [...current, { idempotencyKey, requestedOutputCount }]);
+      return { isCurrent };
     },
-    onSuccess: rememberGeneration,
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("requestError"))),
+    onSuccess: (value, _variables, context) => {
+      if (context?.isCurrent()) rememberGeneration(value);
+    },
+    onError: (error, _variables, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, t("requestError")));
+    },
     onSettled: (_data, _error, { idempotencyKey }) => {
       setPendingSubmissions((current) =>
         current.filter((submission) => submission.idempotencyKey !== idempotencyKey)
@@ -226,32 +292,50 @@ export function StoryProductionGenerationControl({
 
   const cancelMutation = useMutation({
     retry: false,
-    mutationFn: () => {
+    mutationFn: (admittedIsCurrent: () => boolean) => {
+      if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
       if (!generation) throw new Error("A Story generation is required before cancelling.");
       return cancelGeneration(scope, target, generation.id);
     },
-    onSuccess: rememberGeneration,
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("cancelError"))),
+    onMutate: (admittedIsCurrent) => ({ isCurrent: admittedIsCurrent }),
+    onSuccess: (value, _variables, context) => {
+      if (context?.isCurrent()) rememberGeneration(value);
+    },
+    onError: (error, _variables, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, t("cancelError")));
+    },
   });
 
   const retryMutation = useMutation({
     retry: false,
-    mutationFn: () => {
+    mutationFn: (admittedIsCurrent: () => boolean) => {
+      if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
       if (!generation) throw new Error("A Story generation is required before retrying.");
       return retryGeneration(scope, target, generation.id);
     },
-    onSuccess: rememberGeneration,
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("requestError"))),
+    onMutate: (admittedIsCurrent) => ({ isCurrent: admittedIsCurrent }),
+    onSuccess: (value, _variables, context) => {
+      if (context?.isCurrent()) rememberGeneration(value);
+    },
+    onError: (error, _variables, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, t("requestError")));
+    },
   });
 
   const attachmentRetryMutation = useMutation({
     retry: false,
-    mutationFn: () => {
+    mutationFn: (admittedIsCurrent: () => boolean) => {
+      if (!admittedIsCurrent()) throw new DOMException("Generation view abandoned", "AbortError");
       if (!generation) throw new Error("A Story generation is required before reattaching.");
       return retryGenerationMaterialization(scope, target, generation);
     },
-    onSuccess: rememberGeneration,
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("attachmentRetryError"))),
+    onMutate: (admittedIsCurrent) => ({ isCurrent: admittedIsCurrent }),
+    onSuccess: (value, _variables, context) => {
+      if (context?.isCurrent()) rememberGeneration(value);
+    },
+    onError: (error, _variables, context) => {
+      if (context?.isCurrent()) toast.error(storyApiErrorMessage(error, t("attachmentRetryError")));
+    },
   });
 
   const invalidatedGenerationIds = useRef(new Set<string>());
@@ -296,7 +380,7 @@ export function StoryProductionGenerationControl({
     attachmentRetryMutation.isPending;
   const generationEnabled = allowGeneration && target.status !== "archived";
   const runCommandOnce = async (command: () => Promise<StoryProductionGeneration>) => {
-    if (commandInFlight.current) return;
+    if (!isCurrent() || !generationEnabled || commandInFlight.current) return;
     commandInFlight.current = true;
     try {
       await command();
@@ -316,7 +400,9 @@ export function StoryProductionGenerationControl({
       loading={!allowConcurrent && layout === "stage" && createMutation.isPending}
       disabled={Boolean(generationDisabledReason) || (!allowConcurrent && actionPending)}
       onClick={() => {
+        if (!isCurrent() || !generationEnabled || generationDisabledReason) return;
         const request = {
+          isCurrent,
           idempotencyKey: createStoryProductionIdempotencyKey("story-generate"),
           requestedOutputCount: requestedOutputCountFromSettings(effectiveOptions),
         };
@@ -343,7 +429,7 @@ export function StoryProductionGenerationControl({
       size="sm"
       loading={cancelMutation.isPending}
       disabled={actionPending}
-      onClick={() => void runCommandOnce(() => cancelMutation.mutateAsync())}
+      onClick={() => void runCommandOnce(() => cancelMutation.mutateAsync(isCurrent))}
     >
       <IconX />
       {t("cancel")}
@@ -353,7 +439,7 @@ export function StoryProductionGenerationControl({
       size="sm"
       loading={attachmentRetryMutation.isPending}
       disabled={actionPending}
-      onClick={() => void runCommandOnce(() => attachmentRetryMutation.mutateAsync())}
+      onClick={() => void runCommandOnce(() => attachmentRetryMutation.mutateAsync(isCurrent))}
     >
       <IconRefresh />
       {t("retryAttachment")}
@@ -363,7 +449,7 @@ export function StoryProductionGenerationControl({
       size="sm"
       loading={retryMutation.isPending}
       disabled={actionPending}
-      onClick={() => void runCommandOnce(() => retryMutation.mutateAsync())}
+      onClick={() => void runCommandOnce(() => retryMutation.mutateAsync(isCurrent))}
     >
       <IconRefresh />
       {t("retry")}
@@ -395,16 +481,24 @@ export function StoryProductionGenerationControl({
       <section
         className={cn(
           "relative overflow-hidden rounded-xl bg-black/24",
-          aspect === "portrait"
-            ? "aspect-[3/4]"
-            : aspect === "landscape"
-              ? "aspect-video"
-              : "aspect-square"
+          aspectRatio
+            ? undefined
+            : aspect === "portrait"
+              ? "aspect-[3/4]"
+              : aspect === "landscape"
+                ? "aspect-video"
+                : "aspect-square"
         )}
+        style={aspectRatio ? { aspectRatio } : undefined}
         aria-label={t("controlsAria", { name: label })}
       >
         {previewMedia ? (
-          <MediaPreview media={previewMedia} label={label} loading={mediaLoading} />
+          <MediaPreview
+            media={previewMedia}
+            label={label}
+            loading={mediaLoading}
+            playback={playback}
+          />
         ) : actionButton || secondaryAction ? null : (
           <div className="grid size-full place-items-center">
             <IconPhotoOff className="size-6 text-white/40" aria-hidden="true" />
@@ -466,10 +560,12 @@ function MediaPreview({
   media,
   label,
   loading,
+  playback,
 }: {
   media: StoryCreativeMediaVersion;
   label: string;
   loading: "eager" | "lazy";
+  playback: "native" | "inline";
 }) {
   const video = media.mediaKind === "video" || media.mimeType?.startsWith("video/") === true;
   const source = video
@@ -480,15 +576,19 @@ function MediaPreview({
   return (
     <div className="absolute inset-0 overflow-hidden bg-black/40">
       {video && media.previewUrl ? (
-        <video
-          src={media.previewUrl}
-          poster={media.thumbnailUrl ?? undefined}
-          controls
-          preload="metadata"
-          playsInline
-          aria-label={label}
-          className="size-full object-cover"
-        />
+        playback === "inline" ? (
+          <InlineClipVideo src={media.previewUrl} poster={media.thumbnailUrl} label={label} />
+        ) : (
+          <video
+            src={media.previewUrl}
+            poster={media.thumbnailUrl ?? undefined}
+            controls
+            preload="metadata"
+            playsInline
+            aria-label={label}
+            className="size-full object-cover"
+          />
+        )
       ) : (
         <Image
           src={source}
@@ -504,19 +604,78 @@ function MediaPreview({
   );
 }
 
+function InlineClipVideo({
+  src,
+  poster,
+  label,
+}: {
+  src: string;
+  poster: string | null;
+  label: string;
+}) {
+  const t = useTranslations("storyStudio.productionGeneration");
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const toggle = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  };
+  return (
+    <>
+      <video
+        ref={videoRef}
+        src={src}
+        poster={poster ?? undefined}
+        preload="metadata"
+        playsInline
+        aria-label={label}
+        className="size-full object-cover"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => setPlaying(false)}
+      />
+      <button
+        type="button"
+        onClick={toggle}
+        aria-label={playing ? t("pause") : t("play")}
+        className="group absolute inset-0 grid place-items-center focus-visible:outline-none"
+      >
+        <span
+          className={cn(
+            "grid size-8 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm transition",
+            playing && "opacity-0 group-hover:opacity-100"
+          )}
+        >
+          {playing ? (
+            <IconPlayerPause className="size-4" aria-hidden="true" />
+          ) : (
+            <IconPlayerPlay className="ml-0.5 size-4" aria-hidden="true" />
+          )}
+        </span>
+      </button>
+    </>
+  );
+}
+
 function generationQueryKey(
   scope: GenerationScope,
   target: GenerationTarget,
-  generationId: string | null
+  generationId: string | null,
+  ownerId: string | number | null
 ) {
-  return storyProductionKeys.generation(
-    scope.projectId,
-    scope.chapterId,
-    target.kind,
-    target.sequenceId,
-    target.id,
-    generationId
-  );
+  return [
+    ...storyProductionKeys.generation(
+      scope.projectId,
+      scope.chapterId,
+      target.kind,
+      target.sequenceId,
+      target.id,
+      generationId
+    ),
+    ownerId,
+  ] as const;
 }
 
 function queryGeneration(

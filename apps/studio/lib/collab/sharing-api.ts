@@ -29,16 +29,21 @@ export interface SharingMember {
   isSelf: boolean;
 }
 
-export async function listWorkspaceMembers(workspaceId: string): Promise<SharingMember[]> {
-  return api.get<SharingMember[]>(`/aurora/workspaces/${workspaceId}/members`);
+export async function listWorkspaceMembers(
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<SharingMember[]> {
+  return api.get<SharingMember[]>(`/aurora/workspaces/${workspaceId}/members`, { signal });
 }
 
 export async function addWorkspaceMember(
   workspaceId: string,
   account: string,
-  role: AssignableRole
+  role: AssignableRole,
+  signal?: AbortSignal
 ): Promise<SharingMember> {
   return api.post<SharingMember>(`/aurora/workspaces/${workspaceId}/members`, {
+    signal,
     data: { account, role },
   });
 }
@@ -46,29 +51,40 @@ export async function addWorkspaceMember(
 export async function updateWorkspaceMemberRole(
   workspaceId: string,
   memberId: string,
-  role: AssignableRole
+  role: AssignableRole,
+  signal?: AbortSignal
 ): Promise<SharingMember> {
   return api.patch<SharingMember>(`/aurora/workspaces/${workspaceId}/members/${memberId}`, {
+    signal,
     data: { role },
   });
 }
 
-export async function removeWorkspaceMember(workspaceId: string, memberId: string): Promise<void> {
-  await api.delete(`/aurora/workspaces/${workspaceId}/members/${memberId}`, { data: {} });
+export async function removeWorkspaceMember(
+  workspaceId: string,
+  memberId: string,
+  signal?: AbortSignal
+): Promise<void> {
+  await api.delete(`/aurora/workspaces/${workspaceId}/members/${memberId}`, { signal, data: {} });
 }
 
 // ── Project members (per-project sharing) ──────────────────────────────────
 
-export async function listProjectMembers(projectId: string): Promise<SharingMember[]> {
-  return api.get<SharingMember[]>(`/aurora/projects/${projectId}/members`);
+export async function listProjectMembers(
+  projectId: string,
+  signal?: AbortSignal
+): Promise<SharingMember[]> {
+  return api.get<SharingMember[]>(`/aurora/projects/${projectId}/members`, { signal });
 }
 
 export async function addProjectMember(
   projectId: string,
   account: string,
-  role: AssignableRole
+  role: AssignableRole,
+  signal?: AbortSignal
 ): Promise<SharingMember> {
   return api.post<SharingMember>(`/aurora/projects/${projectId}/members`, {
+    signal,
     data: { account, role },
   });
 }
@@ -76,29 +92,40 @@ export async function addProjectMember(
 export async function updateProjectMemberRole(
   projectId: string,
   memberId: string,
-  role: AssignableRole
+  role: AssignableRole,
+  signal?: AbortSignal
 ): Promise<SharingMember> {
   return api.patch<SharingMember>(`/aurora/projects/${projectId}/members/${memberId}`, {
+    signal,
     data: { role },
   });
 }
 
-export async function removeProjectMember(projectId: string, memberId: string): Promise<void> {
-  await api.delete(`/aurora/projects/${projectId}/members/${memberId}`, { data: {} });
+export async function removeProjectMember(
+  projectId: string,
+  memberId: string,
+  signal?: AbortSignal
+): Promise<void> {
+  await api.delete(`/aurora/projects/${projectId}/members/${memberId}`, { signal, data: {} });
 }
 
 // ── Story-project members ──────────────────────────────────────────────────
 
-export async function listStoryProjectMembers(projectId: string): Promise<SharingMember[]> {
-  return api.get<SharingMember[]>(`/aurora/story-projects/${projectId}/members`);
+export async function listStoryProjectMembers(
+  projectId: string,
+  signal?: AbortSignal
+): Promise<SharingMember[]> {
+  return api.get<SharingMember[]>(`/aurora/story-projects/${projectId}/members`, { signal });
 }
 
 export async function addStoryProjectMember(
   projectId: string,
   account: string,
-  role: AssignableShareRole
+  role: AssignableShareRole,
+  signal?: AbortSignal
 ): Promise<SharingMember> {
   return api.post<SharingMember>(`/aurora/story-projects/${projectId}/members`, {
+    signal,
     data: { account, role },
   });
 }
@@ -106,15 +133,21 @@ export async function addStoryProjectMember(
 export async function updateStoryProjectMemberRole(
   projectId: string,
   memberId: string,
-  role: AssignableShareRole
+  role: AssignableShareRole,
+  signal?: AbortSignal
 ): Promise<SharingMember> {
   return api.patch<SharingMember>(`/aurora/story-projects/${projectId}/members/${memberId}`, {
+    signal,
     data: { role },
   });
 }
 
-export async function removeStoryProjectMember(projectId: string, memberId: string): Promise<void> {
-  await api.delete(`/aurora/story-projects/${projectId}/members/${memberId}`, { data: {} });
+export async function removeStoryProjectMember(
+  projectId: string,
+  memberId: string,
+  signal?: AbortSignal
+): Promise<void> {
+  await api.delete(`/aurora/story-projects/${projectId}/members/${memberId}`, { signal, data: {} });
 }
 
 // ── Scope dispatch (workspace | project | story-project) ───────────────────
@@ -137,44 +170,50 @@ export function defaultRoleForScope(scope: ShareScope): AssignableShareRole {
   return scope.kind === "story-project" ? "viewer" : "editor";
 }
 
-export function listMembers(scope: ShareScope): Promise<SharingMember[]> {
-  if (scope.kind === "workspace") return listWorkspaceMembers(scope.id);
-  if (scope.kind === "story-project") return listStoryProjectMembers(scope.id);
-  return listProjectMembers(scope.id);
+export function listMembers(scope: ShareScope, signal?: AbortSignal): Promise<SharingMember[]> {
+  if (scope.kind === "workspace") return listWorkspaceMembers(scope.id, signal);
+  if (scope.kind === "story-project") return listStoryProjectMembers(scope.id, signal);
+  return listProjectMembers(scope.id, signal);
 }
 
 export function addMember(
   scope: ShareScope,
   account: string,
-  role: AssignableShareRole
+  role: AssignableShareRole,
+  signal?: AbortSignal
 ): Promise<SharingMember> {
   if (scope.kind === "workspace") {
-    return addWorkspaceMember(scope.id, account, role as AssignableRole);
+    return addWorkspaceMember(scope.id, account, role as AssignableRole, signal);
   }
   if (scope.kind === "story-project") {
-    return addStoryProjectMember(scope.id, account, role);
+    return addStoryProjectMember(scope.id, account, role, signal);
   }
-  return addProjectMember(scope.id, account, role as AssignableRole);
+  return addProjectMember(scope.id, account, role as AssignableRole, signal);
 }
 
 export function updateMemberRole(
   scope: ShareScope,
   memberId: string,
-  role: AssignableShareRole
+  role: AssignableShareRole,
+  signal?: AbortSignal
 ): Promise<SharingMember> {
   if (scope.kind === "workspace") {
-    return updateWorkspaceMemberRole(scope.id, memberId, role as AssignableRole);
+    return updateWorkspaceMemberRole(scope.id, memberId, role as AssignableRole, signal);
   }
   if (scope.kind === "story-project") {
-    return updateStoryProjectMemberRole(scope.id, memberId, role);
+    return updateStoryProjectMemberRole(scope.id, memberId, role, signal);
   }
-  return updateProjectMemberRole(scope.id, memberId, role as AssignableRole);
+  return updateProjectMemberRole(scope.id, memberId, role as AssignableRole, signal);
 }
 
-export function removeMember(scope: ShareScope, memberId: string): Promise<void> {
-  if (scope.kind === "workspace") return removeWorkspaceMember(scope.id, memberId);
-  if (scope.kind === "story-project") return removeStoryProjectMember(scope.id, memberId);
-  return removeProjectMember(scope.id, memberId);
+export function removeMember(
+  scope: ShareScope,
+  memberId: string,
+  signal?: AbortSignal
+): Promise<void> {
+  if (scope.kind === "workspace") return removeWorkspaceMember(scope.id, memberId, signal);
+  if (scope.kind === "story-project") return removeStoryProjectMember(scope.id, memberId, signal);
+  return removeProjectMember(scope.id, memberId, signal);
 }
 
 // ── Invite links (token) ───────────────────────────────────────────────────
@@ -197,6 +236,7 @@ export interface ShareInvite {
 }
 
 export interface InvitePreview {
+  currentRole?: string;
   existingAccess: AcceptedInvite | null;
   scope: "workspace" | "project" | "story-project";
   targetName: string;
@@ -216,29 +256,34 @@ function scopeBase(scope: ShareScope): string {
   return `/aurora/projects/${scope.id}/invites`;
 }
 
-export function listInvites(scope: ShareScope): Promise<ShareInvite[]> {
-  return api.get<ShareInvite[]>(scopeBase(scope));
+export function listInvites(scope: ShareScope, signal?: AbortSignal): Promise<ShareInvite[]> {
+  return api.get<ShareInvite[]>(scopeBase(scope), { signal });
 }
 
 export function createInvite(
   scope: ShareScope,
   role: AssignableShareRole,
-  expiresInDays = 7
+  expiresInDays = 7,
+  signal?: AbortSignal
 ): Promise<CreatedInvite> {
-  return api.post<CreatedInvite>(scopeBase(scope), { data: { role, expiresInDays } });
+  return api.post<CreatedInvite>(scopeBase(scope), { signal, data: { role, expiresInDays } });
 }
 
-export async function revokeInvite(scope: ShareScope, inviteId: string): Promise<void> {
-  await api.delete(`${scopeBase(scope)}/${inviteId}`, { data: {} });
+export async function revokeInvite(
+  scope: ShareScope,
+  inviteId: string,
+  signal?: AbortSignal
+): Promise<void> {
+  await api.delete(`${scopeBase(scope)}/${inviteId}`, { signal, data: {} });
 }
 
 /** Scope-agnostic accept-flow (token resolves to either scope server-side). */
-export function previewInvite(token: string): Promise<InvitePreview> {
-  return api.get<InvitePreview>("/aurora/invites/preview", { params: { token } });
+export function previewInvite(token: string, signal?: AbortSignal): Promise<InvitePreview> {
+  return api.get<InvitePreview>("/aurora/invites/preview", { params: { token }, signal });
 }
 
-export function acceptInvite(token: string): Promise<AcceptedInvite> {
-  return api.post<AcceptedInvite>("/aurora/invites/accept", { data: { token } });
+export function acceptInvite(token: string, signal?: AbortSignal): Promise<AcceptedInvite> {
+  return api.post<AcceptedInvite>("/aurora/invites/accept", { data: { token }, signal });
 }
 
 /** Build the shareable URL from the current origin — never hardcode a host. */

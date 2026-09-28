@@ -12,6 +12,7 @@ import {
   CharacterConsentRecordType,
   CharacterKind,
   CharacterProjectGrantStatus,
+  type CharacterProjectGrant,
   CharacterStatus,
   PlatformProjectStatus,
   Prisma,
@@ -116,35 +117,47 @@ export class CharacterGrantService {
     context: { ip?: string; userAgent?: string } = {},
   ): Promise<ProjectGrantDto> {
     requireGrantConsent(consent);
-    const character = await this.requireOwnRealPerson(user, characterId);
-    if (character.status !== CharacterStatus.active) {
-      throw new ConflictException({
-        code: 'CHARACTER_NOT_ACTIVE',
-        message: 'Complete identity verification before authorizing a project.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${characterId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM project_members WHERE project_id = ${projectId}::uuid AND user_id = ${user.userId} FOR UPDATE`;
+      const character = await this.requireOwnRealPerson(
+        user,
+        characterId,
+        {},
+        tx,
+      );
+      if (character.status !== CharacterStatus.active) {
+        throw new ConflictException({
+          code: 'CHARACTER_NOT_ACTIVE',
+          message:
+            'Complete identity verification before authorizing a project.',
+        });
+      }
+      const project = await tx.platformProject.findFirst({
+        where: {
+          id: projectId,
+          status: PlatformProjectStatus.active,
+          deletedAt: null,
+        },
+        select: { id: true, name: true },
       });
-    }
-    const project = await this.prisma.platformProject.findFirst({
-      where: {
-        id: projectId,
-        status: PlatformProjectStatus.active,
-        deletedAt: null,
-      },
-      select: { id: true, name: true },
-    });
-    if (!project) {
-      throw new NotFoundException({
-        code: 'PROJECT_NOT_FOUND',
-        message: 'Project not found.',
-      });
-    }
-    await this.requireProjectEditor(user, projectId);
+      if (!project) {
+        throw new NotFoundException({
+          code: 'PROJECT_NOT_FOUND',
+          message: 'Project not found.',
+        });
+      }
+      await this.requireProjectEditor(user, projectId, tx);
 
-    return this.createActiveGrant({
-      characterId,
-      project,
-      grantedByUserId: user.userId,
-      context,
-      via: 'self_grant',
+      return this.createActiveGrant({
+        characterId,
+        project,
+        grantedByUserId: user.userId,
+        context,
+        via: 'self_grant',
+        tx,
+      });
     });
   }
 
@@ -162,6 +175,7 @@ export class CharacterGrantService {
     inviteId: string;
     consent: GrantConsent;
     context?: { ip?: string; userAgent?: string };
+    tx?: Prisma.TransactionClient;
   }): Promise<ProjectGrantDto> {
     requireGrantConsent(args.consent);
     return this.createActiveGrant({
@@ -171,6 +185,7 @@ export class CharacterGrantService {
       context: args.context ?? {},
       via: 'casting_invite',
       inviteId: args.inviteId,
+      tx: args.tx,
     });
   }
 
@@ -182,8 +197,10 @@ export class CharacterGrantService {
     context: { ip?: string; userAgent?: string };
     via: 'self_grant' | 'casting_invite';
     inviteId?: string;
+    tx?: Prisma.TransactionClient;
   }): Promise<ProjectGrantDto> {
-    const existing = await this.prisma.characterProjectGrant.findFirst({
+    const client = args.tx ?? this.prisma;
+    const existing = await client.characterProjectGrant.findFirst({
       where: {
         characterId: args.characterId,
         projectId: args.project.id,
@@ -193,9 +210,9 @@ export class CharacterGrantService {
     if (existing) return this.toDto(existing, args.project.name);
 
     const now = new Date();
-    let grant;
+    let grant: CharacterProjectGrant;
     try {
-      grant = await this.prisma.$transaction(async (tx) => {
+      const persist = async (tx: Prisma.TransactionClient) => {
         // The scoped consent is the legal anchor for THIS authorization — a
         // fresh, timestamped record (never reused across re-grants).
         const consent = await tx.characterConsentRecord.create({
@@ -231,12 +248,16 @@ export class CharacterGrantService {
             consentRecordId: consent.id,
           },
         });
-      });
+      };
+      grant = args.tx
+        ? await persist(args.tx)
+        : await this.prisma.$transaction(persist);
     } catch (err) {
       // Lost the race to the partial-active unique index (two concurrent
       // grants for the same character+project) — re-read and return the
       // committed active grant, keeping the operation idempotent.
       if (
+        !args.tx &&
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === 'P2002'
       ) {
@@ -269,6 +290,7 @@ export class CharacterGrantService {
     await this.revokeGrantRows(
       { characterId, projectId },
       { revokedByUserId: user.userId, trigger: 'self_revocation' },
+      user,
     );
     // Prompt cleanup (worker seam is the barrier): cancel this project's
     // in-flight jobs for the character + release holds. Best-effort.
@@ -451,8 +473,13 @@ export class CharacterGrantService {
   private async revokeGrantRows(
     key: { characterId: string; projectId: string },
     audit: { revokedByUserId: string; trigger: string },
+    subject?: AuthUser,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${key.projectId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT id FROM studio_characters WHERE id = ${key.characterId}::uuid FOR UPDATE`;
+      if (subject)
+        await this.requireOwnRealPerson(subject, key.characterId, {}, tx);
       const grant = await tx.characterProjectGrant.findFirst({
         where: {
           characterId: key.characterId,
@@ -506,10 +533,11 @@ export class CharacterGrantService {
   private async requireProjectEditor(
     user: AuthUser,
     projectId: string,
+    client: Prisma.TransactionClient = this.prisma,
   ): Promise<void> {
     // Explicit ProjectMember editor+ ONLY — no workspace-role fallback (design
     // §4: a grant must be scoped to the project team, not the host workspace).
-    const member = await this.prisma.projectMember.findFirst({
+    const member = await client.projectMember.findFirst({
       where: {
         projectId,
         userId: user.userId,
@@ -537,8 +565,9 @@ export class CharacterGrantService {
     user: AuthUser,
     characterId: string,
     opts: { includeDeleted?: boolean } = {},
+    client: Prisma.TransactionClient = this.prisma,
   ) {
-    const character = await this.prisma.studioCharacter.findFirst({
+    const character = await client.studioCharacter.findFirst({
       // §6 output visibility/takedown must survive the character being
       // tombstoned (deletedAt set) — the outputs persist and the subject must
       // still be able to withdraw them. Grant/list-grant paths keep the

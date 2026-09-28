@@ -89,7 +89,10 @@ import type {
   CreateUploadUrlResponseDto,
 } from './dto';
 import type { UploadKind } from './dto';
-import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
+import {
+  CONTENT_REVIEW_VIDEO_MAX_BYTES,
+  EPISODE_SOURCE_MAX_BYTES,
+} from '@repo/shared';
 import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
 import { WorkspacePermissionService } from '../workspaces';
 import { StoryPermissionService } from '../story-studio/story-permission.service';
@@ -136,6 +139,7 @@ const UPLOAD_KIND_LABEL = {
   agent_attachment_image: 'Image attachment',
   agent_attachment_document: 'Document attachment',
   ai_reference_video: 'Reference video',
+  content_review_video: 'Content review video',
   ai_reference_audio: 'Reference audio',
   story_music_audio: 'Story music',
   crew_asset_file: 'Crew asset file',
@@ -151,7 +155,14 @@ function mediaFileTooLargeError(uploadKind: UploadKind, maxBytes: number) {
 /** Video upload kinds that generic confirm must not transcode. Reference
  *  videos are generation-only inputs; story clips are enqueued later by the
  *  story domain after checksum/ffprobe verification and workspace claim. */
-const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>(['ai_reference_video']);
+const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>([
+  'ai_reference_video',
+  'content_review_video',
+]);
+
+function requiresMultipartUpload(kind: UploadKind): boolean {
+  return kind === 'episode_source_video' || kind === 'content_review_video';
+}
 
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -289,12 +300,21 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
   },
   ai_reference_video: {
     contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
-    // Seedance 2.5 accepts each MP4/MOV reference up to 200 MB. Older models
-    // retain their smaller catalog-driven per-file/combined limits at submit.
-    maxBytes: 200 * MiB,
+    // Library and story-clip uploads accept a 2 GiB master. Generation submit
+    // still enforces each model's own reference-size contract.
+    maxBytes: 2 * 1024 * MiB,
     assetKind: MediaAssetKind.video,
-    ttlSeconds: 900,
+    ttlSeconds: 3600,
     keySegment: 'ai-reference-video',
+  },
+  // Finished-cut review masters, not generation inputs. Capped at the
+  // Aliyun Green videoDetection quota for this account (2 GB).
+  content_review_video: {
+    contentTypes: REFERENCE_VIDEO_CONTENT_TYPES,
+    maxBytes: CONTENT_REVIEW_VIDEO_MAX_BYTES,
+    assetKind: MediaAssetKind.video,
+    ttlSeconds: 3600,
+    keySegment: 'content-review-video',
   },
   ai_reference_audio: {
     contentTypes: REFERENCE_AUDIO_CONTENT_TYPES,
@@ -447,9 +467,11 @@ export class MediaUploadService {
     input: CreateUploadUrlInputDto,
     workspaceId?: string,
   ): Promise<CreateUploadUrlResponseDto> {
-    if (input.kind === 'episode_source_video') {
+    if (requiresMultipartUpload(input.kind)) {
       throw new BadRequestException(
-        'Episode source videos require multipart upload',
+        input.kind === 'content_review_video'
+          ? 'Content review videos require multipart upload'
+          : 'Episode source videos require multipart upload',
       );
     }
     const { storage, storageKey, policy } = await this.prepareUpload(
@@ -572,7 +594,7 @@ export class MediaUploadService {
     const policy = UPLOAD_KIND_POLICY[input.kind];
     let storage = this.storageForUpload(input.kind);
     let sourceLocation: StorageObjectRef | undefined;
-    if (input.kind === 'episode_source_video') {
+    if (requiresMultipartUpload(input.kind)) {
       const session = await this.prisma.episodeUpload.findUnique({
         where: { storageKey: input.storageKey },
       });
@@ -583,7 +605,7 @@ export class MediaUploadService {
         !['uploaded', 'completed'].includes(session.status) ||
         !session.bucket
       ) {
-        throw new BadRequestException('Episode upload has not been completed');
+        throw new BadRequestException('Upload has not been completed');
       }
       const pinned = this.storageRegistry.forProvider(session.provider);
       if (!pinned)
@@ -607,10 +629,6 @@ export class MediaUploadService {
         );
       }
     }
-    const serializeConfirmation =
-      Boolean(policy.verifiedImageFinalKeySegment) ||
-      input.kind === 'episode_source_video' ||
-      input.kind === 'crew_asset_file';
     const storageKey = input.storageKey;
 
     // 1. Ownership: the key MUST sit under this user's scope for this kind.
@@ -730,6 +748,8 @@ export class MediaUploadService {
           userId,
           storageKey,
           input.contentType,
+          input.kind,
+          policy,
           storage,
           sourceLocation,
         );
@@ -768,39 +788,35 @@ export class MediaUploadService {
       async (tx) => {
         if (input.kind === 'crew_asset_file')
           await lockCrewStorage(tx, input.scope!.crewId!);
-        if (serializeConfirmation) {
-          // `media_assets.object_key` is indexed but intentionally not globally
-          // unique across all import paths. Serialize this exact final identity,
-          // then re-read under the lock so two confirm requests converge onto one
-          // asset without a check-then-create race.
-          await tx.$executeRaw`
+        // `media_assets.object_key` is indexed but intentionally not globally
+        // unique across all import paths. Serialize this exact final identity,
+        // then re-read under the lock so two confirm requests converge onto one
+        // asset without a check-then-create race.
+        await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtext(${`media-verified-image-confirm:${persistedStorageKey}`})::bigint
           )
         `;
-        }
-        const converged = serializeConfirmation
-          ? await tx.mediaAsset.findFirst({
-              where: { objectKey: persistedStorageKey, deletedAt: null },
-              select: {
-                id: true,
-                storageProvider: true,
-                bucket: true,
-                region: true,
-                objectKey: true,
-                externalUrl: true,
-                contentType: true,
-                sizeBytes: true,
-                width: true,
-                height: true,
-                durationSeconds: true,
-                checksumSha256: true,
-                workspaceId: true,
-                metadata: true,
-                status: true,
-              },
-            })
-          : null;
+        const converged = await tx.mediaAsset.findFirst({
+          where: { objectKey: persistedStorageKey, deletedAt: null },
+          select: {
+            id: true,
+            storageProvider: true,
+            bucket: true,
+            region: true,
+            objectKey: true,
+            externalUrl: true,
+            contentType: true,
+            sizeBytes: true,
+            width: true,
+            height: true,
+            durationSeconds: true,
+            checksumSha256: true,
+            workspaceId: true,
+            metadata: true,
+            status: true,
+          },
+        });
         if (
           converged &&
           !this.assetMatchesUploadScope(converged, uploadScope)
@@ -955,6 +971,8 @@ export class MediaUploadService {
     userId: string,
     storageKey: string,
     requestedContentType: string,
+    uploadKind: UploadKind,
+    policy: UploadKindPolicy,
     storage: OutputStorageService = this.storage,
     sourceLocation?: StorageObjectRef,
   ): Promise<ConfirmedUploadTruth> {
@@ -962,6 +980,21 @@ export class MediaUploadService {
       ? await storage.headStoredObject(sourceLocation)
       : await this.headUploadObject(userId, storageKey, storage);
     if (!head.exists) throw mediaObjectNotFound();
+    // Signed PUT byte limits are advisory. The stored object, not the caller's
+    // declaration, must satisfy the kind's budget before it enters the ledger.
+    if (
+      head.sizeBytes == null ||
+      !Number.isSafeInteger(head.sizeBytes) ||
+      head.sizeBytes <= 0
+    ) {
+      throw new UnprocessableEntityException({
+        code: 'MEDIA_SIZE_INVALID',
+        message: 'Media storage did not return a valid byte size.',
+      });
+    }
+    if (head.sizeBytes > policy.maxBytes) {
+      throw mediaFileTooLargeError(uploadKind, policy.maxBytes);
+    }
 
     // Generic objects retain their signed permanent key. Their cache metadata
     // is provider bookkeeping, not validation, and remains best-effort.
@@ -1163,7 +1196,8 @@ export class MediaUploadService {
       if (
         crewId !== undefined ||
         kind === 'crew_asset_file' ||
-        kind === 'episode_source_video'
+        kind === 'episode_source_video' ||
+        kind === 'content_review_video'
       ) {
         throw new BadRequestException({
           code: 'MEDIA_SCOPE_CONFLICT',

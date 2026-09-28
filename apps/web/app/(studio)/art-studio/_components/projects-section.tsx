@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import Link from "next/link";
 import { IconDots, IconFolder, IconLayoutGrid, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -224,15 +225,17 @@ function GroupedView({ groups, loading, onCreateWorld }: ViewProps) {
   );
 }
 
-function ProductCard({
-  product,
-  world,
-  isLastInWorld,
-}: {
-  product: V1WorldProduct;
-  world: V1World;
-  isLastInWorld: boolean;
-}) {
+type ProductCardProps = { product: V1WorldProduct; world: V1World; isLastInWorld: boolean };
+export function ProductCard(props: ProductCardProps) {
+  const { user } = useCurrentUser();
+  return (
+    <OwnedProductCard
+      key={JSON.stringify([user?.id, props.product.id, props.product.worldId])}
+      {...props}
+    />
+  );
+}
+function OwnedProductCard({ product, world, isLastInWorld }: ProductCardProps) {
   const tw = useTranslations("workspace");
   const tc = useTranslations("common");
   const queryClient = useQueryClient();
@@ -243,6 +246,24 @@ function ProductCard({
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectOptionItem | null>(null);
   const [loadingEdit, setLoadingEdit] = useState(false);
+  const active = useRef(true);
+  const operation = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+    };
+  }, []);
+  const begin = () => {
+    if (!active.current || operation.current) return null;
+    const run = new AbortController();
+    operation.current = run;
+    return run;
+  };
+  const owns = (run: AbortController) =>
+    active.current && operation.current === run && !run.signal.aborted;
 
   // Opens the same ProjectEditorDialog used on the project detail page.
   // The V1WorldProduct list item here only carries {id, name, imagePath,
@@ -251,30 +272,39 @@ function ProductCard({
   // aspectRatioType) — otherwise required fields appear empty and the
   // validator blocks save. Fetch the full detail first.
   const handleEdit = async () => {
-    if (loadingEdit) return;
+    const run = begin();
+    if (!run) return;
     setLoadingEdit(true);
     try {
       const detail = await backendApi.post<ProjectOptionItem>(
-        `/api/user/project/detail/${product.id}`
+        `/api/user/project/detail/${product.id}`,
+        { signal: run.signal }
       );
+      if (!owns(run)) return;
       setEditingProject(detail);
       setEditorOpen(true);
     } catch (err) {
+      if (!owns(run)) return;
       console.error("[ProductCard] load project detail failed", err);
       toast.error(err instanceof Error ? err.message : tw("projectLoadFailed"));
     } finally {
-      setLoadingEdit(false);
+      if (owns(run)) {
+        operation.current = null;
+        setLoadingEdit(false);
+      }
     }
   };
 
   const handleDelete = async () => {
-    if (deleting) return;
+    const run = begin();
+    if (!run) return;
     setDeleting(true);
     try {
       if (isLastInWorld) {
         // Java rejects worldproduct delete when it's the last one — the
         // contract is "delete the world itself, which cascades".
         await backendApi.post("/api/user/world/delete/world", {
+          signal: run.signal,
           data: { id: product.worldId },
         });
       } else {
@@ -282,9 +312,11 @@ function ProductCard({
         // query string (matches the legacy Vue client — body form returns
         // 未知異常).
         await backendApi.post(
-          `/api/user/world/delete/worldproduct?id=${encodeURIComponent(product.id)}`
+          `/api/user/world/delete/worldproduct?id=${encodeURIComponent(product.id)}`,
+          { signal: run.signal }
         );
       }
+      if (!owns(run)) return;
       toast.success(tw("projectDeleteSuccess"));
       setConfirmOpen(false);
       // Always refresh this world's product list. If we just deleted the
@@ -295,10 +327,14 @@ function ProductCard({
         void queryClient.invalidateQueries({ queryKey: worldKeys.all });
       }
     } catch (err) {
+      if (!owns(run)) return;
       console.error("[ProductCard] delete failed", err);
       toast.error(err instanceof Error ? err.message : tw("projectDeleteFailed"));
     } finally {
-      setDeleting(false);
+      if (owns(run)) {
+        operation.current = null;
+        setDeleting(false);
+      }
     }
   };
 
@@ -343,7 +379,7 @@ function ProductCard({
               </Link>
             </DropdownMenuItem>
             <DropdownMenuItem
-              disabled={loadingEdit}
+              disabled={loadingEdit || deleting}
               onSelect={(e) => {
                 e.preventDefault();
                 void handleEdit();
@@ -379,9 +415,9 @@ function ProductCard({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>{tc("cancel")}</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting || loadingEdit}>{tc("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              disabled={deleting}
+              disabled={deleting || loadingEdit}
               onClick={(e) => {
                 e.preventDefault();
                 void handleDelete();
@@ -404,6 +440,7 @@ function ProductCard({
           if (!next) setEditingProject(null);
         }}
         onSaved={() => {
+          if (!active.current) return;
           // Refresh this world's product list so name / cover / description
           // updates appear without a page reload.
           void queryClient.invalidateQueries({ queryKey: worldKeys.products(product.worldId) });

@@ -17,7 +17,7 @@
  * accept or decline. The conversation is spawned in the same
  * transaction so the creator's inbox lights up immediately.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconLoader2, IconUserPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -47,6 +47,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { OrderApiError, useSubmitOrder } from "@/app/(site)/creators/_hooks/use-orders";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
+
 interface StartRequestDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -55,12 +57,36 @@ interface StartRequestDialogProps {
   initialTier?: ServiceTier;
 }
 
-export function StartRequestDialog({
+export function StartRequestDialog(props: StartRequestDialogProps) {
+  const { user } = useCurrentUser();
+  return (
+    <StartRequestDialogContent
+      key={JSON.stringify([
+        props.service?.id,
+        user?.id,
+        props.open,
+        props.initialTier,
+        props.service?.packages[0]?.tier,
+      ])}
+      {...props}
+    />
+  );
+}
+
+function StartRequestDialogContent({
   open,
   onOpenChange,
   service,
   initialTier,
 }: StartRequestDialogProps) {
+  const active = useRef(false);
+  const admitted = useRef(false);
+  useLayoutEffect(() => {
+    active.current = open;
+    return () => {
+      active.current = false;
+    };
+  }, [open]);
   const t = useTranslations("creatorService");
   const tc = useTranslations("common");
   const router = useRouter();
@@ -110,10 +136,23 @@ export function StartRequestDialog({
     return service.requirementQuestions.filter((q) => q.required && !(answers[q.id] ?? "").trim());
   }, [service, answers]);
 
-  const canSubmit = !!service && !!selectedPkg && missingRequired.length === 0 && !submit.isPending;
+  const canSubmit =
+    !!service &&
+    !!selectedPkg &&
+    !!idempotencyKey &&
+    missingRequired.length === 0 &&
+    !submit.isPending;
 
   const handleSubmit = async () => {
-    if (!service || !selectedPkg) return;
+    if (
+      !active.current ||
+      admitted.current ||
+      submit.isPending ||
+      !idempotencyKey ||
+      !service ||
+      !selectedPkg
+    )
+      return;
     if (missingRequired.length > 0) {
       toast.error(
         t("startRequestMissingRequired", {
@@ -122,9 +161,11 @@ export function StartRequestDialog({
       );
       return;
     }
+    admitted.current = true;
     try {
       const order = await submit.mutateAsync({
         serviceId: service.id,
+        expectedServiceVersion: service.version,
         packageTier: tier,
         answers: service.requirementQuestions.map((q) => ({
           questionId: q.id,
@@ -134,10 +175,12 @@ export function StartRequestDialog({
         note: note.trim() || undefined,
         idempotencyKey,
       });
+      if (!active.current) return;
       toast.success(t("startRequestSubmittedToast"));
       onOpenChange(false);
       router.push(localizePath(`/orders/${order.id}`, locale));
     } catch (err) {
+      if (!active.current) return;
       if (err instanceof OrderApiError) {
         const detail =
           typeof err.body === "object" && err.body && "message" in err.body
@@ -150,6 +193,8 @@ export function StartRequestDialog({
       } else {
         toast.error(err instanceof Error ? err.message : t("startRequestFailed"));
       }
+    } finally {
+      admitted.current = false;
     }
   };
 

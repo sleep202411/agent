@@ -1,10 +1,12 @@
 "use client";
 
+import { useAdminOperation } from "../use-admin-operation";
+
 // 免费活动 (claimable free-credits campaign) page for the /billing sub-app. A
 // campaign lets any eligible user claim free 算力积分 once during its window —
 // distinct from 兑换券 (a single code) and 促销优惠 (an order discount).
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { IconConfetti, IconPlus, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -53,73 +55,93 @@ export function BillingCampaignsPanel({
   const [campaigns, setCampaigns] = useState(initialCampaigns ?? emptyCampaigns);
   const [status, setStatus] = useState("");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError ?? null);
 
-  async function refresh() {
-    setLoading(true);
-    setError(null);
-    try {
+  const loadCampaigns = useCallback(
+    (signal: AbortSignal) => {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
       const qs = params.toString();
-      setCampaigns(
-        await requestEnvelope<AdminBillingCampaignsData>(
-          `/api/admin/billing/credit-campaigns${qs ? `?${qs}` : ""}`
-        )
+      return requestEnvelope<AdminBillingCampaignsData>(
+        `/api/admin/billing/credit-campaigns${qs ? `?${qs}` : ""}`,
+        signal
       );
+    },
+    [status]
+  );
+  async function refresh() {
+    const operation = begin("read");
+    if (!operation) return;
+    setError(null);
+    try {
+      const data = await loadCampaigns(operation.signal);
+      if (operation.current()) setCampaigns(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
-
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
-    setError(null);
+    const operation = begin();
+    if (!operation) return;
     const formEl = event.currentTarget;
-    const form = new FormData(formEl);
-    const maxClaims = stringField(form, "maxClaims");
-    const startsAt = stringField(form, "startsAt");
-    const endsAt = stringField(form, "endsAt");
-    try {
-      await mutateEnvelope("/api/admin/billing/credit-campaigns", {
-        name: stringField(form, "name"),
-        description: stringField(form, "description") || undefined,
-        computeCreditAmount: Number(stringField(form, "computeCreditAmount")),
-        status: stringField(form, "status"),
-        maxClaims: maxClaims ? Number(maxClaims) : undefined,
-        startsAt: startsAt || undefined,
-        endsAt: endsAt || undefined,
-        note: stringField(form, "note") || undefined,
-      });
-      formEl.reset();
-      await refresh();
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleStatus(campaignId: string, next: CreditCampaignStatus) {
-    setLoading(true);
     setError(null);
     try {
+      const form = new FormData(formEl);
+      const maxClaims = stringField(form, "maxClaims");
+      const startsAt = stringField(form, "startsAt");
+      const endsAt = stringField(form, "endsAt");
       await mutateEnvelope(
-        `/api/admin/billing/credit-campaigns/${campaignId}`,
-        { status: next },
-        "PATCH"
+        "/api/admin/billing/credit-campaigns",
+        {
+          name: stringField(form, "name"),
+          description: stringField(form, "description") || undefined,
+          computeCreditAmount: Number(stringField(form, "computeCreditAmount")),
+          status: stringField(form, "status"),
+          maxClaims: maxClaims ? Number(maxClaims) : undefined,
+          startsAt: startsAt || undefined,
+          endsAt: endsAt || undefined,
+          note: stringField(form, "note") || undefined,
+        },
+        "POST",
+        operation.signal
       );
-      await refresh();
+      if (!operation.current()) return;
+      formEl.reset();
+      const data = await loadCampaigns(operation.signal);
+      if (operation.current()) setCampaigns(data);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
+  const handleStatus = useCallback(
+    async (campaignId: string, next: CreditCampaignStatus) => {
+      const operation = begin();
+      if (!operation) return;
+      setError(null);
+      try {
+        await mutateEnvelope(
+          `/api/admin/billing/credit-campaigns/${campaignId}`,
+          { status: next },
+          "PATCH",
+          operation.signal
+        );
+        if (!operation.current()) return;
+        const data = await loadCampaigns(operation.signal);
+        if (operation.current()) setCampaigns(data);
+      } catch (err) {
+        if (operation.current()) setError(toErrorMessage(err));
+      } finally {
+        operation.finish();
+      }
+    },
+    [begin, loadCampaigns]
+  );
 
   const visible = useMemo(
     () =>
@@ -227,9 +249,7 @@ export function BillingCampaignsPanel({
         },
       },
     ],
-    // handleStatus is render-stable; rebuild only when loading toggles.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [loading]
+    [loading, handleStatus]
   );
 
   return (
@@ -294,11 +314,12 @@ export function BillingCampaignsPanel({
           </div>
           <form onSubmit={handleCreate} className="mt-4 grid gap-3">
             <FormLabel label="活动名称" help="展示给用户的活动名称。">
-              <TextInput name="name" required placeholder="新用户福利" />
+              <TextInput disabled={loading} name="name" required placeholder="新用户福利" />
             </FormLabel>
             <div className="grid grid-cols-2 gap-2">
               <FormLabel label="面额（算力积分）" help="每次领取发放到默认工作区的积分数量。">
                 <TextInput
+                  disabled={loading}
                   name="computeCreditAmount"
                   required
                   inputMode="numeric"
@@ -306,11 +327,16 @@ export function BillingCampaignsPanel({
                 />
               </FormLabel>
               <FormLabel label="总名额" help="全站最多领取人数；留空表示不限。">
-                <TextInput name="maxClaims" inputMode="numeric" placeholder="不限" />
+                <TextInput
+                  disabled={loading}
+                  name="maxClaims"
+                  inputMode="numeric"
+                  placeholder="不限"
+                />
               </FormLabel>
             </div>
             <FormLabel label="状态" help="草稿不可领取；进行中可领取。">
-              <Select name="status" defaultValue="draft">
+              <Select disabled={loading} name="status" defaultValue="draft">
                 <option value="draft">草稿</option>
                 <option value="active">进行中</option>
                 <option value="paused">暂停</option>
@@ -318,14 +344,14 @@ export function BillingCampaignsPanel({
             </FormLabel>
             <div className="grid grid-cols-2 gap-2">
               <FormLabel label="开始时间" help="留空表示立即开始。">
-                <TextInput name="startsAt" type="datetime-local" />
+                <TextInput disabled={loading} name="startsAt" type="datetime-local" />
               </FormLabel>
               <FormLabel label="结束时间" help="留空表示长期有效。">
-                <TextInput name="endsAt" type="datetime-local" />
+                <TextInput disabled={loading} name="endsAt" type="datetime-local" />
               </FormLabel>
             </div>
             <FormLabel label="备注" help="内部运营备注，可选。">
-              <TextInput name="note" placeholder="例如：开业活动" />
+              <TextInput disabled={loading} name="note" placeholder="例如：开业活动" />
             </FormLabel>
             <Button type="submit" disabled={loading}>
               <IconPlus className="size-3.5" />

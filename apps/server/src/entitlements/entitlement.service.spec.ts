@@ -87,6 +87,7 @@ function prismaMock(input: {
     },
     billingSubscription: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
     },
   };
 }
@@ -253,11 +254,15 @@ describe('EntitlementService.grantComplimentary', () => {
   function grantPrismaMock(planRow: unknown) {
     const prisma = {
       $transaction: jest.fn(),
+      $executeRaw: jest.fn().mockResolvedValue(0),
+      $queryRaw: jest.fn().mockResolvedValue([]),
       billingMembershipPlan: {
         findUnique: jest.fn().mockResolvedValue(planRow),
       },
       entitlementGrant: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest.fn().mockResolvedValue(null),
         upsert: jest.fn((args: { create: { planKey: string } }) => args.create),
       },
     };
@@ -568,5 +573,142 @@ describe('EntitlementService quota profile', () => {
     const fromStandard = await service.quotaProfileForUser(user());
     expect(fromStandard.planKey).toBe('standard');
     expect(fromStandard.upgrade).toBeNull();
+  });
+});
+
+describe('Membership plan cache recovery', () => {
+  type Row = ReturnType<typeof plan>;
+  type Cache = { byKey: Map<string, Row> };
+  type Probe = {
+    loadPlanCache(): Promise<Cache>;
+    planBenefits(row: Row): ReturnType<typeof benefits>;
+  };
+  const deferred = <T>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (reason: Error) => void;
+    const promise = new Promise<T>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    });
+    return { promise, resolve, reject };
+  };
+  const setup = () => {
+    const read = jest.fn<Promise<Row[]>, []>();
+    const service = new EntitlementService({
+      billingMembershipPlan: { findMany: read },
+    } as never);
+    return { read, service, probe: service as unknown as Probe };
+  };
+  it('coalesces concurrent cache misses', async () => {
+    const { read, probe } = setup();
+    const pending = deferred<Row[]>();
+    read.mockReturnValueOnce(pending.promise);
+    const first = probe.loadPlanCache();
+    const second = probe.loadPlanCache();
+    expect(read).toHaveBeenCalledTimes(1);
+    const row = plan();
+    pending.resolve([row]);
+    expect(await first).toBe(await second);
+  });
+  it.each(['success', 'failure'])(
+    'ignores invalidated delayed %s and preserves the replacement cache',
+    async (outcome) => {
+      const { read, service, probe } = setup();
+      const pending = deferred<Row[]>();
+      const replacement = plan({ rank: 22 });
+      read
+        .mockReturnValueOnce(pending.promise)
+        .mockResolvedValueOnce([replacement]);
+      const old = probe.loadPlanCache();
+      service.invalidatePlanCache();
+      const latest = await probe.loadPlanCache();
+      if (outcome === 'success') pending.resolve([plan({ rank: 1 })]);
+      else pending.reject(new Error('abandoned read'));
+      expect(await old).toBe(latest);
+      expect((await probe.loadPlanCache()).byKey.get('basic')).toBe(
+        replacement,
+      );
+      expect(read).toHaveBeenCalledTimes(2);
+    },
+  );
+  it('releases a failed current cache read for explicit retry', async () => {
+    const { read, probe } = setup();
+    read
+      .mockRejectedValueOnce(new Error('database unavailable'))
+      .mockResolvedValueOnce([plan()]);
+    await expect(probe.loadPlanCache()).rejects.toThrow('database unavailable');
+    expect((await probe.loadPlanCache()).byKey.size).toBe(1);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+  it('keeps derived benefits attached to the exact cached plan row', async () => {
+    const { read, service, probe } = setup();
+    const old = plan({ benefits: benefits({ concurrentJobs: 2 }) });
+    const current = plan({ benefits: benefits({ concurrentJobs: 11 }) });
+    read.mockResolvedValueOnce([old]).mockResolvedValueOnce([current]);
+    await probe.loadPlanCache();
+    expect(probe.planBenefits(old).concurrentJobs).toBe(2);
+    service.invalidatePlanCache();
+    await probe.loadPlanCache();
+    expect(probe.planBenefits(old).concurrentJobs).toBe(2);
+    expect(probe.planBenefits(current).concurrentJobs).toBe(11);
+    expect(probe.planBenefits(old).concurrentJobs).toBe(2);
+    expect(probe.planBenefits(current).concurrentJobs).toBe(11);
+  });
+});
+
+describe('entitlement selection across overlapping records', () => {
+  it('keeps an older high-rank grant when five lower-rank grants are newer', async () => {
+    const prisma = prismaMock({
+      plans: [plan(), plan({ planKey: 'pro', rank: 30 })],
+    });
+    const rows = [
+      ...Array.from({ length: 5 }, (_, index) =>
+        grant({ id: `basic-${index}` }),
+      ),
+      grant({
+        id: 'older-pro',
+        planKey: 'pro',
+        startsAt: new Date('2026-05-01T00:00:00Z'),
+      }),
+    ];
+    prisma.entitlementGrant.findMany
+      .mockReset()
+      .mockImplementation((query: { take?: number }) =>
+        Promise.resolve(rows.slice(0, query.take)),
+      );
+    const snapshot = await new EntitlementService(
+      prisma as never,
+    ).resolveForUser(user(), { now: NOW });
+    expect(snapshot.planKey).toBe('pro');
+  });
+
+  it('selects the higher-rank grace subscription even when the lower plan expires later', async () => {
+    const prisma = prismaMock({
+      plans: [plan(), plan({ planKey: 'pro', rank: 30 })],
+    });
+    const rows = [
+      {
+        subjectType: BillingSubjectType.user,
+        subjectId: 'user-1',
+        planKey: 'basic',
+        currentPeriodEnd: new Date('2026-08-01T00:00:00Z'),
+      },
+      {
+        subjectType: BillingSubjectType.user,
+        subjectId: 'user-1',
+        planKey: 'pro',
+        currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+      },
+    ];
+    prisma.billingSubscription.findFirst.mockResolvedValue(rows[0] as never);
+    Object.assign(prisma.billingSubscription, {
+      findMany: jest.fn().mockResolvedValue(rows),
+    });
+    const snapshot = await new EntitlementService(
+      prisma as never,
+    ).resolveForUser(user(), { now: NOW, workspaceId: 'workspace-1' });
+    expect(snapshot.planKey).toBe('pro');
+    expect(snapshot.subject.id).toBe('user-1');
+    expect(snapshot.source).toBe('subscription_grace');
   });
 });

@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { storyExitNodeIds } from '@repo/shared/story-stats';
 import { Prisma } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
 import {
@@ -508,14 +509,12 @@ async function writeStoryChapterGraphState(
     },
   });
   if (claimed.count !== 1) return null;
-  await Promise.all(
-    input.chapters.map((chapter) =>
-      tx.storyChapter.update({
-        where: { id: chapter.id },
-        data: { nodeIds: chapter.nodeIds, entryNodeId: chapter.entryNodeId },
-      }),
-    ),
-  );
+  for (const chapter of input.chapters) {
+    await tx.storyChapter.update({
+      where: { id: chapter.id },
+      data: { nodeIds: chapter.nodeIds, entryNodeId: chapter.entryNodeId },
+    });
+  }
   return { contentHash };
 }
 
@@ -640,14 +639,7 @@ function graphAdjacency(
     content.graph.nodes.map((node) => [node.nodeId, new Set<string>()]),
   );
   for (const node of content.graph.nodes) {
-    const targets =
-      node.exit.kind === 'choice'
-        ? node.exit.choices.flatMap((choice) =>
-            choice.nextNodeId ? [choice.nextNodeId] : [],
-          )
-        : node.exit.nextNodeId
-          ? [node.exit.nextNodeId]
-          : [];
+    const targets = storyExitNodeIds(node.exit);
     for (const target of targets) {
       if (!graphIds.has(target)) continue;
       adjacency.get(node.nodeId)!.add(target);

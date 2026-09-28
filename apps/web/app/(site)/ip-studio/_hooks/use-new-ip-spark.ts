@@ -17,33 +17,39 @@ async function analyzeNewIpBrief(file: File): Promise<NewIpSparkDraft> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 300_000);
 
-  let res: Response;
   try {
-    res = await fetch("/aurora/spark/analyze", {
-      method: "POST",
-      credentials: "include",
-      body: formData,
-      signal: controller.signal,
-    });
-  } catch (err) {
-    const isTimeout = err instanceof DOMException && err.name === "AbortError";
-    throw new Error(isTimeout ? "Analysis timed out" : "Network connection failed");
+    let res: Response;
+    try {
+      res = await fetch("/aurora/spark/analyze", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+        signal: controller.signal,
+      });
+    } catch {
+      if (controller.signal.aborted) throw new Error("Analysis timed out");
+      throw new Error("Network connection failed");
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const body = (await res.json()) as {
+      code?: number;
+      success?: boolean;
+      msg?: string;
+      message?: string;
+      data?: NewIpSparkDraft | null;
+    };
+    if (controller.signal.aborted) throw new Error("Analysis timed out");
+    const ok = body.success === true || body.code === 0 || body.code === 200;
+    if (!ok) throw new Error(body.msg || body.message || "Analysis failed");
+    return body.data ?? {};
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error("Analysis timed out");
+    throw error;
   } finally {
+    // Fetch resolves at headers; keep the deadline through body consumption.
     clearTimeout(timer);
   }
-
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-  const body = (await res.json()) as {
-    code?: number;
-    success?: boolean;
-    msg?: string;
-    message?: string;
-    data?: NewIpSparkDraft | null;
-  };
-  const ok = body.success === true || body.code === 0 || body.code === 200;
-  if (!ok) throw new Error(body.msg || body.message || "Analysis failed");
-  return body.data ?? {};
 }
 
 export function useNewIpSparkAnalyze() {

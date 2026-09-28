@@ -27,6 +27,7 @@ import {
   normalizeSourceExtraction,
   sourceAuditScopes,
   sourceRoutingRepairView,
+  applySourceLinearSpine,
   sourceEndingAnchors,
   sourceNarrativeAnchors,
   SOURCE_AUDIT_SYSTEM,
@@ -401,6 +402,18 @@ export class StoryAuthoringPipelineService {
           preview: blocks[segment.start].text.slice(0, 160),
         })),
       );
+      // The batch task is local wiring: destinations come from the catalog and
+      // labels from the assigned passages, so the whole <source_blocks> payload
+      // stays out of these many concurrent requests.
+      const batchContext = [
+        `Story language: ${request.creativeProfile.storyLanguage}. Fallback title: ${request.title}.`,
+        ...(request.instructions
+          ? [
+              `Creator revision instructions (preserve source wording): ${request.instructions}`,
+            ]
+          : []),
+        `Characters: ${JSON.stringify(partition.characters)}`,
+      ].join('\n\n');
       const queue = Array.from(
         { length: Math.ceil(segments.length / 8) },
         (_, i) => segments.slice(i * 8, (i + 1) * 8),
@@ -419,7 +432,7 @@ export class StoryAuthoringPipelineService {
               schema: storySourceBatchSchemaFor(batch, segments, blocks),
               system: SOURCE_BATCH_SYSTEM,
               prompt: [
-                requestContext,
+                batchContext,
                 `<scene_catalog>${catalog}</scene_catalog>`,
                 `Assigned immutable segments: ${JSON.stringify(batch)}`,
                 `<assigned_passages>${JSON.stringify(batch.map((segment) => ({ ...segment, blocks: blocks.slice(segment.start, segment.end + 1).map(({ id, text }) => ({ id, text })) })))}</assigned_passages>`,
@@ -469,6 +482,20 @@ export class StoryAuthoringPipelineService {
           .sort((a, b) => a.start - b.start),
         unsupportedRules: planned.flatMap((part) => part.unsupportedRules),
       });
+      // Deterministic connectivity fallback before model repair: chain scenes
+      // the batch stage left unattached along the source's own reading order,
+      // so the model repair loop only faces genuinely interactive routing
+      // problems instead of dozens of bare orphans.
+      const spine = applySourceLinearSpine(plan, blocks);
+      if (spine.attached > 0) {
+        this.log(
+          'source-routing-spine',
+          1,
+          'ok',
+          `chained ${spine.attached} unreachable scene(s) via linear auto continuation`,
+        );
+        plan = spine.plan;
+      }
       feedback = validateSourceExtraction(plan, source, blocks);
       previousPartition = partition;
       if (feedback.length) {

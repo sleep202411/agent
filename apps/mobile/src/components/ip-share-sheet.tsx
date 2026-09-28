@@ -44,7 +44,18 @@ type ShareSheetProps = {
   onClose: () => void;
 };
 
-export function ShareSheet({
+export function ShareSheet(props: ShareSheetProps) {
+  if (!props.visible) return null;
+  // Each visible card owns its load gate; a previous poster cannot ready a new capture.
+  const cardKey = JSON.stringify([
+    props.ip.id,
+    props.ip.coverUrl ?? props.ip.backdropUrl,
+    props.shareUrl,
+  ]);
+  return <VisibleShareSheet key={cardKey} {...props} />;
+}
+
+function VisibleShareSheet({
   visible,
   ip,
   creatorName,

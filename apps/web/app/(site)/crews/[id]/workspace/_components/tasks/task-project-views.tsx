@@ -121,8 +121,10 @@ function ListView(props: TaskProjectViewProps) {
         <ListGroup key={group.key} group={group} props={props} />
       ))}
 
-      {groups.length === 0 ? <EmptyIssues onCreate={() => props.onCreateTask(null)} /> : null}
-      {view.groupBy == null && tasks.length > 0 ? (
+      {groups.length === 0 ? (
+        <EmptyIssues onCreate={props.canManage ? () => props.onCreateTask(null) : undefined} />
+      ) : null}
+      {props.canManage && view.groupBy == null && tasks.length > 0 ? (
         <button
           type="button"
           onClick={() => props.onCreateTask(null)}
@@ -449,14 +451,16 @@ function BoardColumn({
         <span className="text-[10px] tabular-nums text-[#666d77]">
           {props.workflowCounts?.[state.id] ?? tasks.length}
         </span>
-        <button
-          type="button"
-          onClick={() => props.onEditWorkflowState(state)}
-          className="ml-auto grid size-6 place-items-center rounded text-[#555c67] hover:bg-white/[0.05] hover:text-white"
-          aria-label={t("editWorkflowColumn", { name: state.name })}
-        >
-          <IconDots className="size-3.5" />
-        </button>
+        {props.canManage ? (
+          <button
+            type="button"
+            onClick={() => props.onEditWorkflowState(state)}
+            className="ml-auto grid size-6 place-items-center rounded text-[#555c67] hover:bg-white/[0.05] hover:text-white"
+            aria-label={t("editWorkflowColumn", { name: state.name })}
+          >
+            <IconDots className="size-3.5" />
+          </button>
+        ) : null}
         {props.canManage ? (
           <button
             type="button"
@@ -611,21 +615,23 @@ function CardPriorityProperty({ priority }: { priority: CrewTaskPriority }) {
   );
 }
 
-function EmptyIssues({ onCreate }: { onCreate: () => void }) {
+function EmptyIssues({ onCreate }: { onCreate?: () => void }) {
   const t = useTranslations("crewTaskProject");
   return (
     <div className="grid min-h-[420px] place-items-center">
       <div className="text-center">
         <IconCircleDashed className="mx-auto size-7 text-[#555c67]" />
         <p className="mt-3 text-[12px] font-medium text-[#b9bdc5]">{t("noIssues")}</p>
-        <button
-          type="button"
-          onClick={onCreate}
-          className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md bg-[#e52227] px-3 text-[10px] font-medium text-white hover:bg-[#f02d32]"
-        >
-          <IconPlus className="size-3.5" />
-          {t("newIssue")}
-        </button>
+        {onCreate ? (
+          <button
+            type="button"
+            onClick={onCreate}
+            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-md bg-[#e52227] px-3 text-[10px] font-medium text-white hover:bg-[#f02d32]"
+          >
+            <IconPlus className="size-3.5" />
+            {t("newIssue")}
+          </button>
+        ) : null}
       </div>
     </div>
   );

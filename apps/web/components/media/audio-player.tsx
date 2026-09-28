@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useLayoutEffect } from "react";
+import { toast } from "sonner";
+import { useTranslations } from "@/src/i18n/i18n";
 import WaveSurfer from "wavesurfer.js";
 import { IconPlayerPlay, IconPlayerPause } from "@tabler/icons-react";
 
@@ -9,7 +11,16 @@ interface AudioPlayerProps {
   name?: string;
 }
 
-export function AudioPlayer({ src, name }: AudioPlayerProps) {
+export function AudioPlayer(props: AudioPlayerProps) {
+  return <AudioPlayerSession key={props.src} {...props} />;
+}
+
+function AudioPlayerSession({ src, name }: AudioPlayerProps) {
+  const t = useTranslations("common");
+  const messages = useRef(t);
+  useLayoutEffect(() => {
+    messages.current = t;
+  }, [t]);
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WaveSurfer | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -32,31 +43,58 @@ export function AudioPlayer({ src, name }: AudioPlayerProps) {
       normalize: true,
     });
 
-    ws.load(src);
+    wsRef.current = ws;
+    const current = () => wsRef.current === ws;
 
     ws.on("ready", () => {
+      if (!current()) return;
       setReady(true);
       setDuration(formatTime(ws.getDuration()));
     });
 
-    ws.on("audioprocess", () => {
+    // Position updates also fire when the waveform is sought while paused.
+    ws.on("timeupdate", () => {
+      if (!current()) return;
       setCurrentTime(formatTime(ws.getCurrentTime()));
     });
 
-    ws.on("play", () => setPlaying(true));
-    ws.on("pause", () => setPlaying(false));
-    ws.on("finish", () => setPlaying(false));
+    ws.on("play", () => {
+      if (current()) setPlaying(true);
+    });
+    ws.on("pause", () => {
+      if (current()) setPlaying(false);
+    });
+    ws.on("finish", () => {
+      if (current()) setPlaying(false);
+    });
 
-    wsRef.current = ws;
+    void ws.load(src).catch((error: unknown) => {
+      if (!current()) return;
+      setReady(false);
+      setPlaying(false);
+      toast.error(
+        error instanceof Error && error.message ? error.message : messages.current("loadFailed")
+      );
+    });
 
     return () => {
-      ws.destroy();
       wsRef.current = null;
+      ws.destroy();
     };
   }, [src]);
 
   const togglePlay = useCallback(() => {
-    wsRef.current?.playPause();
+    const ws = wsRef.current;
+    if (!ws) return;
+    void ws.playPause().catch((error: unknown) => {
+      if (wsRef.current !== ws) return;
+      setPlaying(false);
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : messages.current("operationFailed")
+      );
+    });
   }, []);
 
   return (

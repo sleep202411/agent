@@ -91,6 +91,7 @@ export function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>
   const trailer = ipPreviewVideoUrl(ip);
   return {
     id: ip.id,
+    channelType: ip.channelType,
     roomNumber: ip.roomNumber,
     title: ip.title || t("untitled"),
     subtitle: ip.subtitle || "",
@@ -110,6 +111,7 @@ export function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>
         id: episode.id,
         number: episode.episodeNo,
         title: episode.title,
+        cover: getAssetUrl(episode.coverAsset) || cover,
         video: previewVideoUrl(episode.mediaAsset),
         videoType: episode.mediaAsset?.contentType ?? undefined,
         published: episode.status === "published",

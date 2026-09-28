@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import Link from "next/link";
 import { IconClipboardCheck, IconExternalLink, IconFlag, IconRefresh } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
@@ -32,18 +33,22 @@ export function IpReviewsPanel({
   error: string | null;
 }) {
   const [data, setData] = useState(overview ?? emptyIpOverview);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError);
 
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setData(await requestEnvelope<AdminIpOverviewData>("/api/admin/ip-commerce/overview"));
+      const result = await requestEnvelope<AdminIpOverviewData>("/api/admin/ip-commerce/overview", {
+        signal: operation.signal,
+      });
+      if (operation.current()) setData(result);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
@@ -75,18 +80,22 @@ export function IpReportsPanel({
   error: string | null;
 }) {
   const [data, setData] = useState(overview ?? emptyIpOverview);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError);
 
   async function refresh() {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setData(await requestEnvelope<AdminIpOverviewData>("/api/admin/ip-commerce/overview"));
+      const result = await requestEnvelope<AdminIpOverviewData>("/api/admin/ip-commerce/overview", {
+        signal: operation.signal,
+      });
+      if (operation.current()) setData(result);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 

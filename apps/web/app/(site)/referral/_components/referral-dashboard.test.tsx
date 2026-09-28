@@ -17,6 +17,7 @@ vi.mock("@tanstack/react-query", () => ({
   useMutation: () => ({ isPending: false }),
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "A" } }) }));
 vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string) => key,
   useLocale: () => "zh-CN",

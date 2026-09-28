@@ -41,7 +41,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { backendApi } from "@/src/lib/api";
 import { useAppSelector, useAppDispatch } from "@/src/store";
@@ -89,19 +89,13 @@ import {
   type TimelineFile,
   type TimelineShot,
 } from "./timeline-types";
-import {
-  exportTimelineToMp4,
-  isExportSupported,
-  triggerBlobDownload,
-  TimelineExportError,
-  TimelineExportUnsupportedError,
-} from "@/src/lib/timeline-export-mediabunny";
+import { useTimelineExport } from "./use-timeline-export";
+import { TimelineExportReportPanel } from "./timeline-export-report";
 
 export function TimelineView() {
   const ts = useTranslations("storyboard");
   const tc = useTranslations("common");
   const tt = useTranslations("timeline");
-  const locale = useLocale();
   const dispatch = useAppDispatch();
   const projectId = useAppSelector((state) => state.project.currentProjectId);
   const detail = useAppSelector((state) => selectCurrentInstance(state).detail);
@@ -118,12 +112,6 @@ export function TimelineView() {
   const [selectedShotId, setSelectedShotId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  // Client-side export state: tracks whether a Mediabunny encode is
-  // in progress + the latest progress ratio so the button can render
-  // a percentage. Single-flight by intent — the button is disabled
-  // while `isExporting` is true.
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [pxPerSecond, setPxPerSecond] = useState(50);
 
@@ -408,67 +396,8 @@ export function TimelineView() {
   // toast so the user gets at least the same diagnostic the lipsync
   // dialog now provides; deeper "View error" UX is intentionally
   // deferred until we know whether this PoC sticks.
-  const handleExportMp4 = useCallback(async () => {
-    if (isExporting) return;
-    if (previewShots.length === 0) {
-      toast.warning(tt("noShots"));
-      return;
-    }
-    // CN locale gets google.cn (Google's official mainland mirror —
-    // google.com is unreachable inside the GFW). Everyone else gets
-    // the canonical google.com page.
-    const chromeUrl =
-      locale === "zh-CN" ? "https://www.google.cn/chrome/" : "https://www.google.com/chrome/";
-    const showUnsupportedToast = () => {
-      toast.error(tt("exportUnsupported"), {
-        description: tt("exportUnsupportedDesc"),
-        duration: 10_000,
-        action: {
-          label: tt("downloadChrome"),
-          onClick: () => window.open(chromeUrl, "_blank", "noopener"),
-        },
-      });
-    };
-    // Pre-flight: WebCodecs encoders are Chromium-only today (with
-    // partial Safari coverage). Pop a sticky toast with a "Get
-    // Chrome" action instead of letting the user watch the export
-    // crash mid-way.
-    if (!isExportSupported()) {
-      showUnsupportedToast();
-      return;
-    }
-    setIsExporting(true);
-    setExportProgress(0);
-    try {
-      const blob = await exportTimelineToMp4(
-        previewShots.map((shot) => ({
-          id: shot.id,
-          videoUrl: shot.videoUrl,
-          duration: shot.duration,
-        })),
-        {
-          onProgress: (ratio) => setExportProgress(ratio),
-        }
-      );
-      const filename = `timeline-${Date.now()}.mp4`;
-      triggerBlobDownload(blob, filename);
-      toast.success(tt("exportSuccess"));
-    } catch (error) {
-      console.error("[TimelineView] export failed:", error);
-      if (error instanceof TimelineExportUnsupportedError) {
-        showUnsupportedToast();
-        return;
-      }
-      const detail =
-        error instanceof TimelineExportError || error instanceof Error
-          ? error.message
-          : String(error);
-      toast.error(tt("exportFailed"), { description: detail });
-    } finally {
-      setIsExporting(false);
-      setExportProgress(0);
-    }
-  }, [isExporting, locale, previewShots, tt]);
+  const { isExporting, exportProgress, handleExportMp4, exportReport, dismissExportReport } =
+    useTimelineExport(previewShots, projectId, activeEpisodeId);
 
   const handleShotResize = useCallback(
     async (shotId: string, nextDuration: number) => {
@@ -836,6 +765,9 @@ export function TimelineView() {
   return (
     <>
       <div className="flex h-full flex-col overflow-hidden" onWheel={handleWheel}>
+        {exportReport && (
+          <TimelineExportReportPanel report={exportReport} onDismiss={dismissExportReport} />
+        )}
         <div
           data-tour-step="timeline-preview"
           className="flex min-min-h-100 flex-1 flex-col items-center justify-center overflow-auto p-4"

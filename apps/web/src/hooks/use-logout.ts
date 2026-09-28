@@ -2,7 +2,7 @@
 
 /**
  * One-stop logout. Optimistic — UI flips to signed-out immediately,
- * Sa-Token cookie is cleared on the backend in the background.
+ * Clear the browser cookie immediately; revoke the server session best-effort.
  *
  * Why optimistic instead of "await backend, then update UI":
  *   1. /user/logout can take 500ms+ on a slow connection — awaiting it
@@ -16,6 +16,7 @@
  *      cleared state without firing a new fetch.
  */
 import { useCallback } from "react";
+import { clearSessionCookie } from "@repo/auth-flow";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import posthog from "posthog-js";
@@ -32,6 +33,10 @@ export function useLogout() {
   const locale = useLocale() as Locale;
 
   return useCallback(() => {
+    // Start the request with the current credentials before expiring the local
+    // cookie. A failed server roundtrip must not restore browser authentication.
+    void apiLogout().catch(() => {});
+    clearSessionCookie();
     // Cancel any in-flight user-bound request so they can't repopulate
     // the cache after we clear it.
     void queryClient.cancelQueries({ queryKey: ["user"] });
@@ -41,19 +46,14 @@ export function useLogout() {
     // Subscribers re-render immediately (avatar → "Get Started",
     // protected pages → AuthGate redirect) without firing an extra refetch.
     queryClient.setQueriesData({ queryKey: userKeys.info }, null);
-    queryClient.setQueryData(userKeys.credits, 0);
+    queryClient.removeQueries({ queryKey: userKeys.credits });
     queryClient.removeQueries({ queryKey: kycKeys.authStatus });
 
     // Capture logout before resetting PostHog identity.
     posthog.capture("user_logged_out");
     posthog.reset();
 
-    // Navigate first, so any unmount happens before the backend roundtrip.
+    // Navigation does not wait for the server roundtrip.
     router.replace(localizePath("/", locale));
-
-    // Backend best-effort. Fire-and-forget — the user is already
-    // visibly logged out client-side. If this fails the cookie sticks
-    // around briefly, but auth-protected endpoints will still 401.
-    apiLogout().catch(() => {});
   }, [queryClient, router, locale]);
 }

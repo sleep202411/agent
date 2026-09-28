@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { LookupUserDTO } from "@repo/shared/users";
 import {
   IconAlertTriangle,
@@ -54,7 +54,8 @@ export function ProductionActivityComposer({
   const commonT = useTranslations("common");
   const locale = useLocale();
   const createActivity = useCreateCrewProductionActivity(crewId);
-  const [mode, setMode] = useState<"comment" | "update">(canManage ? "update" : "comment");
+  const [selectedMode, setMode] = useState<"comment" | "update">(canManage ? "update" : "comment");
+  const mode = canManage ? selectedMode : "comment";
   const [health, setHealth] = useState<CrewProductionUpdateHealth>("on_track");
   const [content, setContent] = useState<CrewProductionDocument>(
     EMPTY_PRODUCTION_ACTIVITY_DOCUMENT
@@ -63,22 +64,30 @@ export function ProductionActivityComposer({
   const [healthOpen, setHealthOpen] = useState(false);
   const [editorFocused, setEditorFocused] = useState(false);
 
+  const draftRevision = useRef(0);
+  const posting = useRef(false);
+
   const clearComposer = () => {
+    draftRevision.current += 1;
     setContent(EMPTY_PRODUCTION_ACTIVITY_DOCUMENT);
     setPlainText("");
   };
 
   const submit = async () => {
-    if (!plainText) return;
+    if (!plainText || posting.current) return;
+    posting.current = true;
+    const submittedRevision = draftRevision.current;
     try {
       await createActivity.mutateAsync(
         mode === "comment"
           ? { kind: "comment", content }
           : { kind: "update", health, content, progress }
       );
-      clearComposer();
+      if (draftRevision.current === submittedRevision) clearComposer();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("activity.postFailed"));
+    } finally {
+      posting.current = false;
     }
   };
 
@@ -151,6 +160,7 @@ export function ProductionActivityComposer({
             mode === "comment" ? t("activity.commentPlaceholder") : t("activity.updatePlaceholder")
           }
           onChange={(document, text) => {
+            draftRevision.current += 1;
             setContent(document);
             setPlainText(text);
           }}
@@ -438,9 +448,13 @@ function propertyChangeLabel(
 }
 
 function formatDate(value: string, locale: string) {
-  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(
-    new Date(value.length === 10 ? `${value}T00:00:00.000Z` : value)
-  );
+  const calendarDate = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    // Calendar dates have no timezone; timestamps still follow the viewer's timezone.
+    ...(calendarDate ? { timeZone: "UTC" } : {}),
+  }).format(new Date(calendarDate ? `${value}T00:00:00.000Z` : value));
 }
 
 function formatActivityDate(value: string, locale: string) {

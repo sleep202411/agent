@@ -27,29 +27,41 @@ export function NotificationsListener() {
 
   useEffect(() => {
     if (!userId) return;
+    let active = true;
+    const controller = new AbortController();
+    const toastIds = new Set<string>();
     const realtime = openNotificationsRealtime(String(userId), {
-      onReady: () => refreshSharing(queryClient),
+      onReady: () => {
+        if (active) refreshSharing(queryClient);
+      },
       onNotification: (notification) => {
+        if (!active) return;
         if (notificationCategory(notification.type) === "sharing") refreshSharing(queryClient);
         const href = notificationHref(notification, locale, siteRegion);
         const action = href
           ? {
               label: t("notifications.view"),
               onClick: () => {
+                if (!active) return;
                 if (!notification.readAt) {
                   void api
                     .post(`/aurora/notifications/${encodeURIComponent(notification.id)}/read`, {
                       requestScope: "user",
                       keepalive: true,
+                      signal: controller.signal,
                     })
-                    .catch((error: Error) => toast.error(error.message));
+                    .catch((error: Error) => {
+                      if (active) toast.error(error.message);
+                    });
                 }
                 if (href.startsWith("/")) router.push(href);
                 else window.location.assign(href);
               },
             }
           : undefined;
-        showNotification(notification, action);
+        const id = `notification:${userId}:${notification.id}`;
+        toastIds.add(id);
+        showNotification(notification, action, id, () => toastIds.delete(id));
       },
     });
     const refreshOnVisible = () => {
@@ -57,6 +69,10 @@ export function NotificationsListener() {
     };
     document.addEventListener("visibilitychange", refreshOnVisible);
     return () => {
+      active = false;
+      controller.abort();
+      for (const id of toastIds) toast.dismiss(id);
+      toastIds.clear();
       document.removeEventListener("visibilitychange", refreshOnVisible);
       realtime.close();
     };
@@ -77,9 +93,11 @@ function refreshSharing(queryClient: QueryClient) {
 
 function showNotification(
   n: NotificationDTO,
-  action: { label: string; onClick: () => void } | undefined
+  action: { label: string; onClick: () => void } | undefined,
+  id: string,
+  onClose: () => void
 ) {
-  const options = { id: `notification:${n.id}`, description: n.body, action };
+  const options = { id, description: n.body, action, onDismiss: onClose, onAutoClose: onClose };
   if (n.type.endsWith(".removed")) toast.warning(n.title, options);
   else toast(n.title, options);
 }

@@ -14,6 +14,7 @@
  * rides it via credentials: "include".
  */
 
+import { clearSessionCookie } from "@repo/auth-flow";
 import { resolveUserAvatarUrl } from "@repo/shared/avatar";
 
 export interface AuthUser {
@@ -31,20 +32,27 @@ export function isAuthUnavailableError(error: unknown): boolean {
 }
 
 /** Current session's user, or null when not signed in. */
-export async function getAuthUser(): Promise<AuthUser | null> {
+export async function getAuthUser(
+  input?: AbortSignal | { signal: AbortSignal }
+): Promise<AuthUser | null> {
+  const signal = input && "signal" in input ? input.signal : input;
   try {
     // Through the Nest BFF (not Java directly) so the avatar comes back as a
     // final, ready-to-use URL (resolved custom image, else a DiceBear face) —
     // user-info + avatar resolution is unified server-side.
+    signal?.throwIfAborted();
     const response = await fetch("/aurora/users/me", {
+      signal,
       credentials: "include",
       headers: { "accept-language": "en-US" },
     });
+    signal?.throwIfAborted();
     if (response.status === 401 || response.status === 403) return null;
     if (!response.ok) {
       throw new AuthUnavailableError(`Auth session check failed: ${response.status}`);
     }
     const body = (await response.json()) as Record<string, unknown> | null;
+    signal?.throwIfAborted();
     const data = (body && typeof body === "object" && "data" in body ? body.data : body) as {
       id?: string | number;
       nickName?: string | null;
@@ -61,33 +69,29 @@ export async function getAuthUser(): Promise<AuthUser | null> {
       avatar: resolveUserAvatarUrl(data.avatar),
     };
   } catch {
+    signal?.throwIfAborted();
     throw new AuthUnavailableError("Auth session check unavailable");
   }
 }
 
 export async function logout(): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
   try {
-    // Server-side: invalidate the satoken on Java's side (best-effort).
-    await fetch("/user/logout", { credentials: "include" });
+    // Start revocation with the current cookie, then clear the local session
+    // synchronously. Delayed completion must never clear a replacement login.
+    let request: Promise<Response>;
+    try {
+      request = fetch("/user/logout", { credentials: "include", signal: controller.signal });
+    } finally {
+      clearSessionCookie();
+    }
+    const response = await request;
+    // No body is consumed by this endpoint. Release any transport resources.
+    void response.body?.cancel().catch(() => {});
   } catch {
-    /* server-side invalidation is best-effort */
-  }
-  // Client-side: the satoken cookie is now shared across subdomains
-  // (Domain=.fizzdragon.com) and is NOT HttpOnly (the legacy studio iframe reads
-  // it). Java's /user/logout doesn't reliably expire the shared-domain cookie,
-  // so without this the next /me refetch re-reads a live cookie and the user
-  // stays logged in. Clear both the host-only and the shared-apex variants.
-  clearSatokenCookie();
-}
-
-/** Expire the satoken cookie locally — host-only + the shared `.<apex>` domain. */
-function clearSatokenCookie(): void {
-  if (typeof document === "undefined") return;
-  const expire = "path=/; max-age=0; SameSite=Lax";
-  document.cookie = `satoken=; ${expire}`;
-  const parts = window.location.hostname.split(".");
-  if (parts.length >= 2) {
-    const apex = parts.slice(-2).join(".");
-    document.cookie = `satoken=; domain=.${apex}; ${expire}`;
+    // Server revocation is best-effort; local logout has already completed.
+  } finally {
+    clearTimeout(timer);
   }
 }

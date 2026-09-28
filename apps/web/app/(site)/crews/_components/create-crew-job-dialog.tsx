@@ -61,6 +61,9 @@ import {
   type WorkMode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 
+import { useCrewTaskOptions } from "../_hooks/use-tasks";
+import { useCrewPermissions } from "../_hooks/use-crew-permissions";
+
 const CREATE_JOB_HERO_URL = "/crews/publish-position-hero.jpg";
 
 interface PublishPositionDialogProps {
@@ -125,6 +128,18 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
   const currencyOptions = useMemo(() => allowedCurrenciesForCell(), []);
   const showCurrencyPicker = currencyOptions.length > 1;
   const isEdit = editingPosition !== undefined;
+
+  const permissions = useCrewPermissions(crewId);
+  const canLinkTask = permissions.can("tasks.manage") && permissions.can("tasks.view");
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [taskId, setTaskId] = useState("");
+  const tasks = useCrewTaskOptions(crewId, { recruitmentOnly: true }, !isEdit && canLinkTask);
+  const taskValid =
+    !taskId ||
+    (canLinkTask &&
+      !tasks.isError &&
+      tasks.isSuccess &&
+      tasks.data.some((task) => task.id === taskId));
 
   const [step, setStep] = useState<StepId>(1);
 
@@ -200,20 +215,26 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
   const pendingApplicantCount = applications.summary?.pending ?? 0;
 
   // ─── Per-step validation ──────────
-  const parsedCount = Number.parseInt(count, 10);
-  const parsedMin = salaryMin === "" ? null : Number.parseFloat(salaryMin);
-  const parsedMax = salaryMax === "" ? null : Number.parseFloat(salaryMax);
-  const parsedDuration = durationMonths === "" ? null : Number.parseInt(durationMonths, 10);
+  const parsedCount = Number(count);
+  const parsedMin = salaryMin === "" ? null : Number(salaryMin);
+  const parsedMax = salaryMax === "" ? null : Number(salaryMax);
+  const parsedDuration = durationMonths === "" ? null : Number(durationMonths);
   const parsedShare = revenueSharePercent === "" ? null : Number.parseFloat(revenueSharePercent);
   const needsLocation = workMode !== "remote";
   const locationOk = !needsLocation || location.trim().length > 0;
+  const salaryAmountsOk =
+    salaryNegotiable ||
+    [parsedMin, parsedMax].every(
+      (amount) =>
+        amount == null || (Number.isFinite(amount) && amount >= 0 && amount <= 100_000_000)
+    );
   const salaryRangeOk =
     salaryNegotiable || parsedMin == null || parsedMax == null || parsedMax >= parsedMin;
   // Treat blank input as "leave unset"; only validate when the user
   // actually typed something. Server enforces the hard caps in zod.
   const durationOk =
     parsedDuration == null ||
-    (Number.isFinite(parsedDuration) && parsedDuration >= 1 && parsedDuration <= 60);
+    (Number.isInteger(parsedDuration) && parsedDuration >= 1 && parsedDuration <= 60);
   const shareOk =
     parsedShare == null ||
     (Number.isFinite(parsedShare) &&
@@ -221,14 +242,15 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
       parsedShare <= 50 &&
       Math.round(parsedShare * 2) === parsedShare * 2);
 
+  const countOk = Number.isInteger(parsedCount) && parsedCount >= 1 && parsedCount <= 99;
   const step1Valid =
+    (visibility !== "private" || Boolean(taskId)) &&
+    taskValid &&
     positionType.length > 0 &&
     description.trim().length > 0 &&
-    Number.isFinite(parsedCount) &&
-    parsedCount >= 1 &&
-    parsedCount <= 99;
+    countOk;
   const step2Valid = locationOk;
-  const step3Valid = salaryRangeOk && durationOk && shareOk;
+  const step3Valid = salaryAmountsOk && salaryRangeOk && durationOk && shareOk;
 
   const canAdvance =
     (step === 1 && step1Valid) || (step === 2 && step2Valid) || (step === 3 && step3Valid);
@@ -239,9 +261,9 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
   const stepReachable = (target: StepId): boolean => target <= step;
 
   // ─── Submit ────────────────────────
-  // Body builder is shared — both create and update accept the same
-  // shape; update's zod schema is a `Partial<>` of the create schema.
+  // The immutable task link is sent only during creation.
   const buildBody = (): CreatePositionInput => ({
+    ...(!isEdit && taskId ? { taskId, recruitmentVisibility: visibility } : {}),
     positionType,
     description: description.trim(),
     targetCount: parsedCount,
@@ -381,10 +403,17 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
                   inputMode="numeric"
                   min={1}
                   max={99}
+                  step={1}
+                  aria-invalid={!countOk}
                   value={count}
                   onChange={(e) => setCount(e.target.value)}
                   disabled={submitting}
                 />
+                {!countOk ? (
+                  <p role="alert" className="mt-1 text-xs text-destructive">
+                    {t("createJobNumberError")}
+                  </p>
+                ) : null}
               </Field>
 
               <Field>
@@ -399,6 +428,66 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
                 />
                 <p className="mt-1 text-xs text-muted-foreground">{t("createJobSkillsHint")}</p>
               </Field>
+              {!isEdit && (canLinkTask || taskId) ? (
+                <Field>
+                  <FieldLabel>{t("recruitmentTaskLabel")}</FieldLabel>
+                  <Select
+                    value={taskId || "none"}
+                    onValueChange={(value) => {
+                      setTaskId(value === "none" ? "" : value);
+                      if (value === "none") setVisibility("public");
+                    }}
+                    disabled={submitting}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">{t("recruitmentTaskNone")}</SelectItem>
+                      {canLinkTask && !tasks.isError
+                        ? tasks.data.map((task) => (
+                            <SelectItem key={task.id} value={task.id}>
+                              #{task.number} {task.title}
+                            </SelectItem>
+                          ))
+                        : null}
+                    </SelectContent>
+                  </Select>
+                  {taskId && (
+                    <>
+                      <FieldLabel>{t("recruitmentVisibility")}</FieldLabel>
+                      <Select
+                        value={visibility}
+                        onValueChange={(value) => setVisibility(value as "public" | "private")}
+                        disabled={submitting}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="public">{t("recruitmentPublic")}</SelectItem>
+                          <SelectItem value="private">{t("recruitmentPrivate")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </>
+                  )}
+                  <p className="text-sm text-muted-foreground">{t("recruitmentTaskHelp")}</p>
+                  {tasks.isPending && canLinkTask ? <p role="status">{tc("loading")}</p> : null}
+                  {tasks.isError || !taskValid ? (
+                    <p role="alert">{t("recruitmentTaskUnavailable")}</p>
+                  ) : null}
+                  {canLinkTask ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={tasks.isFetching || submitting}
+                      onClick={() => void tasks.refetch()}
+                    >
+                      {t("recruitmentTaskRefresh")}
+                    </Button>
+                  ) : null}
+                </Field>
+              ) : null}
             </FieldGroup>
           ) : null}
 
@@ -571,7 +660,11 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
                     className="tabular-nums"
                   />
                 </div>
-                {!salaryRangeOk ? (
+                {!salaryAmountsOk ? (
+                  <p role="alert" className="mt-1 text-xs text-rose-400">
+                    {t("createJobSalaryAmountError")}
+                  </p>
+                ) : !salaryRangeOk ? (
                   <p className="mt-1 text-xs text-rose-400">{t("createJobSalaryRangeError")}</p>
                 ) : null}
               </Field>
@@ -601,6 +694,7 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
                   inputMode="numeric"
                   min={1}
                   max={60}
+                  aria-invalid={!durationOk}
                   step={1}
                   value={durationMonths}
                   onChange={(e) => setDurationMonths(e.target.value)}
@@ -610,7 +704,9 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
                 />
                 <p className="mt-1 text-xs text-muted-foreground">{t("createJobDurationHint")}</p>
                 {!durationOk ? (
-                  <p className="mt-1 text-xs text-rose-400">{t("createJobDurationError")}</p>
+                  <p role="alert" className="mt-1 text-xs text-destructive">
+                    {t("createJobDurationError")}
+                  </p>
                 ) : null}
               </Field>
 
@@ -648,6 +744,11 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
               </Field>
             </FieldGroup>
           ) : null}
+          {step !== 1 && !taskValid ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t("recruitmentTaskUnavailable")}
+            </p>
+          ) : null}
         </DialogBody>
 
         <DialogFooter>
@@ -669,7 +770,11 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
               {t("createJobNext")}
             </Button>
           ) : (
-            <Button type="button" onClick={handleSubmit} disabled={!step3Valid || submitting}>
+            <Button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!step1Valid || !step2Valid || !step3Valid || submitting}
+            >
               {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
               {submitting
                 ? isEdit

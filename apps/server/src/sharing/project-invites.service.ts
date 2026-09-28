@@ -70,24 +70,30 @@ export class ProjectInvitesService {
     const role = ROLE_MAP[input.role];
     const { token, tokenHash } = generateInviteToken();
     const expiresAt = new Date(Date.now() + input.expiresInDays * MS_PER_DAY);
-    const invite = await this.prisma.projectInvite.create({
-      data: {
-        projectId,
-        role,
-        tokenHash,
-        status: ProjectInviteStatus.pending,
-        invitedById: actor.userId,
-        expiresAt,
-      },
-    });
-    await this.audit.record({
-      workspaceId: project.workspaceId,
-      projectId,
-      actorUserId: actor.userId,
-      action: 'project.invite.created',
-      entityType: 'project_invite',
-      entityId: invite.id,
-      after: { role, expiresAt: expiresAt.toISOString() },
+    const invite = await this.prisma.$transaction(async (tx) => {
+      const invite = await tx.projectInvite.create({
+        data: {
+          projectId,
+          role,
+          tokenHash,
+          status: ProjectInviteStatus.pending,
+          invitedById: actor.userId,
+          expiresAt,
+        },
+      });
+      await this.audit.record(
+        {
+          workspaceId: project.workspaceId,
+          projectId,
+          actorUserId: actor.userId,
+          action: 'project.invite.created',
+          entityType: 'project_invite',
+          entityId: invite.id,
+          after: { role, expiresAt: expiresAt.toISOString() },
+        },
+        tx,
+      );
+      return invite;
     });
     return {
       inviteId: invite.id,
@@ -281,6 +287,17 @@ export class ProjectInvitesService {
       });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
+      // A unique failure can roll back any write in the transaction. Only an
+      // independently committed access grant makes this an idempotent success.
+      const hasAccess = await existingInviteAccess(async () => {
+        await this.permissions.requireProjectRole(
+          user.userId,
+          invite.projectId,
+          ProjectMemberRole.viewer,
+        );
+        return true;
+      });
+      if (!hasAccess) throw err;
     }
 
     await this.audit.record({

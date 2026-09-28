@@ -16,8 +16,8 @@
  * Stale locks (older than LOCK_TTL) are reclaimable so a crashed pod
  * doesn't permanently strand events.
  *
- * Production hardening that's still TODO:
- *   - operator UI to inspect / requeue DLQ rows
+ * Operator inspection/requeue is available under AI operations.
+ * Remaining deployment option:
  *   - run dispatcher in a dedicated worker pod (currently same process
  *     as API + generation worker; fine until traffic forces a split)
  */
@@ -45,7 +45,7 @@ const DISPATCH_BATCH = 25;
 /** Lock TTL — if a pod claimed a row but didn't finish in this window,
  *  another pod can reclaim it. Should exceed the longest expected
  *  Web PubSub publish round-trip plus generous slack. */
-const LOCK_TTL_MS = 60_000;
+export const AI_OUTBOX_LOCK_TTL_MS = 60_000;
 /** Per-row max retries before sending to DLQ (deadAt). */
 const MAX_ATTEMPTS = 12;
 /** Backoff for nextAttemptAt — capped at 5 min. */
@@ -61,7 +61,9 @@ export class AiGenerationOutboxService
 {
   private readonly logger = new Logger(AiGenerationOutboxService.name);
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private readonly immediateDispatches = new Set<Promise<void>>();
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -85,30 +87,37 @@ export class AiGenerationOutboxService
     });
     // Optimistic publish — don't await, don't fail the caller if
     // Web PubSub is down. Dispatcher cleans up.
-    void this.tryDispatch(row.id, job.userId, event);
+    void this.tryDispatch(row.id);
   }
 
   onApplicationBootstrap(): void {
+    if (this.stopped || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), DISPATCH_INTERVAL_MS);
     this.logger.log(
       `Outbox dispatcher running every ${DISPATCH_INTERVAL_MS}ms (pod=${POD_ID})`,
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
+    this.stopped = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
+    await Promise.allSettled([this.draining, ...this.immediateDispatches]);
   }
 
   private async drainOnce(): Promise<void> {
-    if (this.draining) return; // overlap guard within a single pod
-    this.draining = true;
+    if (this.stopped || this.draining) return;
+    this.draining = this.drain().finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(): Promise<void> {
     try {
       const now = new Date();
-      const lockCutoff = new Date(now.getTime() - LOCK_TTL_MS);
-
       const candidates = await this.prisma.aiEventOutbox.findMany({
         where: {
           dispatchedAt: null,
@@ -118,7 +127,11 @@ export class AiGenerationOutboxService
             {
               OR: [
                 { lockedAt: null },
-                { lockedAt: { lt: lockCutoff } }, // stale lock — reclaim
+                {
+                  lockedAt: {
+                    lt: new Date(now.getTime() - AI_OUTBOX_LOCK_TTL_MS),
+                  },
+                },
               ],
             },
           ],
@@ -127,95 +140,96 @@ export class AiGenerationOutboxService
         take: DISPATCH_BATCH,
         select: { id: true },
       });
-
-      if (candidates.length === 0) {
-        await this.gc();
-        return;
+      for (const candidate of candidates) {
+        if (this.stopped) break;
+        await this.dispatchOne(candidate.id);
       }
-
-      const candidateIds = candidates.map((row) => row.id);
-      await this.prisma.aiEventOutbox.updateMany({
-        where: {
-          id: { in: candidateIds },
-          dispatchedAt: null,
-          deadAt: null,
-          OR: [
-            { lockedAt: null },
-            { lockedAt: { lt: lockCutoff } }, // stale lock — reclaim
-          ],
-        },
-        data: { lockedAt: now, lockedBy: POD_ID },
-      });
-
-      const rows = await this.prisma.aiEventOutbox.findMany({
-        where: {
-          id: { in: candidateIds },
-          lockedBy: POD_ID,
-          dispatchedAt: null,
-          deadAt: null,
-        },
-        orderBy: { createdAt: 'asc' },
-      });
-
-      for (const row of rows) {
-        const event = toPublishedEvent(row);
-        try {
-          await this.realtime.publishAssetEvent(row.userId, event);
-          await this.prisma.aiEventOutbox.update({
-            where: { id: row.id },
-            data: {
-              dispatchedAt: new Date(),
-              attempt: row.attempt + 1,
-              lockedAt: null,
-              lockedBy: null,
-              lastError: null,
-              nextAttemptAt: null,
-            },
-          });
-        } catch (err) {
-          const nextAttempt = row.attempt + 1;
-          const reachedDLQ = nextAttempt >= MAX_ATTEMPTS;
-          const backoff =
-            BACKOFFS_MS[Math.min(row.attempt, BACKOFFS_MS.length - 1)];
-          await this.prisma.aiEventOutbox.update({
-            where: { id: row.id },
-            data: {
-              attempt: nextAttempt,
-              lastError: errorText(err),
-              nextAttemptAt: reachedDLQ ? null : new Date(Date.now() + backoff),
-              deadAt: reachedDLQ ? new Date() : null,
-              lockedAt: null,
-              lockedBy: null,
-            },
-          });
-          this.logger.warn(
-            `outbox dispatch failed id=${row.id} attempt=${nextAttempt}${reachedDLQ ? ' [DLQ]' : ''}: ${errorText(err)}`,
-          );
-        }
-      }
-
-      await this.gc();
+      if (!this.stopped) await this.gc();
     } catch (err) {
       this.logger.warn(`outbox drain failed: ${errorText(err)}`);
-    } finally {
-      this.draining = false;
     }
   }
 
-  /** Optimistic same-tick publish. Failure here lets dispatcher retry. */
-  private async tryDispatch(
-    rowId: string,
-    userId: string,
-    payload: AssetEvent,
-  ): Promise<void> {
+  /** Immediate publication uses the same ready-row claim as the retry worker. */
+  private async tryDispatch(rowId: string): Promise<void> {
+    if (this.stopped) return;
+    const dispatch = this.dispatchOne(rowId);
+    this.immediateDispatches.add(dispatch);
     try {
-      await this.realtime.publishAssetEvent(userId, payload);
-      await this.prisma.aiEventOutbox.update({
-        where: { id: rowId },
-        data: { dispatchedAt: new Date(), attempt: 1 },
-      });
+      await dispatch;
     } catch {
-      // Dispatcher loop will pick it up via nextAttemptAt logic.
+      // A durable row remains recoverable after a database interruption.
+    } finally {
+      this.immediateDispatches.delete(dispatch);
+    }
+  }
+
+  private async dispatchOne(rowId: string): Promise<void> {
+    if (this.stopped) return;
+    // Claim only this item when ready to publish. SKIP LOCKED avoids aging a
+    // newly minted lease while waiting for another writer; database time is
+    // truncated to JS Date precision so subsequent ownership checks are exact.
+    const claims = await this.prisma.$queryRaw<
+      Array<{ id: string; lockedAt: Date }>
+    >`
+      WITH candidate AS (
+        SELECT id FROM ai_event_outbox
+        WHERE id = ${rowId} AND dispatched_at IS NULL AND dead_at IS NULL
+          AND (next_attempt_at IS NULL OR next_attempt_at <= clock_timestamp())
+          AND (locked_at IS NULL OR locked_at < clock_timestamp() - (${AI_OUTBOX_LOCK_TTL_MS} * INTERVAL '1 millisecond'))
+        FOR UPDATE SKIP LOCKED
+      )
+      UPDATE ai_event_outbox AS event
+      SET locked_at = date_trunc('milliseconds', clock_timestamp()), locked_by = ${POD_ID}
+      FROM candidate WHERE event.id = candidate.id
+      RETURNING event.id, event.locked_at AS "lockedAt"
+    `;
+    const claim = claims[0];
+    if (!claim || this.stopped) return;
+    const ownership = {
+      id: claim.id,
+      lockedBy: POD_ID,
+      lockedAt: claim.lockedAt,
+      dispatchedAt: null,
+      deadAt: null,
+    };
+    const row = await this.prisma.aiEventOutbox.findFirst({ where: ownership });
+    if (!row || this.stopped) return;
+    try {
+      await this.realtime.publishAssetEvent(row.userId, toPublishedEvent(row));
+      // A publication already underway may acknowledge after shutdown, but a
+      // displaced worker must never clear the replacement lease or outcome.
+      await this.prisma.aiEventOutbox.updateMany({
+        where: ownership,
+        data: {
+          dispatchedAt: new Date(),
+          attempt: row.attempt + 1,
+          lockedAt: null,
+          lockedBy: null,
+          lastError: null,
+          nextAttemptAt: null,
+        },
+      });
+    } catch (err) {
+      const nextAttempt = row.attempt + 1;
+      const reachedDLQ = nextAttempt >= MAX_ATTEMPTS;
+      const backoff =
+        BACKOFFS_MS[Math.min(row.attempt, BACKOFFS_MS.length - 1)];
+      const recorded = await this.prisma.aiEventOutbox.updateMany({
+        where: ownership,
+        data: {
+          attempt: nextAttempt,
+          lastError: errorText(err),
+          nextAttemptAt: reachedDLQ ? null : new Date(Date.now() + backoff),
+          deadAt: reachedDLQ ? new Date() : null,
+          lockedAt: null,
+          lockedBy: null,
+        },
+      });
+      if (recorded.count > 0)
+        this.logger.warn(
+          `outbox dispatch failed id=${row.id} attempt=${nextAttempt}${reachedDLQ ? ' [DLQ]' : ''}: ${errorText(err)}`,
+        );
     }
   }
 
@@ -224,6 +238,7 @@ export class AiGenerationOutboxService
    * doesn't need its own scheduler.
    */
   private async gc(): Promise<void> {
+    if (this.stopped) return;
     try {
       await this.prisma.aiEventOutbox.deleteMany({
         where: {

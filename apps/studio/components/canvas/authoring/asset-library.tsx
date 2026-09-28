@@ -115,7 +115,13 @@ export function AssetLibrary({
   );
   const statusQuery = useQuery({
     queryKey: mediaAssetReadinessKeys.statuses(SEEDANCE_REFERENCE_CAPABILITY, statusAssetIds),
-    queryFn: () => getMediaAssetReadinessStatuses(SEEDANCE_REFERENCE_CAPABILITY, statusAssetIds),
+    queryFn: ({ signal }) =>
+      getMediaAssetReadinessStatuses(
+        SEEDANCE_REFERENCE_CAPABILITY,
+        statusAssetIds,
+        undefined,
+        signal
+      ),
     enabled: open && statusAssetIds.length > 0,
     refetchInterval: (queryState) => {
       const data = queryState.state.data;

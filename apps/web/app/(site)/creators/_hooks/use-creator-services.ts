@@ -10,8 +10,8 @@
  *   DELETE /aurora/creator-services/:id        archive
  *
  * Cache key shape:
- *   ["creator-service", "list", queryFingerprint]
- *   ["creator-service", "detail", id]
+ *   ["creator-service", "list", queryFingerprint, viewerId]
+ *   ["creator-service", "detail", id, viewerId]
  *
  * Mutations invalidate the list (any list — easier than diffing query
  * keys) plus the specific detail row. Owner-side optimistic updates
@@ -28,6 +28,8 @@ import type {
   ServiceCategory,
 } from "@repo/shared/creator-service";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
+
 // ─── Fetch helpers ──────────────────────────────────────────
 
 const BASE = "/aurora";
@@ -38,15 +40,19 @@ export class ServiceApiError extends Error {
     public readonly body: unknown
   ) {
     super(
-      (body && typeof body === "object" && "message" in body
-        ? String((body as { message: unknown }).message)
-        : null) ?? `Service API error ${status}`
+      (typeof body === "string" && body.trim()
+        ? body
+        : body && typeof body === "object" && "message" in body
+          ? String((body as { message: unknown }).message)
+          : null) ?? `Service API error ${status}`
     );
     this.name = "ServiceApiError";
   }
 }
 
 interface CallOpts {
+  signal?: AbortSignal;
+  credentials?: RequestCredentials;
   body?: unknown;
   query?: Record<string, string | number | undefined>;
 }
@@ -55,18 +61,21 @@ async function call<T>(method: string, path: string, opts: CallOpts = {}): Promi
   const url = buildUrl(path, opts.query);
   const init: RequestInit = {
     method,
-    credentials: "include",
+    credentials: opts.credentials ?? "include",
+    cache: "no-store",
+    signal: opts.signal,
     headers: { "Content-Type": "application/json" },
     ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
   };
   const res = await fetch(url, init);
   if (res.status === 204) return undefined as T;
   if (!res.ok) {
-    let body: unknown;
+    const text = await res.text().catch(() => "");
+    let body: unknown = text;
     try {
-      body = await res.json();
+      body = JSON.parse(text);
     } catch {
-      body = await res.text().catch(() => null);
+      // Consume once: JSON parsing failure must not discard a plain-text error.
     }
     throw new ServiceApiError(res.status, body);
   }
@@ -121,6 +130,7 @@ export interface ServiceRequirementQuestionInput {
 }
 
 export interface CreateServiceBody {
+  clientRequestKey?: string;
   title: string;
   summary: string;
   coverPath?: string;
@@ -159,9 +169,16 @@ interface ListResponse {
 export const serviceKeys = {
   all: ["creator-service"] as const,
   lists: () => ["creator-service", "list"] as const,
-  list: (params: ListServicesParams) => ["creator-service", "list", fingerprint(params)] as const,
+  list: (params: ListServicesParams, viewerId?: string | null) =>
+    [
+      "creator-service",
+      "list",
+      fingerprint(params),
+      ...(viewerId === undefined ? [] : [viewerId]),
+    ] as const,
   details: () => ["creator-service", "detail"] as const,
-  detail: (id: string) => ["creator-service", "detail", id] as const,
+  detail: (id: string, viewerId?: string | null) =>
+    ["creator-service", "detail", id, ...(viewerId === undefined ? [] : [viewerId])] as const,
 };
 
 function fingerprint(p: ListServicesParams): string {
@@ -176,6 +193,7 @@ function fingerprint(p: ListServicesParams): string {
  * Pass `{ creatorId }` to scope to one creator (used by ServicesTab).
  */
 export function useCreatorServices(params: ListServicesParams = {}) {
+  const { user, isLoading } = useCurrentUser();
   return useInfiniteQuery<
     ListResponse,
     ServiceApiError,
@@ -183,10 +201,13 @@ export function useCreatorServices(params: ListServicesParams = {}) {
     ReturnType<typeof serviceKeys.list>,
     string | null
   >({
-    queryKey: serviceKeys.list(params),
+    queryKey: serviceKeys.list(params, user?.id ?? null),
+    enabled: !isLoading,
     initialPageParam: null,
-    queryFn: ({ pageParam }) =>
+    queryFn: ({ pageParam, signal }) =>
       serviceApi.get<ListResponse>("/creator-services", {
+        signal,
+        credentials: user ? "include" : "omit",
         query: {
           ...(params.creatorId ? { creatorId: params.creatorId } : {}),
           ...(params.category ? { category: params.category } : {}),
@@ -215,10 +236,15 @@ export function useCreatorServices(params: ListServicesParams = {}) {
 
 /** Detail by id (plaza card click-through or owner edit prefill). */
 export function useCreatorService(id: string | null) {
+  const { user, isLoading } = useCurrentUser();
   return useQuery<CreatorServiceDTO, ServiceApiError>({
-    queryKey: id ? serviceKeys.detail(id) : ["creator-service", "detail", "_none"],
-    enabled: !!id,
-    queryFn: () => serviceApi.get<CreatorServiceDTO>(`/creator-services/${id}`),
+    queryKey: serviceKeys.detail(id ?? "_none", user?.id ?? null),
+    enabled: !!id && !isLoading,
+    queryFn: ({ signal }) =>
+      serviceApi.get<CreatorServiceDTO>(`/creator-services/${id}`, {
+        signal,
+        credentials: user ? "include" : "omit",
+      }),
   });
 }
 
@@ -230,15 +256,19 @@ function invalidateServiceCaches(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: serviceKeys.lists() });
 }
 
+type ServiceMutationContext = { ownerId: string | null };
+
 export function useCreateService() {
   const qc = useQueryClient();
-  return useMutation<CreatorServiceDTO, ServiceApiError, CreateServiceBody>({
-    mutationFn: (body) => serviceApi.post<CreatorServiceDTO>("/creator-services", { body }),
-    onSuccess: (created) => {
-      qc.setQueryData(serviceKeys.detail(created.id), created);
-      invalidateServiceCaches(qc);
-    },
-  });
+  const { user } = useCurrentUser();
+  return useMutation<CreatorServiceDTO, ServiceApiError, CreateServiceBody, ServiceMutationContext>(
+    {
+      mutationFn: (body) => serviceApi.post<CreatorServiceDTO>("/creator-services", { body }),
+      onMutate: () => ({ ownerId: user?.id ?? null }),
+      onSuccess: (created, _variables, context) =>
+        applyServiceWriteResult(qc, created, context?.ownerId ?? null),
+    }
+  );
 }
 
 /**
@@ -255,45 +285,64 @@ export function useCreateService() {
  */
 function applyServiceWriteResult(
   qc: ReturnType<typeof useQueryClient>,
-  updated: CreatorServiceDTO
+  updated: CreatorServiceDTO,
+  ownerId: string | null
 ) {
-  qc.setQueryData(serviceKeys.detail(updated.id), updated);
+  if (ownerId) qc.setQueryData(serviceKeys.detail(updated.id, ownerId), updated);
+  qc.invalidateQueries({ queryKey: serviceKeys.detail(updated.id) });
   invalidateServiceCaches(qc);
 }
 
 export function useUpdateService() {
   const qc = useQueryClient();
-  return useMutation<CreatorServiceDTO, ServiceApiError, { id: string; body: UpdateServiceBody }>({
+  const { user } = useCurrentUser();
+  return useMutation<
+    CreatorServiceDTO,
+    ServiceApiError,
+    { id: string; body: UpdateServiceBody },
+    ServiceMutationContext
+  >({
     mutationFn: ({ id, body }) =>
       serviceApi.patch<CreatorServiceDTO>(`/creator-services/${id}`, { body }),
-    onSuccess: (updated) => applyServiceWriteResult(qc, updated),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (updated, _variables, context) =>
+      applyServiceWriteResult(qc, updated, context?.ownerId ?? null),
   });
 }
 
 export function usePublishService() {
   const qc = useQueryClient();
-  return useMutation<CreatorServiceDTO, ServiceApiError, { id: string }>({
+  const { user } = useCurrentUser();
+  return useMutation<CreatorServiceDTO, ServiceApiError, { id: string }, ServiceMutationContext>({
     mutationFn: ({ id }) =>
       serviceApi.post<CreatorServiceDTO>(`/creator-services/${id}/publish`, {
         body: {},
       }),
-    onSuccess: (updated) => applyServiceWriteResult(qc, updated),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (updated, _variables, context) =>
+      applyServiceWriteResult(qc, updated, context?.ownerId ?? null),
   });
 }
 
 export function usePauseService() {
   const qc = useQueryClient();
-  return useMutation<CreatorServiceDTO, ServiceApiError, { id: string }>({
+  const { user } = useCurrentUser();
+  return useMutation<CreatorServiceDTO, ServiceApiError, { id: string }, ServiceMutationContext>({
     mutationFn: ({ id }) => serviceApi.post<CreatorServiceDTO>(`/creator-services/${id}/pause`),
-    onSuccess: (updated) => applyServiceWriteResult(qc, updated),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (updated, _variables, context) =>
+      applyServiceWriteResult(qc, updated, context?.ownerId ?? null),
   });
 }
 
 export function useResumeService() {
   const qc = useQueryClient();
-  return useMutation<CreatorServiceDTO, ServiceApiError, { id: string }>({
+  const { user } = useCurrentUser();
+  return useMutation<CreatorServiceDTO, ServiceApiError, { id: string }, ServiceMutationContext>({
     mutationFn: ({ id }) => serviceApi.post<CreatorServiceDTO>(`/creator-services/${id}/resume`),
-    onSuccess: (updated) => applyServiceWriteResult(qc, updated),
+    onMutate: () => ({ ownerId: user?.id ?? null }),
+    onSuccess: (updated, _variables, context) =>
+      applyServiceWriteResult(qc, updated, context?.ownerId ?? null),
   });
 }
 

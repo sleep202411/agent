@@ -19,6 +19,7 @@ const nextDocument: CrewProductionDocument = {
 
 const state = vi.hoisted(() => ({
   overview: null as CrewProductionOverviewDTO | null,
+  error: null as Error | null,
   save: vi.fn(),
   refetch: vi.fn(),
 }));
@@ -34,8 +35,8 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", async () => {
     useCrewProductionOverview: () => ({
       data: state.overview,
       isLoading: false,
-      isError: false,
-      error: null,
+      isError: !!state.error,
+      error: state.error,
       refetch: state.refetch,
     }),
     useSaveCrewProductionDocument: () => ({ mutateAsync: state.save }),
@@ -58,7 +59,11 @@ vi.mock("@/components/tiptap-templates/notion-like/notion-like-editor", () => ({
   ),
 }));
 vi.mock("./production-project-header", () => ({
-  ProductionProjectHeader: () => <div data-testid="project-header" />,
+  ProductionProjectHeader: (props: { saveState: string; onReload: () => void }) => (
+    <button data-testid="project-header" data-save-state={props.saveState} onClick={props.onReload}>
+      reload
+    </button>
+  ),
 }));
 
 const initialDocument: CrewProductionDocument = {
@@ -103,9 +108,11 @@ let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
 function renderOverview() {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+  if (!container) {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  }
   act(() =>
     root!.render(
       <ProductionOverview
@@ -126,6 +133,7 @@ function renderOverview() {
 beforeEach(() => {
   vi.useFakeTimers();
   state.overview = overview();
+  state.error = null;
   state.save.mockReset();
   state.refetch.mockReset();
   state.save.mockResolvedValue({ ...overview().page, document: nextDocument, version: 4 });
@@ -141,6 +149,46 @@ afterEach(() => {
 });
 
 describe("ProductionOverview", () => {
+  it("retains the failed-save editor and draft across background read failures", async () => {
+    state.save.mockRejectedValue(new Error("Save offline"));
+    renderOverview();
+    const editor = container!.querySelector('[data-testid="editor"]');
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>('[data-testid="update"]')!.click();
+      await vi.advanceTimersByTimeAsync(450);
+    });
+    expect(
+      container!.querySelector('[data-testid="project-header"]')?.getAttribute("data-save-state")
+    ).toBe("error");
+    state.error = new Error("Refresh offline");
+    renderOverview();
+    expect(container!.querySelector('[data-testid="editor"]')).toBe(editor);
+    expect(container!.textContent).toContain("Refresh offline");
+    state.error = null;
+    renderOverview();
+    expect(container!.querySelector('[data-testid="editor"]')).toBe(editor);
+    expect(
+      container!.querySelector('[data-testid="project-header"]')?.getAttribute("data-save-state")
+    ).toBe("error");
+    expect(state.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not mark an unsaved draft saved when reload returns cached data with an error", async () => {
+    state.save.mockRejectedValue(new Error("Save offline"));
+    state.refetch.mockResolvedValue({ data: overview(), isError: true });
+    renderOverview();
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>('[data-testid="update"]')!.click();
+      await vi.advanceTimersByTimeAsync(450);
+    });
+    await act(async () => {
+      container!.querySelector<HTMLButtonElement>('[data-testid="project-header"]')!.click();
+    });
+    expect(
+      container!.querySelector('[data-testid="project-header"]')?.getAttribute("data-save-state")
+    ).toBe("error");
+  });
+
   it("persists editor updates after the debounce with optimistic versioning", async () => {
     renderOverview();
 

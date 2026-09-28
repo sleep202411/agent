@@ -173,25 +173,25 @@ export function openChatEventsClient(
 
   const connect = () => {
     if (userClosed) return;
-    const tokenHint = url.match(/satoken=([^&]{0,8})/)?.[1] ?? "(none)";
-    console.log(
-      `[chat-events] open attempt#${attempts + 1} conv=${conversationId.slice(0, 8)} token=${tokenHint}`
-    );
+    console.log(`[chat-events] open attempt#${attempts + 1} conv=${conversationId.slice(0, 8)}`);
     const sock = new WebSocket(url);
     ws = sock;
 
     sock.addEventListener("open", () => {
+      if (userClosed || ws !== sock) return;
       const wasReconnect = attempts > 0;
       attempts = 0;
-      console.log(`[chat-events] open success token=${tokenHint}`);
+      console.log(`[chat-events] open success`);
       handlers.onOpen?.();
-      if (wasReconnect) handlers.onReconnected?.();
+      if (!userClosed && ws === sock && wasReconnect) handlers.onReconnected?.();
     });
 
     sock.addEventListener("message", (ev) => {
+      if (userClosed || ws !== sock) return;
       const frame = parseFrame(typeof ev.data === "string" ? ev.data : "");
       if (!frame) return;
       handlers.onFrame?.(frame);
+      if (userClosed || ws !== sock) return;
       switch (frame.event) {
         case "message_list":
           handlers.onMessageList?.(frame.data.messageIds);
@@ -224,6 +224,8 @@ export function openChatEventsClient(
     });
 
     sock.addEventListener("close", (event) => {
+      if (ws !== sock) return;
+      ws = null;
       if (userClosed) {
         handlers.onClose?.(event);
         return;
@@ -247,6 +249,7 @@ export function openChatEventsClient(
       const delay = RECONNECT_DELAYS_MS[attempts];
       attempts += 1;
       handlers.onReconnecting?.(attempts, delay);
+      if (userClosed) return;
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null;
         connect();

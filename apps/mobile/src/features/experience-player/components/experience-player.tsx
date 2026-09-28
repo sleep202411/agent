@@ -241,10 +241,12 @@ function ActiveExperienceRuntimePlayer({
         const handle = playbackHandlesRef.current.get(effect.instanceId);
         if (!handle) return;
         if (effect.commandType === "play") {
+          playbackEnabledRef.current = true;
           void handle.play().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
           return;
         }
         if (effect.commandType === "pause") {
+          playbackEnabledRef.current = false;
           handle.pause();
           return;
         }
@@ -361,8 +363,14 @@ function ActiveExperienceRuntimePlayer({
 
   useEffect(() => {
     const abortController = new AbortController();
-    void loadTheme(manifest, abortController.signal)
-      .then(setTheme)
+    void Promise.resolve()
+      .then(() => {
+        abortController.signal.throwIfAborted();
+        return loadTheme(manifest, abortController.signal);
+      })
+      .then((loadedTheme) => {
+        if (!abortController.signal.aborted) setTheme(loadedTheme);
+      })
       .catch((error: unknown) => {
         // Theme is decorative for Phase B — do not hard-fail the session.
         if (!abortController.signal.aborted) {
@@ -698,6 +706,7 @@ function ActiveExperienceRuntimePlayer({
             runtimeState={runtimeState}
             sceneTimeMs={sceneTimeMs}
             locale={playbackLocale}
+            viewerLocale={locale}
             orientation={EXPERIENCE_PLAY_ORIENTATION}
             onEvents={emitRuntimeEvents}
             onRuntimeError={setRuntimeError}
@@ -938,6 +947,7 @@ function parkedEventBranchAtMs(
     )
     .flatMap((node) => node.gestures)
     .find((candidate) => candidate.gestureId === event.sourceId);
+  if (gesture?.holdFrame) return 0;
   return gesture?.branchAtMs ?? gesture?.activeWindow?.endMs ?? 0;
 }
 

@@ -33,9 +33,13 @@ export interface CreateCheckpointInput {
   snapshot?: Record<string, unknown>;
 }
 
-export async function listDocumentVersions(documentId: string): Promise<VersionDto[]> {
+export async function listDocumentVersions(
+  documentId: string,
+  signal?: AbortSignal
+): Promise<VersionDto[]> {
   const data = await api.get<{ versions: VersionDto[] }>(
-    `/aurora/documents/${documentId}/versions`
+    `/aurora/documents/${documentId}/versions`,
+    { signal }
   );
   return data.versions;
 }

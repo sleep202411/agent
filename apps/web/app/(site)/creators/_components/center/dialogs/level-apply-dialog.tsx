@@ -2,7 +2,7 @@
 
 /**
  * Owner-only dialog: apply for a Java certification level.
- * Required: level + crew + IP. Optional: attachment + notes.
+ * Required: level. Optional: crew, IP, attachment + notes.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -54,6 +54,9 @@ const EXTRA_MAX = 300;
  */
 export const AI_PRODUCER_LEVEL_ID = 13;
 
+/** Radix Select needs a non-empty value; maps to "no crew / no IP selected". */
+const SELECT_NONE = "__none__";
+
 interface LevelApplyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -64,7 +67,18 @@ interface LevelApplyDialogProps {
   lockedLevelId?: number;
 }
 
-export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApplyDialogProps) {
+export function LevelApplyDialog(props: LevelApplyDialogProps) {
+  return props.open ? <LevelApplyForm {...props} /> : null;
+}
+
+function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogProps) {
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const t = useTranslations("creatorCenter");
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
@@ -73,17 +87,15 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
   const levelsQuery = useQuery({
     queryKey: ["user-levels", "options", locale],
     queryFn: listUserLevelOptions,
-    enabled: open,
     staleTime: 60_000,
   });
   const pendingQuery = useQuery({
     queryKey: ["user-levels", "apply", "mine", USER_LEVEL_APPLY_STATUS.PENDING, locale],
     queryFn: () => listMyUserLevelApplications(USER_LEVEL_APPLY_STATUS.PENDING),
-    enabled: open,
     staleTime: 30_000,
   });
-  const crewsQuery = useMyCrews(open);
-  const ipsQuery = useAllMyIpCommerceIps(open, { locale });
+  const crewsQuery = useMyCrews(true);
+  const ipsQuery = useAllMyIpCommerceIps(true, { locale });
 
   const crews = useMemo(() => {
     const founded = crewsQuery.data?.founded ?? [];
@@ -159,7 +171,10 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
   }
 
   function handleOpenChange(next: boolean) {
-    if (!next) resetForm();
+    if (!next) {
+      active.current = false;
+      resetForm();
+    }
     onOpenChange(next);
   }
 
@@ -168,33 +183,37 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
     setUploading(true);
     try {
       const path = await uploadUserLevelApplyAttachment(file);
+      if (!active.current) return;
       setAttachmentPath(path);
       setAttachmentName(file.name);
       toast.success(t("levels.apply.uploadSuccess"));
     } catch (err) {
+      if (!active.current) return;
       const msg = err instanceof ApiRequestError ? err.message : t("levels.apply.uploadFailed");
       toast.error(msg);
     } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      if (active.current) {
+        setUploading(false);
+        if (fileRef.current) fileRef.current.value = "";
+      }
     }
   }
 
   async function handleSubmit() {
     const level = levels.find((l) => String(l.id) === levelId);
-    const crew = crews.find((c) => c.id === crewId);
-    const ip = ips.find((i) => i.id === ipId);
-    if (!level || !crew || !ip) {
+    if (!level) {
       toast.error(t("levels.apply.missingRequired"));
       return;
     }
+    const crew = crews.find((c) => c.id === crewId);
+    const ip = ips.find((i) => i.id === ipId);
     if (pendingLevelIds.has(level.id)) {
       toast.error(t("levels.apply.levelPendingHint"));
       return;
     }
     const origin = window.location.origin;
-    const crewLink = `${origin}${localizePath(`/crews/${crew.id}`, locale)}`;
-    const ipLink = `${origin}${localizePath(ipRoomPath(ip.roomNumber), locale)}`;
+    const crewLink = crew ? `${origin}${localizePath(`/crews/${crew.id}`, locale)}` : "";
+    const ipLink = ip ? `${origin}${localizePath(ipRoomPath(ip.roomNumber), locale)}` : "";
     const note = extraInfo.trim();
     if (note.length > EXTRA_MAX) {
       toast.error(t("levels.apply.extraTooLong"));
@@ -205,32 +224,30 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
     try {
       await submitUserLevelApply({
         levelId: level.id,
-        crewName: crew.name,
+        crewName: crew?.name ?? "",
         crewLink,
-        ipName: ip.title,
+        ipName: ip?.title ?? "",
         ipLink,
         ...(attachmentPath ? { attachmentUrl: attachmentPath } : {}),
         ...(note ? { extraInfo: note } : {}),
       });
+      if (!active.current) return;
       toast.success(t("levels.apply.submitSuccess"));
       void pendingQuery.refetch();
       handleOpenChange(false);
     } catch (err) {
+      if (!active.current) return;
       const msg = err instanceof ApiRequestError ? err.message : t("levels.apply.submitFailed");
       toast.error(msg);
     } finally {
-      setSubmitting(false);
+      if (active.current) setSubmitting(false);
     }
   }
 
   const loadingLists =
-    levelsQuery.isLoading || pendingQuery.isLoading || crewsQuery.isLoading || ipsQuery.isLoading;
+    levelsQuery.isPending || pendingQuery.isPending || crewsQuery.isPending || ipsQuery.isPending;
   const canSubmit =
-    Boolean(levelId && crewId && ipId) &&
-    !selectedLevelPending &&
-    !submitting &&
-    !uploading &&
-    !loadingLists;
+    Boolean(levelId) && !selectedLevelPending && !submitting && !uploading && !loadingLists;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -293,14 +310,18 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel required>{t("levels.apply.crewLabel")}</FieldLabel>
-                  <Select value={crewId} onValueChange={setCrewId}>
+                  <FieldLabel>{t("levels.apply.crewLabel")}</FieldLabel>
+                  <Select
+                    value={crewId || SELECT_NONE}
+                    onValueChange={(value) => setCrewId(value === SELECT_NONE ? "" : value)}
+                  >
                     <SelectTrigger className="h-9 w-full">
                       <SelectValue placeholder={t("levels.apply.crewPlaceholder")} />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={SELECT_NONE}>{t("levels.apply.optionalSkip")}</SelectItem>
                       {crews.length === 0 ? (
-                        <SelectItem value="__none" disabled>
+                        <SelectItem value="__empty_crews" disabled>
                           {t("levels.apply.crewEmpty")}
                         </SelectItem>
                       ) : (
@@ -315,14 +336,18 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
                 </Field>
 
                 <Field>
-                  <FieldLabel required>{t("levels.apply.ipLabel")}</FieldLabel>
-                  <Select value={ipId} onValueChange={setIpId}>
+                  <FieldLabel>{t("levels.apply.ipLabel")}</FieldLabel>
+                  <Select
+                    value={ipId || SELECT_NONE}
+                    onValueChange={(value) => setIpId(value === SELECT_NONE ? "" : value)}
+                  >
                     <SelectTrigger className="h-9 w-full">
                       <SelectValue placeholder={t("levels.apply.ipPlaceholder")} />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={SELECT_NONE}>{t("levels.apply.optionalSkip")}</SelectItem>
                       {ips.length === 0 ? (
-                        <SelectItem value="__none" disabled>
+                        <SelectItem value="__empty_ips" disabled>
                           {t("levels.apply.ipEmpty")}
                         </SelectItem>
                       ) : (

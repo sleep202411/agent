@@ -203,6 +203,7 @@ export function useDuplicate(config?: UseDuplicateConfig) {
   useHotkeys(
     DUPLICATE_SHORTCUT_KEY,
     (event) => {
+      if (!editor?.isFocused) return;
       event.preventDefault(); // prevent browser default bookmarking
       handleDuplicate();
     },

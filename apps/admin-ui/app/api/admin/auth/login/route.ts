@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { adminApiUrl } from "@/lib/admin-api";
 import {
+  adminFetch,
   adminForwardHeaders,
   adminUnavailableResponse,
   relayAdminResponse,
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
       email?: unknown;
       password?: unknown;
     } | null;
-    const response = await fetch(adminApiUrl("/auth/login"), {
+    const response = await adminFetch(request, adminApiUrl("/auth/login"), {
       method: "POST",
       headers: adminForwardHeaders(request, { json: true }),
       body: JSON.stringify({
@@ -23,7 +24,7 @@ export async function POST(request: NextRequest) {
       }),
       cache: "no-store",
     });
-    return relayAdminResponse(response);
+    return await relayAdminResponse(response, request.signal);
   } catch {
     return adminUnavailableResponse();
   }

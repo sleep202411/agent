@@ -1,5 +1,5 @@
-import IconGitBranch from "@tabler/icons-react-native/icons/IconGitBranch";
-import IconX from "@tabler/icons-react-native/icons/IconX";
+import IconGitBranch from "@tabler/icons-react-native/IconGitBranch";
+import IconX from "@tabler/icons-react-native/IconX";
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Circle, Path, Svg } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -98,7 +98,7 @@ function plotPreviewMarks(model: StoryPlotPreviewModel) {
       },
     ];
   });
-  const handles: Array<{ key: string; x: number; y: number; fill: string }> = [];
+  const handles: { key: string; x: number; y: number; fill: string }[] = [];
   for (const node of model.nodes) {
     const inbound = plotPreviewHandle(node, "in");
     handles.push({

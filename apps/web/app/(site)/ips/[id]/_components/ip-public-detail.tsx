@@ -1,4 +1,12 @@
 "use client";
+import { ChannelSubmissions } from "../../_components/channel-submissions";
+import { IpFanCommunity } from "../../_components/ip-fan-community";
+import { IpKnowledgeChat } from "../../_components/ip-knowledge-chat";
+import { IpGenerationPanel } from "../../_components/ip-generation-panel";
+
+import { useReportSubmission } from "../_hooks/use-report-submission";
+
+import { IpEngagementActions } from "./ip-engagement-actions";
 
 import { EpisodeFeedback } from "../../_components/episode-feedback";
 import { IpProductionStage } from "../../_components/ip-production-stage";
@@ -20,7 +28,6 @@ import {
   IconSparkles,
   IconTicket,
   IconVideo,
-  IconWallet,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -60,7 +67,6 @@ import type {
   IpTargetType,
 } from "@/src/lib/ip-commerce/api";
 import {
-  useBlockIpContent,
   useCommunityPointBalance,
   useIpAccess,
   useIpCommerceCollection,
@@ -69,7 +75,6 @@ import {
   usePurchaseIpContent,
   useRecordIpView,
   useRemoveIpCommerceCollection,
-  useReportIpContent,
   useSaveIpCommerceCollection,
   useToggleIpEngagementLike,
 } from "@/src/lib/ip-commerce/hooks";
@@ -132,11 +137,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const detailIp = publicQuery.data?.ip
     ? normalizePublicIp(publicQuery.data.ip)
     : creatorQuery.data?.ip
-      ? // The creator preview path only resolves the IP when the viewer IS the
-        // owner (getCreatorIp is scoped to createdById === current user), so the
-        // current user's id is the owner id — thread it through since the
-        // creator DTO doesn't carry createdById.
-        normalizeCreatorIp(creatorQuery.data.ip, user?.id ?? null)
+      ? normalizeCreatorIp(creatorQuery.data.ip, user?.id ?? null)
       : null;
   const accessEpisodeIds = detailIp?.episodes.map((episode) => episode.id) ?? [];
   const accessQuery = useIpAccess(
@@ -151,8 +152,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   );
   const saveCollection = useSaveIpCommerceCollection();
   const removeCollection = useRemoveIpCommerceCollection();
-  const reportContent = useReportIpContent();
-  const blockContent = useBlockIpContent();
+  const reportSubmission = useReportSubmission(user?.id);
   const recordView = useRecordIpView();
   const toggleLike = useToggleIpEngagementLike();
   const viewedIpRef = useRef<string | null>(null);
@@ -200,6 +200,32 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   }
 
   if (!detailIp) {
+    const loadError = [publicQuery.error, previewReference ? creatorQuery.error : null].find(
+      (error) =>
+        error && !(error instanceof ApiRequestError && [401, 403, 404].includes(error.status))
+    );
+    if (loadError) {
+      return (
+        <div className="min-h-[calc(100vh-4rem)] bg-background px-5 py-10 text-foreground">
+          <div
+            role="alert"
+            className="mx-auto flex min-h-[520px] max-w-3xl flex-col items-center justify-center gap-4 text-center"
+          >
+            <h1 className="text-2xl font-semibold">{t("loadFailure.title")}</h1>
+            <p className="text-sm text-muted-foreground">{loadError.message}</p>
+            <Button
+              disabled={publicQuery.isFetching || creatorQuery.isFetching}
+              onClick={() => {
+                void publicQuery.refetch();
+                if (previewReference) void creatorQuery.refetch();
+              }}
+            >
+              {t("loadFailure.retry")}
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return <NotFoundState locale={locale} t={t} />;
   }
 
@@ -216,20 +242,19 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const episodeCoverUrl = getAssetUrl(selectedEpisode?.coverAsset);
   const episodeMediaUrl = getAssetUrl(selectedEpisode?.mediaAsset);
 
-  const episodeTrailerUrl = getAssetUrl(selectedEpisode?.trailerAsset);
   const selectedEpisodeAccess = selectedEpisode
     ? accessQuery.data?.episodes.find((item) => item.id === selectedEpisode.id)
     : null;
   const activeAccess = selectedEpisode ? selectedEpisodeAccess : accessQuery.data?.ip;
   const activePrice = activeAccess?.price ?? selectedEpisode?.price ?? detailIp.price;
   const activeAccessCode: IpCommerceAccess =
-    activeAccess?.access ?? (detailIp.previewMode || !activePrice ? "owned" : "locked");
+    activeAccess?.access ?? (detailIp.previewMode ? "owned" : "locked");
   // Playlist header unlock is always the IP package CTA (matches「整包权益」),
   // not the currently selected free trailer / free-preview chip.
   const ipAccessEntry = accessQuery.data?.ip;
   const playlistUnlockPrice = ipAccessEntry?.price ?? detailIp.price ?? null;
   const playlistUnlockAccess: IpCommerceAccess =
-    ipAccessEntry?.access ?? (detailIp.previewMode || !playlistUnlockPrice ? "owned" : "locked");
+    ipAccessEntry?.access ?? (detailIp.previewMode ? "owned" : "locked");
   // Active members already get member pricing — don't upsell them the membership.
   const viewerIsMember = accessQuery.data?.member ?? false;
   const pendingUnlockAt = getPendingUnlockAt(
@@ -239,17 +264,18 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
       : { targetType: "ip", episodeId: null }
   );
   const canWatchSelected =
-    detailIp.previewMode ||
-    !selectedEpisode ||
-    selectedEpisode.isFreePreview ||
-    isAccessGranted(activeAccessCode);
+    detailIp.previewMode || !selectedEpisode || isAccessGranted(activeAccessCode);
   const lockedMediaLabel = isAccessPending(activeAccessCode)
     ? formatPendingUnlockLabel(pendingUnlockAt, locale, t)
     : undefined;
   const mediaPosterUrl = episodeCoverUrl ?? ipCoverUrl;
-  const mediaTrailerUrl = canWatchSelected
-    ? (episodeMediaUrl ?? episodeTrailerUrl ?? ipTrailerUrl)
-    : (episodeTrailerUrl ?? ipTrailerUrl);
+  // A trailer is an explicit playlist selection. Never substitute it for a
+  // locked (or not-yet-loaded) full episode under that episode's title.
+  const mediaTrailerUrl = selectedEpisode
+    ? canWatchSelected
+      ? episodeMediaUrl
+      : undefined
+    : ipTrailerUrl;
   const mediaTitle = isTrailerSelected
     ? t("episodes.trailer")
     : selectedEpisode
@@ -330,19 +356,17 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
     const reportTargetType: IpTargetType = selectedEpisode ? "episode" : "ip";
     const targetId = selectedEpisode?.id ?? currentIp.id;
     try {
-      await reportContent.mutateAsync({
-        targetType: reportTargetType,
-        targetId,
-        reason: input.reason as CreateIpReportInput["reason"],
-        description: input.description,
+      const completed = await reportSubmission.submit({
+        ipId: currentIp.id,
+        report: {
+          targetType: reportTargetType,
+          targetId,
+          reason: input.reason as CreateIpReportInput["reason"],
+          description: input.description,
+        },
+        blockIp: input.blockIp,
       });
-      if (input.blockIp) {
-        await blockContent.mutateAsync({
-          targetType: "ip",
-          targetId: currentIp.id,
-          reason: input.reason,
-        });
-      }
+      if (!completed) return;
       toast.success(input.blockIp ? t("report.successBlocked") : t("report.success"));
       setReportOpen(false);
     } catch (err) {
@@ -437,10 +461,16 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
               locked={Boolean(selectedEpisode && !canWatchSelected)}
               lockedLabel={lockedMediaLabel}
               onFirstPlay={() => {
-                // Member-view signal for the revenue pool: only when a member
-                // plays the full media of a selected episode (not the trailer).
-                // The server filters to genuine member-free views + dedupes monthly.
-                if (viewerIsMember && selectedEpisode && !isTrailerSelected && canWatchSelected) {
+                // Membership can still be loading after the authorized full-media URL arrives.
+                // The server checks eligibility and dedupes monthly; exclude previews/trailers.
+                if (
+                  user?.id &&
+                  !detailIp.previewMode &&
+                  selectedEpisode &&
+                  !isTrailerSelected &&
+                  canWatchSelected &&
+                  episodeMediaUrl
+                ) {
                   void recordMemberView({
                     ipId: detailIp.id,
                     episodeId: selectedEpisode.id,
@@ -503,8 +533,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   ))}
                 </div>
 
-                <p className="text-xs text-muted-foreground">{originT("likeNotice")}</p>
-                <div className="flex flex-wrap items-center gap-2">
+                <IpEngagementActions notice={originT("likeNotice")}>
                   <ActionButton
                     onClick={() => void shareIp(ipRoomPath(detailIp.roomNumber), locale, t)}
                     icon={IconShare3}
@@ -535,15 +564,25 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                     {activeCollectionItem ? t("actions.collected") : t("actions.collect")}
                   </ActionButton>
                   <ActionButton
-                    disabled={
-                      detailIp.previewMode || reportContent.isPending || blockContent.isPending
-                    }
+                    disabled={detailIp.previewMode || reportSubmission.isPending}
                     onClick={() => (user ? setReportOpen(true) : router.push(loginHref))}
                     icon={IconFlag}
                   >
                     {t("actions.report")}
                   </ActionButton>
-                </div>
+                </IpEngagementActions>
+                {!detailIp.previewMode && <IpFanCommunity ipId={detailIp.id} />}
+                {!detailIp.previewMode && (
+                  <div className="mt-4">
+                    <IpKnowledgeChat ipId={detailIp.id} ipTitle={detailIp.title} />
+                  </div>
+                )}
+                {!detailIp.previewMode && (
+                  <div className="mt-4">
+                    <IpGenerationPanel ipId={detailIp.id} />
+                  </div>
+                )}
+                {!detailIp.previewMode && <ChannelSubmissions ipId={detailIp.id} />}
               </div>
 
               <PurchasePanel
@@ -657,7 +696,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
           onOpenChange={setReportOpen}
           title={selectedEpisode ? selectedEpisode.title : detailIp.title}
           targetType={selectedEpisode ? "episode" : "ip"}
-          pending={reportContent.isPending || blockContent.isPending}
+          pending={reportSubmission.isPending}
           t={t}
           onSubmit={handleReportSubmit}
         />
@@ -691,7 +730,7 @@ function normalizePublicIp(ip: IpCommerceIp): DetailIp {
   };
 }
 
-function normalizeCreatorIp(ip: IpCreatorIp, ownerId: string | null): DetailIp {
+export function normalizeCreatorIp(ip: IpCreatorIp, viewerId: string | null): DetailIp {
   return {
     id: ip.id,
     roomNumber: ip.roomNumber,
@@ -714,7 +753,7 @@ function normalizeCreatorIp(ip: IpCreatorIp, ownerId: string | null): DetailIp {
     genres: ip.genres ?? [],
     tags: [],
     copyrightOwner: ip.copyrightOwner ?? null,
-    createdById: ownerId,
+    createdById: ip.createdById ?? (ip.viewerAccess.owner ? viewerId : null),
     contributors: (ip.contributors ?? []).map((contributor) => ({
       ...contributor,
       displayName: contributor.displayName ?? "",
@@ -780,7 +819,8 @@ function MediaFrame({
       {videoUrl ? (
         <VideoPlayer
           src={videoUrl}
-          className="size-full"
+          className="absolute inset-0 size-full [&_.vjs-tech]:object-contain"
+          fillParent
           autoplay={false}
           onFirstPlay={onFirstPlay}
         />
@@ -1305,14 +1345,14 @@ function PurchasePanel({
     );
   }
 
-  const granted = selectedEpisode?.isFreePreview || isAccessGranted(access);
+  const granted = isAccessGranted(access);
   const pendingUnlock = isAccessPending(access);
   const priceLabel = price ? formatPrice(price, locale, t) : t("commerce.free");
   const balanceLabel = t("priceValue", {
     amount: formatIntegerAmount(walletBalance, locale),
     unit: t("units.communityPoint"),
   });
-  const priceAmount = price ? parseIntegerAmount(price.amount) : null;
+  const priceAmount = price ? parseIntegerAmount(price.memberAmount ?? price.amount) : null;
   const walletAmount = parseIntegerAmount(walletBalance);
   const missingAmount =
     !walletLoading && priceAmount !== null && walletAmount !== null && walletAmount < priceAmount
@@ -1392,7 +1432,6 @@ function PurchasePanel({
 /** Unlock / top-up / login CTA shared by the player bar and playlist header. */
 function PurchaseUnlockAction({
   roomNumber,
-  selectedEpisode,
   access,
   price,
   accessLoading,
@@ -1423,11 +1462,11 @@ function PurchaseUnlockAction({
   onMemberFreeUnlock: () => Promise<void>;
   onSubscribeMembership: () => void;
 }) {
-  const granted = selectedEpisode?.isFreePreview || isAccessGranted(access);
+  const granted = isAccessGranted(access);
   const pendingUnlock = isAccessPending(access);
   if (granted || pendingUnlock) return null;
 
-  const priceAmount = price ? parseIntegerAmount(price.amount) : null;
+  const priceAmount = price ? parseIntegerAmount(price.memberAmount ?? price.amount) : null;
   const walletAmount = parseIntegerAmount(walletBalance);
   const missingAmount =
     !walletLoading && priceAmount !== null && walletAmount !== null && walletAmount < priceAmount
@@ -1442,14 +1481,6 @@ function PurchaseUnlockAction({
     return (
       <Button asChild size="sm">
         <Link href={loginHref}>{t("commerce.loginToUnlock")}</Link>
-      </Button>
-    );
-  }
-  if (missingAmount !== null) {
-    return (
-      <Button type="button" size="sm" onClick={onRecharge}>
-        <IconWallet className="size-4" />
-        {t("commerce.topUpToUnlock")}
       </Button>
     );
   }
@@ -1478,9 +1509,14 @@ function PurchaseUnlockAction({
         type="button"
         size="sm"
         disabled={accessLoading || walletLoading || purchasePending}
-        onClick={() => void onPurchase()}
+        onClick={() => {
+          if (missingAmount !== null) onRecharge();
+          else void onPurchase();
+        }}
       >
-        {purchasePending ? t("commerce.purchasing") : t("commerce.purchase")}
+        {purchasePending
+          ? t("commerce.purchasing")
+          : `${t("commerce.purchase")} · ${formatPrice(price, locale, t)}`}
       </Button>
     );
   }

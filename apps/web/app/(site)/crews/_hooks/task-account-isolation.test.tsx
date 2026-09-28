@@ -306,3 +306,35 @@ it("rolls back its own unchanged optimistic reorder after failure", async () => 
   expect(client.getQueryData(detailKey)).toEqual(original);
   expect(client.getQueryData(listKey)).toEqual(page);
 });
+
+it.each(["account", "crew"])(
+  "cancels task reads after %s replacement and excludes late cache results",
+  async (change) => {
+    const reads: Array<{ signal: AbortSignal; resolve: (value: unknown) => void }> = [];
+    session.api.get.mockImplementation((_path, options) => {
+      expect(options.cache).toBe("no-store");
+      return new Promise((resolve) => reads.push({ signal: options.signal, resolve }));
+    });
+    const view = mount(() => [
+      hooks.useCrewTaskProject(session.crew),
+      hooks.useCrewTaskView(session.crew, { viewId: "view" }),
+      hooks.useCrewTaskOptions(session.crew),
+      hooks.useCrewTaskSummary(session.crew),
+      hooks.useCrewTaskActivity(session.crew),
+      hooks.useCrewTask(session.crew),
+      hooks.useCrewTaskTimeline(session.crew),
+    ]);
+    view.render();
+    expect(reads).toHaveLength(7);
+    if (change === "account") session.account = "bob";
+    else session.crew = "crew-b";
+    view.render();
+    expect(reads).toHaveLength(14);
+    expect(reads.slice(0, 7).every((read) => read.signal.aborted)).toBe(true);
+    expect(reads.slice(7).every((read) => !read.signal.aborted)).toBe(true);
+    await act(async () =>
+      reads.slice(0, 7).forEach((read) => read.resolve({ items: [], nextCursor: null }))
+    );
+    for (const key of keys("alice").slice(0, 7)) expect(client.getQueryData(key)).toBeUndefined();
+  }
+);

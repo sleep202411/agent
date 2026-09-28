@@ -28,7 +28,6 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import type { Message as PrismaMessage } from '@prisma/client';
 import type {
   ConversationCardDTO,
   ConversationDTO,
@@ -104,31 +103,18 @@ export class ConversationsController {
     // Wrap conv-open + optional first-message in one tx so a
     // network drop mid-flight can't leave an empty conversation
     // behind. Broadcasts fire only after the tx commits — same
-    // pending-list pattern used by the orders flow.
-    const pendingMessages: PrismaMessage[] = [];
-    const result = await this.prisma.$transaction(async (tx) => {
-      const conv = await this.svc.openServiceConversation(
-        {
-          serviceId: service.id,
-          buyerId: user.userId,
-          creatorId: service.creatorId,
-        },
-        tx,
-      );
-      let first: PrismaMessage | null = null;
-      if (body.firstMessage) {
-        first = await this.svc.persistText(
-          conv.id,
-          user.userId,
-          body.firstMessage,
-          tx,
-        );
-        pendingMessages.push(first);
-      }
-      return { conv, first };
-    });
-
-    for (const m of pendingMessages) await this.svc.broadcastMessage(m);
+    // transaction boundary used by the orders flow.
+    const result = await this.svc.openServiceInquiry(
+      {
+        serviceId: service.id,
+        buyerId: user.userId,
+        creatorId: service.creatorId,
+      },
+      body.firstMessage,
+      body.firstMessageClientKey,
+    );
+    if (result.created && result.first)
+      await this.svc.broadcastMessage(result.first);
 
     const detail = await this.svc.detail(result.conv.id, user.userId);
     return {

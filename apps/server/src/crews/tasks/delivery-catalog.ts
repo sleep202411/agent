@@ -36,6 +36,10 @@ const Field = z
   .strict();
 export const DeliveryDefinition = z
   .object({
+    categoryKey: z
+      .string()
+      .regex(/^[a-z][a-z0-9_]{0,47}$/)
+      .optional(),
     name: z.string().trim().min(1).max(120),
     description: z.string().trim().max(2000),
     status: z.enum(['active', 'archived']),
@@ -150,6 +154,23 @@ export class CrewDeliveryCatalogService {
       }
       if ((before?.version ?? 0) !== input.expectedVersion)
         throw new ConflictException('Category changed. Refresh before saving.');
+      if (
+        input.definition.categoryKey &&
+        input.definition.status === 'active'
+      ) {
+        const [duplicate] = await tx.$queryRaw<
+          Array<{ categoryId: string }>
+        >`SELECT category_id AS "categoryId" FROM crew_delivery_catalog_revisions
+          WHERE category_id != ${id}::uuid
+            AND definition->>'status' = 'active'
+            AND definition->>'categoryKey' = ${input.definition.categoryKey}
+          LIMIT 1`;
+        if (duplicate) {
+          throw new ConflictException(
+            `categoryKey "${input.definition.categoryKey}" is already in use by another active category.`,
+          );
+        }
+      }
       const after = {
         id,
         version: input.expectedVersion + 1,

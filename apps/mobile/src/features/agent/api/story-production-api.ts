@@ -170,17 +170,27 @@ export const storyProductionApi = {
     );
   },
 
-  cancelGenerationBatch(projectId: string, chapterId: string, batchId: string) {
+  cancelGenerationBatch(
+    projectId: string,
+    chapterId: string,
+    batchId: string,
+    signal?: AbortSignal
+  ) {
     return api.post<StoryGenerationBatch>(
       `${chapterPath(projectId, chapterId, "generation-batches")}/${encodeURIComponent(batchId)}/cancel`,
-      { ...AURORA, data: {}, timeout: 30_000 }
+      { ...AURORA, data: {}, signal, timeout: 30_000 }
     );
   },
 
-  resumeGenerationBatch(projectId: string, chapterId: string, batchId: string) {
+  resumeGenerationBatch(
+    projectId: string,
+    chapterId: string,
+    batchId: string,
+    signal?: AbortSignal
+  ) {
     return api.post<StoryGenerationBatch>(
       `${chapterPath(projectId, chapterId, "generation-batches")}/${encodeURIComponent(batchId)}/resume`,
-      { ...AURORA, data: {}, timeout: 30_000 }
+      { ...AURORA, data: {}, signal, timeout: 30_000 }
     );
   },
 

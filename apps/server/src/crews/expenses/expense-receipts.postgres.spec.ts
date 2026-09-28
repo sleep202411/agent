@@ -1,3 +1,4 @@
+import { postgresFixtureUrl } from '../../common/__tests__/postgres-fixture-url';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -11,7 +12,7 @@ const url =
     : undefined);
 (url ? describe : describe.skip)('private expense receipts', () => {
   it('recovers finalization, isolates draft evidence, submits once and retains own reads after departure', async () => {
-    const target = new URL(url!);
+    const target = postgresFixtureUrl(url!);
     if (
       !['localhost', '127.0.0.1'].includes(target.hostname) ||
       !(

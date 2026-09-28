@@ -4,6 +4,7 @@ import { useProjectUIStore } from "./project-ui-store";
 describe("project UI drawer state", () => {
   beforeEach(() => {
     useProjectUIStore.setState({
+      actorsOpen: false,
       assetsOpen: false,
       crewAssetsOpen: false,
       nodesOpen: false,
@@ -34,4 +35,16 @@ describe("project UI drawer state", () => {
       crewAssetsOpen: false,
     });
   });
+});
+
+it("opens actors exclusively and closes them when switching tools", () => {
+  useProjectUIStore.getState().openCrewAssets();
+  useProjectUIStore.getState().openActors();
+  expect(useProjectUIStore.getState()).toMatchObject({
+    actorsOpen: true,
+    crewAssetsOpen: false,
+    assetsOpen: false,
+  });
+  useProjectUIStore.getState().openAssets();
+  expect(useProjectUIStore.getState().actorsOpen).toBe(false);
 });

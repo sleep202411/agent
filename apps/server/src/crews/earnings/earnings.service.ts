@@ -1,5 +1,5 @@
 import { assertNewCrewCurrency, formatLedgerAmount } from './ledger-currency';
-import { lockMemberPayouts } from './ledger-lock';
+import { lockMemberPayouts, lockLedgerReceipt } from './ledger-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -76,6 +76,7 @@ export class CrewEarningsService {
       {
         userId,
         currency: query.currency,
+        ...(query.crewId ? { crewId: query.crewId } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(query.sourceType ? { sourceType: query.sourceType } : {}),
       },
@@ -200,11 +201,27 @@ export class CrewEarningsService {
     const amount = BigInt(input.amountMinor);
     const idempotencyKey = `crew-earning-manual:${crewId}:${userId}:${input.idempotencyKey}`;
     const created = await this.prisma.$transaction(async (tx) => {
+      await lockLedgerReceipt(tx, idempotencyKey);
       const existing = await tx.crewEarningEntry.findUnique({
         where: { idempotencyKey },
         include: earningInclude,
       });
-      if (existing) return existing;
+      if (existing) {
+        if (
+          existing.crewMemberId !== member.id ||
+          existing.userId !== member.userId ||
+          existing.currency !== input.currency ||
+          existing.amountMinor !== amount ||
+          existing.sourceType !== input.sourceType ||
+          existing.agreementId !== (input.agreementId ?? null) ||
+          existing.title !== input.title ||
+          existing.description !== (input.description || null)
+        )
+          throw new ConflictException(
+            'Earning retry key was already used for different terms.',
+          );
+        return existing;
+      }
       const earning = await tx.crewEarningEntry.create({
         data: {
           crewId,
@@ -473,6 +490,7 @@ export class CrewEarningsService {
           earningId: earning.id,
           earningTitle: earning.title,
           sourceType: earning.sourceType,
+          amendmentId: earning.amendmentId ?? null,
           currency: earning.currency,
           amountMinor: earning.amountMinor.toString(),
           deeplink: `/crews/${earning.crewId}/workspace?tab=income`,
@@ -515,6 +533,7 @@ function earningSnapshot(earning: CrewEarningEntry) {
     id: earning.id,
     status: earning.status,
     sourceType: earning.sourceType,
+    amendmentId: earning.amendmentId ?? null,
     currency: earning.currency,
     amountMinor: earning.amountMinor.toString(),
     version: earning.version,
@@ -530,6 +549,7 @@ function earningDto(earning: EarningWithRelations) {
     crewMemberId: earning.crewMemberId,
     userId: earning.userId,
     sourceType: earning.sourceType,
+    amendmentId: earning.amendmentId ?? null,
     task: earning.task,
     agreement: earning.agreement,
     title: earning.title,

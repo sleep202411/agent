@@ -99,8 +99,15 @@ function build() {
       .mockResolvedValue([
         { total: 100000000000n, used: 0n, reserved: 0n, unknown: 0n },
       ]),
+    crew: {
+      findFirst: jest.fn().mockResolvedValue({ studioWorkspaceId: 'ws-1' }),
+    },
+    storyProject: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     platformProject: {
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       findUnique: jest.fn().mockResolvedValue({
         workspace: { studioCrew: null },
         productionCrew: null,
@@ -170,6 +177,7 @@ function build() {
     resolve: jest.fn().mockResolvedValue(authorizationContext),
   };
   const workspacePermissions = {
+    requireWorkspaceRole: jest.fn(),
     requireProjectRole: jest.fn(),
   };
   const access = {
@@ -705,7 +713,7 @@ describe('CrewAssetsService', () => {
     expect(t.conversations.broadcastCrewAssetChange).not.toHaveBeenCalled();
   });
 
-  it('physically deletes unshared crew media before retiring its ledger', async () => {
+  it('retires unshared crew media before physically deleting its objects', async () => {
     const t = build();
 
     await t.service.removePermanently(CREW_ID, USER_ID, NODE_ID);
@@ -715,6 +723,7 @@ describe('CrewAssetsService', () => {
       NODE_ID,
       USER_ID,
       CrewAssetPermission.manage,
+      t.prisma,
     );
     expect(t.prisma.crewAssetNode.delete).toHaveBeenCalledWith({
       where: { id: NODE_ID },
@@ -820,6 +829,36 @@ describe('CrewAssetsService', () => {
         trashedByUserId: null,
         updatedByUserId: USER_ID,
       },
+    });
+  });
+
+  it('lists ready workspace media for crew-side Studio linking', async () => {
+    const t = build();
+    t.prisma.mediaAsset.findMany.mockResolvedValueOnce([
+      {
+        id: MEDIA_ID,
+        kind: MediaAssetKind.image,
+        contentType: 'image/png',
+        createdAt: new Date('2026-09-24T00:00:00.000Z'),
+        objectKey: 'media/ws/shot.png',
+      },
+    ]);
+
+    await expect(
+      t.service.listStudioMediaOptions(CREW_ID, USER_ID, {}),
+    ).resolves.toEqual({
+      workspaceId: 'ws-1',
+      projects: [],
+      items: [
+        {
+          id: MEDIA_ID,
+          kind: MediaAssetKind.image,
+          contentType: 'image/png',
+          name: 'shot.png',
+          previewUrl: `/aurora/media/assets/${MEDIA_ID}/content`,
+          createdAt: '2026-09-24T00:00:00.000Z',
+        },
+      ],
     });
   });
 });

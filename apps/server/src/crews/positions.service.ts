@@ -11,6 +11,7 @@
  * Hard-soft delete (deletedAt) is ALWAYS blocked while pending
  * applications exist — per spec, owner must process them first.
  */
+import { assertRecruitableTask } from './task-recruitment';
 import {
   BadRequestException,
   ConflictException,
@@ -68,7 +69,12 @@ export class PositionsService {
       deletedAt: null,
       // Admin-taken-down postings are invisible on every public surface.
       moderationStatus: 'ok',
-      ...(canManage ? {} : { status: { not: 'frozen' as const } }),
+      ...(canManage
+        ? {}
+        : {
+            status: { not: 'frozen' as const },
+            recruitmentVisibility: 'public',
+          }),
     } satisfies Prisma.CrewPositionWhereInput;
     if (query.cursor) {
       const cursor = await this.prisma.crewPosition.findFirst({
@@ -77,6 +83,7 @@ export class PositionsService {
       });
       if (!cursor) {
         throw new BadRequestException({
+          code: 'CREW_POSITION_CURSOR_INVALID',
           message:
             'The crew positions cursor is invalid for the current viewer. Restart from the first page.',
         });
@@ -138,7 +145,37 @@ export class PositionsService {
   async listPublic(query: ListPublicPositionsQuery) {
     const limit = query.limit;
     const today = new Date(new Date().toISOString().slice(0, 10));
-    const where = {
+    const baseWhere = {
+      recruitmentVisibility: 'public',
+      ...(query.crewId ? { crewId: query.crewId } : {}),
+      ...(query.skill ? { requiredSkills: { has: query.skill } } : {}),
+      ...(query.q
+        ? {
+            AND: [
+              {
+                OR: [
+                  {
+                    description: {
+                      contains: query.q,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  {
+                    positionType: {
+                      contains: query.q,
+                      mode: 'insensitive' as const,
+                    },
+                  },
+                  {
+                    crew: {
+                      name: { contains: query.q, mode: 'insensitive' as const },
+                    },
+                  },
+                ],
+              },
+            ],
+          }
+        : {}),
       deletedAt: null,
       status: 'open',
       moderationStatus: 'ok',
@@ -160,6 +197,25 @@ export class PositionsService {
         moderationStatus: 'ok',
       },
     } satisfies Prisma.CrewPositionWhereInput;
+    const where: Prisma.CrewPositionWhereInput = {
+      ...baseWhere,
+      AND: [
+        ...(baseWhere.AND ?? []),
+        {
+          OR: [
+            { taskId: null },
+            {
+              task: {
+                deletedAt: null,
+                workflowState: {
+                  semantic: { notIn: ['approved', 'cancelled', 'submitted'] },
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
     const direction = query.sort === 'oldest' ? 'asc' : 'desc';
     if (query.cursor) {
       const cursor = await this.prisma.crewPosition.findFirst({
@@ -168,6 +224,7 @@ export class PositionsService {
       });
       if (!cursor) {
         throw new BadRequestException({
+          code: 'CREW_POSITION_CURSOR_INVALID',
           message:
             'The positions cursor is invalid for the current filters. Restart from the first page.',
         });
@@ -242,6 +299,18 @@ export class PositionsService {
           }
         : {}),
     };
+    if (opts.cursor) {
+      const cursor = await this.prisma.crewPosition.findFirst({
+        where: { AND: [where, { id: opts.cursor }] },
+        select: { id: true },
+      });
+      if (!cursor)
+        throw new BadRequestException({
+          code: 'CREW_POSITION_CURSOR_INVALID',
+          message:
+            'The positions cursor is invalid for the current filters. Restart from the first page.',
+        });
+    }
     const rows = await this.prisma.crewPosition.findMany({
       where,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
@@ -275,80 +344,104 @@ export class PositionsService {
     status: CrewModerationStatus,
     opts: { adminId: string; reason?: string },
   ) {
-    const position = await this.prisma.crewPosition.findFirst({
-      where: { id: positionId, deletedAt: null },
-      select: { id: true },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM crew_positions WHERE id=${positionId} FOR UPDATE`;
+      const position = await tx.crewPosition.findFirst({
+        where: { id: positionId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!position) throw new NotFoundException('Position not found');
+      const reason = opts.reason?.trim() || null;
+      const updated = await tx.crewPosition.update({
+        where: { id: positionId },
+        data: {
+          moderationStatus: status,
+          moderatedAt: new Date(),
+          moderatedByAdminId: opts.adminId,
+          moderationReason: status === 'taken_down' ? reason : null,
+        },
+        include: { crew: { select: { id: true, name: true, logo: true } } },
+      });
+      return {
+        id: updated.id,
+        crewId: updated.crewId,
+        crewName: updated.crew.name,
+        crewLogo: resolveCrewLogoUrl(updated.crew.logo),
+        positionType: updated.positionType,
+        description: updated.description,
+        status: updated.status,
+        moderationStatus: updated.moderationStatus,
+        moderationReason: updated.moderationReason,
+        moderatedAt: updated.moderatedAt
+          ? updated.moderatedAt.toISOString()
+          : null,
+        createdAt: updated.createdAt.toISOString(),
+      };
     });
-    if (!position) throw new NotFoundException('Position not found');
-    const reason = opts.reason?.trim() || null;
-    const updated = await this.prisma.crewPosition.update({
-      where: { id: positionId },
-      data: {
-        moderationStatus: status,
-        moderatedAt: new Date(),
-        moderatedByAdminId: opts.adminId,
-        moderationReason: status === 'taken_down' ? reason : null,
-      },
-      include: { crew: { select: { id: true, name: true, logo: true } } },
-    });
-    return {
-      id: updated.id,
-      crewId: updated.crewId,
-      crewName: updated.crew.name,
-      crewLogo: resolveCrewLogoUrl(updated.crew.logo),
-      positionType: updated.positionType,
-      description: updated.description,
-      status: updated.status,
-      moderationStatus: updated.moderationStatus,
-      moderationReason: updated.moderationReason,
-      moderatedAt: updated.moderatedAt
-        ? updated.moderatedAt.toISOString()
-        : null,
-      createdAt: updated.createdAt.toISOString(),
-    };
   }
 
   async create(crewId: string, ownerId: string, input: CreatePositionInput) {
     await this.authorization.require(crewId, ownerId, 'openings.manage');
-    assertAllowedCurrency(input.salary?.currency, 'salary.currency');
-    const ccy = input.salary?.currency ?? null;
-    const row = await this.prisma.crewPosition.create({
-      data: {
-        id: newCrewDomainId(),
-        crewId,
-        positionType: input.positionType,
-        description: input.description,
-        targetCount: input.targetCount,
-        workMode: input.workMode,
-        location: input.workMode === 'remote' ? null : (input.location ?? null),
-        employmentType: input.employmentType,
-        experienceLevel: input.experienceLevel,
-        requiredSkills: input.requiredSkills,
-        salaryPeriod: input.salary?.period ?? null,
-        salaryCurrency: ccy,
-        salaryMinAmount:
-          input.salary?.min != null && ccy != null
-            ? toSmallestUnit(input.salary.min, ccy)
+    if (input.recruitmentVisibility === 'private' && !input.taskId)
+      throw new BadRequestException(
+        'Private recruitment requires a linked task.',
+      );
+    return this.positionWrite(crewId, ownerId, undefined, async (tx) => {
+      if (input.taskId) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+        await this.authorization.require(crewId, ownerId, 'tasks.manage', tx);
+        await assertRecruitableTask(tx, crewId, input.taskId);
+        const assigned = await tx.crewTaskAssignee.count({
+          where: { taskId: input.taskId },
+        });
+        if (assigned)
+          throw new ConflictException(
+            'Create task recruitment before assigning work. Existing assignments must retain their agreements.',
+          );
+      }
+      assertAllowedCurrency(input.salary?.currency, 'salary.currency');
+      const ccy = input.salary?.currency ?? null;
+      const row = await tx.crewPosition.create({
+        data: {
+          id: newCrewDomainId(),
+          crewId,
+          taskId: input.taskId ?? null,
+          recruitmentVisibility: input.recruitmentVisibility ?? 'public',
+          positionType: input.positionType,
+          description: input.description,
+          targetCount: input.targetCount,
+          workMode: input.workMode,
+          location:
+            input.workMode === 'remote' ? null : (input.location ?? null),
+          employmentType: input.employmentType,
+          experienceLevel: input.experienceLevel,
+          requiredSkills: input.requiredSkills,
+          salaryPeriod: input.salary?.period ?? null,
+          salaryCurrency: ccy,
+          salaryMinAmount:
+            input.salary?.min != null && ccy != null
+              ? toSmallestUnit(input.salary.min, ccy)
+              : null,
+          salaryMaxAmount:
+            input.salary?.max != null && ccy != null
+              ? toSmallestUnit(input.salary.max, ccy)
+              : null,
+          salaryNegotiable: input.salary?.negotiable ?? false,
+          durationMonths: input.durationMonths ?? null,
+          // Wire is plain %, storage is bp. Math.round guards against
+          // FP rounding from values like 2.5 (which round-trips fine
+          // but defensive-coded for future steps like 0.25 if we relax).
+          revenueShareBp:
+            input.revenueSharePercent != null
+              ? Math.round(input.revenueSharePercent * 100)
+              : null,
+          closeDate: input.closeDate
+            ? new Date(`${input.closeDate}T00:00:00Z`)
             : null,
-        salaryMaxAmount:
-          input.salary?.max != null && ccy != null
-            ? toSmallestUnit(input.salary.max, ccy)
-            : null,
-        salaryNegotiable: input.salary?.negotiable ?? false,
-        durationMonths: input.durationMonths ?? null,
-        // Wire is plain %, storage is bp. Math.round guards against
-        // FP rounding from values like 2.5 (which round-trips fine
-        // but defensive-coded for future steps like 0.25 if we relax).
-        revenueShareBp:
-          input.revenueSharePercent != null
-            ? Math.round(input.revenueSharePercent * 100)
-            : null,
-        closeDate: input.closeDate
-          ? new Date(`${input.closeDate}T00:00:00Z`)
-          : null,
-      },
+        },
+      });
+      return toPositionDTO(row);
     });
-    return toPositionDTO(row);
   }
 
   async update(
@@ -358,95 +451,98 @@ export class PositionsService {
     input: UpdatePositionInput,
   ) {
     await this.authorization.require(crewId, ownerId, 'openings.manage');
-    const pos = await this.requirePosition(crewId, positionId);
-    assertAllowedCurrency(input.salary?.currency, 'salary.currency');
+    return this.positionWrite(crewId, ownerId, positionId, async (tx) => {
+      const pos = await this.requirePosition(crewId, positionId, tx);
+      assertAllowedCurrency(input.salary?.currency, 'salary.currency');
 
-    if (
-      input.targetCount !== undefined &&
-      input.targetCount < pos.recruitedCount
-    ) {
-      throw new BadRequestException({
-        message: 'targetCount cannot be below recruitedCount',
-        field: 'targetCount',
-        recruitedCount: pos.recruitedCount,
+      if (
+        input.targetCount !== undefined &&
+        input.targetCount < pos.recruitedCount
+      ) {
+        throw new BadRequestException({
+          message: 'targetCount cannot be below recruitedCount',
+          field: 'targetCount',
+          recruitedCount: pos.recruitedCount,
+        });
+      }
+
+      let nextStatus = input.status ?? pos.status;
+      // Closing is explicit owner intent; capacity edits must not publish it again.
+      if (input.targetCount !== undefined && nextStatus !== 'frozen') {
+        const tc = input.targetCount;
+        if (pos.recruitedCount >= tc) nextStatus = 'full';
+        else if (pos.status === 'full' && pos.recruitedCount < tc)
+          nextStatus = 'open';
+      }
+
+      const updated = await tx.crewPosition.update({
+        where: { id: positionId },
+        data: {
+          ...(input.description !== undefined
+            ? { description: input.description }
+            : {}),
+          ...(input.targetCount !== undefined
+            ? { targetCount: input.targetCount }
+            : {}),
+          ...(input.workMode !== undefined ? { workMode: input.workMode } : {}),
+          ...(input.location !== undefined ? { location: input.location } : {}),
+          ...(input.employmentType !== undefined
+            ? { employmentType: input.employmentType }
+            : {}),
+          ...(input.experienceLevel !== undefined
+            ? { experienceLevel: input.experienceLevel }
+            : {}),
+          ...(input.requiredSkills !== undefined
+            ? { requiredSkills: input.requiredSkills }
+            : {}),
+          ...(input.salary?.period !== undefined
+            ? { salaryPeriod: input.salary.period }
+            : {}),
+          ...(input.salary?.currency !== undefined
+            ? { salaryCurrency: input.salary.currency }
+            : {}),
+          ...(input.salary?.min !== undefined && input.salary?.currency
+            ? {
+                salaryMinAmount:
+                  input.salary.min != null
+                    ? toSmallestUnit(input.salary.min, input.salary.currency)
+                    : null,
+              }
+            : {}),
+          ...(input.salary?.max !== undefined && input.salary?.currency
+            ? {
+                salaryMaxAmount:
+                  input.salary.max != null
+                    ? toSmallestUnit(input.salary.max, input.salary.currency)
+                    : null,
+              }
+            : {}),
+          ...(input.salary?.negotiable !== undefined
+            ? { salaryNegotiable: input.salary.negotiable }
+            : {}),
+          ...(input.durationMonths !== undefined
+            ? { durationMonths: input.durationMonths }
+            : {}),
+          ...(input.revenueSharePercent !== undefined
+            ? {
+                revenueShareBp:
+                  input.revenueSharePercent != null
+                    ? Math.round(input.revenueSharePercent * 100)
+                    : null,
+              }
+            : {}),
+          ...(input.closeDate !== undefined
+            ? {
+                closeDate: input.closeDate
+                  ? new Date(`${input.closeDate}T00:00:00Z`)
+                  : null,
+              }
+            : {}),
+          status: nextStatus,
+        },
       });
-    }
-
-    let nextStatus = input.status ?? pos.status;
-    if (input.targetCount !== undefined) {
-      const tc = input.targetCount;
-      if (pos.recruitedCount >= tc) nextStatus = 'full';
-      else if (pos.status === 'full' && pos.recruitedCount < tc)
-        nextStatus = 'open';
-    }
-
-    const updated = await this.prisma.crewPosition.update({
-      where: { id: positionId },
-      data: {
-        ...(input.description !== undefined
-          ? { description: input.description }
-          : {}),
-        ...(input.targetCount !== undefined
-          ? { targetCount: input.targetCount }
-          : {}),
-        ...(input.workMode !== undefined ? { workMode: input.workMode } : {}),
-        ...(input.location !== undefined ? { location: input.location } : {}),
-        ...(input.employmentType !== undefined
-          ? { employmentType: input.employmentType }
-          : {}),
-        ...(input.experienceLevel !== undefined
-          ? { experienceLevel: input.experienceLevel }
-          : {}),
-        ...(input.requiredSkills !== undefined
-          ? { requiredSkills: input.requiredSkills }
-          : {}),
-        ...(input.salary?.period !== undefined
-          ? { salaryPeriod: input.salary.period }
-          : {}),
-        ...(input.salary?.currency !== undefined
-          ? { salaryCurrency: input.salary.currency }
-          : {}),
-        ...(input.salary?.min !== undefined && input.salary?.currency
-          ? {
-              salaryMinAmount:
-                input.salary.min != null
-                  ? toSmallestUnit(input.salary.min, input.salary.currency)
-                  : null,
-            }
-          : {}),
-        ...(input.salary?.max !== undefined && input.salary?.currency
-          ? {
-              salaryMaxAmount:
-                input.salary.max != null
-                  ? toSmallestUnit(input.salary.max, input.salary.currency)
-                  : null,
-            }
-          : {}),
-        ...(input.salary?.negotiable !== undefined
-          ? { salaryNegotiable: input.salary.negotiable }
-          : {}),
-        ...(input.durationMonths !== undefined
-          ? { durationMonths: input.durationMonths }
-          : {}),
-        ...(input.revenueSharePercent !== undefined
-          ? {
-              revenueShareBp:
-                input.revenueSharePercent != null
-                  ? Math.round(input.revenueSharePercent * 100)
-                  : null,
-            }
-          : {}),
-        ...(input.closeDate !== undefined
-          ? {
-              closeDate: input.closeDate
-                ? new Date(`${input.closeDate}T00:00:00Z`)
-                : null,
-            }
-          : {}),
-        status: nextStatus,
-      },
+      return toPositionDTO(updated);
     });
-    return toPositionDTO(updated);
   }
 
   async delete(
@@ -455,25 +551,49 @@ export class PositionsService {
     ownerId: string,
   ): Promise<void> {
     await this.authorization.require(crewId, ownerId, 'openings.manage');
-    await this.requirePosition(crewId, positionId);
+    return this.positionWrite(crewId, ownerId, positionId, async (tx) => {
+      await this.requirePosition(crewId, positionId, tx);
 
-    const pendingCount = await this.prisma.crewApplication.count({
-      where: { positionId, status: 'pending' },
-    });
-    if (pendingCount > 0) {
-      throw new ConflictException({
-        message: 'Cannot delete position with pending applications',
-        pendingCount,
+      const pendingCount = await tx.crewApplication.count({
+        where: { positionId, status: 'pending' },
       });
-    }
-    await this.prisma.crewPosition.update({
-      where: { id: positionId },
-      data: { deletedAt: new Date() },
+      if (pendingCount > 0) {
+        throw new ConflictException({
+          message: 'Cannot delete position with pending applications',
+          pendingCount,
+        });
+      }
+      await tx.crewPosition.update({
+        where: { id: positionId },
+        data: { deletedAt: new Date() },
+      });
     });
   }
 
-  private async requirePosition(crewId: string, positionId: string) {
-    const pos = await this.prisma.crewPosition.findFirst({
+  private async positionWrite<T>(
+    crewId: string,
+    userId: string,
+    positionId: string | undefined,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      if (positionId)
+        await tx.$queryRaw`SELECT id FROM crew_positions WHERE id=${positionId} AND crew_id=${crewId} FOR UPDATE`;
+      else
+        await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR SHARE`;
+      await this.authorization.require(crewId, userId, 'openings.manage', tx);
+      const result = await work(tx);
+      await this.authorization.require(crewId, userId, 'openings.manage', tx);
+      return result;
+    });
+  }
+
+  private async requirePosition(
+    crewId: string,
+    positionId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const pos = await db.crewPosition.findFirst({
       where: { id: positionId, crewId, deletedAt: null },
     });
     if (!pos) throw new NotFoundException('Position not found');

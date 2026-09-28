@@ -28,7 +28,6 @@ import {
   type FrozenStoryVideoAsset,
   type StoryBuildNodeTimelineInput,
   type StoryBuildSegmentInput,
-  type StoryBuildWorldInput,
 } from './story-build-compiler';
 import { resolveStoryCoverUrl } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
@@ -91,6 +90,7 @@ export class StoryWorkingPreviewService {
     user: AuthUser,
     projectId: string,
     chapterId?: string,
+    sceneId?: string,
   ): Promise<StoryWorkingPreviewDto> {
     const access = await this.permissions.requireProject(
       user.userId,
@@ -99,7 +99,13 @@ export class StoryWorkingPreviewService {
     );
     return this.prisma.$transaction(
       (tx) =>
-        this.compileLatestSavedDraft(tx, access.project, projectId, chapterId),
+        this.compileLatestSavedDraft(
+          tx,
+          access.project,
+          projectId,
+          chapterId,
+          sceneId,
+        ),
       { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
   }
@@ -117,14 +123,15 @@ export class StoryWorkingPreviewService {
     },
     projectId: string,
     chapterId: string | undefined,
+    sceneId: string | undefined,
   ): Promise<StoryWorkingPreviewDto> {
-    const [draft, chapters] = await Promise.all([
-      tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
-      tx.storyChapter.findMany({
+    const [draft, chapters] = [
+      await tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+      await tx.storyChapter.findMany({
         where: { storyProjectId: projectId, archivedAt: null },
         orderBy: [{ rank: 'asc' }, { id: 'asc' }],
       }),
-    ]);
+    ];
     if (!draft) {
       throw new NotFoundException({
         code: 'STORY_DRAFT_NOT_FOUND',
@@ -183,28 +190,107 @@ export class StoryWorkingPreviewService {
           draft.contentHash,
           emptySnapshotHash,
         ),
-        diagnostics: playableDraft.error.issues.map((issue) =>
-          previewDiagnostic(
+        diagnostics: playableDraft.error.issues.map((issue) => {
+          const nodeIndex =
+            issue.path[0] === 'graph' &&
+            issue.path[1] === 'nodes' &&
+            typeof issue.path[2] === 'number'
+              ? issue.path[2]
+              : null;
+          const node =
+            draftShape.success && nodeIndex !== null
+              ? draftShape.data.graph.nodes[nodeIndex]
+              : undefined;
+          const choiceIndex =
+            issue.path[3] === 'exit' &&
+            issue.path[4] === 'choices' &&
+            typeof issue.path[5] === 'number'
+              ? issue.path[5]
+              : null;
+          const choice =
+            node?.exit.kind === 'choice' && choiceIndex !== null
+              ? node.exit.choices[choiceIndex]
+              : undefined;
+          const effectIndex =
+            choice &&
+            issue.path[6] === 'effects' &&
+            typeof issue.path[7] === 'number'
+              ? issue.path[7]
+              : null;
+          const effect =
+            effectIndex !== null ? choice?.effects?.[effectIndex] : undefined;
+          const variable =
+            effect && draftShape.success
+              ? draftShape.data.storyBible.stateVariables?.find(
+                  (candidate) => candidate.key === effect.key,
+                )
+              : undefined;
+          const nodeTitle = node
+            ? node.kind === 'decision'
+              ? localizedDraftText(
+                  node.exit.kind === 'choice' ? node.exit.prompt : {},
+                  project.defaultLocale,
+                ) || node.nodeId
+              : node.name || node.nodeId
+            : null;
+          const choiceLabel = choice
+            ? localizedDraftText(choice.label, project.defaultLocale) ||
+              choice.choiceId
+            : null;
+          const variableName = variable
+            ? localizedDraftText(variable.name, project.defaultLocale) ||
+              variable.key
+            : null;
+          const location = [
+            nodeTitle,
+            choiceLabel ? `choice ${choiceIndex! + 1} "${choiceLabel}"` : null,
+            effectIndex !== null
+              ? `effect ${effectIndex + 1}${variableName ? ` "${variableName}"` : ''}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          const diagnostic = previewDiagnostic(
             'error',
-            'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
-            `${issue.path.join('.') || 'draft'}: Complete this field before playtesting.`,
-            'revision',
-            projectId,
-          ),
-        ),
+            effect && variable
+              ? 'STORY_WORKING_PREVIEW_EFFECT_TYPE_MISMATCH'
+              : 'STORY_WORKING_PREVIEW_DRAFT_INCOMPLETE',
+            `${location || issue.path.join('.') || 'draft'}: ${issue.message}`,
+            node ? 'node' : 'revision',
+            node?.nodeId ?? projectId,
+          );
+          if (node) {
+            const chapter = chapters.find(
+              (candidate) =>
+                Array.isArray(candidate.nodeIds) &&
+                candidate.nodeIds.includes(node.nodeId),
+            );
+            if (chapter) diagnostic.chapterId = chapter.id;
+          }
+          if (
+            nodeTitle &&
+            variable &&
+            variableName &&
+            effect &&
+            effectIndex !== null
+          ) {
+            diagnostic.details = {
+              kind: 'state-effect-type',
+              nodeTitle,
+              choiceLabel,
+              effectIndex: effectIndex + 1,
+              variableName,
+              operation: effect.kind,
+              variableType: variable.valueType,
+            };
+          }
+          return diagnostic;
+        }),
       };
     }
 
     const clipNodes = playableDraft.data.graph.nodes.filter(
       (node) => node.kind === 'clip',
-    );
-    const worldNodes = playableDraft.data.graph.nodes.filter(
-      (
-        node,
-      ): node is Extract<
-        (typeof playableDraft.data.graph.nodes)[number],
-        { kind: 'world' }
-      > => node.kind === 'world' && node.worldId !== null,
     );
     const sequences =
       clipNodes.length === 0
@@ -227,38 +313,9 @@ export class StoryWorkingPreviewService {
         this.assetUrls,
       ),
     );
-    const worldRows =
-      worldNodes.length === 0
-        ? []
-        : await tx.worldModelWorld.findMany({
-            where: {
-              storyProjectId: projectId,
-              workspaceId: project.workspaceId,
-              id: { in: worldNodes.map((node) => node.worldId as string) },
-            },
-            select: { id: true, status: true },
-          });
-    const worldStatusById = new Map(
-      worldRows.map((world) => [world.id, world.status]),
-    );
-    const worlds: StoryBuildWorldInput[] = worldNodes.flatMap((node) => {
-      const status = worldStatusById.get(node.worldId as string);
-      return status
-        ? [
-            {
-              graphNodeId: node.nodeId,
-              worldId: node.worldId as string,
-              status,
-            },
-          ]
-        : [];
-    });
 
     const snapshotEntries = prepared.flatMap((item) => item.snapshotEntries);
     const videoSnapshotHash = storyVideoSnapshotHash(snapshotEntries);
-    // A chapter owns its own entry scene; the story-level entry belongs to the
-    // first chapter only. Preview validates the complete saved projection
-    // before compiling a chapter-scoped subgraph.
     const chapter = chapterId
       ? chapters.find((candidate) => candidate.id === chapterId)
       : null;
@@ -268,14 +325,48 @@ export class StoryWorkingPreviewService {
         message: 'The selected Story chapter was not found.',
       });
     }
-    const chapterScope: StoryBuildScope | null = chapter?.entryNodeId
-      ? { kind: 'subgraph', entryNodeId: chapter.entryNodeId }
+    const graphNodeIds = new Set(
+      playableDraft.data.graph.nodes.map((node) => node.nodeId),
+    );
+    const chapterStart = chapter
+      ? chapterPlayStart(chapter, graphNodeIds, sceneId)
       : null;
-
+    if (chapter && !chapterStart) {
+      return emptyWorkingPreview(
+        draft.revision,
+        draft.contentHash,
+        videoSnapshotHash,
+        previewDiagnostic(
+          'error',
+          'STORY_WORKING_PREVIEW_CHAPTER_EMPTY',
+          'This chapter has no scene to play.',
+          'revision',
+          chapter.id,
+        ),
+      );
+    }
+    // A clicked scene is the start of this play. An empty chapter entry stays
+    // inside that chapter. Neither case may borrow another chapter's node.
+    const scope: StoryBuildScope =
+      chapter && chapterStart
+        ? { kind: 'subgraph', entryNodeId: chapterStart }
+        : sceneId && graphNodeIds.has(sceneId)
+          ? { kind: 'subgraph', entryNodeId: sceneId }
+          : { kind: 'full' };
+    const metadata = {
+      title: project.title,
+      summary: project.summary?.trim() || playableDraft.data.storyBible.logline,
+    };
     const previewBuildId = workingPreviewBuildId(
       projectId,
       draft.contentHash,
       videoSnapshotHash,
+      {
+        scope,
+        frameProfile: project.frameProfile,
+        defaultLocale: project.defaultLocale,
+        metadata,
+      },
     );
     const coverUrl = await resolveStoryCoverUrl(tx, project.coverAssetId);
 
@@ -284,20 +375,14 @@ export class StoryWorkingPreviewService {
       buildId: previewBuildId,
       sourceDraftRevision: draft.revision,
       channel: 'preview',
-      // Previewing a chapter starts at that chapter, not at the story's first
-      // scene. Without this a multi-chapter work could only ever be walked from
-      // the top, which is why the canvas play-test entry was closed off.
-      scope: chapterScope ?? { kind: 'full' },
+      // Playing a node starts at that node. Playing a chapter starts at its
+      // own entry, or its own first scene when the entry was never saved.
+      scope,
       frameProfile: project.frameProfile,
       defaultLocale: project.defaultLocale,
-      metadata: {
-        title: project.title,
-        summary:
-          project.summary?.trim() || playableDraft.data.storyBible.logline,
-      },
+      metadata,
       draft: playableDraft.data,
       timelines: prepared.map((item) => item.timeline),
-      worlds,
     });
 
     return {
@@ -536,12 +621,46 @@ function workingPreviewBuildId(
   projectId: string,
   draftContentHash: string,
   videoSnapshotHash: string,
+  presentation: {
+    scope: StoryBuildScope;
+    frameProfile: string;
+    defaultLocale: string;
+    metadata: { title: string; summary: string };
+  },
 ): string {
+  // Hosts use this identity to replace the playback session. Scope and project
+  // presentation can change independently of the draft and media selections.
   return `preview:${canonicalJsonHash({
     projectId,
     draftContentHash,
     videoSnapshotHash,
+    presentation,
   })}`;
+}
+
+/**
+ * Where a chapter preview starts. The pressed play button wins. Otherwise the
+ * chapter's own entry, then its own first scene. Never a node from elsewhere.
+ */
+function chapterPlayStart(
+  chapter: { nodeIds: Prisma.JsonValue; entryNodeId: string | null },
+  graphNodeIds: ReadonlySet<string>,
+  sceneId: string | undefined,
+): string | null {
+  const owned = jsonStringIds(chapter.nodeIds).filter((id) =>
+    graphNodeIds.has(id),
+  );
+  if (sceneId && owned.includes(sceneId)) return sceneId;
+  if (chapter.entryNodeId && owned.includes(chapter.entryNodeId)) {
+    return chapter.entryNodeId;
+  }
+  return owned[0] ?? null;
+}
+
+function jsonStringIds(value: Prisma.JsonValue): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function emptyWorkingPreview(
@@ -571,4 +690,17 @@ function previewDiagnostic(
   entityId: string | null,
 ): StoryBuildDiagnosticDto {
   return { severity, code, message, entityType, entityId };
+}
+
+function localizedDraftText(
+  value: Record<string, string>,
+  locale: string,
+): string {
+  return (
+    value[locale]?.trim() ||
+    Object.values(value)
+      .find((text) => text.trim())
+      ?.trim() ||
+    ''
+  );
 }

@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  Animated,
   Pressable,
   StyleSheet,
+  Text,
   View,
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from "react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 import {
   boundsOfExperienceProjectedGeometry,
   createExperiencePressHoldState,
@@ -52,8 +55,6 @@ import { localize } from "../lib/localize";
  * forever waiting for a press that never comes.
  */
 const TIMELINE_CONTROL_IDLE_TIMEOUT_MS = 3_000;
-const INTERACTION = "rgba(77,141,255,0.75)";
-const INTERACTION_FILL = "rgba(77,141,255,0.12)";
 
 type PressHoldPresentation = {
   anchor: ExperienceSpatialAnchor;
@@ -93,6 +94,7 @@ export function ExperienceSpatialLayer({
   runtimeState,
   sceneTimeMs,
   locale,
+  viewerLocale,
   orientation,
   onEvents,
   onRuntimeError,
@@ -103,6 +105,8 @@ export function ExperienceSpatialLayer({
   runtimeState: ExperienceRuntimeState;
   sceneTimeMs: number;
   locale: string;
+  /** Viewer UI language for gesture hints. Content copy still uses `locale`. */
+  viewerLocale?: string;
   orientation: ExperienceOrientation;
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
   onRuntimeError: (message: string) => void;
@@ -273,6 +277,7 @@ export function ExperienceSpatialLayer({
   useEffect(() => {
     const timedOutEvents = scene.gestures.flatMap((gesture): ExperienceRuntimeEvent[] => {
       if (
+        gesture.holdFrame ||
         !gesture.activeWindow ||
         sceneTimeMs < gesture.activeWindow.endMs ||
         settledRef.current.has(gesture.gestureId) ||
@@ -292,6 +297,16 @@ export function ExperienceSpatialLayer({
     if (timedOutEvents.length > 0) onEvents(timedOutEvents);
   }, [markGestureSettled, onEvents, scene.gestures, sceneHandlesGestureEvent, sceneTimeMs]);
 
+  useEffect(() => {
+    for (const gesture of scene.gestures) {
+      if (!gesture.holdFrame || !gesture.activeWindow) continue;
+      handleGateStateChange(
+        gesture.gestureId,
+        !settledRef.current.has(gesture.gestureId) && sceneTimeMs >= gesture.activeWindow.endMs
+      );
+    }
+  }, [handleGateStateChange, scene.gestures, sceneTimeMs, settledGestureIds]);
+
   return (
     <View ref={layerRef} pointerEvents="box-none" style={styles.layer} onLayout={handleLayout}>
       {presentations.map((presentation) => (
@@ -301,6 +316,7 @@ export function ExperienceSpatialLayer({
           runtimeState={runtimeState}
           sceneTimeMs={sceneTimeMs}
           layerOriginRef={layerOriginRef}
+          locale={viewerLocale ?? locale}
           onEvents={emitGestureEvents}
           onRuntimeError={onRuntimeError}
           onGateStateChange={
@@ -314,6 +330,7 @@ export function ExperienceSpatialLayer({
         <TapControl
           key={presentation.gestureId}
           presentation={presentation}
+          locale={viewerLocale ?? locale}
           onEvents={emitGestureEvents}
         />
       ))}
@@ -321,6 +338,7 @@ export function ExperienceSpatialLayer({
         <SwipeControl
           key={presentation.gesture.gestureId}
           presentation={presentation}
+          locale={viewerLocale ?? locale}
           onEvents={emitGestureEvents}
         />
       ))}
@@ -330,9 +348,11 @@ export function ExperienceSpatialLayer({
 
 function TapControl({
   presentation,
+  locale,
   onEvents,
 }: {
   presentation: TapPresentation;
+  locale: string;
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
 }) {
   const bounds = hotspotBounds(presentation.geometry, presentation.transform);
@@ -351,18 +371,19 @@ function TapControl({
           onEvents([{ type: "gesture.completed", sourceId: presentation.gestureId, payload: {} }])
         }
         style={StyleSheet.absoluteFill}
-      >
-        <View style={styles.hotspotChrome} />
-      </Pressable>
+      />
+      <GestureCue kind="tap" label={presentation.label} locale={locale} />
     </HotspotFrame>
   );
 }
 
 function SwipeControl({
   presentation,
+  locale,
   onEvents,
 }: {
   presentation: SwipePresentation;
+  locale: string;
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
 }) {
   const pointerRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
@@ -429,9 +450,13 @@ function SwipeControl({
           });
         }}
         onResponderTerminate={cancelPointer}
-      >
-        <View style={styles.hotspotChrome} />
-      </View>
+      />
+      <GestureCue
+        kind="swipe"
+        label={presentation.label}
+        direction={presentation.gesture.directions[0]}
+        locale={locale}
+      />
     </HotspotFrame>
   );
 }
@@ -441,6 +466,7 @@ function PressHoldControl({
   runtimeState,
   sceneTimeMs,
   layerOriginRef,
+  locale,
   onEvents,
   onRuntimeError,
   onGateStateChange,
@@ -449,6 +475,7 @@ function PressHoldControl({
   runtimeState: ExperienceRuntimeState;
   sceneTimeMs: number;
   layerOriginRef: { current: { x: number; y: number } };
+  locale: string;
   onEvents: (events: readonly ExperienceRuntimeEvent[]) => void;
   onRuntimeError: (message: string) => void;
   onGateStateChange?: (gating: boolean) => void;
@@ -529,7 +556,7 @@ function PressHoldControl({
     setTimelinePressed(true);
   };
 
-  const stopTimelinePress = () => {
+  const stopTimelinePress = useCallback(() => {
     if (!timelinePressedRef.current) return;
     timelinePressedRef.current = false;
     setTimelinePressed(false);
@@ -545,7 +572,7 @@ function PressHoldControl({
         },
       },
     ]);
-  };
+  }, [gesture.durationMs, gesture.gestureId, onEvents, timelineProgress, timelineResolved]);
 
   useEffect(() => {
     latestRef.current = { gesture, runtimeState, sceneTimeMs };
@@ -631,7 +658,7 @@ function PressHoldControl({
     pointerInsideRef.current = true;
     step(0);
     ensureAnimationFrame();
-  }, [ensureAnimationFrame, step, timelineControl, timelineProgress]);
+  }, [ensureAnimationFrame, step, stopTimelinePress, timelineControl]);
 
   useEffect(
     () => () => {
@@ -688,25 +715,224 @@ function PressHoldControl({
         }}
         onResponderTerminate={stopPress}
       >
-        <View style={styles.holdStage} pointerEvents="none">
-          <View
-            style={[
-              styles.holdRing,
-              displayPressing && styles.holdRingPressing,
-              displayCompleted && styles.holdRingCompleted,
-            ]}
-          >
-            <View
-              style={[
-                styles.holdCore,
-                presentation.appearance === "target" && styles.holdTarget,
-                { opacity: 0.35 + displayProgress * 0.65 },
-              ]}
-            />
-          </View>
-        </View>
+        <GestureCue
+          kind="press-hold"
+          label={presentation.label}
+          locale={locale}
+          progress={displayProgress}
+          pressing={displayPressing}
+          completed={displayCompleted}
+          marked={presentation.appearance === "target"}
+        />
       </View>
     </HotspotFrame>
+  );
+}
+
+type GestureCueDirection = "up" | "down" | "left" | "right";
+
+function gestureCueHint(
+  kind: "tap" | "press-hold" | "swipe",
+  direction: GestureCueDirection,
+  locale: string
+): string {
+  const traditional = /zh-(HK|TW|Hant)/i.test(locale);
+  const chinese = /^zh/i.test(locale);
+  if (!chinese) {
+    if (kind === "tap") return "Tap";
+    if (kind === "press-hold") return "Hold";
+    return { up: "Swipe up", down: "Swipe down", left: "Swipe left", right: "Swipe right" }[
+      direction
+    ];
+  }
+  if (kind === "tap") return traditional ? "點擊" : "点击";
+  if (kind === "press-hold") return traditional ? "長按" : "长按";
+  return {
+    up: traditional ? "向上滑動" : "向上滑动",
+    down: traditional ? "向下滑動" : "向下滑动",
+    left: traditional ? "向左滑動" : "向左滑动",
+    right: traditional ? "向右滑動" : "向右滑动",
+  }[direction];
+}
+
+function SwipeTrack({ direction }: { direction: GestureCueDirection }) {
+  const travel = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(travel, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.timing(travel, { toValue: 1, duration: 1050, useNativeDriver: true }),
+        Animated.delay(220),
+      ])
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [travel]);
+  const vertical = direction === "up" || direction === "down";
+  const rotation = { right: "0deg", down: "90deg", left: "180deg", up: "-90deg" }[direction];
+  const translateX = travel.interpolate({ inputRange: [0, 1], outputRange: [0, 52] });
+  const opacity = travel.interpolate({
+    inputRange: [0, 0.12, 0.74, 0.9, 1],
+    outputRange: [0, 1, 1, 0, 0],
+  });
+  return (
+    <View style={[styles.cueTrackFrame, vertical && styles.cueTrackFrameVertical]}>
+      <View style={[styles.cueTrack, { transform: [{ rotate: rotation }] }]}>
+        <View style={styles.cueTrackLine} />
+        <View style={styles.cueTrackArrow}>
+          <Svg width={16} height={16} viewBox="0 0 24 24">
+            <Path
+              d="M9 6.5 15 12l-6 5.5"
+              stroke="white"
+              strokeWidth={2}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        </View>
+        <Animated.View style={[styles.cueKnob, { opacity, transform: [{ translateX }] }]}>
+          <View style={styles.cueKnobDot} />
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
+function GestureCue({
+  kind,
+  label,
+  direction = "up",
+  locale = "zh-CN",
+  progress = 0,
+  pressing = false,
+  completed = false,
+  marked = false,
+}: {
+  kind: "tap" | "press-hold" | "swipe";
+  label: string;
+  direction?: GestureCueDirection;
+  locale?: string;
+  progress?: number;
+  pressing?: boolean;
+  completed?: boolean;
+  marked?: boolean;
+}) {
+  return (
+    <View pointerEvents="none" style={styles.cue}>
+      <View
+        style={[
+          styles.cueStack,
+          pressing && { transform: [{ scale: 1.05 }] },
+          completed && { transform: [{ scale: 1.1 }] },
+        ]}
+      >
+        {kind === "swipe" ? (
+          <SwipeTrack direction={direction} />
+        ) : (
+          <View style={styles.cueRing}>
+            {kind === "press-hold" ? <HoldArc progress={progress} /> : null}
+            <View style={[styles.cueDisc, marked && styles.cueDiscMarked]}>
+              <GestureGlyph kind={kind} direction={direction} />
+            </View>
+          </View>
+        )}
+        <View style={styles.cueCaption}>
+          <Text style={styles.cueLabel} numberOfLines={1}>
+            {label}
+          </Text>
+          <Text style={styles.cueHint} numberOfLines={1}>
+            {gestureCueHint(kind, direction, locale)}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function HoldArc({ progress }: { progress: number }) {
+  const radius = 26;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = Math.min(1, Math.max(0, progress));
+  return (
+    <View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { transform: [{ rotate: "-90deg" }] }]}
+    >
+      <Svg width={56} height={56}>
+        <Circle
+          cx={28}
+          cy={28}
+          r={radius}
+          stroke="rgba(255,255,255,0.35)"
+          strokeWidth={2}
+          fill="none"
+        />
+        <Circle
+          cx={28}
+          cy={28}
+          r={radius}
+          stroke="white"
+          strokeWidth={2}
+          fill="none"
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={circumference * (1 - clamped)}
+          strokeLinecap="round"
+        />
+      </Svg>
+    </View>
+  );
+}
+
+function GestureGlyph({
+  kind,
+  direction,
+}: {
+  kind: "tap" | "press-hold" | "swipe";
+  direction: GestureCueDirection;
+}) {
+  const rotation = { up: "0deg", right: "90deg", down: "180deg", left: "-90deg" }[direction];
+  if (kind === "swipe") {
+    return (
+      <View style={{ transform: [{ rotate: rotation }] }}>
+        <Svg width={24} height={24} viewBox="0 0 24 24">
+          <Path
+            d="M12 19V6M7 10.5 12 5.5l5 5"
+            stroke="white"
+            strokeWidth={1.7}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </Svg>
+      </View>
+    );
+  }
+  if (kind === "tap") {
+    return (
+      <Svg width={24} height={24} viewBox="0 0 24 24">
+        <Path
+          d="M12 11.4V5.2a1.45 1.45 0 0 1 2.9 0V12M14.9 11.2V8.4a1.25 1.25 0 0 1 2.5 0v4.6c0 3.1-2.2 5.2-5.4 5.2-2.6 0-4.4-1.5-5.1-3.5L6.2 12a1.25 1.25 0 0 1 2.2-1.1M8.4 6.6a4.6 4.6 0 0 1 .2-2.4M6.2 7.2a6.4 6.4 0 0 1 .2-2"
+          stroke="white"
+          strokeWidth={1.7}
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </Svg>
+    );
+  }
+  return (
+    <Svg width={24} height={24} viewBox="0 0 24 24">
+      <Path
+        d="M8.2 11V6.4a1.35 1.35 0 0 1 2.7 0V11M10.9 10.4V5.2a1.35 1.35 0 0 1 2.7 0v5.4M13.6 10.8V7.2a1.35 1.35 0 0 1 2.7 0v5.2c0 3.4-2.2 5.8-5.6 5.8-2.6 0-4.4-1.4-5.3-3.4L4.4 12.2a1.3 1.3 0 0 1 2.4-1.1L8.2 13"
+        stroke="white"
+        strokeWidth={1.7}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 
@@ -953,41 +1179,116 @@ const styles = StyleSheet.create({
   },
   hotspot: {
     position: "absolute",
-    overflow: "hidden",
+    overflow: "visible",
   },
-  hotspotChrome: {
-    ...StyleSheet.absoluteFill,
-    borderWidth: 1,
-    borderColor: INTERACTION,
-    backgroundColor: INTERACTION_FILL,
-  },
-  holdStage: {
+  cue: {
     ...StyleSheet.absoluteFill,
     alignItems: "center",
     justifyContent: "center",
   },
-  holdRing: {
-    width: 48,
-    height: 48,
+  cueStack: {
+    alignItems: "center",
+    maxWidth: "100%",
+  },
+  cueRing: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    padding: 4,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.55)",
+  },
+  cueDisc: {
+    width: "100%",
+    height: "100%",
     borderRadius: 24,
-    padding: 3,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.72)",
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(255,255,255,0.35)",
   },
-  holdRingPressing: {
-    transform: [{ scale: 1.05 }],
-  },
-  holdRingCompleted: {
-    transform: [{ scale: 1.1 }],
-  },
-  holdCore: {
-    flex: 1,
-    borderRadius: 21,
-    backgroundColor: "rgba(77,141,255,0.55)",
-  },
-  holdTarget: {
+  cueDiscMarked: {
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.55)",
+    borderColor: "rgba(255,255,255,0.8)",
+  },
+  cueTrackFrame: {
+    width: 120,
+    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cueTrackFrameVertical: {
+    width: 56,
+    height: 120,
+  },
+  cueTrack: {
+    width: 112,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(0,0,0,0.72)",
+    overflow: "hidden",
+  },
+  cueTrackLine: {
+    position: "absolute",
+    left: 14,
+    right: 20,
+    top: 19,
+    height: 2,
+    backgroundColor: "rgba(255,255,255,0.7)",
+  },
+  cueTrackArrow: {
+    position: "absolute",
+    right: 4,
+    top: 12,
+  },
+  cueKnob: {
+    position: "absolute",
+    left: 4,
+    top: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "white",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.8)",
+  },
+  cueKnobDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "rgba(0,0,0,0.75)",
+  },
+  cueCaption: {
+    marginTop: 10,
+    maxWidth: "100%",
+    alignItems: "center",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: "rgba(0,0,0,0.78)",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  cueLabel: {
+    maxWidth: "100%",
+    overflow: "hidden",
+    color: "white",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  cueHint: {
+    maxWidth: "100%",
+    overflow: "hidden",
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
   },
 });

@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
-import { act, useState } from "react";
+import { act, useLayoutEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { UIMessage } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useCopilotHistory } from "./use-copilot-history";
+
+let retained: ReturnType<typeof useCopilotHistory<UIMessage>>;
 
 interface PendingHistoryRequest {
   input: RequestInfo | URL;
@@ -31,6 +33,9 @@ function Harness({
     mode,
     projectId,
     setMessages,
+  });
+  useLayoutEffect(() => {
+    retained = history;
   });
   return (
     <div>
@@ -80,6 +85,21 @@ describe("useCopilotHistory", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each(["retry", "reset"] as const)(
+    "rejects retained %s callbacks after unmount",
+    async (action) => {
+      await act(async () => root.render(<Harness conversationId="conversation-a" />));
+      const callback = retained[action];
+      await act(async () => root.render(null));
+      // A stale caller must not start another request; deliberately do not await
+      // an unfixed callback because its mocked HTTP request remains pending.
+      await act(async () => {
+        void callback();
+      });
+      expect(requests).toHaveLength(1);
+    }
+  );
+
   it("cannot apply a late history response from a previous conversation", async () => {
     await act(async () => {
       root.render(<Harness conversationId="conversation-a" />);
@@ -127,6 +147,90 @@ describe("useCopilotHistory", () => {
     });
     expect(container.querySelector("[data-status]")?.textContent).toBe("ready");
     expect(container.querySelector("[data-message]")?.textContent).toBe("message-b");
+  });
+
+  it.each([200, 409])(
+    "ignores an old reset response (%s) after conversation replacement",
+    async (status) => {
+      const canonical = (conversationId: string) => ({
+        conversationId,
+        messages: [],
+        revision: 0,
+        sessionId: null,
+        status: "ready",
+        resetAvailable: true,
+      });
+      await act(async () => {
+        root.render(<Harness conversationId="conversation-a" />);
+      });
+      await act(async () => {
+        requests[0]?.resolve(Response.json(canonical("conversation-a")));
+      });
+      await act(async () => {
+        (container.querySelector("[data-reset]") as HTMLButtonElement).click();
+      });
+      await act(async () => {
+        requests[1]?.resolve(Response.json(canonical("conversation-a")));
+      });
+      expect(String(requests[2]?.input)).toBe("/aurora/copilot/reset");
+      await act(async () => {
+        root.render(<Harness conversationId="conversation-b" />);
+      });
+      const replacement = requests[3];
+      await act(async () => {
+        requests[2]?.resolve(Response.json({ message: "old reset" }, { status }));
+      });
+      expect(requests).toHaveLength(4);
+      expect(replacement?.init?.signal?.aborted).toBe(false);
+      await act(async () => {
+        replacement?.resolve(Response.json(canonical("conversation-b")));
+      });
+      expect(container.querySelector("[data-status]")?.textContent).toBe("ready");
+      expect(container.querySelector("[data-error]")?.textContent).toBe("localized-fallback");
+    }
+  );
+
+  it("cancels an in-flight reset on departure and allows the replacement conversation to reset", async () => {
+    const canonical = (conversationId: string) => ({
+      conversationId,
+      messages: [],
+      revision: 0,
+      sessionId: null,
+      status: "ready",
+      resetAvailable: true,
+    });
+    await act(async () => {
+      root.render(<Harness conversationId="conversation-a" />);
+    });
+    await act(async () => {
+      requests[0]?.resolve(Response.json(canonical("conversation-a")));
+    });
+    await act(async () => {
+      (container.querySelector("[data-reset]") as HTMLButtonElement).click();
+    });
+    await act(async () => {
+      requests[1]?.resolve(Response.json(canonical("conversation-a")));
+    });
+    await act(async () => {
+      root.render(<Harness conversationId="conversation-b" />);
+    });
+    expect(requests[2]?.init?.signal?.aborted).toBe(true);
+    await act(async () => {
+      requests[3]?.resolve(Response.json(canonical("conversation-b")));
+    });
+    await act(async () => {
+      (container.querySelector("[data-reset]") as HTMLButtonElement).click();
+    });
+    expect(requests).toHaveLength(5);
+    await act(async () => {
+      requests[4]?.resolve(Response.json(canonical("conversation-b")));
+    });
+    expect(String(requests[5]?.input)).toBe("/aurora/copilot/reset");
+    await act(async () => {
+      requests[2]?.resolve(Response.json({ reset: true }));
+    });
+    expect(requests).toHaveLength(6);
+    expect(requests[5]?.init?.signal?.aborted).toBe(false);
   });
 
   it("keeps local contract failures behind the localized UI fallback", async () => {

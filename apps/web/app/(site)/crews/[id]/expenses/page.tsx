@@ -48,6 +48,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
     definition: blank(),
     submissionStatus: null,
   }));
+  const savedDraft = useRef<Draft | undefined>(undefined);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const uploadIdentity = useRef<string | null>(null);
   const uploadedBytes = useRef(false);
@@ -89,6 +90,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
   });
   const frozen = busy || draft.submissionStatus === "pending";
   function load(value?: Draft) {
+    savedDraft.current = value;
     setReceiptFile(null);
     uploadIdentity.current = null;
     uploadedBytes.current = false;
@@ -189,7 +191,8 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
           },
         });
         if (!controller.signal.aborted) {
-          setDraft({ ...saved, submissionStatus: null });
+          savedDraft.current = { ...saved, submissionStatus: null };
+          setDraft(savedDraft.current);
           setDirty(false);
         }
       } else {
@@ -222,14 +225,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
         {dirty ? (
           <div>
             <p className="text-sm">{t("unsaved")}</p>
-            <Button
-              disabled={busy}
-              onClick={() =>
-                load(
-                  list.data?.pages.flatMap((page) => page.items).find((row) => row.id === draft.id)
-                )
-              }
-            >
+            <Button disabled={busy} onClick={() => load(savedDraft.current)}>
               {t("discard")}
             </Button>
           </div>

@@ -1,6 +1,8 @@
 "use client";
+import { IpChannelPanel } from "./channel-panel";
 
-import { useMemo, useState } from "react";
+import { useRef, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import Link from "next/link";
 import {
   IconAlertTriangle,
@@ -52,6 +54,7 @@ import type {
   ReportRow,
 } from "./types";
 import { emptyIps, emptyIpTaxonomy } from "./types";
+import { IpPublishersSection } from "./ip-publishers-section";
 import { IpRevenueSection } from "./ip-revenue-section";
 
 // shadcn SelectItem value cannot be an empty string, so the "全部/默认" filter
@@ -77,11 +80,14 @@ export function IpTitlesPanel({
   const [genreCode, setGenreCode] = useState("");
   const [locale, setLocale] = useState("");
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const { busy: loading, begin: beginList } = useAdminOperation();
+  const loadingMore = loading;
+  const [loadedQuery, setLoadedQuery] = useState("");
   const [error, setError] = useState<string | null>(initialError);
   const [selectedIp, setSelectedIp] = useState<AdminIpDetail | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const { busy: detailLoading, begin: beginDetail } = useAdminOperation();
+  const detailRead = useRef<ReturnType<typeof beginDetail>>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const terms = taxonomy ?? emptyIpTaxonomy;
   const genreTerms = terms.items.filter((term) => term.type === "genre");
@@ -108,49 +114,78 @@ export function IpTitlesPanel({
   }
 
   async function refreshIps() {
-    setLoading(true);
+    const operation = beginList("read");
+    if (!operation) return;
+    const params = queryString();
     setError(null);
     try {
-      setIps(await requestEnvelope<AdminIpsData>(`/api/admin/ip-commerce/ips${queryString()}`));
+      const next = await requestEnvelope<AdminIpsData>(`/api/admin/ip-commerce/ips${params}`, {
+        signal: operation.signal,
+      });
+      if (operation.current()) {
+        setIps(next);
+        setLoadedQuery(params);
+      }
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   async function loadMoreIps() {
-    if (!ips.nextCursor || loadingMore) return;
-    setLoadingMore(true);
+    if (!ips.nextCursor) return;
+    if (queryString() !== loadedQuery) {
+      await refreshIps();
+      return;
+    }
+    const operation = beginList("read");
+    if (!operation) return;
     setError(null);
     try {
       const next = await requestEnvelope<AdminIpsData>(
-        `/api/admin/ip-commerce/ips${queryString({ cursor: ips.nextCursor })}`
+        `/api/admin/ip-commerce/ips${queryString({ cursor: ips.nextCursor })}`,
+        { signal: operation.signal }
       );
-      setIps((current) => ({
-        items: [...current.items, ...next.items],
-        nextCursor: next.nextCursor,
-      }));
+      if (operation.current())
+        setIps((current) => ({
+          items: [...current.items, ...next.items],
+          nextCursor: next.nextCursor,
+        }));
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoadingMore(false);
+      operation.finish();
     }
   }
 
   async function openIpDetail(ipId: string) {
-    setDetailLoading(true);
+    const operation = beginDetail("read");
+    if (!operation) return;
+    detailRead.current = operation;
+    setDetailId(ipId);
+    setSelectedIp((current) => (current?.id === ipId ? current : null));
     setDetailError(null);
     try {
       const data = await requestEnvelope<{ ip: AdminIpDetail }>(
-        `/api/admin/ip-commerce/ips/${encodeURIComponent(ipId)}${localeQueryString()}`
+        `/api/admin/ip-commerce/ips/${encodeURIComponent(ipId)}${localeQueryString()}`,
+        { signal: operation.signal }
       );
-      setSelectedIp(data.ip);
+      if (operation.current()) setSelectedIp(data.ip);
     } catch (err) {
-      setDetailError(toErrorMessage(err));
+      if (operation.current()) setDetailError(toErrorMessage(err));
     } finally {
-      setDetailLoading(false);
+      operation.finish();
     }
+  }
+
+  function closeIpDetail() {
+    detailRead.current?.cancel();
+    detailRead.current?.finish();
+    detailRead.current = null;
+    setDetailId(null);
+    setSelectedIp(null);
+    setDetailError(null);
   }
 
   async function updateSelectedIpPublication(input: {
@@ -159,16 +194,27 @@ export function IpTitlesPanel({
     reason: string;
   }) {
     if (!selectedIp) return;
-    const data = await requestEnvelope<{ ip: AdminIpDetail }>(
-      `/api/admin/ip-commerce/ips/${encodeURIComponent(selectedIp.id)}/publication`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...input, expectedVersion: selectedIp.version }),
-      }
-    );
-    setSelectedIp(data.ip);
-    await refreshIps();
+    const operation = beginDetail();
+    if (!operation) return;
+    detailRead.current = operation;
+    try {
+      const data = await requestEnvelope<{ ip: AdminIpDetail }>(
+        `/api/admin/ip-commerce/ips/${encodeURIComponent(selectedIp.id)}/publication`,
+        {
+          method: "PATCH",
+          signal: operation.signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ...input, expectedVersion: selectedIp.version }),
+        }
+      );
+      if (!operation.current()) return;
+      setSelectedIp(data.ip);
+      await refreshIps();
+    } catch (err) {
+      if (operation.current()) throw err;
+    } finally {
+      operation.finish();
+    }
   }
 
   async function resolveSelectedReport(
@@ -180,179 +226,193 @@ export function IpTitlesPanel({
       resolutionNote?: string;
     }
   ) {
-    await requestEnvelope<unknown>(
-      `/api/admin/ip-commerce/reports/${encodeURIComponent(reportId)}`,
-      {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-      }
-    );
-    if (selectedIp) await openIpDetail(selectedIp.id);
-    await refreshIps();
+    if (!selectedIp) return;
+    const operation = beginDetail();
+    if (!operation) return;
+    detailRead.current = operation;
+    try {
+      await requestEnvelope<unknown>(
+        `/api/admin/ip-commerce/reports/${encodeURIComponent(reportId)}`,
+        {
+          method: "PATCH",
+          signal: operation.signal,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+        }
+      );
+      if (!operation.current()) return;
+      const data = await requestEnvelope<{ ip: AdminIpDetail }>(
+        `/api/admin/ip-commerce/ips/${encodeURIComponent(selectedIp.id)}${localeQueryString()}`,
+        { signal: operation.signal }
+      );
+      if (!operation.current()) return;
+      setSelectedIp(data.ip);
+      await refreshIps();
+    } catch (err) {
+      if (operation.current()) throw err;
+    } finally {
+      operation.finish();
+    }
   }
 
-  const columns = useMemo<ColumnDef<IpRow, unknown>[]>(
-    () => [
-      {
-        accessorKey: "title",
-        header: "IP",
-        cell: ({ row }) => {
-          const ip = row.original;
-          return (
-            <div className="flex items-start gap-3">
-              <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500">
-                <IconBook2 className="size-4" />
-              </div>
-              <div className="min-w-0">
-                <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
-                  {ip.title}
-                </p>
-                <p className="mt-0.5 max-w-[260px] truncate text-[12px] text-slate-500">
-                  {ip.slug ?? ip.id}
-                </p>
-              </div>
+  const columns: ColumnDef<IpRow, unknown>[] = [
+    {
+      accessorKey: "title",
+      header: "IP",
+      cell: ({ row }) => {
+        const ip = row.original;
+        return (
+          <div className="flex items-start gap-3">
+            <div className="grid size-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500">
+              <IconBook2 className="size-4" />
             </div>
-          );
-        },
-      },
-      {
-        accessorKey: "roomNumber",
-        header: "Room number",
-        enableSorting: false,
-        cell: ({ row }) => (
-          <span className="select-text font-mono text-xs tabular-nums text-slate-600">
-            {row.original.roomNumber}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "status",
-        header: "状态",
-        cell: ({ row }) => {
-          const ip = row.original;
-          return (
-            <>
-              <IpStatusPill status={ip.status} />
-              <p className="mt-1 text-[11px] text-slate-500">
-                {visibilityLabel(ip.listingVisibility)}
+            <div className="min-w-0">
+              <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
+                {ip.title}
               </p>
-            </>
-          );
-        },
-      },
-      {
-        id: "pricing",
-        header: "定价",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const ip = row.original;
-          return (
-            <>
-              <p className="text-sm font-medium text-slate-950">
-                {ip.pricing.bundle
-                  ? `${formatAmount(ip.pricing.bundle.amount)} ${currencyLabel(
-                      ip.pricing.bundle.currency
-                    )}`
-                  : "免费/未定价"}
+              <p className="text-xs text-slate-500">
+                {ip.channelType === "ip" ? "IP Channel" : "Community Channel"}
               </p>
-              <p className="text-[12px] text-slate-500">{ip.pricing.activePriceCount} 条有效价格</p>
-            </>
-          );
-        },
-      },
-      {
-        id: "sales",
-        header: "销售/权益",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const ip = row.original;
-          return (
-            <>
-              <p className="text-sm text-slate-700">{ip.counts.purchaseOrders} 订单</p>
-              <p className="text-[12px] text-slate-500">{ip.counts.entitlements} 权益</p>
-            </>
-          );
-        },
-      },
-      {
-        id: "review",
-        header: "审核风险",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const ip = row.original;
-          return (
-            <>
-              {ip.review.needsAttention || ip.review.openReportCount ? (
-                <StatusPill tone={ip.review.openReportCount ? "risk" : "warn"}>
-                  {ip.review.openReportCount ? `${ip.review.openReportCount} 举报` : "待处理"}
-                </StatusPill>
-              ) : (
-                <StatusPill tone="success">正常</StatusPill>
-              )}
-              <p className="mt-1 text-[11px] text-slate-500">v{ip.version}</p>
-            </>
-          );
-        },
-      },
-      {
-        id: "content",
-        header: "内容",
-        enableSorting: false,
-        cell: ({ row }) => {
-          const ip = row.original;
-          return (
-            <>
-              <p className="max-w-[180px] truncate text-sm text-slate-700">
-                {ip.genres.length ? ip.genres.join(" / ") : "未设置题材"}
+              <p className="mt-0.5 max-w-[260px] truncate text-[12px] text-slate-500">
+                {ip.slug ?? ip.id}
               </p>
-              <p className="text-[12px] text-slate-500">
-                {ip.counts.episodes} 集 · {ip.localization.locale}
-                {ip.localization.isFallback ? " · 回退" : ""}
-              </p>
-            </>
-          );
-        },
+            </div>
+          </div>
+        );
       },
-      {
-        accessorKey: "updatedAt",
-        header: "更新时间",
-        cell: ({ row }) => {
-          const ip = row.original;
-          return (
-            <>
-              <p className="text-[12px] text-slate-700">{formatDate(ip.updatedAt)}</p>
-              <p className="text-[11px] text-slate-500">
-                {ip.publishedAt ? `发布 ${formatDate(ip.publishedAt)}` : "未发布"}
-              </p>
-            </>
-          );
-        },
+    },
+    {
+      accessorKey: "roomNumber",
+      header: "Room number",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="select-text font-mono text-xs tabular-nums text-slate-600">
+          {row.original.roomNumber}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "status",
+      header: "状态",
+      cell: ({ row }) => {
+        const ip = row.original;
+        return (
+          <>
+            <IpStatusPill status={ip.status} />
+            <p className="mt-1 text-[11px] text-slate-500">
+              {visibilityLabel(ip.listingVisibility)}
+            </p>
+          </>
+        );
       },
-      {
-        id: "actions",
-        header: "操作",
-        enableSorting: false,
-        meta: { pin: "right" },
-        cell: ({ row }) => (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void openIpDetail(row.original.id)}
-            disabled={detailLoading}
-          >
-            <IconEye className="size-3.5" />
-            查看
-          </Button>
-        ),
+    },
+    {
+      id: "pricing",
+      header: "定价",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const ip = row.original;
+        return (
+          <>
+            <p className="text-sm font-medium text-slate-950">
+              {ip.pricing.bundle
+                ? `${formatAmount(ip.pricing.bundle.amount)} ${currencyLabel(
+                    ip.pricing.bundle.currency
+                  )}`
+                : "免费/未定价"}
+            </p>
+            <p className="text-[12px] text-slate-500">{ip.pricing.activePriceCount} 条有效价格</p>
+          </>
+        );
       },
-    ],
-    // openIpDetail is a render-stable closure used only in an onClick; the
-    // column defs only need to rebuild when the disabled state changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [detailLoading]
-  );
+    },
+    {
+      id: "sales",
+      header: "销售/权益",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const ip = row.original;
+        return (
+          <>
+            <p className="text-sm text-slate-700">{ip.counts.purchaseOrders} 订单</p>
+            <p className="text-[12px] text-slate-500">{ip.counts.entitlements} 权益</p>
+          </>
+        );
+      },
+    },
+    {
+      id: "review",
+      header: "审核风险",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const ip = row.original;
+        return (
+          <>
+            {ip.review.needsAttention || ip.review.openReportCount ? (
+              <StatusPill tone={ip.review.openReportCount ? "risk" : "warn"}>
+                {ip.review.openReportCount ? `${ip.review.openReportCount} 举报` : "待处理"}
+              </StatusPill>
+            ) : (
+              <StatusPill tone="success">正常</StatusPill>
+            )}
+            <p className="mt-1 text-[11px] text-slate-500">v{ip.version}</p>
+          </>
+        );
+      },
+    },
+    {
+      id: "content",
+      header: "内容",
+      enableSorting: false,
+      cell: ({ row }) => {
+        const ip = row.original;
+        return (
+          <>
+            <p className="max-w-[180px] truncate text-sm text-slate-700">
+              {ip.genres.length ? ip.genres.join(" / ") : "未设置题材"}
+            </p>
+            <p className="text-[12px] text-slate-500">
+              {ip.counts.episodes} 集 · {ip.localization.locale}
+              {ip.localization.isFallback ? " · 回退" : ""}
+            </p>
+          </>
+        );
+      },
+    },
+    {
+      accessorKey: "updatedAt",
+      header: "更新时间",
+      cell: ({ row }) => {
+        const ip = row.original;
+        return (
+          <>
+            <p className="text-[12px] text-slate-700">{formatDate(ip.updatedAt)}</p>
+            <p className="text-[11px] text-slate-500">
+              {ip.publishedAt ? `发布 ${formatDate(ip.publishedAt)}` : "未发布"}
+            </p>
+          </>
+        );
+      },
+    },
+    {
+      id: "actions",
+      header: "操作",
+      enableSorting: false,
+      meta: { pin: "right" },
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void openIpDetail(row.original.id)}
+          disabled={detailLoading}
+        >
+          <IconEye className="size-3.5" />
+          查看
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -482,15 +542,16 @@ export function IpTitlesPanel({
       </section>
 
       <IpDetailDrawer
+        key={detailId ?? "closed"}
         ip={selectedIp}
         locale={locale}
         loading={detailLoading}
         error={detailError}
-        onClose={() => {
-          setSelectedIp(null);
-          setDetailError(null);
+        onClose={closeIpDetail}
+        onRefresh={(ipId) => {
+          void openIpDetail(ipId);
+          void refreshIps();
         }}
-        onRefresh={(ipId) => void openIpDetail(ipId)}
         onUpdatePublication={updateSelectedIpPublication}
         onResolveReport={resolveSelectedReport}
       />
@@ -549,7 +610,7 @@ function IpDetailDrawer({
   const publishReadiness = ip ? getPublishReadiness(ip) : null;
 
   function updateDraft(next: Partial<NonNullable<typeof draft>>) {
-    if (!ip) return;
+    if (!ip || saving || loading || reportSavingId) return;
     setDraft({
       ipId: ip.id,
       status: status ?? "in_review",
@@ -560,7 +621,7 @@ function IpDetailDrawer({
   }
 
   async function submitAction(nextStatus?: IpStatus) {
-    if (!ip || saving) return;
+    if (!ip || saving || loading || reportSavingId) return;
     const finalStatus = nextStatus ?? status ?? "in_review";
     const draftVisibility = visibility ?? "private";
     const finalVisibility =
@@ -598,7 +659,7 @@ function IpDetailDrawer({
       resolutionNote?: string;
     }
   ) {
-    if (reportSavingId) return;
+    if (reportSavingId || saving || loading) return;
     setReportSavingId(report.id);
     setActionError(null);
     try {
@@ -655,6 +716,13 @@ function IpDetailDrawer({
           {error ? <ErrorBanner message={error} /> : null}
           {ip ? (
             <div className="space-y-4">
+              <IpChannelPanel
+                key={`${ip.id}:${ip.version}`}
+                ipId={ip.id}
+                version={ip.version}
+                channelType={ip.channelType}
+                onSaved={() => onRefresh(ip.id)}
+              />
               <Link
                 href={`/ip/titles/${encodeURIComponent(ip.id)}/production`}
                 className="inline-block text-sm underline"
@@ -662,6 +730,10 @@ function IpDetailDrawer({
                 Production review evidence
               </Link>
               <section className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-2">
+                <DetailCell
+                  label="Channel"
+                  value={ip.channelType === "ip" ? "IP Channel" : "Community Channel"}
+                />
                 <DetailCell label="状态" value={statusLabel(ip.status)} />
                 <DetailCell label="可见性" value={visibilityLabel(ip.listingVisibility)} />
                 <DetailCell
@@ -677,6 +749,13 @@ function IpDetailDrawer({
                   {ip.summary || ip.description || "暂无简介"}
                 </p>
               </section>
+
+              <IpPublishersSection
+                key={`${ip.id}:publishers:${ip.version}`}
+                ipId={ip.id}
+                assigned={ip.publishers ?? []}
+                onSaved={() => onRefresh(ip.id)}
+              />
 
               {publishReadiness ? (
                 <section className="rounded-xl border border-slate-200 p-4">
@@ -868,7 +947,7 @@ function IpDetailDrawer({
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={Boolean(reportSavingId)}
+                            disabled={Boolean(reportSavingId) || saving || loading}
                             onClick={() =>
                               void submitReportAction(report, {
                                 status: "triaged",
@@ -882,7 +961,7 @@ function IpDetailDrawer({
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={Boolean(reportSavingId)}
+                            disabled={Boolean(reportSavingId) || saving || loading}
                             onClick={() =>
                               void submitReportAction(report, {
                                 status: "dismissed",
@@ -896,7 +975,7 @@ function IpDetailDrawer({
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={Boolean(reportSavingId)}
+                            disabled={Boolean(reportSavingId) || saving || loading}
                             onClick={() =>
                               void submitReportAction(report, {
                                 status: "actioned",
@@ -924,6 +1003,7 @@ function IpDetailDrawer({
                   <label className="space-y-1.5">
                     <span className="text-[12px] font-medium text-slate-600">目标状态</span>
                     <Select
+                      disabled={saving || loading || Boolean(reportSavingId)}
                       value={status ?? "in_review"}
                       onValueChange={(value) => updateDraft({ status: value as IpStatus })}
                     >
@@ -944,6 +1024,7 @@ function IpDetailDrawer({
                   <label className="space-y-1.5">
                     <span className="text-[12px] font-medium text-slate-600">可见性</span>
                     <Select
+                      disabled={saving || loading || Boolean(reportSavingId)}
                       value={visibility ?? "private"}
                       onValueChange={(value) =>
                         updateDraft({ visibility: value as IpRow["listingVisibility"] })
@@ -963,6 +1044,7 @@ function IpDetailDrawer({
                 <label className="mt-3 block space-y-1.5">
                   <span className="text-[12px] font-medium text-slate-600">原因 / 说明</span>
                   <Textarea
+                    disabled={saving || loading || Boolean(reportSavingId)}
                     value={reason}
                     onChange={(event) => updateDraft({ reason: event.target.value })}
                     className="min-h-24"
@@ -975,7 +1057,7 @@ function IpDetailDrawer({
                     type="button"
                     variant="outline"
                     onClick={() => void submitAction("changes_requested")}
-                    disabled={saving}
+                    disabled={saving || loading || Boolean(reportSavingId)}
                   >
                     <IconX className="size-3.5" />
                     退回修改
@@ -984,7 +1066,7 @@ function IpDetailDrawer({
                     type="button"
                     variant="outline"
                     onClick={() => void submitAction("approved")}
-                    disabled={saving}
+                    disabled={saving || loading || Boolean(reportSavingId)}
                   >
                     <IconCheck className="size-3.5" />
                     批准
@@ -992,7 +1074,9 @@ function IpDetailDrawer({
                   <Button
                     type="button"
                     onClick={() => void submitAction("published")}
-                    disabled={saving || !publishReadiness?.ready}
+                    disabled={
+                      saving || loading || Boolean(reportSavingId) || !publishReadiness?.ready
+                    }
                   >
                     <IconCheck className="size-3.5" />
                     发布

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAdminOperation } from "../use-admin-operation";
 import { IconLanguage, IconPlus, IconRefresh, IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { DataTable, type ColumnDef } from "@/components/ui/data-table";
@@ -70,6 +71,7 @@ type TaxonomyFormState = {
   enUS: string;
   zhHK: string;
   description: string;
+  aliasesByLocale: Record<string, string[]>;
 };
 
 export function IpTaxonomyPanel({
@@ -85,7 +87,7 @@ export function IpTaxonomyPanel({
 }) {
   const [taxonomy, setTaxonomy] = useState(initialTaxonomy ?? emptyIpTaxonomy);
   const [locale, setLocale] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(initialError);
 
   const [query, setQuery] = useState("");
@@ -95,7 +97,16 @@ export function IpTaxonomyPanel({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [form, setForm] = useState<TaxonomyFormState>(() => emptyTaxonomyForm());
   const editing = Boolean(form.id);
-  const canSubmit = Boolean(form.zhCN.trim() || form.enUS.trim() || form.zhHK.trim()) && !loading;
+  const displayOrder = Number(form.displayOrder);
+  const validDisplayOrder =
+    form.displayOrder.trim() !== "" &&
+    Number.isInteger(displayOrder) &&
+    displayOrder >= 0 &&
+    displayOrder <= 1_000_000;
+  const canSubmit =
+    Boolean(form.zhCN.trim() || form.enUS.trim() || form.zhHK.trim()) &&
+    validDisplayOrder &&
+    !loading;
 
   const metrics = useMemo(() => {
     const items = taxonomy.items;
@@ -127,72 +138,70 @@ export function IpTaxonomyPanel({
     return text ? `?${text}` : "";
   }
 
+  const readTaxonomy = (nextLocale: string, signal: AbortSignal) =>
+    requestEnvelope<AdminIpTaxonomyData>(
+      `/api/admin/ip-commerce/taxonomy${localeQueryString(nextLocale)}`,
+      { signal }
+    );
+
   async function refreshTaxonomy(nextLocale = locale) {
-    setLoading(true);
+    const operation = begin("read");
+    if (!operation) return;
     setError(null);
     try {
-      setTaxonomy(
-        await requestEnvelope<AdminIpTaxonomyData>(
-          `/api/admin/ip-commerce/taxonomy${localeQueryString(nextLocale)}`
-        )
-      );
+      const next = await readTaxonomy(nextLocale, operation.signal);
+      if (operation.current()) setTaxonomy(next);
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
-  async function createTaxonomyTerm(input: CreateTaxonomyTermDraft): Promise<boolean> {
-    setLoading(true);
-    setError(null);
-    try {
-      await requestEnvelope<{ term: IpTaxonomyTerm }>("/api/admin/ip-commerce/taxonomy", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-      });
-      await refreshTaxonomy();
-      return true;
-    } catch (err) {
-      setError(toErrorMessage(err));
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function updateTaxonomyTerm(
-    termId: string,
-    input: UpdateTaxonomyTermDraft
+  async function saveTaxonomyTerm(
+    termId: string | null,
+    input: CreateTaxonomyTermDraft | UpdateTaxonomyTermDraft
   ): Promise<boolean> {
-    setLoading(true);
+    const operation = begin();
+    if (!operation) return false;
     setError(null);
     try {
       await requestEnvelope<{ term: IpTaxonomyTerm }>(
-        `/api/admin/ip-commerce/taxonomy/${encodeURIComponent(termId)}`,
+        `/api/admin/ip-commerce/taxonomy${termId ? `/${encodeURIComponent(termId)}` : ""}`,
         {
-          method: "PATCH",
+          method: termId ? "PATCH" : "POST",
+          signal: operation.signal,
           headers: { "content-type": "application/json" },
           body: JSON.stringify(input),
         }
       );
-      await refreshTaxonomy();
+      if (!operation.current()) return false;
+      // A failed read must not turn an acknowledged write into a retryable save.
+      try {
+        const next = await readTaxonomy(locale, operation.signal);
+        if (!operation.current()) return false;
+        setTaxonomy(next);
+      } catch (err) {
+        if (!operation.current()) return false;
+        setError(toErrorMessage(err));
+      }
       return true;
     } catch (err) {
-      setError(toErrorMessage(err));
+      if (operation.current()) setError(toErrorMessage(err));
       return false;
     } finally {
-      setLoading(false);
+      operation.finish();
     }
   }
 
   function openCreate() {
+    if (loading) return;
     setForm(emptyTaxonomyForm(typeFilter === "tag" ? "tag" : "genre"));
     setSheetOpen(true);
   }
 
   function openEdit(term: IpTaxonomyTerm) {
+    if (loading) return;
     setForm({
       id: term.id,
       type: term.type,
@@ -203,98 +212,103 @@ export function IpTaxonomyPanel({
       enUS: taxonomyLabel(term, "en-US"),
       zhHK: taxonomyLabel(term, "zh-HK"),
       description: term.description ?? "",
+      aliasesByLocale: Object.fromEntries(
+        term.localizations.map((item) => [item.locale, [...item.aliases]])
+      ),
     });
     setSheetOpen(true);
   }
 
   async function submit() {
     if (!canSubmit) return;
-    const displayOrder = Number.parseInt(form.displayOrder, 10);
     const localizations = taxonomyLocalizationsFromForm(form);
     if (!localizations.length) return;
 
     const ok = form.id
-      ? await updateTaxonomyTerm(form.id, {
+      ? await saveTaxonomyTerm(form.id, {
           status: form.status,
-          displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+          displayOrder,
           localizations,
         })
-      : await createTaxonomyTerm({
+      : await saveTaxonomyTerm(null, {
           type: form.type,
           code: form.code.trim() || undefined,
           status: form.status,
-          displayOrder: Number.isFinite(displayOrder) ? displayOrder : 0,
+          displayOrder,
           localizations,
         });
 
     if (ok) setSheetOpen(false);
   }
 
-  const columns = useMemo<ColumnDef<IpTaxonomyTerm, unknown>[]>(
-    () => [
-      {
-        accessorKey: "label",
-        header: "词条",
-        cell: ({ row }) => {
-          const term = row.original;
-          return (
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-slate-950">{term.label || "—"}</p>
-              <p className="mt-0.5 truncate font-mono text-[12px] text-slate-500">{term.code}</p>
-            </div>
-          );
-        },
+  const columns: ColumnDef<IpTaxonomyTerm, unknown>[] = [
+    {
+      accessorKey: "label",
+      header: "词条",
+      cell: ({ row }) => {
+        const term = row.original;
+        return (
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-slate-950">{term.label || "—"}</p>
+            <p className="mt-0.5 truncate font-mono text-[12px] text-slate-500">{term.code}</p>
+          </div>
+        );
       },
-      {
-        accessorKey: "type",
-        header: "类型",
-        cell: ({ row }) => (
-          <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-600">
-            {row.original.type === "genre" ? "题材" : "标签"}
-          </span>
-        ),
-      },
-      {
-        id: "locales",
-        header: "多语言",
-        enableSorting: false,
-        cell: ({ row }) => <LocaleChips term={row.original} />,
-      },
-      {
-        accessorKey: "assignmentCount",
-        header: "关联 IP",
-        cell: ({ row }) => <span className="tabular-nums">{row.original.assignmentCount}</span>,
-      },
-      {
-        accessorKey: "status",
-        header: "状态",
-        cell: ({ row }) => (
-          <StatusPill tone={row.original.status === "active" ? "success" : "muted"}>
-            {taxonomyStatusLabel(row.original.status)}
-          </StatusPill>
-        ),
-      },
-      {
-        accessorKey: "displayOrder",
-        header: "排序",
-        cell: ({ row }) => (
-          <span className="tabular-nums text-slate-600">{row.original.displayOrder}</span>
-        ),
-      },
-      {
-        id: "actions",
-        header: "操作",
-        enableSorting: false,
-        meta: { pin: "right" },
-        cell: ({ row }) => (
-          <Button type="button" variant="outline" size="sm" onClick={() => openEdit(row.original)}>
-            编辑
-          </Button>
-        ),
-      },
-    ],
-    []
-  );
+    },
+    {
+      accessorKey: "type",
+      header: "类型",
+      cell: ({ row }) => (
+        <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-[12px] font-medium text-slate-600">
+          {row.original.type === "genre" ? "题材" : "标签"}
+        </span>
+      ),
+    },
+    {
+      id: "locales",
+      header: "多语言",
+      enableSorting: false,
+      cell: ({ row }) => <LocaleChips term={row.original} />,
+    },
+    {
+      accessorKey: "assignmentCount",
+      header: "关联 IP",
+      cell: ({ row }) => <span className="tabular-nums">{row.original.assignmentCount}</span>,
+    },
+    {
+      accessorKey: "status",
+      header: "状态",
+      cell: ({ row }) => (
+        <StatusPill tone={row.original.status === "active" ? "success" : "muted"}>
+          {taxonomyStatusLabel(row.original.status)}
+        </StatusPill>
+      ),
+    },
+    {
+      accessorKey: "displayOrder",
+      header: "排序",
+      cell: ({ row }) => (
+        <span className="tabular-nums text-slate-600">{row.original.displayOrder}</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "操作",
+      enableSorting: false,
+      meta: { pin: "right" },
+      cell: ({ row }) => (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={loading}
+          onClick={() => openEdit(row.original)}
+        >
+          编辑
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-4">
@@ -305,6 +319,7 @@ export function IpTaxonomyPanel({
       >
         <div className="flex items-center gap-2">
           <Select
+            disabled={loading}
             value={locale || LOCALE_ALL}
             onValueChange={(value) => {
               const nextLocale = value === LOCALE_ALL ? "" : value;
@@ -333,7 +348,7 @@ export function IpTaxonomyPanel({
           >
             <IconRefresh className={cn("size-3.5", loading && "animate-spin")} />
           </Button>
-          <Button type="button" size="sm" onClick={openCreate}>
+          <Button type="button" size="sm" disabled={loading} onClick={openCreate}>
             <IconPlus className="size-4" />
             新增词条
           </Button>
@@ -425,7 +440,7 @@ export function IpTaxonomyPanel({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5">
+          <div inert={loading} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-5">
             <div className="grid gap-2 sm:grid-cols-2">
               <Field label="类型">
                 <Select
@@ -484,7 +499,14 @@ export function IpTaxonomyPanel({
                   placeholder="排序"
                   className="h-9"
                   inputMode="numeric"
+                  aria-invalid={!validDisplayOrder}
+                  aria-describedby={!validDisplayOrder ? "taxonomy-order-error" : undefined}
                 />
+                {!validDisplayOrder && (
+                  <p id="taxonomy-order-error" role="alert" className="text-xs text-red-700">
+                    Enter a whole number from 0 to 1,000,000.
+                  </p>
+                )}
               </Field>
             </div>
             <Field label="简体中文名称">
@@ -590,6 +612,7 @@ function emptyTaxonomyForm(type: "genre" | "tag" = "genre"): TaxonomyFormState {
     enUS: "",
     zhHK: "",
     description: "",
+    aliasesByLocale: {},
   };
 }
 
@@ -607,6 +630,6 @@ function taxonomyLocalizationsFromForm(form: TaxonomyFormState): IpTaxonomyLocal
     .map((item) => ({
       ...item,
       description: form.description.trim() || null,
-      aliases: [],
+      aliases: form.aliasesByLocale[item.locale] ?? [],
     }));
 }
