@@ -1,5 +1,5 @@
 import { useIpGenerationPreview } from "./use-ip-generation-preview";
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +17,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { api } from "@/lib/api-client";
 import { useAuth, useAuthGate } from "@/auth";
+import { getAuthGeneration } from "@/auth/auth-store";
 import { useComputeWalletBalance } from "@/features/paywall/lib/use-compute-wallet-balance";
 import { uploadMobileMediaFile } from "@/lib/media-upload";
 
@@ -45,9 +46,25 @@ interface IpGenerationPanelProps {
 }
 
 export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
+  const { generation } = useAuth();
+  return <IpGenerationSession key={JSON.stringify([ipId, generation])} ipId={ipId} />;
+}
+
+function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   const t = useTranslations();
   const theme = useTheme();
-  const { user } = useAuth();
+  const { user, generation } = useAuth();
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const isCurrent = useCallback(
+    () => mounted.current && getAuthGeneration() === generation,
+    [generation]
+  );
   const { requireAuth } = useAuthGate();
 
   const [templates, setTemplates] = useState<AudienceTemplate[]>([]);
@@ -78,25 +95,25 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
 
   // 1. Fetch available templates on mount
   useEffect(() => {
-    let unmounted = false;
+    const controller = new AbortController();
     api
-      .get<{ templates: AudienceTemplate[] }>(
-        `/ip-commerce/ips/${ipId}/generation-templates`,
-        AURORA
-      )
+      .get<{ templates: AudienceTemplate[] }>(`/ip-commerce/ips/${ipId}/generation-templates`, {
+        ...AURORA,
+        signal: controller.signal,
+      })
       .then((res) => {
-        if (!unmounted && res.templates && res.templates.length > 0) {
-          setTemplates(res.templates);
-          setSelectedTemplate(res.templates[0]);
+        if (!controller.signal.aborted && isCurrent()) {
+          setTemplates(res.templates ?? []);
+          setSelectedTemplate(res.templates?.[0] ?? null);
         }
       })
       .catch(() => {
-        if (!unmounted) setTemplates([]);
+        if (!controller.signal.aborted && isCurrent()) setTemplates([]);
       });
     return () => {
-      unmounted = true;
+      controller.abort();
     };
-  }, [ipId]);
+  }, [ipId, isCurrent]);
 
   // Clean up poll on unmount
   useEffect(() => {
@@ -116,7 +133,7 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
         copyToCacheDirectory: true,
       });
 
-      if (picked.canceled || !picked.assets?.length) return;
+      if (!isCurrent() || picked.canceled || !picked.assets?.length) return;
       const asset = picked.assets[0];
 
       setUploading(true);
@@ -130,12 +147,13 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
         { kind: "ip_audience_reference" }
       );
 
+      if (!isCurrent()) return;
       setRefAssetId(res.mediaAssetId);
       setRefAssetUrl(res.url);
     } catch {
-      Alert.alert(t("ipGeneration.uploadFailed"));
+      if (isCurrent()) Alert.alert(t("ipGeneration.uploadFailed"));
     } finally {
-      setUploading(false);
+      if (isCurrent()) setUploading(false);
     }
   };
 
@@ -146,7 +164,7 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
 
   // Poll status loop
   const pollStatus = (currentJobId: string, templateId: string) => {
-    if (cancelPollRef.current) return;
+    if (!isCurrent() || cancelPollRef.current) return;
 
     api
       .get<{ status: JobStatus["status"]; progress: number | null; outputs: any[]; error?: any }>(
@@ -154,7 +172,7 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
         AURORA
       )
       .then((statusRes) => {
-        if (cancelPollRef.current) return;
+        if (!isCurrent() || cancelPollRef.current) return;
 
         const updated: JobStatus = {
           id: currentJobId,
@@ -177,7 +195,7 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
         }
       })
       .catch((err) => {
-        if (cancelPollRef.current) return;
+        if (!isCurrent() || cancelPollRef.current) return;
         setGenerating(false);
         setGenError(err?.message || t("ipGeneration.errorGeneric"));
       });
@@ -185,6 +203,7 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
 
   // Start Generation
   const handleStartGeneration = async () => {
+    if (!isCurrent()) return;
     if (!user) {
       requireAuth();
       return;
@@ -210,6 +229,7 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
 
       pollStatus(runRes.jobId, selectedTemplate.id);
     } catch (err: any) {
+      if (!isCurrent()) return;
       setGenerating(false);
       setGenError(err?.message || t("ipGeneration.errorGeneric"));
     }
