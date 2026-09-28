@@ -181,7 +181,7 @@ it("reclaims the comment column and retains its draft when reopened", async () =
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-expanded="true"]')!.click()
   );
-  expect(container.querySelector("aside")!.className).toContain("lg:w-12");
+  expect(container.querySelector("aside")!.className).toContain("lg:w-8");
   await act(async () =>
     container.querySelector<HTMLButtonElement>('[aria-label="expand"]')!.click()
   );
