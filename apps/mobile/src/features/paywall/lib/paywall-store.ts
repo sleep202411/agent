@@ -10,6 +10,7 @@ export type PaywallCategory =
   | "compute_membership"
   | "community_membership";
 
+/** Categories shown as paywall tabs. */
 export const PAYWALL_CATEGORIES: PaywallCategory[] = [
   "community_points",
   // Hidden until these IAPs exist in App Store Connect (2.1(b) review).
@@ -18,8 +19,19 @@ export const PAYWALL_CATEGORIES: PaywallCategory[] = [
   // "community_membership",
 ];
 
-export function isPaywallCategory(value: string | undefined): value is PaywallCategory {
-  return PAYWALL_CATEGORIES.includes(value as PaywallCategory);
+const ALL_PAYWALL_CATEGORIES: readonly PaywallCategory[] = [
+  "community_points",
+  // Hidden until a real App Store product exists (2.1(b)).
+  // "compute_points",
+  // "compute_membership",
+  // "community_membership",
+];
+
+/** Any valid paywall category, including ones hidden from the tab strip. */
+export function resolvePaywallCategory(value: string | undefined): PaywallCategory {
+  return ALL_PAYWALL_CATEGORIES.includes(value as PaywallCategory)
+    ? (value as PaywallCategory)
+    : "community_points";
 }
 
 export function openPaywall(input: {
@@ -28,7 +40,7 @@ export function openPaywall(input: {
 }): void {
   const go = () => {
     const params = new URLSearchParams({
-      category: isPaywallCategory(input.category) ? input.category : "community_points",
+      category: resolvePaywallCategory(input.category),
     });
     const returnPath = communityWebPath(input.communityReturnUrl);
     if (returnPath !== "/") params.set("returnPath", returnPath);

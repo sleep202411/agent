@@ -1015,7 +1015,9 @@ export function IpCombobox({
         </ComboboxContent>
       </Combobox>
       {loading ? (
-        <p role="status" className="text-xs text-slate-500">Searching…</p>
+        <p role="status" className="text-xs text-slate-500">
+          Searching…
+        </p>
       ) : null}
       {error ? (
         <div role="alert" className="flex items-center gap-2 text-xs text-red-600">

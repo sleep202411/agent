@@ -9,7 +9,14 @@ export type PaywallProduct = {
   category: PaywallCategory;
   /** App Store / Play / RevenueCat product identifier. */
   storeProductId: string;
+  /**
+   * Nest billing price id for WeChat Native checkout. Set when the paywall
+   * loaded `community_point_pack` / membership prices from `/billing/prices`.
+   */
+  billingPriceId?: string;
   displayPrice: string;
+  /** Server catalog name, when this row came from `/billing/prices`. */
+  name?: string;
   /** Whole points granted; null for memberships. */
   grantsPoints: string | null;
   interval?: BillingInterval;

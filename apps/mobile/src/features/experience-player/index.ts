@@ -1,4 +1,6 @@
 export { ExperiencePlayer } from "./components/experience-player";
+export { ExperiencePlayerWithAccess } from "./components/experience-player-with-access";
+export type { ExperiencePlayerAccess } from "./lib/experience-player-access";
 export type { ExperiencePlayerCopy } from "./lib/experience-player-copy";
 export { ExperienceStartShell } from "./components/experience-start-shell";
 export { navigateToPlay, navigateToStoryPreview, playStoryPreviewHref } from "./lib/play-game-href";

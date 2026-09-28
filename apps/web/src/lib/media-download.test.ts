@@ -130,16 +130,23 @@ describe("downloadMediaFile", () => {
     expect(click).not.toHaveBeenCalled();
   });
 
-  it.each([false, true])("cancels unread error bodies even when cancellation rejects: %s", async (rejectCancel) => {
-    const cancel = vi.fn(() => rejectCancel ? Promise.reject(new Error("cleanup failed")) : undefined);
-    const body = new ReadableStream<Uint8Array>({ cancel });
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 503 })));
+  it.each([false, true])(
+    "cancels unread error bodies even when cancellation rejects: %s",
+    async (rejectCancel) => {
+      const cancel = vi.fn(() =>
+        rejectCancel ? Promise.reject(new Error("cleanup failed")) : undefined
+      );
+      const body = new ReadableStream<Uint8Array>({ cancel });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 503 })));
 
-    await expect(downloadMediaFile("https://cdn.example.test/unavailable.mp4")).resolves.toBe(false);
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(createObjectURL).not.toHaveBeenCalled();
-    expect(click).not.toHaveBeenCalled();
-  });
+      await expect(downloadMediaFile("https://cdn.example.test/unavailable.mp4")).resolves.toBe(
+        false
+      );
+      expect(cancel).toHaveBeenCalledOnce();
+      expect(createObjectURL).not.toHaveBeenCalled();
+      expect(click).not.toHaveBeenCalled();
+    }
+  );
 
   it("returns false when the fetch rejects (CORS / network)", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));

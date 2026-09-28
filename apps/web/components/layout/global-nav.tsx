@@ -146,7 +146,9 @@ export function GlobalNav() {
     setCurrentLocale(next);
     setLanguage(next);
     router.replace(
-      localizePath(stripLocalePrefix(pathname), next) + window.location.search + window.location.hash
+      localizePath(stripLocalePrefix(pathname), next) +
+        window.location.search +
+        window.location.hash
     );
   };
 

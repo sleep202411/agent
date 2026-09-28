@@ -14,42 +14,187 @@ import type { StoryboardCellProps, StoryboardColumn } from "./storyboard-types";
 // ── cell adapters ───────────────────────────────────────────────────────────
 
 function ShotFrameCell({ row, selected, actions }: StoryboardCellProps) {
-  return <ShotPictureCell row={row} kind="image" selected={selected} onOpen={() => actions.onSelect(row.id, "image")} />;
+  return (
+    <ShotPictureCell
+      row={row}
+      kind="image"
+      selected={selected}
+      onOpen={() => actions.onSelect(row.id, "image")}
+    />
+  );
 }
 function ShotClipCell({ row, selected, actions }: StoryboardCellProps) {
-  return <ShotPictureCell row={row} kind="video" selected={selected} onOpen={() => actions.onSelect(row.id, "video")} />;
+  return (
+    <ShotPictureCell
+      row={row}
+      kind="video"
+      selected={selected}
+      onOpen={() => actions.onSelect(row.id, "video")}
+    />
+  );
 }
 function ShotSizeCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
-  return <ShotOptionCell group="size" value={row.data.shotSize} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { shotSize: next })} cellId={cellId} onNavigate={onNavigate} />;
+  return (
+    <ShotOptionCell
+      group="size"
+      value={row.data.shotSize}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { shotSize: next })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
 function ShotAngleCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
-  return <ShotOptionCell group="angle" value={row.data.perspective} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { perspective: next })} cellId={cellId} onNavigate={onNavigate} />;
+  return (
+    <ShotOptionCell
+      group="angle"
+      value={row.data.perspective}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { perspective: next })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
-function ShotMovementCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
-  return <ShotOptionCell group="movement" value={row.data.movement} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { movement: next })} cellId={cellId} onNavigate={onNavigate} />;
+function ShotMovementCell({
+  row,
+  canEdit,
+  label,
+  actions,
+  cellId,
+  onNavigate,
+}: StoryboardCellProps) {
+  return (
+    <ShotOptionCell
+      group="movement"
+      value={row.data.movement}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { movement: next })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
-function ShotDurationColumnCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
-  return <ShotDurationCell value={row.data.durationSeconds} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { durationSeconds: next })} cellId={cellId} onNavigate={onNavigate} />;
+function ShotDurationColumnCell({
+  row,
+  canEdit,
+  label,
+  actions,
+  cellId,
+  onNavigate,
+}: StoryboardCellProps) {
+  return (
+    <ShotDurationCell
+      value={row.data.durationSeconds}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { durationSeconds: next })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
-function ShotDialogueCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+function ShotDialogueCell({
+  row,
+  canEdit,
+  label,
+  actions,
+  cellId,
+  onNavigate,
+}: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return <ShotTextCell value={row.data.dialogue ?? ""} placeholder={t("cell.dialoguePlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { dialogue: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
+  return (
+    <ShotTextCell
+      value={row.data.dialogue ?? ""}
+      placeholder={t("cell.dialoguePlaceholder")}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { dialogue: next || undefined })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
 function ShotNotesCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return <ShotTextCell value={row.data.notes ?? ""} placeholder={t("cell.notesPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { notes: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
+  return (
+    <ShotTextCell
+      value={row.data.notes ?? ""}
+      placeholder={t("cell.notesPlaceholder")}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { notes: next || undefined })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
-function ShotDescriptionCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+function ShotDescriptionCell({
+  row,
+  canEdit,
+  label,
+  actions,
+  cellId,
+  onNavigate,
+}: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return <ShotPromptCell value={row.data.description} placeholder={t("cell.descriptionPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { description: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
+  return (
+    <ShotPromptCell
+      value={row.data.description}
+      placeholder={t("cell.descriptionPlaceholder")}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { description: next || undefined })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
-function ShotImagePromptCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+function ShotImagePromptCell({
+  row,
+  canEdit,
+  label,
+  actions,
+  cellId,
+  onNavigate,
+}: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return <ShotPromptCell value={row.data.imagePrompt} placeholder={t("cell.imagePromptPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { imagePrompt: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
+  return (
+    <ShotPromptCell
+      value={row.data.imagePrompt}
+      placeholder={t("cell.imagePromptPlaceholder")}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { imagePrompt: next || undefined })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
-function ShotVideoPromptCell({ row, canEdit, label, actions, cellId, onNavigate }: StoryboardCellProps) {
+function ShotVideoPromptCell({
+  row,
+  canEdit,
+  label,
+  actions,
+  cellId,
+  onNavigate,
+}: StoryboardCellProps) {
   const t = useTranslations("storyboard");
-  return <ShotPromptCell value={row.data.videoPrompt} placeholder={t("cell.videoPromptPlaceholder")} ariaLabel={label} readOnly={!canEdit} onCommit={(next) => actions.onPatch(row.id, { videoPrompt: next || undefined })} cellId={cellId} onNavigate={onNavigate} />;
+  return (
+    <ShotPromptCell
+      value={row.data.videoPrompt}
+      placeholder={t("cell.videoPromptPlaceholder")}
+      ariaLabel={label}
+      readOnly={!canEdit}
+      onCommit={(next) => actions.onPatch(row.id, { videoPrompt: next || undefined })}
+      cellId={cellId}
+      onNavigate={onNavigate}
+    />
+  );
 }
 
 // ── the columns ─────────────────────────────────────────────────────────────
@@ -57,20 +202,63 @@ function ShotVideoPromptCell({ row, canEdit, label, actions, cellId, onNavigate 
 // so virtualized absolute body rows and the normal-flow header always match.
 
 export const STORYBOARD_COLUMNS: readonly StoryboardColumn[] = [
-  { key: "number",     width: 100, align: "center", pin: "left", header: { kind: "glyph", glyph: "#" }, Cell: ShotNumberCell },
-  { key: "frame",      width: 160, header: { kind: "label" }, Cell: ShotFrameCell },
-  { key: "clip",       width: 160, header: { kind: "label" }, Cell: ShotClipCell },
-  { key: "size",       width: 112, header: { kind: "label" }, Cell: ShotSizeCell, editable: true },
-  { key: "angle",      width: 112, header: { kind: "label" }, Cell: ShotAngleCell, editable: true },
-  { key: "movement",   width: 112, header: { kind: "label" }, Cell: ShotMovementCell, editable: true },
-  { key: "duration",   width: 80,  header: { kind: "label" }, Cell: ShotDurationColumnCell, editable: true },
-  { key: "dialogue",   width: 240, header: { kind: "label" }, Cell: ShotDialogueCell, editable: true },
-  { key: "notes",      width: 256, header: { kind: "label" }, Cell: ShotNotesCell, editable: true },
-  { key: "description",width: 240, header: { kind: "label" }, Cell: ShotDescriptionCell, editable: true },
-  { key: "imagePrompt",width: 240, header: { kind: "label" }, Cell: ShotImagePromptCell, editable: true },
-  { key: "videoPrompt",width: 240, header: { kind: "label" }, Cell: ShotVideoPromptCell, editable: true },
-  { key: "id",         width: 96,  header: { kind: "label" }, Cell: ShotIdCell },
-  { key: "actions",    width: 48,  header: { kind: "hidden" }, Cell: ShotMenuCell },
+  {
+    key: "number",
+    width: 100,
+    align: "center",
+    pin: "left",
+    header: { kind: "glyph", glyph: "#" },
+    Cell: ShotNumberCell,
+  },
+  { key: "frame", width: 160, header: { kind: "label" }, Cell: ShotFrameCell },
+  { key: "clip", width: 160, header: { kind: "label" }, Cell: ShotClipCell },
+  { key: "size", width: 112, header: { kind: "label" }, Cell: ShotSizeCell, editable: true },
+  { key: "angle", width: 112, header: { kind: "label" }, Cell: ShotAngleCell, editable: true },
+  {
+    key: "movement",
+    width: 112,
+    header: { kind: "label" },
+    Cell: ShotMovementCell,
+    editable: true,
+  },
+  {
+    key: "duration",
+    width: 80,
+    header: { kind: "label" },
+    Cell: ShotDurationColumnCell,
+    editable: true,
+  },
+  {
+    key: "dialogue",
+    width: 240,
+    header: { kind: "label" },
+    Cell: ShotDialogueCell,
+    editable: true,
+  },
+  { key: "notes", width: 256, header: { kind: "label" }, Cell: ShotNotesCell, editable: true },
+  {
+    key: "description",
+    width: 240,
+    header: { kind: "label" },
+    Cell: ShotDescriptionCell,
+    editable: true,
+  },
+  {
+    key: "imagePrompt",
+    width: 240,
+    header: { kind: "label" },
+    Cell: ShotImagePromptCell,
+    editable: true,
+  },
+  {
+    key: "videoPrompt",
+    width: 240,
+    header: { kind: "label" },
+    Cell: ShotVideoPromptCell,
+    editable: true,
+  },
+  { key: "id", width: 96, header: { kind: "label" }, Cell: ShotIdCell },
+  { key: "actions", width: 48, header: { kind: "hidden" }, Cell: ShotMenuCell },
 ];
 
 /** CSS grid-template-columns string — every column as a fixed px value. */
@@ -103,11 +291,19 @@ const PIN_OFFSETS: Record<string, number> = (() => {
 const ALIGN_CLASS = { center: "justify-center", end: "justify-end" } as const;
 
 export function storyboardCellClass(column: StoryboardColumn, className?: string): string {
-  return cn("relative", column.align && ALIGN_CLASS[column.align], column.pin && "sticky z-10 bg-inherit", className);
+  return cn(
+    "relative",
+    column.align && ALIGN_CLASS[column.align],
+    column.pin && "sticky z-10 bg-inherit",
+    className
+  );
 }
 
 export function storyboardHeadClass(column: StoryboardColumn, className?: string): string {
-  return storyboardCellClass(column, cn("flex items-center justify-center", column.align && ALIGN_CLASS[column.align], className));
+  return storyboardCellClass(
+    column,
+    cn("flex items-center justify-center", column.align && ALIGN_CLASS[column.align], className)
+  );
 }
 
 export function storyboardCellStyle(column: StoryboardColumn): { left: string } | undefined {

@@ -39,10 +39,20 @@ vi.mock("@/src/store/slices/projectSlice", () => ({
             : []),
         ],
       },
-      { shotId: "two", shotValues: [
-        { presetColumnKey: "dialogue", value: "World" },
-        ...(h.secondAsset ? [{ shotColumnId: "voice", files: [{ url: "https://cdn.test/two.png", preferred: true }] }] : []),
-      ] },
+      {
+        shotId: "two",
+        shotValues: [
+          { presetColumnKey: "dialogue", value: "World" },
+          ...(h.secondAsset
+            ? [
+                {
+                  shotColumnId: "voice",
+                  files: [{ url: "https://cdn.test/two.png", preferred: true }],
+                },
+              ]
+            : []),
+        ],
+      },
     ],
     columns: [],
     detail: {},
@@ -310,40 +320,55 @@ it("cancels a single admitted export on project replacement", async () => {
   expect(h.success).not.toHaveBeenCalled();
 });
 
-
-it.each([false, true])("retries only failed files and retains unresolved failures (retry fails=%s)", async (retryFails) => {
-  h.assets = true;
-  h.secondAsset = true;
-  const ok = () => ({ ok: true, blob: async () => new Blob(["image"]) });
-  const fetcher = vi.fn()
-    .mockResolvedValueOnce(ok())
-    .mockResolvedValueOnce({ ok: false, status: 503 })
-    .mockResolvedValueOnce(retryFails ? { ok: false, status: 503 } : ok());
-  vi.stubGlobal("fetch", fetcher);
-  vi.stubGlobal("URL", class extends URL {
-    static createObjectURL = vi.fn(() => "blob:test");
-    static revokeObjectURL = vi.fn();
-  });
-  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-  try {
-    const imageColumn = { id: "voice", presetColumnKey: "image_path" };
-    await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
-    await act(async () => container.querySelectorAll("button")[1]!.click());
-    expect(container.textContent).toContain("shot_2_final.png");
-    expect(container.textContent).not.toContain("shot_1_final.png");
-    expect(h.success).not.toHaveBeenCalled();
-    // Changing the current rows must not replace the failed batch snapshot.
-    h.secondAsset = false;
-    await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
-    const retry = Array.from(container.querySelectorAll("button")).find(b => b.textContent === "retryFailedDownloads")!;
-    await act(async () => { retry.click(); retry.click(); });
-    expect(fetcher.mock.calls.map(call => call[0])).toEqual([
-      "https://cdn.test/one.png", "https://cdn.test/two.png", "https://cdn.test/two.png",
-    ]);
-    expect(container.textContent?.includes("shot_2_final.png")).toBe(retryFails);
-    expect(h.success).toHaveBeenCalledTimes(retryFails ? 0 : 1);
-  } finally { click.mockRestore(); }
-});
+it.each([false, true])(
+  "retries only failed files and retains unresolved failures (retry fails=%s)",
+  async (retryFails) => {
+    h.assets = true;
+    h.secondAsset = true;
+    const ok = () => ({ ok: true, blob: async () => new Blob(["image"]) });
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(ok())
+      .mockResolvedValueOnce({ ok: false, status: 503 })
+      .mockResolvedValueOnce(retryFails ? { ok: false, status: 503 } : ok());
+    vi.stubGlobal("fetch", fetcher);
+    vi.stubGlobal(
+      "URL",
+      class extends URL {
+        static createObjectURL = vi.fn(() => "blob:test");
+        static revokeObjectURL = vi.fn();
+      }
+    );
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    try {
+      const imageColumn = { id: "voice", presetColumnKey: "image_path" };
+      await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
+      await act(async () => container.querySelectorAll("button")[1]!.click());
+      expect(container.textContent).toContain("shot_2_final.png");
+      expect(container.textContent).not.toContain("shot_1_final.png");
+      expect(h.success).not.toHaveBeenCalled();
+      // Changing the current rows must not replace the failed batch snapshot.
+      h.secondAsset = false;
+      await act(async () => root.render(<StoryboardColumnHeader column={imageColumn} />));
+      const retry = Array.from(container.querySelectorAll("button")).find(
+        (b) => b.textContent === "retryFailedDownloads"
+      )!;
+      await act(async () => {
+        retry.click();
+        retry.click();
+      });
+      expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
+        "https://cdn.test/one.png",
+        "https://cdn.test/two.png",
+        "https://cdn.test/two.png",
+      ]);
+      expect(container.textContent?.includes("shot_2_final.png")).toBe(retryFails);
+      expect(h.success).toHaveBeenCalledTimes(retryFails ? 0 : 1);
+    } finally {
+      click.mockRestore();
+    }
+  }
+);
 
 it("drops the failed-file recovery action after switching projects", async () => {
   h.assets = true;

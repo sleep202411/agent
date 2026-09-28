@@ -190,7 +190,10 @@ function AccountReferralDashboard({ accountId }: { accountId: string }) {
       </header>
 
       <nav aria-label={t("incomeSources")} className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-        <Link href={localizePath("/profile/earnings", locale)} className="text-primary hover:underline">
+        <Link
+          href={localizePath("/profile/earnings", locale)}
+          className="text-primary hover:underline"
+        >
           {t("workIncome")}
         </Link>
         <Link href={localizePath("/crews/income", locale)} className="text-primary hover:underline">

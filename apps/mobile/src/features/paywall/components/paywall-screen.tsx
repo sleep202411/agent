@@ -1,11 +1,15 @@
-import IconBolt from "@tabler/icons-react-native/IconBolt";
-import IconCheck from "@tabler/icons-react-native/IconCheck";
-import IconCoins from "@tabler/icons-react-native/IconCoins";
-import IconCrown from "@tabler/icons-react-native/IconCrown";
-import IconSparkles from "@tabler/icons-react-native/IconSparkles";
-import { Stack, useLocalSearchParams } from "expo-router";
-import { useMemo, type ComponentType } from "react";
 import {
+  IconBolt,
+  IconCheck,
+  IconCoins,
+  IconCrown,
+  IconSparkles,
+} from "@tabler/icons-react-native";
+import { Image } from "expo-image";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -17,9 +21,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useAuth } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
+import { appEnv, resolveAssetUrl } from "@/config";
 import { Colors, Spacing } from "@/constants/theme";
+import { fetchCommunityPointBalance } from "@/data/ip-api";
+import { toHref } from "@/lib/navigation";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
 
@@ -35,9 +43,22 @@ import {
   yearlySavePercent,
 } from "../lib/catalog";
 import { currentCheckoutChannel, type CheckoutChannel } from "../lib/checkout-channel";
-import { useComputeWalletBalance } from "../lib/use-compute-wallet-balance";
-import { isPaywallCategory, PAYWALL_CATEGORIES, type PaywallCategory } from "../lib/paywall-store";
-import { usePaywallSelection } from "../lib/use-paywall-selection";
+import { fetchComputeWalletBalance } from "../lib/compute-wallet";
+import {
+  resolvePaywallCategory,
+  PAYWALL_CATEGORIES,
+  type PaywallCategory,
+} from "../lib/paywall-store";
+import {
+  getBillingOrder,
+  isOrderDead,
+  isOrderSettled,
+  listCommunityPointPackages,
+} from "../lib/billing-api";
+import { isPurchaseCancelled, purchaseProduct, restorePurchases } from "../lib/purchase";
+import { communityPackProduct } from "../lib/wechat";
+import { sanitizeAppWebPath } from "../lib/web-checkout";
+import { WechatScanPay } from "./wechat-scan-pay";
 
 const BRAND = Colors.dark.brand;
 const CANVAS = Colors.dark.background;
@@ -115,6 +136,79 @@ function formatAmount(value: string, locale: string): string {
 
 function paramValue(raw: string | string[] | undefined): string | undefined {
   return Array.isArray(raw) ? raw[0] : raw;
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return String(error);
+}
+
+function accountDisplayName(
+  user:
+    | {
+        nickName?: string;
+        nickname?: string;
+        userName?: string;
+        name?: string;
+        email?: string;
+        phone?: string;
+      }
+    | null
+    | undefined,
+  fallback: string
+): string {
+  return (
+    user?.nickName?.trim() ||
+    user?.nickname?.trim() ||
+    user?.userName?.trim() ||
+    user?.name?.trim() ||
+    user?.email?.trim() ||
+    user?.phone?.trim() ||
+    fallback
+  );
+}
+
+function accountAvatarUrl(
+  user: { avatar?: string; headImg?: string; headImgUrl?: string } | null | undefined
+): string | undefined {
+  const raw = user?.avatar ?? user?.headImg ?? user?.headImgUrl;
+  if (typeof raw !== "string" || !raw.trim()) return undefined;
+  return resolveAssetUrl(raw, appEnv.assets.userBaseUrl);
+}
+
+function CommunityAccountRow({
+  name,
+  label,
+  balance,
+}: {
+  name: string;
+  label: string;
+  balance: string;
+}) {
+  const avatarUrl = accountAvatarUrl(useAuth().user);
+  return (
+    <View style={styles.userCard}>
+      <View style={styles.avatar}>
+        {avatarUrl ? (
+          <Image source={{ uri: avatarUrl }} style={StyleSheet.absoluteFill} contentFit="cover" />
+        ) : (
+          <IconCoins size={20} color={BRAND} strokeWidth={1.8} />
+        )}
+      </View>
+      <View style={styles.userCopy}>
+        <ThemedText type="smallBold" numberOfLines={1}>
+          {name}
+        </ThemedText>
+        <View style={styles.balanceRow}>
+          <IconCoins size={14} color={BRAND} strokeWidth={1.8} />
+          <ThemedText type="small" themeColor="textSecondary">
+            {label}
+          </ThemedText>
+          <ThemedText type="smallBold">{balance}</ThemedText>
+        </View>
+      </View>
+    </View>
+  );
 }
 
 function ComputeRechargePanel({
@@ -197,33 +291,215 @@ function ComputeRechargePanel({
 export function PaywallScreen() {
   const t = useTranslations();
   const locale = useLocale();
+  const auth = useAuth();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const params = useLocalSearchParams<{
     category?: string | string[];
+    returnPath?: string | string[];
   }>();
 
   const rawCategory = paramValue(params.category);
-  const initialCategory: PaywallCategory = isPaywallCategory(rawCategory)
-    ? rawCategory
-    : "community_points";
-  const { selected, setSelected, productId, setProductId, computeAmount, setComputeAmount } =
-    usePaywallSelection(initialCategory);
-  const computeBalance = useComputeWalletBalance();
+  const initialCategory: PaywallCategory = resolvePaywallCategory(rawCategory);
+  const [selected, setSelected] = useState(initialCategory);
+  const [computeBalance, setComputeBalance] = useState<string | null>(null);
+  const [communityBalance, setCommunityBalance] = useState<string | null>(null);
+  const [computeAmount, setComputeAmount] = useState(COMPUTE_RECHARGE_DEFAULT);
+  const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [communityPacks, setCommunityPacks] = useState<
+    ReturnType<typeof communityPackProduct>[] | null
+  >(null);
+  const [communityPackError, setCommunityPackError] = useState<string | null>(null);
+  const [scan, setScan] = useState<{
+    orderId: string;
+    codeUrl: string;
+    amountLabel: string;
+  } | null>(null);
   const channel = useMemo(() => currentCheckoutChannel(), []);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const unsupported = channel === "web";
   const membership = isMembershipCategory(selected);
   const computePoints = selected === "compute_points";
   const products = productsForCategory(selected);
   const savePercent = yearlySavePercent(products);
+  const [productId, setProductId] = useState(products[0]?.id ?? "");
+  const wechatCommunity = channel === "wechat" && selected === "community_points";
   const catalogProduct = products.find((item) => item.id === productId) ?? products[0];
   const computeProduct = computePoints ? computeCustomProduct(computeAmount) : null;
-  const product = computePoints ? computeProduct : catalogProduct;
+  const wechatPack =
+    communityPacks?.find((item) => item.id === productId) ?? communityPacks?.[0] ?? null;
+  const product = wechatCommunity ? wechatPack : computePoints ? computeProduct : catalogProduct;
   const pointsCheckout = selected === "community_points" || selected === "compute_points";
   const stackedFooter = membership || pointsCheckout;
 
-  const notifyUnavailable = () => {
-    Alert.alert(t("paywall.tryAgainLater"), undefined, [{ text: t("common.ok") }]);
+  useEffect(() => {
+    setSelected(initialCategory);
+  }, [initialCategory]);
+
+  useEffect(() => {
+    if (channel === "wechat" && selected === "community_points") return;
+    const next = productsForCategory(selected);
+    const yearly = next.find((item) => item.interval === "year");
+    setProductId(yearly?.id ?? next[0]?.id ?? "");
+  }, [channel, selected]);
+
+  useEffect(() => {
+    if (channel !== "wechat") return;
+    let cancelled = false;
+    setCommunityPacks(null);
+    setCommunityPackError(null);
+    void listCommunityPointPackages("CNY")
+      .then((prices) => {
+        if (cancelled) return;
+        const next = prices.map(communityPackProduct);
+        setCommunityPacks(next);
+        if (selectedRef.current === "community_points") {
+          setProductId(next[0]?.id ?? "");
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setCommunityPacks([]);
+        setCommunityPackError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [channel]);
+
+  useEffect(() => {
+    if (selected === "compute_points") setComputeAmount(COMPUTE_RECHARGE_DEFAULT);
+  }, [selected]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetchComputeWalletBalance().then((compute) => {
+      if (!cancelled) setComputeBalance(compute);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (channel !== "wechat") return;
+    let cancelled = false;
+    void fetchCommunityPointBalance().then((balance) => {
+      if (!cancelled) setCommunityBalance(balance);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [channel]);
+
+  const canRestore = channel === "apple_iap" || channel === "google_play_iap";
+  const actionsLocked = busy || restoring;
+  const walletRefreshGeneration = useRef(0);
+
+  const refreshWallets = useCallback(async () => {
+    const generation = walletRefreshGeneration.current;
+    try {
+      const [compute, community] = await Promise.all([
+        fetchComputeWalletBalance(),
+        fetchCommunityPointBalance(),
+      ]);
+      if (walletRefreshGeneration.current !== generation) return;
+      setComputeBalance(compute);
+      setCommunityBalance(community);
+    } catch {
+      // The row refreshes again the next time this screen opens.
+    }
+  }, []);
+
+  // Closing the QR must not drop a payment that settles a moment later.
+  // Nest reconciles WeChat on each order read, so keep reading briefly.
+  const followWechatOrder = useCallback((orderId: string) => {
+    const generation = ++walletRefreshGeneration.current;
+    void (async () => {
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        if (walletRefreshGeneration.current !== generation) return;
+        try {
+          const order = await getBillingOrder(orderId);
+          if (isOrderSettled(order.status) || isOrderDead(order.status)) break;
+        } catch {
+          // Transient — try again.
+        }
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+      }
+      if (walletRefreshGeneration.current !== generation) return;
+      try {
+        const [compute, community] = await Promise.all([
+          fetchComputeWalletBalance(),
+          fetchCommunityPointBalance(),
+        ]);
+        if (walletRefreshGeneration.current !== generation) return;
+        setComputeBalance(compute);
+        setCommunityBalance(community);
+      } catch {
+        // The row refreshes again the next time this screen opens.
+      }
+    })();
+  }, []);
+
+  useEffect(
+    () => () => {
+      walletRefreshGeneration.current += 1;
+    },
+    []
+  );
+
+  const buy = async () => {
+    if (!product || actionsLocked) return;
+    setBusy(true);
+    try {
+      const result = await purchaseProduct(product);
+      if (result.wechatScan) {
+        setScan({
+          orderId: result.wechatScan.orderId,
+          codeUrl: result.wechatScan.codeUrl,
+          amountLabel: product.displayPrice,
+        });
+        return;
+      }
+      Alert.alert(
+        t("paywall.purchaseOkTitle"),
+        result.mocked
+          ? t("paywall.purchaseOkMock")
+          : channel === "wechat"
+            ? t("paywall.wechat.success")
+            : t("paywall.purchaseOkLive")
+      );
+      await refreshWallets();
+    } catch (error: unknown) {
+      if (isPurchaseCancelled(error)) return;
+      Alert.alert(t("paywall.purchaseFailed"), errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const restore = async () => {
+    if (actionsLocked) return;
+    setRestoring(true);
+    try {
+      const result = await restorePurchases();
+      Alert.alert(
+        t("paywall.restoreOkTitle"),
+        result.mocked ? t("paywall.restoreOkMock") : t("paywall.restoreOkLive")
+      );
+    } catch (error: unknown) {
+      Alert.alert(t("paywall.restoreFailed"), errorMessage(error));
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const goWeb = () => {
+    const returnPath = sanitizeAppWebPath(paramValue(params.returnPath));
+    router.push(toHref(`/pay/community?returnPath=${encodeURIComponent(returnPath)}`));
   };
 
   const heroPoints =
@@ -274,12 +550,12 @@ export function PaywallScreen() {
       </View>
       <Pressable
         accessibilityRole="button"
-        disabled={!product}
-        onPress={notifyUnavailable}
+        disabled={!product || actionsLocked}
+        onPress={() => void buy()}
         style={[
           styles.payButton,
           stackedFooter && styles.payButtonFull,
-          !product && styles.payButtonDisabled,
+          (!product || actionsLocked) && styles.payButtonDisabled,
         ]}
       >
         <ThemedText type="smallBold" style={styles.payLabel}>
@@ -312,11 +588,7 @@ export function PaywallScreen() {
           <ThemedText type="small" themeColor="textSecondary" style={styles.unsupportedBody}>
             {t("paywall.unsupportedBody")}
           </ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            onPress={notifyUnavailable}
-            style={styles.payButton}
-          >
+          <Pressable accessibilityRole="button" onPress={goWeb} style={styles.payButton}>
             <ThemedText type="smallBold" style={styles.payLabel}>
               {t("paywall.continueWeb")}
             </ThemedText>
@@ -329,6 +601,13 @@ export function PaywallScreen() {
         >
           <View style={styles.pointsTop}>
             {tabs}
+            {wechatCommunity ? (
+              <CommunityAccountRow
+                balance={communityBalance == null ? "…" : formatAmount(communityBalance, locale)}
+                label={t("paywall.communityBalance")}
+                name={accountDisplayName(auth.user, t("paywall.category.communityPoints"))}
+              />
+            ) : null}
             {computePoints ? (
               <ComputeRechargePanel
                 amount={computeAmount}
@@ -338,14 +617,61 @@ export function PaywallScreen() {
               />
             ) : null}
           </View>
-          <View style={styles.hero}>
-            <ThemedText type="subtitle" style={styles.heroPoints}>
-              {heroPoints}
-            </ThemedText>
-            <ThemedText type="smallBold" style={styles.heroPrice}>
-              {product?.displayPrice ?? "—"}
-            </ThemedText>
-          </View>
+          {wechatCommunity ? (
+            <ScrollView
+              style={styles.packList}
+              contentContainerStyle={styles.packListContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              {communityPacks === null ? (
+                <ActivityIndicator color={BRAND} style={styles.packLoading} />
+              ) : communityPacks.length === 0 ? (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.packError}>
+                  {communityPackError ?? t("paywall.wechat.noPacks")}
+                </ThemedText>
+              ) : (
+                communityPacks.map((item) => {
+                  const on = item.id === product?.id;
+                  const points =
+                    item.grantsPoints != null
+                      ? fillTemplate(t("paywall.hero.points"), {
+                          amount: formatAmount(item.grantsPoints, locale),
+                        })
+                      : item.name;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      onPress={() => setProductId(item.id)}
+                      style={[styles.packCard, on ? styles.packCardOn : styles.packCardOff]}
+                    >
+                      <View style={styles.packCardCopy}>
+                        <ThemedText type="smallBold">{item.name || points}</ThemedText>
+                        {item.name ? (
+                          <ThemedText type="small" themeColor="textSecondary">
+                            {points}
+                          </ThemedText>
+                        ) : null}
+                      </View>
+                      <ThemedText type="smallBold" style={styles.packCardPrice}>
+                        {item.displayPrice}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+          ) : (
+            <View style={styles.hero}>
+              <ThemedText type="subtitle" style={styles.heroPoints}>
+                {heroPoints}
+              </ThemedText>
+              <ThemedText type="smallBold" style={styles.heroPrice}>
+                {product?.displayPrice ?? "—"}
+              </ThemedText>
+            </View>
+          )}
           {footer}
         </KeyboardAvoidingView>
       ) : (
@@ -416,6 +742,21 @@ export function PaywallScreen() {
           {footer}
         </>
       )}
+      {scan ? (
+        <WechatScanPay
+          orderId={scan.orderId}
+          codeUrl={scan.codeUrl}
+          amountLabel={scan.amountLabel}
+          onClose={() => {
+            const orderId = scan.orderId;
+            setScan(null);
+            followWechatOrder(orderId);
+          }}
+          onPaid={() => {
+            void refreshWallets();
+          }}
+        />
+      ) : null}
     </ThemedView>
   );
 }
@@ -454,6 +795,45 @@ const styles = StyleSheet.create({
     fontSize: 40,
     fontWeight: "700",
     lineHeight: 48,
+    textAlign: "center",
+  },
+  packList: {
+    flex: 1,
+  },
+  packListContent: {
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.four,
+  },
+  packLoading: {
+    marginTop: Spacing.six,
+  },
+  packCard: {
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+  },
+  packCardOn: {
+    backgroundColor: SURFACE,
+    borderColor: BRAND,
+  },
+  packCardOff: {
+    backgroundColor: SURFACE,
+    borderColor: LINE,
+  },
+  packCardCopy: {
+    flex: 1,
+    gap: Spacing.one,
+  },
+  packCardPrice: {
+    color: BRAND,
+  },
+  packError: {
+    marginTop: Spacing.three,
     textAlign: "center",
   },
   heroPrice: {

@@ -45,13 +45,14 @@ export function mustUseMockPayments(channel: CheckoutChannel): boolean {
     if (isProductionApp) return false;
     return revenueCatApiKey(channel).length === 0;
   }
-  // WeChat APP pay still needs Nest providerData — mock until that ships in production.
+  // CN Android WeChat is Native scan pay against Nest. No SDK key to mock around.
+  if (channel === "wechat") return false;
   return !isProductionApp;
 }
 
 export function missingPaymentKeyMessage(channel: CheckoutChannel): string {
   if (channel === "wechat") {
-    return "[paywall] EXPO_PUBLIC_WECHAT_APP_ID is required for WeChat Pay on this build.";
+    return "[paywall] WeChat scan pay is not available on this build.";
   }
   if (channel === "apple_iap") {
     if (isChinaRegion) {
@@ -72,8 +73,13 @@ export function assertPaymentReady(channel: CheckoutChannel): void {
   if (channel === "web") return;
   if (Platform.OS === "web") return;
   if (mustUseMockPayments(channel)) return;
-  if (channel === "wechat" && !wechatAppId()) {
-    throw new Error(missingPaymentKeyMessage(channel));
+  // Native scan pay uses the Nest checkout URL. It does not invoke the WeChat OpenSDK.
+  if (channel === "wechat") return;
+  if (channel === "apple_iap" && isChinaRegion) {
+    if (isProductionApp && !hasStoreKitIapNative()) {
+      throw new Error(missingPaymentKeyMessage(channel));
+    }
+    return;
   }
   if (channel === "apple_iap" && isChinaRegion) {
     if (isProductionApp && !hasStoreKitIapNative()) {

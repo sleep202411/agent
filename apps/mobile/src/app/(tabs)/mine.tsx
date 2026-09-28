@@ -362,25 +362,19 @@ export default function MineScreen() {
                         </ThemedText>
                       </View>
                     </Pressable>
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t("mine.rechargeCompute")}
-                      onPress={() => openPaywall({ category: "compute_points" })}
-                      style={({ pressed }) => (pressed ? styles.pressed : null)}
-                    >
-                      <View style={[styles.pointsPill, { backgroundColor: `${theme.brand}22` }]}>
-                        <SymbolView
-                          name={{ ios: "bolt.fill", android: "bolt", web: "bolt" }}
-                          size={12}
-                          tintColor={theme.brand}
-                        />
-                        <ThemedText type="code" style={{ color: theme.brand }}>
-                          {`${t("mine.computePointsLabel")} ${
-                            computeBalance == null ? "—" : formatPoints(computeBalance, locale)
-                          }`}
-                        </ThemedText>
-                      </View>
-                    </Pressable>
+                    {/* Compute recharge stays closed until a real App Store product exists. */}
+                    <View style={[styles.pointsPill, { backgroundColor: `${theme.brand}22` }]}>
+                      <SymbolView
+                        name={{ ios: "bolt.fill", android: "bolt", web: "bolt" }}
+                        size={12}
+                        tintColor={theme.brand}
+                      />
+                      <ThemedText type="code" style={{ color: theme.brand }}>
+                        {`${t("mine.computePointsLabel")} ${
+                          computeBalance == null ? "—" : formatPoints(computeBalance, locale)
+                        }`}
+                      </ThemedText>
+                    </View>
                   </View>
                 </View>
               </View>

@@ -309,7 +309,8 @@ function LinearTaskSession({
       </Button>
     </div>
   ) : null;
-  const projectUnavailable = projectQuery.error instanceof CrewApiError &&
+  const projectUnavailable =
+    projectQuery.error instanceof CrewApiError &&
     [401, 403, 404].includes(projectQuery.error.status);
   if (projectQuery.isError && (!project || projectUnavailable)) return projectError;
   if (projectQuery.isLoading || !project || !activeView || !effectiveView) {

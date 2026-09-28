@@ -14,7 +14,7 @@ import {
 import {
   ExperienceChapterButton,
   ExperienceChapterPicker,
-  ExperiencePlayer,
+  ExperiencePlayerWithAccess,
   ExperienceShareButton,
   ExperienceStartShell,
   buildExperiencePlayShareUrl,
@@ -225,8 +225,9 @@ export default function PlayGameScreen() {
         <View style={styles.blackGate} />
       ) : published ? (
         <View style={styles.body}>
-          <ExperiencePlayer
+          <ExperiencePlayerWithAccess
             key={playerKey}
+            accessMode="published"
             runtime={published.manifest}
             locale={locale}
             copy={copy}

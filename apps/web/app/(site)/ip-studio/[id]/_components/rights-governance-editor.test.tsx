@@ -12,7 +12,13 @@ vi.mock("sonner", () => ({ toast: { success: s.success, error: s.error } }));
 vi.mock("@/src/env", () => ({ env: {} }));
 let root: Root, host: HTMLDivElement;
 const ip = (version: number, owner = "Original") =>
-  ({ id: "ip", version, copyrightOwner: owner, rightsSummary: {}, aiDisclosure: {} }) as IpCreatorIp;
+  ({
+    id: "ip",
+    version,
+    copyrightOwner: owner,
+    rightsSummary: {},
+    aiDisclosure: {},
+  }) as IpCreatorIp;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   host = document.createElement("div");
@@ -45,9 +51,12 @@ it("keeps a dirty draft tied to its original version after a remote refresh", as
   render(ip(11, "Remote owner"));
   s.save.mockRejectedValueOnce(new Error("Version conflict"));
   await act(async () => save().click());
-  expect(s.save).toHaveBeenCalledWith(expect.objectContaining({
-    copyrightOwner: "My edit", expectedVersion: 10,
-  }));
+  expect(s.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      copyrightOwner: "My edit",
+      expectedVersion: 10,
+    })
+  );
   expect(s.error).toHaveBeenCalledWith("Version conflict");
   expect(host.querySelector("input")!.value).toBe("My edit");
 });
@@ -63,7 +72,12 @@ it("uses the successful save version for a subsequent edit", async () => {
 
 it("preserves typing during a pending save and advances only to the saved version", async () => {
   let resolve!: (result: { ip: IpCreatorIp }) => void;
-  s.save.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+  s.save.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
   render(ip(10));
   edit("My edit");
   act(() => save().click());
@@ -73,9 +87,12 @@ it("preserves typing during a pending save and advances only to the saved versio
   expect(host.querySelector("input")!.value).toBe("Still typing");
   expect(save().disabled).toBe(false);
   await act(async () => save().click());
-  expect(s.save).toHaveBeenLastCalledWith(expect.objectContaining({
-    copyrightOwner: "Still typing", expectedVersion: 11,
-  }));
+  expect(s.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      copyrightOwner: "Still typing",
+      expectedVersion: 11,
+    })
+  );
 });
 it("refreshes to the latest server values when the user reverts the draft", () => {
   render(ip(10));

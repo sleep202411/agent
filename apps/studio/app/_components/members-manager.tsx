@@ -96,7 +96,11 @@ function MembersManagerView({
   const roleLabel = (r: string) =>
     t(
       `roles.${r}` as
-        "roles.admin" | "roles.editor" | "roles.viewer" | "roles.producer" | "roles.reviewer"
+        | "roles.admin"
+        | "roles.editor"
+        | "roles.viewer"
+        | "roles.producer"
+        | "roles.reviewer"
     );
   const queryClient = useQueryClient();
   const membersKey = ["share-members", scope.kind, scope.id, viewerId] as const;

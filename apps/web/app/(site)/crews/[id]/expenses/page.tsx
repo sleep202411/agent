@@ -225,10 +225,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
         {dirty ? (
           <div>
             <p className="text-sm">{t("unsaved")}</p>
-            <Button
-              disabled={busy}
-              onClick={() => load(savedDraft.current)}
-            >
+            <Button disabled={busy} onClick={() => load(savedDraft.current)}>
               {t("discard")}
             </Button>
           </div>

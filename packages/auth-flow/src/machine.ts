@@ -21,7 +21,13 @@ import { secondsUntil } from "./resend-clock";
 import type { AuthMode, AuthSession, NormalizedIdentifier } from "./types";
 
 export type AuthStep =
-  "identifier" | "code" | "password" | "reset_password" | "profile" | "invite" | "done";
+  | "identifier"
+  | "code"
+  | "password"
+  | "reset_password"
+  | "profile"
+  | "invite"
+  | "done";
 
 export type { AuthMode };
 

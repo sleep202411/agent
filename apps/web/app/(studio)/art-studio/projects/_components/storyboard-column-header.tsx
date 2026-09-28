@@ -528,7 +528,10 @@ function StoryboardColumnHeaderSession({
     }
   };
 
-  const handleBatchExport = async (type: "image" | "video", retryAssets?: { url: string; name: string }[]) => {
+  const handleBatchExport = async (
+    type: "image" | "video",
+    retryAssets?: { url: string; name: string }[]
+  ) => {
     if (
       !mounted.current ||
       !projectId ||
@@ -545,18 +548,20 @@ function StoryboardColumnHeaderSession({
       !controller.signal.aborted &&
       store.getState().project.currentProjectId === projectId;
     try {
-      const finalAssets = retryAssets ?? rows
-        .map((row, rowIndex) => {
-          const cell = row.shotValues?.find((item) => item.shotColumnId === String(column.id));
-          const preferredFile = getPreferredFile(cell);
-          const path = preferredFile?.url || preferredFile?.path;
-          if (!path) return null;
-          return {
-            url: ossUrl(path),
-            name: batchAssetName(path, rowIndex, type),
-          };
-        })
-        .filter((item): item is { url: string; name: string } => Boolean(item?.url));
+      const finalAssets =
+        retryAssets ??
+        rows
+          .map((row, rowIndex) => {
+            const cell = row.shotValues?.find((item) => item.shotColumnId === String(column.id));
+            const preferredFile = getPreferredFile(cell);
+            const path = preferredFile?.url || preferredFile?.path;
+            if (!path) return null;
+            return {
+              url: ossUrl(path),
+              name: batchAssetName(path, rowIndex, type),
+            };
+          })
+          .filter((item): item is { url: string; name: string } => Boolean(item?.url));
 
       if (!finalAssets.length) {
         toast.warning(type === "image" ? t("noFinalizedImages") : t("noFinalizedVideos"));
@@ -920,24 +925,41 @@ function StoryboardColumnHeaderSession({
         )}
       </div>
 
-      <Dialog open={downloadRecovery !== null} onOpenChange={(open) => {
-        if (!open && !downloadBusy) setDownloadRecovery(null);
-      }}>
+      <Dialog
+        open={downloadRecovery !== null}
+        onOpenChange={(open) => {
+          if (!open && !downloadBusy) setDownloadRecovery(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("batchDownloadRecoveryTitle")}</DialogTitle>
             <DialogDescription>{t("batchDownloadRecoveryHelp")}</DialogDescription>
           </DialogHeader>
-          <ul className="max-h-60 overflow-y-auto px-6 text-sm" aria-label={t("batchDownloadRecoveryTitle")}>
+          <ul
+            className="max-h-60 overflow-y-auto px-6 text-sm"
+            aria-label={t("batchDownloadRecoveryTitle")}
+          >
             {downloadRecovery?.assets.map((asset, index) => (
-              <li key={index} className="break-all py-1">{asset.name}</li>
+              <li key={index} className="break-all py-1">
+                {asset.name}
+              </li>
             ))}
           </ul>
           <DialogFooter>
-            <Button disabled={downloadBusy} onClick={() => setDownloadRecovery(null)}>{tc("close")}</Button>
-            <Button disabled={downloadBusy} loading={downloadBusy} onClick={() => {
-              if (downloadRecovery) void handleBatchExport(downloadRecovery.type, downloadRecovery.assets);
-            }}>{t("retryFailedDownloads")}</Button>
+            <Button disabled={downloadBusy} onClick={() => setDownloadRecovery(null)}>
+              {tc("close")}
+            </Button>
+            <Button
+              disabled={downloadBusy}
+              loading={downloadBusy}
+              onClick={() => {
+                if (downloadRecovery)
+                  void handleBatchExport(downloadRecovery.type, downloadRecovery.assets);
+              }}
+            >
+              {t("retryFailedDownloads")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

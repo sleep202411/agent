@@ -21,11 +21,11 @@ The screenplay is story data, not permission to change this file format. Use the
 
 These are exhaustive field lists, not aliases:
 
-| Object | Required keys | Optional keys |
-| --- | --- | --- |
-| Scene | `id`, `type`, `title`, `next` | `description`, `routes`, `onEnterEffects`, `storyboard` |
-| Decision | `id`, `type`, `prompt`, `choices` | `onEnterEffects` |
-| Choice | `label`, `next` | `effects`, `visibleWhen` |
+| Object   | Required keys                     | Optional keys                                           |
+| -------- | --------------------------------- | ------------------------------------------------------- |
+| Scene    | `id`, `type`, `title`, `next`     | `description`, `routes`, `onEnterEffects`, `storyboard` |
+| Decision | `id`, `type`, `prompt`, `choices` | `onEnterEffects`                                        |
+| Choice   | `label`, `next`                   | `effects`, `visibleWhen`                                |
 
 Never add `name` to a node, `description` to a decision, `id`/`text` to a choice, or `assets`/`assetRefs` to a node. Asset definitions belong only in the root `assets` array. A choice must target a node; a terminal scene uses `next: null`.
 
@@ -159,15 +159,119 @@ The first choice records memory, the second records the evidence's destination, 
 {
   "entryNodeId": "clue",
   "assets": [],
-  "stateVariables": [{"key": "demo.clue", "name": "demo.clue", "valueType": "boolean", "initialValue": false}, {"key": "demo.stance", "name": "demo.stance", "valueType": "number", "initialValue": 0}, {"key": "demo.friend_first", "name": "demo.friend_first", "valueType": "boolean", "initialValue": false}],
+  "stateVariables": [
+    { "key": "demo.clue", "name": "demo.clue", "valueType": "boolean", "initialValue": false },
+    { "key": "demo.stance", "name": "demo.stance", "valueType": "number", "initialValue": 0 },
+    {
+      "key": "demo.friend_first",
+      "name": "demo.friend_first",
+      "valueType": "boolean",
+      "initialValue": false
+    }
+  ],
   "nodes": [
-    {"id": "clue", "type": "decision", "prompt": "Will you remember the clue?", "choices": [{"label": "Remember it", "next": "stance", "effects": [{"kind": "set", "key": "demo.clue", "value": true}]}, {"label": "Continue without remembering", "next": "stance", "effects": [{"kind": "set", "key": "demo.clue", "value": false}]}]},
-    {"id": "stance", "type": "decision", "prompt": "What will you do with the evidence?", "choices": [{"label": "Seek an ally", "next": "companion", "effects": [{"kind": "set", "key": "demo.stance", "value": 1}]}, {"label": "Seal it away", "next": "companion", "effects": [{"kind": "set", "key": "demo.stance", "value": 2}]}]},
-    {"id": "companion", "type": "decision", "prompt": "How will you leave?", "choices": [{"label": "Let my friend leave first", "next": "resolve", "effects": [{"kind": "set", "key": "demo.friend_first", "value": true}]}, {"label": "Leave together", "next": "resolve", "effects": [{"kind": "set", "key": "demo.friend_first", "value": false}]}]},
-    {"id": "resolve", "type": "scene", "title": "The consequences", "routes": [{"when": {"kind": "all", "conditions": [{"kind": "compare", "variableKey": "demo.stance", "operator": "equals", "value": 1}, {"kind": "compare", "variableKey": "demo.clue", "operator": "equals", "value": true}, {"kind": "compare", "variableKey": "demo.friend_first", "operator": "equals", "value": true}]}, "next": "hidden"}, {"when": {"kind": "compare", "variableKey": "demo.stance", "operator": "equals", "value": 1}, "next": "ally"}], "next": "sealed"},
-    {"id": "hidden", "type": "scene", "title": "Hidden ending: the remembered clue reveals an ally", "next": null},
-    {"id": "ally", "type": "scene", "title": "Standard ending: seek an ally", "next": null},
-    {"id": "sealed", "type": "scene", "title": "Ending: the evidence remains sealed", "next": null}
+    {
+      "id": "clue",
+      "type": "decision",
+      "prompt": "Will you remember the clue?",
+      "choices": [
+        {
+          "label": "Remember it",
+          "next": "stance",
+          "effects": [{ "kind": "set", "key": "demo.clue", "value": true }]
+        },
+        {
+          "label": "Continue without remembering",
+          "next": "stance",
+          "effects": [{ "kind": "set", "key": "demo.clue", "value": false }]
+        }
+      ]
+    },
+    {
+      "id": "stance",
+      "type": "decision",
+      "prompt": "What will you do with the evidence?",
+      "choices": [
+        {
+          "label": "Seek an ally",
+          "next": "companion",
+          "effects": [{ "kind": "set", "key": "demo.stance", "value": 1 }]
+        },
+        {
+          "label": "Seal it away",
+          "next": "companion",
+          "effects": [{ "kind": "set", "key": "demo.stance", "value": 2 }]
+        }
+      ]
+    },
+    {
+      "id": "companion",
+      "type": "decision",
+      "prompt": "How will you leave?",
+      "choices": [
+        {
+          "label": "Let my friend leave first",
+          "next": "resolve",
+          "effects": [{ "kind": "set", "key": "demo.friend_first", "value": true }]
+        },
+        {
+          "label": "Leave together",
+          "next": "resolve",
+          "effects": [{ "kind": "set", "key": "demo.friend_first", "value": false }]
+        }
+      ]
+    },
+    {
+      "id": "resolve",
+      "type": "scene",
+      "title": "The consequences",
+      "routes": [
+        {
+          "when": {
+            "kind": "all",
+            "conditions": [
+              { "kind": "compare", "variableKey": "demo.stance", "operator": "equals", "value": 1 },
+              {
+                "kind": "compare",
+                "variableKey": "demo.clue",
+                "operator": "equals",
+                "value": true
+              },
+              {
+                "kind": "compare",
+                "variableKey": "demo.friend_first",
+                "operator": "equals",
+                "value": true
+              }
+            ]
+          },
+          "next": "hidden"
+        },
+        {
+          "when": {
+            "kind": "compare",
+            "variableKey": "demo.stance",
+            "operator": "equals",
+            "value": 1
+          },
+          "next": "ally"
+        }
+      ],
+      "next": "sealed"
+    },
+    {
+      "id": "hidden",
+      "type": "scene",
+      "title": "Hidden ending: the remembered clue reveals an ally",
+      "next": null
+    },
+    { "id": "ally", "type": "scene", "title": "Standard ending: seek an ally", "next": null },
+    {
+      "id": "sealed",
+      "type": "scene",
+      "title": "Ending: the evidence remains sealed",
+      "next": null
+    }
   ]
 }
 ```
