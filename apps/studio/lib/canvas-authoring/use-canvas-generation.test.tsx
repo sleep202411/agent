@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   fields: vi.fn(),
   probe: vi.fn(),
   connected: false,
+  onEvent: (_event: unknown) => {},
   userId: "owner",
   documentId: "document",
   canGenerate: true,
@@ -48,7 +49,8 @@ vi.mock("@/app/[locale]/project/_components/project-context", () => ({
 }));
 vi.mock("./assets-realtime-kernel", () => ({
   getAssetsRealtimeKernel: () => ({
-    subscribe: (callbacks: { onConnected: () => void }) => {
+    subscribe: (callbacks: { onConnected: () => void; onEvent: (event: unknown) => void }) => {
+      mocks.onEvent = callbacks.onEvent;
       if (mocks.connected) callbacks.onConnected();
       return { close: vi.fn() };
     },
@@ -537,3 +539,46 @@ it("keeps missing accepted jobs marked unavailable after a successful empty look
   expect(state().status).toBe("done");
   expect(submitFizzAiJob).not.toHaveBeenCalled();
 });
+
+it.each(["first", "second"])(
+  "removes only references affected by a blocked %s output",
+  async (blocked) => {
+    const outputs = ["first", "second"].map((assetId) => ({
+      assetId,
+      type: "image" as const,
+      url: `https://cdn.test/${assetId}.png`,
+    }));
+    nodes[0].data.generation = { status: "done", jobId: "job-1", outputs };
+    const reference = {
+      id: "wire",
+      edgeId: "wire",
+      sourceNodeId: "node",
+      assetId: "first",
+      url: outputs[0].url,
+      kind: "image",
+    };
+    nodes.push({
+      id: "target",
+      type: "video",
+      position: { x: 1, y: 1 },
+      data: {
+        references: { referenceImages: [reference] },
+        generation: { status: "done", jobId: "target-job", outputs: [outputs[0]] },
+      },
+    });
+    graph.getEdges = () => [{ id: "wire", source: "node", target: "target" }];
+    await mount();
+    await act(async () =>
+      mocks.onEvent({ kind: "media_asset_moderation_changed", action: "blocked", assetId: blocked })
+    );
+    expect(state().outputs).toEqual(outputs.filter((output) => output.assetId !== blocked));
+    expect(graph.removeAssetsByMediaAssetId).toHaveBeenCalledWith(blocked);
+    if (blocked === "second") {
+      expect(nodes[1].data.references).toEqual({ referenceImages: [reference] });
+      expect(graph.removeEdge).not.toHaveBeenCalled();
+    } else {
+      expect(nodes[1].data.references).toEqual({});
+      expect(graph.removeEdge).toHaveBeenCalledWith("wire");
+    }
+  }
+);

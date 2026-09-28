@@ -767,9 +767,9 @@ export function CanvasGenerationProvider({
             }
             if (
               isGenerationNodeType(node.type) &&
-              (node.data as GenNodeData).generation?.outputs?.some(
-                (output) => output.assetId === event.assetId
-              )
+              // Canvas wires use the primary output. Removing another result
+              // must not disconnect valid references to the first image.
+              (node.data as GenNodeData).generation?.outputs?.[0]?.assetId === event.assetId
             ) {
               blockedOutputSourceNodeIds.add(node.id);
             }
