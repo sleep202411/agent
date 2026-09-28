@@ -154,6 +154,24 @@ export class IpKnowledgeService {
     const { documents } = await this.readRaw(ipId);
     const published = documents.filter((d) => d.isPublished);
 
+    signal.throwIfAborted();
+    // No model or worker is needed to report that no public source exists.
+    // Keep the same audience access check used by the answered path.
+    if (published.length === 0) {
+      await this.ips.ensurePublicEngagementTarget(user, ipId);
+      signal.throwIfAborted();
+      return {
+        answer:
+          input.locale === 'zh-CN'
+            ? '目前没有关于该影片的已发布公开资料，暂时无法回答您的问题。'
+            : input.locale === 'zh-HK'
+              ? '目前沒有關於該影片的已發佈公開資料，暫時無法回答您的問題。'
+              : 'There are currently no published materials available for this film to answer your question.',
+        citedDocumentIds: [],
+        unanswered: true,
+      };
+    }
+
     let worker: AgentOsWorkerClient;
     try {
       worker = this.modules.get(AgentOsWorkerClient, { strict: false });
