@@ -9,14 +9,14 @@ import {
   ExperienceRendererRegistry,
   ExperienceRuntimeController,
   type ExperienceRendererAdapter,
-  type ExperienceRuntimeRestoreInput,
+  type ExperienceAccessCheck,
 } from "@repo/experience-engine";
 
 export interface ExperienceRuntimeOptions {
   rendererAdapters: readonly ExperienceRendererAdapter[];
   additionalCapabilities?: ReadonlySet<string>;
   randomSeed?: string;
-  restore?: ExperienceRuntimeRestoreInput;
+  canAccess?: ExperienceAccessCheck;
 }
 
 /**
@@ -46,6 +46,7 @@ export function createExperienceRuntime(
   const capabilities = new Set(EXPERIENCE_ENGINE_BUILT_IN_CAPABILITIES);
   rendererRegistry.capabilities().forEach((capability) => capabilities.add(capability));
   EXPERIENCE_NATIVE_HOST_CAPABILITIES.forEach((capability) => capabilities.add(capability));
+  if (options.canAccess) capabilities.add("commerce.community-points");
   options.additionalCapabilities?.forEach((capability) => capabilities.add(capability));
 
   return new ExperienceRuntimeController(manifest, {
@@ -54,8 +55,8 @@ export function createExperienceRuntime(
       experienceApiVersion: EXPERIENCE_API_VERSION,
       capabilities,
     },
+    canAccess: options.canAccess,
     rendererRegistry,
     ...(options.randomSeed ? { randomSeed: options.randomSeed } : {}),
-    ...(options.restore ? { restore: options.restore } : {}),
   });
 }

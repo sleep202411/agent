@@ -19,7 +19,7 @@ import {
   type StoryWorkingPreview,
 } from "@/features/agent/api/story-working-preview-api";
 import {
-  ExperiencePlayer,
+  ExperiencePlayerWithAccess,
   ExperienceStartShell,
   localize,
   type ExperiencePlayerCopy,
@@ -181,8 +181,9 @@ export default function StoryPreviewScreen() {
         />
       ) : playableRuntime ? (
         <View style={styles.body}>
-          <ExperiencePlayer
+          <ExperiencePlayerWithAccess
             key={`${parsedRuntime?.buildId ?? "invalid-runtime"}:${preview?.draftRevision ?? 0}:${reloadToken}`}
+            accessMode="preview"
             runtime={playableRuntime}
             locale={locale}
             copy={copy}

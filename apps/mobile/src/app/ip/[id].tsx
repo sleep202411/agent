@@ -481,14 +481,9 @@ export default function IpDetailScreen() {
   };
 
   const promptCommunityMembership = () => {
-    promptInsufficientPaywall({
-      title: t("ipDetail.memberOnlyTitle"),
-      body: t("ipDetail.memberOnlyBody"),
-      cancelLabel: t("common.cancel"),
-      buyLabel: t("paywall.buyMembership"),
-      category: "community_membership",
-      communityReturnUrl: webIpUrl,
-    });
+    Alert.alert(t("ipDetail.memberOnlyTitle"), t("ipDetail.memberOnlyWebBody"), [
+      { text: t("common.ok") },
+    ]);
   };
 
   const creator = ip.creators[0];

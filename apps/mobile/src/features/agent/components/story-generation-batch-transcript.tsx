@@ -12,13 +12,20 @@ import IconWallet from "@tabler/icons-react-native/icons/IconWallet";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
 import { navigateToStoryPreview } from "@/features/experience-player";
-import { promptInsufficientPaywall } from "@/features/paywall";
 import { useTranslations, type MessageKey } from "@/i18n";
 
 import {
@@ -231,20 +238,6 @@ function BatchBody({
     failure?.code === "INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS";
   const firstUnfinished = ordered.find((item) => item.status !== "completed");
   const canCancelBatch = batch.canCancel && CANCELLABLE.has(batch.status);
-  const promptedBatchRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!insufficientBalance) return;
-    if (promptedBatchRef.current === batch.id) return;
-    promptedBatchRef.current = batch.id;
-    promptInsufficientPaywall({
-      title: t("agent.generation.recovery.balanceTitle"),
-      body: t("agent.credits.insufficientBody"),
-      cancelLabel: t("common.cancel"),
-      buyLabel: t("paywall.buyCredits"),
-      category: "compute_points",
-    });
-  }, [batch.id, insufficientBalance, t]);
 
   const itemLabel = (item: StoryGenerationBatchItem): string => {
     if (batch.status === "blocked" && item.id === firstUnfinished?.id) {
@@ -298,29 +291,64 @@ function BatchBody({
               ? t("agent.generation.recovery.balanceBody")
               : t("agent.generation.recovery.failedBody")}
           </Text>
-          {insufficientBalance ? (
-            <Text style={styles.recoveryBody}>{t("agent.credits.insufficientBody")}</Text>
-          ) : null}
           <View style={styles.recoveryActions}>
+            {insufficientBalance ? (
+              <View style={styles.recoveryHit}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={mutating}
+                  onPress={() =>
+                    Alert.alert(
+                      t("agent.credits.webRechargeTitle"),
+                      t("agent.credits.webRechargeBody"),
+                      [{ text: t("common.ok") }]
+                    )
+                  }
+                >
+                  <View style={[styles.continueChrome, mutating && styles.disabled]}>
+                    <IconWallet size={14} color="#FFFFFF" strokeWidth={1.8} />
+                    <Text style={styles.continueText} numberOfLines={1}>
+                      {t("agent.generation.recovery.recharge")}
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+            ) : null}
             <View style={styles.recoveryHit}>
               <Pressable
                 accessibilityRole="button"
                 disabled={mutating}
                 onPress={() => void onResume()}
               >
-                <View style={[styles.continueChrome, mutating && styles.disabled]}>
+                <View
+                  style={[
+                    insufficientBalance ? styles.stopChrome : styles.continueChrome,
+                    mutating && styles.disabled,
+                  ]}
+                >
                   {mutating ? (
-                    <IconLoader2 size={14} color="#FFFFFF" strokeWidth={1.8} />
+                    <IconLoader2
+                      size={14}
+                      color={insufficientBalance ? "rgba(255,255,255,0.82)" : "#FFFFFF"}
+                      strokeWidth={1.8}
+                    />
                   ) : (
-                    <IconRefresh size={14} color="#FFFFFF" strokeWidth={1.8} />
+                    <IconRefresh
+                      size={14}
+                      color={insufficientBalance ? "rgba(255,255,255,0.82)" : "#FFFFFF"}
+                      strokeWidth={1.8}
+                    />
                   )}
-                  <Text style={styles.continueText} numberOfLines={1}>
+                  <Text
+                    style={insufficientBalance ? styles.stopText : styles.continueText}
+                    numberOfLines={1}
+                  >
                     {t("agent.generation.recovery.continue")}
                   </Text>
                 </View>
               </Pressable>
             </View>
-            <View style={styles.recoveryHit}>
+            <View style={insufficientBalance ? styles.recoveryHitFull : styles.recoveryHit}>
               <Pressable
                 accessibilityRole="button"
                 disabled={mutating}
@@ -744,13 +772,20 @@ const styles = StyleSheet.create({
   },
   recoveryActions: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: Spacing.two,
     marginTop: 4,
     width: "100%",
   },
   recoveryHit: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: "47%",
     minWidth: 0,
+  },
+  recoveryHitFull: {
+    flexBasis: "100%",
+    minWidth: 0,
+    width: "100%",
   },
   continueChrome: {
     alignItems: "center",

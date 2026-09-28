@@ -69,10 +69,12 @@ install or plugin changes:
 - CN Android WeChat: `npx eas-cli build --profile development-cn --platform android`
 
 CN iOS talks to StoreKit through `react-native-iap` (no RevenueCat key).
-Global iOS and Google Play still use RevenueCat. CN Android uses WeChat Pay.
-Bake public keys (`EXPO_PUBLIC_REVENUECAT_*` for global, `EXPO_PUBLIC_WECHAT_APP_ID`
-for CN Android) into the release env; never put RevenueCat secrets or WeChat
-merchant certs in the app.
+Global iOS and Google Play still use RevenueCat. CN Android WeChat is Native
+scan pay: the app calls Nest `/billing/checkout` and renders the `weixin://`
+code as a QR. It does not use WeChat H5 or the OpenSDK `pay()` path, so
+`EXPO_PUBLIC_WECHAT_APP_ID` is not required for checkout. Bake
+`EXPO_PUBLIC_REVENUECAT_*` for global builds; never put RevenueCat secrets or
+WeChat merchant certs in the app.
 
 **WeChat Universal Links (CN iOS):** Web hosts AASA + `/app/` on
 `fizzdragon.fizzspace.cn`. Mobile bakes

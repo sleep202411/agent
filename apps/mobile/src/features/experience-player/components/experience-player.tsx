@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   EXPERIENCE_CORE_RENDERER_ADAPTERS,
+  ExperienceAccessRequiredError,
   advanceExperienceTimeline,
   createExperienceTimelineCursor,
   evaluateExperienceCondition,
@@ -19,6 +20,7 @@ import {
   ExperienceCoreChoiceRendererConfigSchema,
   ExperienceCoreTextRendererConfigSchema,
   ExperienceRuntimeManifestSchema,
+  type ExperienceAccessRequirement,
   type ExperienceGraphNode,
   type ExperienceImageAsset,
   type ExperienceRendererInstance,
@@ -35,6 +37,7 @@ import { ScreenActiveGateContext, useScreenActive } from "@/hooks/use-app-active
 import { useExperienceAudioHost } from "../hooks/use-experience-audio-host";
 import { useExperiencePreload } from "../hooks/use-experience-preload";
 import { EXPERIENCE_PLAY_ORIENTATION } from "../lib/experience-media";
+import type { ExperiencePlayerAccess } from "../lib/experience-player-access";
 import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 import { createExperienceRuntime } from "../lib/experience-runtime-host";
 import {
@@ -49,12 +52,16 @@ import {
   type ExperienceMediaPlaybackHandle,
 } from "./experience-video-renderer";
 const START_ACCENT = EXPERIENCE_START_ACCENT;
+
+export type { ExperiencePlayerAccess };
+
 export interface ExperiencePlayerProps {
   runtime: ExperienceRuntimeManifest;
   locale: string;
   copy: ExperiencePlayerCopy;
   randomSeed?: string;
   coverUrl?: string;
+  access?: ExperiencePlayerAccess;
   /** Serial works: jump to the next chapter without leaving the play shell. */
   onNextChapter?: () => void;
   nextChapterLabel?: string;
@@ -71,6 +78,7 @@ export function ExperiencePlayer({
   copy,
   randomSeed: initialRandomSeed,
   coverUrl,
+  access,
   onNextChapter,
   nextChapterLabel,
   loadTheme = defaultLoadExperienceTheme,
@@ -93,6 +101,7 @@ export function ExperiencePlayer({
         controller: createExperienceRuntime(parsed.data, {
           rendererAdapters: EXPERIENCE_CORE_RENDERER_ADAPTERS,
           randomSeed,
+          canAccess: access?.canAccess,
         }),
       };
     } catch (error) {
@@ -101,7 +110,7 @@ export function ExperiencePlayer({
         issues: [{ path: [] as PropertyKey[], message: runtimeErrorMessage(error) }],
       };
     }
-  }, [randomSeed, runtime]);
+  }, [access, randomSeed, restartEpoch, runtime]);
 
   if (!prepared.ok) {
     return (
@@ -125,6 +134,7 @@ export function ExperiencePlayer({
   return (
     <ActiveExperienceRuntimePlayer
       key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
+      access={access}
       manifest={prepared.manifest}
       controller={prepared.controller}
       locale={locale}
@@ -155,6 +165,7 @@ function ActiveExperienceRuntimePlayer({
   loadTheme,
   active,
   onRestart,
+  access,
 }: {
   manifest: ExperienceRuntimeManifest;
   controller: ExperienceRuntimeController;
@@ -166,6 +177,7 @@ function ActiveExperienceRuntimePlayer({
   loadTheme: ExperienceThemeLoader;
   active: boolean;
   onRestart: () => void;
+  access?: ExperiencePlayerAccess;
 }) {
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -176,6 +188,17 @@ function ActiveExperienceRuntimePlayer({
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [timelineHoldGate, setTimelineHoldGate] = useState(false);
+  const accessPendingRef = useRef(false);
+  const [accessPending, setAccessPending] = useState(false);
+  const [retryAccess, setRetryAccess] = useState<(() => void) | null>(null);
+  const [nodeGate, setNodeGate] = useState<ExperienceGraphNode | null>(null);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
   const preload = useExperiencePreload(manifest);
   const playbackLocale = resolvePlaybackLocale(manifest, locale);
   const {
@@ -264,17 +287,76 @@ function ActiveExperienceRuntimePlayer({
   );
 
   const run = useCallback(
-    (operation: () => ExperienceEventQueueResult) => {
-      try {
-        applyResult(operation());
-        return true;
-      } catch (error) {
-        if (isDiscardableLateInput(error)) return false;
-        setRuntimeError(runtimeErrorMessage(error));
-        return false;
-      }
+    async (operation: () => ExperienceEventQueueResult, cancellable = false) => {
+      if (accessPendingRef.current) return false;
+      const attempt = async (): Promise<boolean> => {
+        try {
+          applyResult(operation());
+          setRetryAccess(null);
+          return true;
+        } catch (error) {
+          if (error instanceof ExperienceAccessRequiredError && access) {
+            accessPendingRef.current = true;
+            setAccessPending(true);
+            playbackHandlesRef.current.forEach((handle) => handle.pause());
+            try {
+              await suspendAudio();
+              const alreadyOwned = access.checkAccess
+                ? await access.checkAccess(error.requirement)
+                : access.canAccess(error.requirement);
+              if (!aliveRef.current) return false;
+              let allowed = alreadyOwned;
+              if (!alreadyOwned) {
+                const lockedNode = manifest.graph.nodes.find(
+                  (node) => node.access?.key === error.requirement.key
+                );
+                setNodeGate(lockedNode ?? null);
+                allowed = await access.requestAccess(error.requirement);
+              }
+              if (!aliveRef.current) return false;
+              if (allowed) {
+                if (!access.canAccess(error.requirement)) {
+                  throw new Error("The unlock could not be verified.");
+                }
+                setNodeGate(null);
+                return await attempt();
+              }
+              if (!cancellable) setRetryAccess(() => continueSession);
+              return false;
+            } catch (failure) {
+              if (aliveRef.current) {
+                setRuntimeError(runtimeErrorMessage(failure));
+                if (!cancellable) setRetryAccess(() => continueSession);
+              }
+              return false;
+            } finally {
+              if (aliveRef.current) {
+                accessPendingRef.current = false;
+                setAccessPending(false);
+                setNodeGate(null);
+              }
+            }
+          }
+          if (isDiscardableLateInput(error)) return false;
+          setRuntimeError(runtimeErrorMessage(error));
+          return false;
+        }
+      };
+      const continueSession = () => {
+        if (accessPendingRef.current) return;
+        void (async () => {
+          const ok = await attempt();
+          if (!ok || !aliveRef.current) return;
+          setRuntimeError(null);
+          if (!playbackEnabledRef.current) {
+            playbackEnabledRef.current = true;
+            setStarted(true);
+          }
+        })();
+      };
+      return attempt();
     },
-    [applyResult]
+    [access, applyResult, controller, manifest, suspendAudio]
   );
 
   useEffect(() => {
@@ -295,7 +377,9 @@ function ActiveExperienceRuntimePlayer({
       instanceId: string,
       outcomeType: string,
       payload: Record<string, never> | { choiceId: string } = {}
-    ) => run(() => controller.emitRendererOutcome({ instanceId, outcomeType, payload })),
+    ) => {
+      void run(() => controller.emitRendererOutcome({ instanceId, outcomeType, payload }), true);
+    },
     [controller, run]
   );
 
@@ -309,7 +393,7 @@ function ActiveExperienceRuntimePlayer({
       parkedGestureEventsRef.current = parkedGestureEventsRef.current.filter(
         (event) => !due.includes(event)
       );
-      run(() => controller.dispatch(due));
+      void run(() => controller.dispatch(due));
     },
     [controller, manifest, run]
   );
@@ -323,7 +407,7 @@ function ActiveExperienceRuntimePlayer({
       setSceneTimeMs(positionMs);
       const advanced = advanceExperienceTimeline(activeNode, timelineCursorRef.current, positionMs);
       timelineCursorRef.current = advanced.cursor;
-      if (advanced.events.length > 0) run(() => controller.dispatch(advanced.events));
+      if (advanced.events.length > 0) void run(() => controller.dispatch(advanced.events));
       flushParkedGestureEvents(positionMs);
     },
     [controller, manifest, run, flushParkedGestureEvents]
@@ -337,18 +421,19 @@ function ActiveExperienceRuntimePlayer({
           timelineCursorRef.current.positionMs < parkedEventBranchAtMs(manifest, event) - 1e-6
       );
       if (parked.length === 0) {
-        run(() => controller.dispatch(events));
+        void run(() => controller.dispatch(events));
         return;
       }
       const immediate = events.filter((event) => !parked.includes(event));
       parkedGestureEventsRef.current.push(...parked);
-      if (immediate.length > 0) run(() => controller.dispatch(immediate));
+      if (immediate.length > 0) void run(() => controller.dispatch(immediate));
     },
     [controller, manifest, run]
   );
 
   const currentNode = findGraphNode(manifest, runtimeState.currentSceneId);
-  const scene = currentNode?.kind === "scene" ? currentNode : null;
+  const entryLocked = Boolean(currentNode?.access && !access?.canAccess(currentNode.access));
+  const scene = !entryLocked && currentNode?.kind === "scene" ? currentNode : null;
   const endingId = runtimeState.completedEndingId ?? null;
   const ending = endingId
     ? (manifest.endings.find((candidate) => candidate.endingId === endingId) ?? null)
@@ -461,7 +546,8 @@ function ActiveExperienceRuntimePlayer({
     void (async () => {
       try {
         await unlockAudio();
-        if (!run(() => controller.start())) {
+        const ok = await run(() => controller.start());
+        if (!ok) {
           await suspendAudio();
           return;
         }
@@ -478,7 +564,7 @@ function ActiveExperienceRuntimePlayer({
 
   useEffect(() => {
     if (!started) return;
-    if (timelineHoldGate) {
+    if (timelineHoldGate || accessPending) {
       playbackHandlesRef.current.forEach((handle) => handle.pause());
       return;
     }
@@ -486,7 +572,7 @@ function ActiveExperienceRuntimePlayer({
     playbackHandlesRef.current.forEach((handle) => {
       void handle.play().catch(() => undefined);
     });
-  }, [started, timelineHoldGate]);
+  }, [started, timelineHoldGate, accessPending]);
 
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
@@ -495,7 +581,7 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       playbackHandlesRef.current.set(instanceId, handle);
-      if (!playbackEnabledRef.current || timelineHoldGate) return;
+      if (!playbackEnabledRef.current || timelineHoldGate || accessPendingRef.current) return;
       void handle.play().catch(() => undefined);
     },
     [timelineHoldGate]
@@ -510,7 +596,11 @@ function ActiveExperienceRuntimePlayer({
         <ThemedText type="code" style={styles.lightMuted}>
           {runtimeError}
         </ThemedText>
-        <PrimaryButton label={copy.restart} accent={accent} onPress={onRestart} />
+        {retryAccess ? (
+          <PrimaryButton label={copy.continue} accent={accent} onPress={retryAccess} />
+        ) : (
+          <PrimaryButton label={copy.restart} accent={accent} onPress={onRestart} />
+        )}
       </View>
     );
   }
@@ -592,6 +682,7 @@ function ActiveExperienceRuntimePlayer({
               locale={locale}
               copy={copy}
               accent={accent}
+              formatPrice={access?.formatPrice}
               onOutcome={emitOutcome}
               onRuntimeError={setRuntimeError}
               onTimelineTimeMs={(positionMs) => advanceTimeline(renderer.instanceId, positionMs)}
@@ -599,7 +690,7 @@ function ActiveExperienceRuntimePlayer({
             />
           </View>
         ))}
-        {scene && started && !endingId ? (
+        {scene && started && !endingId && !accessPending && !retryAccess ? (
           <ExperienceSpatialLayer
             key={scene.sceneId}
             manifest={manifest}
@@ -612,6 +703,12 @@ function ActiveExperienceRuntimePlayer({
             onRuntimeError={setRuntimeError}
             onTimelineHoldGateChange={setTimelineHoldGate}
           />
+        ) : null}
+        {nodeGate ? <View pointerEvents="none" style={styles.nodeGate} /> : null}
+        {retryAccess && started && !nodeGate ? (
+          <View style={styles.retryOverlay}>
+            <PrimaryButton label={copy.continue} accent={accent} onPress={retryAccess} />
+          </View>
         ) : null}
       </View>
     </ScreenActiveGateContext.Provider>
@@ -626,6 +723,7 @@ function RendererPanel({
   locale,
   copy,
   accent,
+  formatPrice,
   onOutcome,
   onRuntimeError,
   onTimelineTimeMs,
@@ -638,6 +736,7 @@ function RendererPanel({
   locale: string;
   copy: ExperiencePlayerCopy;
   accent: string;
+  formatPrice?: (amount: number) => string;
   onOutcome: (
     instanceId: string,
     outcomeType: string,
@@ -714,17 +813,28 @@ function RendererPanel({
             {copy.noVisibleChoices}
           </ThemedText>
         ) : (
-          choices.map((choice) => (
-            <PrimaryButton
-              key={choice.choiceId}
-              label={localize(choice.label, locale, defaultLocale)}
-              accent="rgba(255,255,255,0.14)"
-              textColor="#FFFFFF"
-              onPress={() =>
-                onOutcome(renderer.instanceId, "choice-selected", { choiceId: choice.choiceId })
-              }
-            />
-          ))
+          choices.map((choice) => {
+            const requirement = choiceRouteAccess(
+              manifest,
+              runtimeState,
+              renderer.instanceId,
+              choice.choiceId
+            );
+            const price =
+              requirement && formatPrice ? formatPrice(requirement.communityPointPrice) : null;
+            const label = localize(choice.label, locale, defaultLocale);
+            return (
+              <PrimaryButton
+                key={choice.choiceId}
+                label={price ? `${label} · ${price}` : label}
+                accent="rgba(255,255,255,0.14)"
+                textColor="#FFFFFF"
+                onPress={() =>
+                  onOutcome(renderer.instanceId, "choice-selected", { choiceId: choice.choiceId })
+                }
+              />
+            );
+          })
         )}
       </View>
     );
@@ -768,6 +878,33 @@ function findGraphNode(
   sceneId: string
 ): ExperienceGraphNode | undefined {
   return manifest.graph.nodes.find((node) => node.sceneId === sceneId);
+}
+
+function choiceRouteAccess(
+  manifest: ExperienceRuntimeManifest,
+  runtimeState: ExperienceRuntimeState,
+  instanceId: string,
+  choiceId: string
+): ExperienceAccessRequirement | undefined {
+  return manifest.graph.nodes
+    .flatMap((node) => node.eventBindings)
+    .filter(
+      (binding) =>
+        binding.on.type === "renderer.outcome" &&
+        binding.on.sourceId === instanceId &&
+        binding.on.qualifierId === "choice-selected"
+    )
+    .flatMap((binding) => binding.routes)
+    .find(
+      (route) =>
+        !route.when ||
+        evaluateExperienceCondition(route.when, runtimeState, {
+          type: "renderer.outcome",
+          sourceId: instanceId,
+          qualifierId: "choice-selected",
+          payload: { choiceId },
+        })
+    )?.access;
 }
 
 /**
@@ -904,6 +1041,19 @@ const styles = StyleSheet.create({
   stage: {
     flex: 1,
     backgroundColor: "#000000",
+  },
+  nodeGate: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    zIndex: 40,
+  },
+  retryOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing.five,
+    zIndex: 41,
   },
   rendererLayer: {
     ...StyleSheet.absoluteFill,
