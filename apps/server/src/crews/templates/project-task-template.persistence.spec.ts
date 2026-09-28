@@ -1,3 +1,4 @@
+import { DEFAULT_SERIES_TASK_TEMPLATE } from './project-task-template.types';
 import { CrewProductionKind, type Prisma } from '@prisma/client';
 import { ProjectTaskTemplateService } from './project-task-template.service';
 
@@ -81,7 +82,26 @@ describe('Project task template publication persistence', () => {
   const save = (
     name: string,
     projectType: CrewProductionKind = CrewProductionKind.series,
-  ) => service.saveAdmin({ projectType, name, definition: { items: [] } });
+  ) =>
+    service.saveAdmin({
+      projectType,
+      name,
+      definition: DEFAULT_SERIES_TASK_TEMPLATE,
+    });
+
+  it('retains the active template after an invalid definition is rejected', async () => {
+    await save('original');
+    await expect(
+      service.saveAdmin({
+        projectType: CrewProductionKind.series,
+        name: 'Broken',
+        definition: { version: 1, items: [null] },
+      }),
+    ).rejects.toThrow('Invalid project task template');
+    expect(
+      (await db.query('SELECT name, version, active FROM templates')).rows,
+    ).toEqual([{ name: 'original', version: 1, active: true }]);
+  });
 
   it('keeps the previous active version when its replacement cannot be inserted', async () => {
     await save('original');

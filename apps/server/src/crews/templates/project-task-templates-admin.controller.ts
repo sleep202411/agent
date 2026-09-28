@@ -1,3 +1,4 @@
+import { TaskTemplateDefinitionSchema } from './project-task-template.schema';
 import {
   Body,
   Controller,
@@ -36,7 +37,7 @@ const ParamsSchema = z.object({
 const SaveBodySchema = z
   .object({
     name: z.string().trim().min(1).max(120),
-    definition: z.record(z.string(), z.unknown()),
+    definition: TaskTemplateDefinitionSchema,
   })
   .strict();
 

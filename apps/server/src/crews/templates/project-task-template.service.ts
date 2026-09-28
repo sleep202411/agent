@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { TaskTemplateDefinitionSchema } from './project-task-template.schema';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import {
   CrewProductionKind,
   Prisma,
@@ -263,6 +264,13 @@ export class ProjectTaskTemplateService {
     name: string;
     definition: unknown;
   }): Promise<ProjectTaskTemplate> {
+    const definition = TaskTemplateDefinitionSchema.safeParse(input.definition);
+    if (!definition.success) {
+      throw new BadRequestException({
+        message: 'Invalid project task template definition',
+        issues: definition.error.issues,
+      });
+    }
     return this.prisma.$transaction(async (tx) => {
       // Saving and plot-tree import share this lock, including the first version.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:project-task-template:${input.projectType}`}, 0))`;
@@ -281,7 +289,7 @@ export class ProjectTaskTemplateService {
           name: input.name,
           version: (latest?.version ?? 0) + 1,
           active: true,
-          definition: input.definition as Prisma.InputJsonValue,
+          definition: definition.data as Prisma.InputJsonValue,
         },
       });
     });
