@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { ConsentGate } from "./consent-gate";
 const m = vi.hoisted(() => ({ read: vi.fn(), write: vi.fn(), alert: vi.fn() }));
 vi.mock("react-native", () => ({
   Alert: { alert: m.alert },
@@ -22,7 +23,6 @@ vi.mock("@/lib/legal", () => ({
   setPrivacyConsent: m.write,
   openLegal: vi.fn(),
 }));
-import { ConsentGate } from "./consent-gate";
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 beforeEach(() => {
   vi.clearAllMocks();

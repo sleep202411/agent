@@ -1,5 +1,3 @@
-import { Platform } from "react-native";
-
 import { isMembershipCategory } from "./catalog";
 import type { PaywallProduct } from "./catalog";
 import { PurchaseCancelledError, type PurchaseResult } from "./purchase-types";

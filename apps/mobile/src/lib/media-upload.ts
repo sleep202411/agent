@@ -1,4 +1,3 @@
-import { Platform } from "react-native";
 import { api } from "./api-client";
 
 const AURORA = { service: "aurora" } as const;

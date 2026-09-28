@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
+import { ShareSheet } from "./ip-share-sheet";
 const m = vi.hoisted(() => ({
   ready: null as null | (() => void),
   capture: vi.fn(),
@@ -34,7 +35,6 @@ vi.mock("./ip-share-card", () => ({
     return null;
   },
 }));
-import { ShareSheet } from "./ip-share-sheet";
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 const ip = { id: "one", title: "Title", coverUrl: "poster-one" } as any;
 async function render(visible = true, coverUrl = "poster-one") {

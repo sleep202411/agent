@@ -1,3 +1,4 @@
+import { useIpGenerationPreview } from "./use-ip-generation-preview";
 import { useEffect, useState, useRef } from "react";
 import {
   ActivityIndicator,
@@ -31,16 +32,11 @@ interface AudienceTemplate {
   order: number;
 }
 
-interface CostPreview {
-  computePoints: number;
-  isFree: boolean;
-}
-
 interface JobStatus {
   id: string;
   status: "queued" | "in_progress" | "completed" | "failed" | "cancelled";
   progress: number | null;
-  outputs: Array<{ assetId: string; url?: string }>;
+  outputs: { assetId: string; url?: string }[];
   error?: { message?: string };
 }
 
@@ -62,13 +58,14 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
   const [refAssetUrl, setRefAssetUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  // Cost preview
-  const [costPreview, setCostPreview] = useState<CostPreview | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewError, setPreviewError] = useState(false);
+  const { costPreview, previewLoading, previewError } = useIpGenerationPreview({
+    ipId,
+    templateId: selectedTemplate?.id ?? null,
+    requiresReference: selectedTemplate?.requireReferenceImage ?? false,
+    referenceId: refAssetId,
+  });
 
   // Job progress state
-  const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
@@ -100,51 +97,6 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
       unmounted = true;
     };
   }, [ipId]);
-
-  // 2. Refresh cost preview whenever template or ref asset changes
-  useEffect(() => {
-    if (!selectedTemplate) {
-      setCostPreview(null);
-      return;
-    }
-    if (selectedTemplate.requireReferenceImage && !refAssetId) {
-      setCostPreview(null);
-      return;
-    }
-
-    let unmounted = false;
-    setPreviewLoading(true);
-    setPreviewError(false);
-
-    api
-      .post<{ cost: CostPreview }>(
-        `/ip-commerce/ips/${ipId}/generation-templates/${selectedTemplate.id}/preview`,
-        {
-          ...AURORA,
-          data: {
-            referenceImageAssetId: refAssetId || undefined,
-          },
-        }
-      )
-      .then((res) => {
-        if (!unmounted && res.cost) {
-          setCostPreview(res.cost);
-        }
-      })
-      .catch(() => {
-        if (!unmounted) {
-          setPreviewError(true);
-          setCostPreview(null);
-        }
-      })
-      .finally(() => {
-        if (!unmounted) setPreviewLoading(false);
-      });
-
-    return () => {
-      unmounted = true;
-    };
-  }, [ipId, selectedTemplate, refAssetId]);
 
   // Clean up poll on unmount
   useEffect(() => {
@@ -237,7 +189,7 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
       requireAuth();
       return;
     }
-    if (!selectedTemplate) return;
+    if (!selectedTemplate || !costPreview || previewLoading || previewError) return;
 
     setGenerating(true);
     setGenError(null);
@@ -256,7 +208,6 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
         }
       );
 
-      setJobId(runRes.jobId);
       pollStatus(runRes.jobId, selectedTemplate.id);
     } catch (err: any) {
       setGenerating(false);
@@ -275,7 +226,6 @@ export function IpGenerationPanel({ ipId }: IpGenerationPanelProps) {
 
   const handleReset = () => {
     handleCancel();
-    setJobId(null);
     setJobStatus(null);
     setGenError(null);
   };

@@ -756,7 +756,7 @@ function gestureCueHint(
 }
 
 function SwipeTrack({ direction }: { direction: GestureCueDirection }) {
-  const travel = useRef(new Animated.Value(0)).current;
+  const [travel] = useState(() => new Animated.Value(0));
   useEffect(() => {
     const animation = Animated.loop(
       Animated.sequence([
