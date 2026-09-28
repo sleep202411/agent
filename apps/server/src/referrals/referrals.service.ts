@@ -810,7 +810,15 @@ export class ReferralsService {
     );
     for (const order of orders) {
       if (existing.has(order.id)) continue;
-      await this.accrueCommissionForOrder(order);
+      try {
+        await this.accrueCommissionForOrder(order);
+      } catch (error) {
+        // One failing order must not block independent commissions in this
+        // bounded batch. Missing rewards remain eligible on the next read.
+        this.logger.warn(
+          `commission backfill failed for order ${order.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
   }
 

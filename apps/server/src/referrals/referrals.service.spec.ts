@@ -235,6 +235,34 @@ function makeService() {
 }
 
 describe('unfinished reward recovery', () => {
+  it('continues commission reconciliation after an individual order fails', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralAttribution.findUnique.mockResolvedValue({
+      status: 'qualified',
+    });
+    const orders = ['order-broken', 'order-ready'].map((id) => ({
+      id,
+      userId: REFEREE,
+      amountMinor: 100n,
+      currency: 'USD',
+    }));
+    prisma.billingOrder.findMany.mockResolvedValue(orders);
+    const internal = service as unknown as {
+      backfillRefereeCommissions(userId: string): Promise<void>;
+      accrueCommissionForOrder(order: (typeof orders)[number]): Promise<void>;
+    };
+    const accrue = jest
+      .spyOn(internal, 'accrueCommissionForOrder')
+      .mockRejectedValueOnce(new Error('Transient payout failure'))
+      .mockResolvedValue(undefined);
+    await expect(
+      internal.backfillRefereeCommissions(REFEREE),
+    ).resolves.toBeUndefined();
+    expect(accrue).toHaveBeenCalledWith(orders[1]);
+    accrue.mockClear();
+    await internal.backfillRefereeCommissions(REFEREE);
+    expect(accrue).toHaveBeenCalledWith(orders[0]);
+  });
   it('keeps recovery positions scoped to each recipient', async () => {
     const { service, prisma } = makeService();
     prisma.referralReward.findMany.mockResolvedValue(
