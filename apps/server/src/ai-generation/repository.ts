@@ -637,6 +637,23 @@ export class AiGenerationRepository {
     return this.findById(id);
   }
 
+  /** A late provider error must not overwrite a terminal outcome. */
+  async failIfActive(id: string, patch: Partial<AiJob>): Promise<AiJob | null> {
+    const data = this.patchToRow({
+      ...patch,
+      status: 'failed',
+      stage: 'failed',
+    });
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.aiJob.updateMany({
+        where: { id, status: { in: ['created', 'in_queue', 'in_progress'] } },
+        data: { ...data, version: { increment: 1 } },
+      });
+      if (result.count === 0) return null;
+      return this.findByIdWith(tx, id);
+    });
+  }
+
   /**
    * Claim a cancellation atomically: only transitions a job that is still in a
    * cancellable (non-terminal) state. Returns the fresh row if THIS call won,

@@ -19,7 +19,7 @@ it('reports failed output storage without enqueueing another paid generation', a
   const worker = Object.assign(
     Object.create(AiGenerationWorkerService.prototype) as object,
     {
-      store: { update, requeueIfRunning },
+      store: { update, failIfActive: update, requeueIfRunning },
       queueService: { enqueue },
       providerCapacity: { release: jest.fn() },
       billingWallet: { releaseForJob },

@@ -1633,6 +1633,17 @@ export class AiGenerationWorkerService
 
   private async markFailed(job: AiJob, payload: AiJobError): Promise<void> {
     const now = new Date().toISOString();
+    const failed = await this.store.failIfActive(job.id, {
+      status: 'failed',
+      stage: 'failed',
+      error: payload,
+      completedAt: now,
+      logs: [
+        ...job.logs,
+        { time: now, stage: 'failed', message: payload.message },
+      ],
+    });
+    if (!failed) return;
     await this.providerCapacity.release(job);
     await this.recordTraceSafe(job, {
       eventType: 'job_failed',
@@ -1648,27 +1659,15 @@ export class AiGenerationWorkerService
         userMessage: payload.userMessage,
       },
     });
-    const failed = await this.store.update(job.id, {
-      status: 'failed',
-      stage: 'failed',
-      error: payload,
-      completedAt: now,
-      logs: [
-        ...job.logs,
-        { time: now, stage: 'failed', message: payload.message },
-      ],
-    });
-    if (failed) {
-      await this.billingWallet.releaseForJob(
-        failed,
-        `ai_job_failed_${payload.code}`,
-      );
-      this.emit(failed);
-      this.logger.warn(
-        `job ${job.id} failed: ${payload.code} ${payload.message}`,
-      );
-      this.alertJobFailure(failed, payload, now);
-    }
+    await this.billingWallet.releaseForJob(
+      failed,
+      `ai_job_failed_${payload.code}`,
+    );
+    this.emit(failed);
+    this.logger.warn(
+      `job ${job.id} failed: ${payload.code} ${payload.message}`,
+    );
+    this.alertJobFailure(failed, payload, now);
   }
 
   /**

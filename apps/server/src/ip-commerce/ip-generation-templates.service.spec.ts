@@ -1,9 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import {
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { IpGenerationTemplatesService } from './ip-generation-templates.service';
 import type { PrismaService } from '../infra/db/db.module';
 import type { IpCommerceService } from './ip-commerce.service';
@@ -12,9 +7,17 @@ import type { AuthUser } from '../auth';
 
 describe('IpGenerationTemplatesService', () => {
   let service: IpGenerationTemplatesService;
-  let mockPrisma: any;
-  let mockIps: any;
-  let mockCatalog: any;
+  let mockPrisma: {
+    $queryRaw: jest.Mock;
+    $executeRaw: jest.Mock;
+    $transaction: jest.Mock;
+    mediaAsset: { findMany: jest.Mock };
+  };
+  let mockIps: {
+    requireEditableIp: jest.Mock;
+    ensurePublicEngagementTarget: jest.Mock;
+  };
+  let mockCatalog: { listModels: jest.Mock };
 
   const mockUser: AuthUser = {
     userId: 'user-00000000-0000-4000-8000-000000000001',
@@ -27,21 +30,23 @@ describe('IpGenerationTemplatesService', () => {
 
   beforeEach(() => {
     mockPrisma = {
-      $queryRaw: vi.fn(),
-      $executeRaw: vi.fn(),
-      $transaction: vi.fn(async (cb) => cb(mockPrisma)),
+      $queryRaw: jest.fn(),
+      $executeRaw: jest.fn(),
+      $transaction: jest.fn((cb: (db: typeof mockPrisma) => unknown) =>
+        Promise.resolve(cb(mockPrisma)),
+      ),
       mediaAsset: {
-        findMany: vi.fn(),
+        findMany: jest.fn(),
       },
     };
 
     mockIps = {
-      requireEditableIp: vi.fn(),
-      ensurePublicEngagementTarget: vi.fn(),
+      requireEditableIp: jest.fn(),
+      ensurePublicEngagementTarget: jest.fn(),
     };
 
     mockCatalog = {
-      listModels: vi
+      listModels: jest
         .fn()
         .mockResolvedValue([
           { id: 'model-seedance-image' },
@@ -50,14 +55,14 @@ describe('IpGenerationTemplatesService', () => {
     };
 
     service = new IpGenerationTemplatesService(
-      mockPrisma as PrismaService,
-      mockIps as IpCommerceService,
-      mockCatalog as AiCanonicalCatalogService,
+      mockPrisma as unknown as PrismaService,
+      mockIps as unknown as IpCommerceService,
+      mockCatalog as unknown as AiCanonicalCatalogService,
     );
   });
 
   it('create templates with valid modelIds succeeds', async () => {
-    mockPrisma.$queryRaw.mockImplementation(async (sql: any) => {
+    mockPrisma.$queryRaw.mockImplementation((sql: unknown) => {
       const text = Array.isArray(sql) ? sql.join(' ') : String(sql);
       if (text.includes('SELECT audience_generation_templates')) {
         return [
@@ -120,7 +125,7 @@ describe('IpGenerationTemplatesService', () => {
   });
 
   it('update with mismatched expectedVersion returns conflict', async () => {
-    mockPrisma.$queryRaw.mockImplementation(async (sql: any) => {
+    mockPrisma.$queryRaw.mockImplementation((sql: unknown) => {
       const text = Array.isArray(sql) ? sql.join(' ') : String(sql);
       if (text.includes('SELECT audience_generation_templates')) {
         return [
@@ -214,10 +219,10 @@ describe('IpGenerationTemplatesService', () => {
     const pub = res.templates[0];
     expect(pub.id).toBe('b0000000-0000-4000-8000-000000000001');
     expect(pub.name).toBe('Public Template');
-    expect((pub as any).promptPrefix).toBeUndefined();
-    expect((pub as any).promptSuffix).toBeUndefined();
-    expect((pub as any).logoAssetId).toBeUndefined();
-    expect((pub as any).enabled).toBeUndefined();
-    expect((pub as any).modelId).toBeUndefined();
+    expect(pub).not.toHaveProperty('promptPrefix');
+    expect(pub).not.toHaveProperty('promptSuffix');
+    expect(pub).not.toHaveProperty('logoAssetId');
+    expect(pub).not.toHaveProperty('enabled');
+    expect(pub).not.toHaveProperty('modelId');
   });
 });

@@ -55,3 +55,36 @@ describe('canvas job recovery filters', () => {
     );
   });
 });
+
+describe('terminal failure barrier', () => {
+  it('claims failure only from active states and leaves a lost race untouched', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const findUnique = jest.fn();
+    const tx = { aiJob: { updateMany, findUnique } };
+    const repository = new AiGenerationRepository(
+      {
+        $transaction: (work: (client: typeof tx) => unknown) => work(tx),
+      } as never,
+      {} as never,
+    );
+    await expect(
+      repository.failIfActive('job', {
+        status: 'failed',
+        completedAt: '2026-09-28T00:00:00Z',
+      }),
+    ).resolves.toBeNull();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'job',
+          status: { in: ['created', 'in_queue', 'in_progress'] },
+        },
+        data: expect.objectContaining({
+          status: 'failed',
+          version: { increment: 1 },
+        }) as unknown,
+      }),
+    );
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+});

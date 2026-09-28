@@ -1,4 +1,3 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { IpGenerationJobsService } from './ip-generation-jobs.service';
 import type { PrismaService } from '../infra/db/db.module';
@@ -9,10 +8,21 @@ import type { AuthUser } from '../auth';
 
 describe('IpGenerationJobsService', () => {
   let service: IpGenerationJobsService;
-  let mockPrisma: any;
-  let mockIps: any;
-  let mockTemplates: any;
-  let mockAiGeneration: any;
+  let mockPrisma: {
+    $queryRaw: jest.Mock;
+    mediaAsset: { findFirst: jest.Mock };
+    aiJob: { findUnique: jest.Mock };
+  };
+  let mockIps: { ensurePublicEngagementTarget: jest.Mock };
+  let mockTemplates: { getPublicTemplates: jest.Mock };
+  let mockAiGeneration: {
+    listCatalog: jest.Mock;
+    submitJob: jest.Mock<
+      Promise<unknown>,
+      Parameters<AiGenerationService['submitJob']>
+    >;
+    getJob: jest.Mock;
+  };
 
   const mockUser: AuthUser = {
     userId: 'user-00000000-0000-4000-8000-000000000001',
@@ -27,7 +37,7 @@ describe('IpGenerationJobsService', () => {
 
   beforeEach(() => {
     mockPrisma = {
-      $queryRaw: vi.fn().mockResolvedValue([
+      $queryRaw: jest.fn().mockResolvedValue([
         {
           audience_generation_templates: [
             {
@@ -44,38 +54,54 @@ describe('IpGenerationJobsService', () => {
         },
       ]),
       mediaAsset: {
-        findFirst: vi.fn().mockImplementation(({ where }) => {
-          if (
-            where.id === sampleAssetId &&
-            where.createdByUserId === mockUser.userId
-          ) {
-            return Promise.resolve({
-              id: sampleAssetId,
-              createdByUserId: mockUser.userId,
-            });
-          }
-          return Promise.resolve(null);
-        }),
+        findFirst: jest
+          .fn()
+          .mockImplementation(
+            ({
+              where,
+            }: {
+              where: { id: string; createdByUserId?: string };
+            }) => {
+              if (
+                where.id === sampleAssetId &&
+                where.createdByUserId === mockUser.userId
+              ) {
+                return Promise.resolve({
+                  id: sampleAssetId,
+                  createdByUserId: mockUser.userId,
+                });
+              }
+              return Promise.resolve(null);
+            },
+          ),
       },
       aiJob: {
-        findUnique: vi.fn().mockImplementation(({ where }) => {
-          if (where.id === 'job-other') {
-            return Promise.resolve({
-              id: 'job-other',
-              userId: 'someone-else-id',
-            });
-          }
-          return Promise.resolve({ id: where.id, userId: mockUser.userId });
-        }),
+        findUnique: jest
+          .fn()
+          .mockImplementation(
+            ({
+              where,
+            }: {
+              where: { id: string; createdByUserId?: string };
+            }) => {
+              if (where.id === 'job-other') {
+                return Promise.resolve({
+                  id: 'job-other',
+                  userId: 'someone-else-id',
+                });
+              }
+              return Promise.resolve({ id: where.id, userId: mockUser.userId });
+            },
+          ),
       },
     };
 
     mockIps = {
-      ensurePublicEngagementTarget: vi.fn().mockResolvedValue(undefined),
+      ensurePublicEngagementTarget: jest.fn().mockResolvedValue(undefined),
     };
 
     mockTemplates = {
-      getPublicTemplates: vi.fn().mockResolvedValue({
+      getPublicTemplates: jest.fn().mockResolvedValue({
         templates: [
           {
             id: sampleTemplateId,
@@ -88,7 +114,7 @@ describe('IpGenerationJobsService', () => {
     };
 
     mockAiGeneration = {
-      listCatalog: vi.fn().mockResolvedValue({
+      listCatalog: jest.fn().mockResolvedValue({
         models: [
           {
             id: 'model-seedance-image',
@@ -103,11 +129,13 @@ describe('IpGenerationJobsService', () => {
         ],
         campaigns: [],
       }),
-      submitJob: vi.fn().mockResolvedValue({
-        request_id: 'job-123',
-        status: 'queued',
-      }),
-      getJob: vi.fn().mockResolvedValue({
+      submitJob: jest
+        .fn<Promise<unknown>, Parameters<AiGenerationService['submitJob']>>()
+        .mockResolvedValue({
+          request_id: 'job-123',
+          status: 'queued',
+        }),
+      getJob: jest.fn().mockResolvedValue({
         id: 'job-123',
         status: 'completed',
         progress: 100,
@@ -116,10 +144,10 @@ describe('IpGenerationJobsService', () => {
     };
 
     service = new IpGenerationJobsService(
-      mockPrisma as PrismaService,
-      mockIps as IpCommerceService,
-      mockTemplates as IpGenerationTemplatesService,
-      mockAiGeneration as AiGenerationService,
+      mockPrisma as unknown as PrismaService,
+      mockIps as unknown as IpCommerceService,
+      mockTemplates as unknown as IpGenerationTemplatesService,
+      mockAiGeneration as unknown as AiGenerationService,
     );
   });
 
@@ -249,7 +277,7 @@ describe('IpGenerationJobsService', () => {
     );
 
     expect(mockAiGeneration.submitJob).toHaveBeenCalledTimes(1);
-    const [, submittedBody] = mockAiGeneration.submitJob.mock.calls[0];
+    const submittedBody = mockAiGeneration.submitJob.mock.calls[0][1];
 
     // Security invariant verification
     expect(submittedBody.workspaceId).toBeUndefined();
