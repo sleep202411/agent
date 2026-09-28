@@ -162,7 +162,7 @@ export function Composer({ theme: t }: { theme: Theme }) {
         ) : studio.kind === "project" ? (
           <ProjectStudio theme={t} />
         ) : (
-          <CreativeComposer theme={t} />
+          <CreativeComposer />
         )}
       </div>
     </div>

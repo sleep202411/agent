@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FizzAiModel } from "@/lib/canvas-authoring/generation-api";
 import type { ReferenceUpload } from "./use-reference-uploads";
+import { useComposerDraftStore } from "./use-composer-draft";
 import { useImageGeneration } from "./use-image-generation";
 import { useVideoGeneration } from "./use-video-generation";
 
@@ -19,7 +20,7 @@ vi.mock("@/app/_components/auth-provider", () => ({
 vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/lib/canvas-authoring/use-ai-catalog", () => ({
   useAiCatalog: () => ({ data: undefined }),
-  usableModelsByModality: () => [],
+  usableModelsByModality: (_catalog: unknown, kind: "image" | "video") => [model(kind)],
 }));
 vi.mock("./use-generation-feed", () => ({ useGenerationFeed: () => ({ submit: state.submit }) }));
 vi.mock("@/app/_components/credits-badge", () => ({
@@ -82,6 +83,7 @@ describe.each(["image", "video"] as const)("%s composer reference submission", (
   }
   beforeEach(async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    useComposerDraftStore.setState({ drafts: {} });
     state.userId = "owner";
     state.workspaceId = "workspace";
     state.submit.mockReset().mockResolvedValue({ ok: true });
@@ -121,6 +123,8 @@ describe.each(["image", "video"] as const)("%s composer reference submission", (
       await act(async () => root.render(<Harness />));
       expect(controller.submitting).toBe(false);
       expect(await oldSubmit()).toEqual({ ok: false });
+      expect(controller.prompt).toBe("");
+      await act(async () => controller.setPrompt("New workspace prompt"));
       state.submit.mockImplementationOnce(() => new Promise(() => {}));
       await act(async () => {
         void controller.submit();

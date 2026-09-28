@@ -79,7 +79,9 @@ export function StudioComposer({
   validationIssues,
   onDismissValidation,
   onSubmit,
+  onRequestSubmit,
   docked = true,
+  submitOnEnter = false,
 }: {
   modality: "image" | "video";
   catalog: FizzAiCatalog | undefined;
@@ -105,8 +107,11 @@ export function StudioComposer({
   /** Clear parent validation / error state when the dialog closes. */
   onDismissValidation?: () => void;
   onSubmit: () => void;
+  /** Host may wait for authenticated workspace hydration before resuming. */
+  onRequestSubmit?: () => void;
   /** Bottom-docked (feed pages) vs in-flow (e.g. the home hero). */
   docked?: boolean;
+  submitOnEnter?: boolean;
 }) {
   const t = useTranslations("generation");
   const tc = useTranslations("common");
@@ -123,7 +128,7 @@ export function StudioComposer({
   const { requireAuth } = useAuth();
   // Generation is public to browse but gated to run: prompt sign-in on submit
   // when signed out, then resume the submit on success.
-  const gatedSubmit = () => requireAuth(onSubmit);
+  const gatedSubmit = () => (onRequestSubmit ? onRequestSubmit() : requireAuth(onSubmit));
 
   /** Mode-menu selection, including the UI-only omni sub-intent entries:
    *  `multimodal_to_video::edit` maps to mode + task type (+ parameter locks)
@@ -207,6 +212,7 @@ export function StudioComposer({
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229 || event.repeat) return;
     if (mentionOpen && mentionOptions.length > 0) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -227,7 +233,12 @@ export function StudioComposer({
         return;
       }
     }
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canSubmit) {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      (submitOnEnter || event.metaKey || event.ctrlKey) &&
+      canSubmit
+    ) {
       event.preventDefault();
       gatedSubmit();
     }
@@ -266,6 +277,7 @@ export function StudioComposer({
         )}
         <textarea
           ref={textareaRef}
+          aria-label={t("promptPlaceholder")}
           value={prompt}
           maxLength={stringMaxLength(model, "prompt")}
           rows={3}
@@ -330,7 +342,7 @@ export function StudioComposer({
       />
 
       {/* Controls row */}
-      <div className="mt-3 flex items-center gap-1.5">
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
         <div className="relative" data-popover-zone>
           <button
             type="button"

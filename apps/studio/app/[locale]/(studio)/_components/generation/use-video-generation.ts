@@ -1,7 +1,8 @@
 "use client";
 
+import { useComposerDraft } from "./use-composer-draft";
 import { useComposerSubmission } from "./use-composer-submission";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   buildPromptDocument,
@@ -19,7 +20,6 @@ import {
   referenceFieldsForMode,
   validateModelGenerationInput,
   type FizzAiModel,
-  type ModelSettings,
   type ValidationIssue,
 } from "@/lib/canvas-authoring/generation-api";
 import { formatValidationIssue } from "@/lib/canvas-authoring/format-validation-issue";
@@ -82,42 +82,48 @@ export function useVideoGeneration() {
   const { data: catalog } = useAiCatalog();
   const feed = useGenerationFeed("video", "fizzstudio-video-studio");
   const { data: wallet } = useComputeWalletBalance();
-  const uploads = useReferenceUploads();
+  const uploads = useReferenceUploads("video");
 
-  const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState<FizzAiModel | undefined>(undefined);
-  const [settings, setSettings] = useState<ModelSettings>({});
-  const [mode, setMode] = useState<string | undefined>(undefined);
+  const draft = useComposerDraft("video");
+  const { prompt, setPrompt, setSettings, setMode } = draft;
+  const models = usableModelsByModality(catalog, "video");
+  const model = models.find((entry) => entry.id === draft.modelId) ?? models[0];
+  const matchesModel = model?.id === draft.modelId;
+  const settings = useMemo(
+    () =>
+      matchesModel && draft.settings ? draft.settings : model ? defaultSettingsForModel(model) : {},
+    [matchesModel, draft.settings, model]
+  );
+  const mode =
+    matchesModel && draft.mode && model?.generationModes?.includes(draft.mode as never)
+      ? draft.mode
+      : model
+        ? defaultVideoMode(model)
+        : undefined;
   const operation = useComposerSubmission();
   const { submitting } = operation;
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [validationIssues, setValidationIssues] = useState<ValidationIssue[]>([]);
 
-  useEffect(() => {
-    if (model || !catalog) return;
-    const first = usableModelsByModality(catalog, "video")[0];
-    if (!first) return;
-    let cancelled = false;
-    queueMicrotask(() => {
-      if (cancelled) return;
-      setModel(first);
-      setSettings(defaultSettingsForModel(first));
-      setMode(defaultVideoMode(first));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [catalog, model]);
-
   const onSelectModel = (selected: FizzAiModel) => {
-    setModel(selected);
+    draft.setModelId(selected.id);
     setSettings(defaultSettingsForModel(selected));
-    // Keep the mode when the new model offers it; else fall back to default.
-    setMode((current) =>
-      current && selected.generationModes?.includes(current as never)
-        ? current
-        : defaultVideoMode(selected)
+    setMode(
+      mode && selected.generationModes?.includes(mode as never) ? mode : defaultVideoMode(selected)
     );
+  };
+
+  // Store the model identity alongside edits to defaults so both surfaces agree.
+  const updateSettings = (next: typeof settings) => {
+    if (model) draft.setModelId(model.id);
+    setSettings(next);
+  };
+  const updateMode = (next: string) => {
+    if (model) {
+      draft.setModelId(model.id);
+      setSettings(settings);
+    }
+    setMode(next);
   };
 
   const modes = model?.generationModes ?? [];
@@ -240,9 +246,9 @@ export function useVideoGeneration() {
     model,
     onSelectModel,
     settings,
-    setSettings,
+    setSettings: updateSettings,
     mode,
-    setMode,
+    setMode: updateMode,
     modes,
     referenceFields,
     activeUploads,

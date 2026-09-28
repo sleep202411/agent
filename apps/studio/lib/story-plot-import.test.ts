@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   applyStoryPlotImport,
@@ -84,7 +86,11 @@ describe("plot JSON import", () => {
     "ships a valid downloadable %s template matching the server contract",
     (locale) => {
       const md = readFileSync(
-        new URL(`../public/templates/story-plot/${locale}.md`, import.meta.url),
+        resolve(
+          dirname(fileURLToPath(import.meta.url)),
+          "../public/templates/story-plot",
+          `${locale}.md`
+        ),
         "utf8"
       );
       const examples = [...md.matchAll(/```json\n([\s\S]+?)\n```/g)];

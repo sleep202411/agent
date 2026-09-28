@@ -2,6 +2,7 @@
 import { act, StrictMode, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useComposerDraftStore } from "./use-composer-draft";
 import { useReferenceUploads } from "./use-reference-uploads";
 const mock = vi.hoisted(() => ({
   upload: vi.fn(),
@@ -36,6 +37,7 @@ function Harness() {
   return null;
 }
 beforeEach(() => {
+  useComposerDraftStore.setState({ drafts: {} });
   mock.userId = "a";
   mock.projectId = "one";
   mock.workspaceId = "workspace";
@@ -220,4 +222,40 @@ it("does not restore a removed upload when its delayed duration probe resolves",
   expect(state.items[0]?.id).not.toBe(removed.id);
   expect(URL.revokeObjectURL).toHaveBeenCalledTimes(1);
   expect(URL.revokeObjectURL).toHaveBeenCalledWith(removed.previewUrl);
+});
+
+function SharedHarness() {
+  const value = useReferenceUploads("image");
+  useLayoutEffect(() => {
+    state = value;
+  });
+  return null;
+}
+it("retains completed references across Home/tool remounts with durable previews and unique labels", async () => {
+  await act(async () => root.render(<SharedHarness />));
+  mock.upload.mockResolvedValueOnce({ url: "/uploaded/image.png", mediaAssetId: "image" });
+  await act(async () => state.addFiles("refs", "image", [file]));
+  const first = state.items[0]!;
+  await act(async () => root.render(null));
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith(first.previewUrl);
+  await act(async () => root.render(<SharedHarness />));
+  expect(state.items).toHaveLength(1);
+  expect(state.items[0]).toMatchObject({
+    url: "/uploaded/image.png",
+    previewUrl: "/uploaded/image.png",
+    label: "Image1",
+  });
+  act(() => state.addFiles("refs", "image", [file]));
+  expect(state.items.map((item) => item.label)).toEqual(["Image1", "Image2"]);
+  await act(async () => root.render(null));
+  await act(async () => root.render(<SharedHarness />));
+  expect(state.items).toHaveLength(1); // In-flight uploads are cancelled, never restored as stuck tiles.
+});
+it("does not carry shared references into another workspace", async () => {
+  await act(async () => root.render(<SharedHarness />));
+  mock.upload.mockResolvedValueOnce({ url: "/uploaded/private.png", mediaAssetId: "private" });
+  await act(async () => state.addFiles("refs", "image", [file]));
+  mock.workspaceId = "other-workspace";
+  await act(async () => root.render(<SharedHarness />));
+  expect(state.items).toEqual([]);
 });

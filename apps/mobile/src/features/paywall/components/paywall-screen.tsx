@@ -25,9 +25,9 @@ import { ThemedView } from "@/components/themed-view";
 import { appEnv, resolveAssetUrl } from "@/config";
 import { Colors, Spacing } from "@/constants/theme";
 import { fetchCommunityPointBalance } from "@/data/ip-api";
+import { toHref } from "@/lib/navigation";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
-import { toHref } from "@/lib/navigation";
 
 import {
   COMPUTE_RECHARGE_DEFAULT,

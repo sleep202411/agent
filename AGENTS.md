@@ -79,6 +79,18 @@ public creator surfaces.
 
 ## Production deployment
 
+### Local validation and deployment ownership (2026-09-28)
+
+Isaac and Yuanzheng own deployments. There is currently no staging or
+canary environment: deployment goes directly to production. Run feasible
+local checks, then hand off environment-dependent validation to the leads
+for testing after deployment. Do not copy production secrets into local
+configuration to enable those tests. Real R2 access is currently unavailable
+locally; Isaac is following up on the six missing variables. Report exactly
+which checks ran: type checks and unit tests do not imply a browser smoke
+test passed. Missing R2 configuration does not by itself require blocking
+the handoff, and does not excuse unrelated failing local checks.
+
 Two production deployments running off the same monorepo:
 
 - **`fizzdragon.com`** — international (Singapore / OSS-AP-Southeast-1)
