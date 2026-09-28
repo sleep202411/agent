@@ -150,6 +150,40 @@ describe("episode video upload", () => {
     expect(completeCalls).toBe(1);
   });
 
+  it("preserves a non-JSON HTTP rejection without retrying it as a network failure", async () => {
+    const { uploadEpisodeVideo } = await import("./episode-upload");
+    vi.mocked(fetch).mockResolvedValue(new Response("Unauthorized", { status: 401 }));
+    await expect(uploadEpisodeVideo(file(), options())).rejects.toMatchObject({
+      message: "HTTP 401",
+      status: 401,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(sends).toEqual([]);
+    expect(completeCalls).toBe(0);
+  }, 15_000);
+
+  it("preserves a rejection whose JSON body is null", async () => {
+    const { uploadEpisodeVideo } = await import("./episode-upload");
+    vi.mocked(fetch).mockResolvedValue(Response.json(null, { status: 403 }));
+    await expect(uploadEpisodeVideo(file(), options())).rejects.toMatchObject({
+      message: "HTTP 403",
+      status: 403,
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("still retries a non-JSON temporary server failure", async () => {
+    const { uploadEpisodeVideo } = await import("./episode-upload");
+    vi.mocked(fetch).mockResolvedValueOnce(new Response("Unavailable", { status: 503 }));
+    await expect(uploadEpisodeVideo(file(), options())).resolves.toMatchObject({
+      mediaAssetId: "asset",
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith("/episode-uploads"))
+    ).toHaveLength(2);
+    expect(completeCalls).toBe(1);
+  });
+
   it("resumes verified parts after a failed upload instead of starting over", async () => {
     const { uploadEpisodeVideo } = await import("./episode-upload");
     failPart = 3;

@@ -90,12 +90,20 @@ async function request<T>(
       body: data === undefined ? undefined : JSON.stringify(data),
     });
     if (response.status === 204) return undefined as T;
-    const body = await response.json();
-    if (!response.ok)
+    const body: unknown = await response.json().catch((error: unknown) => {
+      // Proxies may return HTML or an empty body for an HTTP rejection.
+      // Keep its status; malformed successful responses and read failures
+      // still follow the existing connection-error handling below.
+      if (response.ok || !(error instanceof SyntaxError)) throw error;
+      return null;
+    });
+    if (!response.ok) {
+      const details = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
       throw new UploadError(
-        String(body.message || body.msg || `HTTP ${response.status}`),
+        String(details.message || details.msg || `HTTP ${response.status}`),
         response.status
       );
+    }
     return body as T;
   } catch (error) {
     signal.throwIfAborted();
