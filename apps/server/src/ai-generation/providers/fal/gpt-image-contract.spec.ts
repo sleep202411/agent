@@ -67,6 +67,42 @@ function setup(slug: string) {
 }
 
 describe.each(models)('$slug end-to-end catalog contract', (model) => {
+  it('preserves both outputs for an image-to-image request of two', async () => {
+    const { catalog, adapter, submit, response } = setup(model.slug);
+    const runtime = (await catalog.getRuntimeConfig(model.slug))!;
+    const urls = [
+      'https://example.com/first.png',
+      'https://example.com/second.png',
+    ];
+    response.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {},
+      body: {
+        images: urls.map((url) => ({
+          url,
+          content_type: 'image/png',
+          width: 1024,
+          height: 768,
+        })),
+      },
+    });
+    const result = await adapter.startGeneration(
+      model.slug,
+      validator.normalizeInput(runtime.inputSchema, {
+        prompt: 'Two variations',
+        numOutputs: 2,
+        referenceImages: references.slice(0, 1),
+      }),
+      {} as ProviderGenerationContext,
+    );
+    expect(submit.mock.calls[0][2]).toMatchObject({ num_images: 2 });
+    if (result.kind !== 'pending') throw new Error('Expected pending');
+    const polled = await adapter.pollStatus(result.providerJobId);
+    if (polled.kind !== 'completed') throw new Error('Expected completed');
+    expect(polled.outputs.map((output) => output.providerUrl)).toEqual(urls);
+  });
+
   it('rejects a mask without an original image before provider submission', async () => {
     const { catalog } = setup(model.slug);
     const runtime = (await catalog.getRuntimeConfig(model.slug))!;

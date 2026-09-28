@@ -1592,6 +1592,8 @@
     "before": "處理前",
     "after": "處理後",
     "result": "結果",
+    "outputGalleryCount": "已生成 {count} 張圖片",
+    "viewOutput": "查看第 {number} 張圖片，共 {count} 張",
     "resultsPlaceholder": "生成結果將顯示在這裡。",
     "generationFailed": "生成失敗",
     "generationProviderUnavailable": "此模型暫時不可用。請切換模型或稍後再試。",

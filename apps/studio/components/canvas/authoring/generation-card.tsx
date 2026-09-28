@@ -88,6 +88,7 @@ import {
 } from "@/app/[locale]/_components/generation/generation-prompt-composer";
 import { PortPlus } from "./ports";
 import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
+import { GenerationOutputGallery } from "./generation-output-gallery";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
@@ -1095,6 +1096,13 @@ function GenerationCard({
             />
           )}
         </div>
+        {generation?.status === "done" && generation.outputs && (
+          <GenerationOutputGallery
+            key={generation.jobId}
+            outputs={generation.outputs}
+            title={displayTitle}
+          />
+        )}
       </div>
 
       {/* Card-specific composer — slides up below the card while selected.

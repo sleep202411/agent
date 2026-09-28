@@ -1592,6 +1592,8 @@
     "before": "Before",
     "after": "After",
     "result": "Result",
+    "outputGalleryCount": "Generated images: {count}",
+    "viewOutput": "View image {number} of {count}",
     "resultsPlaceholder": "Results will appear here.",
     "generationFailed": "Generation failed",
     "generationProviderUnavailable": "This model is temporarily unavailable. Please choose another model or try again later.",

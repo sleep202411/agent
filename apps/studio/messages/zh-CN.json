@@ -1592,6 +1592,8 @@
     "before": "处理前",
     "after": "处理后",
     "result": "结果",
+    "outputGalleryCount": "已生成 {count} 张图片",
+    "viewOutput": "查看第 {number} 张图片，共 {count} 张",
     "resultsPlaceholder": "生成结果将显示在这里。",
     "generationFailed": "生成失败",
     "generationProviderUnavailable": "该模型暂时不可用。请切换模型或稍后再试。",
