@@ -89,13 +89,14 @@ export function useStoryTimelineExport({
 
   const cancel = useCallback(() => {
     const owned = owner.current;
-    if (owned?.operation) {
+    if (owned?.scope !== scope) return;
+    if (owned.operation) {
       owned.operation.abort();
       owned.operation = null;
     }
     setStage("idle");
     setProgress(null);
-  }, []);
+  }, [scope]);
 
   const handleExport = useCallback(async () => {
     const owned = owner.current;
@@ -186,6 +187,8 @@ export function useStoryTimelineExport({
   }, [scope, validShots, projectId, onComplete, setError, t]);
 
   const downloadOnly = useCallback(async () => {
+    const owned = owner.current;
+    if (owned?.scope !== scope) return;
     setError(null);
     if (lastBlob?.scope === scope && lastBlob.blob) {
       const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
@@ -204,8 +207,7 @@ export function useStoryTimelineExport({
       return;
     }
 
-    const owned = owner.current;
-    if (owned?.scope !== scope || owned.operation) return;
+    if (owned.operation) return;
 
     const operation = new AbortController();
     owned.operation = operation;

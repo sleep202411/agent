@@ -223,3 +223,33 @@ it("abandons an in-flight export when its selected media is replaced", async () 
   expect(h.success).not.toHaveBeenCalled();
   expect(api.isExporting).toBe(false);
 });
+
+it("ignores cached download and cancel callbacks retained from a previous project", async () => {
+  await render();
+  await act(async () => api.downloadOnly());
+  const obsolete = api;
+  h.download.mockClear();
+  h.success.mockClear();
+  options = { ...options, projectId: "replacement" };
+  await render();
+  const pending = deferred<Blob>();
+  h.export.mockReturnValueOnce(pending.promise);
+  let work!: Promise<void>;
+  await act(async () => {
+    work = api.handleExport();
+  });
+  const signal = h.export.mock.calls.at(-1)![1].signal;
+  await act(async () => {
+    obsolete.cancel();
+    await obsolete.downloadOnly();
+  });
+  expect(signal.aborted).toBe(false);
+  expect(api.isExporting).toBe(true);
+  expect(h.download).not.toHaveBeenCalled();
+  expect(h.success).not.toHaveBeenCalled();
+  await act(async () => {
+    pending.resolve(new Blob(["new"]));
+    await work;
+  });
+  expect(h.save).toHaveBeenCalledWith("replacement", "asset");
+});
