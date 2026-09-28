@@ -6,6 +6,7 @@ import {
   creditsForDurationSeconds,
   resultFromReviewRecord,
   reviewModeration,
+  downloadModerationExcel,
 } from "./content-review-api";
 
 vi.mock("@/lib/api", async (importOriginal) => {
@@ -25,6 +26,68 @@ vi.mock("@/lib/api", async (importOriginal) => {
 afterEach(() => {
   vi.mocked(api.post).mockReset();
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe("content review report download", () => {
+  it.each([false, true])(
+    "releases the report URL after the browser handoff (click fails: %s)",
+    async (fails) => {
+      vi.useFakeTimers();
+      const revoke = vi.fn();
+      vi.stubGlobal("URL", {
+        createObjectURL: vi.fn(() => "blob:report"),
+        revokeObjectURL: revoke,
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response("report", { headers: { "content-type": "application/octet-stream" } })
+          )
+      );
+      vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {
+        if (fails) throw new Error("Download blocked");
+      });
+      const download = downloadModerationExcel({
+        overview: {},
+        details: [],
+        fileName: "report.xlsx",
+      });
+      if (fails) await expect(download).rejects.toThrow();
+      else await expect(download).resolves.toBe("report.xlsx");
+      expect(revoke).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(revoke).toHaveBeenCalledExactlyOnceWith("blob:report");
+    }
+  );
+
+  it("does not save a report when cancellation wins during body reading", async () => {
+    const controller = new AbortController();
+    const create = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: create, revokeObjectURL: vi.fn() });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers(),
+        blob: async () => {
+          controller.abort();
+          return new Blob(["report"]);
+        },
+      })
+    );
+    await expect(
+      downloadModerationExcel(
+        { overview: {}, details: [], fileName: "report.xlsx" },
+        controller.signal
+      )
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(create).not.toHaveBeenCalled();
+  });
 });
 
 describe("content review upload guards", () => {

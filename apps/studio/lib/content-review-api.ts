@@ -125,11 +125,16 @@ function filenameFromDisposition(header: string | null): string | null {
 
 function saveBlob(blob: Blob, filename: string): void {
   const href = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = href;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(href);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = href;
+    anchor.download = filename;
+    anchor.click();
+  } finally {
+    // Let the browser consume the URL before releasing it, including when
+    // the handoff throws. Immediate revocation can cancel the download.
+    setTimeout(() => URL.revokeObjectURL(href), 1_000);
+  }
 }
 
 async function readApiError(response: Response, fallback: string): Promise<never> {
@@ -414,6 +419,7 @@ export async function downloadModerationExcel(
       await readApiError(response, `HTTP ${response.status}`);
     }
     const blob = await response.blob();
+    controller.signal.throwIfAborted();
     const filename =
       filenameFromDisposition(response.headers.get("content-disposition")) ??
       result.fileName ??
