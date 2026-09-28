@@ -162,7 +162,8 @@ async function requestSignedUrl(
   } = {};
   try {
     json = await res.json();
-  } catch {
+  } catch (error) {
+    if (isUploadAbort(error)) throw error;
     /* non-JSON body — fall through to the HTTP-status error */
   }
 
@@ -305,7 +306,8 @@ async function confirmUpload(
   } = {};
   try {
     json = await res.json();
-  } catch {
+  } catch (error) {
+    if (isUploadAbort(error)) throw error;
     /* non-JSON body — fall through to the HTTP-status error */
   }
 

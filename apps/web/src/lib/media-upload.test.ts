@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { type UploadFileCheckpoint, uploadFileViaSignedUrl } from "./media-upload";
+import { isUploadAbort, type UploadFileCheckpoint, uploadFileViaSignedUrl } from "./media-upload";
 
 class SuccessfulUploadRequest {
   static instances: SuccessfulUploadRequest[] = [];
@@ -60,6 +60,52 @@ afterEach(() => {
 });
 
 describe("uploadFileViaSignedUrl", () => {
+  it.each(["signing", "confirming"])(
+    "preserves cancellation while reading the %s response body",
+    async (stage) => {
+      const controller = new AbortController();
+      const aborted = new DOMException("Upload aborted", "AbortError");
+      const response = {
+        ok: true,
+        status: 200,
+        json: () => {
+          controller.abort();
+          return Promise.reject(aborted);
+        },
+      };
+      const fetchMock = vi.fn().mockResolvedValueOnce(response);
+      if (stage === "confirming") {
+        fetchMock.mockResolvedValueOnce(jsonResponse({ cancelled: true }));
+      }
+      vi.stubGlobal("fetch", fetchMock);
+      vi.stubGlobal("XMLHttpRequest", SuccessfulUploadRequest);
+      const result = uploadFileViaSignedUrl(new File(["image"], "a.png", { type: "image/png" }), {
+        kind: "crew_asset_file",
+        scope: { crewId: "crew-1" },
+        signal: controller.signal,
+        ...(stage === "confirming"
+          ? {
+              resumeFrom: {
+                storageKey: "crew/key.png",
+                kind: "crew_asset_file",
+                contentType: "image/png",
+                scope: { crewId: "crew-1" },
+              },
+            }
+          : {}),
+      });
+
+      await expect(result).rejects.toBe(aborted);
+      expect(isUploadAbort(await result.catch((error: unknown) => error))).toBe(true);
+      expect(SuccessfulUploadRequest.instances).toHaveLength(0);
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(
+        stage === "signing"
+          ? ["/aurora/media/upload-url"]
+          : ["/aurora/media/confirm", "/aurora/media/cancel-upload"]
+      );
+    }
+  );
+
   it("detaches cancellation when the browser throws while starting an upload", async () => {
     const failure = new DOMException("Network unavailable", "NetworkError");
     const abort = vi.fn();
