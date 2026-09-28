@@ -76,7 +76,10 @@ it.each(["resolve", "reject", "current"] as const)(
       Object.defineProperty(input, "files", {
         value: [new File(["evidence"], "old.pdf", { type: "application/pdf" })],
       });
-      await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+      await act(async () => {
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      });
       expect(h.upload).toHaveBeenCalledOnce();
       if (outcome !== "current") {
         await render(false);
@@ -101,48 +104,82 @@ it.each(["resolve", "reject", "current"] as const)(
   }
 );
 
-it("requires a crew and submits its name/link while leaving IP optional", async () => {
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  h.crews = [{ id: "crew-123", name: "Selected crew" }];
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () =>
-      root.render(<LevelApplyDialog open onOpenChange={() => {}} lockedLevelId={13} />)
-    );
-    const submit = () =>
-      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent === "levels.apply.submit"
+it.each(["AI Producer", "FD"])(
+  "%s requires a crew and submits its name/link while leaving IP optional",
+  async (entry) => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    h.crews = [{ id: "crew-123", name: "Selected crew" }];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    try {
+      await act(async () =>
+        root.render(
+          <LevelApplyDialog
+            open
+            onOpenChange={() => {}}
+            lockedLevelId={entry === "AI Producer" ? 13 : undefined}
+          />
+        )
+      );
+      if (entry === "FD") {
+        const level = document.querySelector('[role="combobox"]')!;
+        await act(async () =>
+          level.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+        );
+        const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+          (item) => item.textContent === "AI Producer"
+        )!;
+        await act(async () => option.click());
+      }
+      const submit = () =>
+        [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+          (button) => button.textContent === "levels.apply.submit"
+        )!;
+      expect(submit().disabled).toBe(true);
+      await act(async () => submit().click());
+      expect(h.submit).not.toHaveBeenCalled();
+      const crew = document.querySelector('[aria-label="levels.apply.crewLabel"]')!;
+      expect(crew.getAttribute("aria-required")).toBe("true");
+      await act(async () =>
+        crew.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+      );
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (item) => item.textContent === "Selected crew"
       )!;
-    expect(submit().disabled).toBe(true);
-    await act(async () => submit().click());
-    expect(h.submit).not.toHaveBeenCalled();
-    const crew = document.querySelector('[aria-label="levels.apply.crewLabel"]')!;
-    expect(crew.getAttribute("aria-required")).toBe("true");
-    await act(async () =>
-      crew.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
-    );
-    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-      (item) => item.textContent === "Selected crew"
-    )!;
-    await act(async () => option.click());
-    expect(submit().disabled).toBe(false);
-    await act(async () => submit().click());
-    expect(h.submit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        levelId: 13,
-        crewName: "Selected crew",
-        crewLink: `${window.location.origin}/en-US/crews/crew-123`,
-        ipName: "",
-        ipLink: "",
-      })
-    );
-  } finally {
-    await act(async () => root.unmount());
-    container.remove();
+      await act(async () => option.click());
+      expect(submit().disabled).toBe(false);
+      let reject!: (error: Error) => void;
+      h.submit.mockImplementationOnce(
+        () =>
+          new Promise((_, no) => {
+            reject = no;
+          })
+      );
+      await act(async () => {
+        submit().click();
+        submit().click();
+      });
+      expect(h.submit).toHaveBeenCalledTimes(1);
+      await act(async () => reject(new Error("Temporary failure")));
+      expect(submit().disabled).toBe(false);
+      await act(async () => submit().click());
+      expect(h.submit).toHaveBeenCalledTimes(2);
+      expect(h.submit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          levelId: 13,
+          crewName: "Selected crew",
+          crewLink: `${window.location.origin}/en-US/crews/crew-123`,
+          ipName: "",
+          ipLink: "",
+        })
+      );
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
   }
-});
+);
 
 it("explains the requirement and blocks application when no crews are available", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });

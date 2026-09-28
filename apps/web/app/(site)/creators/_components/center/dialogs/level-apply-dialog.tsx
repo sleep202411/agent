@@ -73,6 +73,7 @@ export function LevelApplyDialog(props: LevelApplyDialogProps) {
 
 function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogProps) {
   const active = useRef(true);
+  const operationPending = useRef(false);
   useEffect(() => {
     active.current = true;
     return () => {
@@ -179,7 +180,8 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   }
 
   async function handleFileChange(file: File | undefined) {
-    if (!file) return;
+    if (!file || !active.current || operationPending.current) return;
+    operationPending.current = true;
     setUploading(true);
     try {
       const path = await uploadUserLevelApplyAttachment(file);
@@ -192,6 +194,7 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
       const msg = err instanceof ApiRequestError ? err.message : t("levels.apply.uploadFailed");
       toast.error(msg);
     } finally {
+      operationPending.current = false;
       if (active.current) {
         setUploading(false);
         if (fileRef.current) fileRef.current.value = "";
@@ -200,6 +203,7 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   }
 
   async function handleSubmit() {
+    if (!active.current || operationPending.current) return;
     const level = levels.find((l) => String(l.id) === levelId);
     if (!level) {
       toast.error(t("levels.apply.missingRequired"));
@@ -224,6 +228,7 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
       return;
     }
 
+    operationPending.current = true;
     setSubmitting(true);
     try {
       await submitUserLevelApply({
@@ -244,6 +249,7 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
       const msg = err instanceof ApiRequestError ? err.message : t("levels.apply.submitFailed");
       toast.error(msg);
     } finally {
+      operationPending.current = false;
       if (active.current) setSubmitting(false);
     }
   }
