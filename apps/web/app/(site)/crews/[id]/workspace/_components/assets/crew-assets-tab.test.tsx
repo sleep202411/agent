@@ -1298,3 +1298,51 @@ it("accepts a folder with upload permission, matching the existing Move contract
   });
   await vi.waitFor(() => expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(1));
 });
+it.each([false, true])(
+  "preserves new selection and preview while a move settles (partial failure: %s)",
+  async (partial) => {
+    bulkMove = true;
+    await render();
+    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select second.png"]')!);
+    if (partial)
+      await click(
+        document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!
+      );
+    const originalFetch = globalThis.fetch;
+    let finish!: () => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method !== "PATCH" || !String(input).endsWith("/assets/file-2"))
+          return originalFetch(input, init);
+        return new Promise<Response>((resolve) => {
+          finish = () => resolve(originalFetch(input, init));
+        });
+      })
+    );
+    await act(async () => {
+      dragEvent(assetRow("second.png"), "dragstart");
+      dragEvent(assetRow("Storyboard"), "drop");
+    });
+    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!);
+    await click(assetRow("concept.png"));
+    const preview = () => document.querySelector('aside[aria-label="Asset preview and details"]');
+    expect(preview()?.textContent).toContain("concept.png");
+    await act(async () => finish());
+    await vi.waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("1"))
+    );
+    expect(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!.checked
+    ).toBe(true);
+    expect(preview()?.textContent).toContain("concept.png");
+    if (partial) {
+      expect(
+        document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!.checked
+      ).toBe(true);
+      expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+        "concept.png: Name already exists"
+      );
+    }
+  }
+);

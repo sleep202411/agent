@@ -457,6 +457,18 @@ export function CrewAssetsTab({
     setDestinationId(primary?.parentId ?? "");
   };
 
+  const settleAssetActionSelection = (completedIds: string[], failedIds: string[] = []) => {
+    const completed = new Set(completedIds);
+    setCheckedIds(
+      (current) => new Set([...current].filter((id) => !completed.has(id)).concat(failedIds))
+    );
+    if (completed.has(currentSelection.current)) {
+      setSelectedAssetId("");
+      setInspectorOpen(false);
+      onSelectedAssetChange?.(null);
+    }
+  };
+
   const submitAssetAction = async (drop?: {
     targets: CrewAssetPreviewItem[];
     parentId: string;
@@ -513,16 +525,18 @@ export function CrewAssetsTab({
               .join("\n")
           );
           setAssetActionTargets(failures.map(({ target }) => target));
-          setCheckedIds(new Set(failures.map(({ target }) => target.id)));
+          settleAssetActionSelection(
+            targets
+              .filter((_, index) => results[index]?.status === "fulfilled")
+              .map((target) => target.id),
+            failures.map(({ target }) => target.id)
+          );
           return;
         }
       }
       setAssetAction(null);
       setAssetActionTargets([]);
-      setCheckedIds(new Set());
-      setSelectedAssetId("");
-      setInspectorOpen(false);
-      onSelectedAssetChange?.(null);
+      settleAssetActionSelection(targets.map((target) => target.id));
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
     } finally {
