@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   GoneException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type { EpisodeUpload } from '@prisma/client';
@@ -365,5 +366,58 @@ describe('episode multipart uploads', () => {
     await completed.service.sweepExpired();
     expect(completed.storage.deleteObject).not.toHaveBeenCalled();
     expect(completed.prisma.episodeUpload.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it('progresses past a full page of cleanup failures and retries them on the next pass', async () => {
+    const f = fixture();
+    const rows = Array.from({ length: 21 }, (_, index) => ({
+      ...f.row(),
+      id: String(index).padStart(3, '0'),
+      storageKey: `episode/${index}`,
+      expiresAt: new Date(index),
+    }));
+    f.prisma.episodeUpload.findMany.mockImplementation(
+      ({ where, take }: { where: { id?: { gt: string } }; take: number }) =>
+        Promise.resolve(
+          rows
+            .filter((row) => !where.id || row.id > where.id.gt)
+            .slice(0, take),
+        ),
+    );
+    f.prisma.episodeUpload.findUniqueOrThrow.mockImplementation(
+      ({ where }: { where: { id: string } }) =>
+        Promise.resolve(rows.find((row) => row.id === where.id)),
+    );
+    f.prisma.episodeUpload.delete.mockImplementation(
+      ({ where }: { where: { id: string } }) => {
+        rows.splice(
+          rows.findIndex((row) => row.id === where.id),
+          1,
+        );
+        return Promise.resolve();
+      },
+    );
+    f.storage.abortMultipartUpload.mockImplementation(({ storageKey }) =>
+      storageKey === 'episode/20'
+        ? Promise.resolve()
+        : Promise.reject(new Error('Storage temporarily unavailable')),
+    );
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    try {
+      await f.service.sweepExpired();
+      expect(f.storage.abortMultipartUpload).toHaveBeenCalledTimes(20);
+      expect(f.prisma.episodeUpload.delete).not.toHaveBeenCalled();
+      await f.service.sweepExpired();
+      expect(f.prisma.episodeUpload.delete).toHaveBeenCalledWith({
+        where: { id: '020' },
+      });
+      expect(rows).toHaveLength(20);
+
+      f.storage.abortMultipartUpload.mockResolvedValue(undefined);
+      await f.service.sweepExpired();
+      expect(rows).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

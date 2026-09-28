@@ -54,6 +54,7 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EpisodeUploadService.name);
   private timer?: ReturnType<typeof setInterval>;
   private sweeping = false;
+  private cleanupCursor: string | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -401,8 +402,11 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
     this.sweeping = true;
     try {
       const expired = await this.prisma.episodeUpload.findMany({
-        where: { expiresAt: { lte: new Date() } },
-        orderBy: { expiresAt: 'asc' },
+        where: {
+          expiresAt: { lte: new Date() },
+          ...(this.cleanupCursor ? { id: { gt: this.cleanupCursor } } : {}),
+        },
+        orderBy: { id: 'asc' },
         take: 20,
       });
       for (const session of expired) {
@@ -423,7 +427,11 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
               `Could not clean up episode upload ${session.id}: ${String(error)}`,
             );
         }
+        // Failed or busy sessions must not starve later expired uploads.
+        // Retry them after reaching the end, including newly expired sessions.
+        this.cleanupCursor = session.id;
       }
+      if (expired.length < 20) this.cleanupCursor = undefined;
     } catch (error) {
       this.logger.error(`Episode upload cleanup failed: ${String(error)}`);
     } finally {
