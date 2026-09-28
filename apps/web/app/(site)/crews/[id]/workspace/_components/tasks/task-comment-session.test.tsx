@@ -62,6 +62,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useDeleteCrewTaskComment: () => ({ mutateAsync: state.remove, isPending: false }),
   useCreateCrewTaskComment: () => ({ mutateAsync: state.create, isPending: false }),
   useUpdateCrewTask: () => ({ mutateAsync: state.patch, isPending: false }),
+  useSetTaskDeliveryFolder: () => ({ mutateAsync: state.patch, isPending: false }),
   useCrewTaskTimeline: () => ({
     data: { pages: [{ items: state.items }] },
     isError: state.timelineError,
@@ -98,6 +99,13 @@ const attachmentQuery = vi.hoisted(() => ({
 vi.mock("../../_hooks/use-crew-assets", () => ({
   useCrewAssetContext: () => ({ data: { capabilities: { upload: true } } }),
   useCrewAssets: () => attachmentQuery,
+  useCrewAssetFolders: () => ({
+    data: [] as Array<{ id: string; name: string; permissions: string[] }>,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
   discardPendingCrewAssetUpload: state.discard,
 }));
 vi.mock("@/src/lib/media-upload", () => ({ uploadFileViaSignedUrl: state.upload }));
