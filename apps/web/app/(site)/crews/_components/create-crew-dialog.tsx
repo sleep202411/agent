@@ -140,9 +140,11 @@ function CrewFormDialog({
   open,
   onOpenChange,
   initial,
+  accountId,
   workspaces = [],
   onCertificationRequired,
 }: CreateCrewDialogProps & {
+  accountId?: string | null;
   workspaces?: Array<{ id: string; name: string }>;
   onCertificationRequired?: () => void;
 }) {
@@ -179,7 +181,7 @@ function CrewFormDialog({
   }> | null>(null);
 
   const storyProjectsQuery = useQuery({
-    queryKey: ["story-projects-list-picker"],
+    queryKey: ["story-projects-list-picker", accountId ?? null],
     queryFn: () => crewApi.get<{ items: Array<{ id: string; title: string }> }>("/story-projects"),
     enabled: open && !isEdit && productionKind === "interactive_film",
     staleTime: 60_000,
