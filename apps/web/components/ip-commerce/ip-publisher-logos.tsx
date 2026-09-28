@@ -23,16 +23,17 @@ export function IpPublisherLogos({
   const items = (publishers ?? []).filter((row) => row.logoUrl?.trim()).slice(0, 4);
   if (items.length === 0) return null;
 
-  // Fixed outer height + object-contain so wordmarks stay legible without
-  // wrapping into a second row (which would stretch plaza card heights).
+  // Equal chip footprint for every mark — auto-width made wide wordmarks
+  // (Netflix) look much larger than square icons (芒果). object-contain
+  // scales the art inside a fixed box so plaza rows stay even.
   const chip =
     size === "sm"
       ? "h-5 w-12 rounded-md"
       : size === "lg"
-        ? "h-9 w-[5.5rem] rounded-lg"
-        : "h-6 w-14 rounded-md";
-  const rowH = size === "sm" ? "h-5" : size === "lg" ? "h-9" : "h-6";
-  const gap = size === "lg" ? "gap-2.5" : "gap-1.5";
+        ? "h-8 w-[4.5rem] rounded-lg"
+        : "h-5 w-[3.25rem] rounded-md";
+  const rowH = size === "sm" ? "h-5" : size === "lg" ? "h-8" : "h-5";
+  const gap = size === "lg" ? "gap-2" : "gap-1.5";
 
   return (
     <div className={cn("min-w-0", className)}>
@@ -50,10 +51,7 @@ export function IpPublisherLogos({
               alt={publisher.name}
               title={publisher.name}
               loading="lazy"
-              className={cn(
-                "bg-white/90 object-contain p-0.5 opacity-95 transition-opacity hover:opacity-100 dark:bg-white/10",
-                chip
-              )}
+              className={cn("object-contain opacity-95 transition-opacity hover:opacity-100", chip)}
             />
           );
           return (

@@ -134,7 +134,7 @@ export function IPPlazaCard({ project }: { project: PlazaProject }) {
           </div>
 
           {/* Dedicated logo row — keeps wordmarks from competing with stats. */}
-          <div className="flex h-6 items-center">
+          <div className="flex h-5 items-center">
             <IpPublisherLogos publishers={project.publishers} size="md" className="min-w-0" />
           </div>
         </div>
