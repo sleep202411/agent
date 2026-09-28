@@ -74,6 +74,15 @@ function sameLogicalJob(a: FeedJob, b: FeedJob): boolean {
 }
 
 function mergeRow(existing: FeedJob, incoming: FeedJob): FeedJob {
+  // History, polling and realtime can arrive out of order. A settled task must
+  // not become active again, but a retry with a new job ID can reuse its row.
+  if (
+    existing.jobId &&
+    existing.jobId === incoming.jobId &&
+    isTerminalGenerationStatus(existing.status) &&
+    !isTerminalGenerationStatus(incoming.status)
+  )
+    return existing;
   return {
     ...existing,
     ...incoming,

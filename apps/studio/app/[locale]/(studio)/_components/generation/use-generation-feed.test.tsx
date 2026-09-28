@@ -14,7 +14,7 @@ import {
 const state = vi.hoisted(() => ({
   user: "a",
   workspace: "one",
-  callbacks: [] as { onConnected: () => void }[],
+  callbacks: [] as { onConnected: () => void; onEvent: (event: unknown) => void }[],
 }));
 vi.mock("@/app/_components/auth-provider", () => ({
   useAuth: () => ({ user: { id: state.user } }),
@@ -24,7 +24,7 @@ vi.mock("@/app/[locale]/project/_components/project-context", () => ({
 }));
 vi.mock("@/lib/canvas-authoring/assets-realtime-kernel", () => ({
   getAssetsRealtimeKernel: () => ({
-    subscribe: (callbacks: { onConnected: () => void }) => {
+    subscribe: (callbacks: { onConnected: () => void; onEvent: (event: unknown) => void }) => {
       state.callbacks.push(callbacks);
       return { close: vi.fn() };
     },
@@ -186,3 +186,32 @@ it("ignores old polling results after an account change", async () => {
   await act(async () => finish(job));
   expect(feed.jobs).toEqual([]);
 });
+
+it.each(["queued", "running"])(
+  "keeps completed outputs visible after a late %s update",
+  async (status) => {
+    const completed = {
+      ...job,
+      status: "completed",
+      type: "image",
+      sourceSurface: "home",
+      outputs: [1, 2].map((n) => ({
+        id: `output-${n}`,
+        type: "image",
+        url: `https://cdn.test/${n}.png`,
+      })),
+    } as FizzAiJobView;
+    vi.mocked(listFizzAiJobs).mockResolvedValueOnce({ jobs: [completed], nextCursor: null });
+    await render();
+    expect(feed.jobs[0].status).toBe("done");
+    await act(async () =>
+      state.callbacks.at(-1)!.onEvent({
+        kind: "ai_job_update",
+        job: { ...completed, status, outputs: [] },
+      })
+    );
+    expect(feed.jobs[0].status).toBe("done");
+    expect(feed.jobs[0].outputs).toEqual(completed.outputs);
+    expect(feed.hasActiveJobs).toBe(false);
+  }
+);
