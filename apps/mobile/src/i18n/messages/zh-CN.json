@@ -926,5 +926,17 @@
   "ipGeneration.retry": "重新生成",
   "ipGeneration.completedLabel": "制作完成",
   "ipGeneration.downloadButton": "保存/下载",
-  "ipGeneration.errorGeneric": "生成遇到异常，请重试"
+  "ipGeneration.errorGeneric": "生成遇到异常，请重试",
+  "tabs.courses": "课程",
+  "courses.search": "搜索课程",
+  "courses.error": "无法加载课程",
+  "courses.retry": "重试",
+  "courses.loading": "正在加载课程…",
+  "courses.empty": "未找到课程",
+  "courses.emptyDetail": "请尝试其他搜索或稍后再来。",
+  "courses.free": "免费",
+  "courses.lessons": "课程视频",
+  "courses.noLessons": "暂无课程视频",
+  "courses.playError": "无法播放本节课程，请重试。",
+  "courses.invalid": "课程链接无效。"
 }

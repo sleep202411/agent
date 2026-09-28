@@ -926,5 +926,17 @@
   "ipGeneration.retry": "重新生成",
   "ipGeneration.completedLabel": "製作完成",
   "ipGeneration.downloadButton": "儲存/下載",
-  "ipGeneration.errorGeneric": "生成遇到異常，請重試"
+  "ipGeneration.errorGeneric": "生成遇到異常，請重試",
+  "tabs.courses": "課程",
+  "courses.search": "搜尋課程",
+  "courses.error": "無法載入課程",
+  "courses.retry": "重試",
+  "courses.loading": "正在載入課程…",
+  "courses.empty": "未找到課程",
+  "courses.emptyDetail": "請嘗試其他搜尋或稍後再來。",
+  "courses.free": "免費",
+  "courses.lessons": "課程影片",
+  "courses.noLessons": "暫無課程影片",
+  "courses.playError": "無法播放本節課程，請重試。",
+  "courses.invalid": "課程連結無效。"
 }

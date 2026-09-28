@@ -926,5 +926,17 @@
   "ipGeneration.retry": "Try Again",
   "ipGeneration.completedLabel": "Generation Completed",
   "ipGeneration.downloadButton": "Download Output",
-  "ipGeneration.errorGeneric": "Generation failed. Please try again."
+  "ipGeneration.errorGeneric": "Generation failed. Please try again.",
+  "tabs.courses": "Courses",
+  "courses.search": "Search courses",
+  "courses.error": "Unable to load courses",
+  "courses.retry": "Retry",
+  "courses.loading": "Loading course…",
+  "courses.empty": "No courses found",
+  "courses.emptyDetail": "Try another search or check back later.",
+  "courses.free": "Free",
+  "courses.lessons": "Lessons",
+  "courses.noLessons": "No lessons available",
+  "courses.playError": "Unable to play this lesson. Please retry.",
+  "courses.invalid": "Invalid course link."
 }

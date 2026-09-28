@@ -70,6 +70,8 @@ export default function RootLayout() {
                 <Stack.Screen name="pay/community" />
                 <Stack.Screen name="delete-account" />
                 <Stack.Screen name="ips" options={detailHeader} />
+                <Stack.Screen name="course/[id]" options={detailHeader} />
+                <Stack.Screen name="news" options={detailHeader} />
                 <Stack.Screen name="games" options={detailHeader} />
                 <Stack.Screen
                   name="play/interactive-film/[gameId]"
