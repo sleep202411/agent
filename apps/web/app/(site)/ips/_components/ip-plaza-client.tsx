@@ -293,7 +293,9 @@ export function IpPlazaClient() {
           ) : isError && projects.length === 0 ? (
             <div className="flex min-h-[100vh] flex-col items-center justify-center text-center text-muted-foreground">
               <IconRefresh className="mb-3 size-10 opacity-30" />
-              <p className="text-sm">{error instanceof Error ? error.message : commonT("loadFailed")}</p>
+              <p className="text-sm">
+                {error instanceof Error ? error.message : commonT("loadFailed")}
+              </p>
               <button
                 type="button"
                 disabled={isFetching}
@@ -306,9 +308,17 @@ export function IpPlazaClient() {
           ) : projects.length > 0 ? (
             <>
               {isError && (
-                <div role="alert" className="mb-4 flex items-center gap-3 text-sm text-muted-foreground">
+                <div
+                  role="alert"
+                  className="mb-4 flex items-center gap-3 text-sm text-muted-foreground"
+                >
                   <p>{error instanceof Error ? error.message : commonT("loadFailed")}</p>
-                  <Button type="button" variant="outline" disabled={isFetching} onClick={() => void refetch()}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isFetching}
+                    onClick={() => void refetch()}
+                  >
                     {commonT("retry")}
                   </Button>
                 </div>
@@ -375,6 +385,7 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
   const trailer = ipPreviewVideoUrl(ip);
   const primaryGenre = ip.genres[0] ?? "";
   const ownerName = ip.copyrightOwner?.trim() || t("anonymousOwner");
+  const coCreators = buildPlazaCoCreators(ip, ownerName);
 
   return {
     id: ip.id,
@@ -388,6 +399,8 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     ownerId: ip.createdById ?? "",
     ownerName,
     ownerAvatar: "",
+    coCreators,
+    publishers: ip.publishers ?? [],
     genres: ip.genres,
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,
@@ -397,6 +410,33 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     eyebrow: primaryGenre || t("featured"),
     region: ip.region ?? "",
   };
+}
+
+function buildPlazaCoCreators(ip: IpCommerceIp, ownerName: string): PlazaProject["coCreators"] {
+  const ordered: PlazaProject["coCreators"] = [];
+  const seen = new Set<string>();
+
+  if (ip.createdById) {
+    seen.add(`user:${ip.createdById}`);
+    ordered.push({
+      id: `owner:${ip.createdById}`,
+      userId: ip.createdById,
+      displayName: ownerName,
+    });
+  }
+
+  for (const contributor of ip.contributors ?? []) {
+    const key = contributor.userId ? `user:${contributor.userId}` : `contributor:${contributor.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push({
+      id: contributor.id,
+      userId: contributor.userId,
+      displayName: contributor.displayName?.trim() || ownerName,
+    });
+  }
+
+  return ordered.slice(0, 3);
 }
 
 function discoveryToPlazaProject(

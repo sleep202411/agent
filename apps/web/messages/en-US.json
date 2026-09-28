@@ -447,6 +447,7 @@
     "stageReleased": "Released",
     "featured": "Featured",
     "trailer": "Trailer",
+    "plazaCoCreators": "Co-creators",
     "anonymousOwner": "Anonymous",
     "total": "Total",
     "exploreAll": "Explore All",
@@ -1768,6 +1769,9 @@
       "preview": "Creator preview",
       "public": "Public access"
     },
+    "publishers": {
+      "label": "Distributed by"
+    },
     "creatorTeam": {
       "titleFallback": "Creator team",
       "subtitle": "{count} episodes · IP team",
@@ -2178,6 +2182,7 @@
       "kycVerified": "Verified",
       "kycPending": "Not verified",
       "joined": "Joined",
+      "publishers": "Distributors",
       "contact": "Contact"
     },
     "tabs": {
@@ -2219,20 +2224,21 @@
         "emptyCta": "Apply for certification",
         "title": "Apply for FD certification",
         "titleAiProducer": "Apply for AI Producer certification",
-        "description": "Choose a level, then pick one of your crews and IPs. Review usually takes a few business days.",
-        "descriptionAiProducer": "Submit for AI Producer review with one of your crews and IPs. Review usually takes a few business days.",
+        "description": "Choose a certification level. Crew and IP are optional. Review usually takes a few business days.",
+        "descriptionAiProducer": "Submit for AI Producer review. Crew and IP are optional. Review usually takes a few business days.",
         "levelLabel": "Certification level",
         "levelPlaceholder": "Select a level",
         "levelEmpty": "No levels available",
         "levelPendingOption": "{name} (pending review)",
         "levelPendingHint": "You already have a pending application for this level. Wait for review or cancel it before applying again.",
-        "crewLabel": "Crew",
+        "crewLabel": "Crew (optional)",
         "crewPlaceholder": "Select a crew",
-        "crewEmpty": "Create or join a crew first",
+        "crewEmpty": "No crews yet",
         "crewDeferredName": "Pending — applying to create a crew",
-        "ipLabel": "IP",
+        "ipLabel": "IP (optional)",
         "ipPlaceholder": "Select an IP",
-        "ipEmpty": "Create an IP first",
+        "ipEmpty": "No IPs yet",
+        "optionalSkip": "Not selected",
         "attachmentLabel": "Supporting materials (optional)",
         "attachmentHint": "Upload materials such as a portfolio, diploma, or certificate. You can also fill out your resume on your profile.",
         "attachmentPick": "Drop a file here or click to browse",
@@ -2244,7 +2250,7 @@
         "extraLabel": "Additional notes",
         "extraPlaceholder": "Anything else reviewers should know (optional)",
         "extraTooLong": "Additional notes must be 300 characters or fewer",
-        "missingRequired": "Please select a level, crew, and IP",
+        "missingRequired": "Please select a certification level",
         "missingRequiredIp": "Please select an IP",
         "submit": "Submit application",
         "submitting": "Submitting…",
@@ -2290,7 +2296,8 @@
       "enterStudio": "Open studio",
       "loadFailedTitle": "IP list failed to load",
       "loadFailedBody": "The new IP service is temporarily unavailable. Existing drafts were not deleted.",
-      "retry": "Retry"
+      "retry": "Retry",
+      "publishersLabel": "Distributed by"
     },
     "crews": {
       "emptyOwnerTitle": "Join a crew",

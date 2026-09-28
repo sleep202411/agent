@@ -1,6 +1,6 @@
-import { useCrewExpensesSummary } from "@/app/(site)/crews/_hooks/use-expenses";
-("use client");
+"use client";
 
+import { useCrewExpensesSummary } from "@/app/(site)/crews/_hooks/use-expenses";
 import { AmendmentFinancePanel } from "@/app/(site)/crews/_components/amendment-finance-panel";
 
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";

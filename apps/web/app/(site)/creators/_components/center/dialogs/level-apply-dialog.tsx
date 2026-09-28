@@ -2,7 +2,7 @@
 
 /**
  * Owner-only dialog: apply for a Java certification level.
- * Required: level + crew + IP. Optional: attachment + notes.
+ * Required: level. Optional: crew, IP, attachment + notes.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -53,6 +53,9 @@ const EXTRA_MAX = 300;
  * `CREW_CREATE_LEVEL_ID` in `apps/server/src/integrations/java/user-level-gates.ts`.
  */
 export const AI_PRODUCER_LEVEL_ID = 13;
+
+/** Radix Select needs a non-empty value; maps to "no crew / no IP selected". */
+const SELECT_NONE = "__none__";
 
 interface LevelApplyDialogProps {
   open: boolean;
@@ -180,19 +183,19 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
 
   async function handleSubmit() {
     const level = levels.find((l) => String(l.id) === levelId);
-    const crew = crews.find((c) => c.id === crewId);
-    const ip = ips.find((i) => i.id === ipId);
-    if (!level || !crew || !ip) {
+    if (!level) {
       toast.error(t("levels.apply.missingRequired"));
       return;
     }
+    const crew = crews.find((c) => c.id === crewId);
+    const ip = ips.find((i) => i.id === ipId);
     if (pendingLevelIds.has(level.id)) {
       toast.error(t("levels.apply.levelPendingHint"));
       return;
     }
     const origin = window.location.origin;
-    const crewLink = `${origin}${localizePath(`/crews/${crew.id}`, locale)}`;
-    const ipLink = `${origin}${localizePath(ipRoomPath(ip.roomNumber), locale)}`;
+    const crewLink = crew ? `${origin}${localizePath(`/crews/${crew.id}`, locale)}` : "";
+    const ipLink = ip ? `${origin}${localizePath(ipRoomPath(ip.roomNumber), locale)}` : "";
     const note = extraInfo.trim();
     if (note.length > EXTRA_MAX) {
       toast.error(t("levels.apply.extraTooLong"));
@@ -203,9 +206,9 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
     try {
       await submitUserLevelApply({
         levelId: level.id,
-        crewName: crew.name,
+        crewName: crew?.name ?? "",
         crewLink,
-        ipName: ip.title,
+        ipName: ip?.title ?? "",
         ipLink,
         ...(attachmentPath ? { attachmentUrl: attachmentPath } : {}),
         ...(note ? { extraInfo: note } : {}),
@@ -224,11 +227,7 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
   const loadingLists =
     levelsQuery.isPending || pendingQuery.isPending || crewsQuery.isPending || ipsQuery.isPending;
   const canSubmit =
-    Boolean(levelId && crewId && ipId) &&
-    !selectedLevelPending &&
-    !submitting &&
-    !uploading &&
-    !loadingLists;
+    Boolean(levelId) && !selectedLevelPending && !submitting && !uploading && !loadingLists;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -291,14 +290,18 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel required>{t("levels.apply.crewLabel")}</FieldLabel>
-                  <Select value={crewId} onValueChange={setCrewId}>
+                  <FieldLabel>{t("levels.apply.crewLabel")}</FieldLabel>
+                  <Select
+                    value={crewId || SELECT_NONE}
+                    onValueChange={(value) => setCrewId(value === SELECT_NONE ? "" : value)}
+                  >
                     <SelectTrigger className="h-9 w-full">
                       <SelectValue placeholder={t("levels.apply.crewPlaceholder")} />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={SELECT_NONE}>{t("levels.apply.optionalSkip")}</SelectItem>
                       {crews.length === 0 ? (
-                        <SelectItem value="__none" disabled>
+                        <SelectItem value="__empty_crews" disabled>
                           {t("levels.apply.crewEmpty")}
                         </SelectItem>
                       ) : (
@@ -313,14 +316,18 @@ export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApp
                 </Field>
 
                 <Field>
-                  <FieldLabel required>{t("levels.apply.ipLabel")}</FieldLabel>
-                  <Select value={ipId} onValueChange={setIpId}>
+                  <FieldLabel>{t("levels.apply.ipLabel")}</FieldLabel>
+                  <Select
+                    value={ipId || SELECT_NONE}
+                    onValueChange={(value) => setIpId(value === SELECT_NONE ? "" : value)}
+                  >
                     <SelectTrigger className="h-9 w-full">
                       <SelectValue placeholder={t("levels.apply.ipPlaceholder")} />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={SELECT_NONE}>{t("levels.apply.optionalSkip")}</SelectItem>
                       {ips.length === 0 ? (
-                        <SelectItem value="__none" disabled>
+                        <SelectItem value="__empty_ips" disabled>
                           {t("levels.apply.ipEmpty")}
                         </SelectItem>
                       ) : (

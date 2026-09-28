@@ -15,6 +15,7 @@ import {
   IconFileSettings,
   IconFlag,
   IconBriefcase,
+  IconBuildingStore,
   IconLayoutCards,
   IconMasksTheater,
   IconNews,
@@ -328,6 +329,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
       label: "配置",
       items: [
         { href: "/ip/taxonomy", label: "题材词库", icon: IconTags, permission: "ip.read" },
+        {
+          href: "/ip/publishers",
+          label: "发行商库",
+          icon: IconBuildingStore,
+          permission: "ip.read",
+        },
         {
           href: "/ip/discovery",
           label: "广场运营位",

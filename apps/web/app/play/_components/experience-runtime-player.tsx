@@ -1,6 +1,6 @@
-import { PlaySessionReportView } from "../interactive-film/_components/play-session-report";
-("use client");
+"use client";
 
+import { PlaySessionReportView } from "../interactive-film/_components/play-session-report";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { useStoryCommunityAccess } from "./story-community-access";
 import {

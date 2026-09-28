@@ -33,6 +33,7 @@ export interface UserLevelApplication {
 
 export interface SubmitUserLevelApplyInput {
   levelId: number;
+  /** Empty when the applicant skips crew / IP (optional on apply form). */
   crewName: string;
   crewLink: string;
   ipName: string;

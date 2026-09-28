@@ -120,6 +120,17 @@ export interface IpEngagementSnapshot {
   viewerHasLiked: boolean;
 }
 
+/** Distribution partner shown on public IP surfaces (admin-curated). */
+export interface IpPublisherPublic {
+  id: string;
+  code: string;
+  name: string;
+  logoUrl: string;
+  websiteUrl: string | null;
+  displayOrder: number;
+  status?: "active" | "inactive";
+}
+
 export interface IpEngagementMutationResult {
   recorded?: boolean;
   liked?: boolean;
@@ -163,6 +174,8 @@ export interface IpCommerceIp {
     isPublic: boolean;
     displayOrder: number;
   }>;
+  /** Active distribution partners bound by admin (empty when none). */
+  publishers?: IpPublisherPublic[];
   rightsSummary: Record<string, unknown>;
   aiDisclosure: Record<string, unknown>;
   coverAsset: IpCommerceAsset | null;
@@ -223,6 +236,8 @@ export interface IpCreatorIp {
   }>;
   priceRules?: Array<IpCommercePriceRule & { status?: string; priority?: number }>;
   copyrightOwner?: string | null;
+  /** Active distribution partners (admin-curated; read-only for creators). */
+  publishers?: IpPublisherPublic[];
   rightsSummary?: Record<string, unknown>;
   aiDisclosure?: Record<string, unknown>;
   createdAt: string;

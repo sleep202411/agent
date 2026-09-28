@@ -248,6 +248,27 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     getAssetUrl(ip.episodes.find((episode) => episode.trailerAsset)?.trailerAsset) ||
     getAssetUrl(ip.episodes.find((episode) => episode.mediaAsset)?.mediaAsset);
   const primaryGenre = ip.genres[0] ?? "";
+  const ownerName = ip.copyrightOwner?.trim() || t("anonymousOwner");
+  const coCreators: PlazaProject["coCreators"] = [];
+  const seen = new Set<string>();
+  if (ip.createdById) {
+    seen.add(`user:${ip.createdById}`);
+    coCreators.push({
+      id: `owner:${ip.createdById}`,
+      userId: ip.createdById,
+      displayName: ownerName,
+    });
+  }
+  for (const contributor of ip.contributors ?? []) {
+    const key = contributor.userId ? `user:${contributor.userId}` : `contributor:${contributor.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    coCreators.push({
+      id: contributor.id,
+      userId: contributor.userId,
+      displayName: contributor.displayName?.trim() || ownerName,
+    });
+  }
   return {
     id: ip.id,
     roomNumber: ip.roomNumber,
@@ -257,8 +278,10 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
     cover,
     trailer,
     ownerId: ip.createdById ?? "",
-    ownerName: ip.copyrightOwner?.trim() || t("anonymousOwner"),
+    ownerName,
     ownerAvatar: "",
+    coCreators: coCreators.slice(0, 3),
+    publishers: ip.publishers ?? [],
     genres: ip.genres,
     tags: ip.tags.length > 0 ? ip.tags : ip.genres,
     episodes: ip.episodes.length,

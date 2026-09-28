@@ -3,6 +3,7 @@ import { hasCrewCreatePass } from '../integrations/java/user-level-gates';
 import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import { ConversationsService } from '../conversations/conversations.service';
 import { joinCrewFanTx } from '../crews/fan-community';
+import { publishersFromAssignments } from './ip-publishers.service';
 import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import {
   BadRequestException,
@@ -292,6 +293,10 @@ const ipInclude = {
     where: { isPublic: true, removedAt: null },
     orderBy: { displayOrder: 'asc' },
   },
+  publisherAssignments: {
+    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    include: { publisher: true },
+  },
 } satisfies Prisma.IpInclude;
 
 type IpWithCommerce = Prisma.IpGetPayload<{
@@ -384,6 +389,10 @@ const adminIpInclude = {
   contributors: {
     where: { removedAt: null },
     orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+  },
+  publisherAssignments: {
+    orderBy: [{ displayOrder: 'asc' }, { createdAt: 'asc' }],
+    include: { publisher: true },
   },
   aclGrants: {
     where: { revokedAt: null },
@@ -7752,6 +7761,10 @@ function adminIpSummaryDto(
     ageRating: title.ageRating,
     sourceLocale: title.sourceLocale,
     ...taxonomy,
+    publishers: publishersFromAssignments(
+      title.publisherAssignments,
+      requestedLocale,
+    ),
     version: title.version,
     coverAsset: assetDto(copy.value?.coverAsset ?? title.coverAsset),
     trailerAsset: assetDto(title.trailerAsset),
@@ -7808,6 +7821,10 @@ function creatorIpSummaryDto(
     summary: copy.value?.summary ?? '',
     description: copy.value?.description ?? null,
     ...taxonomy,
+    publishers: publishersFromAssignments(
+      title.publisherAssignments,
+      requestedLocale,
+    ),
     localization: copy.meta,
     status: title.status,
     listingVisibility: title.listingVisibility,
@@ -7896,6 +7913,11 @@ function adminIpDetailDto(
     ...adminIpSummaryDto(title, requestedLocale),
     description: titleCopy.value?.description ?? null,
     copyrightOwner: title.copyrightOwner,
+    publishers: publishersFromAssignments(
+      title.publisherAssignments,
+      requestedLocale,
+      { activeOnly: false },
+    ),
     rightsSummary: title.rightsSummary,
     aiDisclosure: title.aiDisclosure,
     episodes: title.episodes.map((episode) => {
@@ -8570,6 +8592,10 @@ function ipDto(
       isPublic: contributor.isPublic,
       displayOrder: contributor.displayOrder,
     })),
+    publishers: publishersFromAssignments(
+      title.publisherAssignments,
+      requestedLocale,
+    ),
     rightsSummary: title.rightsSummary,
     aiDisclosure: title.aiDisclosure,
     coverAsset: assetDto(copy.value?.coverAsset ?? title.coverAsset),

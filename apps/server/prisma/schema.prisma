@@ -681,6 +681,12 @@ enum IpTaxonomyTermStatus {
   archived
 }
 
+/// Platform distribution partner (芒果 / 优酷 / Netflix…). Admin-curated.
+enum IpPublisherStatus {
+  active
+  inactive
+}
+
 enum IpTaxonomyAssignmentSource {
   creator
   admin
@@ -3646,6 +3652,7 @@ model Ip {
   engagementAggregate      IpEngagementAggregate?
   viewEvents               IpViewEvent[]
   likes                    IpLike[]
+  publisherAssignments     IpPublisherAssignment[]
 
   /// Public slug uniqueness is locale-aware and enforced on
   /// IpLocalization by partial unique SQL.
@@ -3653,6 +3660,48 @@ model Ip {
   @@index([status, listingVisibility, publishedAt(sort: Desc)], map: "ips_public_feed_idx")
   @@index([channelType, status, listingVisibility], map: "ips_channel_public_idx")
   @@map("ips")
+}
+
+/// Curated distribution partner catalog. FizzDragon binds these to IPs after
+/// a deal is confirmed — not free-text creator fields.
+model IpPublisher {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  /// Stable machine key (e.g. mango, youku, netflix).
+  code         String            @unique @map("code") @db.VarChar(64)
+  status       IpPublisherStatus @default(active)
+  displayOrder Int               @default(0) @map("display_order")
+  /// Locale map: { "en-US": "Netflix", "zh-CN": "奈飞", "zh-HK": "Netflix" }.
+  names        Json              @default("{}") @db.JsonB
+  /// Absolute HTTPS URL or OSS key resolved via BANNER_BASE_URL.
+  logoUrl      String            @map("logo_url") @db.VarChar(1024)
+  websiteUrl   String?           @map("website_url") @db.VarChar(1024)
+  notes        String?           @db.VarChar(500)
+  createdById  String?           @map("created_by_id") @db.VarChar(64)
+  updatedById  String?           @map("updated_by_id") @db.VarChar(64)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  assignments IpPublisherAssignment[]
+
+  @@index([status, displayOrder], map: "ip_publishers_status_order_idx")
+  @@map("ip_publishers")
+}
+
+model IpPublisherAssignment {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  ipId         String   @map("ip_id") @db.Uuid
+  publisherId  String   @map("publisher_id") @db.Uuid
+  displayOrder Int      @default(0) @map("display_order")
+  createdById  String?  @map("created_by_id") @db.VarChar(64)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  ip        Ip          @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  publisher IpPublisher @relation(fields: [publisherId], references: [id], onDelete: Restrict)
+
+  @@unique([ipId, publisherId], map: "ip_publisher_assignments_ip_publisher_unique")
+  @@index([ipId, displayOrder], map: "ip_publisher_assignments_ip_order_idx")
+  @@index([publisherId, ipId], map: "ip_publisher_assignments_publisher_ip_idx")
+  @@map("ip_publisher_assignments")
 }
 
 model IpTaxonomyTerm {

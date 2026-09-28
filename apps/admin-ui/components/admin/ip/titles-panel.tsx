@@ -54,6 +54,7 @@ import type {
   ReportRow,
 } from "./types";
 import { emptyIps, emptyIpTaxonomy } from "./types";
+import { IpPublishersSection } from "./ip-publishers-section";
 import { IpRevenueSection } from "./ip-revenue-section";
 
 // shadcn SelectItem value cannot be an empty string, so the "全部/默认" filter
@@ -748,6 +749,13 @@ function IpDetailDrawer({
                   {ip.summary || ip.description || "暂无简介"}
                 </p>
               </section>
+
+              <IpPublishersSection
+                key={`${ip.id}:publishers:${ip.version}`}
+                ipId={ip.id}
+                assigned={ip.publishers ?? []}
+                onSaved={() => onRefresh(ip.id)}
+              />
 
               {publishReadiness ? (
                 <section className="rounded-xl border border-slate-200 p-4">

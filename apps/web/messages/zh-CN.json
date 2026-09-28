@@ -447,6 +447,7 @@
     "stageReleased": "已发布",
     "featured": "精选",
     "trailer": "预告片",
+    "plazaCoCreators": "共创者",
     "anonymousOwner": "匿名作者",
     "total": "共",
     "exploreAll": "全部 IP",
@@ -1768,6 +1769,9 @@
       "preview": "创作者预览",
       "public": "公开可访问"
     },
+    "publishers": {
+      "label": "发行方"
+    },
     "creatorTeam": {
       "titleFallback": "创作者团队",
       "subtitle": "{count} 集内容 · IP 团队",
@@ -2178,6 +2182,7 @@
       "kycVerified": "已认证",
       "kycPending": "未认证",
       "joined": "加入时间",
+      "publishers": "发行商",
       "contact": "联系方式"
     },
     "tabs": {
@@ -2219,20 +2224,21 @@
         "emptyCta": "申请认证",
         "title": "申请 FD 认证",
         "titleAiProducer": "申请 AI 制片人认证",
-        "description": "选择认证等级，并选择你的剧组与 IP。审核通常需要几个工作日。",
-        "descriptionAiProducer": "提交 AI 制片人认证申请，并选择你的剧组与 IP。审核通常需要几个工作日。",
+        "description": "选择认证等级即可提交；剧组与 IP 为可选。审核通常需要几个工作日。",
+        "descriptionAiProducer": "提交 AI 制片人认证申请；剧组与 IP 为可选。审核通常需要几个工作日。",
         "levelLabel": "认证等级",
         "levelPlaceholder": "请选择等级",
         "levelEmpty": "暂无可选等级",
         "levelPendingOption": "{name}（审核中）",
         "levelPendingHint": "该等级已有待审核申请，请等待审核结果，或先取消后再申请。",
-        "crewLabel": "剧组",
+        "crewLabel": "剧组（可选）",
         "crewPlaceholder": "请选择剧组",
-        "crewEmpty": "请先创建或加入剧组",
+        "crewEmpty": "暂无剧组",
         "crewDeferredName": "待创建剧组（认证申请中）",
-        "ipLabel": "IP",
+        "ipLabel": "IP（可选）",
         "ipPlaceholder": "请选择 IP",
-        "ipEmpty": "请先创建 IP",
+        "ipEmpty": "暂无 IP",
+        "optionalSkip": "不选择",
         "attachmentLabel": "认证材料（可选）",
         "attachmentHint": "请上传您的认证材料，比如作品集或者学历证书等，也可完善简历。",
         "attachmentPick": "拖拽文件到此处，或点击选择",
@@ -2244,7 +2250,7 @@
         "extraLabel": "其它信息",
         "extraPlaceholder": "补充说明（可选）",
         "extraTooLong": "其它信息最多 300 字",
-        "missingRequired": "请选择认证等级、剧组和 IP",
+        "missingRequired": "请选择认证等级",
         "missingRequiredIp": "请选择 IP",
         "submit": "提交申请",
         "submitting": "提交中…",
@@ -2290,7 +2296,8 @@
       "enterStudio": "进入工作台",
       "loadFailedTitle": "IP 列表加载失败",
       "loadFailedBody": "新版 IP 服务暂时不可用，已有草稿没有被删除。",
-      "retry": "重试"
+      "retry": "重试",
+      "publishersLabel": "发行方"
     },
     "crews": {
       "emptyOwnerTitle": "加入或筹组剧组",

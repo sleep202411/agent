@@ -12,6 +12,7 @@ import type {
   AdminIpOrdersData,
   AdminIpOverviewData,
   AdminIpsData,
+  AdminIpPublishersData,
   AdminIpTaxonomyData,
   AdminRevenueEntriesData,
   IpCommerceSettingsData,
@@ -72,6 +73,15 @@ export async function fetchAdminIpTaxonomy(
   return fetchAdminIpResource(
     `/ip-commerce/taxonomy${toSearch(searchParams)}`,
     "IP 词库数据加载失败。"
+  );
+}
+
+export async function fetchAdminIpPublishers(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminIpLoadResult<AdminIpPublishersData>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/publishers${toSearch(searchParams)}`,
+    "发行商库加载失败。"
   );
 }
 

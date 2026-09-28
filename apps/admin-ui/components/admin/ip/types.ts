@@ -288,9 +288,45 @@ export type IpContributorRow = {
   displayOrder: number;
 };
 
+export type IpPublisherNames = {
+  "en-US"?: string;
+  "zh-CN"?: string;
+  "zh-HK"?: string;
+};
+
+export type IpPublisherRow = {
+  id: string;
+  code: string;
+  status: "active" | "inactive";
+  displayOrder: number;
+  names: IpPublisherNames;
+  name: string;
+  logoUrl: string;
+  websiteUrl: string | null;
+  notes: string | null;
+  assignmentCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type IpPublisherAssignment = {
+  id: string;
+  code: string;
+  name: string;
+  logoUrl: string;
+  websiteUrl: string | null;
+  displayOrder: number;
+  status?: "active" | "inactive";
+};
+
+export type AdminIpPublishersData = {
+  items: IpPublisherRow[];
+};
+
 export type AdminIpDetail = IpRow & {
   description: string | null;
   copyrightOwner: string | null;
+  publishers?: IpPublisherAssignment[];
   rightsSummary: Record<string, unknown>;
   aiDisclosure: Record<string, unknown>;
   episodes: IpEpisodeRow[];

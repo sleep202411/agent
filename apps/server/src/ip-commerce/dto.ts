@@ -214,6 +214,129 @@ export type UpdateAdminIpTaxonomyTermInput = z.infer<
 >;
 
 // ---------------------------------------------------------------------------
+// IP publishers (distribution partners)
+// ---------------------------------------------------------------------------
+
+export const IpPublisherStatusSchema = z.enum(['active', 'inactive']);
+const PublisherCodeSchema = z
+  .string()
+  .trim()
+  .min(2)
+  .max(64)
+  .regex(/^[a-z][a-z0-9_-]*$/, 'code must be lowercase alphanumeric');
+
+const PublisherNamesSchema = z
+  .object({
+    'en-US': z.string().trim().min(1).max(120).optional(),
+    'zh-CN': z.string().trim().min(1).max(120).optional(),
+    'zh-HK': z.string().trim().min(1).max(120).optional(),
+  })
+  .strict()
+  .refine(
+    (names) => Boolean(names['en-US'] || names['zh-CN'] || names['zh-HK']),
+    { message: 'At least one localized name is required.' },
+  );
+
+const PublisherLogoUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(1024)
+  .refine((value) => {
+    if (/^https:\/\//i.test(value)) {
+      try {
+        const url = new URL(value);
+        return !url.username && !url.password;
+      } catch {
+        return false;
+      }
+    }
+    return !value.includes('://') && value.length > 0;
+  }, 'logoUrl must be an HTTPS URL or an OSS object key.');
+
+export const ListAdminIpPublishersQuerySchema = z.object({
+  status: IpPublisherStatusSchema.optional(),
+  locale: LocaleQuerySchema,
+});
+export type ListAdminIpPublishersQuery = z.infer<
+  typeof ListAdminIpPublishersQuerySchema
+>;
+
+export const AdminIpPublisherParamsSchema = z.object({
+  publisherId: z.string().uuid(),
+});
+export type AdminIpPublisherParams = z.infer<
+  typeof AdminIpPublisherParamsSchema
+>;
+
+export const CreateAdminIpPublisherSchema = z
+  .object({
+    code: PublisherCodeSchema,
+    status: IpPublisherStatusSchema.default('active'),
+    displayOrder: z.number().int().min(0).max(1_000_000).default(0),
+    names: PublisherNamesSchema,
+    logoUrl: PublisherLogoUrlSchema,
+    websiteUrl: z
+      .string()
+      .trim()
+      .url()
+      .max(1024)
+      .nullable()
+      .optional()
+      .refine(
+        (value) =>
+          value == null ||
+          (() => {
+            try {
+              const url = new URL(value);
+              return url.protocol === 'https:';
+            } catch {
+              return false;
+            }
+          })(),
+        'websiteUrl must be HTTPS.',
+      ),
+    notes: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict();
+export type CreateAdminIpPublisherInput = z.infer<
+  typeof CreateAdminIpPublisherSchema
+>;
+
+export const UpdateAdminIpPublisherSchema = z
+  .object({
+    status: IpPublisherStatusSchema.optional(),
+    displayOrder: z.number().int().min(0).max(1_000_000).optional(),
+    names: PublisherNamesSchema.optional(),
+    logoUrl: PublisherLogoUrlSchema.optional(),
+    websiteUrl: z.string().trim().url().max(1024).nullable().optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.status !== undefined ||
+      value.displayOrder !== undefined ||
+      value.names !== undefined ||
+      value.logoUrl !== undefined ||
+      value.websiteUrl !== undefined ||
+      value.notes !== undefined,
+    { message: 'At least one publisher field is required.' },
+  );
+export type UpdateAdminIpPublisherInput = z.infer<
+  typeof UpdateAdminIpPublisherSchema
+>;
+
+export const SetAdminIpPublishersSchema = z
+  .object({
+    publisherIds: z.array(z.string().uuid()).max(40),
+  })
+  .strict();
+export type SetAdminIpPublishersInput = z.infer<
+  typeof SetAdminIpPublishersSchema
+>;
+
+// ---------------------------------------------------------------------------
 // IP discovery placements (IP Plaza hero / for-you / pinned recommendations)
 // ---------------------------------------------------------------------------
 

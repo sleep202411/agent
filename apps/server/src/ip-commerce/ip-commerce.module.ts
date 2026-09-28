@@ -53,6 +53,7 @@ import { IpGenerationJobsService } from './ip-generation-jobs.service';
 import { IpGenerationTemplatesService } from './ip-generation-templates.service';
 import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { IpCommerceService } from './ip-commerce.service';
+import { IpPublishersService } from './ip-publishers.service';
 import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
 
 @Module({
@@ -98,6 +99,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpCommentsService,
     IpEpisodeFeedbackService,
     IpCommerceService,
+    IpPublishersService,
     IpKnowledgeService,
     IpGenerationTemplatesService,
     IpGenerationJobsService,

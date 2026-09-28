@@ -1,3 +1,11 @@
+import type { IpPublisherPublic } from "@/src/lib/ip-commerce/api";
+
+export interface PlazaCoCreator {
+  id: string;
+  userId: string | null;
+  displayName: string;
+}
+
 export interface PlazaProject {
   channelType?: "ip" | "community";
   id: string;
@@ -11,6 +19,10 @@ export interface PlazaProject {
   ownerId: string;
   ownerName: string;
   ownerAvatar: string;
+  /** Public co-creators (owner + contributors), for cover avatar stack. */
+  coCreators: PlazaCoCreator[];
+  /** Active distribution partners bound by admin. */
+  publishers: IpPublisherPublic[];
   genres: string[];
   tags: string[];
   episodes: number;
