@@ -28,7 +28,10 @@ class SuccessfulUploadRequest {
     this.url = url;
   }
 
-  setRequestHeader() {}
+  headers: [string, string][] = [];
+  setRequestHeader(name: string, value: string) {
+    this.headers.push([name, value]);
+  }
 
   send(file: File) {
     this.upload.onprogress?.({
@@ -224,4 +227,35 @@ describe("uploadFileViaSignedUrl", () => {
       "/aurora/media/confirm",
     ]);
   });
+});
+
+it.each([
+  [{ "content-type": "image/provider-signed" }, "image/provider-signed"],
+  [{}, "image/explicit"],
+])("sends one canonical content type with signed headers %j", async (headers, expected) => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(
+      jsonResponse({
+        uploadUrl: "https://storage.example/upload",
+        method: "PUT",
+        headers,
+        storageKey: "key",
+        provider: "s3_compatible",
+      })
+    )
+    .mockResolvedValueOnce(
+      jsonResponse({ mediaAssetId: "media", url: "https://media.example/file" })
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("XMLHttpRequest", SuccessfulUploadRequest);
+  await uploadFileViaSignedUrl(new File(["image"], "file.png", { type: "image/png" }), {
+    kind: "crew_asset_file",
+    contentType: "image/explicit",
+  });
+  const sent = SuccessfulUploadRequest.instances[0]!.headers.filter(
+    ([name]) => name.toLowerCase() === "content-type"
+  );
+  expect(sent).toHaveLength(1);
+  expect(sent[0]![1]).toBe(expected);
 });

@@ -181,7 +181,7 @@ async function requestSignedUrl(
 function putBytesToStorage(
   info: SignedUrlResponse,
   file: File,
-  options?: { onProgress?: (percent: number) => void; signal?: AbortSignal }
+  options?: { contentType?: string; onProgress?: (percent: number) => void; signal?: AbortSignal }
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -190,13 +190,20 @@ function putBytesToStorage(
     // Echo the signed headers exactly. Content-Type is part of the
     // signature on both providers, so it MUST match what the server
     // signed — default from the file only if (defensively) absent.
-    const headers: Record<string, string> = {
-      "Content-Type": file.type || "application/octet-stream",
-      ...(info.headers ?? {}),
-    };
-    for (const [k, v] of Object.entries(headers)) {
-      xhr.setRequestHeader(k, v);
+    const headers = new Map<string, { name: string; value: string }>([
+      [
+        "content-type",
+        {
+          name: "Content-Type",
+          value: options?.contentType || file.type || "application/octet-stream",
+        },
+      ],
+    ]);
+    for (const [name, value] of Object.entries(info.headers ?? {})) {
+      headers.set(name.toLowerCase(), { name, value });
     }
+    // XHR appends duplicate header values, even when their casing differs.
+    for (const { name, value } of headers.values()) xhr.setRequestHeader(name, value);
 
     if (options?.onProgress) {
       xhr.upload.onprogress = (e) => {
@@ -361,7 +368,11 @@ export async function uploadFileViaSignedUrl(
       );
       storageKey = info.storageKey;
       opts.onStage?.("uploading");
-      await putBytesToStorage(info, file, { onProgress: opts.onProgress, signal: opts.signal });
+      await putBytesToStorage(info, file, {
+        contentType,
+        onProgress: opts.onProgress,
+        signal: opts.signal,
+      });
       storageKey = info.storageKey;
       opts.onCheckpoint?.({
         storageKey,
