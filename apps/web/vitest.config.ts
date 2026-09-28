@@ -18,6 +18,7 @@ export default defineConfig({
     },
   },
   test: {
+    setupFiles: ["./vitest.setup.ts"],
     env: {
       NEXT_PUBLIC_SITE_REGION: "com",
       NEXT_PUBLIC_OSS_BASE_URL: "https://oss.test.invalid",
