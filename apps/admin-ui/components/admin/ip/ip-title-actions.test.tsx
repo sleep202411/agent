@@ -100,7 +100,14 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 async function render(view: ReactNode, session = "alice") {
-  vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    // Publisher catalog reads are independent of the publication/report action
+    // under test and must not consume its deferred response.
+    if (url === "/api/admin/ip-commerce/publishers") {
+      return Promise.resolve(response({ items: [], nextCursor: null }));
+    }
+    return fetchMock(url, init);
+  });
   if (!root) {
     container = document.createElement("div");
     root = createRoot(container);
