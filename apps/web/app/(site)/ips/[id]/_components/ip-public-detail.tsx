@@ -1,7 +1,8 @@
 "use client";
+
+import { IpKnowledgeAssistant } from "../../_components/ip-knowledge-assistant";
 import { ChannelSubmissions } from "../../_components/channel-submissions";
 import { IpFanCommunity } from "../../_components/ip-fan-community";
-import { IpKnowledgeChat } from "../../_components/ip-knowledge-chat";
 import { IpGenerationPanel } from "../../_components/ip-generation-panel";
 
 import { useReportSubmission } from "../_hooks/use-report-submission";
@@ -574,11 +575,6 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                 {!detailIp.previewMode && <IpFanCommunity ipId={detailIp.id} />}
                 {!detailIp.previewMode && (
                   <div className="mt-4">
-                    <IpKnowledgeChat ipId={detailIp.id} ipTitle={detailIp.title} />
-                  </div>
-                )}
-                {!detailIp.previewMode && (
-                  <div className="mt-4">
                     <IpGenerationPanel ipId={detailIp.id} />
                   </div>
                 )}
@@ -691,6 +687,9 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
             />
           </aside>
         </div>
+        {!detailIp.previewMode && (
+          <IpKnowledgeAssistant key={detailIp.id} ipId={detailIp.id} ipTitle={detailIp.title} />
+        )}
         <ReportDialog
           open={reportOpen}
           onOpenChange={setReportOpen}

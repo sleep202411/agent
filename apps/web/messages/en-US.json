@@ -10541,6 +10541,8 @@
     "consent": "Creator confirmed: {date}"
   },
   "ipKnowledge": {
+    "launcher": "Ask AI",
+    "close": "Close assistant",
     "title": "Film Knowledge Assistant",
     "subtitle": "Ask questions based on officially published materials for this film",
     "placeholder": "Ask a question about the film lore, characters, or story...",

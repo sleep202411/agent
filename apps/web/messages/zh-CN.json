@@ -10541,6 +10541,8 @@
     "consent": "创作者确认时间：{date}"
   },
   "ipKnowledge": {
+    "launcher": "AI 问答",
+    "close": "关闭助手",
     "title": "影片知识助手",
     "subtitle": "基于官方已发布的影片资料为您解答疑问",
     "placeholder": "向影片助手提问角色设定、背景世界观或剧情...",

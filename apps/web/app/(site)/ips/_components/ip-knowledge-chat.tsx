@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { IconSparkles, IconSend, IconX, IconFileText, IconAlertCircle } from "@tabler/icons-react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { api } from "@/src/lib/api";
@@ -9,10 +9,9 @@ import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 
 interface IpKnowledgeChatProps {
   ipId: string;
-  ipTitle: string;
 }
 
-export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
+export function IpKnowledgeChat({ ipId }: IpKnowledgeChatProps) {
   const t = useTranslations("ipKnowledge");
   const rawLocale = useLocale();
   const locale = rawLocale === "en-US" || rawLocale === "zh-HK" ? rawLocale : "zh-CN";
@@ -27,6 +26,8 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  useEffect(() => () => abortControllerRef.current?.abort(), []);
+
   const handleCancel = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -37,7 +38,7 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
 
   const handleAsk = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!question.trim() || loading) return;
+    if (!question.trim() || abortControllerRef.current) return;
 
     if (!user) {
       open();
@@ -66,22 +67,24 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
         timeout: 45_000,
       });
 
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && abortControllerRef.current === controller) {
         setAnswer(reply.answer);
         setCitedIds(reply.citedDocumentIds || []);
       }
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
+    } catch {
+      if (!controller.signal.aborted && abortControllerRef.current === controller) {
         setError(t("error"));
       }
     } finally {
-      setLoading(false);
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+        abortControllerRef.current = null;
+      }
     }
   };
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 backdrop-blur-sm">
+    <div className="min-w-0">
       <div className="flex items-center gap-2 mb-2">
         <IconSparkles className="w-5 h-5 text-primary" />
         <h3 className="text-base font-semibold text-white">{t("title")}</h3>
@@ -92,6 +95,7 @@ export function IpKnowledgeChat({ ipId, ipTitle }: IpKnowledgeChatProps) {
         <div className="relative flex items-center">
           <input
             type="text"
+            aria-label={t("placeholder")}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder={t("placeholder")}
