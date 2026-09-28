@@ -253,3 +253,29 @@ it("ignores cached download and cancel callbacks retained from a previous projec
   });
   expect(h.save).toHaveBeenCalledWith("replacement", "asset");
 });
+
+it("normalizes storage upload percentages to the export progress ratio", async () => {
+  h.export.mockImplementationOnce(async (_shots, options) => {
+    options.onProgress(1);
+    return new Blob(["video"]);
+  });
+  const pending = deferred<{ mediaAssetId: string }>();
+  h.upload.mockReturnValueOnce(pending.promise);
+  await render();
+  let work!: Promise<void>;
+  await act(async () => {
+    work = api.handleExport();
+  });
+  expect(api.exportStage).toBe("uploading");
+  expect(api.exportProgress).toBe(0);
+  const onProgress = h.upload.mock.calls[0][1].onProgress;
+  await act(async () => onProgress(50));
+  expect(api.exportProgress).toBe(0.5);
+  await act(async () => onProgress(100));
+  expect(api.exportProgress).toBe(1);
+  await act(async () => {
+    pending.resolve({ mediaAssetId: "asset" });
+    await work;
+  });
+  expect(h.save).toHaveBeenCalledWith("project", "asset");
+});

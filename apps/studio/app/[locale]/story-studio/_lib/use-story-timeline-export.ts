@@ -144,13 +144,14 @@ export function useStoryTimelineExport({
 
       // Upload the export before adding it to project assets.
       setStage("uploading");
+      setProgress({ scope, ratio: 0 });
       const uploaded = await uploadFileViaSignedUrl(file, {
         kind: "ai_reference_video",
         scope: { storyProjectId: projectId },
-        onProgress: (uploadRatio) => {
+        onProgress: (uploadPercent) => {
           if (current()) {
-            // keep ratio normalized
-            setProgress({ scope, ratio: uploadRatio });
+            // Upload reports 0–100; export progress and its UI use 0–1.
+            setProgress({ scope, ratio: uploadPercent / 100 });
           }
         },
         signal,
