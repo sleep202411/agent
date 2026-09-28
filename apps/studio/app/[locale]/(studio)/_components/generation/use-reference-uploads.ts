@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useComposerDraft } from "./use-composer-draft";
 import { useAuth } from "@/app/_components/auth-provider";
 import {
   useOptionalProjectContext,
@@ -63,7 +64,7 @@ const LABEL_PREFIX: Record<FizzAiReferenceKind, string> = {
  * with live progress, abort-on-remove, object-URL lifecycle, and mention
  * labels (Image1/Video1/…) assigned per kind.
  */
-export function useReferenceUploads() {
+export function useReferenceUploads(modality?: "image" | "video") {
   // Uploads carry the project's member-accessible workspace (its team pot, or
   // my own personal one when the project is personal) — the upload endpoint is
   // workspace-membership gated, so this is always a workspace I can write to,
@@ -79,7 +80,10 @@ export function useReferenceUploads() {
     canEdit,
   ]);
   const activeScope = useRef<string | null>(null);
-  const [items, setItems] = useState<ReferenceUpload[]>([]);
+  const draft = useComposerDraft(modality ?? "image");
+  const [localItems, setLocalItems] = useState<ReferenceUpload[]>([]);
+  const items = modality ? draft.references : localItems;
+  const setItems = modality ? draft.setReferences : setLocalItems;
   const aborts = useRef(new Map<string, AbortController>());
   const previews = useRef(new Map<string, string>());
   const labels = useRef({ image: 0, video: 0, audio: 0 });
@@ -92,6 +96,12 @@ export function useReferenceUploads() {
   }, []);
   useLayoutEffect(() => {
     activeScope.current = scope;
+    // Restored references retain their mention labels across navigation.
+    for (const item of items) {
+      const number = Number(item.label.replace(/\D/g, ""));
+      if (Number.isFinite(number))
+        labels.current[item.kind] = Math.max(labels.current[item.kind], number);
+    }
     const controllers = aborts.current;
     const urls = previews.current;
     return () => {
@@ -101,9 +111,17 @@ export function useReferenceUploads() {
       urls.forEach((url) => URL.revokeObjectURL(url));
       urls.clear();
       labels.current = { image: 0, video: 0, audio: 0 };
-      setItems([]);
+      setItems((previous) =>
+        modality
+          ? previous
+              .filter((item) => item.url && !item.uploading && !item.error)
+              .map((item) => ({ ...item, previewUrl: item.url! }))
+          : []
+      );
     };
-  }, [scope]);
+    // Items are read only on scope entry; upload edits must not tear down uploads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, modality, setItems]);
 
   const addFiles = useCallback(
     (field: string, kind: FizzAiReferenceKind, files: File[]) => {
@@ -177,7 +195,7 @@ export function useReferenceUploads() {
           .finally(() => aborts.current.delete(id));
       }
     },
-    [workspaceId, releasePreview, scope, canEdit]
+    [workspaceId, releasePreview, scope, canEdit, setItems]
   );
 
   const remove = useCallback(
@@ -187,7 +205,7 @@ export function useReferenceUploads() {
       releasePreview(id);
       setItems((prev) => prev.filter((item) => item.id !== id));
     },
-    [releasePreview]
+    [releasePreview, setItems]
   );
 
   const clear = useCallback(() => {
@@ -196,7 +214,7 @@ export function useReferenceUploads() {
     previews.current.forEach((url) => URL.revokeObjectURL(url));
     previews.current.clear();
     setItems([]);
-  }, []);
+  }, [setItems]);
 
   return { items, addFiles, remove, clear };
 }

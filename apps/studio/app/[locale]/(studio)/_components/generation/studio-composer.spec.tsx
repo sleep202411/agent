@@ -78,3 +78,59 @@ describe("StudioComposer prompt policy", () => {
     expect(container.querySelector("textarea")?.maxLength).toBe(15_000);
   });
 });
+
+describe("Home keyboard submission", () => {
+  it.each([{ isComposing: true }, { keyCode: 229 }, { repeat: true }, { shiftKey: true }])(
+    "keeps composition, repeated keys and newlines in the prompt (%j)",
+    async (options) => {
+      const host = document.createElement("div");
+      document.body.append(host);
+      const root = createRoot(host);
+      const submit = vi.fn();
+      await act(async () =>
+        root.render(
+          <StudioComposer
+            modality="image"
+            catalog={undefined}
+            prompt="测试 prompt"
+            onPromptChange={vi.fn()}
+            model={undefined}
+            onSelectModel={vi.fn()}
+            settings={{}}
+            onSettingsChange={vi.fn()}
+            referenceFields={[]}
+            referenceItems={[]}
+            onAddReferences={vi.fn()}
+            onRemoveReference={vi.fn()}
+            cost={null}
+            canSubmit
+            submitting={false}
+            onSubmit={submit}
+            submitOnEnter
+            docked={false}
+          />
+        )
+      );
+      const textarea = host.querySelector("textarea")!;
+      await act(async () =>
+        textarea.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Enter",
+            bubbles: true,
+            cancelable: true,
+            ...options,
+          })
+        )
+      );
+      expect(submit).not.toHaveBeenCalled();
+      await act(async () =>
+        textarea.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+        )
+      );
+      expect(submit).toHaveBeenCalledTimes(1);
+      await act(async () => root.unmount());
+      host.remove();
+    }
+  );
+});

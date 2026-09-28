@@ -42,6 +42,7 @@ import { FizzAgentOrbButton } from "@/components/fizz-agent";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { MODE_ORDER, getMode } from "@/app/[locale]/project/_modes/registry";
 import { getProject, renameProject, type ProjectRole } from "@/lib/collab/projects-api";
+import { useProjectPromptHandoff } from "@/app/[locale]/project/_components/use-project-prompt-handoff";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 
 export default function ProjectLayout({
@@ -429,12 +430,15 @@ function SectionAgentPanel({
 }) {
   const { canEdit } = useProjectContext();
   const { activeSection } = useProjectSections();
+  const handoff = useProjectPromptHandoff();
   const workbenchMode = agentOsWorkbenchModeFromStudioMode(activeMode);
   const isSectionMode = workbenchMode === "canvas" || workbenchMode === "storyboard";
   if (isSectionMode && !activeSection) return null;
   return (
     <AgentOsPanel
       canWrite={canEdit}
+      composerPrefill={handoff.request}
+      onComposerPrefillConsumed={handoff.consume}
       className="p-0"
       projectId={projectId}
       projectKind="platform"

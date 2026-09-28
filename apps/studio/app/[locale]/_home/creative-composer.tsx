@@ -1,22 +1,27 @@
 "use client";
 
-/**
- * The home's Creative composer — deliberately MINIMAL (imagine-style): a prompt
- * box with a bottom-left Image/Video toggle and a bottom-right submit. It does
- * NOT generate here; submit hands the prompt off to the full /images or /video
- * studio (via `?prompt=`), where the user picks model + params and generates.
- * Keeping model/settings/cost OFF the home keeps the entry frictionless.
- */
-
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { IconArrowUp, IconLayoutGrid, IconRefresh, type Icon } from "@tabler/icons-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  IconArrowUp,
+  IconLayoutGrid,
+  IconLoader2,
+  IconRefresh,
+  type Icon,
+} from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useAuth } from "@/app/_components/auth-provider";
-import { GlassRim } from "@/components/ui/glass-rim";
+import { useWorkspace } from "@/app/_components/workspace-context";
 import { useRouter } from "@/i18n/navigation";
-import { cn } from "@/lib/utils";
-import { type Theme } from "../_pollo/theme";
+import { createProject } from "@/lib/collab/projects-api";
+import {
+  useComposerDraft,
+  useComposerDraftStore,
+} from "../(studio)/_components/generation/use-composer-draft";
+import { StudioComposer } from "../(studio)/_components/generation/studio-composer";
+import { useImageGeneration } from "../(studio)/_components/generation/use-image-generation";
+import { useVideoGeneration } from "../(studio)/_components/generation/use-video-generation";
 import { G, Glyph } from "../_pollo/glyphs";
 
 type Modality = "image" | "video" | "project";
@@ -25,13 +30,6 @@ const TOGGLE: { id: Modality; labelKey: string; svg?: string; Icon?: Icon }[] = 
   { id: "image", labelKey: "composer.modes.image", svg: G.image },
   { id: "video", labelKey: "composer.modes.video", svg: G.video },
   { id: "project", labelKey: "composer.modes.project", Icon: IconLayoutGrid },
-];
-
-const PLACEHOLDER_EXAMPLES = [
-  "composer.placeholders.logo",
-  "composer.placeholders.carousel",
-  "composer.placeholders.ugcVideo",
-  "composer.placeholders.campaign",
 ];
 
 const SUGGESTION_GROUPS: Array<Array<{ key: string; modality: Modality }>> = [
@@ -52,282 +50,375 @@ const SUGGESTION_GROUPS: Array<Array<{ key: string; modality: Modality }>> = [
   ],
 ];
 
-type TypewriterPhase = "typing" | "deleting";
-
-const FLOWING_RIM_STYLE = {
-  "--composer-rim-angle": "0deg",
-  background:
-    "conic-gradient(from var(--composer-rim-angle), transparent 0deg, transparent 244deg, rgba(255,255,255,0.06) 272deg, rgba(255,255,255,0.58) 304deg, rgba(190,200,210,0.34) 322deg, rgba(255,255,255,0.16) 338deg, transparent 360deg)",
-  padding: "1px",
-  WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
-  WebkitMaskComposite: "xor",
-  maskComposite: "exclude",
-} as CSSProperties;
-
-export function CreativeComposer({ theme: t }: { theme: Theme }) {
+/** Home uses the same generation contract and controls as the dedicated tools. */
+export function CreativeComposer() {
   const th = useTranslations("home");
-  const router = useRouter();
-  const { requireAuth } = useAuth();
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [modality, setModality] = useState<Modality>("image");
-  const [prompt, setPrompt] = useState("");
-  const [isPromptFocused, setIsPromptFocused] = useState(false);
   const [suggestionGroup, setSuggestionGroup] = useState(0);
-  const showTypedPlaceholder = !prompt && !isPromptFocused;
-  const placeholderExamples = PLACEHOLDER_EXAMPLES.map((key) => th(key));
-  const { text: typedPlaceholder, reducedMotion } = useTypewriterPlaceholder(
-    placeholderExamples,
-    showTypedPlaceholder
-  );
-  const canSubmit = prompt.trim().length > 0;
-  const submission = useMemo(() => ({ prompt, modality }), [prompt, modality]);
-  const activeSubmission = useRef<{ scope: typeof submission; navigated: boolean } | null>(null);
-  useLayoutEffect(() => {
-    activeSubmission.current = { scope: submission, navigated: false };
-    return () => {
-      activeSubmission.current = null;
-    };
-  }, [submission]);
-
-  const submit = () => {
-    const operation = activeSubmission.current;
-    if (!canSubmit || operation?.scope !== submission || operation.navigated) return;
-    const dest = modality === "image" ? "/images" : modality === "video" ? "/video" : "/canvas";
-    const nextHref = `${dest}?prompt=${encodeURIComponent(prompt.trim())}`;
-    requireAuth(() => {
-      if (activeSubmission.current !== operation || operation.navigated) return;
-      operation.navigated = true;
-      try {
-        router.push(nextHref);
-      } catch (error) {
-        operation.navigated = false;
-        throw error;
-      }
-    });
+  const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
+  const sequence = useRef(0);
+  const imageDraft = useComposerDraft("image");
+  const videoDraft = useComposerDraft("video");
+  const { prompt: projectPrompt, setPrompt: setProjectPrompt } = useComposerDraft("project");
+  const currentPrompt =
+    modality === "image"
+      ? imageDraft.prompt
+      : modality === "video"
+        ? videoDraft.prompt
+        : projectPrompt;
+  const changeModality = (next: Modality) => {
+    if (next === "image") imageDraft.setPrompt(currentPrompt);
+    else if (next === "video") videoDraft.setPrompt(currentPrompt);
+    else setProjectPrompt(currentPrompt);
+    setSuggestion(null);
+    setModality(next);
   };
-
-  const applySuggestion = (suggestion: (typeof SUGGESTION_GROUPS)[number][number]) => {
-    setPrompt(th(`composer.suggestions.${suggestion.key}.prompt`));
-    setModality(suggestion.modality);
-    setIsPromptFocused(true);
-    requestAnimationFrame(() => textareaRef.current?.focus());
-  };
-
   return (
-    <div className="mx-auto w-full max-w-[768px]">
-      <style>{`
-        @property --composer-rim-angle {
-          syntax: "<angle>";
-          inherits: false;
-          initial-value: 0deg;
-        }
-
-        @keyframes fizzComposerRimFlow {
-          to {
-            --composer-rim-angle: 360deg;
+    <div className="mx-auto w-full max-w-[1120px]">
+      <ToggleGroup
+        type="single"
+        value={modality}
+        onValueChange={(value) => {
+          if (value === "image" || value === "video" || value === "project") {
+            changeModality(value);
           }
-        }
-
-        @media (prefers-reduced-motion: no-preference) {
-          .fizz-composer-flow-rim {
-            animation: fizzComposerRimFlow 4.2s linear infinite;
-          }
-        }
-      `}</style>
-      <div
-        className="group/composer relative overflow-hidden rounded-[24px] bg-[#171717]/90 p-3 backdrop-blur-xl backdrop-saturate-150 transition-colors"
-        style={{
-          boxShadow: `inset 0 1px 0 rgb(255 255 255 / 0.04), 0 18px 60px rgb(0 0 0 / 0.24), ${t.tabGlow}`,
         }}
+        aria-label={th("composer.generationTypeAria")}
+        className="mb-3 inline-flex rounded-xl bg-white/[0.03] p-1"
       >
-        <GlassRim gradient={t.tabRing} className="opacity-80" />
-        <GlassRim className="opacity-55" />
-        <span
-          aria-hidden
-          className="fizz-composer-flow-rim pointer-events-none absolute inset-0 rounded-[inherit] opacity-25 transition-opacity duration-300 group-hover/composer:opacity-80 group-focus-within/composer:opacity-90"
-          style={FLOWING_RIM_STYLE}
+        {TOGGLE.map((entry) => (
+          <ToggleGroupItem
+            key={entry.id}
+            value={entry.id}
+            aria-label={th(entry.labelKey)}
+            className="gap-1.5 rounded-lg px-3 text-sm text-white/55 data-[state=on]:bg-white/10 data-[state=on]:text-white"
+          >
+            {entry.svg ? (
+              <Glyph svg={entry.svg} size={15} fill="currentColor" />
+            ) : entry.Icon ? (
+              <entry.Icon className="size-4" />
+            ) : null}
+            {th(entry.labelKey)}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+      {modality === "project" ? (
+        <ProjectComposer
+          suggestion={suggestion}
+          prompt={projectPrompt}
+          setPrompt={setProjectPrompt}
         />
-        <div className="group/prompt relative min-h-8">
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onFocus={() => setIsPromptFocused(true)}
-            onBlur={() => setIsPromptFocused(false)}
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.repeat &&
-                !e.nativeEvent.isComposing &&
-                e.nativeEvent.keyCode !== 229
-              ) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            aria-label={th("composer.promptAria")}
-            placeholder=""
-            rows={1}
-            className="relative z-10 block max-h-48 min-h-8 w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[14px] leading-5 font-normal tracking-[0.28px] text-white/90 caret-white/80 outline-none"
-          />
-
-          {showTypedPlaceholder && (
-            <div
-              aria-hidden
-              className="pointer-events-none absolute top-0 left-0 z-0 min-h-8 w-full overflow-hidden px-1 py-1 text-[14px] leading-5 font-normal tracking-[0.28px] whitespace-pre text-white/35 group-focus-within/prompt:hidden"
-            >
-              {typedPlaceholder}
-              {!reducedMotion ? (
-                <span className="ml-px inline-block h-[1.05em] w-px animate-pulse bg-white/35 align-middle" />
-              ) : null}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <ToggleGroup
-            type="single"
-            value={modality}
-            onValueChange={(value) => {
-              if (value === "image" || value === "video" || value === "project") {
-                setModality(value);
-              }
-            }}
-            aria-label={th("composer.generationTypeAria")}
-            spacing={0.5}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-xl bg-white/[0.03] p-0.5"
-          >
-            {TOGGLE.map((m) => {
-              const active = modality === m.id;
-              return (
-                <ToggleGroupItem
-                  key={m.id}
-                  value={m.id}
-                  aria-label={th(m.labelKey)}
-                  className={cn(
-                    "h-7 min-w-0 gap-1.5 rounded-[9px] px-2.5 text-[13px] font-medium transition-colors hover:bg-transparent hover:text-white/80 focus-visible:ring-1 focus-visible:ring-white/20",
-                    "data-[state=on]:bg-white/[0.10] data-[state=on]:text-white",
-                    active ? "text-white" : "text-white/55"
-                  )}
-                >
-                  {m.svg ? (
-                    <Glyph
-                      svg={m.svg}
-                      size={15}
-                      fill={active ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.5)"}
-                    />
-                  ) : m.Icon ? (
-                    <m.Icon className="size-[15px] shrink-0" stroke={1.8} />
-                  ) : null}
-                  {th(m.labelKey)}
-                </ToggleGroupItem>
-              );
-            })}
-          </ToggleGroup>
-
+      ) : modality === "image" ? (
+        <HomeImageComposer suggestion={suggestion} />
+      ) : (
+        <HomeVideoComposer suggestion={suggestion} />
+      )}
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-2.5">
+        {SUGGESTION_GROUPS[suggestionGroup].map((entry) => (
           <button
+            key={entry.key}
             type="button"
-            disabled={!canSubmit}
-            onClick={submit}
-            aria-label={th("composer.createAria")}
-            className={cn(
-              "grid size-7 place-items-center rounded-full transition",
-              canSubmit
-                ? "hover:brightness-110"
-                : "cursor-not-allowed bg-white/[0.06] text-white/25"
-            )}
-            style={
-              canSubmit
-                ? { background: t.genBg, color: t.genText, boxShadow: t.genShadow }
-                : undefined
-            }
+            onClick={() => {
+              setModality(entry.modality);
+              setSuggestion({
+                id: ++sequence.current,
+                text: th(`composer.suggestions.${entry.key}.prompt`),
+              });
+            }}
+            className="max-w-[240px] truncate rounded-xl px-3 py-2 text-sm text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.11)] hover:bg-white/[0.07]"
           >
-            <IconArrowUp className="size-4" stroke={2.2} />
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-6 flex w-full items-center justify-center gap-2.5">
-        {SUGGESTION_GROUPS[suggestionGroup].map((suggestion) => (
-          <button
-            key={suggestion.key}
-            type="button"
-            onClick={() => applySuggestion(suggestion)}
-            className="h-8 max-w-[220px] min-w-0 truncate rounded-xl bg-transparent px-2.5 py-1.5 text-[14px] leading-5 font-medium whitespace-nowrap text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.11)] transition duration-300 hover:bg-white/[0.07] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0)] active:translate-y-px"
-          >
-            {th(`composer.suggestions.${suggestion.key}.label`)}
+            {th(`composer.suggestions.${entry.key}.label`)}
           </button>
         ))}
         <button
           type="button"
           aria-label={th("composer.shuffleAria")}
           onClick={() => setSuggestionGroup((group) => (group + 1) % SUGGESTION_GROUPS.length)}
-          className="grid size-8 shrink-0 place-items-center rounded-full bg-transparent text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.11)] transition duration-300 hover:bg-white/[0.07] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0)] active:translate-y-px"
+          className="grid size-8 place-items-center rounded-full text-white hover:bg-white/[0.07]"
         >
-          <IconRefresh className="size-[18px]" stroke={1.8} />
+          <IconRefresh className="size-[18px]" />
         </button>
       </div>
     </div>
   );
 }
 
-function useTypewriterPlaceholder(examples: string[], active: boolean) {
-  const [exampleIndex, setExampleIndex] = useState(0);
-  const [charCount, setCharCount] = useState(0);
-  const [phase, setPhase] = useState<TypewriterPhase>("typing");
-  const [reducedMotion, setReducedMotion] = useState(false);
-
+type SuggestionProps = { suggestion: { id: number; text: string } | null };
+function useSuggestion(
+  suggestion: SuggestionProps["suggestion"],
+  setPrompt: (text: string) => void
+) {
+  useLayoutEffect(() => {
+    if (suggestion) setPrompt(suggestion.text);
+  }, [suggestion, setPrompt]);
+}
+function HomeImageComposer({ suggestion }: SuggestionProps) {
+  const gen = useImageGeneration();
+  useSuggestion(suggestion, gen.setPrompt);
+  return <HomeGenerationComposer gen={gen} modality="image" error={gen.submitError} />;
+}
+function HomeVideoComposer({ suggestion }: SuggestionProps) {
+  const gen = useVideoGeneration();
+  useSuggestion(suggestion, gen.setPrompt);
+  return <HomeGenerationComposer gen={gen} modality="video" error={gen.error} />;
+}
+function HomeGenerationComposer({
+  gen,
+  modality,
+  error,
+}: {
+  gen: ReturnType<typeof useImageGeneration> | ReturnType<typeof useVideoGeneration>;
+  modality: "image" | "video";
+  error: string | null;
+}) {
+  const router = useRouter();
+  const { user, requireAuth } = useAuth();
+  const { activeWorkspace } = useWorkspace();
+  const [loginDraft, setLoginDraft] = useState<{
+    prompt: string;
+    modelId?: string;
+    settings: typeof gen.settings;
+    mode?: string;
+    references: typeof gen.activeUploads;
+    sourceKey: string;
+  } | null>(null);
+  const claimedLogin = useRef<object | null>(null);
+  const hydratedLogin = useRef<{ request: object; scope: string } | null>(null);
+  const runClaim = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    runClaim.current = null;
+    return () => {
+      runClaim.current = null;
+    };
+  }, [user?.id, activeWorkspace?.id]);
+  const gate = useRef<object | null>(null);
+  const signature = JSON.stringify([
+    gen.prompt,
+    gen.model?.id,
+    gen.settings,
+    gen.mode,
+    gen.activeUploads,
+  ]);
+  useLayoutEffect(() => {
+    gate.current = {};
+    return () => {
+      gate.current = null;
+    };
+  }, [signature]);
+  const run = () => {
+    if (runClaim.current) return;
+    const claim = {};
+    runClaim.current = claim;
+    void gen.submit().then((result) => {
+      if (runClaim.current !== claim) return;
+      if (result.ok) router.push(modality === "image" ? "/images" : "/video");
+      else runClaim.current = null;
+    });
+  };
+  const requestSubmit = () => {
+    const operation = gate.current;
+    let resumed = false;
+    requireAuth(() => {
+      if (!operation || gate.current !== operation || resumed) return;
+      resumed = true;
+      if (user) run();
+      else
+        setLoginDraft({
+          prompt: gen.prompt,
+          modelId: gen.model?.id,
+          settings: gen.settings,
+          mode: gen.mode,
+          sourceKey: JSON.stringify([null, activeWorkspace?.id ?? null, modality]),
+          references: gen.activeUploads
+            .filter((item) => item.url && !item.uploading && !item.error)
+            .map((item) => ({ ...item, previewUrl: item.url! })),
+        });
+    });
+  };
+  // Login resumes before the account query refreshes. Wait for its workspace,
+  // then restore this explicitly submitted guest draft into the signed-in scope.
   useEffect(() => {
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => setReducedMotion(media.matches);
-
-    sync();
-    media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
-  }, []);
-
-  useEffect(() => {
-    if (!active || reducedMotion || examples.length === 0) return;
-
-    const fullText = examples[exampleIndex] ?? "";
-    let delay = 52;
-
-    if (phase === "typing") {
-      if (charCount < fullText.length) {
-        delay = 52;
-      } else {
-        delay = 1400;
-      }
-    } else {
-      delay = 30;
-    }
-
-    const id = window.setTimeout(() => {
-      if (phase === "typing") {
-        if (charCount < fullText.length) {
-          setCharCount((count) => count + 1);
-        } else {
-          setPhase("deleting");
-        }
+    if (!loginDraft || !user || !activeWorkspace || claimedLogin.current === loginDraft) return;
+    const key = JSON.stringify([user.id, activeWorkspace.id, modality]);
+    const store = useComposerDraftStore.getState();
+    if (hydratedLogin.current?.request !== loginDraft) {
+      // A guest edit made while the session was loading cancels the old intent.
+      if (store.drafts[loginDraft.sourceKey]?.prompt !== loginDraft.prompt) {
+        claimedLogin.current = loginDraft;
         return;
       }
+      hydratedLogin.current = { request: loginDraft, scope: key };
+      store.update(key, "prompt", loginDraft.prompt);
+      if (loginDraft.modelId) store.update(key, "modelId", loginDraft.modelId);
+      store.update(key, "settings", loginDraft.settings);
+      store.update(key, "mode", loginDraft.mode);
+      store.update(key, "references", loginDraft.references);
+      return;
+    }
+    if (hydratedLogin.current.scope !== key) {
+      claimedLogin.current = loginDraft;
+      return;
+    }
+    if (!gen.canSubmit) return;
+    claimedLogin.current = loginDraft;
+    run();
+  });
+  return (
+    <StudioComposer
+      docked={false}
+      submitOnEnter
+      modality={modality}
+      catalog={gen.catalog}
+      prompt={gen.prompt}
+      onPromptChange={gen.setPrompt}
+      model={gen.model}
+      onSelectModel={gen.onSelectModel}
+      settings={gen.settings}
+      onSettingsChange={gen.setSettings}
+      mode={gen.mode}
+      modes={gen.modes}
+      onSelectMode={gen.setMode}
+      referenceFields={gen.referenceFields}
+      referenceItems={gen.activeUploads}
+      onAddReferences={(field, files) => gen.uploads.addFiles(field.field, field.kind, files)}
+      onRemoveReference={gen.uploads.remove}
+      cost={gen.cost}
+      canSubmit={gen.canSubmit}
+      submitting={gen.submitting}
+      error={error}
+      validationIssues={gen.validationIssues}
+      onDismissValidation={gen.clearValidation}
+      onRequestSubmit={requestSubmit}
+      onSubmit={run}
+    />
+  );
+}
 
-      if (charCount > 0) {
-        setCharCount((count) => Math.max(0, count - 1));
-      } else {
-        setExampleIndex((index) => (index + 1) % examples.length);
-        setPhase("typing");
-      }
-    }, delay);
-
-    return () => window.clearTimeout(id);
-  }, [active, charCount, exampleIndex, examples, phase, reducedMotion]);
-
-  if (reducedMotion) return { text: examples[0] ?? "", reducedMotion };
-
-  return {
-    text: (examples[exampleIndex] ?? "").slice(0, charCount),
-    reducedMotion,
+function ProjectComposer({
+  suggestion,
+  prompt,
+  setPrompt,
+}: SuggestionProps & { prompt: string; setPrompt: (value: string) => void }) {
+  const th = useTranslations("home");
+  const tp = useTranslations("projects");
+  const ts = useTranslations("project.sections");
+  const { user, requireAuth } = useAuth();
+  const { activeWorkspace } = useWorkspace();
+  const router = useRouter();
+  const [creating, setCreating] = useState(false);
+  useSuggestion(suggestion, setPrompt);
+  const [requested, setRequested] = useState<{
+    prompt: string;
+    userId: string | number | null;
+    workspaceId: string | null;
+  } | null>(null);
+  const active = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    active.current = {};
+    return () => {
+      active.current = null;
+    };
+  }, [prompt, user?.id, activeWorkspace?.id]);
+  const pending = useRef(false);
+  const submit = () => {
+    const scope = active.current;
+    if (!prompt.trim() || pending.current) return;
+    requireAuth(() => {
+      if (!scope || active.current !== scope || pending.current) return;
+      setRequested({
+        prompt: prompt.trim(),
+        userId: user?.id ?? null,
+        workspaceId: activeWorkspace?.id ?? null,
+      });
+    });
   };
+  useEffect(() => {
+    if (!requested || !user || !activeWorkspace || pending.current) return;
+    if (requested.userId == null && prompt !== requested.prompt) {
+      const sourceKey = JSON.stringify([null, requested.workspaceId, "project"]);
+      if (useComposerDraftStore.getState().drafts[sourceKey]?.prompt.trim() !== requested.prompt)
+        return;
+      setPrompt(requested.prompt);
+      return;
+    }
+    if (
+      requested.prompt !== prompt.trim() ||
+      (requested.userId != null && requested.userId !== user.id) ||
+      (requested.workspaceId != null && requested.workspaceId !== activeWorkspace.id)
+    )
+      return;
+    const scope = active.current;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled || pending.current) return;
+      pending.current = true;
+      setCreating(true);
+      let navigated = false;
+      void createProject(activeWorkspace.id, {
+        name: tp("untitledCanvas"),
+        initialSectionTitle: ts("defaultTitle"),
+        description: requested.prompt,
+      })
+        .then((project) => {
+          if (active.current === scope) {
+            navigated = true;
+            router.push(
+              `/project/${project.id}/canvas?prompt=${encodeURIComponent(requested.prompt)}`
+            );
+          }
+        })
+        .catch((error: unknown) => {
+          if (active.current === scope)
+            toast.error(error instanceof Error ? error.message : tp("createCanvasFailed"));
+        })
+        .finally(() => {
+          pending.current = navigated;
+          setCreating(navigated);
+          setRequested(null);
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [requested, user, activeWorkspace, prompt, setPrompt, router, tp, ts]);
+  return (
+    <div className="rounded-3xl bg-[oklch(0.22)] p-4">
+      <textarea
+        value={prompt}
+        onChange={(event) => setPrompt(event.target.value)}
+        aria-label={th("composer.promptAria")}
+        placeholder={th("composer.placeholders.campaign")}
+        rows={3}
+        className="w-full resize-none bg-transparent text-sm outline-none"
+        onKeyDown={(event) => {
+          if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.repeat &&
+            !event.nativeEvent.isComposing &&
+            event.nativeEvent.keyCode !== 229
+          ) {
+            event.preventDefault();
+            submit();
+          }
+        }}
+      />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!prompt.trim() || creating || Boolean(user && !activeWorkspace)}
+          aria-label={th("composer.createAria")}
+          aria-busy={creating}
+          className="grid size-9 place-items-center rounded-full bg-primary text-white disabled:opacity-40"
+        >
+          {creating ? (
+            <IconLoader2 className="size-4 animate-spin" />
+          ) : (
+            <IconArrowUp className="size-4" />
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }
