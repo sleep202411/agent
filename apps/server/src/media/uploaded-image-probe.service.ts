@@ -286,6 +286,16 @@ async function execImageTool(
           killed?: boolean;
           signal?: NodeJS.Signals | null;
         };
+        if (systemError.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+          reject(
+            new ServiceUnavailableException({
+              code: 'MEDIA_IMAGE_INSPECTOR_OUTPUT_LIMIT',
+              message:
+                'The server image inspector exceeded its output limit. The file has not been validated.',
+            }),
+          );
+          return;
+        }
         if (systemError.code === 'ENOENT') {
           reject(
             new ServiceUnavailableException({

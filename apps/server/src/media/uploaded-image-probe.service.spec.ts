@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import childProcess from 'node:child_process';
 import { MediaStorageProvider } from '@prisma/client';
 import { UploadedImageProbeService } from './uploaded-image-probe.service';
 
@@ -51,6 +52,30 @@ function asset(bytes = VALID_PNG) {
 describe('UploadedImageProbeService', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('reports inspector output exhaustion without declaring the image invalid', async () => {
+    const { service } = harness();
+    jest
+      .spyOn(childProcess, 'execFile')
+      .mockImplementation((...args: unknown[]) => {
+        const callback = args.at(-1) as (
+          error: unknown,
+          stdout: string,
+          stderr: string,
+        ) => void;
+        callback({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, '', '');
+        return {} as childProcess.ChildProcess;
+      });
+    await expect(
+      service.probe(asset(), {
+        expectedContentType: 'image/png',
+        maxBytes: 1024,
+      }),
+    ).rejects.toMatchObject({
+      status: 503,
+      response: { code: 'MEDIA_IMAGE_INSPECTOR_OUTPUT_LIMIT' },
+    });
   });
 
   it.each([
