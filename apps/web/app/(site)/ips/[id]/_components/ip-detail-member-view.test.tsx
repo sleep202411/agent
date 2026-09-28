@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { IpPublicDetail } from "./ip-public-detail";
 const state = vi.hoisted(() => ({
@@ -17,6 +18,14 @@ const state = vi.hoisted(() => ({
 vi.mock("@/src/lib/ip-commerce/api", async (original) => ({
   ...(await original<object>()),
   recordMemberView: (...args: unknown[]) => state.signal(...args),
+}));
+vi.mock("@/components/auth/auth-dialog-provider", () => ({
+  useAuthDialog: () => ({
+    open: vi.fn(),
+    close: vi.fn(),
+    isOpen: false,
+  }),
+  AuthDialogProvider: ({ children }: { children: unknown }) => children,
 }));
 vi.mock("@/components/media/video-player", () => ({
   VideoPlayer: (props: { src: string; onFirstPlay?: () => void }) => {
@@ -41,7 +50,9 @@ vi.mock("@/src/lib/ip-commerce/hooks", () => ({
         sourceLocale: "en-US",
         createdById: "creator",
         trailerAsset: { url: "https://cdn.test/trailer.mp4" },
-        price: state.priced ? { id: "rule", targetType: "ip", amount: "299", currency: "community_point" } : null,
+        price: state.priced
+          ? { id: "rule", targetType: "ip", amount: "299", currency: "community_point" }
+          : null,
         episodes: [
           {
             id: "episode",
@@ -84,7 +95,7 @@ vi.mock("../../_components/episode-feedback", () => ({ EpisodeFeedback: () => nu
 vi.mock("../../_components/ip-production-stage", () => ({ IpProductionStage: () => null }));
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ useUserDisplays: () => new Map() }));
 vi.mock("@/components/payment/community-recharge-dialog", () => ({
-  CommunityRechargeDialog: ({ open }: { open: boolean }) => open ? <div data-recharge /> : null,
+  CommunityRechargeDialog: ({ open }: { open: boolean }) => (open ? <div data-recharge /> : null),
 }));
 vi.mock("@/components/payment/community-membership-dialog", () => ({
   CommunityMembershipDialog: () => null,
@@ -118,8 +129,17 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
 });
+const testQueryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+});
 function render() {
-  act(() => root.render(<IpPublicDetail ipReference="ip" />));
+  act(() =>
+    root.render(
+      <QueryClientProvider client={testQueryClient}>
+        <IpPublicDetail ipReference="ip" />
+      </QueryClientProvider>
+    )
+  );
 }
 it("withholds full media while access is pending even when no price is present", async () => {
   render();
@@ -158,10 +178,14 @@ it("keeps locked content hidden, offers a package purchase, and plays only after
   render();
   expect(state.player).toBeNull();
   expect(state.purchase).not.toHaveBeenCalled();
-  const button = Array.from(host.querySelectorAll("button")).find((item) => item.textContent?.startsWith("commerce.purchase ·"));
+  const button = Array.from(host.querySelectorAll("button")).find((item) =>
+    item.textContent?.startsWith("commerce.purchase ·")
+  );
   expect(button).toBeDefined();
   await act(async () => button!.click());
-  expect(state.purchase).toHaveBeenCalledWith(expect.objectContaining({ ipId: "ip", targetType: "ip", priceRuleId: "rule" }));
+  expect(state.purchase).toHaveBeenCalledWith(
+    expect.objectContaining({ ipId: "ip", targetType: "ip", priceRuleId: "rule" })
+  );
   expect(state.player).toBeNull();
   state.access = "owned_ip";
   render();
@@ -172,7 +196,9 @@ it("plays the trailer only when explicitly selected while the episode is locked"
   state.access = "locked_bundle";
   render();
   expect(state.player).toBeNull();
-  const trailer = Array.from(host.querySelectorAll("button")).find((item) => item.textContent?.includes("episodes.trailer"));
+  const trailer = Array.from(host.querySelectorAll("button")).find((item) =>
+    item.textContent?.includes("episodes.trailer")
+  );
   expect(trailer).toBeDefined();
   act(() => trailer!.click());
   expect(state.player?.src).toBe("https://cdn.test/trailer.mp4");
@@ -185,7 +211,9 @@ it("keeps the purchase entry visible with low balance and opens recharge without
   state.priced = true;
   state.balance = "0";
   render();
-  const button = Array.from(host.querySelectorAll("button")).find((item) => item.textContent?.startsWith("commerce.purchase ·"));
+  const button = Array.from(host.querySelectorAll("button")).find((item) =>
+    item.textContent?.startsWith("commerce.purchase ·")
+  );
   expect(button).toBeDefined();
   await act(async () => button!.click());
   expect(host.querySelector("[data-recharge]")).not.toBeNull();
