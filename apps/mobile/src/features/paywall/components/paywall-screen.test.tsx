@@ -5,11 +5,13 @@ import { PaywallScreen } from "./paywall-screen";
 
 const state = vi.hoisted(() => ({
   channel: "apple_iap",
+  generation: 1,
   buy: vi.fn(),
   push: vi.fn(),
   packs: vi.fn(),
   returnPath: "/ip/example",
   alert: vi.fn(),
+  balance: vi.fn(),
 }));
 vi.mock("@tabler/icons-react-native", () => ({
   IconBolt: () => null,
@@ -51,7 +53,8 @@ vi.mock("react-native", () => {
   };
 });
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("@/auth", () => ({ useAuth: () => ({ user: null }) }));
+vi.mock("@/auth", () => ({ useAuth: () => ({ user: null, generation: state.generation }) }));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => state.generation }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
 }));
@@ -68,7 +71,7 @@ vi.mock("@/i18n", () => ({
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("@/lib/navigation", () => ({ toHref: (path: string) => path }));
-vi.mock("@/data/ip-api", () => ({ fetchCommunityPointBalance: async () => "0" }));
+vi.mock("@/data/ip-api", () => ({ fetchCommunityPointBalance: state.balance }));
 vi.mock("../lib/compute-wallet", () => ({ fetchComputeWalletBalance: async () => "0" }));
 vi.mock("../lib/checkout-channel", () => ({ currentCheckoutChannel: () => state.channel }));
 vi.mock("../lib/paywall-store", () => ({
@@ -87,12 +90,16 @@ vi.mock("../lib/purchase", () => ({
   isPurchaseCancelled: () => false,
 }));
 vi.mock("../lib/wechat", () => ({ communityPackProduct: (value: unknown) => value }));
-vi.mock("./wechat-scan-pay", () => ({ WechatScanPay: () => null }));
+vi.mock("./wechat-scan-pay", () => ({
+  WechatScanPay: ({ orderId }: { orderId: string }) => <span>{orderId}</span>,
+}));
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.channel = "apple_iap";
+  state.generation = 1;
+  state.balance.mockResolvedValue("0");
   state.buy.mockImplementation(() => new Promise(() => {}));
   state.packs.mockImplementation(() => new Promise(() => {}));
   host = document.createElement("div");
@@ -142,6 +149,119 @@ it("allows a new purchase after the previous attempt fails", async () => {
   });
   expect(state.buy).toHaveBeenCalledTimes(2);
   expect(button.disabled).toBe(true);
+});
+
+it.each([false, true])(
+  "ignores an old purchase completion after session replacement (failure=%s)",
+  async (failure) => {
+    let resolve!: (result: { mocked: boolean; productId: string }) => void;
+    let reject!: (error: Error) => void;
+    state.buy.mockImplementationOnce(
+      () =>
+        new Promise((ok, fail) => {
+          resolve = ok;
+          reject = fail;
+        })
+    );
+    await render();
+    const button = [...host.querySelectorAll("button")].find(
+      (item) => item.textContent === "paywall.buyNow"
+    )!;
+    await act(async () => button.click());
+    state.generation += 1;
+    // A response can arrive before React renders the replacement session.
+    await act(async () => {
+      if (failure) reject(new Error("Old checkout failed"));
+      else resolve({ mocked: false, productId: "old-product" });
+    });
+    expect(state.alert).not.toHaveBeenCalled();
+  }
+);
+
+it("resets the busy purchase state for a replacement session", async () => {
+  await render();
+  const buyButton = () =>
+    [...host.querySelectorAll("button")].find((item) => item.textContent === "paywall.buyNow")!;
+  await act(async () => buyButton().click());
+  expect(buyButton().disabled).toBe(true);
+  state.generation += 1;
+  await render();
+  expect(buyButton().disabled).toBe(false);
+});
+
+it("does not show a late purchase alert after leaving the paywall", async () => {
+  let resolve!: (result: { mocked: boolean; productId: string }) => void;
+  state.buy.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await render();
+  const button = [...host.querySelectorAll("button")].find(
+    (item) => item.textContent === "paywall.buyNow"
+  )!;
+  await act(async () => button.click());
+  await act(async () => root.render(null));
+  await act(async () => resolve({ mocked: false, productId: "old-product" }));
+  expect(state.alert).not.toHaveBeenCalled();
+});
+
+it("does not open a QR code from a purchase completed in an old session", async () => {
+  let resolve!: (result: unknown) => void;
+  state.buy.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await render();
+  const button = [...host.querySelectorAll("button")].find(
+    (item) => item.textContent === "paywall.buyNow"
+  )!;
+  await act(async () => button.click());
+  state.generation += 1;
+  await act(async () =>
+    resolve({ mocked: false, wechatScan: { orderId: "old-qr-order", codeUrl: "weixin://old" } })
+  );
+  expect(host.textContent).not.toContain("old-qr-order");
+});
+
+it("removes the previous session's open QR code", async () => {
+  state.buy.mockResolvedValueOnce({
+    mocked: false,
+    wechatScan: { orderId: "old-qr-order", codeUrl: "weixin://old" },
+  });
+  await render();
+  const button = [...host.querySelectorAll("button")].find(
+    (item) => item.textContent === "paywall.buyNow"
+  )!;
+  await act(async () => button.click());
+  expect(host.textContent).toContain("old-qr-order");
+  state.generation += 1;
+  await render();
+  expect(host.textContent).not.toContain("old-qr-order");
+});
+
+it("reloads the replacement account's balance and ignores the old account's late balance", async () => {
+  state.channel = "wechat";
+  let resolve!: (balance: string) => void;
+  state.balance
+    .mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        })
+    )
+    .mockResolvedValue("777");
+  await render();
+  state.generation += 1;
+  await render();
+  expect(state.balance).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("777");
+  await act(async () => resolve("999"));
+  expect(host.textContent).toContain("777");
+  expect(host.textContent).not.toContain("999");
 });
 
 it("keeps the return destination when continuing to web checkout", async () => {

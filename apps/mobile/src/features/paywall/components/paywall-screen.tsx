@@ -5,7 +5,15 @@ import IconCrown from "@tabler/icons-react-native/IconCrown";
 import IconSparkles from "@tabler/icons-react-native/IconSparkles";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +28,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "@/auth";
+import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { appEnv, resolveAssetUrl } from "@/config";
@@ -288,6 +297,11 @@ function ComputeRechargePanel({
 }
 
 export function PaywallScreen() {
+  const { generation } = useAuth();
+  return <PaywallSession key={generation} />;
+}
+
+function PaywallSession() {
   const params = useLocalSearchParams<{
     category?: string | string[];
     returnPath?: string | string[];
@@ -297,6 +311,18 @@ export function PaywallScreen() {
   const t = useTranslations();
   const locale = useLocale();
   const auth = useAuth();
+  const sessionGeneration = auth.generation;
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const isCurrentSession = useCallback(
+    () => mounted.current && getAuthGeneration() === sessionGeneration,
+    [sessionGeneration]
+  );
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -335,40 +361,40 @@ export function PaywallScreen() {
     let cancelled = false;
     void listCommunityPointPackages("CNY")
       .then((prices) => {
-        if (cancelled) return;
+        if (cancelled || !isCurrentSession()) return;
         const next = prices.map(communityPackProduct);
         setCommunityPacks(next);
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
+        if (cancelled || !isCurrentSession()) return;
         setCommunityPacks([]);
         setCommunityPackError(error instanceof Error ? error.message : String(error));
       });
     return () => {
       cancelled = true;
     };
-  }, [channel]);
+  }, [channel, isCurrentSession]);
 
   useEffect(() => {
     let cancelled = false;
     void fetchComputeWalletBalance().then((compute) => {
-      if (!cancelled) setComputeBalance(compute);
+      if (!cancelled && isCurrentSession()) setComputeBalance(compute);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isCurrentSession]);
 
   useEffect(() => {
     if (channel !== "wechat") return;
     let cancelled = false;
     void fetchCommunityPointBalance().then((balance) => {
-      if (!cancelled) setCommunityBalance(balance);
+      if (!cancelled && isCurrentSession()) setCommunityBalance(balance);
     });
     return () => {
       cancelled = true;
     };
-  }, [channel]);
+  }, [channel, isCurrentSession]);
 
   const canRestore = channel === "apple_iap" || channel === "google_play_iap";
   const actionsLocked = busy || restoring;
@@ -377,49 +403,53 @@ export function PaywallScreen() {
   const walletRefreshGeneration = useRef(0);
 
   const refreshWallets = useCallback(async () => {
+    if (!isCurrentSession()) return;
     const generation = walletRefreshGeneration.current;
     try {
       const [compute, community] = await Promise.all([
         fetchComputeWalletBalance(),
         fetchCommunityPointBalance(),
       ]);
-      if (walletRefreshGeneration.current !== generation) return;
+      if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
       setComputeBalance(compute);
       setCommunityBalance(community);
     } catch {
       // The row refreshes again the next time this screen opens.
     }
-  }, []);
+  }, [isCurrentSession]);
 
   // Closing the QR must not drop a payment that settles a moment later.
   // Nest reconciles WeChat on each order read, so keep reading briefly.
-  const followWechatOrder = useCallback((orderId: string) => {
-    const generation = ++walletRefreshGeneration.current;
-    void (async () => {
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        if (walletRefreshGeneration.current !== generation) return;
-        try {
-          const order = await getBillingOrder(orderId);
-          if (isOrderFulfilled(order.status) || isOrderDead(order.status)) break;
-        } catch {
-          // Transient — try again.
+  const followWechatOrder = useCallback(
+    (orderId: string) => {
+      const generation = ++walletRefreshGeneration.current;
+      void (async () => {
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
+          try {
+            const order = await getBillingOrder(orderId);
+            if (isOrderFulfilled(order.status) || isOrderDead(order.status)) break;
+          } catch {
+            // Transient — try again.
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2500));
         }
-        await new Promise((resolve) => setTimeout(resolve, 2500));
-      }
-      if (walletRefreshGeneration.current !== generation) return;
-      try {
-        const [compute, community] = await Promise.all([
-          fetchComputeWalletBalance(),
-          fetchCommunityPointBalance(),
-        ]);
-        if (walletRefreshGeneration.current !== generation) return;
-        setComputeBalance(compute);
-        setCommunityBalance(community);
-      } catch {
-        // The row refreshes again the next time this screen opens.
-      }
-    })();
-  }, []);
+        if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
+        try {
+          const [compute, community] = await Promise.all([
+            fetchComputeWalletBalance(),
+            fetchCommunityPointBalance(),
+          ]);
+          if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
+          setComputeBalance(compute);
+          setCommunityBalance(community);
+        } catch {
+          // The row refreshes again the next time this screen opens.
+        }
+      })();
+    },
+    [isCurrentSession]
+  );
 
   useEffect(
     () => () => {
@@ -429,11 +459,12 @@ export function PaywallScreen() {
   );
 
   const buy = async () => {
-    if (!product || actionsLocked || paymentActionInFlight.current) return;
+    if (!isCurrentSession() || !product || actionsLocked || paymentActionInFlight.current) return;
     paymentActionInFlight.current = true;
     setBusy(true);
     try {
       const result = await purchaseProduct(product);
+      if (!isCurrentSession()) return;
       if (result.wechatScan) {
         setScan({
           orderId: result.wechatScan.orderId,
@@ -452,29 +483,31 @@ export function PaywallScreen() {
       );
       await refreshWallets();
     } catch (error: unknown) {
-      if (isPurchaseCancelled(error)) return;
+      if (!isCurrentSession() || isPurchaseCancelled(error)) return;
       Alert.alert(t("paywall.purchaseFailed"), errorMessage(error));
     } finally {
       paymentActionInFlight.current = false;
-      setBusy(false);
+      if (isCurrentSession()) setBusy(false);
     }
   };
 
   const restore = async () => {
-    if (actionsLocked || paymentActionInFlight.current) return;
+    if (!isCurrentSession() || actionsLocked || paymentActionInFlight.current) return;
     paymentActionInFlight.current = true;
     setRestoring(true);
     try {
       const result = await restorePurchases();
+      if (!isCurrentSession()) return;
       Alert.alert(
         t("paywall.restoreOkTitle"),
         result.mocked ? t("paywall.restoreOkMock") : t("paywall.restoreOkLive")
       );
     } catch (error: unknown) {
+      if (!isCurrentSession()) return;
       Alert.alert(t("paywall.restoreFailed"), errorMessage(error));
     } finally {
       paymentActionInFlight.current = false;
-      setRestoring(false);
+      if (isCurrentSession()) setRestoring(false);
     }
   };
 
