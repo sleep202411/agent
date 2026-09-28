@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { estimateProductModelPoints } from '@repo/shared';
+import type { AudienceGenerationTemplateAdmin } from './ip-generation-template.dto';
 import { PrismaService } from '../infra/db/db.module';
 import type { AuthUser } from '../auth';
 import { AiGenerationService } from '../ai-generation/ai-generation.service';
@@ -48,7 +49,9 @@ export class IpGenerationJobsService {
 
     // Load full admin template for generation fields (modelId, promptPrefix, promptSuffix, logoAssetId)
     const [row] = await this.prisma.$queryRaw<
-      { audience_generation_templates: any[] | null }[]
+      {
+        audience_generation_templates: AudienceGenerationTemplateAdmin[] | null;
+      }[]
     >`SELECT audience_generation_templates FROM ips WHERE id = ${ipId}::uuid AND deleted_at IS NULL`;
     const fullTemplate = (row?.audience_generation_templates ?? []).find(
       (t) => t.id === templateId && t.enabled,
@@ -90,7 +93,7 @@ export class IpGenerationJobsService {
   private async computeTemplateCost(
     user: AuthUser,
     template: { modelId: string },
-  ): Promise<{ computePoints: number; isFree: boolean; model: any }> {
+  ) {
     const catalog = await this.aiGeneration.listCatalog(user);
     const model = catalog.models.find((m) => m.id === template.modelId);
 
@@ -101,30 +104,26 @@ export class IpGenerationJobsService {
       });
     }
 
-    const isCampaignFree = (catalog.campaigns ?? []).some(
-      (c: any) =>
-        c.status === 'active' &&
-        (!c.modelId || c.modelId === template.modelId) &&
-        (!c.sourceSurface || c.sourceSurface === 'ip_audience_generation'),
-    );
-
+    // Audience jobs submit a direct model without a campaign ID. A campaign
+    // merely appearing in the catalog does not make this request eligible.
+    const billing = model.billing_policy;
     let points = 0;
-    if (!isCampaignFree) {
-      const productPricing = (model as any).billingPolicy?.productPricing;
-      if (productPricing) {
-        const estimate = estimateProductModelPoints({
-          policy: productPricing,
-          numOutputs: 1,
+    if (billing?.mode !== 'free') {
+      if (!billing?.productPricing) {
+        throw new BadRequestException({
+          code: 'MODEL_PRICING_NOT_CONFIGURED',
+          message: 'This model is missing product pricing.',
         });
-        points = estimate.sellPoints;
-      } else if ((model as any).pointsCost != null) {
-        points = (model as any).pointsCost;
       }
+      points = estimateProductModelPoints({
+        policy: billing.productPricing,
+        numOutputs: 1,
+      }).sellPoints;
     }
 
     return {
       computePoints: points,
-      isFree: isCampaignFree || points === 0,
+      isFree: points === 0,
       model,
     };
   }
@@ -220,8 +219,9 @@ export class IpGenerationJobsService {
         : undefined,
     };
 
-    const submitRes = await this.aiGeneration.submitJob(user, jobBody);
+    // Complete fallible quote reads before accepting a paid generation.
     const costInfo = await this.computeTemplateCost(user, template);
+    const submitRes = await this.aiGeneration.submitJob(user, jobBody);
 
     return {
       jobId: submitRes.request_id,
@@ -261,7 +261,7 @@ export class IpGenerationJobsService {
       id: publicJob.id,
       status: publicJob.status,
       progress: publicJob.progress,
-      outputs: ((publicJob as any).outputs ?? []).map((out: any) => ({
+      outputs: (publicJob.outputs ?? []).map((out) => ({
         assetId: out.assetId,
         url: out.url,
       })),

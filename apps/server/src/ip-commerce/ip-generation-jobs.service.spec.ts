@@ -119,7 +119,7 @@ describe('IpGenerationJobsService', () => {
           {
             id: 'model-seedance-image',
             cost_estimate: { supportsPreflightEstimate: true },
-            billingPolicy: {
+            billing_policy: {
               productPricing: {
                 mode: 'fixed_per_output',
                 pointsPerOutput: 15,
@@ -171,7 +171,7 @@ describe('IpGenerationJobsService', () => {
         {
           id: 'model-seedance-image',
           cost_estimate: { supportsPreflightEstimate: true },
-          billingPolicy: {
+          billing_policy: {
             productPricing: {
               mode: 'fixed_per_output',
               pointsPerOutput: 25,
@@ -194,12 +194,12 @@ describe('IpGenerationJobsService', () => {
     expect(res.cost.isFree).toBe(false);
   });
 
-  it('Preview returns 0 cost when an active free campaign matches', async () => {
+  it('does not apply catalog campaigns that are not selected by submission', async () => {
     mockAiGeneration.listCatalog.mockResolvedValueOnce({
       models: [
         {
           id: 'model-seedance-image',
-          billingPolicy: {
+          billing_policy: {
             productPricing: {
               mode: 'fixed_per_output',
               pointsPerOutput: 15,
@@ -207,7 +207,12 @@ describe('IpGenerationJobsService', () => {
           },
         },
       ],
-      campaigns: [{ status: 'active', modelId: 'model-seedance-image' }],
+      campaigns: [
+        {
+          campaignId: 'free-images',
+          eligibleModelIds: ['model-seedance-image'],
+        },
+      ],
     });
 
     const res = await service.previewCost(
@@ -218,8 +223,42 @@ describe('IpGenerationJobsService', () => {
         referenceImageAssetId: sampleAssetId,
       },
     );
-    expect(res.cost.computePoints).toBe(0);
-    expect(res.cost.isFree).toBe(true);
+    expect(res.cost.computePoints).toBe(15);
+    expect(res.cost.isFree).toBe(false);
+  });
+
+  it('honors an explicitly free model billing policy', async () => {
+    mockAiGeneration.listCatalog.mockResolvedValueOnce({
+      models: [
+        { id: 'model-seedance-image', billing_policy: { mode: 'free' } },
+      ],
+      campaigns: [],
+    });
+    const result = await service.previewCost(
+      mockUser,
+      sampleIpId,
+      sampleTemplateId,
+      {
+        referenceImageAssetId: sampleAssetId,
+      },
+    );
+    expect(result.cost).toMatchObject({ computePoints: 0, isFree: true });
+  });
+
+  it('rejects missing product pricing before submitting a job', async () => {
+    mockAiGeneration.listCatalog.mockResolvedValueOnce({
+      models: [
+        { id: 'model-seedance-image', billing_policy: { mode: 'charge' } },
+      ],
+      campaigns: [],
+    });
+    await expect(
+      service.runJob(mockUser, sampleIpId, sampleTemplateId, {
+        referenceImageAssetId: sampleAssetId,
+        idempotencyKey: 'missing-pricing',
+      }),
+    ).rejects.toThrow('This model is missing product pricing.');
+    expect(mockAiGeneration.submitJob).not.toHaveBeenCalled();
   });
 
   it('previewCost and runJob return the same computePoints when called with the same template and catalog', async () => {
@@ -292,6 +331,49 @@ describe('IpGenerationJobsService', () => {
 
     // Cost verification
     expect(runRes.cost.computePoints).toBe(15);
+  });
+
+  it.each(['unavailable', 'missing-model'])(
+    'does not submit a paid job when the response cost catalog is %s',
+    async (failure) => {
+      if (failure === 'unavailable') {
+        mockAiGeneration.listCatalog.mockRejectedValueOnce(
+          new Error('Catalog unavailable'),
+        );
+      } else {
+        mockAiGeneration.listCatalog.mockResolvedValueOnce({
+          models: [],
+          campaigns: [],
+        });
+      }
+      await expect(
+        service.runJob(mockUser, sampleIpId, sampleTemplateId, {
+          referenceImageAssetId: sampleAssetId,
+          idempotencyKey: 'catalog-failure',
+        }),
+      ).rejects.toThrow();
+      expect(mockAiGeneration.submitJob).not.toHaveBeenCalled();
+    },
+  );
+
+  it('finishes catalog validation before submitting and returns the accepted job', async () => {
+    const result = await service.runJob(
+      mockUser,
+      sampleIpId,
+      sampleTemplateId,
+      {
+        referenceImageAssetId: sampleAssetId,
+        idempotencyKey: 'accepted-job',
+      },
+    );
+    expect(mockAiGeneration.listCatalog).toHaveBeenCalledTimes(1);
+    expect(
+      mockAiGeneration.listCatalog.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockAiGeneration.submitJob.mock.invocationCallOrder[0]);
+    expect(result).toMatchObject({
+      jobId: 'job-123',
+      cost: { computePoints: 15 },
+    });
   });
 
   it('Status returns 403 if caller is not the job owner', async () => {
