@@ -1,4 +1,10 @@
-import { parsePlayableVideoFfprobeOutput } from './playable-video-probe.service';
+import * as childProcess from 'node:child_process';
+import {
+  PlayableVideoProbeService,
+  parsePlayableVideoFfprobeOutput,
+} from './playable-video-probe.service';
+
+jest.mock('node:child_process', () => ({ execFile: jest.fn() }));
 
 const video = {
   codec_type: 'video',
@@ -82,5 +88,61 @@ describe('video probe stream selection', () => {
         { requireBrowserSafeMp4: false },
       ).browserSafeMp4,
     ).toBe(false);
+  });
+});
+
+describe('video probe process failures', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  test.each([
+    [{ code: 'ENOENT' }, 'MEDIA_VIDEO_PROBE_UNAVAILABLE', 503],
+    [{ killed: true, signal: 'SIGTERM' }, 'MEDIA_VIDEO_PROBE_TIMEOUT', 503],
+    [{ code: 1 }, 'MEDIA_VIDEO_INVALID', 422],
+  ] as const)(
+    'classifies %j without claiming valid media',
+    async (error, code, status) => {
+      jest
+        .mocked(childProcess.execFile)
+        .mockImplementation((...args: unknown[]) => {
+          const callback = args.at(-1) as (
+            error: unknown,
+            stdout: string,
+            stderr: string,
+          ) => void;
+          callback(error, '', 'fixture failure');
+          return {} as childProcess.ChildProcess;
+        });
+      const result = new PlayableVideoProbeService().probeFile(
+        '/local/fixture.mp4',
+      );
+      await expect(result).rejects.toMatchObject({ status });
+      await expect(result).rejects.toHaveProperty('response.code', code);
+    },
+  );
+
+  test('measures an hour-long stream without treating process timeout as a media-duration limit', async () => {
+    const exec = jest
+      .mocked(childProcess.execFile)
+      .mockImplementation((...args: unknown[]) => {
+        const callback = args.at(-1) as (
+          error: null,
+          stdout: string,
+          stderr: string,
+        ) => void;
+        callback(null, output([{ ...video, duration: '3601.125' }]), '');
+        return {} as childProcess.ChildProcess;
+      });
+    await expect(
+      new PlayableVideoProbeService().probeFile('/local/long.mp4'),
+    ).resolves.toMatchObject({
+      durationMs: 3601125,
+      durationSecondsExact: 3601.125,
+    });
+    expect(exec).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining(['/local/long.mp4']),
+      expect.objectContaining({ timeout: 60000 }),
+      expect.any(Function),
+    );
   });
 });
