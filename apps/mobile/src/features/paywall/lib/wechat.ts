@@ -75,7 +75,17 @@ async function createWechatScanCheckout(
       currency: "CNY",
     });
     const interval = product.interval ?? "month";
-    priceId = (prices.find((price) => price.interval === interval) ?? prices[0])?.id;
+    const matches = prices.filter(
+      (price) => price.interval === interval && price.currency === "CNY" && price.isActive !== false
+    );
+    // A missing interval must never silently buy another billing period. If
+    // multiple plans match, the caller must supply its selected billingPriceId.
+    if (matches.length !== 1) {
+      throw new Error(
+        "[paywall] No unique active CNY price matches the selected membership. Refresh the catalog and select a price."
+      );
+    }
+    priceId = matches[0]!.id;
   }
   if (!priceId) {
     throw new Error("[paywall] No CNY WeChat price is available for this product.");
