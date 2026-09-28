@@ -372,6 +372,8 @@ export function PaywallScreen() {
 
   const canRestore = channel === "apple_iap" || channel === "google_play_iap";
   const actionsLocked = busy || restoring;
+  // React state disables the UI on the next render; serialize dispatch now.
+  const paymentActionInFlight = useRef(false);
   const walletRefreshGeneration = useRef(0);
 
   const refreshWallets = useCallback(async () => {
@@ -427,7 +429,8 @@ export function PaywallScreen() {
   );
 
   const buy = async () => {
-    if (!product || actionsLocked) return;
+    if (!product || actionsLocked || paymentActionInFlight.current) return;
+    paymentActionInFlight.current = true;
     setBusy(true);
     try {
       const result = await purchaseProduct(product);
@@ -452,12 +455,14 @@ export function PaywallScreen() {
       if (isPurchaseCancelled(error)) return;
       Alert.alert(t("paywall.purchaseFailed"), errorMessage(error));
     } finally {
+      paymentActionInFlight.current = false;
       setBusy(false);
     }
   };
 
   const restore = async () => {
-    if (actionsLocked) return;
+    if (actionsLocked || paymentActionInFlight.current) return;
+    paymentActionInFlight.current = true;
     setRestoring(true);
     try {
       const result = await restorePurchases();
@@ -468,6 +473,7 @@ export function PaywallScreen() {
     } catch (error: unknown) {
       Alert.alert(t("paywall.restoreFailed"), errorMessage(error));
     } finally {
+      paymentActionInFlight.current = false;
       setRestoring(false);
     }
   };

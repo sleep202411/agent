@@ -115,6 +115,35 @@ it("connects the buy button to checkout and disables it while a purchase is pend
   expect(state.buy).toHaveBeenCalledTimes(1);
   expect(button.disabled).toBe(true);
 });
+it("dispatches only one purchase for two presses before React renders", async () => {
+  await render();
+  const button = [...host.querySelectorAll("button")].find(
+    (item) => item.textContent === "paywall.buyNow"
+  )!;
+  await act(async () => {
+    button.click();
+    button.click();
+  });
+  expect(state.buy).toHaveBeenCalledTimes(1);
+});
+
+it("allows a new purchase after the previous attempt fails", async () => {
+  state.buy.mockRejectedValueOnce(new Error("Checkout unavailable"));
+  await render();
+  const button = [...host.querySelectorAll("button")].find(
+    (item) => item.textContent === "paywall.buyNow"
+  )!;
+  await act(async () => button.click());
+  expect(state.alert).toHaveBeenCalledWith("paywall.purchaseFailed", "Checkout unavailable");
+  expect(button.disabled).toBe(false);
+  await act(async () => {
+    button.click();
+    button.click();
+  });
+  expect(state.buy).toHaveBeenCalledTimes(2);
+  expect(button.disabled).toBe(true);
+});
+
 it("keeps the return destination when continuing to web checkout", async () => {
   state.channel = "web";
   await render();
