@@ -395,7 +395,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
                 onClick={() => void timelineExport.handleExport()}
                 className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 text-xs font-medium text-white/68 transition-colors hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
               >
-                合成成片
+                {t("exportFilm")}
               </button>
               <button
                 type="button"
@@ -403,7 +403,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
                 onClick={() => void timelineExport.downloadOnly()}
                 className="inline-flex h-8 shrink-0 items-center gap-2 rounded-lg bg-white/[0.06] px-2.5 text-xs font-medium text-white/68 transition-colors hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
               >
-                下载到本地
+                {t("downloadFilm")}
               </button>
             </>
           )}

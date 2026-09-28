@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 import {
   exportTimelineToMp4,
   isExportSupported,
@@ -33,9 +34,29 @@ export function useStoryTimelineExport({
   chapterId,
   onComplete,
 }: UseStoryTimelineExportOptions) {
+  const t = useTranslations("storyStudio.timelineExport");
+  const clips = sequence?.clips;
+  const validShots = useMemo(() => {
+    if (!clips?.length) return [];
+    const result: ExportableShot[] = [];
+    for (const clip of clips) {
+      const videoUrl = clip.selectedMediaVersion?.previewUrl;
+      if (!videoUrl) {
+        continue;
+      }
+      result.push({
+        id: clip.id,
+        videoUrl,
+        duration: clip.durationMs > 0 ? clip.durationMs / 1000 : undefined,
+      });
+    }
+    return result;
+  }, [clips]);
+
+  const mediaKey = JSON.stringify(validShots);
   const scope = useMemo(
-    () => ({ sequenceId: sequence?.id, projectId, chapterId }),
-    [sequence?.id, projectId, chapterId]
+    () => ({ sequenceId: sequence?.id, projectId, chapterId, mediaKey }),
+    [sequence?.id, projectId, chapterId, mediaKey]
   );
   const owner = useRef<{ scope: typeof scope; operation: AbortController | null } | null>(null);
 
@@ -50,29 +71,19 @@ export function useStoryTimelineExport({
 
   const [progress, setProgress] = useState<{ scope: typeof scope; ratio: number } | null>(null);
   const [stage, setStage] = useState<"idle" | "exporting" | "uploading" | "saving">("idle");
-  const [error, setError] = useState<StoryTimelineExportError>(null);
+  const [failure, setFailure] = useState<{
+    scope: typeof scope;
+    error: StoryTimelineExportError;
+  } | null>(null);
+  const error = failure?.scope === scope ? failure.error : null;
+  const setError = useCallback(
+    (error: StoryTimelineExportError) => setFailure({ scope, error }),
+    [scope]
+  );
   const [lastBlob, setLastBlob] = useState<{ scope: typeof scope; blob: Blob } | null>(null);
 
   const isExporting = progress?.scope === scope && stage !== "idle";
   const exportProgress = progress?.scope === scope ? progress.ratio : 0;
-
-  const validShots = useMemo(() => {
-    if (!sequence?.clips?.length) return [];
-    const result: ExportableShot[] = [];
-    for (const clip of sequence.clips) {
-      const videoUrl = clip.selectedMediaVersion?.previewUrl;
-      if (!videoUrl) {
-        console.warn(`[StoryTimelineExport] clip ${clip.id} has no previewUrl, skipping`);
-        continue;
-      }
-      result.push({
-        id: clip.id,
-        videoUrl,
-        duration: clip.durationMs > 0 ? clip.durationMs / 1000 : undefined,
-      });
-    }
-    return result;
-  }, [sequence?.clips]);
 
   const canExport = validShots.length > 0;
 
@@ -92,13 +103,13 @@ export function useStoryTimelineExport({
 
     if (!validShots.length) {
       setError("no_clips_with_media");
-      toast.warning("没有可导出的媒体片段");
+      toast.warning(t("noMedia"));
       return;
     }
 
     if (!isExportSupported()) {
       setError("browser_unsupported");
-      toast.error("当前浏览器不支持视频合成导出，建议使用 Chrome 浏览器");
+      toast.error(t("unsupported"));
       return;
     }
 
@@ -130,7 +141,7 @@ export function useStoryTimelineExport({
       const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
       const file = new File([blob], filename, { type: "video/mp4" });
 
-      // Step e: Upload via signed url (matching lines 1174-1182)
+      // Upload the export before adding it to project assets.
       setStage("uploading");
       const uploaded = await uploadFileViaSignedUrl(file, {
         kind: "ai_reference_video",
@@ -153,18 +164,18 @@ export function useStoryTimelineExport({
       if (!current()) return;
 
       // Step g: On complete
-      toast.success("成片已保存到项目资产库");
+      toast.success(t("saved"));
       onComplete?.(uploaded.mediaAssetId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (!current()) return;
       console.error("[StoryTimelineExport] failed:", err);
       if (err instanceof TimelineExportUnsupportedError) {
         setError("browser_unsupported");
-        toast.error("当前浏览器不支持视频合成导出");
+        toast.error(t("unsupported"));
         return;
       }
       setError("failed");
-      toast.error(`成片合成失败: ${err?.message || String(err)}`);
+      toast.error(err instanceof Error && err.message ? err.message : t("failed"));
     } finally {
       if (current()) {
         owned.operation = null;
@@ -172,23 +183,24 @@ export function useStoryTimelineExport({
         setProgress(null);
       }
     }
-  }, [scope, validShots, projectId, onComplete]);
+  }, [scope, validShots, projectId, onComplete, setError, t]);
 
   const downloadOnly = useCallback(async () => {
+    setError(null);
     if (lastBlob?.scope === scope && lastBlob.blob) {
       const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
       triggerBlobDownload(lastBlob.blob, filename);
-      toast.success("开始下载已合成的成片");
+      toast.success(t("downloadStarted"));
       return;
     }
 
     // If not already exported, run export and download directly
     if (!validShots.length) {
-      toast.warning("没有可导出的媒体片段");
+      toast.warning(t("noMedia"));
       return;
     }
     if (!isExportSupported()) {
-      toast.error("当前浏览器不支持视频合成导出");
+      toast.error(t("unsupported"));
       return;
     }
 
@@ -216,10 +228,11 @@ export function useStoryTimelineExport({
       setLastBlob({ scope, blob });
       const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
       triggerBlobDownload(blob, filename);
-      toast.success("成片已导出并开始下载");
-    } catch (err: any) {
+      toast.success(t("downloadStarted"));
+    } catch (err: unknown) {
       if (!current()) return;
-      toast.error(`导出下载失败: ${err?.message || String(err)}`);
+      setError(err instanceof TimelineExportUnsupportedError ? "browser_unsupported" : "failed");
+      toast.error(err instanceof Error && err.message ? err.message : t("failed"));
     } finally {
       if (current()) {
         owned.operation = null;
@@ -227,12 +240,12 @@ export function useStoryTimelineExport({
         setProgress(null);
       }
     }
-  }, [scope, lastBlob, validShots, projectId]);
+  }, [scope, lastBlob, validShots, projectId, setError, t]);
 
   return {
     isExporting,
     exportProgress,
-    exportStage: stage,
+    exportStage: isExporting ? stage : "idle",
     error,
     canExport,
     validShotsCount: validShots.length,

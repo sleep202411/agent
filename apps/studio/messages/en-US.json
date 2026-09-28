@@ -3253,7 +3253,9 @@
         "replaceError": "The clip media could not be replaced.",
         "mediaUnavailable": "Media replacement is unavailable until this project is editable.",
         "unsupportedMedia": "A clip can only use image or video media."
-      }
+      },
+      "exportFilm": "Export film",
+      "downloadFilm": "Download film"
     },
     "canvas": {
       "back": "Back to Interactive Film Studio",
@@ -4094,6 +4096,13 @@
       "moving": "Moving…",
       "success": "Project moved",
       "failed": "Could not move the project."
+    },
+    "timelineExport": {
+      "noMedia": "No media clips are available to export.",
+      "unsupported": "This browser does not support video export. Try Chrome.",
+      "saved": "Film saved to project assets.",
+      "downloadStarted": "Film download started.",
+      "failed": "The film could not be exported. Please try again."
     }
   },
   "storyStudioLanding": {

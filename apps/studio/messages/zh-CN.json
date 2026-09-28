@@ -3253,7 +3253,9 @@
         "replaceError": "无法替换片段媒体。",
         "mediaUnavailable": "项目恢复为可编辑状态后才能替换媒体。",
         "unsupportedMedia": "片段只能使用图片或视频媒体。"
-      }
+      },
+      "exportFilm": "合成成片",
+      "downloadFilm": "下载到本地"
     },
     "canvas": {
       "back": "返回影游工作室",
@@ -4094,6 +4096,13 @@
       "moving": "正在移动…",
       "success": "项目已移动",
       "failed": "无法移动项目。"
+    },
+    "timelineExport": {
+      "noMedia": "没有可导出的媒体片段。",
+      "unsupported": "当前浏览器不支持视频导出，请尝试使用 Chrome。",
+      "saved": "成片已保存到项目资产库。",
+      "downloadStarted": "已开始下载成片。",
+      "failed": "成片导出失败，请重试。"
     }
   },
   "storyStudioLanding": {
