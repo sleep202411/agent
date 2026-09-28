@@ -3,7 +3,14 @@ import { act, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { usePublicCourseDetail, usePublicCourseList } from "./use-courses-public";
+import {
+  publicCourseVideoStableKey,
+  readPublicCourseProgress,
+  recomputePublicCourseProgress,
+  usePublicCourseDetail,
+  usePublicCourseList,
+} from "./use-courses-public";
+import { writeStoredEpisodeProgress } from "./use-courses";
 const mocks = vi.hoisted(() => ({ viewer: "a", detail: vi.fn(), play: vi.fn(), list: vi.fn() }));
 vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: mocks.viewer } }) }));
 vi.mock("@/src/i18n/i18n", () => ({ useLocale: () => "en-US" }));
@@ -59,6 +66,20 @@ afterEach(async () => {
   container.remove();
   localStorage.clear();
 });
+it("keeps recalculated zero progress instead of reviving a removed lesson's progress", () => {
+  writeStoredEpisodeProgress(
+    11,
+    { currentTime: 60, duration: 60 },
+    publicCourseVideoStableKey(1, 11)
+  );
+  // With no aggregate yet, the legacy per-lesson fallback remains available.
+  expect(readPublicCourseProgress(1, 1)).toBe(100);
+
+  // The current playlist now contains a different, unwatched lesson.
+  expect(recomputePublicCourseProgress(1, [12])).toBe(0);
+  expect(readPublicCourseProgress(1, 1)).toBe(0);
+});
+
 it("restores the destination course lesson and rejects retained selection callbacks", async () => {
   localStorage.setItem("public-course-episode-v1:2", "22");
   await render();

@@ -175,7 +175,7 @@ export function readPublicCourseProgress(courseId: number, episodeCount?: number
     const raw = window.localStorage.getItem(`${PROGRESS_PREFIX}${courseId}`);
     if (raw != null && raw !== "") {
       const value = Number(raw);
-      if (Number.isFinite(value) && value > 0) return clampPercent(value);
+      if (Number.isFinite(value) && value >= 0) return clampPercent(value);
     }
   } catch {
     /* fall through */
