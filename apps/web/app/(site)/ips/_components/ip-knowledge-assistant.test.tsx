@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { IpKnowledgeAssistant } from "./ip-knowledge-assistant";
 const mocks = vi.hoisted(() => ({
+  locale: "zh-CN",
+  ipId: "film",
   post: vi.fn(),
   open: vi.fn(),
   user: { id: "user" } as { id: string } | null,
@@ -14,7 +16,7 @@ vi.mock("@/components/auth/auth-dialog-provider", () => ({
   useAuthDialog: () => ({ open: mocks.open }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
-  useLocale: () => "zh-CN",
+  useLocale: () => mocks.locale,
   useTranslations: () => (key: string) => key,
 }));
 let host: HTMLDivElement, root: Root;
@@ -23,6 +25,8 @@ beforeEach(() => {
   mocks.post.mockReset();
   mocks.open.mockReset();
   mocks.user = { id: "user" };
+  mocks.locale = "zh-CN";
+  mocks.ipId = "film";
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -33,7 +37,9 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 async function render() {
-  await act(async () => root.render(<IpKnowledgeAssistant ipId="film" ipTitle="Current film" />));
+  await act(async () =>
+    root.render(<IpKnowledgeAssistant ipId={mocks.ipId} ipTitle="Current film" />)
+  );
 }
 async function open() {
   await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
@@ -84,4 +90,38 @@ it("requires login before sending a question", async () => {
   await ask();
   expect(mocks.open).toHaveBeenCalledOnce();
   expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it.each(["locale", "account", "film"])("discards an old answer when %s changes", async (change) => {
+  let resolveOld!: (value: unknown) => void;
+  mocks.post.mockReturnValueOnce(
+    new Promise((resolve) => {
+      resolveOld = resolve;
+    })
+  );
+  await render();
+  await open();
+  await ask();
+  const oldSignal = mocks.post.mock.calls[0]![1].signal as AbortSignal;
+  if (change === "locale") mocks.locale = "en-US";
+  if (change === "account") mocks.user = { id: "other" };
+  if (change === "film") mocks.ipId = "other-film";
+  await render();
+  expect(oldSignal.aborted).toBe(true);
+  expect(document.body.querySelector("input")!.value).toBe("");
+  mocks.post.mockResolvedValueOnce({
+    answer: "Current answer",
+    citedDocumentIds: [],
+    unanswered: false,
+  });
+  await ask();
+  expect(mocks.post).toHaveBeenLastCalledWith(
+    `/aurora/ip-commerce/ips/${mocks.ipId}/knowledge/ask`,
+    expect.objectContaining({ data: { question: "Who created this?", locale: mocks.locale } })
+  );
+  await act(async () =>
+    resolveOld({ answer: "Obsolete answer", citedDocumentIds: ["old"], unanswered: false })
+  );
+  expect(document.body.textContent).toContain("Current answer");
+  expect(document.body.textContent).not.toContain("Obsolete answer");
 });

@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { IconSparkles, IconX } from "@tabler/icons-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { IpKnowledgeChat } from "./ip-knowledge-chat";
 
 export function IpKnowledgeAssistant({ ipId, ipTitle }: { ipId: string; ipTitle: string }) {
   const t = useTranslations("ipKnowledge");
   const { user } = useCurrentUser();
+  const locale = useLocale();
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -43,7 +44,7 @@ export function IpKnowledgeAssistant({ ipId, ipTitle }: { ipId: string; ipTitle:
             <IconX className="size-4" aria-hidden="true" />
           </button>
         </div>
-        <IpKnowledgeChat key={`${ipId}:${user?.id ?? "guest"}`} ipId={ipId} />
+        <IpKnowledgeChat key={JSON.stringify([ipId, user?.id ?? null, locale])} ipId={ipId} />
       </PopoverContent>
     </Popover>
   );
