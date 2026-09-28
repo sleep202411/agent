@@ -202,8 +202,13 @@ export class IpPublishersService {
     }
   }
 
-  async listForIp(ipId: string, locale?: string | null, activeOnly = false) {
-    const rows = await this.prisma.ipPublisherAssignment.findMany({
+  async listForIp(
+    ipId: string,
+    locale?: string | null,
+    activeOnly = false,
+    db: Pick<Prisma.TransactionClient, 'ipPublisherAssignment'> = this.prisma,
+  ) {
+    const rows = await db.ipPublisherAssignment.findMany({
       where: {
         ipId,
         ...(activeOnly
@@ -225,49 +230,55 @@ export class IpPublishersService {
     ipId: string,
     input: SetAdminIpPublishersInput,
   ) {
-    const ip = await this.prisma.ip.findFirst({
-      where: { id: ipId, deletedAt: null },
-      select: { id: true },
-    });
-    if (!ip) throw new NotFoundException('IP not found.');
-
     const uniqueIds = [...new Set(input.publisherIds)];
     if (uniqueIds.length !== input.publisherIds.length) {
       throw new BadRequestException('Duplicate publisher ids are not allowed.');
     }
 
-    if (uniqueIds.length > 0) {
-      const publishers = await this.prisma.ipPublisher.findMany({
-        where: { id: { in: uniqueIds } },
-        select: { id: true, status: true },
-      });
-      if (publishers.length !== uniqueIds.length) {
-        throw new NotFoundException('One or more publishers were not found.');
-      }
-      const inactive = publishers.filter(
-        (row) => row.status !== IpPublisherStatus.active,
-      );
-      if (inactive.length > 0) {
-        throw new BadRequestException(
-          'Only active publishers can be assigned to an IP.',
+    return this.prisma.$transaction(async (tx) => {
+      // All replacements of an IP's publisher list share its row lock. Locking
+      // existing assignments alone does not serialize empty/disjoint lists.
+      const ips = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM ips WHERE id = ${ipId}::uuid AND deleted_at IS NULL FOR UPDATE
+      `;
+      if (!ips.length) throw new NotFoundException('IP not found.');
+
+      if (uniqueIds.length > 0) {
+        // Hold catalog rows through commit: a concurrent deactivation must not
+        // slip between eligibility validation and assignment. Consistent order
+        // also avoids deadlocks between IPs sharing several publishers.
+        const publishers = await tx.$queryRaw<
+          Array<{ id: string; status: IpPublisherStatus }>
+        >(
+          Prisma.sql`SELECT id, status FROM ip_publishers
+            WHERE id IN (${Prisma.join(uniqueIds.map((id) => Prisma.sql`${id}::uuid`))})
+            ORDER BY id FOR SHARE`,
         );
+        if (publishers.length !== uniqueIds.length) {
+          throw new NotFoundException('One or more publishers were not found.');
+        }
+        if (publishers.some((row) => row.status !== IpPublisherStatus.active)) {
+          throw new BadRequestException(
+            'Only active publishers can be assigned to an IP.',
+          );
+        }
       }
-    }
 
-    await this.prisma.$transaction(async (tx) => {
       await tx.ipPublisherAssignment.deleteMany({ where: { ipId } });
-      if (uniqueIds.length === 0) return;
-      await tx.ipPublisherAssignment.createMany({
-        data: uniqueIds.map((publisherId, index) => ({
-          ipId,
-          publisherId,
-          displayOrder: index,
-          createdById: admin.userId,
-        })),
-      });
+      if (uniqueIds.length > 0) {
+        await tx.ipPublisherAssignment.createMany({
+          data: uniqueIds.map((publisherId, index) => ({
+            ipId,
+            publisherId,
+            displayOrder: index,
+            createdById: admin.userId,
+          })),
+        });
+      }
+      // Read before releasing the lock so the response describes this save,
+      // rather than another administrator's later replacement.
+      return { publishers: await this.listForIp(ipId, undefined, false, tx) };
     });
-
-    return { publishers: await this.listForIp(ipId) };
   }
 }
 

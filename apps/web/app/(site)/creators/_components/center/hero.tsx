@@ -26,7 +26,6 @@ import {
   IconLoader2,
   IconMail,
   IconMessage,
-  IconPlus,
   IconShare3,
   IconUserPlus,
   IconWallet,
@@ -53,13 +52,6 @@ const FALLBACK_HERO_BACKGROUND =
 interface CreatorHeroProps {
   creator: Creator;
   isOwner: boolean;
-  /**
-   * Owner clicked the hero "+ 新建服务包" CTA. The parent owns the
-   * dialog so the hero doesn't have to import the services data
-   * layer; it also lets the parent flip the active tab to Services
-   * on save so the user lands on the page that just changed.
-   */
-  onCreateService?: () => void;
   /** Owner clicked the referral-link CTA — parent generates the
    *  code and opens the referral-link share dialog. */
   onShareReferral?: () => void;
@@ -74,7 +66,6 @@ interface CreatorHeroProps {
 export function CreatorHero({
   creator,
   isOwner,
-  onCreateService,
   onShareReferral,
   referralPending,
   onShareProfile,
@@ -141,7 +132,6 @@ export function CreatorHero({
           {isOwner ? (
             <OwnerCtas
               t={t}
-              onCreateService={onCreateService}
               onShareReferral={onShareReferral}
               referralPending={referralPending}
               onShareProfile={onShareProfile}
@@ -157,13 +147,11 @@ export function CreatorHero({
 
 function OwnerCtas({
   t,
-  onCreateService,
   onShareReferral,
   referralPending,
   onShareProfile,
 }: {
   t: (k: string) => string;
-  onCreateService?: () => void;
   onShareReferral?: () => void;
   referralPending?: boolean;
   onShareProfile?: () => void;
@@ -171,10 +159,6 @@ function OwnerCtas({
   const locale = useLocale() as Locale;
   return (
     <>
-      <Button type="button" variant="solid" color="primary" onClick={() => onCreateService?.()}>
-        <IconPlus className="size-4" />
-        {t("cta.createService")}
-      </Button>
       <Button variant="outline" color="muted" asChild>
         <Link href={localizePath("/profile/earnings", locale)}>
           <IconWallet className="size-4" />
@@ -189,6 +173,9 @@ function OwnerCtas({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-44">
+          <DropdownMenuItem asChild>
+            <Link href={localizePath("/profile/services", locale)}>{t("cta.manageServices")}</Link>
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => toast.info(t("ctaPhase1bHint"))}>
             <IconInbox className="size-4 text-muted-foreground" />
             <span>{t("cta.inbox")}</span>

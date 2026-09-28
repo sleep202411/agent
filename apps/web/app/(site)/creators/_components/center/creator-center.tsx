@@ -1,41 +1,7 @@
 "use client";
 
-/**
- * CreatorCenter — unified profile page layout. Same shell renders for:
- *
- *   - `/creators/[id]`  (public visit, any creator)
- *   - `/profile` (or `/creators/<self>`)  (owner self-view; same
- *     URL would also work, just bounces through `/profile`)
- *
- * The layout (per 2026-05-21 product spec, modelled after the
- * 新片场 creator profile reference; About lifted into the rail
- * 2026-05-26):
- *
- *   ┌─────────────────────────────────────────────────────────────┐
- *   │  HERO  cover · avatar · name · level · bio · primary CTA    │
- *   ├──────────────┬──────────────────────────────────────────────┤
- *   │ left rail    │  tab bar: 服务包 / 作品 / 证书 / IP / 剧组      │
- *   │ business     ├──────────────────────────────────────────────┤
- *   │ bio          │  active-section content                      │
- *   │ education    │                                              │
- *   │ experience   │                                              │
- *   │ certificate  │                                              │
- *   └──────────────┴──────────────────────────────────────────────┘
- *
- * Hero is full-width and capped at 1680px on large screens; the
- * body grid below sits inside the same 1680px container.
- *
- * Visitor sees: 关注 / 私信 / 下单 CTAs in the hero.
- * Owner sees:  + 服务包 + ⋯More overflow (Inbox / Earnings / Referral /
- *              Share profile); edit-profile is per-section in the left
- *              rail instead of a hero button.
- *
- * Service packages tab is the **primary commercial entry** and
- * therefore the default-selected tab — see doc § 10.1 "do not turn
- * this into a resume wall". Until the Phase 1a backend ships, the
- * tab renders an owner-side "create your first service" empty
- * state and (for visitors) a "this creator hasn't published a
- * service yet" message.
+/** Shared owner/public portfolio. IP is first per stage-modification Slide 26.
+ * Service management is retained at /profile/services, outside the portfolio.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
@@ -65,9 +31,7 @@ import {
   CREATOR_TAB_ID,
   type CreatorTabId,
 } from "./tab-bar";
-import { CreateServiceDialog } from "./dialogs/create-service-dialog";
 import { AccountSecurityDialog } from "./dialogs/account-security-dialog";
-import { ServicesTab } from "./tabs/services-tab";
 import { WorksTab } from "./tabs/works-tab";
 import { CertificatesTab } from "./tabs/certificates-tab";
 import { IpsTab } from "./tabs/ips-tab";
@@ -79,7 +43,7 @@ export interface CreatorCenterProps {
   creatorId: string;
 }
 
-const DEFAULT_TAB: CreatorTabId = "services";
+const DEFAULT_TAB: CreatorTabId = "ips";
 
 /** Public creator page: always renders the complete scrollable profile. */
 export function CreatorCenter({ creatorId }: CreatorCenterProps) {
@@ -160,10 +124,6 @@ export function SharedCreatorCenterLayout({
     }
     return () => observer.disconnect();
   }, [contentMode]);
-
-  // Hero "+ 新建服务包" is hoisted here so a save can both close the
-  // dialog AND scroll to the services section after save.
-  const [createServiceOpen, setCreateServiceOpen] = useState(false);
 
   // Edit-profile + referral are owner-only and share state pattern
   // with /profile (the original location). We reuse ProfileEditDialog
@@ -254,7 +214,6 @@ export function SharedCreatorCenterLayout({
       <CreatorHero
         creator={creator}
         isOwner={isOwner}
-        onCreateService={isOwner ? () => setCreateServiceOpen(true) : undefined}
         onShareReferral={isOwner ? handleShareReferral : undefined}
         referralPending={referralPending}
         onShareProfile={isOwner ? handleShareProfile : undefined}
@@ -323,15 +282,6 @@ export function SharedCreatorCenterLayout({
 
       {isOwner ? (
         <>
-          <CreateServiceDialog
-            open={createServiceOpen}
-            onOpenChange={setCreateServiceOpen}
-            onSaved={() => {
-              setCreateServiceOpen(false);
-              // After save, jump the user to the newly-saved card.
-              handlePickTab("services");
-            }}
-          />
           <ProfileEditDialog
             open={editProfileOpen}
             onOpenChange={setEditProfileOpen}
@@ -404,8 +354,6 @@ function SectionContent({
   contentMode: "sections" | "tabs";
 }) {
   switch (tab) {
-    case "services":
-      return <ServicesTab creator={creator} isOwner={isOwner} />;
     case "works":
       return <WorksTab creator={creator} isOwner={isOwner} />;
     case "certificates":

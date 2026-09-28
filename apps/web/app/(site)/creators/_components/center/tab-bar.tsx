@@ -7,12 +7,8 @@
  * `/profile` creator center uses the same visual treatment as an accessible
  * tablist that swaps a single content panel.
  *
- * Tab order is deliberate:
- *   1. 服务包  — commercial entry, first because it's the buy CTA.
- *   2. 作品    — videos / personal works.
- *   3. 证书    — public trust signal / training completion proof.
- *   4. IP      — owned IP projects.
- *   5. 剧组    — joined crews.
+ * IP leads the portfolio per Pax’s stage-modification Slide 26.
+ * Service management remains separate from the profile portfolio.
  *
  * About (bio / education / experience / socials) was lifted out of the
  * tab bar entirely and now lives in the left rail — identity content
@@ -25,18 +21,11 @@
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
 
-export type CreatorTabId = "services" | "works" | "certificates" | "ips" | "crews";
+export type CreatorTabId = "works" | "certificates" | "ips" | "crews";
 
-export const CREATOR_TAB_ORDER: CreatorTabId[] = [
-  "services",
-  "works",
-  "certificates",
-  "ips",
-  "crews",
-];
+export const CREATOR_TAB_ORDER: CreatorTabId[] = ["ips", "works", "certificates", "crews"];
 
 const TAB_I18N_KEY: Record<CreatorTabId, string> = {
-  services: "tabs.services",
   works: "tabs.works",
   certificates: "tabs.certificates",
   ips: "tabs.ips",
