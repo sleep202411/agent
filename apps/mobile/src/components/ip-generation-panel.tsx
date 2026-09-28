@@ -88,7 +88,7 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   const [genError, setGenError] = useState<string | null>(null);
 
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelPollRef = useRef(false);
+  const activeAttempt = useRef<AbortController | null>(null);
 
   // User compute balance
   const balance = useComputeWalletBalance();
@@ -118,7 +118,8 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   // Clean up poll on unmount
   useEffect(() => {
     return () => {
-      cancelPollRef.current = true;
+      activeAttempt.current?.abort();
+      activeAttempt.current = null;
       if (pollTimerRef.current) {
         clearTimeout(pollTimerRef.current);
       }
@@ -163,16 +164,19 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
   };
 
   // Poll status loop
-  const pollStatus = (currentJobId: string, templateId: string) => {
-    if (!isCurrent() || cancelPollRef.current) return;
+  const isActiveAttempt = (attempt: AbortController) =>
+    isCurrent() && activeAttempt.current === attempt && !attempt.signal.aborted;
+
+  const pollStatus = (currentJobId: string, templateId: string, attempt: AbortController) => {
+    if (!isActiveAttempt(attempt)) return;
 
     api
-      .get<{ status: JobStatus["status"]; progress: number | null; outputs: any[]; error?: any }>(
+      .get<Omit<JobStatus, "id">>(
         `/ip-commerce/ips/${ipId}/generation-templates/${templateId}/jobs/${currentJobId}`,
-        AURORA
+        { ...AURORA, signal: attempt.signal }
       )
       .then((statusRes) => {
-        if (!isCurrent() || cancelPollRef.current) return;
+        if (!isActiveAttempt(attempt)) return;
 
         const updated: JobStatus = {
           id: currentJobId,
@@ -184,18 +188,22 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
         setJobStatus(updated);
 
         if (statusRes.status === "completed") {
+          activeAttempt.current = null;
           setGenerating(false);
         } else if (statusRes.status === "failed" || statusRes.status === "cancelled") {
+          activeAttempt.current = null;
           setGenerating(false);
           setGenError(statusRes.error?.message || t("ipGeneration.errorGeneric"));
         } else {
           pollTimerRef.current = setTimeout(() => {
-            pollStatus(currentJobId, templateId);
+            pollTimerRef.current = null;
+            pollStatus(currentJobId, templateId, attempt);
           }, 2000);
         }
       })
       .catch((err) => {
-        if (!isCurrent() || cancelPollRef.current) return;
+        if (!isActiveAttempt(attempt)) return;
+        activeAttempt.current = null;
         setGenerating(false);
         setGenError(err?.message || t("ipGeneration.errorGeneric"));
       });
@@ -203,17 +211,20 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
 
   // Start Generation
   const handleStartGeneration = async () => {
-    if (!isCurrent()) return;
+    if (!isCurrent() || activeAttempt.current) return;
     if (!user) {
       requireAuth();
       return;
     }
     if (!selectedTemplate || !costPreview || previewLoading || previewError) return;
 
+    // Keep dispatch locked before React processes another tap. The controller
+    // cancels local reads only; an accepted server job continues independently.
+    const attempt = new AbortController();
+    activeAttempt.current = attempt;
     setGenerating(true);
     setGenError(null);
     setJobStatus(null);
-    cancelPollRef.current = false;
 
     try {
       const runRes = await api.post<{ jobId: string }>(
@@ -227,16 +238,18 @@ function IpGenerationSession({ ipId }: IpGenerationPanelProps) {
         }
       );
 
-      pollStatus(runRes.jobId, selectedTemplate.id);
+      pollStatus(runRes.jobId, selectedTemplate.id, attempt);
     } catch (err: any) {
-      if (!isCurrent()) return;
+      if (!isActiveAttempt(attempt)) return;
+      activeAttempt.current = null;
       setGenerating(false);
       setGenError(err?.message || t("ipGeneration.errorGeneric"));
     }
   };
 
   const handleCancel = () => {
-    cancelPollRef.current = true;
+    activeAttempt.current?.abort();
+    activeAttempt.current = null;
     if (pollTimerRef.current) {
       clearTimeout(pollTimerRef.current);
       pollTimerRef.current = null;
