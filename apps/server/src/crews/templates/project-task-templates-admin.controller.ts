@@ -27,7 +27,10 @@ import {
 
 const ListQuerySchema = z.object({
   projectType: z.nativeEnum(CrewProductionKind).optional(),
-  includeInactive: z.coerce.boolean().optional(),
+  includeInactive: z
+    .enum(['true', 'false'])
+    .transform((value) => value === 'true')
+    .optional(),
 });
 
 const ParamsSchema = z.object({
