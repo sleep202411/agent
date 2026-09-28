@@ -56,7 +56,7 @@ function ReviewSession({ task, onReviewed }: Props) {
   };
   const latestSubmission = task.submissions[0];
   const videoAssets =
-    latestSubmission?.assets.filter((a) => a.contentType?.startsWith("video/")) ?? [];
+    latestSubmission?.assets?.filter((a) => a.contentType?.startsWith("video/")) ?? [];
   const clipId = (task as any).metadata?.clipId;
   const showPrimaryPicker = Boolean(clipId && videoAssets.length >= 1);
 

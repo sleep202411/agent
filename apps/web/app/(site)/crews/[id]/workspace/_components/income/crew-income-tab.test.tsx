@@ -98,6 +98,18 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useCrewEarningDetail: () => ({}),
   useCrewPayoutDetail: () => ({}),
 }));
+vi.mock("@/app/(site)/crews/_hooks/use-expenses", () => ({
+  useCrewExpensesSummary: () => ({
+    data: {
+      taskRewardsByCurrency: { CNY: "0", USD: "0" },
+      reimbursementsByCurrency: { CNY: "0", USD: "0" },
+      totalByCurrency: { CNY: "0", USD: "0" },
+    },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+}));
 vi.mock("@/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
     open ? <div role="dialog">{children}</div> : null,
