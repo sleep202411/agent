@@ -74,6 +74,29 @@ afterEach(async () => {
   await act(async () => root.unmount());
   node.remove();
 });
+it("reports cached download failures and retries without encoding or uploading again", async () => {
+  await render();
+  await act(async () => api.downloadOnly());
+  h.success.mockClear();
+  h.download.mockImplementationOnce(() => {
+    throw new Error("Browser download unavailable");
+  });
+
+  await act(async () => {
+    await expect(api.downloadOnly()).resolves.toBeUndefined();
+  });
+  expect(api.error).toBe("failed");
+  expect(h.error).toHaveBeenCalledWith("Browser download unavailable");
+  expect(h.success).not.toHaveBeenCalled();
+  expect(api.isExporting).toBe(false);
+
+  await act(async () => api.downloadOnly());
+  expect(api.error).toBeNull();
+  expect(h.export).toHaveBeenCalledTimes(1);
+  expect(h.upload).not.toHaveBeenCalled();
+  expect(h.success).toHaveBeenCalledWith("downloadStarted");
+});
+
 it("exports once on rapid clicks, uploads, then saves and notifies", async () => {
   const pending = deferred<Blob>();
   h.export.mockReturnValue(pending.promise);

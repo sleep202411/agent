@@ -193,8 +193,13 @@ export function useStoryTimelineExport({
     setError(null);
     if (lastBlob?.scope === scope && lastBlob.blob) {
       const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
-      triggerBlobDownload(lastBlob.blob, filename);
-      toast.success(t("downloadStarted"));
+      try {
+        triggerBlobDownload(lastBlob.blob, filename);
+        toast.success(t("downloadStarted"));
+      } catch (err: unknown) {
+        setError("failed");
+        toast.error(err instanceof Error && err.message ? err.message : t("failed"));
+      }
       return;
     }
 
