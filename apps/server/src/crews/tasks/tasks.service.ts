@@ -5021,7 +5021,10 @@ function taskSearchWhere(search: string): Prisma.CrewTaskWhereInput[] {
         },
       },
     },
-    ...(number != null && Number.isSafeInteger(number) ? [{ number }] : []),
+    // CrewTask.number is a PostgreSQL INTEGER, narrower than a JS safe integer.
+    ...(number != null && Number.isSafeInteger(number) && number <= 2147483647
+      ? [{ number }]
+      : []),
   ];
 }
 

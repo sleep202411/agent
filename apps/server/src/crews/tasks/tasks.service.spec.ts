@@ -952,6 +952,40 @@ describe('CrewTasksService', () => {
     });
   });
 
+  it.each(['2147483648', '#2147483648', '9007199254740991'])(
+    'keeps out-of-range task number %s as a text search',
+    async (query) => {
+      const t = build();
+      t.prisma.crewTask.findMany.mockResolvedValue([]);
+      await t.service.listOptions(CREW_ID, OWNER_ID, { query });
+      const input = firstCallArgument<{ where: { OR: unknown[] } }>(
+        t.prisma.crewTask.findMany,
+      );
+      expect(input.where.OR).toEqual([
+        { title: { contains: query, mode: 'insensitive' } },
+        { description: { contains: query, mode: 'insensitive' } },
+        {
+          labels: {
+            some: { label: { name: { contains: query, mode: 'insensitive' } } },
+          },
+        },
+      ]);
+    },
+  );
+
+  it.each(['2147483647', '#2147483647'])(
+    'searches the maximum task number %s',
+    async (query) => {
+      const t = build();
+      t.prisma.crewTask.findMany.mockResolvedValue([]);
+      await t.service.listOptions(CREW_ID, OWNER_ID, { query });
+      const input = firstCallArgument<{ where: { OR: unknown[] } }>(
+        t.prisma.crewTask.findMany,
+      );
+      expect(input.where.OR).toContainEqual({ number: 2147483647 });
+    },
+  );
+
   it('rejects a stale task edit before mutating task or canvas state', async () => {
     const t = build();
 
