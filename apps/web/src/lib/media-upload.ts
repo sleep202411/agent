@@ -256,7 +256,12 @@ function putBytesToStorage(
       reject(new DOMException("Upload aborted", "AbortError"));
     };
 
-    xhr.send(file);
+    try {
+      xhr.send(file);
+    } catch (error) {
+      cleanup();
+      reject(error);
+    }
   });
 }
 

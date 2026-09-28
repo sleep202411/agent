@@ -60,6 +60,48 @@ afterEach(() => {
 });
 
 describe("uploadFileViaSignedUrl", () => {
+  it("detaches cancellation when the browser throws while starting an upload", async () => {
+    const failure = new DOMException("Network unavailable", "NetworkError");
+    const abort = vi.fn();
+    class FailedUploadRequest extends SuccessfulUploadRequest {
+      send() {
+        throw failure;
+      }
+      abort() {
+        abort();
+        super.abort();
+      }
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          uploadUrl: "https://storage.example/upload",
+          storageKey: "crew/key.png",
+          headers: {},
+        })
+      )
+      .mockResolvedValueOnce(jsonResponse({ cancelled: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("XMLHttpRequest", FailedUploadRequest);
+    const controller = new AbortController();
+
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "a.png", { type: "image/png" }), {
+        kind: "crew_asset_file",
+        scope: { crewId: "crew-1" },
+        signal: controller.signal,
+      })
+    ).rejects.toBe(failure);
+
+    controller.abort();
+    expect(abort).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/aurora/media/upload-url",
+      "/aurora/media/cancel-upload",
+    ]);
+  });
+
   it("reports durable phases and emits a confirm-retry checkpoint after PUT", async () => {
     const fetchMock = vi
       .fn()
