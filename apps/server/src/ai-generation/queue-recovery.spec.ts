@@ -80,3 +80,43 @@ it('preserves a poll backoff while the singleton is active', async () => {
   );
   expect(queue.add).not.toHaveBeenCalled();
 });
+
+it.each(['in_queue', 'in_progress'])(
+  'continues the recovery page when one %s job fails to dispatch',
+  async (status) => {
+    const { service, queue, prisma } = fixture(status);
+    prisma.aiJob.findMany.mockResolvedValue([
+      {
+        id: 'broken',
+        status,
+        version: 2,
+        queueName: 'ai-image-generation',
+        routingSnapshot: null,
+      },
+      {
+        id: 'healthy',
+        status,
+        version: 2,
+        queueName: 'ai-video-generation',
+        routingSnapshot: null,
+      },
+    ]);
+    queue.getJob.mockRejectedValueOnce(new Error('job-specific Redis failure'));
+    await expect(
+      (service as unknown as Internals).recoverQueuedJobs(),
+    ).resolves.toBeUndefined();
+    expect(queue.add).toHaveBeenCalledWith(
+      'process',
+      { jobId: 'healthy', op: status === 'in_progress' ? 'poll' : 'start' },
+      expect.any(Object),
+    );
+    // The failed row remains eligible: the next scan retries it, rather than
+    // marking it failed or abandoning its accepted provider receipt.
+    await (service as unknown as Internals).recoverQueuedJobs();
+    expect(queue.add).toHaveBeenCalledWith(
+      'process',
+      { jobId: 'broken', op: status === 'in_progress' ? 'poll' : 'start' },
+      expect.any(Object),
+    );
+  },
+);

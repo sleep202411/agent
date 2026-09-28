@@ -95,38 +95,47 @@ export class AiGenerationQueueService
         ].includes(job.queueName)
       )
         continue;
-      const snapshot = job.routingSnapshot as {
-        policy?: { entitlement?: { queuePriority?: number } };
-      } | null;
-      if (job.status === 'in_progress') {
-        await this.enqueue(
-          job.queueName as AiQueueName,
-          job.id,
-          0,
-          snapshot?.policy?.entitlement?.queuePriority ?? 5,
-          'poll',
-        );
-        continue;
-      }
-      const queue = this.queueFor(job.queueName as AiQueueName);
-      const recoveryId = `${job.id}__recover__${job.version}`;
-      const existing = await queue.getJob(recoveryId);
-      if (existing) {
-        const state = await existing.getState();
-        if (state === 'failed') {
-          await existing.retry('failed');
+      try {
+        const snapshot = job.routingSnapshot as {
+          policy?: { entitlement?: { queuePriority?: number } };
+        } | null;
+        if (job.status === 'in_progress') {
+          await this.enqueue(
+            job.queueName as AiQueueName,
+            job.id,
+            0,
+            snapshot?.policy?.entitlement?.queuePriority ?? 5,
+            'poll',
+          );
           continue;
         }
-        if (state === 'completed') await existing.remove();
+        const queue = this.queueFor(job.queueName as AiQueueName);
+        const recoveryId = `${job.id}__recover__${job.version}`;
+        const existing = await queue.getJob(recoveryId);
+        if (existing) {
+          const state = await existing.getState();
+          if (state === 'failed') {
+            await existing.retry('failed');
+            continue;
+          }
+          if (state === 'completed') await existing.remove();
+        }
+        await queue.add(
+          'process',
+          { jobId: job.id, op: 'start' },
+          {
+            jobId: recoveryId,
+            priority: snapshot?.policy?.entitlement?.queuePriority ?? 5,
+          },
+        );
+      } catch (error: unknown) {
+        // A removed/locked queue entry or a queue-specific failure must not
+        // starve every later row in this page. Keep the database row intact;
+        // the cursor wraps and retries it on a subsequent recovery scan.
+        this.logger.warn(
+          `Generation recovery dispatch failed for ${job.id} (${job.queueName}, ${job.status}): ${String(error)}`,
+        );
       }
-      await queue.add(
-        'process',
-        { jobId: job.id, op: 'start' },
-        {
-          jobId: recoveryId,
-          priority: snapshot?.policy?.entitlement?.queuePriority ?? 5,
-        },
-      );
     }
   }
 
