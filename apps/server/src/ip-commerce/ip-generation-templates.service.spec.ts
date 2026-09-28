@@ -1,9 +1,17 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { IpGenerationTemplatesService } from './ip-generation-templates.service';
 import type { PrismaService } from '../infra/db/db.module';
 import type { IpCommerceService } from './ip-commerce.service';
 import type { AiCanonicalCatalogService } from '../ai-generation/canonical-catalog.service';
 import type { AuthUser } from '../auth';
+import {
+  AudienceGenerationTemplateAdminSchema,
+  UpdateAudienceGenerationTemplatesSchema,
+} from './ip-generation-template.dto';
 
 describe('IpGenerationTemplatesService', () => {
   let service: IpGenerationTemplatesService;
@@ -173,6 +181,80 @@ describe('IpGenerationTemplatesService', () => {
         ],
       }),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects duplicate template IDs at the request boundary', () => {
+    const template = {
+      id: 'b0000000-0000-4000-8000-000000000001',
+      name: 'Poster',
+      modelId: 'model-seedance-image',
+    };
+    const result = UpdateAudienceGenerationTemplatesSchema.safeParse({
+      expectedVersion: 1,
+      templates: [
+        template,
+        {
+          ...template,
+          name: 'Different prompt',
+          promptPrefix: 'Another style',
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success)
+      expect(result.error.issues[0].path).toEqual(['templates', 1, 'id']);
+  });
+
+  it('rejects duplicate IDs before catalog reads or database writes', async () => {
+    const template = AudienceGenerationTemplateAdminSchema.parse({
+      id: 'b0000000-0000-4000-8000-000000000001',
+      name: 'Poster',
+      modelId: 'model-seedance-image',
+    });
+    await expect(
+      service.updateAdminTemplates(mockUser, sampleIpId, {
+        expectedVersion: 1,
+        templates: [template, { ...template, name: 'Second' }],
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockCatalog.listModels).not.toHaveBeenCalled();
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('denies unauthorized edits before catalog or asset lookups', async () => {
+    mockIps.requireEditableIp.mockRejectedValueOnce(new ForbiddenException());
+    await expect(
+      service.updateAdminTemplates(mockUser, sampleIpId, {
+        expectedVersion: 1,
+        templates: [],
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockCatalog.listModels).not.toHaveBeenCalled();
+    expect(mockPrisma.mediaAsset.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rechecks edit access under the write lock before updating', async () => {
+    mockIps.requireEditableIp
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new ForbiddenException());
+    await expect(
+      service.updateAdminTemplates(mockUser, sampleIpId, {
+        expectedVersion: 1,
+        templates: [],
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(mockIps.requireEditableIp).toHaveBeenLastCalledWith(
+      mockUser,
+      sampleIpId,
+      mockPrisma,
+    );
+    expect(
+      mockPrisma.$queryRaw.mock.calls.some(
+        ([sql]: [unknown]) =>
+          Array.isArray(sql) && sql.join(' ').includes('UPDATE ips'),
+      ),
+    ).toBe(false);
   });
 
   it('public read filters out disabled templates and strips sensitive fields', async () => {

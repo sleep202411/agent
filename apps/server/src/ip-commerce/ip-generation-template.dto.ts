@@ -26,7 +26,22 @@ export type AudienceGenerationTemplateAdmin = z.infer<
 
 export const UpdateAudienceGenerationTemplatesSchema = z
   .object({
-    templates: z.array(AudienceGenerationTemplateAdminSchema).max(50),
+    templates: z
+      .array(AudienceGenerationTemplateAdminSchema)
+      .max(50)
+      .superRefine((templates, ctx) => {
+        const ids = new Set<string>();
+        templates.forEach((template, index) => {
+          if (ids.has(template.id)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [index, 'id'],
+              message: 'Template IDs must be unique.',
+            });
+          }
+          ids.add(template.id);
+        });
+      }),
     expectedVersion: z.number().int().min(0),
   })
   .strict();

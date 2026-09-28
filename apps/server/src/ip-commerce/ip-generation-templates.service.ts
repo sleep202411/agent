@@ -13,6 +13,7 @@ import {
   AudienceGenerationTemplatePublic,
   toPublicAudienceTemplate,
   UpdateAudienceGenerationTemplatesDto,
+  UpdateAudienceGenerationTemplatesSchema,
 } from './ip-generation-template.dto';
 
 @Injectable()
@@ -74,6 +75,16 @@ export class IpGenerationTemplatesService {
     templates: AudienceGenerationTemplateAdmin[];
     version: number;
   }> {
+    await this.ips.requireEditableIp(user, ipId);
+    const parsed = UpdateAudienceGenerationTemplatesSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        message: 'Invalid audience generation templates.',
+        issues: parsed.error.issues,
+      });
+    }
+    input = parsed.data;
+
     // 1. Validate that all models exist in canonical catalog
     const knownModels = await this.catalog.listModels();
     const knownModelIds = new Set(knownModels.map((m) => m.id));
