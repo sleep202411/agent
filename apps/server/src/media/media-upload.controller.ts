@@ -21,6 +21,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   Post,
 } from '@nestjs/common';
@@ -48,6 +49,8 @@ import { MediaUploadService } from './media-upload.service';
 
 @Controller('media')
 export class MediaUploadController {
+  private readonly logger = new Logger(MediaUploadController.name);
+
   constructor(
     private readonly svc: MediaUploadService,
     private readonly readiness: MediaAssetReadinessService,
@@ -85,8 +88,17 @@ export class MediaUploadController {
     try {
       return await this.svc.confirmUpload(user.userId, body, workspaceHeader);
     } catch (error) {
-      if (body.kind === 'crew_asset_file')
-        await this.svc.cancelUpload(user.userId, body);
+      if (body.kind === 'crew_asset_file') {
+        try {
+          await this.svc.cancelUpload(user.userId, body);
+        } catch {
+          // Reservation expiry recovers failed cleanup. Keep the original
+          // confirmation status/code so clients can handle it correctly.
+          this.logger.warn(
+            'Crew upload reservation cleanup failed after confirmation failure',
+          );
+        }
+      }
       throw error;
     }
   }
