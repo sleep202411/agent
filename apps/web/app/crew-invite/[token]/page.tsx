@@ -14,7 +14,7 @@
  * better by clicking again.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   IconAlertCircle,
@@ -28,6 +28,7 @@ import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
 import { Button } from "@/components/ui/button";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { CrewApiError, crewApi } from "@/app/(site)/crews/_hooks/api";
 
 interface CrewInvitePreview {
@@ -81,15 +82,27 @@ type View =
     };
 
 export default function CrewInvitePage() {
+  const params = useParams<{ token: string }>();
+  const token = typeof params?.token === "string" ? params.token : "";
+  const { user } = useCurrentUser();
+  return <CrewInviteSession key={JSON.stringify([token, user?.id ?? null])} token={token} />;
+}
+
+function CrewInviteSession({ token }: { token: string }) {
   const t = useTranslations("crewInvite");
   const tc = useTranslations("crewCommunityInvite");
   const router = useRouter();
   const locale = useLocale() as Locale;
-  const params = useParams<{ token: string }>();
-  const token = typeof params?.token === "string" ? params.token : "";
-
   const [view, setView] = useState<View>(() => (token ? { kind: "loading" } : { kind: "invalid" }));
   const [joining, setJoining] = useState(false);
+  const pending = useRef(false);
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const [error, setError] = useState("");
   // Preview is session-gated server-side, so a signed-out recipient sees the
   // sign-in prompt first and this re-runs the lookup afterwards.
@@ -134,6 +147,7 @@ export default function CrewInvitePage() {
     openAuthDialog({
       mode: "stay",
       onSuccess: () => {
+        if (!active.current) return;
         setView({ kind: "loading" });
         setAttempt((n) => n + 1);
       },
@@ -141,7 +155,8 @@ export default function CrewInvitePage() {
   }, [openAuthDialog]);
 
   const join = useCallback(async () => {
-    if (view.kind !== "ready" || joining) return;
+    if (view.kind !== "ready" || pending.current || !active.current) return;
+    pending.current = true;
     setJoining(true);
     setError("");
     try {
@@ -149,6 +164,7 @@ export default function CrewInvitePage() {
         "/invites/accept",
         { body: { token } }
       );
+      if (!active.current) return;
       const accepted = unwrap(body);
       setView({
         kind: "joined",
@@ -158,6 +174,7 @@ export default function CrewInvitePage() {
           accepted.scope === "crew_community" ? accepted.channelHref : accepted.workspaceHref,
       });
     } catch (err) {
+      if (!active.current) return;
       if (err instanceof CrewApiError && err.status === 401) {
         // Sign in without leaving: the token stays in the address bar.
         promptSignIn();
@@ -186,9 +203,10 @@ export default function CrewInvitePage() {
       }
       setError(err instanceof CrewApiError ? err.message : t("failed"));
     } finally {
-      setJoining(false);
+      pending.current = false;
+      if (active.current) setJoining(false);
     }
-  }, [joining, promptSignIn, t, token, view]);
+  }, [promptSignIn, t, token, view]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#0a0a0f] p-5">
