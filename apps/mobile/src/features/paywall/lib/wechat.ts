@@ -7,7 +7,7 @@ import {
   createBillingCheckout,
   createComputeCustomRecharge,
   formatCny,
-  isOrderSettled,
+  isOrderFulfilled,
   isWechatScanUrl,
   listMembershipPrices,
   type BillingCheckoutResult,
@@ -35,7 +35,7 @@ function returnUrls(): { successUrl: string; backUrl: string } {
 
 function scanFromCheckout(result: BillingCheckoutResult): WechatScanCheckout | null {
   const url = result.paymentIntent?.checkoutUrl ?? null;
-  if (isOrderSettled(result.order.status) && !isWechatScanUrl(url)) return null;
+  if (isOrderFulfilled(result.order.status) && !isWechatScanUrl(url)) return null;
   if (!isWechatScanUrl(url)) {
     throw new Error("[paywall] WeChat checkout did not return a scan code.");
   }

@@ -1,14 +1,16 @@
-import IconCheck from "@tabler/icons-react-native/IconCheck";
-import IconChevronRight from "@tabler/icons-react-native/IconChevronRight";
-import IconClock from "@tabler/icons-react-native/IconClock";
-import IconFileDescription from "@tabler/icons-react-native/IconFileDescription";
-import IconGitBranch from "@tabler/icons-react-native/IconGitBranch";
-import IconLayoutGrid from "@tabler/icons-react-native/IconLayoutGrid";
-import IconLoader2 from "@tabler/icons-react-native/IconLoader2";
-import IconMovie from "@tabler/icons-react-native/IconMovie";
-import IconRotateClockwise from "@tabler/icons-react-native/IconRotateClockwise";
-import IconRoute from "@tabler/icons-react-native/IconRoute";
-import IconX from "@tabler/icons-react-native/IconX";
+import {
+  IconCheck,
+  IconChevronRight,
+  IconClock,
+  IconFileDescription,
+  IconGitBranch,
+  IconLayoutGrid,
+  IconLoader2,
+  IconMovie,
+  IconRotateClockwise,
+  IconRoute,
+  IconX,
+} from "@tabler/icons-react-native";
 import { useMemo, useState, type ComponentType } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 

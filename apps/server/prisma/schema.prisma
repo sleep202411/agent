@@ -5410,6 +5410,7 @@ model CrewInviteLinkRedemption {
 /// GitHub-Issue-like production unit. Its project/document are the editable
 /// task canvas; submissions point to immutable document versions and assets.
 model CrewTask {
+  computeRequests CrewComputeRequest[]
   disputes CrewTaskDispute[]
   extensionRequests CrewTaskExtensionRequest[]
   recruitmentPositions CrewPosition[]
@@ -10667,4 +10668,27 @@ model ProjectTaskTemplate {
   @@unique([projectType, version])
   @@index([projectType, active])
   @@map("project_task_templates")
+}
+
+// Approval is an allowance against the existing workspace wallet, never a mint.
+model CrewComputeRequest {
+  id String @id @default(uuid(7)) @db.Uuid
+  crewId String @map("crew_id")
+  taskId String @map("task_id") @db.Uuid
+  workspaceId String @map("workspace_id") @db.Uuid
+  userId String @map("user_id") @db.VarChar(64)
+  taskTitle String @map("task_title") @db.VarChar(180)
+  points Int
+  reason String @db.Text
+  status String @default("pending") @db.VarChar(16)
+  decidedByUserId String? @map("decided_by_user_id") @db.VarChar(64)
+  decisionNote String? @map("decision_note") @db.Text
+  decidedAt DateTime? @map("decided_at") @db.Timestamptz(6)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  requestKey String @map("request_key") @db.Uuid
+  task CrewTask @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Restrict)
+  @@unique([crewId, userId, requestKey], map: "crew_compute_requests_crew_user_key_unique")
+  @@index([crewId, createdAt, id])
+  @@index([taskId, userId, status])
+  @@map("crew_compute_requests")
 }

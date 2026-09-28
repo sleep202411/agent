@@ -1,3 +1,5 @@
+import { CrewComputeRequestsController } from './compute-requests/compute-requests.controller';
+import { CrewComputeRequestsService } from './compute-requests/compute-requests.service';
 import {
   ProjectStoryboardChildrenController,
   StoryStoryboardChildrenController,
@@ -183,6 +185,7 @@ import { CrewProductionService } from './production/production.service';
     CrewProductionController,
     CrewAgreementsController,
     CrewEarningsController,
+    CrewComputeRequestsController,
     CrewPayoutsController,
     ProjectTaskTemplatesAdminController,
     TaskTemplatesAdminAliasController,
@@ -225,6 +228,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAgreementArchiveWorker,
     BoldSignAgreementProvider,
     CrewEarningsService,
+    CrewComputeRequestsService,
     CrewPayoutsService,
     ProjectTaskTemplateService,
   ],

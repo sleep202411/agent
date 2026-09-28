@@ -1,6 +1,4 @@
-import IconCheck from "@tabler/icons-react-native/IconCheck";
-import IconChevronDown from "@tabler/icons-react-native/IconChevronDown";
-import IconPuzzle from "@tabler/icons-react-native/IconPuzzle";
+import { IconCheck, IconChevronDown, IconPuzzle } from "@tabler/icons-react-native";
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 

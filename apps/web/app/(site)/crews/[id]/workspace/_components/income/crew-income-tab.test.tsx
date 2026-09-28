@@ -5,6 +5,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { CrewIncomeTab } from "./crew-income-tab";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock("@/app/(site)/crews/_components/crew-compute-finance", () => ({
+  CrewComputeFinance: () => <div data-testid="compute-finance" />,
+}));
 const state = vi.hoisted(() => ({
   account: "alice",
   failure: null as Error | null,

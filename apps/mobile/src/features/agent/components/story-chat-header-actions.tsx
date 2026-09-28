@@ -1,5 +1,4 @@
-import IconAlertCircle from "@tabler/icons-react-native/IconAlertCircle";
-import IconPencilPlus from "@tabler/icons-react-native/IconPencilPlus";
+import { IconAlertCircle, IconPencilPlus } from "@tabler/icons-react-native";
 import { useState } from "react";
 import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

@@ -52,12 +52,13 @@ import {
 import {
   getBillingOrder,
   isOrderDead,
-  isOrderSettled,
+  isOrderFulfilled,
   listCommunityPointPackages,
 } from "../lib/billing-api";
 import { isPurchaseCancelled, purchaseProduct, restorePurchases } from "../lib/purchase";
 import { communityPackProduct } from "../lib/wechat";
 import { sanitizeAppWebPath } from "../lib/web-checkout";
+import { usePaywallSelection } from "../lib/use-paywall-selection";
 import { WechatScanPay } from "./wechat-scan-pay";
 
 const BRAND = Colors.dark.brand;
@@ -289,23 +290,22 @@ function ComputeRechargePanel({
 }
 
 export function PaywallScreen() {
+  const params = useLocalSearchParams<{
+    category?: string | string[];
+    returnPath?: string | string[];
+  }>();
+  const initialCategory = resolvePaywallCategory(paramValue(params.category));
+  const returnPath = paramValue(params.returnPath);
   const t = useTranslations();
   const locale = useLocale();
   const auth = useAuth();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{
-    category?: string | string[];
-    returnPath?: string | string[];
-  }>();
-
-  const rawCategory = paramValue(params.category);
-  const initialCategory: PaywallCategory = resolvePaywallCategory(rawCategory);
-  const [selected, setSelected] = useState(initialCategory);
+  const { selected, setSelected, productId, setProductId, computeAmount, setComputeAmount } =
+    usePaywallSelection(initialCategory);
   const [computeBalance, setComputeBalance] = useState<string | null>(null);
   const [communityBalance, setCommunityBalance] = useState<string | null>(null);
-  const [computeAmount, setComputeAmount] = useState(COMPUTE_RECHARGE_DEFAULT);
   const [busy, setBusy] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [communityPacks, setCommunityPacks] = useState<
@@ -318,14 +318,11 @@ export function PaywallScreen() {
     amountLabel: string;
   } | null>(null);
   const channel = useMemo(() => currentCheckoutChannel(), []);
-  const selectedRef = useRef(selected);
-  selectedRef.current = selected;
   const unsupported = channel === "web";
   const membership = isMembershipCategory(selected);
   const computePoints = selected === "compute_points";
   const products = productsForCategory(selected);
   const savePercent = yearlySavePercent(products);
-  const [productId, setProductId] = useState(products[0]?.id ?? "");
   const wechatCommunity = channel === "wechat" && selected === "community_points";
   const catalogProduct = products.find((item) => item.id === productId) ?? products[0];
   const computeProduct = computePoints ? computeCustomProduct(computeAmount) : null;
@@ -336,29 +333,13 @@ export function PaywallScreen() {
   const stackedFooter = membership || pointsCheckout;
 
   useEffect(() => {
-    setSelected(initialCategory);
-  }, [initialCategory]);
-
-  useEffect(() => {
-    if (channel === "wechat" && selected === "community_points") return;
-    const next = productsForCategory(selected);
-    const yearly = next.find((item) => item.interval === "year");
-    setProductId(yearly?.id ?? next[0]?.id ?? "");
-  }, [channel, selected]);
-
-  useEffect(() => {
     if (channel !== "wechat") return;
     let cancelled = false;
-    setCommunityPacks(null);
-    setCommunityPackError(null);
     void listCommunityPointPackages("CNY")
       .then((prices) => {
         if (cancelled) return;
         const next = prices.map(communityPackProduct);
         setCommunityPacks(next);
-        if (selectedRef.current === "community_points") {
-          setProductId(next[0]?.id ?? "");
-        }
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -369,10 +350,6 @@ export function PaywallScreen() {
       cancelled = true;
     };
   }, [channel]);
-
-  useEffect(() => {
-    if (selected === "compute_points") setComputeAmount(COMPUTE_RECHARGE_DEFAULT);
-  }, [selected]);
 
   useEffect(() => {
     let cancelled = false;
@@ -423,7 +400,7 @@ export function PaywallScreen() {
         if (walletRefreshGeneration.current !== generation) return;
         try {
           const order = await getBillingOrder(orderId);
-          if (isOrderSettled(order.status) || isOrderDead(order.status)) break;
+          if (isOrderFulfilled(order.status) || isOrderDead(order.status)) break;
         } catch {
           // Transient — try again.
         }
@@ -498,8 +475,9 @@ export function PaywallScreen() {
   };
 
   const goWeb = () => {
-    const returnPath = sanitizeAppWebPath(paramValue(params.returnPath));
-    router.push(toHref(`/pay/community?returnPath=${encodeURIComponent(returnPath)}`));
+    router.push(
+      toHref(`/pay/community?returnPath=${encodeURIComponent(sanitizeAppWebPath(returnPath))}`)
+    );
   };
 
   const heroPoints =
@@ -523,6 +501,7 @@ export function PaywallScreen() {
             key={key}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
+            disabled={actionsLocked}
             onPress={() => setSelected(key)}
             style={[styles.tab, on ? styles.tabOn : styles.tabOff]}
           >
@@ -566,6 +545,17 @@ export function PaywallScreen() {
               : `${t("paywall.payNow")} ${product?.displayPrice ?? ""}`}
         </ThemedText>
       </Pressable>
+      {membership && canRestore ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={actionsLocked}
+          onPress={() => void restore()}
+        >
+          <ThemedText type="small" themeColor="textSecondary">
+            {t("paywall.restore")}
+          </ThemedText>
+        </Pressable>
+      ) : null}
     </View>
   );
 

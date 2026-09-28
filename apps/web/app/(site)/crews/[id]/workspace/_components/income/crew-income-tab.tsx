@@ -1,5 +1,6 @@
 "use client";
 
+import { CrewComputeFinance } from "@/app/(site)/crews/_components/crew-compute-finance";
 import { useCrewExpensesSummary } from "@/app/(site)/crews/_hooks/use-expenses";
 import { AmendmentFinancePanel } from "@/app/(site)/crews/_components/amendment-finance-panel";
 
@@ -215,6 +216,7 @@ function IncomeSession({
 
   return (
     <div className="mx-auto w-full max-w-[1180px] pb-10">
+      <CrewComputeFinance crewId={crewId} crewName={crewName} />
       <Link
         className="mb-3 inline-block text-sm"
         href={`/crews/${encodeURIComponent(crewId)}/expenses`}

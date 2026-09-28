@@ -1,3 +1,4 @@
+import { requireCrewComputeAllowance } from '../crews/compute-requests/compute-allowance';
 import { ensureWalletAccount } from '../workspaces/wallet-account-admission';
 import {
   ConflictException,
@@ -185,6 +186,13 @@ export class AiGenerationBillingWalletService {
       projectId: args.job.projectId ?? null,
     });
 
+    const crewComputeAllowance = await requireCrewComputeAllowance(tx, {
+      projectId: args.job.projectId ?? null,
+      userId: args.job.userId,
+      workspaceId:
+        payer.ownerType === WalletOwnerType.workspace ? payer.ownerId : null,
+      amount,
+    });
     const nextAvailable = locked.availableBalance - amount;
     const nextHeld = locked.heldBalance + amount;
     if (nextAvailable < 0n) {
@@ -206,12 +214,15 @@ export class AiGenerationBillingWalletService {
         workspaceId: args.job.workspaceId ?? null,
         projectId: args.job.projectId ?? null,
         description: `AI generation reserved ${amount.toString()} compute points.`,
-        metadata: walletMetadata({
-          event: 'hold',
-          amount,
-          job: args.job,
-          payer,
-        }),
+        metadata: {
+          crewComputeAllowance,
+          ...walletMetadata({
+            event: 'hold',
+            amount,
+            job: args.job,
+            payer,
+          }),
+        },
       },
     });
 

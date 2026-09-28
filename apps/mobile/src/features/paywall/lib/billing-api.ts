@@ -29,11 +29,10 @@ export type BillingOrderView = {
   status: string;
 };
 
-const SETTLED_ORDER_STATUSES = new Set(["paid", "fulfilled"]);
-const DEAD_ORDER_STATUSES = new Set(["failed", "expired", "cancelled"]);
+const DEAD_ORDER_STATUSES = new Set(["failed", "expired", "canceled", "refunded"]);
 
-export function isOrderSettled(status: string): boolean {
-  return SETTLED_ORDER_STATUSES.has(status);
+export function isOrderFulfilled(status: string): boolean {
+  return status === "fulfilled";
 }
 
 export function isOrderDead(status: string): boolean {

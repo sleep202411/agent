@@ -37,11 +37,10 @@ export class ProjectTaskTemplateService {
     // Guard: some callers (tests, partial transaction mocks) may not provide
     // the projectTaskTemplate delegate. Fall back to the in-memory default.
     const hasTemplateModel =
-      client &&
-      typeof (client as any).projectTaskTemplate?.findFirst === 'function';
+      client && typeof client.projectTaskTemplate?.findFirst === 'function';
 
     if (hasTemplateModel) {
-      const found = await (client as any).projectTaskTemplate.findFirst({
+      const found = await client.projectTaskTemplate.findFirst({
         where: { projectType, active: true },
         orderBy: { version: 'desc' },
       });
@@ -72,7 +71,7 @@ export class ProjectTaskTemplateService {
     options: InstantiateTasksOptions = {},
   ): Promise<CrewTask[]> {
     // Guard: tx or tx.crewTask may be a partial mock in unit tests
-    if (!tx || !(tx as any).crewTask) {
+    if (!tx || !tx.crewTask) {
       this.logger.warn(
         `Cannot instantiate tasks for crew ${crewId}: crewTask delegate missing.`,
       );
@@ -80,7 +79,7 @@ export class ProjectTaskTemplateService {
     }
 
     // 1. Idempotency check: query CrewTask where metadata matches templateId and crewId
-    if (typeof (tx as any).crewTask.findMany === 'function') {
+    if (typeof tx.crewTask.findMany === 'function') {
       const existing = await tx.crewTask.findMany({
         where: {
           crewId,
@@ -98,9 +97,9 @@ export class ProjectTaskTemplateService {
         );
         return existing;
       }
-    } else if (typeof (tx as any).crewTask.count === 'function') {
-      const count = await (tx as any).crewTask.count({ where: { crewId } });
-      if (count > 0 && !(tx as any).crewTask.create) {
+    } else if (typeof tx.crewTask.count === 'function') {
+      const count = await tx.crewTask.count({ where: { crewId } });
+      if (count > 0 && !tx.crewTask.create) {
         return [];
       }
     }
@@ -109,7 +108,7 @@ export class ProjectTaskTemplateService {
     let workflowStateId = options.workflowStateId;
     if (
       !workflowStateId &&
-      typeof (tx as any).crewTaskWorkflowState?.findFirst === 'function'
+      typeof tx.crewTaskWorkflowState?.findFirst === 'function'
     ) {
       const openState = await tx.crewTaskWorkflowState.findFirst({
         where: { crewId, systemKey: 'open' },
@@ -132,10 +131,7 @@ export class ProjectTaskTemplateService {
     }
 
     let episodeId = options.episodeId;
-    if (
-      !episodeId &&
-      typeof (tx as any).crewEpisode?.findFirst === 'function'
-    ) {
+    if (!episodeId && typeof tx.crewEpisode?.findFirst === 'function') {
       const episode = await tx.crewEpisode.findFirst({
         where: { crewId },
         orderBy: { number: 'asc' },
@@ -150,8 +146,8 @@ export class ProjectTaskTemplateService {
     }
 
     // Find current max task number in crew
-    let lastTask: { number: number; rank: any } | null = null;
-    if (typeof (tx as any).crewTask.findFirst === 'function') {
+    let lastTask: { number: number; rank: Prisma.Decimal } | null = null;
+    if (typeof tx.crewTask.findFirst === 'function') {
       lastTask = await tx.crewTask.findFirst({
         where: { crewId },
         orderBy: { number: 'desc' },
@@ -161,7 +157,7 @@ export class ProjectTaskTemplateService {
 
     let currentNumber = (lastTask?.number ?? 0) + 1;
     let currentRank = lastTask?.rank
-      ? (lastTask.rank as Prisma.Decimal).plus(1024)
+      ? lastTask.rank.plus(1024)
       : new Prisma.Decimal(1024);
 
     const createdTasks: CrewTask[] = [];
@@ -194,7 +190,7 @@ export class ProjectTaskTemplateService {
           : {}),
       };
 
-      if (typeof (tx as any).crewTask.create === 'function') {
+      if (typeof tx.crewTask.create === 'function') {
         const task = await tx.crewTask.create({
           data: {
             id: taskId,
@@ -218,7 +214,7 @@ export class ProjectTaskTemplateService {
     }
 
     // Pass 2: wire up default dependencies
-    if (typeof (tx as any).crewTaskDependency?.create === 'function') {
+    if (typeof tx.crewTaskDependency?.create === 'function') {
       for (const item of items) {
         if (item.defaultDependencies?.length) {
           const blockedTaskId = keyToTaskId.get(item.templateKey);
@@ -253,7 +249,7 @@ export class ProjectTaskTemplateService {
     projectType?: CrewProductionKind;
     includeInactive?: boolean;
   }): Promise<ProjectTaskTemplate[]> {
-    const where: any = {};
+    const where: Prisma.ProjectTaskTemplateWhereInput = {};
     if (filter?.projectType) where.projectType = filter.projectType;
     if (!filter?.includeInactive) where.active = true;
     return this.prisma.projectTaskTemplate.findMany({
@@ -267,29 +263,27 @@ export class ProjectTaskTemplateService {
     name: string;
     definition: unknown;
   }): Promise<ProjectTaskTemplate> {
-    // Determine next version number for this projectType
-    const latest = await this.prisma.projectTaskTemplate.findFirst({
-      where: { projectType: input.projectType },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    });
-    const nextVersion = (latest?.version ?? 0) + 1;
-
-    // Deactivate prior versions of the same projectType (only one active version at a time)
-    await this.prisma.projectTaskTemplate.updateMany({
-      where: { projectType: input.projectType, active: true },
-      data: { active: false },
-    });
-
-    // Create the new version
-    return this.prisma.projectTaskTemplate.create({
-      data: {
-        projectType: input.projectType,
-        name: input.name,
-        version: nextVersion,
-        active: true,
-        definition: input.definition as any,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      // Saving and plot-tree import share this lock, including the first version.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:project-task-template:${input.projectType}`}, 0))`;
+      const latest = await tx.projectTaskTemplate.findFirst({
+        where: { projectType: input.projectType },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+      await tx.projectTaskTemplate.updateMany({
+        where: { projectType: input.projectType, active: true },
+        data: { active: false },
+      });
+      return tx.projectTaskTemplate.create({
+        data: {
+          projectType: input.projectType,
+          name: input.name,
+          version: (latest?.version ?? 0) + 1,
+          active: true,
+          definition: input.definition as Prisma.InputJsonValue,
+        },
+      });
     });
   }
 
@@ -313,31 +307,10 @@ export class ProjectTaskTemplateService {
       items: DEFAULT_INTERACTIVE_FILM_TASK_TEMPLATE.items,
     };
 
-    const template = await this.prisma.$transaction(async (tx) => {
-      const latest = await tx.projectTaskTemplate.findFirst({
-        where: { projectType: CrewProductionKind.interactive_film },
-        orderBy: { version: 'desc' },
-        select: { version: true },
-      });
-      const nextVersion = (latest?.version ?? 0) + 1;
-
-      await tx.projectTaskTemplate.updateMany({
-        where: {
-          projectType: CrewProductionKind.interactive_film,
-          active: true,
-        },
-        data: { active: false },
-      });
-
-      return tx.projectTaskTemplate.create({
-        data: {
-          projectType: CrewProductionKind.interactive_film,
-          name: validated.title,
-          version: nextVersion,
-          active: true,
-          definition: definition as unknown as Prisma.InputJsonValue,
-        },
-      });
+    const template = await this.saveAdmin({
+      projectType: CrewProductionKind.interactive_film,
+      name: validated.title,
+      definition,
     });
 
     return {

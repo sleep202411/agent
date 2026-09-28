@@ -1,9 +1,8 @@
+import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react-native";
 import {
   ExperienceRuntimeManifestSchema,
   type ExperienceRuntimeManifest,
 } from "@repo/shared/experience-runtime";
-import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
-import IconRefresh from "@tabler/icons-react-native/IconRefresh";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";

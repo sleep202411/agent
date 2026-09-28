@@ -42,8 +42,10 @@ export function useStoryCommunityAccess(
   const pending = useRef<AccessRequest | null>(null);
   const payingRef = useRef(false);
   const quoteCache = useRef<StoryCommunityAccessQuote | null>(null);
+  const quoteGeneration = useRef(0);
 
   const finish = useCallback((allowed: boolean) => {
+    quoteGeneration.current += 1;
     const current = pending.current;
     pending.current = null;
     setRequest(null);
@@ -54,6 +56,7 @@ export function useStoryCommunityAccess(
 
   useEffect(
     () => () => {
+      quoteGeneration.current += 1;
       pending.current?.resolve(false);
       pending.current = null;
     },
@@ -61,28 +64,25 @@ export function useStoryCommunityAccess(
   );
 
   const loadQuote = useCallback(async (): Promise<StoryCommunityAccessQuote | null> => {
+    const generation = ++quoteGeneration.current;
+    const currentRequest = pending.current;
     setQuoteLoading(true);
     setQuoteError(null);
     try {
       const latest = await fetchStoryCommunityAccessQuote(runtime.gameId, runtime.buildId);
+      if (generation !== quoteGeneration.current || pending.current !== currentRequest) return null;
       quoteCache.current = latest;
       setQuote(latest);
       return latest;
     } catch (failure) {
+      if (generation !== quoteGeneration.current || pending.current !== currentRequest) return null;
       const message = failure instanceof Error ? failure.message : t("play.communityAccess.failed");
       setQuoteError(message);
       return null;
     } finally {
-      setQuoteLoading(false);
+      if (generation === quoteGeneration.current) setQuoteLoading(false);
     }
   }, [runtime.buildId, runtime.gameId, t]);
-
-  useEffect(() => {
-    if (!request) return;
-    void loadQuote().then((latest) => {
-      if (latest?.ownedKeys.includes(request.requirement.key)) finish(true);
-    });
-  }, [finish, loadQuote, request]);
 
   useFocusEffect(
     useCallback(() => {
@@ -119,10 +119,14 @@ export function useStoryCommunityAccess(
           pending.current = next;
           setError(null);
           setRequest(next);
+          void loadQuote().then((latest) => {
+            if (pending.current === next && latest?.ownedKeys.includes(requirement.key))
+              finish(true);
+          });
         }),
       formatPrice,
     }),
-    [formatPrice, runtime.buildId, runtime.gameId]
+    [finish, formatPrice, loadQuote, runtime.buildId, runtime.gameId]
   );
 
   const price =

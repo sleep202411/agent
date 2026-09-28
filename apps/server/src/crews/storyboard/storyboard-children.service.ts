@@ -19,8 +19,12 @@ import {
   LinkStoryboardChildInput,
   CreateStoryboardChildInput,
 } from './storyboard-children.dto';
-import { PlotTree } from '../templates/project-task-template.types';
+import {
+  PlotTree,
+  PlotTreeSchema,
+} from '../templates/project-task-template.types';
 import { randomUUID } from 'node:crypto';
+import { CrewAuthorizationService } from '../crew-authorization.service';
 
 @Injectable()
 export class StoryboardChildrenService {
@@ -28,6 +32,7 @@ export class StoryboardChildrenService {
     private readonly prisma: PrismaService,
     private readonly storyPermissions: StoryPermissionService,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly authorization: CrewAuthorizationService,
   ) {}
 
   private async resolveCrew(
@@ -97,8 +102,31 @@ export class StoryboardChildrenService {
     });
   }
 
-  private async resolvePlotTree(crewId: string): Promise<PlotTree | null> {
-    const template = await this.prisma.projectTaskTemplate.findFirst({
+  private async resolvePlotTree(
+    crewId: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<PlotTree | null> {
+    const plotTask = await client.crewTask.findFirst({
+      where: { crewId, taskKind: CrewTaskKind.plot_tree, deletedAt: null },
+      select: { metadata: true },
+    });
+    const metadata = plotTask?.metadata;
+    if (
+      metadata &&
+      typeof metadata === 'object' &&
+      !Array.isArray(metadata) &&
+      'plotTree' in metadata
+    ) {
+      const snapshot = PlotTreeSchema.safeParse(metadata.plotTree);
+      if (!snapshot.success) {
+        throw new BadRequestException({
+          message: 'The imported crew plot tree is invalid.',
+        });
+      }
+      return snapshot.data;
+    }
+
+    const template = await client.projectTaskTemplate.findFirst({
       where: {
         projectType: CrewProductionKind.interactive_film,
         active: true,
@@ -115,8 +143,11 @@ export class StoryboardChildrenService {
     return null;
   }
 
-  private async resolveStoryboardTask(crewId: string) {
-    const storyboardTask = await this.prisma.crewTask.findFirst({
+  private async resolveStoryboardTask(
+    crewId: string,
+    client: Prisma.TransactionClient | PrismaService = this.prisma,
+  ) {
+    const storyboardTask = await client.crewTask.findFirst({
       where: {
         crewId,
         deletedAt: null,
@@ -136,11 +167,26 @@ export class StoryboardChildrenService {
     return storyboardTask;
   }
 
+  private async withTaskWrite<T>(
+    crewId: string,
+    userId: string,
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+      await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+      const result = await write(tx);
+      await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+      return result;
+    });
+  }
+
   async list(
     projectId: string,
     userId: string,
   ): Promise<StoryboardChildItem[]> {
     const crewId = await this.resolveCrew(projectId, userId);
+    await this.authorization.require(crewId, userId, 'tasks.view');
     const plotTree = await this.resolvePlotTree(crewId);
     if (!plotTree || !Array.isArray(plotTree.nodes)) {
       return [];
@@ -182,7 +228,7 @@ export class StoryboardChildrenService {
 
     return plotTree.nodes.map((node) => {
       const linked = taskByNodeId.get(node.id);
-      const content = (node.content ?? {}) as Record<string, unknown>;
+      const content = node.content ?? {};
       const title =
         typeof content.title === 'string' && content.title.trim()
           ? content.title.trim()
@@ -205,91 +251,114 @@ export class StoryboardChildrenService {
     input: LinkStoryboardChildInput,
   ): Promise<{ taskId: string }> {
     const crewId = await this.resolveCrew(projectId, userId);
-    const plotTree = await this.resolvePlotTree(crewId);
-    if (!plotTree || !Array.isArray(plotTree.nodes)) {
-      throw new BadRequestException({
-        message:
-          'No active plot tree template configured for interactive_film.',
-      });
-    }
+    return this.withTaskWrite(crewId, userId, async (tx) => {
+      const plotTree = await this.resolvePlotTree(crewId, tx);
+      if (!plotTree || !Array.isArray(plotTree.nodes)) {
+        throw new BadRequestException({
+          message:
+            'No active plot tree template configured for interactive_film.',
+        });
+      }
 
-    const targetNode = plotTree.nodes.find((n) => n.id === nodeId);
-    if (!targetNode) {
-      throw new NotFoundException({
-        message: `Plot tree node ${nodeId} not found in active template.`,
-      });
-    }
+      const targetNode = plotTree.nodes.find((n) => n.id === nodeId);
+      if (!targetNode) {
+        throw new NotFoundException({
+          message: `Plot tree node ${nodeId} not found in active template.`,
+        });
+      }
 
-    const storyboardTask = await this.resolveStoryboardTask(crewId);
-    if (!storyboardTask) {
-      throw new BadRequestException({
-        message: 'No storyboard task found in crew.',
-      });
-    }
+      const storyboardTask = await this.resolveStoryboardTask(crewId, tx);
+      if (!storyboardTask) {
+        throw new BadRequestException({
+          message: 'No storyboard task found in crew.',
+        });
+      }
 
-    // Check if a child task already linked to this nodeId
-    const existingChild = await this.prisma.crewTask.findFirst({
-      where: {
-        crewId,
-        parentId: storyboardTask.id,
-        deletedAt: null,
-        metadata: {
-          path: ['plotTreeNodeId'],
-          equals: nodeId,
+      // Check if a child task already linked to this nodeId
+      const existingChild = await tx.crewTask.findFirst({
+        where: {
+          crewId,
+          parentId: storyboardTask.id,
+          deletedAt: null,
+          metadata: {
+            path: ['plotTreeNodeId'],
+            equals: nodeId,
+          },
         },
-      },
-      select: { id: true },
-    });
+        select: { id: true },
+      });
 
-    if (existingChild) {
-      if (existingChild.id === input.taskId) {
+      if (existingChild) {
+        if (existingChild.id === input.taskId) {
+          return { taskId: existingChild.id };
+        }
+        // If linked twice to same nodeId with different taskId or re-linking
         return { taskId: existingChild.id };
       }
-      // If linked twice to same nodeId with different taskId or re-linking
-      return { taskId: existingChild.id };
-    }
 
-    // Validate the target task
-    const taskToLink = await this.prisma.crewTask.findFirst({
-      where: {
-        id: input.taskId,
-        crewId,
-        deletedAt: null,
-      },
-      select: { id: true, metadata: true, parentId: true },
-    });
-
-    if (!taskToLink) {
-      throw new NotFoundException({
-        message: 'Task not found in this crew.',
+      // Validate the target task
+      const taskToLink = await tx.crewTask.findFirst({
+        where: {
+          id: input.taskId,
+          crewId,
+          deletedAt: null,
+        },
+        select: { id: true, metadata: true, parentId: true },
       });
-    }
 
-    // Check if task is already linked to a different nodeId
-    const existingMeta = (taskToLink.metadata ?? {}) as Record<string, unknown>;
-    if (
-      typeof existingMeta.plotTreeNodeId === 'string' &&
-      existingMeta.plotTreeNodeId !== nodeId
-    ) {
-      throw new ConflictException({
-        message: `Task is already linked to plot node ${existingMeta.plotTreeNodeId}.`,
+      if (!taskToLink) {
+        throw new NotFoundException({
+          message: 'Task not found in this crew.',
+        });
+      }
+
+      let ancestorId: string | null = storyboardTask.id;
+      const visited = new Set<string>();
+      while (ancestorId) {
+        if (ancestorId === taskToLink.id || visited.has(ancestorId)) {
+          throw new ConflictException({
+            message: 'Linking this task would create a task hierarchy cycle.',
+          });
+        }
+        visited.add(ancestorId);
+        const ancestor: { parentId: string | null } | null =
+          await tx.crewTask.findFirst({
+            where: { id: ancestorId, crewId, deletedAt: null },
+            select: { parentId: true },
+          });
+        ancestorId = ancestor?.parentId ?? null;
+      }
+
+      // Check if task is already linked to a different nodeId
+      const existingMeta = (taskToLink.metadata ?? {}) as Record<
+        string,
+        unknown
+      >;
+      if (
+        typeof existingMeta.plotTreeNodeId === 'string' &&
+        existingMeta.plotTreeNodeId !== nodeId
+      ) {
+        throw new ConflictException({
+          message: `Task is already linked to plot node ${existingMeta.plotTreeNodeId}.`,
+        });
+      }
+
+      const updatedMeta: Prisma.InputJsonObject = {
+        ...(existingMeta as Prisma.InputJsonObject),
+        plotTreeNodeId: nodeId,
+      };
+
+      await tx.crewTask.update({
+        where: { id: taskToLink.id },
+        data: {
+          parentId: storyboardTask.id,
+          metadata: updatedMeta,
+          version: { increment: 1 },
+        },
       });
-    }
 
-    const updatedMeta: Prisma.InputJsonObject = {
-      ...(existingMeta as Prisma.InputJsonObject),
-      plotTreeNodeId: nodeId,
-    };
-
-    await this.prisma.crewTask.update({
-      where: { id: taskToLink.id },
-      data: {
-        parentId: storyboardTask.id,
-        metadata: updatedMeta,
-      },
+      return { taskId: taskToLink.id };
     });
-
-    return { taskId: taskToLink.id };
   }
 
   async create(
@@ -299,98 +368,102 @@ export class StoryboardChildrenService {
     input: CreateStoryboardChildInput,
   ): Promise<{ taskId: string }> {
     const crewId = await this.resolveCrew(projectId, userId);
-    const plotTree = await this.resolvePlotTree(crewId);
-    if (!plotTree || !Array.isArray(plotTree.nodes)) {
-      throw new BadRequestException({
-        message:
-          'No active plot tree template configured for interactive_film.',
-      });
-    }
+    return this.withTaskWrite(crewId, userId, async (tx) => {
+      const plotTree = await this.resolvePlotTree(crewId, tx);
+      if (!plotTree || !Array.isArray(plotTree.nodes)) {
+        throw new BadRequestException({
+          message:
+            'No active plot tree template configured for interactive_film.',
+        });
+      }
 
-    const targetNode = plotTree.nodes.find((n) => n.id === nodeId);
-    if (!targetNode) {
-      throw new NotFoundException({
-        message: `Plot tree node ${nodeId} not found in active template.`,
-      });
-    }
+      const targetNode = plotTree.nodes.find((n) => n.id === nodeId);
+      if (!targetNode) {
+        throw new NotFoundException({
+          message: `Plot tree node ${nodeId} not found in active template.`,
+        });
+      }
 
-    const storyboardTask = await this.resolveStoryboardTask(crewId);
-    if (!storyboardTask) {
-      throw new BadRequestException({
-        message: 'No storyboard task found in crew.',
-      });
-    }
+      const storyboardTask = await this.resolveStoryboardTask(crewId, tx);
+      if (!storyboardTask) {
+        throw new BadRequestException({
+          message: 'No storyboard task found in crew.',
+        });
+      }
 
-    // Idempotency: if child task exists with metadata.plotTreeNodeId = nodeId
-    const existing = await this.prisma.crewTask.findFirst({
-      where: {
-        crewId,
-        parentId: storyboardTask.id,
-        deletedAt: null,
-        metadata: {
-          path: ['plotTreeNodeId'],
-          equals: nodeId,
+      // Idempotency: if child task exists with metadata.plotTreeNodeId = nodeId
+      const existing = await tx.crewTask.findFirst({
+        where: {
+          crewId,
+          parentId: storyboardTask.id,
+          deletedAt: null,
+          metadata: {
+            path: ['plotTreeNodeId'],
+            equals: nodeId,
+          },
         },
-      },
-      select: { id: true },
-    });
-
-    if (existing) {
-      return { taskId: existing.id };
-    }
-
-    // Determine workflow state
-    let workflowStateId = storyboardTask.workflowStateId;
-    if (!workflowStateId) {
-      const openState = await this.prisma.crewTaskWorkflowState.findFirst({
-        where: { crewId, systemKey: CrewTaskStatus.open },
         select: { id: true },
       });
-      workflowStateId = openState?.id ?? '';
-    }
 
-    // Determine max number
-    const lastTask = await this.prisma.crewTask.findFirst({
-      where: { crewId },
-      orderBy: { number: 'desc' },
-      select: { number: true, rank: true },
+      if (existing) {
+        return { taskId: existing.id };
+      }
+
+      // Children start open even when their parent is already completed.
+      const openState = await tx.crewTaskWorkflowState.findFirst({
+        where: { crewId, systemKey: CrewTaskStatus.open, archived: false },
+        select: { id: true },
+      });
+      if (!openState) {
+        throw new BadRequestException({
+          message: 'No open workflow column is available in this crew.',
+        });
+      }
+      const workflowStateId = openState.id;
+
+      // Determine max number
+      const lastTask = await tx.crewTask.findFirst({
+        where: { crewId },
+        orderBy: { number: 'desc' },
+        select: { number: true, rank: true },
+      });
+
+      const nextNumber = (lastTask?.number ?? 0) + 1;
+      const nextRank = lastTask?.rank
+        ? lastTask.rank.plus(1024)
+        : new Prisma.Decimal(1024);
+
+      const nodeContent = targetNode.content ?? {};
+      const defaultTitle =
+        typeof nodeContent.title === 'string' && nodeContent.title.trim()
+          ? nodeContent.title.trim()
+          : `${targetNode.type}: ${targetNode.id}`;
+
+      const taskTitle = input.title?.trim() || defaultTitle;
+
+      const metadata: Prisma.InputJsonObject = {
+        plotTreeNodeId: nodeId,
+        nodeType: targetNode.type,
+        generatedFrom: 'storyboard-plot-tree',
+      };
+
+      const created = await tx.crewTask.create({
+        data: {
+          id: randomUUID(),
+          crewId,
+          number: nextNumber,
+          title: taskTitle,
+          description: '',
+          parentId: storyboardTask.id,
+          workflowStateId,
+          rank: nextRank,
+          createdByUserId: userId,
+          metadata,
+        },
+        select: { id: true },
+      });
+
+      return { taskId: created.id };
     });
-
-    const nextNumber = (lastTask?.number ?? 0) + 1;
-    const nextRank = lastTask?.rank
-      ? (lastTask.rank as Prisma.Decimal).plus(1024)
-      : new Prisma.Decimal(1024);
-
-    const nodeContent = (targetNode.content ?? {}) as Record<string, unknown>;
-    const defaultTitle =
-      typeof nodeContent.title === 'string' && nodeContent.title.trim()
-        ? nodeContent.title.trim()
-        : `${targetNode.type}: ${targetNode.id}`;
-
-    const taskTitle = input.title?.trim() || defaultTitle;
-
-    const metadata: Prisma.InputJsonObject = {
-      plotTreeNodeId: nodeId,
-      nodeType: targetNode.type,
-      generatedFrom: 'storyboard-plot-tree',
-    };
-
-    const created = await this.prisma.crewTask.create({
-      data: {
-        id: randomUUID(),
-        crewId,
-        number: nextNumber,
-        title: taskTitle,
-        description: '',
-        parentId: storyboardTask.id,
-        workflowStateId,
-        rank: nextRank,
-        createdByUserId: userId,
-        metadata,
-      },
-      select: { id: true },
-    });
-
-    return { taskId: created.id };
   }
 }

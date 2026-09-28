@@ -1,11 +1,13 @@
+import {
+  IconChevronRight,
+  IconHome,
+  IconNews,
+  IconUser,
+  IconUserCircle,
+  IconUsersGroup,
+} from "@tabler/icons-react-native";
 import type { ComponentType } from "react";
 import type { SvgProps } from "react-native-svg";
-import IconChevronRight from "@tabler/icons-react-native/IconChevronRight";
-import IconHome from "@tabler/icons-react-native/IconHome";
-import IconNews from "@tabler/icons-react-native/IconNews";
-import IconUser from "@tabler/icons-react-native/IconUser";
-import IconUserCircle from "@tabler/icons-react-native/IconUserCircle";
-import IconUsersGroup from "@tabler/icons-react-native/IconUsersGroup";
 
 export type AppIconName = "chevronRight" | "creators" | "crews" | "home" | "mine" | "news";
 

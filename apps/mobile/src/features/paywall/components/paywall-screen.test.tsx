@@ -79,7 +79,7 @@ vi.mock("../lib/billing-api", () => ({
   listCommunityPointPackages: state.packs,
   getBillingOrder: vi.fn(),
   isOrderDead: () => false,
-  isOrderSettled: () => false,
+  isOrderFulfilled: () => false,
 }));
 vi.mock("../lib/purchase", () => ({
   purchaseProduct: state.buy,

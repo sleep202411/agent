@@ -1,0 +1,63 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+const { PGlite } = process.getBuiltinModule('module').createRequire(__filename)(
+  '@electric-sql/pglite',
+) as typeof import('@electric-sql/pglite');
+
+describe('Crew compute request migration', () => {
+  let db: import('@electric-sql/pglite').PGlite;
+  const task = '01994bd8-0000-7000-8000-000000000001';
+  beforeAll(async () => {
+    db = await PGlite.create();
+    await db.exec(
+      `CREATE TABLE crew_tasks (id uuid, crew_id text, UNIQUE(id, crew_id)); INSERT INTO crew_tasks VALUES ('${task}', 'crew');`,
+    );
+    await db.exec(
+      readFileSync(
+        resolve(
+          __dirname,
+          '../../../prisma/migrations/20260928160000_crew_compute_requests/migration.sql',
+        ),
+        'utf8',
+      ),
+    );
+  }, 30000);
+  afterAll(async () => {
+    await db.close();
+  });
+  beforeEach(async () => {
+    await db.exec('DELETE FROM crew_compute_requests');
+  });
+  const insert = (crew = 'crew', points = 50) =>
+    db.query(
+      `INSERT INTO crew_compute_requests (id, crew_id, task_id, workspace_id, user_id, task_title, points, reason, request_key) VALUES ('01994bd8-0000-7000-8000-000000000002', $1, $2, '01994bd8-0000-7000-8000-000000000003', 'creator', 'Shot', $3, 'Render', '01994bd8-0000-7000-8000-000000000004')`,
+      [crew, task, points],
+    );
+  it('rejects cross-Crew task references and invalid amounts', async () => {
+    await expect(insert('other')).rejects.toThrow();
+    await expect(insert('crew', 0)).rejects.toThrow();
+  });
+  it('retains requests when task deletion is attempted', async () => {
+    await insert();
+    await expect(
+      db.query('DELETE FROM crew_tasks WHERE id = $1', [task]),
+    ).rejects.toThrow();
+    expect(
+      (await db.query('SELECT points FROM crew_compute_requests')).rows,
+    ).toEqual([{ points: 50 }]);
+  });
+  it('requires a decision actor and timestamp and rejects duplicate keys', async () => {
+    await insert();
+    await expect(
+      db.exec("UPDATE crew_compute_requests SET status = 'approved'"),
+    ).rejects.toThrow();
+    await db.exec(
+      "UPDATE crew_compute_requests SET status = 'approved', decided_by_user_id = 'owner', decided_at = CURRENT_TIMESTAMP",
+    );
+    await expect(
+      db.exec(
+        "INSERT INTO crew_compute_requests SELECT '01994bd8-0000-7000-8000-000000000005', crew_id, task_id, workspace_id, user_id, task_title, points, reason, status, decided_by_user_id, decision_note, decided_at, created_at, request_key FROM crew_compute_requests",
+      ),
+    ).rejects.toThrow();
+  });
+});

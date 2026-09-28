@@ -40,6 +40,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
       },
+      crewTask: { findUnique: jest.fn().mockResolvedValue(null) },
       walletAccount: {
         createMany,
         findUniqueOrThrow: jest.fn(() =>
@@ -111,6 +112,47 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       ownerType: 'workspace',
       ownerId: 'host-ws',
     });
+  });
+
+  it('checks an approved task allowance before reserving any points', async () => {
+    const { tx } = buildTx();
+    tx.crewTask.findUnique.mockResolvedValue({
+      id: 'task',
+      deletedAt: null,
+      crew: { workspaceId: 'host-ws', deletedAt: null },
+      assignees: [{ userId: 'guest-user' }],
+      computeRequests: [
+        {
+          userId: 'guest-user',
+          points: 4,
+          status: 'approved',
+          workspaceId: 'host-ws',
+          createdAt: new Date(),
+        },
+      ],
+    });
+    const extended = {
+      ...tx,
+      walletTransaction: {
+        ...tx.walletTransaction,
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      walletLedgerEntry: {
+        ...tx.walletLedgerEntry,
+        aggregate: jest
+          .fn()
+          .mockResolvedValue({ _sum: { availableDelta: 0n } }),
+      },
+    };
+    const service = new AiGenerationBillingWalletService(
+      null as never,
+      null as never,
+    );
+    await expect(
+      service.reserveForJobInTransaction({ tx: extended as never, job: job() }),
+    ).rejects.toThrow('allowance exceeded');
+    expect(tx.walletTransaction.create).not.toHaveBeenCalled();
+    expect(tx.walletLedgerEntry.create).not.toHaveBeenCalled();
   });
 
   it('never queries the actor workspace while resolving a project payer', async () => {
@@ -213,6 +255,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       availableBalance: 80n,
     };
     const prisma = {
+      crewTask: { findUnique: jest.fn().mockResolvedValue(null) },
       walletAccount: {
         findUnique: jest
           .fn()

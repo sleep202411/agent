@@ -6,7 +6,7 @@ import QRCode from "react-native-qrcode-svg";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 
-import { getBillingOrder, isOrderDead, isOrderSettled } from "../lib/billing-api";
+import { getBillingOrder, isOrderDead, isOrderFulfilled } from "../lib/billing-api";
 
 type ScanStatus = "pending" | "paid" | "expired";
 const POLL_MS = 2500;
@@ -39,24 +39,28 @@ export function WechatScanPay({
   useEffect(() => {
     if (status !== "pending") return;
     let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const tick = async () => {
       try {
         const order = await getBillingOrder(orderId);
-        if (isOrderSettled(order.status)) {
+        if (!alive) return;
+        if (isOrderFulfilled(order.status)) {
+          setStatus("paid");
           onPaidRef.current();
-          if (alive) setStatus("paid");
-        } else if (alive && isOrderDead(order.status)) {
+          return;
+        } else if (isOrderDead(order.status)) {
           setStatus("expired");
+          return;
         }
       } catch {
         // Transient — keep polling.
       }
+      if (alive) timer = setTimeout(() => void tick(), POLL_MS);
     };
-    const id = setInterval(() => void tick(), POLL_MS);
     void tick();
     return () => {
       alive = false;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, [orderId, status]);
 

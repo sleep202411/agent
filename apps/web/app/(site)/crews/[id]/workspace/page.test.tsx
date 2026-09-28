@@ -384,7 +384,7 @@ describe("crew workspace tabs", () => {
 
     for (const label of [
       "Tasks",
-      "Income",
+      "Finance",
       "Asset Center",
       "Members",
       "Positions",
@@ -409,7 +409,7 @@ describe("crew workspace tabs", () => {
       "Team chat",
       "Community chat",
       "Tasks",
-      "Income",
+      "Finance",
       "Asset Center",
       "Members",
       "Positions",
@@ -449,7 +449,7 @@ describe("crew workspace tabs", () => {
     nav.search = new URLSearchParams("tab=tasks");
     render();
 
-    click(tabButton("Income"));
+    click(tabButton("Finance"));
     expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=income");
     reload();
     expect(pane()).toBe("income");
@@ -611,7 +611,7 @@ describe("crew workspace with an unresolvable chat thread", () => {
       "Team chat",
       "Community chat",
       "Tasks",
-      "Income",
+      "Finance",
       "Asset Center",
       "Members",
       "Positions",

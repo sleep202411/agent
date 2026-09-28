@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { PlotTreeImportInput } from '../templates/project-task-template.types';
 import {
   CrewAssetNodeKind,
   CrewProductionKind,
@@ -300,6 +301,7 @@ export async function seedCrewProductionTasks(
     kind: CrewProductionKind;
     locale: ProductionLocale;
     openWorkflowStateId: string;
+    plotTree?: PlotTreeImportInput;
   },
 ) {
   const existing = await tx.crewTask.count({ where: { crewId: input.crewId } });
@@ -376,6 +378,13 @@ export async function seedCrewProductionTasks(
         description: '',
         workflowStateId: input.openWorkflowStateId,
         taskKind: CrewTaskKind.plot_tree,
+        ...(input.plotTree
+          ? {
+              metadata: {
+                plotTree: input.plotTree as unknown as Prisma.InputJsonValue,
+              },
+            }
+          : {}),
         episodeId: input.episodeId,
         rank: rank,
         createdByUserId: input.userId,

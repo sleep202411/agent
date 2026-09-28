@@ -1,18 +1,20 @@
-import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
-import IconBan from "@tabler/icons-react-native/IconBan";
-import IconBox from "@tabler/icons-react-native/IconBox";
-import IconChevronDown from "@tabler/icons-react-native/IconChevronDown";
-import IconLoader2 from "@tabler/icons-react-native/IconLoader2";
-import IconMapPin from "@tabler/icons-react-native/IconMapPin";
-import IconMovie from "@tabler/icons-react-native/IconMovie";
-import IconPlayerPlay from "@tabler/icons-react-native/IconPlayerPlay";
-import IconRefresh from "@tabler/icons-react-native/IconRefresh";
-import IconUser from "@tabler/icons-react-native/IconUser";
-import IconWallet from "@tabler/icons-react-native/IconWallet";
+import {
+  IconAlertTriangle,
+  IconBan,
+  IconBox,
+  IconChevronDown,
+  IconLoader2,
+  IconMapPin,
+  IconMovie,
+  IconPlayerPlay,
+  IconRefresh,
+  IconUser,
+  IconWallet,
+} from "@tabler/icons-react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { useLayoutEffect, useMemo, useState, type ComponentType } from "react";
 import {
   ActivityIndicator,
   Alert,

@@ -176,6 +176,7 @@ export async function createCrewTx(
         kind: productionKind,
         locale: input.productionTemplateLocale,
         openWorkflowStateId,
+        plotTree: input.plotTree,
       });
     }
     await seedCrewTaskKindTemplates(tx, {
