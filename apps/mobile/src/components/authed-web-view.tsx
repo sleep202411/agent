@@ -52,7 +52,34 @@ function sanitizeCookieValue(value: string): string {
   return value.replace(/[;,\s]/g, "");
 }
 
-export function AuthedWebView({ path, title, nativeShell = true }: AuthedWebViewProps) {
+/** Only our login document signals an expired app session. Provider logins and
+ * URLs mentioning login in a query, fragment, or content slug are normal navigation.
+ */
+function isAppLoginUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      url.origin === new URL(webBaseUrl).origin &&
+      /^\/(?:en-US\/|zh-CN\/|zh-HK\/)?login\/?$/.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function AuthedWebView(props: AuthedWebViewProps) {
+  const auth = useAuth();
+  // Remount the whole session, not just the native WebView: an expired-session
+  // prompt otherwise hides that WebView and survives a successful new login.
+  return (
+    <AuthedWebViewSession
+      key={JSON.stringify([auth.generation, auth.session?.token, props.path])}
+      {...props}
+    />
+  );
+}
+
+function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebViewProps) {
   const auth = useAuth();
   const authGate = useAuthGate();
   const locale = useLocale();
@@ -100,7 +127,7 @@ export function AuthedWebView({ path, title, nativeShell = true }: AuthedWebView
     canGoBackRef.current = navState.canGoBack;
     // The web side only redirects to /login when the token was rejected —
     // surface the NATIVE sign-in instead of rendering the web login page.
-    if (navState.url.includes("/login")) {
+    if (isAppLoginUrl(navState.url)) {
       webViewRef.current?.stopLoading();
       setFailure("auth");
     }

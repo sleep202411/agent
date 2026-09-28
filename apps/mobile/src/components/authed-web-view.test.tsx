@@ -3,6 +3,7 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AuthedWebView } from "./authed-web-view";
 const state = vi.hoisted(() => ({
   token: { tokenName: "satoken", tokenValue: "fixture-token" } as {
     tokenName: string;
@@ -36,7 +37,6 @@ vi.mock("@/config", () => ({ webBaseUrl: "https://app.example" }));
 vi.mock("@/constants/theme", () => ({ Spacing: {} }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useLocale: () => "en-US", useTranslations: () => (s: string) => s }));
-import { AuthedWebView } from "./authed-web-view";
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -95,4 +95,40 @@ it("preserves token text without allowing injected JavaScript", async () => {
   expect(execute("https://app.example").cookie).toBe(
     'satoken=value"\\quoted; path=/; secure; samesite=lax'
   );
+});
+
+it.each([
+  "https://app.example/en-US/ip/login-guide",
+  "https://app.example/en-US/referral?next=/login",
+  "https://app.example/en-US/referral#/login",
+  "https://payments.example/login",
+  "https://app.example.external.example/en-US/login",
+  "https://app.example:444/en-US/login",
+])("does not replace valid navigation with native sign-in: %s", async (url) => {
+  await mount();
+  await act(async () => state.props.onNavigationStateChange({ url, canGoBack: false }));
+  expect(host.textContent).not.toContain("authedWeb.sessionNeeded");
+});
+
+it.each([
+  "https://app.example/login",
+  "https://app.example/en-US/login?next=%2Freferral",
+  "https://app.example/zh-CN/login",
+  "https://app.example/zh-HK/login/",
+])("requests native sign-in for the trusted login route: %s", async (url) => {
+  await mount();
+  await act(async () => state.props.onNavigationStateChange({ url, canGoBack: false }));
+  expect(host.textContent).toContain("authedWeb.sessionNeeded");
+});
+
+it("clears the previous session's sign-in failure after a fresh token arrives", async () => {
+  await mount();
+  await act(async () =>
+    state.props.onNavigationStateChange({ url: "https://app.example/login", canGoBack: false })
+  );
+  expect(host.textContent).toContain("authedWeb.sessionNeeded");
+  state.token = { tokenName: "satoken", tokenValue: "new-session-token" };
+  await mount();
+  expect(host.textContent).not.toContain("authedWeb.sessionNeeded");
+  expect(state.props.source.headers.Cookie).toBe("satoken=new-session-token");
 });
