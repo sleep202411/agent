@@ -58,18 +58,28 @@ Output → `$FD_OUT_DIR` (default `~/Desktop/FizzDragon-builds/`), named
    from the build; for **Android**, also upload a **512×512 PNG** app icon
    (generate from `assets/images/icon.png`: `sips -z 512 512 …`).
 
-## Native pay SDKs (RevenueCat + WeChat)
+## Native pay SDKs (StoreKit / RevenueCat / WeChat)
 
-`react-native-purchases` and `expo-wechat` are native modules. Metro JS updates
-do not pick them up — rebuild the binary after install or plugin changes:
+`react-native-iap`, `react-native-purchases`, and `expo-wechat` are native
+modules. Metro JS updates do not pick them up — rebuild the binary after
+install or plugin changes:
 
-- iOS / Play: `npx eas-cli build --profile development-global --platform ios|android`
+- CN iOS StoreKit: `npx eas-cli build --profile development-cn --platform ios`
+- Global iOS / Play (RevenueCat): `npx eas-cli build --profile development-global --platform ios|android`
 - CN Android WeChat: `npx eas-cli build --profile development-cn --platform android`
 
-Dev / preview still mock checkout. Production uses Apple IAP or Play Billing
-through RevenueCat, and WeChat Pay on the CN Android package only. Bake public
-keys (`EXPO_PUBLIC_REVENUECAT_*`, `EXPO_PUBLIC_WECHAT_APP_ID`) into the release
-env; never put RevenueCat secrets or WeChat merchant certs in the app.
+CN iOS talks to StoreKit through `react-native-iap` (no RevenueCat key).
+Global iOS and Google Play still use RevenueCat. CN Android uses WeChat Pay.
+Bake public keys (`EXPO_PUBLIC_REVENUECAT_*` for global, `EXPO_PUBLIC_WECHAT_APP_ID`
+for CN Android) into the release env; never put RevenueCat secrets or WeChat
+merchant certs in the app.
+
+**WeChat Universal Links (CN iOS):** Web hosts AASA + `/app/` on
+`fizzdragon.fizzspace.cn`. Mobile bakes
+`EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK=https://fizzdragon.fizzspace.cn/app/` so
+`associatedDomains` includes `applinks:fizzdragon.fizzspace.cn` and
+`expo-wechat` `registerApp` gets the same URL. Rebuild the CN iOS binary after
+changing this; OTA is not enough. AASA must list Bundle ID `cn.fizzspaceapp`.
 
 ## How signing/config stays correct (the footguns this fixes)
 
