@@ -95,6 +95,11 @@ describe('video probe process failures', () => {
   afterEach(() => jest.restoreAllMocks());
 
   test.each([
+    [
+      { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' },
+      'MEDIA_VIDEO_PROBE_OUTPUT_LIMIT',
+      503,
+    ],
     [{ code: 'ENOENT' }, 'MEDIA_VIDEO_PROBE_UNAVAILABLE', 503],
     [{ killed: true, signal: 'SIGTERM' }, 'MEDIA_VIDEO_PROBE_TIMEOUT', 503],
     [{ code: 1 }, 'MEDIA_VIDEO_INVALID', 422],

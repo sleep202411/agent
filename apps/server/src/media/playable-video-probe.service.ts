@@ -102,6 +102,16 @@ export class PlayableVideoProbeService {
             killed?: boolean;
             signal?: NodeJS.Signals | null;
           };
+          if (systemError.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') {
+            reject(
+              new ServiceUnavailableException({
+                code: 'MEDIA_VIDEO_PROBE_OUTPUT_LIMIT',
+                message:
+                  'The server video inspector exceeded its output limit. The file has not been validated.',
+              }),
+            );
+            return;
+          }
           if (systemError.code === 'ENOENT') {
             reject(
               new ServiceUnavailableException({
