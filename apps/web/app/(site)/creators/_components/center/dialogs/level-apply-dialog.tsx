@@ -2,7 +2,7 @@
 
 /**
  * Owner-only dialog: apply for a Java certification level.
- * Required: level. Optional: crew, IP, attachment + notes.
+ * Required: level and crew. Optional: IP, attachment + notes.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -206,13 +206,17 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
       return;
     }
     const crew = crews.find((c) => c.id === crewId);
+    if (!crew) {
+      toast.error(t("levels.apply.missingRequiredCrew"));
+      return;
+    }
     const ip = ips.find((i) => i.id === ipId);
     if (pendingLevelIds.has(level.id)) {
       toast.error(t("levels.apply.levelPendingHint"));
       return;
     }
     const origin = window.location.origin;
-    const crewLink = crew ? `${origin}${localizePath(`/crews/${crew.id}`, locale)}` : "";
+    const crewLink = `${origin}${localizePath(`/crews/${crew.id}`, locale)}`;
     const ipLink = ip ? `${origin}${localizePath(ipRoomPath(ip.roomNumber), locale)}` : "";
     const note = extraInfo.trim();
     if (note.length > EXTRA_MAX) {
@@ -224,7 +228,7 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
     try {
       await submitUserLevelApply({
         levelId: level.id,
-        crewName: crew?.name ?? "",
+        crewName: crew.name,
         crewLink,
         ipName: ip?.title ?? "",
         ipLink,
@@ -247,7 +251,12 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
   const loadingLists =
     levelsQuery.isPending || pendingQuery.isPending || crewsQuery.isPending || ipsQuery.isPending;
   const canSubmit =
-    Boolean(levelId) && !selectedLevelPending && !submitting && !uploading && !loadingLists;
+    Boolean(selectedLevel) &&
+    crews.some((crew) => crew.id === crewId) &&
+    !selectedLevelPending &&
+    !submitting &&
+    !uploading &&
+    !loadingLists;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -310,16 +319,16 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
 
               <div className="grid gap-5 sm:grid-cols-2">
                 <Field>
-                  <FieldLabel>{t("levels.apply.crewLabel")}</FieldLabel>
-                  <Select
-                    value={crewId || SELECT_NONE}
-                    onValueChange={(value) => setCrewId(value === SELECT_NONE ? "" : value)}
-                  >
-                    <SelectTrigger className="h-9 w-full">
+                  <FieldLabel required>{t("levels.apply.crewLabel")}</FieldLabel>
+                  <Select value={crewId} onValueChange={setCrewId}>
+                    <SelectTrigger
+                      className="h-9 w-full"
+                      aria-required="true"
+                      aria-label={t("levels.apply.crewLabel")}
+                    >
                       <SelectValue placeholder={t("levels.apply.crewPlaceholder")} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={SELECT_NONE}>{t("levels.apply.optionalSkip")}</SelectItem>
                       {crews.length === 0 ? (
                         <SelectItem value="__empty_crews" disabled>
                           {t("levels.apply.crewEmpty")}
@@ -333,6 +342,13 @@ function LevelApplyForm({ open, onOpenChange, lockedLevelId }: LevelApplyDialogP
                       )}
                     </SelectContent>
                   </Select>
+                  <FieldDescription>
+                    {t(
+                      crews.length === 0
+                        ? "levels.apply.crewEmpty"
+                        : "levels.apply.missingRequiredCrew"
+                    )}
+                  </FieldDescription>
                 </Field>
 
                 <Field>
