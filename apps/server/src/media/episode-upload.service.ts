@@ -371,10 +371,18 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
     } finally {
       clearInterval(heartbeat);
       await renewal;
-      await this.prisma.episodeUpload.updateMany({
-        where: { id, leaseUntil: until },
-        data: { leaseUntil: null },
-      });
+      try {
+        await this.prisma.episodeUpload.updateMany({
+          where: { id, leaseUntil: until },
+          data: { leaseUntil: null },
+        });
+      } catch (error) {
+        // The lease expires naturally. Cleanup must not replace the action's
+        // error or turn a persisted successful upload into a failed response.
+        this.logger.error(
+          `Could not release episode upload lease ${id}: ${String(error)}`,
+        );
+      }
     }
   }
 

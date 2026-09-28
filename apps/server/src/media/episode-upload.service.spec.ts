@@ -201,6 +201,43 @@ describe('episode multipart uploads', () => {
     expect(f.row().status).toBe('completed');
   });
 
+  it.each([false, true])(
+    'preserves the completion outcome when lease release fails (action fails: %s)',
+    async (actionFails) => {
+      const f = fixture();
+      const original = new BadRequestException('Video validation failed');
+      const releaseError = new Error('Lease release unavailable');
+      f.prisma.episodeUpload.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockRejectedValueOnce(releaseError);
+      if (actionFails) f.uploads.confirmUpload.mockRejectedValueOnce(original);
+      const log = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      try {
+        const completion = f.service.complete('owner', f.row().id);
+        if (actionFails) {
+          await expect(completion).rejects.toBe(original);
+        } else {
+          await expect(completion).resolves.toEqual({
+            mediaAssetId: 'asset',
+            url: 'https://example.test/video',
+          });
+          expect(f.row().status).toBe('completed');
+        }
+        expect(log).toHaveBeenCalledWith(
+          expect.stringContaining('Could not release episode upload lease'),
+        );
+        expect(f.prisma.episodeUpload.updateMany).toHaveBeenLastCalledWith({
+          where: { id: f.row().id, leaseUntil: expect.any(Date) as Date },
+          data: { leaseUntil: null },
+        });
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+
   it('recovers completion after storage accepted the merge but the response was lost', async () => {
     const f = fixture();
     f.storage.headStoredObject.mockResolvedValue({
