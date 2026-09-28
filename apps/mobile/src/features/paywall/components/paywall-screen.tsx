@@ -1,12 +1,13 @@
-import IconBolt from "@tabler/icons-react-native/icons/IconBolt";
-import IconCheck from "@tabler/icons-react-native/icons/IconCheck";
-import IconCoins from "@tabler/icons-react-native/icons/IconCoins";
-import IconCrown from "@tabler/icons-react-native/icons/IconCrown";
-import IconSparkles from "@tabler/icons-react-native/icons/IconSparkles";
+import IconBolt from "@tabler/icons-react-native/IconBolt";
+import IconCheck from "@tabler/icons-react-native/IconCheck";
+import IconCoins from "@tabler/icons-react-native/IconCoins";
+import IconCrown from "@tabler/icons-react-native/IconCrown";
+import IconSparkles from "@tabler/icons-react-native/IconSparkles";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -26,6 +27,7 @@ import { Colors, Spacing } from "@/constants/theme";
 import { fetchCommunityPointBalance } from "@/data/ip-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
+import { toHref } from "@/lib/navigation";
 
 import {
   COMPUTE_RECHARGE_DEFAULT,
@@ -289,9 +291,11 @@ export function PaywallScreen() {
   const locale = useLocale();
   const auth = useAuth();
   const theme = useTheme();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     category?: string | string[];
+    returnPath?: string | string[];
   }>();
 
   const rawCategory = paramValue(params.category);
@@ -544,12 +548,12 @@ export function PaywallScreen() {
       </View>
       <Pressable
         accessibilityRole="button"
-        disabled={!product}
-        onPress={notifyUnavailable}
+        disabled={!product || actionsLocked}
+        onPress={() => void buy()}
         style={[
           styles.payButton,
           stackedFooter && styles.payButtonFull,
-          !product && styles.payButtonDisabled,
+          (!product || actionsLocked) && styles.payButtonDisabled,
         ]}
       >
         <ThemedText type="smallBold" style={styles.payLabel}>
@@ -582,11 +586,7 @@ export function PaywallScreen() {
           <ThemedText type="small" themeColor="textSecondary" style={styles.unsupportedBody}>
             {t("paywall.unsupportedBody")}
           </ThemedText>
-          <Pressable
-            accessibilityRole="button"
-            onPress={notifyUnavailable}
-            style={styles.payButton}
-          >
+          <Pressable accessibilityRole="button" onPress={goWeb} style={styles.payButton}>
             <ThemedText type="smallBold" style={styles.payLabel}>
               {t("paywall.continueWeb")}
             </ThemedText>

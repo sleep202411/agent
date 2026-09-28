@@ -1,6 +1,6 @@
-import IconCircleCheck from "@tabler/icons-react-native/icons/IconCircleCheck";
-import IconRefresh from "@tabler/icons-react-native/icons/IconRefresh";
-import IconX from "@tabler/icons-react-native/icons/IconX";
+import IconCircleCheck from "@tabler/icons-react-native/IconCircleCheck";
+import IconRefresh from "@tabler/icons-react-native/IconRefresh";
+import IconX from "@tabler/icons-react-native/IconX";
 import { useEffect, useRef, useState } from "react";
 import { Modal, Pressable, StyleSheet, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";

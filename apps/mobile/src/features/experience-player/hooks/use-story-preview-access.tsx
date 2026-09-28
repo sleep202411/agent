@@ -1,5 +1,5 @@
 import type { ExperienceAccessRequirement } from "@repo/shared/experience-runtime";
-import IconLock from "@tabler/icons-react-native/icons/IconLock";
+import IconLock from "@tabler/icons-react-native/IconLock";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
