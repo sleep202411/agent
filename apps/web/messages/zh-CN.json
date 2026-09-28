@@ -4759,7 +4759,8 @@
     "commentOne": "镜头运动现在更清楚了，动态预演继续沿用这个构图。",
     "commentTwo": "我更新了追逐方向，并替换了第三、第四格。",
     "commentThree": "已通过下一轮审核，请保留上一个版本。",
-    "addComment": "添加评论…"
+    "addComment": "添加评论…",
+    "dragMoveHint": "将文件拖到文件夹上即可移动，也可以勾选多个文件一起拖动。"
   },
   "crewTransfers": {
     "title": "文件传输",

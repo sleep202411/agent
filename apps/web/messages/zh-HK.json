@@ -4759,7 +4759,8 @@
     "commentOne": "鏡頭運動現在更清楚了，動態預演繼續沿用這個構圖。",
     "commentTwo": "我更新了追逐方向，並替換了第三、第四格。",
     "commentThree": "已通過下一輪審核，請保留上一個版本。",
-    "addComment": "新增評論…"
+    "addComment": "新增評論…",
+    "dragMoveHint": "將檔案拖到資料夾上即可移動，也可以勾選多個檔案一起拖動。"
   },
   "crewTransfers": {
     "title": "檔案傳輸",

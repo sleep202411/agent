@@ -126,6 +126,9 @@ let linkFails = false;
 let linkedWorkspaceId: string | null = null;
 let folderReadFails = false;
 let bulkMove = false;
+let allowOrganize = true;
+let folderPermission = "manage";
+let filePermission = "manage";
 let movedSecond = false;
 let memberReadFails = false;
 let accessVersion = 1;
@@ -192,7 +195,7 @@ function installFetch() {
             view: true,
             createFolder: true,
             upload: true,
-            organize: true,
+            organize: allowOrganize,
             trash: true,
             restore: true,
             deleteForever: true,
@@ -272,7 +275,11 @@ function installFetch() {
                 ...ROOT_ITEMS.map((item) =>
                   refreshedAsset && item.id === "file-1"
                     ? { ...item, name: "Collaborator.png", updatedAt: "2026-09-23T10:00:00.000Z" }
-                    : item
+                    : {
+                        ...item,
+                        effectivePermission:
+                          item.kind === "folder" ? folderPermission : filePermission,
+                      }
                 ),
                 ...(bulkMove && !movedSecond
                   ? [{ ...ROOT_ITEMS[1], id: "file-2", name: "second.png" }]
@@ -374,6 +381,9 @@ beforeEach(() => {
 afterEach(() => {
   folderReadFails = false;
   bulkMove = false;
+  allowOrganize = true;
+  folderPermission = "manage";
+  filePermission = "manage";
   movedSecond = false;
   memberReadFails = false;
   accessVersion = 1;
@@ -1174,4 +1184,117 @@ it("disables cached workspace authority after an overview refresh fails", async 
   await vi.waitFor(() =>
     expect((byText("button", "Link workspace") as HTMLButtonElement).disabled).toBe(false)
   );
+});
+
+function assetRow(name: string) {
+  const row = document
+    .querySelector<HTMLInputElement>(`input[aria-label="Select ${name}"]`)
+    ?.closest<HTMLElement>('[role="button"]');
+  if (!row) throw new Error(`Missing asset row: ${name}`);
+  return row;
+}
+function dragEvent(target: HTMLElement, type: string) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "dataTransfer", {
+    value: { effectAllowed: "", dropEffect: "", setData: vi.fn() },
+  });
+  target.dispatchEvent(event);
+  return event;
+}
+it.each(["List view", "Card view"])("moves a dragged file into a folder in %s", async (view) => {
+  bulkMove = true;
+  await render();
+  if (view === "Card view")
+    await click(document.querySelector<HTMLButtonElement>('button[aria-label="Card view"]')!);
+  const source = assetRow("second.png"),
+    folder = assetRow("Storyboard");
+  expect(source.draggable).toBe(true);
+  await act(async () => {
+    dragEvent(source, "dragstart");
+    dragEvent(folder, "dragover");
+  });
+  expect(folder.className).toContain("ring-primary");
+  await act(async () => {
+    dragEvent(folder, "drop");
+    dragEvent(folder, "drop");
+  });
+  await vi.waitFor(() => expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(1));
+  expect(requests.find((r) => r.method === "PATCH")?.body).toMatchObject({
+    parentId: "folder-1",
+    expectedUpdatedAt: ROOT_ITEMS[1].updatedAt,
+  });
+  expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull();
+});
+it("moves selected files together and keeps only failures for retry", async () => {
+  bulkMove = true;
+  await render();
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select second.png"]')!);
+  await act(async () => {
+    dragEvent(assetRow("second.png"), "dragstart");
+    dragEvent(assetRow("Storyboard"), "drop");
+  });
+  await vi.waitFor(() => expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(2));
+  await vi.waitFor(() =>
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "concept.png: Name already exists"
+    )
+  );
+  expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("1"));
+  expect(
+    document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')?.checked
+  ).toBe(true);
+});
+it("ignores external drops and files used as drop targets", async () => {
+  await render();
+  await act(async () => {
+    dragEvent(assetRow("Storyboard"), "drop");
+  });
+  await act(async () => {
+    dragEvent(assetRow("concept.png"), "dragstart");
+    dragEvent(assetRow("concept.png"), "drop");
+  });
+  expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+});
+it("rejects a drag selection containing the destination folder", async () => {
+  await render();
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!);
+  await click(document.querySelector<HTMLInputElement>('input[aria-label="Select Storyboard"]')!);
+  await act(async () => {
+    expect(dragEvent(assetRow("concept.png"), "dragstart").defaultPrevented).toBe(true);
+    dragEvent(assetRow("Storyboard"), "drop");
+  });
+  expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+});
+
+it("does not enable dragging without organization permission", async () => {
+  allowOrganize = false;
+  await render();
+  expect(assetRow("concept.png").draggable).toBe(false);
+  await act(async () => {
+    expect(dragEvent(assetRow("concept.png"), "dragstart").defaultPrevented).toBe(true);
+    dragEvent(assetRow("Storyboard"), "drop");
+  });
+  expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+});
+
+it.each(["folder", "file"])("rejects moving with view-only %s access", async (kind) => {
+  if (kind === "folder") folderPermission = "view";
+  else filePermission = "view";
+  await render();
+  await act(async () => {
+    dragEvent(assetRow("concept.png"), "dragstart");
+    dragEvent(assetRow("Storyboard"), "drop");
+  });
+  expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(0);
+});
+it("accepts a folder with upload permission, matching the existing Move contract", async () => {
+  folderPermission = "upload";
+  bulkMove = true;
+  await render();
+  await act(async () => {
+    dragEvent(assetRow("second.png"), "dragstart");
+    dragEvent(assetRow("Storyboard"), "drop");
+  });
+  await vi.waitFor(() => expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(1));
 });

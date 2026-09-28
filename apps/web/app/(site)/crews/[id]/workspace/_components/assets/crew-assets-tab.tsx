@@ -2,7 +2,15 @@
 
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 
-import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  type HTMLAttributes,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   IconAdjustmentsHorizontal,
   IconArrowLeft,
@@ -137,6 +145,15 @@ export function CrewAssetsTab({
   const [assetAction, setAssetAction] = useState<AssetAction | null>(null);
   const [assetActionTargets, setAssetActionTargets] = useState<CrewAssetPreviewItem[]>([]);
   const [assetActionBusy, setAssetActionBusy] = useState(false);
+  const assetActionPending = useRef(false);
+  const draggedAssets = useRef<{ crewId: string; targets: CrewAssetPreviewItem[] } | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    draggedAssets.current = null;
+    return () => {
+      draggedAssets.current = null;
+    };
+  }, [crewId, activeSource]);
   const [assetActionErrors, setAssetActionErrors] = useState<string[]>([]);
   const [actionName, setActionName] = useState("");
   const [renameVersion, setRenameVersion] = useState("");
@@ -440,14 +457,20 @@ export function CrewAssetsTab({
     setDestinationId(primary?.parentId ?? "");
   };
 
-  const submitAssetAction = async () => {
-    if (!assetAction || assetActionTargets.length === 0 || assetActionBusy) return;
-    if (assetAction === "move" && (folderQuery.isPending || folderQuery.isError)) return;
+  const submitAssetAction = async (drop?: {
+    targets: CrewAssetPreviewItem[];
+    parentId: string;
+  }) => {
+    const action = drop ? "move" : assetAction;
+    const targets = drop?.targets ?? assetActionTargets;
+    if (!action || targets.length === 0 || assetActionPending.current) return;
+    if (!drop && action === "move" && (folderQuery.isPending || folderQuery.isError)) return;
+    assetActionPending.current = true;
     setAssetActionBusy(true);
     setAssetActionErrors([]);
     try {
-      if (assetAction === "rename") {
-        const target = assetActionTargets[0];
+      if (action === "rename") {
+        const target = targets[0];
         if (!target) return;
         const name = actionName.trim();
         if (!name) return;
@@ -458,9 +481,9 @@ export function CrewAssetsTab({
         });
         toast.success(t("renamed"));
       } else {
-        const parentId = destinationId || null;
+        const parentId = drop?.parentId ?? (destinationId || null);
         const results = await Promise.allSettled(
-          assetActionTargets.map((target) =>
+          targets.map((target) =>
             updateAsset.mutateAsync({
               nodeId: target.id,
               expectedUpdatedAt: target.updatedAt,
@@ -469,13 +492,13 @@ export function CrewAssetsTab({
           )
         );
         const failures = results.flatMap((result, index) =>
-          result.status === "rejected"
-            ? [{ target: assetActionTargets[index]!, error: result.reason }]
-            : []
+          result.status === "rejected" ? [{ target: targets[index]!, error: result.reason }] : []
         );
         const movedCount = results.length - failures.length;
         if (movedCount) toast.success(t("moved", { count: movedCount }));
         if (failures.length) {
+          setAssetAction("move");
+          setDestinationId(parentId ?? "");
           setAssetActionErrors(
             failures.map(
               ({ target, error }) => `${target.name}: ${describeError(error, t("operationFailed"))}`
@@ -503,8 +526,84 @@ export function CrewAssetsTab({
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
     } finally {
+      assetActionPending.current = false;
       setAssetActionBusy(false);
     }
+  };
+
+  const assetDragProps = (item: CrewAssetPreviewItem): HTMLAttributes<HTMLElement> => {
+    const dragEnabled =
+      capabilities?.organize === true && activeSource !== "trash" && !assetActionBusy && !bulkBusy;
+    const editable = dragEnabled && hasAssetPermission(item.effectivePermission, "edit");
+    const canDrop = () => {
+      const drag = draggedAssets.current;
+      return (
+        dragEnabled &&
+        hasAssetPermission(item.effectivePermission, "upload") &&
+        !assetActionPending.current &&
+        item.kind === "folder" &&
+        drag?.crewId === crewId &&
+        drag.targets.length > 0 &&
+        drag.targets.every((target) => {
+          const current = sourceItems.find((source) => source.id === target.id);
+          return (
+            current &&
+            current.id !== item.id &&
+            current.parentId !== item.id &&
+            hasAssetPermission(current.effectivePermission, "edit")
+          );
+        })
+      );
+    };
+    return {
+      draggable: editable && item.kind !== "folder",
+      onDragStart: (event) => {
+        draggedAssets.current = null;
+        const targets = checkedIds.has(item.id) ? checkedAssets : [item];
+        if (
+          !editable ||
+          assetActionPending.current ||
+          targets.length === 0 ||
+          targets.some(
+            (target) =>
+              target.kind === "folder" || !hasAssetPermission(target.effectivePermission, "edit")
+          )
+        ) {
+          event.preventDefault();
+          return;
+        }
+        draggedAssets.current = { crewId, targets };
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-fizzdragon-crew-assets", crewId);
+      },
+      onDragOver: (event) => {
+        if (!canDrop()) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setDropTargetId(item.id);
+      },
+      onDragLeave: (event) => {
+        if (
+          event.relatedTarget instanceof Node &&
+          event.currentTarget.contains(event.relatedTarget)
+        )
+          return;
+        setDropTargetId((current) => (current === item.id ? null : current));
+      },
+      onDrop: (event) => {
+        if (!canDrop()) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const targets = draggedAssets.current!.targets;
+        draggedAssets.current = null;
+        setDropTargetId(null);
+        void submitAssetAction({ targets, parentId: item.id });
+      },
+      onDragEnd: () => {
+        draggedAssets.current = null;
+        setDropTargetId(null);
+      },
+    };
   };
 
   return (
@@ -850,6 +949,9 @@ export function CrewAssetsTab({
                 }
               }}
             >
+              {capabilities?.organize && activeSource !== "trash" ? (
+                <p className="px-4 py-2 text-xs text-muted-foreground">{t("dragMoveHint")}</p>
+              ) : null}
               {assetQuery.isLoading ? (
                 <AssetLoadingState t={t} />
               ) : assetQuery.isError && !assetQuery.data ? (
@@ -861,6 +963,8 @@ export function CrewAssetsTab({
                 />
               ) : viewMode === "list" ? (
                 <AssetList
+                  assetDragProps={assetDragProps}
+                  dropTargetId={dropTargetId}
                   items={filteredItems}
                   checkedIds={checkedIds}
                   selectedAssetId={selectedAssetId}
@@ -882,6 +986,8 @@ export function CrewAssetsTab({
                 />
               ) : (
                 <AssetGrid
+                  assetDragProps={assetDragProps}
+                  dropTargetId={dropTargetId}
                   items={filteredItems}
                   checkedIds={checkedIds}
                   selectedAssetId={selectedAssetId}
@@ -1195,6 +1301,8 @@ function SourceButton({
 }
 
 function AssetList({
+  assetDragProps,
+  dropTargetId,
   items,
   checkedIds,
   selectedAssetId,
@@ -1211,6 +1319,8 @@ function AssetList({
   onToggleAll,
   onToggleFavorite,
 }: {
+  assetDragProps: (item: CrewAssetPreviewItem) => HTMLAttributes<HTMLElement>;
+  dropTargetId: string | null;
   items: CrewAssetPreviewItem[];
   checkedIds: Set<string>;
   selectedAssetId: string;
@@ -1310,6 +1420,7 @@ function AssetList({
         return (
           <div
             key={item.id}
+            {...assetDragProps(item)}
             role="button"
             tabIndex={0}
             onClick={() => onSelect(item)}
@@ -1326,6 +1437,7 @@ function AssetList({
               }
             }}
             className={cn(
+              dropTargetId === item.id && "bg-primary/15 ring-2 ring-inset ring-primary",
               "group grid min-h-11 cursor-pointer items-center border-b border-border/45 px-2 text-xs outline-none transition-colors",
               gridColumns,
               selected
@@ -1402,6 +1514,8 @@ function AssetList({
 }
 
 function AssetGrid({
+  assetDragProps,
+  dropTargetId,
   items,
   checkedIds,
   selectedAssetId,
@@ -1411,6 +1525,8 @@ function AssetGrid({
   onToggleChecked,
   onToggleFavorite,
 }: {
+  assetDragProps: (item: CrewAssetPreviewItem) => HTMLAttributes<HTMLElement>;
+  dropTargetId: string | null;
   items: CrewAssetPreviewItem[];
   checkedIds: Set<string>;
   selectedAssetId: string;
@@ -1430,6 +1546,7 @@ function AssetGrid({
         return (
           <article
             key={item.id}
+            {...assetDragProps(item)}
             role="button"
             tabIndex={0}
             onClick={() => onSelect(item)}
@@ -1446,6 +1563,7 @@ function AssetGrid({
               }
             }}
             className={cn(
+              dropTargetId === item.id && "bg-primary/15 ring-2 ring-inset ring-primary",
               "group relative cursor-pointer overflow-hidden rounded-xl border bg-card/35 outline-none transition-all",
               selected
                 ? "border-primary ring-1 ring-primary/30"

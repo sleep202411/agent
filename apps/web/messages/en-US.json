@@ -4759,7 +4759,8 @@
     "commentOne": "The camera move is clearer now. Keep this framing for the animatic.",
     "commentTwo": "I updated the chase direction and replaced panels three and four.",
     "commentThree": "Approved for the next review. Please retain the previous version.",
-    "addComment": "Add a comment…"
+    "addComment": "Add a comment…",
+    "dragMoveHint": "Drag files onto a folder to move them. Select multiple files to move them together."
   },
   "crewTransfers": {
     "title": "File transfers",
