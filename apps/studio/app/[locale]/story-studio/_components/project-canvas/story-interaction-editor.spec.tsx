@@ -1,3 +1,4 @@
+import { TooltipProvider } from "@/components/ui/tooltip";
 // @vitest-environment jsdom
 
 import { act, useState } from "react";
@@ -109,7 +110,11 @@ describe("StoryInteractionEditor", () => {
     await changeEnd(5);
     expect(document.body.querySelector<HTMLInputElement>("[data-branch-at]")?.value).toBe("8.0");
     await act(async () =>
-      root.render(<ControlledEditor key="implicit" initialDrafts={[draft()]} onClose={vi.fn()} />)
+      root.render(
+        <TooltipProvider>
+          <ControlledEditor key="implicit" initialDrafts={[draft()]} onClose={vi.fn()} />
+        </TooltipProvider>
+      )
     );
     await changeEnd(5);
     await changeEnd(2);
@@ -244,7 +249,13 @@ describe("StoryInteractionEditor", () => {
       );
     }
 
-    await act(async () => root.render(<ClosableEditor />));
+    await act(async () =>
+      root.render(
+        <TooltipProvider>
+          <ClosableEditor />
+        </TooltipProvider>
+      )
+    );
     const launch = buttonWithText(container, "Launch editor");
     launch.focus();
     await click(launch);
@@ -257,7 +268,11 @@ describe("StoryInteractionEditor", () => {
 
 async function renderEditor(root: Root, initialDrafts: StoryInteractionDraft[] = []) {
   await act(async () => {
-    root.render(<ControlledEditor initialDrafts={initialDrafts} onClose={vi.fn()} />);
+    root.render(
+      <TooltipProvider>
+        <ControlledEditor initialDrafts={initialDrafts} onClose={vi.fn()} />
+      </TooltipProvider>
+    );
   });
 }
 
@@ -340,5 +355,9 @@ async function changeEnd(value: number) {
       String(value)
     );
     input.dispatchEvent(new Event("input", { bubbles: true }));
+    // React 17+ listens for `focusout` (bubbling), not `blur` (non-bubbling),
+    // when handling onBlur. Dispatching `blur` alone never reaches the handler,
+    // so TimeField's blur-commit never fires.
+    input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
   });
 }

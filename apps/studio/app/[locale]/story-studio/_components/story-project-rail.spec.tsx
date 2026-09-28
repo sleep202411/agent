@@ -66,6 +66,7 @@ describe("StoryProjectRail", () => {
       "sidebar.stats",
       "sidebar.catalog",
       "chapters.action",
+      "sidebar.analytics",
       "label",
       "share",
     ]);

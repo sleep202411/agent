@@ -163,6 +163,20 @@ export function StoryHotspotStage({
     onDrawComplete();
   };
 
+  const cancelPointerOperation = (event: KonvaEventObject<PointerEvent>) => {
+    const operation = drawOperationRef.current;
+    if (!operation || operation.pointerId !== event.evt.pointerId) return;
+    drawOperationRef.current = null;
+    const stage = event.target.getStage();
+    if (stage?.container().hasPointerCapture?.(operation.pointerId)) {
+      stage.container().releasePointerCapture(operation.pointerId);
+    }
+    paintPreview(null);
+    // A cancelled draw must not commit a hotspot. Release the operation so the
+    // next pointer can start a fresh one, but skip onCreate entirely.
+    onDrawComplete();
+  };
+
   if (width <= 0 || height <= 0) return null;
 
   return (
@@ -173,7 +187,7 @@ export function StoryHotspotStage({
         onPointerDown={beginPointerOperation}
         onPointerMove={updatePointerOperation}
         onPointerUp={endPointerOperation}
-        onPointerCancel={endPointerOperation}
+        onPointerCancel={cancelPointerOperation}
       >
         <Layer>
           {drafts.map((draft, index) => (

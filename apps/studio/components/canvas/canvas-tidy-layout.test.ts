@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Edge, Node } from "@xyflow/react";
 import {
   computeCanvasTidyLayout,
@@ -6,6 +6,15 @@ import {
   resolveCanvasTidyTargets,
   type CanvasTidyPosition,
 } from "./canvas-tidy-layout";
+
+// jsdom has no Worker, so swap the browser client (which spawns one) for
+// the bundled in-thread ELK. Same layout algorithm, different executor.
+vi.mock("./browser-elk-layout-client", async () => {
+  const bundled = await import("elkjs/lib/elk.bundled.js");
+  return {
+    createBrowserElkLayoutEngine: () => new bundled.default({}),
+  };
+});
 
 describe("resolveCanvasTidyTargets", () => {
   it("tidies the whole canvas when selection scoping is off", () => {

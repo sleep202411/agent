@@ -250,8 +250,24 @@ describe("Infinite Canvas Copilot panel", () => {
       setValue?.call(input, "Do not lose this exact instruction");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const storageFailure = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new DOMException("Storage unavailable", "QuotaExceededError");
+    // jsdom's Storage exposes setItem as an own property, so both prototype
+    // and instance spies silently pass through. Replace the whole object to
+    // force the write to fail, then restore in afterEach.
+    const originalSessionStorage = window.sessionStorage;
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: {
+        getItem: () => null,
+        setItem: () => {
+          throw new DOMException("Storage unavailable", "QuotaExceededError");
+        },
+        removeItem: () => undefined,
+        clear: () => undefined,
+        key: () => null,
+        get length() {
+          return 0;
+        },
+      } as unknown as Storage,
     });
 
     await act(async () => {
@@ -264,7 +280,10 @@ describe("Infinite Canvas Copilot panel", () => {
       "Do not lose this exact instruction"
     );
     expect(container.querySelector('[data-status-message="recoveryStorageError"]')).not.toBeNull();
-    storageFailure.mockRestore();
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: originalSessionStorage,
+    });
   });
 
   it("turns Cancel into an explicit declined tool output so the loop can continue", async () => {
