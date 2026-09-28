@@ -88,3 +88,40 @@ describe('terminal failure barrier', () => {
     expect(findUnique).not.toHaveBeenCalled();
   });
 });
+
+describe('pending progress barrier', () => {
+  it('matches only the live provider attempt and leaves a lost race untouched', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const findUnique = jest.fn();
+    const tx = { aiJob: { updateMany, findUnique } };
+    const repository = new AiGenerationRepository(
+      {
+        $transaction: (work: (client: typeof tx) => unknown) => work(tx),
+      } as never,
+      {} as never,
+    );
+    await expect(
+      repository.updateProgressIfRunning(
+        { id: 'job', attempt: 2, providerJobId: 'provider-task' },
+        { stage: 'generating', progress: 0.4 },
+      ),
+    ).resolves.toBeNull();
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'job',
+          attempt: 2,
+          providerJobId: 'provider-task',
+          status: 'in_progress',
+          deletedAt: null,
+        },
+        data: expect.objectContaining({
+          stage: 'generating',
+          progress: 0.4,
+          version: { increment: 1 },
+        }) as unknown,
+      }),
+    );
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+});

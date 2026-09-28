@@ -637,6 +637,31 @@ export class AiGenerationRepository {
     return this.findById(id);
   }
 
+  /** Ignore progress from a terminal job or an obsolete provider attempt. */
+  async updateProgressIfRunning(
+    job: Pick<AiJob, 'id' | 'attempt' | 'providerJobId'>,
+    patch: Pick<
+      Partial<AiJob>,
+      'stage' | 'progress' | 'providerStartedAt' | 'logs'
+    >,
+  ): Promise<AiJob | null> {
+    const data = this.patchToRow(patch);
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.aiJob.updateMany({
+        where: {
+          id: job.id,
+          status: 'in_progress',
+          deletedAt: null,
+          attempt: job.attempt,
+          providerJobId: job.providerJobId ?? null,
+        },
+        data: { ...data, version: { increment: 1 } },
+      });
+      if (result.count === 0) return null;
+      return this.findByIdWith(tx, job.id);
+    });
+  }
+
   /** A late provider error must not overwrite a terminal outcome. */
   async failIfActive(id: string, patch: Partial<AiJob>): Promise<AiJob | null> {
     const data = this.patchToRow({

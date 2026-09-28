@@ -4,6 +4,7 @@ import { PollDispatchError } from './poll-dispatch-error';
 it('retains an accepted Seedance task after poll dispatch fails and resumes the same task', async () => {
   const job = {
     id: 'seedance-job',
+    attempt: 1,
     status: 'in_progress',
     provider: 'byteplus',
     providerJobId: 'dreamina-seedance-2-5-260628::task-25::no-video-input',
@@ -30,7 +31,7 @@ it('retains an accepted Seedance task after poll dispatch fails and resumes the 
       providers: { get: () => adapter },
       store: {
         findProviderAttemptContext: jest.fn(),
-        update: jest.fn().mockResolvedValue(job),
+        updateProgressIfRunning: jest.fn().mockResolvedValue(job),
       },
       providerCapacity: {
         heartbeat: jest.fn(),
@@ -66,4 +67,46 @@ it('retains an accepted Seedance task after poll dispatch fails and resumes the 
     undefined,
   );
   expect(enqueue).toHaveBeenCalledTimes(2);
+});
+
+it('does not emit late progress or dispatch another poll after losing the running-attempt claim', async () => {
+  const job = {
+    id: 'job',
+    attempt: 1,
+    status: 'in_progress',
+    provider: 'byteplus',
+    providerJobId: 'accepted',
+    logs: [],
+    progress: 0.2,
+  };
+  const updateProgressIfRunning = jest.fn().mockResolvedValue(null);
+  const enqueue = jest.fn();
+  const emit = jest.fn();
+  const worker = Object.assign(
+    Object.create(AiGenerationWorkerService.prototype) as object,
+    {
+      providers: {
+        get: () => ({
+          pollStatus: jest
+            .fn()
+            .mockResolvedValue({ kind: 'pending', progress: 0.7 }),
+        }),
+      },
+      store: { findProviderAttemptContext: jest.fn(), updateProgressIfRunning },
+      providerCapacity: { heartbeat: jest.fn() },
+      queueService: { enqueue },
+      isAsyncProviderTimedOut: () => false,
+      recordAttemptSafe: jest.fn(),
+      recordProviderTraceEventsSafe: jest.fn(),
+      recordTraceSafe: jest.fn(),
+      emit,
+    },
+  ) as unknown as { pollJob: (value: typeof job) => Promise<void> };
+  await worker.pollJob(job);
+  expect(updateProgressIfRunning).toHaveBeenCalledWith(
+    job,
+    expect.objectContaining({ stage: 'generating', progress: 0.7 }),
+  );
+  expect(emit).not.toHaveBeenCalled();
+  expect(enqueue).not.toHaveBeenCalled();
 });

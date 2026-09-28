@@ -732,7 +732,7 @@ export class AiGenerationWorkerService
             },
           });
         }
-        const updated = await this.store.update(job.id, {
+        const updated = await this.store.updateProgressIfRunning(job, {
           stage: 'generating',
           progress: result.progress ?? job.progress ?? 0.5,
           providerStartedAt: executionStartedAt,
@@ -747,7 +747,8 @@ export class AiGenerationWorkerService
               ]
             : job.logs,
         });
-        if (updated) this.emit(updated);
+        if (!updated) return;
+        this.emit(updated);
         await this.dispatchPoll(() =>
           this.queueService.enqueue(
             job.queueName,
