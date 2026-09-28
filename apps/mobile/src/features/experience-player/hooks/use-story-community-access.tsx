@@ -1,8 +1,8 @@
-import { IconLock } from "@tabler/icons-react-native";
 import type {
   ExperienceAccessRequirement,
   ExperienceRuntimeManifest,
 } from "@repo/shared/experience-runtime";
+import IconLock from "@tabler/icons-react-native/IconLock";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";

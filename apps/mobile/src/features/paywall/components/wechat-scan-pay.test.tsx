@@ -87,3 +87,7 @@ it.each(["canceled", "refunded"])("stops polling a %s backend order", async (sta
   expect(mocks.get).toHaveBeenCalledTimes(1);
   expect(mocks.paid).not.toHaveBeenCalled();
 });
+
+vi.mock("@tabler/icons-react-native/IconCircleCheck", () => ({ default: () => null }));
+vi.mock("@tabler/icons-react-native/IconRefresh", () => ({ default: () => null }));
+vi.mock("@tabler/icons-react-native/IconX", () => ({ default: () => null }));

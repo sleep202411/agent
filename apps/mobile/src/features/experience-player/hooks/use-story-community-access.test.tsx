@@ -118,3 +118,5 @@ it("rejects pending access on unmount and ignores a late quote", async () => {
   expect(result).toHaveBeenCalledExactlyOnceWith(false);
   expect(access.canAccess(requirement("first"))).toBe(false);
 });
+
+vi.mock("@tabler/icons-react-native/IconLock", () => ({ default: () => null }));

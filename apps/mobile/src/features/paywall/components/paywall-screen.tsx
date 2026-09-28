@@ -1,10 +1,8 @@
-import {
-  IconBolt,
-  IconCheck,
-  IconCoins,
-  IconCrown,
-  IconSparkles,
-} from "@tabler/icons-react-native";
+import IconBolt from "@tabler/icons-react-native/IconBolt";
+import IconCheck from "@tabler/icons-react-native/IconCheck";
+import IconCoins from "@tabler/icons-react-native/IconCoins";
+import IconCrown from "@tabler/icons-react-native/IconCrown";
+import IconSparkles from "@tabler/icons-react-native/IconSparkles";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
@@ -300,8 +298,8 @@ export function PaywallScreen() {
   const locale = useLocale();
   const auth = useAuth();
   const theme = useTheme();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { selected, setSelected, productId, setProductId, computeAmount, setComputeAmount } =
     usePaywallSelection(initialCategory);
   const [computeBalance, setComputeBalance] = useState<string | null>(null);

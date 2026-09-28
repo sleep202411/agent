@@ -130,3 +130,9 @@ it("renders the WeChat package loading state before prices arrive", async () => 
   await render();
   expect(host.querySelector('[role="progressbar"]')).not.toBeNull();
 });
+
+vi.mock("@tabler/icons-react-native/IconBolt", () => ({ default: () => null }));
+vi.mock("@tabler/icons-react-native/IconCheck", () => ({ default: () => null }));
+vi.mock("@tabler/icons-react-native/IconCoins", () => ({ default: () => null }));
+vi.mock("@tabler/icons-react-native/IconCrown", () => ({ default: () => null }));
+vi.mock("@tabler/icons-react-native/IconSparkles", () => ({ default: () => null }));
