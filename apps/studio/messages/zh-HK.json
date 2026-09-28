@@ -3794,7 +3794,17 @@
           "linkTask": "關聯任務",
           "createTask": "建立任務",
           "linkedTask": "已關聯任務",
-          "noTaskYet": "尚無任務"
+          "noTaskYet": "尚無任務",
+          "linkTaskDescription": "選擇現有劇組任務。關聯會將任務移至分鏡任務下，並保留其分工與內容。",
+          "searchTasks": "搜尋任務標題",
+          "taskListError": "無法載入任務",
+          "retryTasks": "重試",
+          "noEligibleTasks": "本頁沒有可關聯的任務。",
+          "taskAlreadyLinked": "此節點已關聯其他任務。",
+          "taskLinked": "任務已關聯",
+          "linkTaskError": "無法關聯任務",
+          "moreTasks": "更多任務",
+          "cancelLink": "取消"
         }
       },
       "stats": {

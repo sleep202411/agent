@@ -181,6 +181,60 @@ export class StoryboardChildrenService {
     });
   }
 
+  async candidates(
+    projectId: string,
+    userId: string,
+    query: { q: string; cursor?: string },
+  ) {
+    const crewId = await this.resolveCrew(projectId, userId);
+    await this.authorization.require(crewId, userId, 'tasks.manage');
+    const parent = await this.resolveStoryboardTask(crewId);
+    if (!parent)
+      throw new BadRequestException('No storyboard task found in crew.');
+    const excluded = new Set<string>();
+    let id: string | null = parent.id;
+    while (id && !excluded.has(id)) {
+      excluded.add(id);
+      const ancestor: { parentId: string | null } | null =
+        await this.prisma.crewTask.findFirst({
+          where: { id, crewId },
+          select: { parentId: true },
+        });
+      id = ancestor?.parentId ?? null;
+    }
+    const rows = await this.prisma.crewTask.findMany({
+      where: {
+        crewId,
+        deletedAt: null,
+        id: {
+          notIn: [...excluded],
+          ...(query.cursor ? { gt: query.cursor } : {}),
+        },
+        ...(query.q
+          ? { title: { contains: query.q, mode: 'insensitive' as const } }
+          : {}),
+      },
+      select: { id: true, title: true, number: true, metadata: true },
+      orderBy: { id: 'asc' },
+      take: 51,
+    });
+    const page = rows.slice(0, 50);
+    return {
+      items: page
+        .filter((row) => {
+          const metadata = row.metadata;
+          return (
+            !metadata ||
+            typeof metadata !== 'object' ||
+            Array.isArray(metadata) ||
+            typeof metadata.plotTreeNodeId !== 'string'
+          );
+        })
+        .map(({ id, title, number }) => ({ id, title, number })),
+      nextCursor: rows.length > 50 ? page[49].id : null,
+    };
+  }
+
   async list(
     projectId: string,
     userId: string,

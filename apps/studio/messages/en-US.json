@@ -3794,7 +3794,17 @@
           "linkTask": "Link task",
           "createTask": "Create task",
           "linkedTask": "Linked task",
-          "noTaskYet": "No task yet"
+          "noTaskYet": "No task yet",
+          "linkTaskDescription": "Select an existing Crew task. Linking moves it under the storyboard task and keeps its assignments and content.",
+          "searchTasks": "Search task titles",
+          "taskListError": "Could not load tasks",
+          "retryTasks": "Retry",
+          "noEligibleTasks": "No eligible tasks on this page.",
+          "taskAlreadyLinked": "This node was already linked to another task.",
+          "taskLinked": "Task linked",
+          "linkTaskError": "Could not link task",
+          "moreTasks": "More tasks",
+          "cancelLink": "Cancel"
         }
       },
       "stats": {

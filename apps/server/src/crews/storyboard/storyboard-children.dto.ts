@@ -27,3 +27,11 @@ export interface StoryboardChildItem {
   taskId: string | null;
   status: string | null;
 }
+
+export const StoryboardTaskCandidatesSchema = z.object({
+  q: z.string().trim().max(180).default(''),
+  cursor: z.string().uuid().optional(),
+});
+export type StoryboardTaskCandidatesQuery = z.infer<
+  typeof StoryboardTaskCandidatesSchema
+>;

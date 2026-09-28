@@ -3,7 +3,6 @@
 import {
   IconArrowRight,
   IconCheck,
-  IconClock,
   IconLink,
   IconLoader2,
   IconMovie,
@@ -13,6 +12,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
+import { StoryboardTaskPicker } from "./storyboard-task-picker";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "@/i18n/navigation";
@@ -70,6 +70,9 @@ export function StoryNodeStoryboardPanel({
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
   const [opening, setOpening] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<string | null>(null);
+  const pickerKey = JSON.stringify([projectId, nodeId]);
+  const pickerOpen = pickerTarget === pickerKey;
   const [creatingTask, setCreatingTask] = useState(false);
 
   const storyboardQuery = useQuery({
@@ -185,8 +188,8 @@ export function StoryNodeStoryboardPanel({
             <div className="flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
-                disabled={!canEdit}
-                onClick={() => toast.info("Task picker available when tasks exist")}
+                disabled={!canEdit || creatingTask || pickerOpen || !childItem}
+                onClick={() => setPickerTarget(pickerKey)}
                 className="inline-flex items-center gap-1 rounded-lg bg-white/[0.06] px-2.5 py-1 text-[10px] font-medium text-white/72 transition hover:bg-white/[0.1] hover:text-white disabled:opacity-50"
               >
                 <IconLink className="size-3" stroke={1.8} />
@@ -194,7 +197,7 @@ export function StoryNodeStoryboardPanel({
               </button>
               <button
                 type="button"
-                disabled={!canEdit || creatingTask}
+                disabled={!canEdit || creatingTask || pickerOpen || !childItem}
                 onClick={() => void handleCreateTask()}
                 className="inline-flex items-center gap-1 rounded-lg bg-white/[0.12] px-2.5 py-1 text-[10px] font-medium text-white transition hover:bg-white/[0.18] disabled:opacity-50"
               >
@@ -209,6 +212,15 @@ export function StoryNodeStoryboardPanel({
           </div>
         )}
       </div>
+
+      {pickerOpen && canEdit && !childItem?.taskId ? (
+        <StoryboardTaskPicker
+          key={`${projectId}:${nodeId}`}
+          projectId={projectId}
+          nodeId={nodeId}
+          onClose={() => setPickerTarget(null)}
+        />
+      ) : null}
 
       {clips.length > 0 || (sequence && chapterId) ? (
         <div className="mt-3 -mx-0.5 flex gap-2 overflow-x-auto px-0.5 py-0.5">

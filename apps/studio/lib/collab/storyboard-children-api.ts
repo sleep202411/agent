@@ -52,3 +52,21 @@ export function createStoryboardChild(
     }
   );
 }
+
+export interface StoryboardTaskCandidates {
+  items: { id: string; title: string; number: number }[];
+  nextCursor: string | null;
+}
+export function listStoryboardTaskCandidates(
+  projectId: string,
+  q: string,
+  cursor?: string,
+  signal?: AbortSignal
+) {
+  const query = new URLSearchParams({ q });
+  if (cursor) query.set("cursor", cursor);
+  return api.get<StoryboardTaskCandidates>(
+    `${storyboardChildrenPath(projectId)}/candidates?${query}`,
+    { signal, requestScope: "project" }
+  );
+}

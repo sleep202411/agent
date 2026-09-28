@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { CurrentUser, type AuthUser } from '../../auth';
 import { parseIdParam } from '../../common/params';
 import { ZodValidationPipe } from '../../common/zod.pipe';
 import { StoryboardChildrenService } from './storyboard-children.service';
 import {
+  StoryboardTaskCandidatesSchema,
+  type StoryboardTaskCandidatesQuery,
   CreateStoryboardChildSchema,
   type CreateStoryboardChildInput,
   LinkStoryboardChildSchema,
@@ -24,6 +26,23 @@ export class ProjectStoryboardChildrenController {
       data: await this.service.list(
         parseIdParam(projectIdRaw, 'projectId'),
         user.userId,
+      ),
+    };
+  }
+
+  @Get('candidates')
+  async candidates(
+    @Param('projectId') projectIdRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(StoryboardTaskCandidatesSchema))
+    query: StoryboardTaskCandidatesQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.service.candidates(
+        parseIdParam(projectIdRaw, 'projectId'),
+        user.userId,
+        query,
       ),
     };
   }
@@ -81,6 +100,23 @@ export class StoryStoryboardChildrenController {
       data: await this.service.list(
         parseIdParam(projectIdRaw, 'projectId'),
         user.userId,
+      ),
+    };
+  }
+
+  @Get('candidates')
+  async candidates(
+    @Param('projectId') projectIdRaw: string,
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(StoryboardTaskCandidatesSchema))
+    query: StoryboardTaskCandidatesQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.service.candidates(
+        parseIdParam(projectIdRaw, 'projectId'),
+        user.userId,
+        query,
       ),
     };
   }

@@ -3794,7 +3794,17 @@
           "linkTask": "关联任务",
           "createTask": "创建任务",
           "linkedTask": "已关联任务",
-          "noTaskYet": "尚无任务"
+          "noTaskYet": "尚无任务",
+          "linkTaskDescription": "选择现有剧组任务。关联会将任务移至分镜任务下，并保留其分工与内容。",
+          "searchTasks": "搜索任务标题",
+          "taskListError": "无法加载任务",
+          "retryTasks": "重试",
+          "noEligibleTasks": "本页没有可关联的任务。",
+          "taskAlreadyLinked": "此节点已关联其他任务。",
+          "taskLinked": "任务已关联",
+          "linkTaskError": "无法关联任务",
+          "moreTasks": "更多任务",
+          "cancelLink": "取消"
         }
       },
       "stats": {
