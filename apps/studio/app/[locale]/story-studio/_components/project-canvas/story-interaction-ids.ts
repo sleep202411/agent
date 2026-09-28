@@ -8,7 +8,7 @@ const LEGACY_BARE_UUID_PATTERN =
  * Prefixing the UUID keeps every generated value inside StoryStableIdSchema
  * while retaining collision resistance across concurrent authoring sessions.
  */
-export function createStoryHotspotId(uuid = globalThis.crypto.randomUUID()): string {
+export function createStoryHotspotId(uuid: string = globalThis.crypto.randomUUID()): string {
   return `hotspot:${uuid}`;
 }
 

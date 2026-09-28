@@ -17,6 +17,7 @@ interface StoryHotspotStageProps {
   mode: EditorMode;
   tool: EditorTool;
   minimumSize: number;
+  currentTime?: number;
   onCreate: (rect: NormalizedHotspotRect) => string;
   onRectChange: (id: string, rect: NormalizedHotspotRect) => void;
   onSelect: (id: string | null) => void;
@@ -26,6 +27,7 @@ interface StoryHotspotStageProps {
 
 type DrawOperation = {
   pointerId: number;
+  hotspotId: string;
   origin: { x: number; y: number };
 };
 
@@ -94,6 +96,7 @@ export function StoryHotspotStage({
   };
 
   const beginPointerOperation = (event: KonvaEventObject<PointerEvent>) => {
+    if (drawOperationRef.current) return;
     const stage = event.target.getStage();
     if (!stage || event.target !== stage) return;
 
@@ -108,8 +111,15 @@ export function StoryHotspotStage({
     event.evt.preventDefault();
     const pointerId = event.evt.pointerId;
     stage.container().setPointerCapture?.(pointerId);
-    drawOperationRef.current = { pointerId, origin: point };
-    paintPreview(rectFromPointer(point, point, minimumSize));
+    const hotspotId = onCreate(
+      normalizeStageRect(
+        { x: point.x, y: point.y, width: minimumSize, height: minimumSize },
+        1,
+        1,
+        minimumSize
+      )
+    );
+    drawOperationRef.current = { pointerId, hotspotId, origin: point };
   };
 
   const updatePointerOperation = (event: KonvaEventObject<PointerEvent>) => {
@@ -119,7 +129,24 @@ export function StoryHotspotStage({
     if (!stage) return;
     const point = stagePoint(stage);
     if (!point) return;
-    paintPreview(rectFromPointer(operation.origin, point, minimumSize));
+    const x = Math.min(operation.origin.x, point.x);
+    const y = Math.min(operation.origin.y, point.y);
+    // Use the same size-first bounds as resizing. Clipping width against the
+    // unadjusted pointer origin can collapse an edge drag below minimumSize.
+    onRectChange(
+      operation.hotspotId,
+      normalizeStageRect(
+        {
+          x,
+          y,
+          width: Math.abs(point.x - operation.origin.x),
+          height: Math.abs(point.y - operation.origin.y),
+        },
+        1,
+        1,
+        minimumSize
+      )
+    );
   };
 
   const endPointerOperation = (event: KonvaEventObject<PointerEvent>) => {

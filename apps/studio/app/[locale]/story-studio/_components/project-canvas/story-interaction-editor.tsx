@@ -158,9 +158,15 @@ export function StoryInteractionEditor({
 
   const updateDraft = useCallback(
     (id: string, update: (draft: StoryInteractionDraft) => StoryInteractionDraft) => {
-      commitDrafts(draftsRef.current.map((draft) => (draft.id === id ? update(draft) : draft)));
+      commitDrafts(
+        draftsRef.current.map((draft) => {
+          if (draft.id !== id) return draft;
+          const next = update(draft);
+          return next.endSeconds !== draft.endSeconds ? fitBranchTime(next, duration) : next;
+        })
+      );
     },
-    [commitDrafts]
+    [commitDrafts, duration]
   );
   const changeHotspotRect = useCallback(
     (id: string, rect: NormalizedHotspotRect) => {
@@ -1419,11 +1425,22 @@ function fitDraftsToDuration(
   const fitted = drafts.map((draft) => {
     const startSeconds = clamp(draft.startSeconds, 0, duration - MIN_WINDOW_SECONDS);
     const endSeconds = clamp(draft.endSeconds, startSeconds + MIN_WINDOW_SECONDS, duration);
-    if (startSeconds === draft.startSeconds && endSeconds === draft.endSeconds) return draft;
-    changed = true;
-    return { ...draft, startSeconds, endSeconds };
+    const resized =
+      startSeconds === draft.startSeconds && endSeconds === draft.endSeconds
+        ? draft
+        : { ...draft, startSeconds, endSeconds };
+    const next = fitBranchTime(resized, duration);
+    if (next !== draft) changed = true;
+    return next;
   });
   return changed ? fitted : drafts;
+}
+
+function fitBranchTime(draft: StoryInteractionDraft, duration: number): StoryInteractionDraft {
+  // Null deliberately follows the window end; don't turn it into a fixed time.
+  if (draft.branchAtSeconds === null) return draft;
+  const branchAtSeconds = clamp(draft.branchAtSeconds, draft.endSeconds, duration);
+  return branchAtSeconds === draft.branchAtSeconds ? draft : { ...draft, branchAtSeconds };
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
