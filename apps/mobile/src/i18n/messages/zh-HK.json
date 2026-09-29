@@ -1348,5 +1348,7 @@
   "taskAssignments.edit": "編輯負責人",
   "taskAssignments.reward": "報酬（選填）",
   "taskAssignments.help": "留空表示無報酬。保留已有幣種；新增分工使用本區域幣種。",
-  "taskAssignments.invalid": "請輸入正數，最多兩位小數，上限100,000,000。"
+  "taskAssignments.invalid": "請輸入正數，最多兩位小數，上限100,000,000。",
+  "taskCreate.workflow": "工作流程欄",
+  "taskCreate.defaultWorkflow": "預設待處理欄"
 }

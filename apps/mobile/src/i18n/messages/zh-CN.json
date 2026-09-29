@@ -1348,5 +1348,7 @@
   "taskAssignments.edit": "编辑负责人",
   "taskAssignments.reward": "报酬（选填）",
   "taskAssignments.help": "留空表示无报酬。保留已有币种；新增分工使用本区域币种。",
-  "taskAssignments.invalid": "请输入正数，最多两位小数，上限100,000,000。"
+  "taskAssignments.invalid": "请输入正数，最多两位小数，上限100,000,000。",
+  "taskCreate.workflow": "工作流列",
+  "taskCreate.defaultWorkflow": "默认待处理列"
 }

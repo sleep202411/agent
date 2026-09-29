@@ -3,6 +3,7 @@ import { api } from "@/lib/api-client";
 import { taskDetailSchema } from "./task-detail-api";
 export const taskCreateInput = z
   .object({
+    workflowStateId: z.string().uuid().optional(),
     title: z.string().trim().min(1).max(180),
     description: z.string().trim().max(10_000),
     priority: z.enum(["low", "normal", "high", "urgent"]),
@@ -35,13 +36,16 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     .regex(/^[A-Za-z0-9_-]{1,64}$/)
     .parse(crewId);
   const data = taskCreateInput.parse(input);
-  const result = taskDetailSchema.parse(
-    await api.post(`/crews/${encodeURIComponent(crewId)}/tasks`, { service: "aurora", data })
-  );
+  const result = taskDetailSchema
+    .extend({ workflowStateId: z.string().uuid().optional() })
+    .parse(
+      await api.post(`/crews/${encodeURIComponent(crewId)}/tasks`, { service: "aurora", data })
+    );
   const dateMatches = (a: string | null, b: string | null) =>
     a === null || b === null ? a === b : Date.parse(a) === Date.parse(b);
   if (
     result.crewId !== crewId ||
+    (data.workflowStateId !== undefined && result.workflowStateId !== data.workflowStateId) ||
     result.title !== data.title ||
     result.description !== data.description ||
     result.priority !== data.priority ||

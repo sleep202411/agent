@@ -2,8 +2,15 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskCreate } from "./task-create";
-const h = vi.hoisted(() => ({ access: vi.fn(), update: vi.fn(), refresh: vi.fn(), generation: 1 }));
+const h = vi.hoisted(() => ({
+  access: vi.fn(),
+  update: vi.fn(),
+  refresh: vi.fn(),
+  workflows: vi.fn(),
+  generation: 1,
+}));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock("./task-workflow-api", () => ({ fetchCreationWorkflows: h.workflows }));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
 vi.mock("./task-create-api", async (original) => ({
   ...(await original<typeof import("./task-create-api")>()),
@@ -68,6 +75,15 @@ const type = (n: number, text: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.workflows.mockResolvedValue([
+    {
+      id: "33333333-3333-4333-8333-333333333333",
+      crewId: "crew",
+      name: "Storyboard",
+      semantic: "open",
+      archived: false,
+    },
+  ]);
   h.access.mockResolvedValue({ allowed: false, canManage: true });
   host = document.createElement("div");
   document.body.append(host);
@@ -204,4 +220,54 @@ it("clears draft parent and blockers before creation", async () => {
     "crew",
     expect.objectContaining({ parentId: null, blockedByTaskIds: [] })
   );
+});
+
+it("selects a workflow column and sends it during creation", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Shot"));
+  await act(async () => button("taskCreate.defaultWorkflow")!.click());
+  await act(async () => button("Storyboard")!.click());
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ workflowStateId: "33333333-3333-4333-8333-333333333333" })
+  );
+});
+it("can clear the selected column to use the server default", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Shot"));
+  await act(async () => button("taskCreate.defaultWorkflow")!.click());
+  await act(async () => button("Storyboard")!.click());
+  await act(async () => button("Storyboard")!.click());
+  await act(async () => button("taskCreate.defaultWorkflow")!.click());
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update.mock.calls[0]![1]).not.toHaveProperty("workflowStateId");
+});
+it("shows workflow loading errors and retries without losing the draft", async () => {
+  h.workflows.mockRejectedValueOnce(new Error("Service unavailable"));
+  await render();
+  await act(async () => type(0, "Draft"));
+  await act(async () => button("taskCreate.defaultWorkflow")!.click());
+  expect(host.textContent).toContain("Service unavailable");
+  await act(async () => button("inbox.retry")!.click());
+  await act(async () => button("Storyboard")!.click());
+  expect(host.querySelector("input")!.value).toBe("Draft");
+});
+it("discards workflow options arriving after an account change", async () => {
+  let finish!: (value: unknown[]) => void;
+  h.workflows.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => button("taskCreate.defaultWorkflow")!.click());
+  h.generation = 2;
+  await act(async () =>
+    finish([{ id: "33333333-3333-4333-8333-333333333333", name: "Private Column" }])
+  );
+  expect(host.textContent).not.toContain("Private Column");
 });

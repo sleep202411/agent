@@ -11,6 +11,8 @@ import { fetchTaskCommentAccess } from "./task-comment-api";
 import { createTask, taskCreateInput } from "./task-create-api";
 import { parseScheduleDate } from "./task-schedule-api";
 import { TaskMentionPicker } from "./task-mention-picker";
+import { TaskCreationWorkflow } from "./task-creation-workflow";
+import type { TaskWorkflow } from "./task-workflow-api";
 import { TaskCreationRelations } from "./task-creation-relations";
 import type { TaskOption } from "./task-options";
 import type { TaskMention } from "./task-mentions";
@@ -56,6 +58,7 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
+  const [workflow, setWorkflow] = useState<TaskWorkflow | null>(null);
   const [parent, setParent] = useState<TaskOption | null>(null);
   const [blockers, setBlockers] = useState<TaskOption[]>([]);
   const [title, setTitle] = useState(""),
@@ -75,6 +78,7 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
       title,
       description,
       priority,
+      ...(workflow ? { workflowStateId: workflow.id } : {}),
       parentId: parent?.id ?? null,
       blockedByTaskIds: blockers.map((task) => task.id),
       startAt: parseScheduleDate(start, null),
@@ -155,6 +159,13 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
         placeholder="YYYY-MM-DD HH:mm"
         placeholderTextColor={theme.textSecondary}
         style={{ color: theme.text, padding: 12 }}
+      />
+      <TaskCreationWorkflow
+        crewId={crewId}
+        generation={generation}
+        selected={workflow}
+        locked={locked}
+        onSelect={setWorkflow}
       />
       <TaskCreationRelations
         crewId={crewId}

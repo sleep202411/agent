@@ -108,3 +108,15 @@ it("validates relationship identifiers, limits and acknowledgement", async () =>
   vi.mocked(api.post).mockResolvedValue(detail);
   await expect(createTask("crew", data)).rejects.toThrow("acknowledgement");
 });
+
+it("validates an explicit workflow and requires its exact acknowledgement", async () => {
+  await expect(createTask("crew", { ...input, workflowStateId: "bad" })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+  const selected = { ...input, workflowStateId: id };
+  vi.mocked(api.post).mockResolvedValue({ ...detail, workflowStateId: id });
+  await expect(createTask("crew", selected)).resolves.toMatchObject({ workflowStateId: id });
+  for (const workflowStateId of [undefined, "22222222-2222-4222-8222-222222222222"]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, workflowStateId });
+    await expect(createTask("crew", selected)).rejects.toThrow("acknowledgement");
+  }
+});
