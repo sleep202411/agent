@@ -7,6 +7,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { fetchEpisodeCreateAccess } from "./episode-create-api";
+import { EpisodeOrganization } from "./episode-organization";
 import { EpisodeDelivery } from "./episode-delivery";
 import { EpisodeCreate } from "./episode-create";
 import {
@@ -26,6 +27,7 @@ function Session(props: Props) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0),
     [creating, setCreating] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
   const [deliveryId, setDeliveryId] = useState<string>();
   const [selected, setSelected] = useState<CrewEpisode>();
   const [snapshot, setSnapshot] = useState<{
@@ -56,8 +58,10 @@ function Session(props: Props) {
     setSelected(undefined);
     setDeliveryId(undefined);
     setCreating(false);
+    setOrganizing(false);
     setRevision((n) => n + 1);
   };
+  if (organizing) return <EpisodeOrganization {...props} onClose={reload} />;
   if (deliveryId) return <EpisodeDelivery {...props} episodeId={deliveryId} onClose={reload} />;
   if (creating) return <EpisodeCreate {...props} onClose={reload} />;
   if (selected)
@@ -84,6 +88,17 @@ function Session(props: Props) {
           }}
         >
           <ThemedText>{t("episodeCreate.title")}</ThemedText>
+        </Pressable>
+      )}
+      {visible?.allowed && (
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 12 }}
+          onPress={() => {
+            if (props.generation === getAuthGeneration()) setOrganizing(true);
+          }}
+        >
+          <ThemedText>{t("episodeOrganization.title")}</ThemedText>
         </Pressable>
       )}
       {visible?.rows?.map((row) => (

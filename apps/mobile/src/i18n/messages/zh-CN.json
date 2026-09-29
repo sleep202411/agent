@@ -1468,5 +1468,15 @@
   "episodeDelivery.submit": "提交审批",
   "episodeDelivery.saved": "已保存，请刷新查看最新状态。",
   "episodeDelivery.refreshHelp": "请刷新并检查交付记录后再进行其他操作。",
-  "episodeDelivery.videoRequired": "请选择剧组资产中的视频文件。"
+  "episodeDelivery.videoRequired": "请选择剧组资产中的视频文件。",
+  "episodeOrganization.title": "整理剧集",
+  "episodeOrganization.help": "调整显示顺序不会更改集数编号。仅可删除没有任何任务或交付记录的剧集。",
+  "episodeOrganization.up": "上移",
+  "episodeOrganization.down": "下移",
+  "episodeOrganization.remove": "删除剧集",
+  "episodeOrganization.confirmHelp": "确定永久删除此剧集？服务器将检查任务和交付记录。",
+  "episodeOrganization.confirm": "确认删除",
+  "episodeOrganization.cancel": "取消",
+  "episodeOrganization.saved": "已保存，请刷新查看最新顺序。",
+  "episodeOrganization.denied": "您没有整理剧集的权限。"
 }

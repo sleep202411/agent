@@ -1468,5 +1468,15 @@
   "episodeDelivery.submit": "Submit for Approval",
   "episodeDelivery.saved": "Saved. Refresh to see the latest episode status.",
   "episodeDelivery.refreshHelp": "Refresh and check delivery history before making another change.",
-  "episodeDelivery.videoRequired": "Select a video file from Crew assets."
+  "episodeDelivery.videoRequired": "Select a video file from Crew assets.",
+  "episodeOrganization.title": "Organize Episodes",
+  "episodeOrganization.help": "Change display order without changing episode numbers. Only episodes without any task or delivery history can be deleted.",
+  "episodeOrganization.up": "Move Up",
+  "episodeOrganization.down": "Move Down",
+  "episodeOrganization.remove": "Delete Episode",
+  "episodeOrganization.confirmHelp": "Permanently delete this episode? The server will check for task and delivery history.",
+  "episodeOrganization.confirm": "Confirm Deletion",
+  "episodeOrganization.cancel": "Cancel",
+  "episodeOrganization.saved": "Saved. Refresh to load the latest episode order.",
+  "episodeOrganization.denied": "You do not have permission to organize episodes."
 }
