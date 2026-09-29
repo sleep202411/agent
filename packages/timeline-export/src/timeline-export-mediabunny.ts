@@ -93,7 +93,8 @@ export interface TimelineExportOptions {
   /** Audio bitrate in bits/s. Defaults to 128 kbps stereo AAC, which
    * is plenty for dialogue + music draft exports. */
   audioBitrate?: number;
-  /** 0..1 progress callback. Fires after each shot is processed. */
+  /** 0..1 progress callback. Fires after each shot is processed.
+   * Observer failures are isolated from encoding. */
   onProgress?: (ratio: number) => void;
   /** Emitted only after a usable output is finalized. Observer failures are isolated. */
   onReport?: (report: TimelineExportReport) => void;
@@ -392,7 +393,11 @@ export async function exportTimelineToMp4(
       }
 
       processedShots += 1;
-      options.onProgress?.(processedShots / probed.length);
+      try {
+        options.onProgress?.(processedShots / probed.length);
+      } catch (error) {
+        console.warn("[timeline-export] progress observer failed:", error);
+      }
     }
 
     if (totalFramesEncoded === 0) {

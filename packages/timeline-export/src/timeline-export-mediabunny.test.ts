@@ -91,6 +91,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 const shots = [{ id: "one", videoUrl: "https://media.invalid/one.mp4" }];
+it("finishes every shot when a progress observer throws", async () => {
+  const onProgress = vi.fn(() => {
+    throw new Error("progress view detached");
+  });
+  const onReport = vi.fn();
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  await expect(
+    exportTimelineToMp4([...shots, { ...shots[0]!, id: "two" }], {
+      onProgress,
+      onReport,
+    })
+  ).resolves.toBeInstanceOf(Blob);
+  expect(onProgress.mock.calls).toHaveLength(2);
+  expect(fixture.add).toHaveBeenCalledTimes(2);
+  expect(fixture.finalize).toHaveBeenCalledTimes(1);
+  expect(fixture.cancel).not.toHaveBeenCalled();
+  expect(fixture.dispose).toHaveBeenCalledTimes(2);
+  expect(onReport).toHaveBeenCalledWith({
+    requestedShots: 2,
+    completedShots: 2,
+    partial: false,
+    issues: [],
+  });
+});
 it("releases opened inputs after output setup fails", async () => {
   const failure = new Error("encoder unavailable");
   fixture.start.mockRejectedValue(failure);
