@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  pickAndUploadCrewFile,
+  discardCrewUpload,
+  type CrewUpload,
+} from "@/features/crew-assets/upload";
 import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
 import type { CrewAsset } from "@/features/crew-assets/api";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -55,6 +60,22 @@ function Composer({
     [attempted, setAttempted] = useState(false);
   const intent = useRef<TaskCommentInput | undefined>(undefined);
   const [assets, setAssets] = useState<CrewAsset[]>([]);
+  const [uploads, setUploads] = useState<CrewUpload[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const uploadRequest = useRef<AbortController | undefined>(undefined);
+  const pendingUploads = useRef<{ items: CrewUpload[]; attempted: boolean }>({
+    items: [],
+    attempted: false,
+  });
+  useEffect(
+    () => () => {
+      uploadRequest.current?.abort();
+      if (generation !== getAuthGeneration() || pendingUploads.current.attempted) return;
+      for (const file of pendingUploads.current.items)
+        void discardCrewUpload(crewId, file.mediaAssetId).catch(() => undefined);
+    },
+    [crewId, generation]
+  );
   const [picking, setPicking] = useState(false);
   const [submittedReply, setSubmittedReply] = useState<Props["reply"]>();
   useEffect(() => {
@@ -74,8 +95,8 @@ function Composer({
   const current = access?.revision === revision ? access : undefined;
   const allowed = current?.allowed === true;
   useEffect(() => {
-    onReplyAvailability?.({ allowed, locked: attempted || op.busy || picking });
-  }, [allowed, attempted, op.busy, picking, onReplyAvailability]);
+    onReplyAvailability?.({ allowed, locked: attempted || op.busy || picking || uploading });
+  }, [allowed, attempted, op.busy, picking, uploading, onReplyAvailability]);
   useEffect(() => {
     if (allowed && reply && !attempted) input.current?.focus();
   }, [allowed, reply, attempted]);
@@ -130,7 +151,9 @@ function Composer({
       )}
       <Pressable
         accessibilityRole="button"
-        disabled={op.busy || picking || (!body.trim() && !assets.length)}
+        disabled={
+          op.busy || picking || uploading || (!body.trim() && !assets.length && !uploads.length)
+        }
         style={{ padding: 12 }}
         onPress={() => {
           void op.run(
@@ -139,16 +162,20 @@ function Composer({
                 body: body.trim(),
                 clientKey: inquiryKey(),
                 ...(reply ? { replyToId: reply.id } : {}),
-                ...(assets.length
+                ...(assets.length || uploads.length
                   ? {
-                      attachments: assets.map((asset) => ({
-                        source: "asset" as const,
-                        assetNodeId: asset.id,
-                      })),
+                      attachments: [
+                        ...assets.map((asset) => ({
+                          source: "asset" as const,
+                          assetNodeId: asset.id,
+                        })),
+                        ...uploads,
+                      ],
                     }
                   : {}),
               };
               if (!attempted) setSubmittedReply(reply);
+              pendingUploads.current.attempted = true;
               setAttempted(true);
               return postTaskComment(taskId, userId, intent.current);
             },
@@ -157,6 +184,8 @@ function Composer({
               setAttempted(false);
               setBody("");
               setAssets([]);
+              pendingUploads.current = { items: [], attempted: false };
+              setUploads([]);
               setSubmittedReply(undefined);
               onClearReply?.();
               setError(undefined);
@@ -183,12 +212,69 @@ function Composer({
       </Pressable>
       <Pressable
         accessibilityRole="button"
-        disabled={op.busy || attempted || assets.length >= 10}
+        disabled={op.busy || attempted || uploading || assets.length + uploads.length >= 10}
         onPress={() => setPicking(true)}
         style={{ padding: 12 }}
       >
         <ThemedText>{t("crewAssets.choose")}</ThemedText>
       </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        disabled={
+          op.busy || attempted || uploading || picking || assets.length + uploads.length >= 10
+        }
+        onPress={() => {
+          if (uploadRequest.current) return;
+          const controller = new AbortController();
+          uploadRequest.current = controller;
+          setUploading(true);
+          setError(undefined);
+          void (async () => {
+            try {
+              const file = await pickAndUploadCrewFile(crewId, controller.signal);
+              if (!file) return;
+              if (controller.signal.aborted || generation !== getAuthGeneration()) {
+                if (generation === getAuthGeneration())
+                  void discardCrewUpload(crewId, file.mediaAssetId).catch(() => undefined);
+                return;
+              }
+              pendingUploads.current.items = [...pendingUploads.current.items, file];
+              setUploads(pendingUploads.current.items);
+            } catch (cause) {
+              if (!controller.signal.aborted && generation === getAuthGeneration())
+                setError(cause instanceof Error ? cause.message : String(cause));
+            } finally {
+              if (uploadRequest.current === controller) {
+                uploadRequest.current = undefined;
+                if (!controller.signal.aborted) setUploading(false);
+              }
+            }
+          })();
+        }}
+        style={{ padding: 12 }}
+      >
+        <ThemedText>{t("thread.uploadFile")}</ThemedText>
+      </Pressable>
+      {uploading && <ActivityIndicator accessibilityLabel={t("courses.loading")} />}
+      {uploads.map((file) => (
+        <Pressable
+          key={file.mediaAssetId}
+          accessibilityRole="button"
+          disabled={op.busy || attempted || uploading}
+          onPress={() => {
+            pendingUploads.current.items = pendingUploads.current.items.filter(
+              (item) => item.mediaAssetId !== file.mediaAssetId
+            );
+            setUploads(pendingUploads.current.items);
+            void discardCrewUpload(crewId, file.mediaAssetId).catch(() => undefined);
+          }}
+          style={{ padding: 12 }}
+        >
+          <ThemedText>
+            {file.name} · {t("crewAssets.remove")}
+          </ThemedText>
+        </Pressable>
+      ))}
       {assets.map((asset) => (
         <Pressable
           key={asset.id}
@@ -208,14 +294,14 @@ function Composer({
             <CrewAssetPicker
               crewId={crewId}
               excludedIds={assets.map((asset) => asset.id)}
-              remaining={10 - assets.length}
+              remaining={10 - assets.length - uploads.length}
               onClose={() => setPicking(false)}
               onSelect={(selected) => {
                 if (generation !== getAuthGeneration() || attempted || op.busy) return;
                 setAssets((value) =>
                   Array.from(
                     new Map([...value, ...selected].map((asset) => [asset.id, asset])).values()
-                  ).slice(0, 10)
+                  ).slice(0, 10 - uploads.length)
                 );
                 setPicking(false);
               }}

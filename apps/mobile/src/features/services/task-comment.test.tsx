@@ -5,10 +5,16 @@ import { TaskComment } from "./task-comment";
 const h = vi.hoisted(() => ({
   permission: vi.fn(),
   picker: vi.fn(),
+  upload: vi.fn(),
+  discard: vi.fn(),
   post: vi.fn(),
   sent: vi.fn(),
   generation: 1,
   active: true,
+}));
+vi.mock("@/features/crew-assets/upload", () => ({
+  pickAndUploadCrewFile: h.upload,
+  discardCrewUpload: h.discard,
 }));
 vi.mock("@/features/crew-assets/asset-picker", () => ({
   CrewAssetPicker: (props: { onSelect: (assets: unknown[]) => void; onClose: () => void }) => {
@@ -84,6 +90,7 @@ beforeEach(() => {
   h.active = true;
   h.generation = 1;
   h.permission.mockResolvedValue(true);
+  h.discard.mockResolvedValue(undefined);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -246,4 +253,81 @@ it("removes selected files without deleting assets and aborts the picker on back
   h.active = false;
   await render();
   expect(host.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("uploads once, reserves picker capacity and retries confirmed media without re-uploading", async () => {
+  const file = { source: "upload", mediaAssetId: "media", name: "New.mp4" };
+  const byText = (text: string) =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
+  h.upload.mockResolvedValue(file);
+  await render();
+  await act(async () => {
+    byText("thread.uploadFile").click();
+    byText("thread.uploadFile").click();
+  });
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  await act(async () => byText("crewAssets.choose").click());
+  expect(h.picker.mock.calls.at(-1)![0].remaining).toBe(9);
+  await act(async () => byText("close-picker").click());
+  h.post.mockRejectedValueOnce(new Error("Timeout")).mockResolvedValueOnce({});
+  await act(async () => byText("taskActivity.sendComment").click());
+  expect(byText("New.mp4 · crewAssets.remove").disabled).toBe(true);
+  await act(async () => byText("inbox.retry").click());
+  expect(h.post.mock.calls).toEqual([
+    ["task", "1", { body: "", clientKey: "stable", attachments: [file] }],
+    ["task", "1", { body: "", clientKey: "stable", attachments: [file] }],
+  ]);
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  expect(h.discard).not.toHaveBeenCalled();
+});
+it("cleans removed unsent uploads but retains uploads after an uncertain send", async () => {
+  const byText = (text: string) =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
+  h.upload.mockResolvedValue({ source: "upload", mediaAssetId: "media", name: "New.mp4" });
+  await render();
+  await act(async () => byText("thread.uploadFile").click());
+  await act(async () => byText("New.mp4 · crewAssets.remove").click());
+  expect(h.discard).toHaveBeenCalledExactlyOnceWith("crew", "media");
+  h.discard.mockClear();
+  await act(async () => byText("thread.uploadFile").click());
+  h.post.mockRejectedValue(new Error("Timeout"));
+  await act(async () => byText("taskActivity.sendComment").click());
+  h.active = false;
+  await render();
+  expect(h.discard).not.toHaveBeenCalled();
+});
+it("aborts in-flight upload on leaving, cleans a late same-account upload and never submits it", async () => {
+  let finish!: (v: unknown) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      })
+  );
+  await render();
+  await act(async () =>
+    Array.from(host.querySelectorAll("button"))
+      .find((b) => b.textContent === "thread.uploadFile")!
+      .click()
+  );
+  const signal = h.upload.mock.calls[0][1];
+  expect(host.querySelector("button")!.disabled).toBe(true);
+  h.active = false;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Late" }));
+  expect(h.discard).toHaveBeenCalledExactlyOnceWith("crew", "media");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("does not clean a former account's upload with the new account", async () => {
+  h.upload.mockResolvedValue({ source: "upload", mediaAssetId: "media", name: "New" });
+  await render();
+  await act(async () =>
+    Array.from(host.querySelectorAll("button"))
+      .find((b) => b.textContent === "thread.uploadFile")!
+      .click()
+  );
+  h.generation = 2;
+  await render();
+  expect(h.discard).not.toHaveBeenCalled();
 });

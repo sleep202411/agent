@@ -22,10 +22,29 @@ export const taskCommentInput = z
     clientKey: z.string().trim().min(1).max(64),
     replyToId: z.string().uuid().optional(),
     attachments: z
-      .array(z.object({ source: z.literal("asset"), assetNodeId: z.string().uuid() }))
+      .array(
+        z.discriminatedUnion("source", [
+          z.object({ source: z.literal("asset"), assetNodeId: z.string().uuid() }),
+          z.object({
+            source: z.literal("upload"),
+            mediaAssetId: z.string().uuid(),
+            name: z
+              .string()
+              .trim()
+              .min(1)
+              .max(256)
+              .refine((name) => name !== "." && name !== ".." && !name.includes("/")),
+          }),
+        ])
+      )
       .max(10)
       .refine(
-        (items) => new Set(items.map((item) => item.assetNodeId)).size === items.length,
+        (items) =>
+          new Set(
+            items.map((item) =>
+              item.source === "asset" ? `asset:${item.assetNodeId}` : `upload:${item.mediaAssetId}`
+            )
+          ).size === items.length,
         "Duplicate attachment"
       )
       .optional(),
@@ -53,7 +72,15 @@ export async function postTaskComment(
     result.actorUserId !== userId ||
     result.kind !== "comment" ||
     result.attachments.length !== (data.attachments?.length ?? 0) ||
-    result.attachments.some((file, index) => file.id !== data.attachments?.[index]?.assetNodeId) ||
+    result.attachments.some((file, index) => {
+      const sent = data.attachments?.[index];
+      return (
+        !sent ||
+        (sent.source === "asset"
+          ? file.id !== sent.assetNodeId
+          : file.mediaAssetId !== sent.mediaAssetId)
+      );
+    }) ||
     (result.replyTo?.id ?? null) !== (data.replyToId ?? null)
   )
     throw new Error("Task comment acknowledgement mismatch");

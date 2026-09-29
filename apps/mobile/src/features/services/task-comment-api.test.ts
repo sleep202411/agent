@@ -97,3 +97,42 @@ it("rejects missing files in the comment acknowledgement", async () => {
     })
   ).rejects.toThrow("acknowledgement mismatch");
 });
+
+it("accepts confirmed uploads and verifies their returned media identity", async () => {
+  const media = "22222222-2222-4222-8222-222222222222";
+  const input = {
+    body: "",
+    clientKey: "upload",
+    attachments: [{ source: "upload" as const, mediaAssetId: media, name: "New.mp4" }],
+  };
+  vi.mocked(api.post).mockResolvedValue({
+    ...comment,
+    attachments: [
+      { id, mediaAssetId: media, name: "New.mp4", mediaKind: "video", contentType: "video/mp4" },
+    ],
+  });
+  await postTaskComment(id, "1", input);
+  expect(api.post).toHaveBeenCalledWith(`/crew-tasks/${id}/comments`, {
+    service: "aurora",
+    data: input,
+  });
+  await expect(
+    postTaskComment(id, "1", {
+      ...input,
+      attachments: [...input.attachments, ...input.attachments],
+    })
+  ).rejects.toThrow("Duplicate");
+  await expect(
+    postTaskComment(id, "1", {
+      ...input,
+      attachments: [{ ...input.attachments[0]!, name: "../file" }],
+    })
+  ).rejects.toThrow();
+  vi.mocked(api.post).mockResolvedValue({
+    ...comment,
+    attachments: [
+      { id, mediaAssetId: id, name: "Other", mediaKind: "video", contentType: "video/mp4" },
+    ],
+  });
+  await expect(postTaskComment(id, "1", input)).rejects.toThrow("acknowledgement mismatch");
+});
