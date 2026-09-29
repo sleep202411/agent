@@ -1193,5 +1193,9 @@
   "thread.openWebChat": "更多聊天工具",
   "thread.uploadFile": "上传文件",
   "thread.mention": "提及成员",
-  "thread.findMember": "搜索成员"
+  "thread.findMember": "搜索成员",
+  "thread.tagTask": "引用任务",
+  "thread.searchTasks": "搜索剧组任务",
+  "thread.noTasks": "没有匹配的任务",
+  "thread.taskTooLong": "加入任务引用后将超出消息长度限制。"
 }

@@ -1193,5 +1193,9 @@
   "thread.openWebChat": "More chat tools",
   "thread.uploadFile": "Upload file",
   "thread.mention": "Mention a member",
-  "thread.findMember": "Find a member"
+  "thread.findMember": "Find a member",
+  "thread.tagTask": "Tag a task",
+  "thread.searchTasks": "Search Crew tasks",
+  "thread.noTasks": "No matching tasks",
+  "thread.taskTooLong": "The task reference would exceed the message limit."
 }

@@ -35,6 +35,14 @@ vi.mock("@/features/crew-assets/upload", () => ({
   pickAndUploadCrewFile: h.upload,
   discardCrewUpload: h.discard,
 }));
+vi.mock("./task-options", () => ({
+  taskLabel: (task: { number: number; title: string }) => `TASK-${task.number} ${task.title}`,
+}));
+vi.mock("./task-picker", () => ({
+  TaskPicker: ({ onSelect }: { onSelect: (task: unknown) => void }) => (
+    <button onClick={() => onSelect({ id: "task", number: 7, title: "Scene" })}>pick-task</button>
+  ),
+}));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
@@ -382,4 +390,41 @@ it("drops deleted mention tokens and never enables the picker for service chats"
   await act(async () => type("plain text"));
   await act(async () => click("thread.send"));
   expect(h.send.mock.calls[0][1]).not.toHaveProperty("mentions");
+});
+
+it("sends task references with immutable retry metadata and removes deleted tokens", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team" };
+  h.send.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(message);
+  await render();
+  await act(async () => click("thread.tagTask"));
+  await act(async () => click("pick-task"));
+  await act(async () => click("thread.send"));
+  expect(h.send.mock.calls[0][1].tasks).toEqual([{ taskId: "task", label: "TASK-7 Scene" }]);
+  await act(async () => click("inbox.retry"));
+  expect(h.send.mock.calls[1][1]).toEqual(h.send.mock.calls[0][1]);
+  await act(async () => click("thread.tagTask"));
+  await act(async () => click("pick-task"));
+  await act(async () => type("no reference"));
+  await act(async () => click("thread.send"));
+  expect(h.send.mock.calls[2][1]).not.toHaveProperty("tasks");
+});
+it("opens a received same-Crew task through the existing authenticated workspace", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  h.messages = [
+    {
+      ...message,
+      payload: {
+        kind: "text",
+        tasks: [
+          { taskId: "task", crewId: "crew", number: 7, label: "TASK-7 Scene" },
+          { taskId: "foreign", crewId: "other", number: 1, label: "Foreign" },
+        ],
+      },
+    },
+  ];
+  await render();
+  await act(async () => click("#TASK-7 Scene"));
+  expect(host.textContent).toContain("web:/crews/crew/workspace?tab=tasks&task=task");
+  await act(async () => click("thread.backToChat"));
+  expect(host.textContent).not.toContain("#Foreign");
 });

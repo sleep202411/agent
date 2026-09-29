@@ -33,6 +33,8 @@ import { ConversationProposal, ConversationProposalEditor } from "./conversation
 import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
 import type { CrewAsset } from "@/features/crew-assets/api";
 import { canAttachCrewFiles, sendConversationAttachments } from "./conversation-attachments";
+import { TaskPicker } from "./task-picker";
+import { taskLabel } from "./task-options";
 import { ConversationFile } from "./conversation-file";
 import { AuthedWebView } from "@/components/authed-web-view";
 
@@ -87,12 +89,16 @@ export function NativeConversation({
   const [mentions, setMentions] = useState<{ userId: string; label: string }[]>([]),
     [mentionPicker, setMentionPicker] = useState(false),
     [mentionQuery, setMentionQuery] = useState("");
+  const [taskPicker, setTaskPicker] = useState(false),
+    [taskReferences, setTaskReferences] = useState<{ taskId: string; label: string }[]>([]);
+  const [taskTarget, setTaskTarget] = useState<string>();
   const intent = useRef<
     | {
         body: string;
         clientKey: string;
         attachments: ({ source: "asset"; assetNodeId: string } | CrewUpload)[];
         mentions?: { userId: string; label: string }[];
+        tasks?: { taskId: string; label: string }[];
       }
     | undefined
   >(undefined);
@@ -139,7 +145,7 @@ export function NativeConversation({
       <View style={{ flex: 1 }}>
         {web && button(t("thread.backToChat"), () => setWeb(false))}
         <AuthedWebView
-          path={`/messages/${encodeURIComponent(id)}`}
+          path={taskTarget ?? `/messages/${encodeURIComponent(id)}`}
           title={t("serviceContact.open")}
         />
       </View>
@@ -154,6 +160,28 @@ export function NativeConversation({
     );
   const conversation = history.detail;
   const canAttach = canAttachCrewFiles(conversation, userId);
+  if (taskPicker && canAttach)
+    return (
+      <TaskPicker
+        crewId={conversation.contextId}
+        generation={generation}
+        onClose={() => setTaskPicker(false)}
+        onSelect={(task) => {
+          const label = taskLabel(task);
+          if (body.length + label.length + 3 > 4000) {
+            setSendError(t("thread.taskTooLong"));
+            setTaskPicker(false);
+            return;
+          }
+          setBody((value) => `${value}${value && !/\s$/.test(value) ? " " : ""}#${label} `);
+          setTaskReferences((value) => [
+            ...value.filter((item) => item.taskId !== task.id),
+            { taskId: task.id, label },
+          ]);
+          setTaskPicker(false);
+        }}
+      />
+    );
   if (picking && canAttach)
     return (
       <CrewAssetPicker
@@ -181,7 +209,14 @@ export function NativeConversation({
     >
       <View style={{ flexDirection: "row", paddingHorizontal: 12 }}>
         {conversation.contextType === "crew"
-          ? button(t("thread.openWebChat"), () => setWeb(true), uploading || op.busy)
+          ? button(
+              t("thread.openWebChat"),
+              () => {
+                setTaskTarget(undefined);
+                setWeb(true);
+              },
+              uploading || op.busy
+            )
           : button(
               t(conversation.contextType === "order" ? "thread.openOrder" : "thread.openService"),
               () =>
@@ -263,6 +298,25 @@ export function NativeConversation({
                   name={file.name}
                 />
               ))}
+            {conversation.contextType === "crew" &&
+              (item.payload?.kind === "text" || item.payload?.kind === "attachments") &&
+              item.payload.tasks
+                ?.filter((task) => task.crewId === conversation.contextId)
+                .map((task) => (
+                  <Pressable
+                    key={task.taskId}
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setTaskTarget(
+                        `/crews/${encodeURIComponent(task.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(task.taskId)}`
+                      );
+                      setWeb(true);
+                    }}
+                    style={{ padding: 10 }}
+                  >
+                    <ThemedText>#{task.label}</ThemedText>
+                  </Pressable>
+                ))}
             <ThemedText type="small">
               {Number.isNaN(Date.parse(item.createdAt))
                 ? ""
@@ -378,6 +432,11 @@ export function NativeConversation({
         {canAttach && (
           <View>
             {button(
+              t("thread.tagTask"),
+              () => setTaskPicker(true),
+              op.busy || attempted || uploading || taskReferences.length >= 20
+            )}
+            {button(
               t("thread.mention"),
               () => {
                 setMentionPicker((v) => !v);
@@ -444,6 +503,9 @@ export function NativeConversation({
           editable={!op.busy && !attempted}
           onChangeText={(value) => {
             setBody(value);
+            setTaskReferences((previous) =>
+              previous.filter((task) => value.includes(`#${task.label}`))
+            );
             setMentions((previous) => previous.filter((m) => value.includes(`@${m.label}`)));
           }}
           style={{
@@ -466,6 +528,9 @@ export function NativeConversation({
               intent.current = {
                 body: body.trim(),
                 clientKey: inquiryKey(),
+                ...(canAttach && taskReferences.length
+                  ? { tasks: taskReferences.filter((task) => body.includes(`#${task.label}`)) }
+                  : {}),
                 ...(canAttach && mentions.length
                   ? { mentions: mentions.filter((m) => body.includes(`@${m.label}`)) }
                   : {}),
@@ -484,6 +549,7 @@ export function NativeConversation({
                   : sendConversationText(id, {
                       body: submitted.body,
                       clientKey: submitted.clientKey,
+                      ...(submitted.tasks ? { tasks: submitted.tasks } : {}),
                       ...(submitted.mentions ? { mentions: submitted.mentions } : {}),
                     }),
               () => {
@@ -491,6 +557,8 @@ export function NativeConversation({
                 setAttempted(false);
                 setBody("");
                 setMentions([]);
+                setTaskReferences([]);
+                setTaskPicker(false);
                 setMentionPicker(false);
                 setAssets([]);
                 pendingUploads.current.items = [];
