@@ -1,5 +1,7 @@
+import { useScreenActive } from "@/hooks/use-app-active";
+import { useInboxRealtime } from "@/features/services/use-inbox-realtime";
 import { useUserDisplays } from "@/features/services/user-displays";
-import { Stack, useIsFocused, useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
 import { CONVERSATION_CONTEXT_TYPES } from "@repo/shared/conversation";
@@ -14,13 +16,19 @@ import type { InboxFilter } from "@/features/services/inbox-api";
 export default function InboxScreen() {
   const auth = useAuth(),
     gate = useAuthGate(),
-    focused = useIsFocused();
+    focused = useScreenActive();
   const theme = useTheme(),
     t = useTranslations(),
     router = useRouter();
   const [contextType, setContextType] = useState<InboxFilter>("");
   const owner = auth.status === "authenticated" && focused ? String(auth.generation) : undefined;
   const inbox = useInbox(owner, contextType);
+  const liveUnavailable = useInboxRealtime(
+    auth.status === "authenticated" ? String(auth.user?.userId ?? auth.user?.id ?? "") : undefined,
+    auth.generation,
+    focused,
+    inbox.refresh
+  );
   const displays = useUserDisplays(
     owner,
     inbox.items.filter((item) => item.contextType !== "crew").map((item) => item.counterpartyId)
@@ -62,6 +70,7 @@ export default function InboxScreen() {
               ))}
             </ScrollView>
           </View>
+          {liveUnavailable && <ThemedText>{t("inbox.liveUnavailable")}</ThemedText>}
           <FlatList
             data={inbox.items}
             keyExtractor={(item) => item.id}

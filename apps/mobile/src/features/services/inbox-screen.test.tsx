@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import InboxScreen from "@/app/inbox";
 vi.mock("@/features/services/user-displays", () => ({ useUserDisplays: () => new Map() }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("@/features/services/use-inbox-realtime", () => ({ useInboxRealtime: () => false }));
 const h = vi.hoisted(() => ({
   push: vi.fn(),
   gate: vi.fn(),

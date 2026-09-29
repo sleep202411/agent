@@ -9,6 +9,7 @@
     "@repo/experience-engine": "*",
     "@repo/shared": "*",
     "@tabler/icons-react-native": "^3.44.0",
+    "ably": "2.26.0",
     "country-flag-icons": "^1.6.19",
     "expo": "~57.0.11",
     "expo-asset": "~57.0.5",
