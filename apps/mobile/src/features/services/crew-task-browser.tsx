@@ -4,6 +4,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { AuthedWebView } from "@/components/authed-web-view";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
+import { TaskCreate } from "./task-create";
 import { TaskDetail } from "./task-detail";
 import { TaskPicker } from "./task-picker";
 
@@ -19,9 +20,23 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [creating, setCreating] = useState(false);
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (creating)
+    return (
+      <TaskCreate
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setCreating(false)}
+        onCreated={(id) => {
+          setCreating(false);
+          setTaskId(id);
+        }}
+      />
+    );
   if (webTask)
     return (
       <View style={{ flex: 1 }}>
@@ -56,15 +71,26 @@ export function CrewTaskBrowser({
       />
     );
   return (
-    <TaskPicker
-      crewId={crewId}
-      generation={generation}
-      title={t("crewTasks.title")}
-      closeLabel={t("report.close")}
-      onClose={onClose}
-      onSelect={(task) => {
-        if (generation === getAuthGeneration()) setTaskId(task.id);
-      }}
-    />
+    <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => {
+          if (generation === getAuthGeneration()) setCreating(true);
+        }}
+        style={{ padding: 12 }}
+      >
+        <ThemedText>{t("taskCreate.title")}</ThemedText>
+      </Pressable>
+      <TaskPicker
+        crewId={crewId}
+        generation={generation}
+        title={t("crewTasks.title")}
+        closeLabel={t("report.close")}
+        onClose={onClose}
+        onSelect={(task) => {
+          if (generation === getAuthGeneration()) setTaskId(task.id);
+        }}
+      />
+    </View>
   );
 }

@@ -1336,5 +1336,13 @@
   "taskRelationships.removeBlocker": "移除前置任務",
   "taskRelationships.save": "儲存修改",
   "crewTasks.title": "劇組任務",
-  "crewTasks.back": "返回任務列表"
+  "crewTasks.back": "返回任務列表",
+  "taskCreate.title": "發起任務",
+  "taskCreate.managerOnly": "僅任務管理員可以發起任務。",
+  "taskCreate.assignees": "負責人",
+  "taskCreate.remove": "移除負責人",
+  "taskCreate.add": "添加負責人",
+  "taskCreate.invalid": "請檢查標題、說明和日期；截止時間不能早於開始時間。",
+  "taskCreate.uncertain": "請求可能已建立任務。請返回任務列表核對後再建立，避免重複。",
+  "taskCreate.submit": "建立任務"
 }

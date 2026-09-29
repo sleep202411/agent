@@ -129,3 +129,24 @@ it("stops cursor loops and ignores results after account change or unmount", asy
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
 });
+
+it("allows self-assignment only when explicitly enabled", async () => {
+  h.fetch.mockResolvedValue({ items: [member("1"), member("2")], nextCursor: null });
+  await act(async () =>
+    root.render(
+      <TaskMentionPicker
+        crewId="crew"
+        userId="1"
+        generation={1}
+        excludedIds={[]}
+        includeSelf
+        title="Assignees"
+        onSelect={h.select}
+        onClose={() => {}}
+      />
+    )
+  );
+  expect(host.textContent).toContain("Assignees");
+  await act(async () => button("@1 · 1").click());
+  expect(h.select).toHaveBeenCalledExactlyOnceWith({ userId: "1", label: "1" });
+});

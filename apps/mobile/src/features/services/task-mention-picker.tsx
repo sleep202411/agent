@@ -13,6 +13,8 @@ export function TaskMentionPicker({
   excludedIds,
   onSelect,
   onClose,
+  includeSelf = false,
+  title,
 }: {
   crewId: string;
   userId: string;
@@ -20,6 +22,8 @@ export function TaskMentionPicker({
   excludedIds: string[];
   onSelect: (mention: TaskMention) => void;
   onClose: () => void;
+  includeSelf?: boolean;
+  title?: string;
 }) {
   const t = useTranslations(),
     theme = useTheme();
@@ -83,7 +87,7 @@ export function TaskMentionPicker({
     return () => controller.abort();
   }, [crewId, generation]);
   const candidates = items
-    .filter((item) => item.userId !== userId && !excludedIds.includes(item.userId))
+    .filter((item) => (includeSelf || item.userId !== userId) && !excludedIds.includes(item.userId))
     .map((item) => ({
       userId: item.userId,
       label:
@@ -97,7 +101,7 @@ export function TaskMentionPicker({
     );
   return (
     <View style={{ flex: 1, padding: 12, gap: 10 }}>
-      <ThemedText>{t("thread.mention")}</ThemedText>
+      <ThemedText>{title ?? t("thread.mention")}</ThemedText>
       <TextInput
         accessibilityLabel={t("thread.findMember")}
         value={query}

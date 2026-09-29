@@ -1336,5 +1336,13 @@
   "taskRelationships.removeBlocker": "移除前置任务",
   "taskRelationships.save": "保存修改",
   "crewTasks.title": "剧组任务",
-  "crewTasks.back": "返回任务列表"
+  "crewTasks.back": "返回任务列表",
+  "taskCreate.title": "发起任务",
+  "taskCreate.managerOnly": "仅任务管理员可以发起任务。",
+  "taskCreate.assignees": "负责人",
+  "taskCreate.remove": "移除负责人",
+  "taskCreate.add": "添加负责人",
+  "taskCreate.invalid": "请检查标题、说明和日期；截止时间不能早于开始时间。",
+  "taskCreate.uncertain": "请求可能已创建任务。请返回任务列表核对后再创建，避免重复。",
+  "taskCreate.submit": "创建任务"
 }

@@ -17,6 +17,11 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("@/components/authed-web-view", () => ({
   AuthedWebView: ({ path }: { path: string }) => <span>{path}</span>,
 }));
+vi.mock("./task-create", () => ({
+  TaskCreate: ({ onCreated }: { onCreated: (id: string) => void }) => (
+    <button onClick={() => onCreated("new")}>create form</button>
+  ),
+}));
 vi.mock("./task-picker", () => ({
   TaskPicker: ({
     onSelect,
@@ -85,4 +90,10 @@ it("ignores stale task selection after account changes", async () => {
   h.generation = 2;
   await act(async () => button("pick").click());
   expect(h.detail).not.toHaveBeenCalled();
+});
+
+it("opens the newly created task directly", async () => {
+  await act(async () => button("taskCreate.title").click());
+  await act(async () => button("create form").click());
+  expect(h.detail).toHaveBeenLastCalledWith(expect.objectContaining({ taskId: "new" }));
 });

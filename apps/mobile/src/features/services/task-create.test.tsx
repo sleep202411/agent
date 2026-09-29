@@ -1,0 +1,158 @@
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { TaskCreate } from "./task-create";
+const h = vi.hoisted(() => ({ access: vi.fn(), update: vi.fn(), refresh: vi.fn(), generation: 1 }));
+vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
+vi.mock("./task-create-api", async (original) => ({
+  ...(await original<typeof import("./task-create-api")>()),
+  createTask: h.update,
+}));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
+vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s }));
+vi.mock("@/components/themed-text", () => ({
+  ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
+vi.mock("react-native", () => ({
+  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Modal: ({ children, visible }: { children: ReactNode; visible: boolean }) =>
+    visible ? <div>{children}</div> : null,
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ActivityIndicator: () => <span>loading</span>,
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+  }: {
+    children: ReactNode;
+    onPress: () => void;
+    disabled: boolean;
+  }) => (
+    <button onClick={onPress} disabled={disabled}>
+      {children}
+    </button>
+  ),
+  TextInput: ({
+    value,
+    onChangeText,
+    editable,
+  }: {
+    value: string;
+    onChangeText: (s: string) => void;
+    editable: boolean;
+  }) => <input value={value} disabled={!editable} onChange={(e) => onChangeText(e.target.value)} />,
+}));
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+let host: HTMLDivElement, root: Root;
+const render = () =>
+  act(async () =>
+    root.render(
+      <TaskCreate
+        crewId="crew"
+        userId="1"
+        generation={1}
+        onCreated={h.refresh}
+        onClose={h.refresh}
+      />
+    )
+  );
+const button = (text: string) =>
+  Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text);
+const type = (n: number, text: string) => {
+  const input = host.querySelectorAll("input")[n]!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, text);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+};
+beforeEach(() => {
+  vi.resetAllMocks();
+  h.generation = 1;
+  h.access.mockResolvedValue({ allowed: false, canManage: true });
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+});
+afterEach(async () => {
+  await act(async () => root.unmount());
+  host.remove();
+});
+
+vi.mock("@/config", () => ({ appEnv: { siteRegion: "cn" } }));
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("./task-mention-picker", () => ({
+  TaskMentionPicker: ({
+    onSelect,
+  }: {
+    onSelect: (m: { userId: string; label: string }) => void;
+  }) => <button onClick={() => onSelect({ userId: "1", label: "Self" })}>choose member</button>,
+}));
+it("requires task management permission", async () => {
+  h.access.mockResolvedValue({ allowed: true, canManage: false });
+  await render();
+  expect(button("taskCreate.submit")).toBeUndefined();
+  expect(host.textContent).toContain("taskCreate.managerOnly");
+});
+it("validates dates and submits one trimmed creation with regional assignments", async () => {
+  let finish!: (task: { id: string }) => void;
+  h.update.mockImplementation(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      })
+  );
+  await render();
+  expect(button("taskCreate.submit")!.disabled).toBe(true);
+  await act(async () => {
+    type(0, " New shot ");
+    type(1, " Brief ");
+    type(2, "2026-10-05 10:00");
+    type(3, "2026-10-04 10:00");
+  });
+  expect(button("taskCreate.submit")!.disabled).toBe(true);
+  await act(async () => type(3, "2026-10-06 10:00"));
+  await act(async () => button("taskCreate.add")!.click());
+  await act(async () => button("choose member")!.click());
+  await act(async () => {
+    button("taskCreate.submit")!.click();
+    button("taskCreate.submit")!.click();
+  });
+  expect(h.update).toHaveBeenCalledExactlyOnceWith(
+    "crew",
+    expect.objectContaining({
+      title: "New shot",
+      description: "Brief",
+      assignees: [{ userId: "1", currency: "CNY" }],
+    })
+  );
+  expect(button("crewTasks.back")!.disabled).toBe(true);
+  await act(async () => finish({ id: "new" }));
+  expect(h.refresh).toHaveBeenCalledExactlyOnceWith("new");
+});
+it("freezes an uncertain creation without retrying", async () => {
+  h.update.mockRejectedValue(new Error("Connection lost"));
+  await render();
+  await act(async () => type(0, "Task"));
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(host.textContent).toContain("Connection lost");
+  expect(host.textContent).toContain("taskCreate.uncertain");
+  expect(button("taskCreate.submit")!.disabled).toBe(true);
+  expect(host.querySelector("input")!.value).toBe("Task");
+});
+it("ignores completion after an account change", async () => {
+  let finish!: (task: { id: string }) => void;
+  h.update.mockImplementation(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      })
+  );
+  await render();
+  await act(async () => type(0, "Task"));
+  await act(async () => button("taskCreate.submit")!.click());
+  h.generation = 2;
+  await act(async () => finish({ id: "new" }));
+  expect(h.refresh).not.toHaveBeenCalled();
+});

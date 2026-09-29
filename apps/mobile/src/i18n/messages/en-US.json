@@ -1336,5 +1336,13 @@
   "taskRelationships.removeBlocker": "Remove Blocking Task",
   "taskRelationships.save": "Save Changes",
   "crewTasks.title": "Crew Tasks",
-  "crewTasks.back": "Back to Tasks"
+  "crewTasks.back": "Back to Tasks",
+  "taskCreate.title": "Create Task",
+  "taskCreate.managerOnly": "Only task managers can create tasks.",
+  "taskCreate.assignees": "Assignees",
+  "taskCreate.remove": "Remove assignee",
+  "taskCreate.add": "Add Assignee",
+  "taskCreate.invalid": "Check the title, brief and dates. The due date must not precede the start date.",
+  "taskCreate.uncertain": "The request may have created a task. Return to the task list and check before creating another.",
+  "taskCreate.submit": "Create Task"
 }
