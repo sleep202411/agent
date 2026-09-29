@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ConversationFile } from "./conversation-file";
 const h = vi.hoisted(() => ({ access: vi.fn(), open: vi.fn(), active: true, generation: 1 }));
+vi.mock("./conversation-video", () => ({
+  ConversationVideo: () => <div data-video>video-preview</div>,
+}));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
@@ -187,4 +190,28 @@ it("clears image previews on account changes and leaves non-image files in the e
   await render();
   await act(async () => click());
   expect(h.open).toHaveBeenCalledTimes(1);
+});
+
+it("mounts video only after authorized access and removes it on close", async () => {
+  h.access.mockResolvedValue({ url: "https://files.test/video", expiresAt: null });
+  await act(async () =>
+    root.render(
+      <ConversationFile
+        mediaAssetId="media"
+        name="Film"
+        mediaKind="video"
+        contentType="video/mp4"
+      />
+    )
+  );
+  expect(host.querySelector("[data-video]")).toBeNull();
+  await act(async () => click());
+  expect(host.querySelector("[data-video]")).not.toBeNull();
+  expect(h.open).not.toHaveBeenCalled();
+  await act(async () =>
+    Array.from(host.querySelectorAll("button"))
+      .find((b) => b.textContent === "thread.closePreview")!
+      .click()
+  );
+  expect(host.querySelector("[data-video]")).toBeNull();
 });

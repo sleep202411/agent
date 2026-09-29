@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Linking, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ConversationVideo } from "./conversation-video";
 import { Image } from "expo-image";
 import { useTheme } from "@/hooks/use-theme";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -9,14 +10,17 @@ import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
 import { fetchCrewAssetAccess } from "@/features/crew-assets/api";
 type Props = { mediaAssetId: string; name: string; mediaKind?: string; contentType?: string };
-/** Resolve access on tap; image URLs live only in the active preview, never persisted. */
+/** Resolve access on tap; media URLs live only in the active preview, never persisted. */
 function File({ mediaAssetId, name, mediaKind, contentType }: Props) {
   const insets = useSafeAreaInsets();
   const t = useTranslations(),
     theme = useTheme();
   const [preview, setPreview] = useState<{ url: string; expiresAt: string | null } | undefined>();
+  const isVideo = mediaKind === "video" && /^video\//i.test(contentType || "");
   const canPreview =
-    mediaKind === "image" && /^image\/(jpeg|png|webp|gif|avif|heic|heif)$/i.test(contentType || "");
+    isVideo ||
+    (mediaKind === "image" &&
+      /^image\/(jpeg|png|webp|gif|avif|heic|heif)$/i.test(contentType || ""));
   useEffect(() => {
     if (!preview?.expiresAt) return;
     const timer = setTimeout(
@@ -94,17 +98,21 @@ function File({ mediaAssetId, name, mediaKind, contentType }: Props) {
               <ThemedText>{t("thread.closePreview")}</ThemedText>
             </Pressable>
             <ThemedText numberOfLines={2}>{name}</ThemedText>
-            <Image
-              source={{ uri: preview.url }}
-              style={{ flex: 1 }}
-              contentFit="contain"
-              cachePolicy="none"
-              accessibilityLabel={name}
-              onError={() => {
-                setPreview(undefined);
-                setError(t("thread.previewFailed"));
-              }}
-            />
+            {isVideo ? (
+              <ConversationVideo url={preview.url} onRetry={() => setPreview(undefined)} />
+            ) : (
+              <Image
+                source={{ uri: preview.url }}
+                style={{ flex: 1 }}
+                contentFit="contain"
+                cachePolicy="none"
+                accessibilityLabel={name}
+                onError={() => {
+                  setPreview(undefined);
+                  setError(t("thread.previewFailed"));
+                }}
+              />
+            )}
           </View>
         </Modal>
       )}
