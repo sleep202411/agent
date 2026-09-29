@@ -1,3 +1,4 @@
+import { ApplicationAmendments } from "./application-amendments";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -138,8 +139,24 @@ function ApplicationPage(
 }
 function TermsReview(props: Props & { application: Application; onClose: () => void }) {
   const [interview, setInterview] = useState(false);
+  const [amendments, setAmendments] = useState(false);
   const [before, setBefore] = useState<number | null>(null),
     [revision, setRevision] = useState(0);
+  if (amendments)
+    return (
+      <ApplicationAmendments
+        {...props}
+        crewId={props.application.crewId}
+        applicationId={props.application.id}
+        applicantId={props.application.applicantId}
+        taskId={props.application.taskId!}
+        onClose={() => {
+          setAmendments(false);
+          setBefore(null);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (interview)
     return (
       <ApplicationInterview
@@ -153,6 +170,7 @@ function TermsReview(props: Props & { application: Application; onClose: () => v
     <TermsPage
       key={`${revision}:${before}`}
       {...props}
+      onAmendments={() => setAmendments(true)}
       onInterview={() => setInterview(true)}
       before={before}
       onMore={setBefore}
@@ -168,6 +186,7 @@ function TermsPage(
     application: Application;
     onClose: () => void;
     onInterview: () => void;
+    onAmendments: () => void;
     before: number | null;
     onMore: (before: number) => void;
     onRefresh: () => void;
@@ -201,6 +220,9 @@ function TermsPage(
         {props.application.crewName} · {props.application.positionType}
       </ThemedText>
       <Action disabled={op.busy} label={t("crewInterview.title")} onPress={props.onInterview} />
+      {props.application.status === "approved" && props.application.taskId && (
+        <Action disabled={op.busy} label={t("crewAmendments.title")} onPress={props.onAmendments} />
+      )}
       <ThemedText>{t("crewTerms.title")}</ThemedText>
       {!page && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}

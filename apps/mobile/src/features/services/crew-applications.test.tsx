@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewApplications } from "./crew-applications";
+vi.mock("./application-amendments", () => ({
+  ApplicationAmendments: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>Amendments</button>
+  ),
+}));
 vi.mock("./application-interview", () => ({ ApplicationInterview: () => <span>Interview</span> }));
 vi.mock("./position-invitations", () => ({ PositionInvitations: () => <span>Invitations</span> }));
 const h = vi.hoisted(() => ({
@@ -242,4 +247,17 @@ it("opens native invitation inbox", async () => {
   await render();
   await click("crewPositionInvites.title");
   expect(host.textContent).toBe("Invitations");
+});
+
+it("opens approved task amendments and reloads terms on return", async () => {
+  h.list.mockResolvedValue({
+    items: [{ ...app, status: "approved", taskId: "00000000-0000-4000-8000-000000000002" }],
+    nextCursor: null,
+  });
+  await render();
+  await click("Crew · Director · 2026-09-30 · crewTerms.approved");
+  await click("crewAmendments.title");
+  expect(host.textContent).toBe("Amendments");
+  await click("Amendments");
+  expect(h.terms).toHaveBeenCalledTimes(2);
 });

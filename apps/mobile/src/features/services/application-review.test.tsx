@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApplicationReview } from "./application-review";
+vi.mock("./application-amendments", () => ({
+  ApplicationAmendments: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>Amendments</button>
+  ),
+}));
 vi.mock("./terms-proposal", () => ({
   TermsProposalScreen: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>Proposal</button>
@@ -254,5 +259,15 @@ it("opens terms proposals and refreshes approval readiness on return", async () 
   await click("termsProposal.open");
   expect(host.textContent).toBe("Proposal");
   await click("Proposal");
+  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+});
+
+it("opens amendments after approval and reloads the application on return", async () => {
+  await open();
+  await click("applicationReview.approve");
+  await click("applicationReview.confirm");
+  await click("crewAmendments.title");
+  expect(host.textContent).toBe("Amendments");
+  await click("Amendments");
   expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
 });

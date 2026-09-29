@@ -68,7 +68,8 @@ export async function fetchProposalContext(
     )
       throw new Error("Position pagination changed. Refresh to reload.");
     const position = page.items.find((row) => row.id === review.app.positionId);
-    if (position) return { ...review, taskLinked: position.taskId !== null };
+    if (position)
+      return { ...review, taskLinked: position.taskId !== null, taskId: position.taskId };
     cursor = page.nextCursor;
   } while (cursor !== null && !signal.aborted);
   throw new Error("Application position is unavailable. Refresh to reload.");

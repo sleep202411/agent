@@ -1,3 +1,4 @@
+import { ApplicationAmendments } from "./application-amendments";
 import { TermsProposalScreen } from "./terms-proposal";
 import { ApplicationInterview } from "./application-interview";
 import { useEffect, useState } from "react";
@@ -124,7 +125,20 @@ function ReviewList(
 function Review(props: Props & { applicationId: string }) {
   const [revision, setRevision] = useState(0);
   const [proposal, setProposal] = useState(false);
+  const [amendmentApplicant, setAmendmentApplicant] = useState<string>();
   const [interviewApplicant, setInterviewApplicant] = useState<string>();
+  if (amendmentApplicant)
+    return (
+      <ApplicationAmendments
+        {...props}
+        applicantId={amendmentApplicant}
+        reviewer
+        onClose={() => {
+          setAmendmentApplicant(undefined);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (proposal)
     return (
       <TermsProposalScreen
@@ -153,6 +167,7 @@ function Review(props: Props & { applicationId: string }) {
     <ReviewDetail
       key={revision}
       {...props}
+      onAmendments={setAmendmentApplicant}
       onProposal={() => setProposal(true)}
       onInterview={setInterviewApplicant}
       onRefresh={() => setRevision((n) => n + 1)}
@@ -163,6 +178,7 @@ function ReviewDetail(
   props: Props & {
     applicationId: string;
     onProposal: () => void;
+    onAmendments: (applicantId: string) => void;
     onInterview: (applicantId: string) => void;
     onRefresh: () => void;
   }
@@ -257,6 +273,13 @@ function ReviewDetail(
             onPress={() => props.onInterview(review.app.applicantId)}
           />
           <Action disabled={op.busy} label={t("termsProposal.open")} onPress={props.onProposal} />
+          {(result ?? review.app.status) === "approved" && (
+            <Action
+              disabled={op.busy}
+              label={t("crewAmendments.title")}
+              onPress={() => props.onAmendments(review.app.applicantId)}
+            />
+          )}
           <ThemedText>{t("applicationReview.requirements")}</ThemedText>
           {review.app.status === "pending" && !result && !attempted && (
             <>
