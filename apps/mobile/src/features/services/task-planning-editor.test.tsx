@@ -8,9 +8,14 @@ const h = vi.hoisted(() => ({
   fetch: vi.fn(),
   update: vi.fn(),
   refresh: vi.fn(),
+  templates: vi.fn(),
   generation: 1,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock("./task-kind-api", async (original) => ({
+  ...(await original<typeof import("./task-kind-api")>()),
+  fetchTaskKindTemplates: h.templates,
+}));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
 vi.mock("./task-planning-edit-api", async (original) => ({
   ...(await original<typeof import("./task-planning-edit-api")>()),
@@ -87,6 +92,7 @@ beforeEach(() => {
   h.generation = 1;
   h.fetch.mockResolvedValue({
     ...task,
+    taskKind: "storyboard",
     cycleId: "11111111-1111-4111-8111-111111111111",
     cycle: { id: "11111111-1111-4111-8111-111111111111", name: "Sprint" },
     episodeId: null,
@@ -193,4 +199,28 @@ it("aborts snapshot reads on unmount", async () => {
   const signal = h.fetch.mock.calls[0]![1] as AbortSignal;
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
+});
+
+it("edits the existing kind without loading or applying creation templates", async () => {
+  h.update.mockResolvedValue({});
+  await render();
+  await act(async () => button("taskPlanning.edit")!.click());
+  expect(button("taskKind.storyboard")).toBeDefined();
+  await act(async () => button("taskKind.storyboard")!.click());
+  await act(async () => button("taskKind.art")!.click());
+  await act(async () => button("taskPlanning.save")!.click());
+  expect(h.templates).not.toHaveBeenCalled();
+  expect(h.update).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ title: "Shot", description: "Brief", taskKind: "storyboard" }),
+    { expectedVersion: 4, taskKind: "art" }
+  );
+});
+it("supports explicitly clearing the kind", async () => {
+  h.update.mockResolvedValue({});
+  await render();
+  await act(async () => button("taskPlanning.edit")!.click());
+  await act(async () => button("taskKind.storyboard")!.click());
+  await act(async () => button("taskKind.unset")!.click());
+  await act(async () => button("taskPlanning.save")!.click());
+  expect(h.update).toHaveBeenCalledWith(expect.anything(), { expectedVersion: 4, taskKind: null });
 });

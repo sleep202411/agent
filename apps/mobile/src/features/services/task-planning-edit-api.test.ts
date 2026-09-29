@@ -34,6 +34,7 @@ const detail = {
 const other = "22222222-2222-4222-8222-222222222222";
 const snapshot = {
   ...detail,
+  taskKind: "storyboard" as const,
   cycleId: id,
   cycle: { id, name: "Sprint" },
   episodeId: id,
@@ -122,4 +123,39 @@ it("surfaces version conflicts without retrying", async () => {
     "Version changed"
   );
   expect(api.patch).toHaveBeenCalledOnce();
+});
+
+it("changes or clears only the kind without applying title templates", async () => {
+  for (const taskKind of ["art", null] as const) {
+    const changed = planningChanges(snapshot, planningDraft(snapshot), taskKind);
+    expect(changed.data).toEqual({ expectedVersion: 1, taskKind });
+    vi.mocked(api.patch).mockResolvedValue({ ...snapshot, version: 2, taskKind });
+    await expect(
+      updateTaskPlanning(snapshot, { expectedVersion: 1, taskKind })
+    ).resolves.toMatchObject({
+      taskKind,
+      title: snapshot.title,
+      description: snapshot.description,
+    });
+    expect(api.patch).toHaveBeenLastCalledWith(`/crew-tasks/${id}`, {
+      service: "aurora",
+      data: { expectedVersion: 1, taskKind },
+    });
+  }
+});
+it("rejects absent or invalid kinds in fresh snapshots", async () => {
+  for (const taskKind of [undefined, "unknown"]) {
+    vi.mocked(api.get).mockResolvedValue({ ...snapshot, taskKind });
+    await expect(fetchTaskPlanning(detail, new AbortController().signal)).rejects.toThrow();
+  }
+});
+it("requires the kind to match both changed and retained acknowledgements", async () => {
+  vi.mocked(api.patch).mockResolvedValue({ ...snapshot, version: 2 });
+  await expect(
+    updateTaskPlanning(snapshot, { expectedVersion: 1, taskKind: "art" })
+  ).rejects.toThrow("acknowledgement");
+  vi.mocked(api.patch).mockResolvedValue({ ...snapshot, version: 2, labels: [], taskKind: null });
+  await expect(updateTaskPlanning(snapshot, { expectedVersion: 1, labelIds: [] })).rejects.toThrow(
+    "acknowledgement"
+  );
 });

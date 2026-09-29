@@ -12,6 +12,8 @@ import {
   updateTaskPlanning,
   type PlanningSnapshot,
 } from "./task-planning-edit-api";
+import { TaskKindField } from "./task-kind-field";
+import type { TaskKind } from "./task-kind-api";
 import { TaskPlanningFields } from "./task-planning-fields";
 import type { TaskDetail } from "./task-detail-api";
 type Props = { task: TaskDetail; userId: string; generation: number; onRefresh: () => void };
@@ -116,15 +118,24 @@ function Editor({
 }) {
   const t = useTranslations(),
     op = useAuthFormOperation(snapshot.id, true);
+  const [taskKind, setTaskKind] = useState<TaskKind | null>(snapshot.taskKind);
   const [draft, setDraft] = useState(() => planningDraft(snapshot));
   const [attempted, setAttempted] = useState(false),
     [error, setError] = useState<string>();
   const attemptedRef = useRef(false),
     locked = attempted || op.busy;
-  const parsed = planningChanges(snapshot, draft);
+  const parsed = planningChanges(snapshot, draft, taskKind);
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("taskPlanning.edit")}</ThemedText>
+      <TaskKindField
+        crewId={snapshot.crewId}
+        generation={generation}
+        selected={taskKind}
+        locked={locked}
+        loadTemplates={false}
+        onSelect={setTaskKind}
+      />
       <TaskPlanningFields
         crewId={snapshot.crewId}
         generation={generation}

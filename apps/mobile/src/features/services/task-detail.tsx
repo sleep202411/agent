@@ -133,6 +133,12 @@ function TaskContent({
           <ThemedText>
             {t("taskSchedule.priority")}: {t(`taskSchedule.${data.priority}`)}
           </ThemedText>
+          {data.taskKind !== undefined && (
+            <ThemedText>
+              {t("taskKind.label")}:{" "}
+              {t(data.taskKind ? `taskKind.${data.taskKind}` : "taskKind.unset")}
+            </ThemedText>
+          )}
           <TaskSchedule
             key={`schedule:${revision}`}
             task={data}

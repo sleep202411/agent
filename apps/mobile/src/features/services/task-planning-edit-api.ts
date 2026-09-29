@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskDetailSchema, type TaskDetail } from "./task-detail-api";
+import { taskKindSchema, type TaskKind } from "./task-kind-api";
 import type { TaskPlanningDraft } from "./task-planning-fields";
 const ref = z.object({ id: z.string().uuid(), name: z.string().min(1) });
 const planningSnapshotSchema = taskDetailSchema
   .extend({
+    taskKind: taskKindSchema.nullable(),
     cycleId: z.string().uuid().nullable(),
     cycle: ref.nullable(),
     episodeId: z.string().uuid().nullable(),
@@ -24,6 +26,7 @@ const planningSnapshotSchema = taskDetailSchema
 export type PlanningSnapshot = z.infer<typeof planningSnapshotSchema>;
 export const planningEditInput = z
   .object({
+    taskKind: taskKindSchema.nullable().optional(),
     expectedVersion: z.number().int().positive(),
     cycleId: z.string().uuid().nullable().optional(),
     episodeId: z.string().uuid().nullable().optional(),
@@ -36,7 +39,10 @@ export const planningEditInput = z
   .strict()
   .refine(
     (data) =>
-      data.cycleId !== undefined || data.episodeId !== undefined || data.labelIds !== undefined,
+      data.taskKind !== undefined ||
+      data.cycleId !== undefined ||
+      data.episodeId !== undefined ||
+      data.labelIds !== undefined,
     "No planning changes"
   );
 export function planningDraft(task: PlanningSnapshot): TaskPlanningDraft {
@@ -48,12 +54,17 @@ export function planningDraft(task: PlanningSnapshot): TaskPlanningDraft {
       : null,
   };
 }
-export function planningChanges(task: PlanningSnapshot, draft: TaskPlanningDraft) {
+export function planningChanges(
+  task: PlanningSnapshot,
+  draft: TaskPlanningDraft,
+  taskKind: TaskKind | null = task.taskKind
+) {
   const cycleId = draft.cycle?.id ?? null,
     episodeId = draft.episode?.id ?? null;
   const ids = draft.labels.map((label) => label.id);
   return planningEditInput.safeParse({
     expectedVersion: task.version,
+    ...(taskKind !== task.taskKind ? { taskKind } : {}),
     ...(cycleId !== task.cycleId ? { cycleId } : {}),
     ...(episodeId !== task.episodeId ? { episodeId } : {}),
     ...(ids.length !== task.labels.length ||
@@ -88,6 +99,7 @@ export async function updateTaskPlanning(
     result.id !== task.id ||
     result.crewId !== task.crewId ||
     result.version !== data.expectedVersion + 1 ||
+    result.taskKind !== (data.taskKind === undefined ? task.taskKind : data.taskKind) ||
     result.cycleId !== cycleId ||
     result.episodeId !== episodeId ||
     result.labels.length !== labels.length ||

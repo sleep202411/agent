@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskSubmission } from "./task-delivery-api";
+import { taskKindSchema } from "./task-kind-api";
 import { taskOption } from "./task-options";
 const date = z.string().datetime({ offset: true }).nullable();
 export const taskReference = taskOption.extend({
@@ -9,6 +10,7 @@ export const taskReference = taskOption.extend({
   parentId: z.string().uuid().nullable(),
 });
 export const taskDetailSchema = taskOption.extend({
+  taskKind: taskKindSchema.nullable().optional(),
   crewId: z.string().min(1),
   description: z.string(),
   priority: z.enum(["low", "normal", "high", "urgent"]),

@@ -53,6 +53,7 @@ vi.mock("react-native", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const detail = {
+  taskKind: "music",
   parent: null,
   children: [],
   blockedBy: [],
@@ -196,4 +197,10 @@ it("shows denied related-task access without retaining the previous task data", 
   expect(host.textContent).not.toContain("Private brief");
   expect(host.textContent).not.toContain("thread.taskOpenWorkspace");
   expect(host.textContent).toContain("taskRelations.backToTask");
+});
+
+it("displays the returned task kind to task viewers", async () => {
+  await render();
+  expect(host.textContent).toContain("taskKind.label");
+  expect(host.textContent).toContain("taskKind.music");
 });

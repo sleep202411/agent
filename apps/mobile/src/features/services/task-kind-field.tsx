@@ -16,12 +16,14 @@ export function TaskKindField({
   generation,
   selected,
   locked,
+  loadTemplates = true,
   onSelect,
 }: {
   crewId: string;
   generation: number;
   selected: TaskKind | null;
   locked: boolean;
+  loadTemplates?: boolean;
   onSelect: (kind: TaskKind | null, title?: string) => void;
 }) {
   const t = useTranslations(),
@@ -45,7 +47,8 @@ export function TaskKindField({
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
           {open && !locked && (
             <KindOptions
-              key={`${crewId}:${generation}`}
+              key={`${crewId}:${generation}:${loadTemplates}`}
+              loadTemplates={loadTemplates}
               crewId={crewId}
               generation={generation}
               onClose={() => setOpen(false)}
@@ -63,6 +66,7 @@ export function TaskKindField({
   );
 }
 function KindOptions({
+  loadTemplates,
   crewId,
   generation,
   onSelect,
@@ -72,11 +76,13 @@ function KindOptions({
   generation: number;
   onSelect: (kind: TaskKind | null, title?: string) => void;
   onClose: () => void;
+  loadTemplates: boolean;
 }) {
   const t = useTranslations();
   const [attempt, setAttempt] = useState(0);
   const [state, setState] = useState<{ items?: TaskKindTemplate[]; error?: string }>({});
   useEffect(() => {
+    if (!loadTemplates) return;
     const controller = new AbortController();
     void fetchTaskKindTemplates(crewId, controller.signal).then(
       (items) => {
@@ -88,11 +94,11 @@ function KindOptions({
       }
     );
     return () => controller.abort();
-  }, [crewId, generation, attempt]);
+  }, [crewId, generation, attempt, loadTemplates]);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{t("taskKind.label")}</ThemedText>
-      {!state.items && !state.error && <ActivityIndicator />}
+      {loadTemplates && !state.items && !state.error && <ActivityIndicator />}
       {state.error && (
         <>
           <ThemedText accessibilityRole="alert">{state.error}</ThemedText>
