@@ -1359,5 +1359,7 @@
   "taskPlanning.clearEpisode": "清除集",
   "taskPlanning.empty": "暫無可用選項。",
   "taskPlanning.edit": "編輯任務規劃",
-  "taskPlanning.save": "儲存任務規劃"
+  "taskPlanning.save": "儲存任務規劃",
+  "taskWorkflow.edit": "移動工作流程欄",
+  "taskWorkflow.save": "儲存工作流程"
 }

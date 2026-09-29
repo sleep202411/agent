@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
-const workflow = z.object({
+export const taskWorkflowSchema = z.object({
   id: z.string().uuid(),
   crewId: z.string().min(1),
   name: z.string().min(1),
@@ -14,12 +14,12 @@ const workflow = z.object({
   ]),
   archived: z.boolean(),
 });
-export type TaskWorkflow = z.infer<typeof workflow>;
-export async function fetchCreationWorkflows(crewId: string, signal: AbortSignal) {
+export type TaskWorkflow = z.infer<typeof taskWorkflowSchema>;
+export async function fetchManualTaskWorkflows(crewId: string, signal: AbortSignal) {
   z.string()
     .regex(/^[A-Za-z0-9_-]{1,64}$/)
     .parse(crewId);
-  const result = z.object({ workflowStates: z.array(workflow) }).parse(
+  const result = z.object({ workflowStates: z.array(taskWorkflowSchema) }).parse(
     await api.get(`/crews/${encodeURIComponent(crewId)}/task-project`, {
       service: "aurora",
       signal,

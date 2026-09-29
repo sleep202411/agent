@@ -5,19 +5,21 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
-import { fetchCreationWorkflows, type TaskWorkflow } from "./task-workflow-api";
+import { fetchManualTaskWorkflows, type TaskWorkflow } from "./task-workflow-api";
 
-export function TaskCreationWorkflow({
+export function TaskWorkflowField({
   crewId,
   generation,
   selected,
   locked,
+  allowDefault = true,
   onSelect,
 }: {
   crewId: string;
   generation: number;
   selected: TaskWorkflow | null;
   locked: boolean;
+  allowDefault?: boolean;
   onSelect: (value: TaskWorkflow | null) => void;
 }) {
   const t = useTranslations(),
@@ -42,6 +44,7 @@ export function TaskCreationWorkflow({
           {open && !locked && (
             <WorkflowOptions
               key={`${crewId}:${generation}`}
+              allowDefault={allowDefault}
               crewId={crewId}
               generation={generation}
               onSelect={(value) => {
@@ -59,6 +62,7 @@ export function TaskCreationWorkflow({
   );
 }
 function WorkflowOptions({
+  allowDefault,
   crewId,
   generation,
   onSelect,
@@ -66,6 +70,7 @@ function WorkflowOptions({
 }: {
   crewId: string;
   generation: number;
+  allowDefault: boolean;
   onSelect: (value: TaskWorkflow | null) => void;
   onClose: () => void;
 }) {
@@ -74,7 +79,7 @@ function WorkflowOptions({
   const [state, setState] = useState<{ items?: TaskWorkflow[]; error?: string }>({});
   useEffect(() => {
     const controller = new AbortController();
-    void fetchCreationWorkflows(crewId, controller.signal).then(
+    void fetchManualTaskWorkflows(crewId, controller.signal).then(
       (items) => {
         if (!controller.signal.aborted && generation === getAuthGeneration()) setState({ items });
       },
@@ -88,9 +93,15 @@ function WorkflowOptions({
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{t("taskCreate.workflow")}</ThemedText>
-      <Pressable accessibilityRole="button" style={{ padding: 12 }} onPress={() => onSelect(null)}>
-        <ThemedText>{t("taskCreate.defaultWorkflow")}</ThemedText>
-      </Pressable>
+      {allowDefault && (
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 12 }}
+          onPress={() => onSelect(null)}
+        >
+          <ThemedText>{t("taskCreate.defaultWorkflow")}</ThemedText>
+        </Pressable>
+      )}
       {!state.items && !state.error && <ActivityIndicator />}
       {state.items?.map((item) => (
         <Pressable

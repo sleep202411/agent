@@ -12,7 +12,7 @@ import { createTask, taskCreateInput } from "./task-create-api";
 import { parseScheduleDate } from "./task-schedule-api";
 import { TaskMentionPicker } from "./task-mention-picker";
 import { TaskPlanningFields, type TaskPlanningDraft } from "./task-planning-fields";
-import { TaskCreationWorkflow } from "./task-creation-workflow";
+import { TaskWorkflowField } from "./task-workflow-field";
 import type { TaskWorkflow } from "./task-workflow-api";
 import { TaskCreationRelations } from "./task-creation-relations";
 import type { TaskOption } from "./task-options";
@@ -169,7 +169,7 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
         placeholderTextColor={theme.textSecondary}
         style={{ color: theme.text, padding: 12 }}
       />
-      <TaskCreationWorkflow
+      <TaskWorkflowField
         crewId={crewId}
         generation={generation}
         selected={workflow}

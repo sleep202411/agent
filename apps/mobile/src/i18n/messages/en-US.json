@@ -1359,5 +1359,7 @@
   "taskPlanning.clearEpisode": "Clear Episode",
   "taskPlanning.empty": "No available options.",
   "taskPlanning.edit": "Edit Planning",
-  "taskPlanning.save": "Save Planning"
+  "taskPlanning.save": "Save Planning",
+  "taskWorkflow.edit": "Move Workflow Column",
+  "taskWorkflow.save": "Save Workflow"
 }

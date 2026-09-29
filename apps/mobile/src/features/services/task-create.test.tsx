@@ -12,7 +12,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
 vi.mock("./task-planning-api", () => ({ fetchTaskPlanningOptions: h.planning }));
-vi.mock("./task-workflow-api", () => ({ fetchCreationWorkflows: h.workflows }));
+vi.mock("./task-workflow-api", () => ({ fetchManualTaskWorkflows: h.workflows }));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
 vi.mock("./task-create-api", async (original) => ({
   ...(await original<typeof import("./task-create-api")>()),

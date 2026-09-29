@@ -1359,5 +1359,7 @@
   "taskPlanning.clearEpisode": "清除集",
   "taskPlanning.empty": "暂无可用选项。",
   "taskPlanning.edit": "编辑任务规划",
-  "taskPlanning.save": "保存任务规划"
+  "taskPlanning.save": "保存任务规划",
+  "taskWorkflow.edit": "移动工作流列",
+  "taskWorkflow.save": "保存工作流"
 }
