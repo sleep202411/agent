@@ -118,6 +118,20 @@ export function CrewWorkbenchShell({
         <div className="my-2 h-px bg-white/[0.075]" />
 
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5">
+          {tabs
+            .filter((tab) => ["tasks", "roles", "income"].includes(tab.id))
+            .map((tab) => {
+              const Icon = RAIL_ICONS[tab.id];
+              return (
+                <RailButton
+                  key={tab.id}
+                  icon={Icon}
+                  label={t(tab.labelKey)}
+                  active={activeTab === tab.id}
+                  onClick={() => onSelectTab(tab.id)}
+                />
+              );
+            })}
           {hasChat ? (
             <div className="mb-2 flex flex-col gap-0.5">
               <div className="flex h-8 items-center justify-between px-3">
@@ -146,7 +160,7 @@ export function CrewWorkbenchShell({
           ) : null}
 
           {tabs
-            .filter((tab) => tab.id !== "chat")
+            .filter((tab) => !["chat", "tasks", "roles", "income"].includes(tab.id))
             .map((tab) => {
               const Icon = RAIL_ICONS[tab.id];
               return (

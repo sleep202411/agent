@@ -410,11 +410,11 @@ export async function seedCrewProductionTasks(
     });
     rank = rank.plus(1024);
 
-    for (const childTitle of [
-      titles.artCharacter[input.locale],
-      titles.artScene[input.locale],
-      titles.artProp[input.locale],
-    ]) {
+    for (const [assetCategory, childTitle] of [
+      ['characters', titles.artCharacter[input.locale]],
+      ['scenes', titles.artScene[input.locale]],
+      ['props', titles.artProp[input.locale]],
+    ] as const) {
       await tx.crewTask.create({
         data: {
           id: randomUUID(),
@@ -422,6 +422,7 @@ export async function seedCrewProductionTasks(
           parentId: artParentId,
           number: number++,
           title: childTitle,
+          metadata: { assetCategory },
           description: '',
           workflowStateId: input.openWorkflowStateId,
           taskKind: CrewTaskKind.art,

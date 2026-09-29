@@ -6,6 +6,8 @@ import { TaskCreationWorkbench } from "./task-creation-workbench";
 import type { CrewTaskProjectDTO } from "@/app/(site)/crews/_hooks/types";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
+  taskLoading: false,
+  taskMore: false,
   create: vi.fn(),
   episode: vi.fn(),
   refresh: vi.fn(),
@@ -37,7 +39,12 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
       },
     ],
   }),
-  useCrewTaskView: () => ({ data: [], refetch: state.refresh }),
+  useCrewTaskView: () => ({
+    data: [],
+    refetch: state.refresh,
+    isLoading: state.taskLoading,
+    hasNextPage: state.taskMore,
+  }),
 }));
 vi.mock("./episode-template-preview", () => ({
   EpisodeTemplatePreview: ({ episodeId }: { episodeId: string }) => (
@@ -158,7 +165,7 @@ it("shows assets and production to viewers without creation controls", async () 
 it("removes a draft before confirmation", async () => {
   await render();
   await stage();
-  await act(async () => host.querySelector<HTMLButtonElement>("[aria-label]")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>("button[aria-label]")!.click());
   expect(button("Create All Tasks").disabled).toBe(true);
   expect(state.create).not.toHaveBeenCalled();
 });
@@ -173,3 +180,18 @@ it("hides template creation from members without task management permission", as
   await render(false);
   expect(button("Stage Standard Tasks")).toBeUndefined();
 });
+
+it.each(["taskLoading", "taskMore"] as const)(
+  "withholds counters while %s is incomplete",
+  async (key) => {
+    state[key] = true;
+    try {
+      await render();
+      const progress = host.querySelector('section[aria-label="Approved / Total Tasks"]');
+      expect(progress?.textContent).toContain("—");
+      expect(progress?.textContent).not.toContain("0/0");
+    } finally {
+      state[key] = false;
+    }
+  }
+);

@@ -5153,7 +5153,16 @@
       "failed": "建立失敗。",
       "uncertainHelp": "建立已停止：有一個請求未收到確認。再次建立前請核對製作任務；已確認的任務不會重複提交。",
       "episodeUncertain": "劇集建立請求未收到確認。再次建立前請先核對劇集清單。",
-      "stageTemplate": "暫存標準任務組"
+      "stageTemplate": "暫存標準任務組",
+      "assetProgress": "已驗收 / 任務總數",
+      "assetProgressHelp": "已驗收交付任務 / 有效交付任務。不含分組任務和已取消任務。未分類美術任務列於其他美術。",
+      "assetGroup_scripts": "劇本",
+      "assetGroup_characters": "角色",
+      "assetGroup_scenes": "場景",
+      "assetGroup_props": "道具",
+      "assetGroup_art": "其他美術",
+      "assetGroup_music": "音樂",
+      "assetGroup_other": "其他任務"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",

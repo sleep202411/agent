@@ -1,3 +1,4 @@
+import { taskAssetCategory } from './task-asset-category';
 import { CloseCrewTaskSchema, type CloseCrewTaskInput } from '../dto';
 import { assertRecruitedTaskAssignees } from '../task-recruitment';
 import { assertDeliveryTemplateEditable } from './task-delivery-template';
@@ -5100,6 +5101,7 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     title: task.title,
     description: task.description,
     taskKind: task.taskKind,
+    assetCategory: taskAssetCategory(task.metadata, task.taskKind),
     storyboardClipId:
       typeof (task.metadata as Record<string, unknown> | null)?.clipId ===
       'string'

@@ -5153,7 +5153,16 @@
       "failed": "创建失败。",
       "uncertainHelp": "创建已停止：有一个请求未收到确认。再次创建前请核对制作任务；已确认的任务不会重复提交。",
       "episodeUncertain": "剧集创建请求未收到确认。再次创建前请先核对剧集列表。",
-      "stageTemplate": "暂存标准任务组"
+      "stageTemplate": "暂存标准任务组",
+      "assetProgress": "已验收 / 任务总数",
+      "assetProgressHelp": "已验收交付任务 / 有效交付任务。不含分组任务和已取消任务。未分类美术任务列于其他美术。",
+      "assetGroup_scripts": "剧本",
+      "assetGroup_characters": "角色",
+      "assetGroup_scenes": "场景",
+      "assetGroup_props": "道具",
+      "assetGroup_art": "其他美术",
+      "assetGroup_music": "音乐",
+      "assetGroup_other": "其他任务"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",

@@ -508,6 +508,7 @@ export interface CrewPayoutPageDTO {
 }
 
 export interface CrewTaskDTO {
+  assetCategory?: string;
   id: string;
   crewId: string;
   number: number;

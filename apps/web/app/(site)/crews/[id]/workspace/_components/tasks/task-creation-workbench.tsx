@@ -19,6 +19,8 @@ import {
 import { EpisodeTemplatePreview } from "./episode-template-preview";
 import { TaskQuickCreate } from "./task-quick-create";
 
+import { ASSET_TASK_GROUPS, assetTaskProgress } from "./asset-task-progress";
+
 type Draft = {
   id: number;
   input: CreateCrewTaskInput;
@@ -62,6 +64,9 @@ export function TaskCreationWorkbench({
   const createEpisode = useCreateCrewEpisode(crewId);
   const episodes = useCrewEpisodes(crewId);
   const tasks = useCrewTaskView(crewId, { viewId: "production" }, active);
+  const progress = assetTaskProgress(tasks.data);
+  const progressReady =
+    !tasks.isLoading && !tasks.isFetching && !tasks.hasNextPage && !tasks.isError;
   const assets = useCrewAssets(crewId, { source: "all", sort: "name" }, active);
   useEffect(() => {
     alive.current = true;
@@ -148,6 +153,20 @@ export function TaskCreationWorkbench({
         <aside className="w-full shrink-0 border-b border-white/10 bg-[#18181b] p-5 lg:w-64 lg:border-b-0 lg:border-r">
           <h2 className="text-sm font-semibold">{t("assets")}</h2>
           <p className="mt-2 text-xs text-muted-foreground">{t("assetsHelp")}</p>
+          <section className="my-4" aria-label={t("assetProgress")}>
+            <h3 className="text-sm font-semibold">{t("assetProgress")}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{t("assetProgressHelp")}</p>
+            <dl className="mt-3 space-y-2 text-sm">
+              {ASSET_TASK_GROUPS.map((key) => (
+                <div key={key} className="flex justify-between gap-2">
+                  <dt>{t(`assetGroup_${key}`)}</dt>
+                  <dd>
+                    {progressReady ? `${progress[key].approved}/${progress[key].total}` : "—"}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
           {assets.isError ? (
             <p role="alert" className="mt-3 text-sm text-destructive">
               {assets.error.message}

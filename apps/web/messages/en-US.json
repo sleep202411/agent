@@ -5153,7 +5153,16 @@
       "failed": "Creation failed.",
       "uncertainHelp": "Creation stopped. A response was not confirmed. Check Production Tasks before creating anything again; confirmed tasks will not be submitted twice.",
       "episodeUncertain": "The episode response was not confirmed. Check the episode list before attempting to create it again.",
-      "stageTemplate": "Stage Standard Tasks"
+      "stageTemplate": "Stage Standard Tasks",
+      "assetProgress": "Approved / Total Tasks",
+      "assetProgressHelp": "Approved deliverables / active deliverables. Group tasks and cancelled tasks are excluded. Unclassified art appears under Other Art.",
+      "assetGroup_scripts": "Scripts",
+      "assetGroup_characters": "Characters",
+      "assetGroup_scenes": "Scenes",
+      "assetGroup_props": "Props",
+      "assetGroup_art": "Other Art",
+      "assetGroup_music": "Music",
+      "assetGroup_other": "Other Tasks"
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
