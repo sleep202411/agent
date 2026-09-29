@@ -1984,5 +1984,14 @@
   "positionEdit.saved": "职位 {id} 已更新。",
   "positionEdit.recheck": "请返回刷新后的职位列表后再更新。",
   "positionEdit.help": "更改适用于此招聘职位。已接受的条款请通过修订流程管理。",
-  "positionEdit.noChanges": "没有需要保存的更改。"
+  "positionEdit.noChanges": "没有需要保存的更改。",
+  "taskClosure.title": "填写原因并取消任务",
+  "taskClosure.notice": "此操作取消未完成的工作，保留分工、约定报酬和证据，不结算付款、退款或争议。",
+  "taskClosure.reason": "关闭原因",
+  "taskClosure.required": "请填写原因（最多 4,000 字符）。",
+  "taskClosure.stale": "任务已变更。请返回当前任务并重新审核后再确认。",
+  "taskClosure.confirm": "确认取消任务",
+  "taskClosure.retryHelp": "结果尚未确认。请重试同一关闭请求以确认结果。",
+  "taskClosure.retry": "重试关闭",
+  "taskClosure.done": "任务已取消。请刷新以加载当前状态。"
 }

@@ -1984,5 +1984,14 @@
   "positionEdit.saved": "職位 {id} 已更新。",
   "positionEdit.recheck": "請返回重新整理後的職位列表再更新。",
   "positionEdit.help": "變更適用於此招聘職位。已接受的條款請透過修訂流程管理。",
-  "positionEdit.noChanges": "沒有需要儲存的變更。"
+  "positionEdit.noChanges": "沒有需要儲存的變更。",
+  "taskClosure.title": "填寫原因並取消任務",
+  "taskClosure.notice": "此操作取消未完成的工作，保留分工、約定報酬和證據，不結算付款、退款或爭議。",
+  "taskClosure.reason": "關閉原因",
+  "taskClosure.required": "請填寫原因（最多 4,000 字元）。",
+  "taskClosure.stale": "任務已變更。請返回目前任務並重新審核後再確認。",
+  "taskClosure.confirm": "確認取消任務",
+  "taskClosure.retryHelp": "結果尚未確認。請重試同一關閉請求以確認結果。",
+  "taskClosure.retry": "重試關閉",
+  "taskClosure.done": "任務已取消。請重新整理以載入目前狀態。"
 }

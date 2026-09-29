@@ -1984,5 +1984,14 @@
   "positionEdit.saved": "Position {id} updated.",
   "positionEdit.recheck": "Return to the refreshed positions list before another update.",
   "positionEdit.help": "Changes apply to this recruitment listing. Existing accepted terms are managed through the amendment workflow.",
-  "positionEdit.noChanges": "No changes to save."
+  "positionEdit.noChanges": "No changes to save.",
+  "taskClosure.title": "Cancel Task With a Reason",
+  "taskClosure.notice": "This cancels unfinished work. Assignments, agreed rewards and evidence are preserved. It does not settle payments, refunds or disputes.",
+  "taskClosure.reason": "Closure Reason",
+  "taskClosure.required": "A written reason is required (up to 4,000 characters).",
+  "taskClosure.stale": "The task changed. Return to the current task and review it before confirming.",
+  "taskClosure.confirm": "Confirm Task Cancellation",
+  "taskClosure.retryHelp": "The result is uncertain. Retry the same closure request to check its outcome.",
+  "taskClosure.retry": "Retry Closure",
+  "taskClosure.done": "Task cancelled. Refresh to load its current status."
 }

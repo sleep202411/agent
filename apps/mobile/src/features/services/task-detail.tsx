@@ -1,3 +1,4 @@
+import { TaskClosure } from "./task-closure";
 import { TaskDeadline } from "./task-deadline";
 import { TaskCustomFields } from "./task-custom-fields";
 import { useEffect, useState } from "react";
@@ -198,6 +199,13 @@ function TaskContent({
             userId={userId}
             generation={generation}
             onRefresh={() => setRevision((n) => n + 1)}
+          />
+          <TaskClosure
+            key={`closure:${revision}`}
+            task={data}
+            userId={userId}
+            generation={generation}
+            onRefresh={() => setRevision((v) => v + 1)}
           />
           <TaskBrief
             key={`brief:${revision}`}

@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDetail } from "./task-detail";
+vi.mock("./task-closure", () => ({
+  TaskClosure: ({ onRefresh }: { onRefresh: () => void }) => (
+    <button onClick={onRefresh}>refresh after closure</button>
+  ),
+}));
 vi.mock("./task-custom-fields", () => ({ TaskCustomFields: () => <div>custom fields</div> }));
 vi.mock("./task-workflow-editor", () => ({ TaskWorkflowEditor: () => <div>workflow editor</div> }));
 vi.mock("./task-planning-editor", () => ({ TaskPlanningEditor: () => <div>planning editor</div> }));
@@ -248,4 +253,10 @@ it("returns to and refreshes the parent after cancelling child creation", async 
   await act(async () => click("cancel child"));
   expect(h.fetch.mock.calls.length).toBe(count + 1);
   expect(h.close).not.toHaveBeenCalled();
+});
+
+it("reloads the task after closure", async () => {
+  await render();
+  await act(async () => click("refresh after closure"));
+  expect(h.fetch).toHaveBeenCalledTimes(2);
 });
