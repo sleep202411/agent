@@ -446,7 +446,9 @@ it.each(["earnings", "payouts"])(
   async (view) => {
     await render();
     if (view === "payouts") await act(async () => button("views.payouts").click());
-    expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+    expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(
+      view === "earnings" ? 4 : 3
+    );
   }
 );
 it.each(["earnings", "payouts"])(
@@ -473,7 +475,7 @@ it.each([null, "", "1.5", "oops", 100])(
   async (value) => {
     state.summary = summary(value);
     await render();
-    expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+    expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(4);
     await act(async () => button("views.payouts").click());
     expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
   }
@@ -481,7 +483,7 @@ it.each([null, "", "1.5", "oops", 100])(
 it("handles incomplete earning summary groups", async () => {
   state.summary = { byStatus: {} };
   await render();
-  expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+  expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(4);
 });
 it("preserves exact large and negative payout totals", async () => {
   state.summary = {

@@ -5981,6 +5981,8 @@ model CrewEarningEntry {
   @@index([userId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_earning_entries_user_status_created_idx")
   @@index([crewMemberId, createdAt(sort: Desc)], map: "crew_earning_entries_member_created_idx")
   @@index([agreementId], map: "crew_earning_entries_agreement_idx")
+  @@index([crewId, currency, status, postedAt], map: "crew_earning_entries_crew_posted_trend_idx")
+  @@index([userId, currency, status, postedAt], map: "crew_earning_entries_user_posted_trend_idx")
   @@map("crew_earning_entries")
 }
 

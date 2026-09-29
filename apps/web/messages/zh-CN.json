@@ -10730,5 +10730,18 @@
     "reviewNotes": "审核意见",
     "notStarted": "未开始",
     "unavailableFile": "文件不可用"
+  },
+  "crewFinanceDashboard": {
+    "trend": "已确认收入趋势",
+    "period": "最近 30 天 · UTC",
+    "basis": "按完整账本汇总每日已入账收益，不包括待确认、已拒绝和已冲销记录。收益入账不代表已付款。",
+    "loading": "正在加载收入趋势…",
+    "unavailable": "收入趋势暂不可用",
+    "dailyAmounts": "查看每日金额",
+    "date": "日期（UTC）",
+    "amount": "已确认收入",
+    "profitShare": "已确认分润",
+    "record": "记录 / 来源",
+    "status": "状态"
   }
 }

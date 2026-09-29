@@ -1,3 +1,4 @@
+import { readEarningTrend, type EarningReadScope } from './earning-trend';
 import { assertNewCrewCurrency, formatLedgerAmount } from './ledger-currency';
 import { lockMemberPayouts, lockLedgerReceipt } from './ledger-lock';
 import {
@@ -85,7 +86,7 @@ export class CrewEarningsService {
   }
 
   private async readEarnings(
-    scopeWhere: Prisma.CrewEarningEntryWhereInput,
+    scopeWhere: EarningReadScope,
     query: ListMyCrewEarningsQuery,
   ) {
     const where = {
@@ -111,34 +112,36 @@ export class CrewEarningsService {
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
-    const [rows, statusGroups, sourceGroups, monthPosted] = await Promise.all([
-      this.prisma.crewEarningEntry.findMany({
-        where,
-        include: earningInclude,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: query.limit + 1,
-        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
-      }),
-      this.prisma.crewEarningEntry.groupBy({
-        by: ['status'],
-        where: scopeWhere,
-        _count: { _all: true },
-        _sum: { amountMinor: true },
-      }),
-      this.prisma.crewEarningEntry.groupBy({
-        by: ['sourceType'],
-        where: { AND: [scopeWhere, { status: CrewEarningStatus.posted }] },
-        _count: { _all: true },
-        _sum: { amountMinor: true },
-      }),
-      this.prisma.crewEarningEntry.aggregate({
-        where: {
-          AND: [scopeWhere, { status: CrewEarningStatus.posted }],
-          postedAt: { gte: monthStart },
-        },
-        _sum: { amountMinor: true },
-      }),
-    ]);
+    const [rows, statusGroups, sourceGroups, monthPosted, postedDaily] =
+      await Promise.all([
+        this.prisma.crewEarningEntry.findMany({
+          where,
+          include: earningInclude,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: query.limit + 1,
+          ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+        }),
+        this.prisma.crewEarningEntry.groupBy({
+          by: ['status'],
+          where: scopeWhere,
+          _count: { _all: true },
+          _sum: { amountMinor: true },
+        }),
+        this.prisma.crewEarningEntry.groupBy({
+          by: ['sourceType'],
+          where: { AND: [scopeWhere, { status: CrewEarningStatus.posted }] },
+          _count: { _all: true },
+          _sum: { amountMinor: true },
+        }),
+        this.prisma.crewEarningEntry.aggregate({
+          where: {
+            AND: [scopeWhere, { status: CrewEarningStatus.posted }],
+            postedAt: { gte: monthStart },
+          },
+          _sum: { amountMinor: true },
+        }),
+        readEarningTrend(this.prisma, scopeWhere),
+      ]);
     const items = rows.slice(0, query.limit);
     const byStatus = Object.fromEntries(
       Object.values(CrewEarningStatus).map((status) => [
@@ -157,6 +160,7 @@ export class CrewEarningsService {
       items: items.map(earningDto),
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
       summary: {
+        postedDaily,
         byStatus,
         postedThisMonthAmountMinor: (
           monthPosted._sum.amountMinor ?? 0n

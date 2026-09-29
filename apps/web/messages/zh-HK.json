@@ -10730,5 +10730,18 @@
     "reviewNotes": "審核意見",
     "notStarted": "未開始",
     "unavailableFile": "檔案不可用"
+  },
+  "crewFinanceDashboard": {
+    "trend": "已確認收入趨勢",
+    "period": "最近 30 天 · UTC",
+    "basis": "按完整帳本彙總每日已入帳收益，不包括待確認、已拒絕和已沖銷記錄。收益入帳不代表已付款。",
+    "loading": "正在載入收入趨勢…",
+    "unavailable": "收入趨勢暫不可用",
+    "dailyAmounts": "查看每日金額",
+    "date": "日期（UTC）",
+    "amount": "已確認收入",
+    "profitShare": "已確認分潤",
+    "record": "記錄 / 來源",
+    "status": "狀態"
   }
 }

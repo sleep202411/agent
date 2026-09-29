@@ -73,6 +73,7 @@ function build() {
     notificationOutbox: { create: jest.fn().mockResolvedValue({}) },
   };
   const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
     crewEarningEntry: {
       findUnique: jest.fn().mockResolvedValue(pending),
       findFirst: jest.fn(),
@@ -497,5 +498,35 @@ describe('Personal cross-Crew earnings', () => {
       }),
     );
     expect(f.prisma.crewEarningEntry.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('Income trend authorization', () => {
+  it('does not aggregate the Crew ledger when permission is denied', async () => {
+    const f = build();
+    f.authorization.require.mockRejectedValue(new Error('denied'));
+    await expect(
+      f.service.list(
+        CREW_ID,
+        MEMBER_USER_ID,
+        ListCrewEarningsQuerySchema.parse({ currency: 'USD', scope: 'crew' }),
+      ),
+    ).rejects.toThrow('denied');
+    expect(f.prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+  it('scopes personal trend aggregation to the authenticated beneficiary', async () => {
+    const f = build();
+    await f.service.listMine(
+      MEMBER_USER_ID,
+      ListMyCrewEarningsQuerySchema.parse({ currency: 'USD', crewId: CREW_ID }),
+    );
+    const query = firstCallArgument(f.prisma.$queryRaw) as {
+      text: string;
+      values: unknown[];
+    };
+    expect(query.text).toContain('user_id =');
+    expect(query.values).toContain(MEMBER_USER_ID);
+    expect(query.values).toContain(CREW_ID);
+    expect(query.values).toContain('USD');
   });
 });

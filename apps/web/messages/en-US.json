@@ -10730,5 +10730,18 @@
     "reviewNotes": "Review Notes",
     "notStarted": "Not Started",
     "unavailableFile": "File Unavailable"
+  },
+  "crewFinanceDashboard": {
+    "trend": "Confirmed Income Trend",
+    "period": "Last 30 Days · UTC",
+    "basis": "Daily posted earnings across the full ledger. Pending, rejected and reversed entries are excluded. Posted earnings are not proof of payment.",
+    "loading": "Loading Income Trend…",
+    "unavailable": "Income Trend Unavailable",
+    "dailyAmounts": "View Daily Amounts",
+    "date": "Date (UTC)",
+    "amount": "Confirmed Income",
+    "profitShare": "Confirmed Profit Share",
+    "record": "Record / Source",
+    "status": "Status"
   }
 }

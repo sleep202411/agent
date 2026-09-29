@@ -415,11 +415,19 @@ export interface CrewEarningDetailDTO extends CrewEarningEntryDTO {
   events: CrewEarningEventDTO[];
 }
 
+export interface CrewEarningTrendDTO {
+  timezone: "UTC";
+  from: string;
+  through: string;
+  days: Array<{ date: string; amountMinor: string }>;
+}
+
 export interface CrewEarningPageDTO {
   items: CrewEarningEntryDTO[];
   nextCursor: string | null;
   summary: {
     byStatus: Record<CrewEarningStatus, { count: number; amountMinor: string }>;
+    postedDaily?: CrewEarningTrendDTO;
     postedThisMonthAmountMinor: string;
     postedBySource: Array<{
       sourceType: CrewEarningSourceType;
