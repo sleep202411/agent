@@ -82,6 +82,7 @@ const task: TaskDetail = {
   status: "open",
   revisionLimit: null,
   revisionRoundsUsed: 0,
+  priority: "normal" as const,
   parent: null,
   children: [],
   blockedBy: [],

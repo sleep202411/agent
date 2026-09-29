@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   close: vi.fn(),
   web: vi.fn(),
 }));
+vi.mock("./task-schedule", () => ({ TaskSchedule: () => <div>schedule editor</div> }));
 vi.mock("./task-brief", () => ({ TaskBrief: () => <div>brief editor</div> }));
 vi.mock("./task-submit", () => ({ TaskSubmit: () => <div>submit</div> }));
 vi.mock("./task-review", () => ({ TaskReview: () => <div>review</div> }));
@@ -51,6 +52,7 @@ const detail = {
   blockedBy: [],
   blocking: [],
   number: 7,
+  priority: "normal",
   title: "Scene",
   description: "Private brief",
   workflowState: { name: "Review" },
@@ -98,6 +100,7 @@ it("shows details, resolved assignees, labels and an explicit workspace continua
     "Artist",
     "Animation",
     "thread.taskUnset",
+    "taskSchedule.normal",
   ])
     expect(host.textContent).toContain(text);
   await act(async () => click("thread.taskOpenWorkspace"));

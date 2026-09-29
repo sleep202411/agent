@@ -11,6 +11,7 @@ export const taskReference = taskOption.extend({
 export const taskDetailSchema = taskOption.extend({
   crewId: z.string().min(1),
   description: z.string(),
+  priority: z.enum(["low", "normal", "high", "urgent"]),
   submissions: z.array(taskSubmission),
   parent: taskReference.nullable(),
   children: z.array(taskReference),

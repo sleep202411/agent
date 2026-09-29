@@ -57,6 +57,7 @@ const task: TaskDetail = {
   blocking: [],
   revisionLimit: null,
   revisionRoundsUsed: 0,
+  priority: "normal" as const,
   workflowState: { name: "Open" },
   startAt: null,
   dueAt: null,

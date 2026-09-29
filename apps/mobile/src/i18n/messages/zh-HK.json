@@ -1318,5 +1318,15 @@
   "taskBrief.edit": "編輯任務說明",
   "taskBrief.title": "標題",
   "taskBrief.description": "說明",
-  "taskBrief.save": "儲存修改"
+  "taskBrief.save": "儲存修改",
+  "taskSchedule.edit": "編輯任務日程",
+  "taskSchedule.priority": "優先級",
+  "taskSchedule.low": "低",
+  "taskSchedule.normal": "普通",
+  "taskSchedule.high": "高",
+  "taskSchedule.urgent": "緊急",
+  "taskSchedule.localTime": "當地時間",
+  "taskSchedule.clearHelp": "留空可移除日期。",
+  "taskSchedule.invalid": "請輸入有效日期，截止時間不得早於開始時間。",
+  "taskSchedule.save": "儲存修改"
 }

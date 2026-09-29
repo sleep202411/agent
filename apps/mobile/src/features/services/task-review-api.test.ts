@@ -34,6 +34,7 @@ const task: TaskDetail = {
   status: "approved",
   revisionLimit: 2,
   revisionRoundsUsed: 0,
+  priority: "normal" as const,
   parent: null,
   children: [],
   blockedBy: [],

@@ -1318,5 +1318,15 @@
   "taskBrief.edit": "Edit Task Brief",
   "taskBrief.title": "Title",
   "taskBrief.description": "Description",
-  "taskBrief.save": "Save Changes"
+  "taskBrief.save": "Save Changes",
+  "taskSchedule.edit": "Edit Task Schedule",
+  "taskSchedule.priority": "Priority",
+  "taskSchedule.low": "Low",
+  "taskSchedule.normal": "Normal",
+  "taskSchedule.high": "High",
+  "taskSchedule.urgent": "Urgent",
+  "taskSchedule.localTime": "Local time",
+  "taskSchedule.clearHelp": "Leave a date blank to remove it.",
+  "taskSchedule.invalid": "Enter valid dates. The due date must be on or after the start date.",
+  "taskSchedule.save": "Save Changes"
 }
