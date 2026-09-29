@@ -119,6 +119,62 @@ integration('Referral qualification admission (owned PostgreSQL)', () => {
       where: { programKey },
       include: { items: true },
     });
+  it('recovers more than one page without duplicate commissions or cross-user cursors', async () => {
+    await db.referralAttribution.updateMany({
+      where: { programKey },
+      data: { status: 'qualified' },
+    });
+    await db.referralProgram.update({
+      where: { key: programKey },
+      data: { commissionBps: 1000 },
+    });
+    const first = await db.billingOrder.findFirstOrThrow({
+      where: { userId: referees[0] },
+    });
+    await db.billingOrder.createMany({
+      data: Array.from({ length: 20 }, () => {
+        const key = randomUUID();
+        return {
+          userId: referees[0],
+          subjectType: 'user' as const,
+          subjectId: referees[0],
+          orderNo: key,
+          idempotencyKey: key,
+          orderType: 'subscription_checkout' as const,
+          status: 'paid' as const,
+          itemId,
+          priceId: first.priceId,
+          provider: 'airwallex' as const,
+          currency: 'USD',
+          amountMinor: 200n,
+          subtotalAmountMinor: 200n,
+        };
+      }),
+    });
+    const internal = service as unknown as {
+      backfillRefereeCommissions(userId: string): Promise<void>;
+    };
+    await internal.backfillRefereeCommissions(referees[0]);
+    expect(await rewards()).toHaveLength(20);
+    await internal.backfillRefereeCommissions(referees[1]);
+    expect(await rewards()).toHaveLength(21);
+    await Promise.all([
+      internal.backfillRefereeCommissions(referees[0]),
+      internal.backfillRefereeCommissions(referees[0]),
+    ]);
+    await internal.backfillRefereeCommissions(referees[0]);
+    const rows = await rewards();
+    expect(rows).toHaveLength(22);
+    expect(new Set(rows.map((row) => row.orderId)).size).toBe(22);
+    expect(
+      rows.every(
+        (row) =>
+          row.kind === 'commission' &&
+          row.amountMinor === 20n &&
+          row.items.length === 1,
+      ),
+    ).toBe(true);
+  });
   it('respects a shared referrer cap across simultaneous invitees and retries', async () => {
     await Promise.all(referees.map((id) => service.qualifyRefereePurchase(id)));
     await Promise.all(referees.map((id) => service.qualifyRefereePurchase(id)));
