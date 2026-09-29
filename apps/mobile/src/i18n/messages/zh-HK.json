@@ -1714,5 +1714,8 @@
   "expenseSubmit.review": "核對已儲存的申請",
   "expenseSubmit.confirm": "確認提交",
   "expenseSubmit.retry": "重試同一次提交",
-  "expenseSubmit.retryHelp": "重試提交相同的已儲存版本。請重新整理申請列表檢查目前審核狀態。"
+  "expenseSubmit.retryHelp": "重試提交相同的已儲存版本。請重新整理申請列表檢查目前審核狀態。",
+  "receiptUpload.retry": "重試收據上傳",
+  "receiptUpload.chooseAnother": "選擇其他檔案",
+  "receiptUpload.refresh": "重新整理已上傳收據"
 }

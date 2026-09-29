@@ -1,3 +1,4 @@
+import { ExpenseReceipts } from "./expense-receipts";
 import { useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -43,12 +44,14 @@ export function ExpenseEdit(props: {
       ? ""
       : `${BigInt(value) / 100n}.${(BigInt(value) % 100n).toString().padStart(2, "0")}`;
   });
+  const receiptPending = useRef(false);
+  const [receiptBusy, setReceiptBusy] = useState(false);
   const [attempted, setAttempted] = useState(false),
     [dirty, setDirty] = useState(false),
     [discard, setDiscard] = useState(false),
     [error, setError] = useState<string>();
   const request = useRef<ExpenseSaveInput | null>(null),
-    locked = attempted || op.busy || props.record?.submissionStatus === "pending";
+    locked = receiptBusy || attempted || op.busy || props.record?.submissionStatus === "pending";
   const edit = (patch: Partial<ExpenseSaveInput["definition"]>) => {
     setDefinition((old) => ({ ...old, ...patch }));
     setDirty(true);
@@ -136,15 +139,29 @@ export function ExpenseEdit(props: {
           setDirty(true);
         }}
       />
+      {props.record && (
+        <ExpenseReceipts
+          crewId={props.crewId}
+          draftId={id}
+          generation={props.generation}
+          selected={definition.receiptIds ?? []}
+          disabled={attempted || op.busy || props.record.submissionStatus === "pending"}
+          onBusy={(value) => {
+            receiptPending.current = value;
+            setReceiptBusy(value);
+          }}
+          onChange={(receiptIds) => edit({ receiptIds })}
+        />
+      )}
       <ThemedText>
         {t("crewExpenses.receipts")} · {definition.receiptIds?.length ?? 0}
       </ThemedText>
       <Pressable
         accessibilityRole="button"
         style={{ padding: 12 }}
-        disabled={op.busy || props.record?.submissionStatus === "pending"}
+        disabled={receiptBusy || op.busy || props.record?.submissionStatus === "pending"}
         onPress={() => {
-          if (props.generation !== getAuthGeneration()) return;
+          if (receiptPending.current || props.generation !== getAuthGeneration()) return;
           void op.run(
             async () => {
               if (!request.current) {
@@ -171,9 +188,10 @@ export function ExpenseEdit(props: {
       {discard && <ThemedText>{t("crewExpenses.unsaved")}</ThemedText>}
       <Pressable
         accessibilityRole="button"
-        disabled={op.busy}
+        disabled={receiptBusy || op.busy}
         style={{ padding: 12 }}
         onPress={() => {
+          if (receiptPending.current) return;
           if (dirty && !discard) {
             setDiscard(true);
             return;

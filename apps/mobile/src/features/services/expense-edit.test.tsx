@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ExpenseEdit } from "./expense-edit";
 
+vi.mock("./expense-receipts", () => ({ ExpenseReceipts: () => <span>receipt management</span> }));
 vi.mock("./earning-decision", () => ({ EarningDecision: () => <span>earning actions</span> }));
 vi.mock("./payout-decision", () => ({ PayoutDecision: () => <span>payout actions</span> }));
 const h = vi.hoisted(() => ({

@@ -1714,5 +1714,8 @@
   "expenseSubmit.review": "Review Saved Claim",
   "expenseSubmit.confirm": "Confirm Submission",
   "expenseSubmit.retry": "Retry Same Submission",
-  "expenseSubmit.retryHelp": "Retry submits the same saved revision. Refresh the claims list to check its current review status."
+  "expenseSubmit.retryHelp": "Retry submits the same saved revision. Refresh the claims list to check its current review status.",
+  "receiptUpload.retry": "Retry Receipt Upload",
+  "receiptUpload.chooseAnother": "Choose Another File",
+  "receiptUpload.refresh": "Refresh Uploaded Receipts"
 }
