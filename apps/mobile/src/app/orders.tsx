@@ -1,3 +1,4 @@
+import { useUserDisplays } from "@/features/services/user-displays";
 import { Stack, useIsFocused, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
@@ -22,6 +23,10 @@ export default function OrdersScreen() {
     [status, setStatus] = useState<OrderFilter>("");
   const owner = auth.status === "authenticated" && focused ? String(auth.generation) : undefined;
   const orders = useOrders(owner, role, status);
+  const displays = useUserDisplays(
+    owner,
+    orders.items.map((item) => item.counterpartyId)
+  );
   return (
     <View style={{ flex: 1, backgroundColor: theme.background, padding: 16, gap: 12 }}>
       <Stack.Screen
@@ -96,6 +101,10 @@ export default function OrdersScreen() {
               >
                 <ThemedText type="smallBold">{item.serviceTitle}</ThemedText>
                 <ThemedText>{t(`orders.status.${item.status}`)}</ThemedText>
+                <ThemedText>
+                  {displays?.get(item.counterpartyId)?.nickname?.trim() ||
+                    `${t("inbox.person")} ${item.counterpartyId}`}
+                </ThemedText>
                 <ThemedText>
                   {formatServicePrice(
                     { startingPrice: item.totalPrice, currency: item.currency },

@@ -1,3 +1,4 @@
+import { useUserDisplays } from "@/features/services/user-displays";
 import { Stack, useIsFocused, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
@@ -20,6 +21,10 @@ export default function InboxScreen() {
   const [contextType, setContextType] = useState<InboxFilter>("");
   const owner = auth.status === "authenticated" && focused ? String(auth.generation) : undefined;
   const inbox = useInbox(owner, contextType);
+  const displays = useUserDisplays(
+    owner,
+    inbox.items.filter((item) => item.contextType !== "crew").map((item) => item.counterpartyId)
+  );
   return (
     <View style={{ flex: 1, backgroundColor: theme.background, padding: 16, gap: 12 }}>
       <Stack.Screen
@@ -77,7 +82,8 @@ export default function InboxScreen() {
                 <ThemedText type="smallBold">
                   {item.contextType === "crew"
                     ? item.crewName || item.contextId
-                    : `${t("inbox.person")} ${item.counterpartyId}`}
+                    : displays?.get(item.counterpartyId)?.nickname?.trim() ||
+                      `${t("inbox.person")} ${item.counterpartyId}`}
                 </ThemedText>
                 <ThemedText>
                   {t(`inbox.filter.${item.contextType}`)}

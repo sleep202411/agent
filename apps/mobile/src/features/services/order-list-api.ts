@@ -10,6 +10,7 @@ const card = z.object({
   status: z.enum(ORDER_STATUSES),
   totalPrice: z.number().finite().nonnegative(),
   currency: z.string().regex(/^[A-Z]{3}$/),
+  counterpartyId: z.string().min(1),
   counterpartyRole: z.enum(["buyer", "creator"]),
   unreadCount: z.number().int().nonnegative(),
 });

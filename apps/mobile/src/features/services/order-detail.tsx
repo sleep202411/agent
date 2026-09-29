@@ -1,3 +1,4 @@
+import { useUserDisplays } from "./user-displays";
 import { useEffect, useState } from "react";
 import { useIsFocused, useRouter, Stack } from "expo-router";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
@@ -57,6 +58,9 @@ function Content({ id, userId }: { id: string; userId: string }) {
   const [action, setAction] = useState<OrderAction>(),
     [reason, setReason] = useState("");
   const op = useAuthFormOperation(id, true);
+  const auth = useAuth();
+  const otherId = order ? (order.buyerId === userId ? order.creatorId : order.buyerId) : "";
+  const displays = useUserDisplays(String(auth.generation), [otherId]);
   useEffect(() => {
     const controller = new AbortController();
     void fetchOrder(id, controller.signal)
@@ -122,7 +126,7 @@ function Content({ id, userId }: { id: string; userId: string }) {
           </ThemedText>
           <ThemedText>
             {t(order.buyerId === userId ? "orderDetail.creator" : "orderDetail.buyer")}{" "}
-            {order.buyerId === userId ? order.creatorId : order.buyerId}
+            {displays?.get(otherId)?.nickname?.trim() || otherId}
           </ThemedText>
           <ThemedText>
             {formatServicePrice(

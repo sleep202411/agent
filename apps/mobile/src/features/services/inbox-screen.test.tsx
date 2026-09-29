@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import InboxScreen from "@/app/inbox";
+vi.mock("@/features/services/user-displays", () => ({ useUserDisplays: () => new Map() }));
 const h = vi.hoisted(() => ({
   push: vi.fn(),
   gate: vi.fn(),

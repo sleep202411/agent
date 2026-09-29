@@ -9,6 +9,7 @@ const item = {
   status: "pending_creator",
   totalPrice: 12.5,
   currency: "USD",
+  counterpartyId: "123",
   counterpartyRole: "creator",
   unreadCount: 2,
 };
