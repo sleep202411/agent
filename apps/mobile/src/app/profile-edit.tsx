@@ -1,5 +1,5 @@
 import { Stack, useIsFocused, useRouter } from "expo-router";
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useState, useLayoutEffect, useRef } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -18,6 +18,8 @@ import { Spacing } from "@/constants/theme";
 import { profileDraft, updateProfile, type ProfileDraft } from "@/features/profile/api";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations, type MessageKey } from "@/i18n";
+
+import { AvatarValidationError, pickAndUploadAvatar } from "@/features/profile/avatar-upload";
 
 const fields: { key: keyof ProfileDraft; label: MessageKey; multiline?: boolean }[] = [
   { key: "nickName", label: "profileEdit.nickname" },
@@ -61,6 +63,41 @@ function ProfileForm() {
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
   const refresh = auth.refreshCurrentUser;
+  const uploadScope = useRef<AbortController | null>(null);
+  const [avatarUpdated, setAvatarUpdated] = useState(false);
+  useLayoutEffect(() => {
+    const scope = new AbortController();
+    uploadScope.current = focused ? scope : null;
+    return () => {
+      scope.abort();
+      uploadScope.current = null;
+    };
+  }, [focused]);
+  const changeAvatar = async () => {
+    const scope = uploadScope.current;
+    if (!scope) return;
+    const generation = getAuthGeneration();
+    const current = () => !scope.signal.aborted && getAuthGeneration() === generation;
+    await operation.run(
+      async () => {
+        setError(undefined);
+        setAvatarUpdated(false);
+        const uploaded = await pickAndUploadAvatar(current, scope.signal);
+        if (uploaded && current()) await refresh();
+        return uploaded;
+      },
+      (uploaded) => setAvatarUpdated(uploaded),
+      (cause) => {
+        setError(
+          cause instanceof AvatarValidationError
+            ? t("profileEdit.avatarInvalid")
+            : cause instanceof Error
+              ? cause.message
+              : t("profileEdit.failed")
+        );
+      }
+    );
+  };
   const loadFailed = useEffectEvent((cause: unknown) => {
     setError(cause instanceof Error ? cause.message : t("profileEdit.failed"));
   });
@@ -102,6 +139,19 @@ function ProfileForm() {
     >
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
         {!draft && !error && <ActivityIndicator />}
+        {draft && (
+          <View style={styles.field}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={operation.busy}
+              onPress={() => void changeAvatar()}
+            >
+              <ThemedText type="smallBold">{t("profileEdit.avatarChange")}</ThemedText>
+            </Pressable>
+            <ThemedText>{t("profileEdit.avatarHint")}</ThemedText>
+            {avatarUpdated && <ThemedText>{t("profileEdit.avatarUpdated")}</ThemedText>}
+          </View>
+        )}
         {draft &&
           fields.map((field) => (
             <View key={field.key} style={styles.field}>

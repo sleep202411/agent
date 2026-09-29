@@ -961,5 +961,9 @@
   "profileEdit.failed": "資料更新失敗",
   "profileEdit.other": "補充資訊",
   "profileEdit.save": "儲存",
-  "profileEdit.retry": "重試"
+  "profileEdit.retry": "重試",
+  "profileEdit.avatarChange": "更換頭像",
+  "profileEdit.avatarHint": "圖片不超過 5 MB。頭像更改會立即儲存。",
+  "profileEdit.avatarInvalid": "請選擇不超過 5 MB 的圖片。",
+  "profileEdit.avatarUpdated": "頭像已更新"
 }

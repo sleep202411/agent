@@ -9,8 +9,13 @@ const h = vi.hoisted(() => ({
   authenticated: true,
   refresh: vi.fn(),
   post: vi.fn(),
+  upload: vi.fn(),
   back: vi.fn(),
   t: (key: string) => key,
+}));
+vi.mock("./avatar-upload", () => ({
+  AvatarValidationError: class extends Error {},
+  pickAndUploadAvatar: h.upload,
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
@@ -101,7 +106,10 @@ afterEach(async () => {
   host.remove();
 });
 const render = () => act(async () => root.render(<ProfileEditScreen />));
-const save = () => host.querySelector("button")!.click();
+const save = () =>
+  [...host.querySelectorAll("button")]
+    .find((b) => b.textContent?.includes("profileEdit.save"))!
+    .click();
 const input = (label: string) =>
   host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
 function change(label: string, value: string) {
@@ -127,7 +135,10 @@ it("loads current profile and writes only the editable Web fields before refresh
 it("rejects blank nicknames and supports clearing optional fields", async () => {
   await render();
   await act(async () => change("profileEdit.nickname", "   "));
-  expect(host.querySelector("button")!.disabled).toBe(true);
+  expect(
+    [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("profileEdit.save"))!
+      .disabled
+  ).toBe(true);
   await act(async () => {
     change("profileEdit.nickname", "Name");
     change("profileEdit.contact", "");
@@ -177,7 +188,7 @@ it("provides a retry after a profile-load failure without submitting empty data"
   await render();
   expect(host.textContent).toContain("Offline");
   expect(host.querySelectorAll("input")).toHaveLength(0);
-  await act(async () => save());
+  await act(async () => host.querySelector("button")!.click());
   expect(input("profileEdit.nickname").value).toBe("Alice");
   expect(h.post).not.toHaveBeenCalled();
 });
@@ -221,4 +232,37 @@ it("does not navigate back if a save finishes after the editor loses focus", asy
   await render();
   await act(async () => resolve());
   expect(h.back).not.toHaveBeenCalled();
+});
+
+it("uploads immediately without saving or discarding the text draft", async () => {
+  h.upload.mockResolvedValue(true);
+  await render();
+  await act(async () => change("profileEdit.nickname", "Unsaved"));
+  await act(async () => host.querySelector("button")!.click());
+  expect(h.refresh).toHaveBeenCalledTimes(2);
+  expect(input("profileEdit.nickname").value).toBe("Unsaved");
+  expect(h.post).not.toHaveBeenCalled();
+  expect(h.back).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("profileEdit.avatarUpdated");
+});
+it("locks repeated picks and makes a late picker stale on blur", async () => {
+  let finish!: (uploaded: boolean) => void;
+  h.upload.mockReturnValue(
+    new Promise<boolean>((resolve) => {
+      finish = resolve;
+    })
+  );
+  await render();
+  await act(async () => {
+    host.querySelector("button")!.click();
+    host.querySelector("button")!.click();
+  });
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  const [current, signal] = h.upload.mock.calls[0];
+  h.focused = false;
+  await render();
+  expect(current()).toBe(false);
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish(true));
+  expect(h.refresh).toHaveBeenCalledTimes(1);
 });

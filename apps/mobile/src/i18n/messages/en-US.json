@@ -961,5 +961,9 @@
   "profileEdit.failed": "Failed to update profile",
   "profileEdit.other": "Additional information",
   "profileEdit.save": "Save",
-  "profileEdit.retry": "Retry"
+  "profileEdit.retry": "Retry",
+  "profileEdit.avatarChange": "Change Avatar",
+  "profileEdit.avatarHint": "Image up to 5 MB. Avatar changes are saved immediately.",
+  "profileEdit.avatarInvalid": "Choose an image no larger than 5 MB.",
+  "profileEdit.avatarUpdated": "Avatar updated"
 }
