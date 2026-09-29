@@ -1431,6 +1431,43 @@ describe('ensureAttribution', () => {
 // ─── lazy commission backfill ────────────────────────────────────────────
 
 describe('backfillRefereeCommissions', () => {
+  it('reaches orders beyond a full failed page and wraps for retry', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralAttribution.findUnique.mockResolvedValue({
+      status: 'qualified',
+    });
+    const orders = Array.from({ length: 21 }, (_, index) => ({
+      id: String(index).padStart(3, '0'),
+      userId: REFEREE,
+      amountMinor: 100n,
+      currency: 'USD',
+    }));
+    prisma.billingOrder.findMany.mockImplementation(
+      (query: { where: { id?: { gt: string } }; take: number }) =>
+        Promise.resolve(
+          orders
+            .filter((order) => !query.where.id || order.id > query.where.id.gt)
+            .slice(0, query.take),
+        ),
+    );
+    const internal = service as unknown as {
+      backfillRefereeCommissions(userId: string): Promise<void>;
+      accrueCommissionForOrder(order: (typeof orders)[number]): Promise<void>;
+    };
+    const accrue = jest
+      .spyOn(internal, 'accrueCommissionForOrder')
+      .mockRejectedValue(new Error('temporary failure'));
+    await internal.backfillRefereeCommissions(REFEREE);
+    expect(accrue).toHaveBeenCalledTimes(20);
+    accrue.mockClear();
+    await internal.backfillRefereeCommissions(REFEREE);
+    expect(accrue).toHaveBeenCalledTimes(1);
+    expect(accrue).toHaveBeenCalledWith(orders[20]);
+    accrue.mockClear();
+    await internal.backfillRefereeCommissions(REFEREE);
+    expect(accrue).toHaveBeenCalledWith(orders[0]);
+  });
+
   const call = (service: ReferralsService) =>
     (
       service as unknown as {

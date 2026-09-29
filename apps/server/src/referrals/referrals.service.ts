@@ -77,6 +77,7 @@ export class ReferralsService {
   private readonly logger = new Logger(ReferralsService.name);
   // Best-effort recovery position only; durable payout truth stays in the DB.
   private readonly recoveryCursors = new Map<string, string>();
+  private readonly commissionCursors = new Map<string, string>();
   // Validate at service construction so a missing origin fails startup,
   // before an invitation can be sent to the wrong site's account system.
   private readonly inviteBase = resolveReferralInviteBaseUrl(process.env);
@@ -782,21 +783,29 @@ export class ReferralsService {
       where: { refereeUserId },
       select: { status: true },
     });
-    if (!attribution || attribution.status !== 'qualified') return;
+    if (!attribution || attribution.status !== 'qualified') {
+      this.commissionCursors.delete(refereeUserId);
+      return;
+    }
+    const cursor = this.commissionCursors.get(refereeUserId);
     const orders = await this.prisma.billingOrder.findMany({
       where: {
         userId: refereeUserId,
+        ...(cursor ? { id: { gt: cursor } } : {}),
         status: {
           in: [BillingOrderStatus.paid, BillingOrderStatus.fulfilled],
         },
         orderType: { not: BillingOrderType.manual_adjustment },
         createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { id: 'asc' },
       take: 20,
       select: { id: true, userId: true, amountMinor: true, currency: true },
     });
-    if (!orders.length) return;
+    if (!orders.length) {
+      this.commissionCursors.delete(refereeUserId);
+      return;
+    }
     const existing = new Set(
       (
         await this.prisma.referralReward.findMany({
@@ -814,11 +823,22 @@ export class ReferralsService {
         await this.accrueCommissionForOrder(order);
       } catch (error) {
         // One failing order must not block independent commissions in this
-        // bounded batch. Missing rewards remain eligible on the next read.
+        // bounded batch. Missing rewards remain eligible when the scan wraps.
         this.logger.warn(
           `commission backfill failed for order ${order.id}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
+    }
+    // Traverse all eligible orders, including pages behind already rewarded or
+    // failing orders. A short page wraps the next read back to retained failures.
+    // This is only a bounded local cursor; transactional accrual stays authoritative.
+    this.commissionCursors.delete(refereeUserId);
+    if (orders.length === 20) {
+      if (this.commissionCursors.size >= 1_000) {
+        const oldest = this.commissionCursors.keys().next();
+        if (!oldest.done) this.commissionCursors.delete(oldest.value);
+      }
+      this.commissionCursors.set(refereeUserId, orders[orders.length - 1].id);
     }
   }
 
