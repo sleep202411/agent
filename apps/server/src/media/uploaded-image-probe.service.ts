@@ -296,12 +296,16 @@ async function execImageTool(
           );
           return;
         }
-        if (systemError.code === 'ENOENT') {
+        if (
+          systemError.code === 'ENOENT' ||
+          systemError.code === 'EACCES' ||
+          systemError.code === 'EPERM'
+        ) {
           reject(
             new ServiceUnavailableException({
               code: 'MEDIA_IMAGE_INSPECTOR_UNAVAILABLE',
               message:
-                'The server image inspector is unavailable. ffprobe and ffmpeg must be installed.',
+                'The server image inspector is unavailable. ffprobe and ffmpeg must be installed and executable.',
             }),
           );
           return;

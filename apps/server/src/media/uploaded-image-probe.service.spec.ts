@@ -54,29 +54,36 @@ describe('UploadedImageProbeService', () => {
     jest.restoreAllMocks();
   });
 
-  it('reports inspector output exhaustion without declaring the image invalid', async () => {
-    const { service } = harness();
-    jest
-      .spyOn(childProcess, 'execFile')
-      .mockImplementation((...args: unknown[]) => {
-        const callback = args.at(-1) as (
-          error: unknown,
-          stdout: string,
-          stderr: string,
-        ) => void;
-        callback({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, '', '');
-        return {} as childProcess.ChildProcess;
+  it.each([
+    ['ERR_CHILD_PROCESS_STDIO_MAXBUFFER', 'MEDIA_IMAGE_INSPECTOR_OUTPUT_LIMIT'],
+    ['EACCES', 'MEDIA_IMAGE_INSPECTOR_UNAVAILABLE'],
+    ['EPERM', 'MEDIA_IMAGE_INSPECTOR_UNAVAILABLE'],
+  ])(
+    'reports inspector failure %s without declaring the image invalid',
+    async (systemCode, code) => {
+      const { service } = harness();
+      jest
+        .spyOn(childProcess, 'execFile')
+        .mockImplementation((...args: unknown[]) => {
+          const callback = args.at(-1) as (
+            error: unknown,
+            stdout: string,
+            stderr: string,
+          ) => void;
+          callback({ code: systemCode }, '', '');
+          return {} as childProcess.ChildProcess;
+        });
+      await expect(
+        service.probe(asset(), {
+          expectedContentType: 'image/png',
+          maxBytes: 1024,
+        }),
+      ).rejects.toMatchObject({
+        status: 503,
+        response: { code },
       });
-    await expect(
-      service.probe(asset(), {
-        expectedContentType: 'image/png',
-        maxBytes: 1024,
-      }),
-    ).rejects.toMatchObject({
-      status: 503,
-      response: { code: 'MEDIA_IMAGE_INSPECTOR_OUTPUT_LIMIT' },
-    });
-  });
+    },
+  );
 
   it.each([
     [503, null, 'MEDIA_IMAGE_STORAGE_UNAVAILABLE'],

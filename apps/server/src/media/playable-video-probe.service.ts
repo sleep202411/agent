@@ -112,12 +112,16 @@ export class PlayableVideoProbeService {
             );
             return;
           }
-          if (systemError.code === 'ENOENT') {
+          if (
+            systemError.code === 'ENOENT' ||
+            systemError.code === 'EACCES' ||
+            systemError.code === 'EPERM'
+          ) {
             reject(
               new ServiceUnavailableException({
                 code: 'MEDIA_VIDEO_PROBE_UNAVAILABLE',
                 message:
-                  'The server video inspector is unavailable. ffprobe must be installed.',
+                  'The server video inspector is unavailable. ffprobe must be installed and executable.',
               }),
             );
             return;

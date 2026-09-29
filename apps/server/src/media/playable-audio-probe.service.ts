@@ -57,12 +57,16 @@ export class PlayableAudioProbeService {
             );
             return;
           }
-          if (systemError.code === 'ENOENT') {
+          if (
+            systemError.code === 'ENOENT' ||
+            systemError.code === 'EACCES' ||
+            systemError.code === 'EPERM'
+          ) {
             return reject(
               new ServiceUnavailableException({
                 code: 'MEDIA_AUDIO_PROBE_UNAVAILABLE',
                 message:
-                  'The server audio inspector is unavailable. ffprobe must be installed.',
+                  'The server audio inspector is unavailable. ffprobe must be installed and executable.',
               }),
             );
           }

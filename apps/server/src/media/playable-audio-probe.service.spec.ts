@@ -45,6 +45,8 @@ describe('audio probe process failures', () => {
       503,
     ],
     [{ code: 'ENOENT' }, 'MEDIA_AUDIO_PROBE_UNAVAILABLE', 503],
+    [{ code: 'EACCES' }, 'MEDIA_AUDIO_PROBE_UNAVAILABLE', 503],
+    [{ code: 'EPERM' }, 'MEDIA_AUDIO_PROBE_UNAVAILABLE', 503],
     [{ killed: true, signal: 'SIGTERM' }, 'MEDIA_AUDIO_PROBE_TIMEOUT', 503],
     [{ code: 1 }, 'MEDIA_AUDIO_INVALID', 422],
   ] as const)(

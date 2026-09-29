@@ -101,6 +101,8 @@ describe('video probe process failures', () => {
       503,
     ],
     [{ code: 'ENOENT' }, 'MEDIA_VIDEO_PROBE_UNAVAILABLE', 503],
+    [{ code: 'EACCES' }, 'MEDIA_VIDEO_PROBE_UNAVAILABLE', 503],
+    [{ code: 'EPERM' }, 'MEDIA_VIDEO_PROBE_UNAVAILABLE', 503],
     [{ killed: true, signal: 'SIGTERM' }, 'MEDIA_VIDEO_PROBE_TIMEOUT', 503],
     [{ code: 1 }, 'MEDIA_VIDEO_INVALID', 422],
   ] as const)(
