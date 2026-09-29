@@ -68,6 +68,7 @@ export default function RootLayout() {
                 <Stack.Screen name="bind-invite" />
                 <Stack.Screen name="referrals" />
                 <Stack.Screen name="crew-applications" />
+                <Stack.Screen name="conversation/[id]" />
                 <Stack.Screen
                   name="pay/index"
                   options={{ contentStyle: { backgroundColor: Colors.dark.background } }}

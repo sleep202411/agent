@@ -1009,5 +1009,10 @@
   "publishWork.done": "完成",
   "publishWork.edit": "編輯作品",
   "publishWork.editHint": "長按可編輯或繼續上傳。",
-  "publishWork.loadFailed": "無法從目前帳戶載入此作品。"
+  "publishWork.loadFailed": "無法從目前帳戶載入此作品。",
+  "serviceContact.title": "聯絡創作者",
+  "serviceContact.message": "訊息",
+  "serviceContact.send": "傳送",
+  "serviceContact.sent": "訊息已傳送。",
+  "serviceContact.open": "開啟對話"
 }

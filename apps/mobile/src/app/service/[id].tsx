@@ -1,3 +1,4 @@
+import { ServiceContact } from "@/features/services/service-contact";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
@@ -111,6 +112,12 @@ export default function CreatorServiceDetailScreen() {
         )}
 
         <View style={styles.body}>
+          <ServiceContact
+            key={service.id}
+            serviceId={service.id}
+            creatorId={service.creatorId}
+            status={service.status}
+          />
           <View style={styles.section}>
             <SectionHeader title={t("serviceDetail.overviewTitle")} />
             <ThemedText type="small" themeColor="textSecondary" style={styles.paragraph}>

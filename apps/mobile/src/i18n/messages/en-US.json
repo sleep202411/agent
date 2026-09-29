@@ -1009,5 +1009,10 @@
   "publishWork.done": "Done",
   "publishWork.edit": "Edit Work",
   "publishWork.editHint": "Long press to edit or resume uploads.",
-  "publishWork.loadFailed": "Could not load this work from your account."
+  "publishWork.loadFailed": "Could not load this work from your account.",
+  "serviceContact.title": "Contact Creator",
+  "serviceContact.message": "Message",
+  "serviceContact.send": "Send",
+  "serviceContact.sent": "Message sent.",
+  "serviceContact.open": "Open Conversation"
 }
