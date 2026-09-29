@@ -953,5 +953,13 @@
   "crewRoles.producer": "制片人",
   "crewRoles.marketing": "市场负责人",
   "crewDetail.applicationsAction": "我的申请",
-  "crewDetail.safetyActions": "举报或屏蔽"
+  "crewDetail.safetyActions": "举报或屏蔽",
+  "profileEdit.title": "编辑资料",
+  "profileEdit.nickname": "昵称",
+  "profileEdit.contact": "联系方式",
+  "profileEdit.bio": "个人简介",
+  "profileEdit.failed": "资料更新失败",
+  "profileEdit.other": "补充信息",
+  "profileEdit.save": "保存",
+  "profileEdit.retry": "重试"
 }

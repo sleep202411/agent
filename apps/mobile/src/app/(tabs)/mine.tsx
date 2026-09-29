@@ -18,6 +18,7 @@ import { openPaywall } from "@/features/paywall";
 import { fetchComputeWalletBalance } from "@/features/paywall/lib/compute-wallet";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
+import { toHref } from "@/lib/navigation";
 
 type TabKey = "works" | "ips" | "crews";
 
@@ -320,7 +321,12 @@ export default function MineScreen() {
               </View>
 
               <View style={styles.profileRow}>
-                <View style={[styles.avatar, { backgroundColor: theme.brand }]}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={t("profileEdit.title")}
+                  onPress={() => router.push(toHref("/profile-edit"))}
+                  style={[styles.avatar, { backgroundColor: theme.brand }]}
+                >
                   {avatarUrl ? (
                     <Image
                       source={{ uri: avatarUrl }}
@@ -332,7 +338,7 @@ export default function MineScreen() {
                       {initial}
                     </ThemedText>
                   )}
-                </View>
+                </Pressable>
                 <View style={styles.profileCopy}>
                   <ThemedText type="subtitle" style={styles.profileName} numberOfLines={1}>
                     {displayName}

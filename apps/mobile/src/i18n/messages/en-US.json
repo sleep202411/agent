@@ -953,5 +953,13 @@
   "crewRoles.producer": "Producer",
   "crewRoles.marketing": "Marketing Lead",
   "crewDetail.applicationsAction": "My applications",
-  "crewDetail.safetyActions": "Report or block"
+  "crewDetail.safetyActions": "Report or block",
+  "profileEdit.title": "Edit Profile",
+  "profileEdit.nickname": "Nickname",
+  "profileEdit.contact": "Contact",
+  "profileEdit.bio": "Bio",
+  "profileEdit.failed": "Failed to update profile",
+  "profileEdit.other": "Additional information",
+  "profileEdit.save": "Save",
+  "profileEdit.retry": "Retry"
 }

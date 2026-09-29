@@ -953,5 +953,13 @@
   "crewRoles.producer": "監製",
   "crewRoles.marketing": "市場負責人",
   "crewDetail.applicationsAction": "我的申請",
-  "crewDetail.safetyActions": "舉報或屏蔽"
+  "crewDetail.safetyActions": "舉報或屏蔽",
+  "profileEdit.title": "編輯資料",
+  "profileEdit.nickname": "暱稱",
+  "profileEdit.contact": "聯絡方式",
+  "profileEdit.bio": "個人簡介",
+  "profileEdit.failed": "資料更新失敗",
+  "profileEdit.other": "補充資訊",
+  "profileEdit.save": "儲存",
+  "profileEdit.retry": "重試"
 }
