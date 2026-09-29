@@ -978,5 +978,7 @@
   "profileEdit.bannerHint": "Image up to 10 MB. Your public profile cover is saved immediately.",
   "profileEdit.bannerInvalid": "Choose an image no larger than 10 MB.",
   "profileEdit.bannerUpdated": "Profile cover updated",
-  "creatorDetail.present": "Present"
+  "creatorDetail.present": "Present",
+  "creatorDetail.experienceTitle": "Work Experience",
+  "creatorDetail.experienceFailed": "Work experience could not be loaded. Please retry."
 }
