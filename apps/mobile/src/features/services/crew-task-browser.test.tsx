@@ -68,6 +68,11 @@ vi.mock("./task-view-browser", () => ({
     </>
   ),
 }));
+vi.mock("./task-label-management", () => ({
+  TaskLabelManagement: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close labels</button>
+  ),
+}));
 vi.mock("./task-field-management", () => ({
   TaskFieldManagement: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close fields</button>
@@ -182,4 +187,11 @@ it("passes the selected task view into staged creation", async () => {
   expect(h.workbench).toHaveBeenLastCalledWith(
     expect.objectContaining({ viewId: "selected-view" })
   );
+});
+
+it("opens native label management and returns to tasks", async () => {
+  await act(async () => button("taskLabels.title").click());
+  expect(button("close labels")).toBeTruthy();
+  await act(async () => button("close labels").click());
+  expect(button("pick")).toBeTruthy();
 });

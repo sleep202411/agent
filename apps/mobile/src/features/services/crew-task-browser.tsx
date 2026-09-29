@@ -1,3 +1,4 @@
+import { TaskLabelManagement } from "./task-label-management";
 import { EpisodeManagement } from "./episode-management";
 import { EpisodeCreate } from "./episode-create";
 import { EpisodeTaskTemplate } from "./episode-task-template";
@@ -29,6 +30,7 @@ export function CrewTaskBrowser({
   const [creatingEpisode, setCreatingEpisode] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
+  const [managingLabels, setManagingLabels] = useState(false);
   const [managingFields, setManagingFields] = useState(false);
   const [creating, setCreating] = useState(false);
   const [viewId, setViewId] = useState<string>();
@@ -68,6 +70,15 @@ export function CrewTaskBrowser({
         crewId={crewId}
         generation={generation}
         onClose={() => setShowProgress(false)}
+      />
+    );
+  if (managingLabels)
+    return (
+      <TaskLabelManagement
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setManagingLabels(false)}
       />
     );
   if (managingFields)
@@ -136,6 +147,15 @@ export function CrewTaskBrowser({
         style={{ padding: 12 }}
       >
         <ThemedText>{t("taskCreate.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setManagingLabels(true);
+        }}
+      >
+        <ThemedText>{t("taskLabels.title")}</ThemedText>
       </Pressable>
       <Pressable
         accessibilityRole="button"

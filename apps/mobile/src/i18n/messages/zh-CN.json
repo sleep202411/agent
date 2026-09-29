@@ -2064,5 +2064,19 @@
   "viewLifecycle.last": "至少保留一个任务视图。",
   "viewLifecycle.confirmHelp": "请确认删除上方名称对应的视图。",
   "viewLifecycle.confirmRemove": "确认删除视图",
-  "viewLifecycle.recheck": "请返回刷新后的视图列表，检查结果后再操作。"
+  "viewLifecycle.recheck": "请返回刷新后的视图列表，检查结果后再操作。",
+  "taskLabels.title": "管理任务标签",
+  "taskLabels.add": "添加标签",
+  "taskLabels.empty": "暂无标签。",
+  "taskLabels.edit": "编辑标签",
+  "taskLabels.shared": "标签在此剧组内共享。",
+  "taskLabels.name": "标签名称",
+  "taskLabels.description": "描述",
+  "taskLabels.color": "颜色",
+  "taskLabels.colorHelp": "选择颜色或输入六位十六进制颜色，例如 #e52227。",
+  "taskLabels.recheck": "请返回刷新后的标签列表，检查结果后再操作。",
+  "taskLabels.save": "保存标签",
+  "taskLabels.delete": "删除标签",
+  "taskLabels.confirmDelete": "确认删除标签",
+  "taskLabels.deleteHelp": "从此剧组删除“{name}”？该标签的任务及项目关联和已保存视图中的筛选条件将被移除，任务和项目会保留。"
 }

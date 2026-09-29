@@ -2064,5 +2064,19 @@
   "viewLifecycle.last": "Keep at least one task view.",
   "viewLifecycle.confirmHelp": "Confirm deletion of the view named above.",
   "viewLifecycle.confirmRemove": "Confirm Delete View",
-  "viewLifecycle.recheck": "Return to the refreshed view list and check the result before trying again."
+  "viewLifecycle.recheck": "Return to the refreshed view list and check the result before trying again.",
+  "taskLabels.title": "Manage Task Labels",
+  "taskLabels.add": "Add Label",
+  "taskLabels.empty": "No labels yet.",
+  "taskLabels.edit": "Edit Label",
+  "taskLabels.shared": "Labels are shared across this Crew.",
+  "taskLabels.name": "Label Name",
+  "taskLabels.description": "Description",
+  "taskLabels.color": "Color",
+  "taskLabels.colorHelp": "Choose a color or enter a six-digit hex color, such as #e52227.",
+  "taskLabels.recheck": "Return to the refreshed label list and check the result before trying again.",
+  "taskLabels.save": "Save Label",
+  "taskLabels.delete": "Delete Label",
+  "taskLabels.confirmDelete": "Confirm Delete Label",
+  "taskLabels.deleteHelp": "Delete “{name}” from this Crew? Its task/project assignments and saved-view filters will be removed. Tasks and projects are kept."
 }

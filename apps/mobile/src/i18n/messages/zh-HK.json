@@ -2064,5 +2064,19 @@
   "viewLifecycle.last": "至少保留一個任務檢視。",
   "viewLifecycle.confirmHelp": "請確認刪除上方名稱對應的檢視。",
   "viewLifecycle.confirmRemove": "確認刪除檢視",
-  "viewLifecycle.recheck": "請返回重新整理後的檢視清單，檢查結果後再操作。"
+  "viewLifecycle.recheck": "請返回重新整理後的檢視清單，檢查結果後再操作。",
+  "taskLabels.title": "管理任務標籤",
+  "taskLabels.add": "新增標籤",
+  "taskLabels.empty": "暫無標籤。",
+  "taskLabels.edit": "編輯標籤",
+  "taskLabels.shared": "標籤在此劇組內共用。",
+  "taskLabels.name": "標籤名稱",
+  "taskLabels.description": "描述",
+  "taskLabels.color": "顏色",
+  "taskLabels.colorHelp": "選擇顏色或輸入六位十六進位顏色，例如 #e52227。",
+  "taskLabels.recheck": "請返回重新整理後的標籤清單，檢查結果後再操作。",
+  "taskLabels.save": "儲存標籤",
+  "taskLabels.delete": "刪除標籤",
+  "taskLabels.confirmDelete": "確認刪除標籤",
+  "taskLabels.deleteHelp": "從此劇組刪除「{name}」？該標籤的任務及專案關聯和已儲存檢視中的篩選條件將被移除，任務和專案會保留。"
 }
