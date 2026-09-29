@@ -21,6 +21,7 @@ const earningDetail = earning.extend({
   events,
 });
 const payoutDetail = payout.extend({
+  version: z.number().int().positive(),
   paymentMethod: z.enum(["bank_transfer", "alipay", "wechat_pay", "paypal", "other"]).nullable(),
   paymentReference: z.string().nullable(),
   paymentProofUrl: z.string().nullable(),

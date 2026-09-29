@@ -1,3 +1,4 @@
+import { PayoutDecision } from "./payout-decision";
 import { EarningDecision } from "./earning-decision";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
@@ -158,6 +159,15 @@ function Session(props: Props) {
           )}
           {"sourceType" in record && (
             <EarningDecision
+              key={`${record.id}:${record.version}`}
+              record={record}
+              userId={props.userId}
+              generation={props.generation}
+              onSaved={props.onChanged}
+            />
+          )}
+          {"allocations" in record && (
+            <PayoutDecision
               key={`${record.id}:${record.version}`}
               record={record}
               userId={props.userId}

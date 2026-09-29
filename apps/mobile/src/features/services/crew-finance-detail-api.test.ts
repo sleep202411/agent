@@ -35,6 +35,7 @@ const earning = {
   events: [event],
 };
 const payout = {
+  version: 1,
   ...selected,
   crewId: "crew",
   status: "paid",

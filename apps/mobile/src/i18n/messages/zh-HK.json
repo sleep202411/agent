@@ -1543,5 +1543,10 @@
   "crewFinance.decisionHelp": "請確認對收入記錄的更改。此操作不會轉帳。已預留或已支付的收入不能沖銷。",
   "crewFinance.decisionReason": "原因（必填）",
   "crewFinance.confirmDecision": "確認操作",
-  "crewFinance.decisionRefresh": "請重新整理並檢查記錄後再執行其他操作。"
+  "crewFinance.decisionRefresh": "請重新整理並檢查記錄後再執行其他操作。",
+  "crewFinance.payout_pay": "記錄已完成付款",
+  "crewFinance.payout_void": "作廢待付款記錄",
+  "crewFinance.recordPaymentHelp": "記錄已在平台外完成的付款。此操作不會轉帳，請填寫付款方式和參考號。",
+  "crewFinance.voidHelp": "作廢此待付款記錄並釋放預留收入。此操作不會撤銷外部付款。",
+  "crewFinance.proofUrl": "付款憑證連結（HTTPS）"
 }

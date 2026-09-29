@@ -1543,5 +1543,10 @@
   "crewFinance.decisionHelp": "请确认对收入记录的更改。此操作不会转账。已预留或已支付的收入不能冲销。",
   "crewFinance.decisionReason": "原因（必填）",
   "crewFinance.confirmDecision": "确认操作",
-  "crewFinance.decisionRefresh": "请刷新并检查记录后再执行其他操作。"
+  "crewFinance.decisionRefresh": "请刷新并检查记录后再执行其他操作。",
+  "crewFinance.payout_pay": "记录已完成付款",
+  "crewFinance.payout_void": "作废待付款记录",
+  "crewFinance.recordPaymentHelp": "记录已在平台外完成的付款。此操作不会转账，请填写付款方式和参考号。",
+  "crewFinance.voidHelp": "作废此待付款记录并释放预留收入。此操作不会撤销外部付款。",
+  "crewFinance.proofUrl": "付款凭证链接（HTTPS）"
 }

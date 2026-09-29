@@ -1543,5 +1543,10 @@
   "crewFinance.decisionHelp": "Confirm this change to the earning record. This does not transfer money. A reserved or paid earning cannot be reversed.",
   "crewFinance.decisionReason": "Reason (Required)",
   "crewFinance.confirmDecision": "Confirm Decision",
-  "crewFinance.decisionRefresh": "Refresh and check the record before taking another action."
+  "crewFinance.decisionRefresh": "Refresh and check the record before taking another action.",
+  "crewFinance.payout_pay": "Record Completed Payment",
+  "crewFinance.payout_void": "Void Pending Payout",
+  "crewFinance.recordPaymentHelp": "Record a payment already completed outside the platform. This action does not send money. Enter its payment method and reference.",
+  "crewFinance.voidHelp": "Void this pending payout and release its reserved earnings. This does not reverse an external payment.",
+  "crewFinance.proofUrl": "Payment Proof URL (HTTPS)"
 }
