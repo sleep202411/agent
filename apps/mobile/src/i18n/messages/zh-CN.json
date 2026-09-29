@@ -1413,5 +1413,15 @@
   "assetTaskProgress.props": "道具",
   "assetTaskProgress.art": "其他美术",
   "assetTaskProgress.music": "音乐",
-  "assetTaskProgress.other": "其他任务"
+  "assetTaskProgress.other": "其他任务",
+  "episodeTaskTemplate.title": "分集任务模板",
+  "episodeTaskTemplate.help": "选择集数，查看标准任务后确认创建。已有模板任务将复用。",
+  "episodeTaskTemplate.denied": "需要任务管理权限。",
+  "episodeTaskTemplate.noEpisodes": "暂无未完成集数，请在剧组工作台创建。",
+  "episodeTaskTemplate.role": "岗位",
+  "episodeTaskTemplate.dependencies": "依赖任务",
+  "episodeTaskTemplate.confirm": "创建分集任务",
+  "episodeTaskTemplate.creating": "创建中…",
+  "episodeTaskTemplate.created": "分集任务已创建",
+  "episodeTaskTemplate.reused": "已复用已有分集任务"
 }

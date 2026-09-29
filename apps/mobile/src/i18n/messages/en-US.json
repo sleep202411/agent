@@ -1413,5 +1413,15 @@
   "assetTaskProgress.props": "Props",
   "assetTaskProgress.art": "Other Art",
   "assetTaskProgress.music": "Music",
-  "assetTaskProgress.other": "Other Tasks"
+  "assetTaskProgress.other": "Other Tasks",
+  "episodeTaskTemplate.title": "Episode Task Templates",
+  "episodeTaskTemplate.help": "Choose an episode, review its standard tasks, then confirm creation. Existing template tasks are reused.",
+  "episodeTaskTemplate.denied": "Task management permission is required.",
+  "episodeTaskTemplate.noEpisodes": "No open episodes. Create an episode in the Crew workbench.",
+  "episodeTaskTemplate.role": "Role",
+  "episodeTaskTemplate.dependencies": "Dependencies",
+  "episodeTaskTemplate.confirm": "Create Episode Tasks",
+  "episodeTaskTemplate.creating": "Creating…",
+  "episodeTaskTemplate.created": "Episode tasks created",
+  "episodeTaskTemplate.reused": "Existing episode tasks reused"
 }

@@ -1,3 +1,4 @@
+import { EpisodeTaskTemplate } from "./episode-task-template";
 import { AssetTaskProgress } from "./asset-task-progress";
 import { TaskFieldManagement } from "./task-field-management";
 import { useState } from "react";
@@ -22,12 +23,22 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [showTemplate, setShowTemplate] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
   const [managingFields, setManagingFields] = useState(false);
   const [creating, setCreating] = useState(false);
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (showTemplate)
+    return (
+      <EpisodeTaskTemplate
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowTemplate(false)}
+      />
+    );
   if (showProgress)
     return (
       <AssetTaskProgress
@@ -119,6 +130,15 @@ export function CrewTaskBrowser({
         }}
       >
         <ThemedText>{t("assetTaskProgress.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowTemplate(true);
+        }}
+      >
+        <ThemedText>{t("episodeTaskTemplate.title")}</ThemedText>
       </Pressable>
       <TaskPicker
         crewId={crewId}

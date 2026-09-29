@@ -17,6 +17,11 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("@/components/authed-web-view", () => ({
   AuthedWebView: ({ path }: { path: string }) => <span>{path}</span>,
 }));
+vi.mock("./episode-task-template", () => ({
+  EpisodeTaskTemplate: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close templates</button>
+  ),
+}));
 vi.mock("./asset-task-progress", () => ({
   AssetTaskProgress: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close progress</button>
@@ -118,5 +123,12 @@ it("opens native asset progress and returns to the unchanged task browser", asyn
   await act(async () => button("assetTaskProgress.title").click());
   expect(button("close progress")).toBeDefined();
   await act(async () => button("close progress").click());
+  expect(button("pick")).toBeDefined();
+});
+
+it("opens native episode templates and returns to the task browser", async () => {
+  await act(async () => button("episodeTaskTemplate.title").click());
+  expect(button("close templates")).toBeDefined();
+  await act(async () => button("close templates").click());
   expect(button("pick")).toBeDefined();
 });
