@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   error: undefined as string | undefined,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
+vi.mock("./task-comment", () => ({ TaskComment: () => null }));
 vi.mock("./use-task-timeline", () => ({
   useTaskTimeline: () => ({
     items: h.items,
@@ -60,7 +61,10 @@ const item: TaskActivity = {
     },
   ],
 };
-const render = () => act(async () => root.render(<TaskTimeline taskId="task" generation={1} />));
+const render = () =>
+  act(async () =>
+    root.render(<TaskTimeline crewId="crew" taskId="task" generation={1} userId="1" />)
+  );
 beforeEach(() => {
   vi.resetAllMocks();
   h.items = [item];

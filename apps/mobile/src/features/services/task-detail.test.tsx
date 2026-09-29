@@ -57,6 +57,7 @@ const render = (taskId = "task") =>
         crewId="crew"
         taskId={taskId}
         generation={1}
+        userId="1"
         onClose={h.close}
         onOpenWeb={h.web}
       />

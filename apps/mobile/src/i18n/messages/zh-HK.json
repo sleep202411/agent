@@ -1,4 +1,8 @@
 {
+  "taskActivity.writeComment": "寫評論",
+  "taskActivity.sendComment": "發表評論",
+  "taskActivity.sendingComment": "正在發表…",
+  "taskActivity.retryCommentHint": "重試會傳送同一則評論，避免重複。",
   "taskActivity.older": "更早的動態",
   "taskActivity.title": "動態與評論",
   "taskActivity.system": "系統",

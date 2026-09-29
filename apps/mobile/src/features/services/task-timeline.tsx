@@ -4,9 +4,20 @@ import { useTranslations, useLocale } from "@/i18n";
 import { useTaskTimeline } from "./use-task-timeline";
 import { useUserDisplays } from "./user-displays";
 import { taskActivityLabel, taskActivityNote } from "./task-timeline-api";
+import { TaskComment } from "./task-comment";
 import { ConversationFile } from "./conversation-file";
 /** Parent task detail is scoped to account/focus and revalidates tasks.view first. */
-export function TaskTimeline({ taskId, generation }: { taskId: string; generation: number }) {
+export function TaskTimeline({
+  crewId,
+  taskId,
+  userId,
+  generation,
+}: {
+  crewId: string;
+  taskId: string;
+  userId: string;
+  generation: number;
+}) {
   const t = useTranslations(),
     locale = useLocale();
   const history = useTaskTimeline(String(generation), taskId);
@@ -60,6 +71,15 @@ export function TaskTimeline({ taskId, generation }: { taskId: string; generatio
           )}
         </View>
       ))}
+      {!history.error && (
+        <TaskComment
+          crewId={crewId}
+          taskId={taskId}
+          userId={userId}
+          generation={generation}
+          onSent={history.refresh}
+        />
+      )}
       {history.loading && <ActivityIndicator />}
       {!history.loading && !history.error && history.items.length === 0 && (
         <ThemedText>{t("taskActivity.empty")}</ThemedText>

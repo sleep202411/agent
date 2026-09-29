@@ -1,4 +1,8 @@
 {
+  "taskActivity.writeComment": "写评论",
+  "taskActivity.sendComment": "发表评论",
+  "taskActivity.sendingComment": "正在发表…",
+  "taskActivity.retryCommentHint": "重试会发送同一条评论，避免重复。",
   "taskActivity.older": "更早的动态",
   "taskActivity.title": "动态与评论",
   "taskActivity.system": "系统",

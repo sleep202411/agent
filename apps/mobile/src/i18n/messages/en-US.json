@@ -1,4 +1,8 @@
 {
+  "taskActivity.writeComment": "Write a comment",
+  "taskActivity.sendComment": "Post Comment",
+  "taskActivity.sendingComment": "Posting…",
+  "taskActivity.retryCommentHint": "Retry sends the same comment to avoid duplicates.",
   "taskActivity.older": "Older activity",
   "taskActivity.title": "Activity and Comments",
   "taskActivity.system": "System",

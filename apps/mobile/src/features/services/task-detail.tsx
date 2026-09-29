@@ -11,6 +11,7 @@ type Props = {
   crewId: string;
   taskId: string;
   generation: number;
+  userId: string;
   onClose: () => void;
   onOpenWeb: () => void;
 };
@@ -20,7 +21,7 @@ export function TaskDetail(props: Props) {
     <TaskContent key={`${props.crewId}:${props.taskId}:${props.generation}`} {...props} />
   ) : null;
 }
-function TaskContent({ crewId, taskId, generation, onClose, onOpenWeb }: Props) {
+function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }: Props) {
   const t = useTranslations(),
     locale = useLocale();
   const [revision, setRevision] = useState(0);
@@ -76,7 +77,7 @@ function TaskContent({ crewId, taskId, generation, onClose, onOpenWeb }: Props) 
               <ThemedText key={label.id}>{label.name}</ThemedText>
             ))}
           </View>
-          <TaskTimeline taskId={taskId} generation={generation} />
+          <TaskTimeline crewId={crewId} taskId={taskId} userId={userId} generation={generation} />
           <Pressable accessibilityRole="button" onPress={onOpenWeb} style={{ padding: 12 }}>
             <ThemedText>{t("thread.taskOpenWorkspace")}</ThemedText>
           </Pressable>

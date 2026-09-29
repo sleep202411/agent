@@ -163,6 +163,7 @@ export function NativeConversation({
     return (
       <TaskDetail
         {...selectedTask}
+        userId={userId}
         generation={generation}
         onClose={() => setSelectedTask(undefined)}
         onOpenWeb={() => {
