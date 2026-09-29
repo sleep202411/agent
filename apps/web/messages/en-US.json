@@ -10663,6 +10663,7 @@
     "reject": "Reject",
     "empty": "No points requests yet.",
     "latest": "Latest requests",
-    "older": "Older requests"
+    "older": "Older requests",
+    "loadFailed": "Finance data could not be loaded. Please retry."
   }
 }

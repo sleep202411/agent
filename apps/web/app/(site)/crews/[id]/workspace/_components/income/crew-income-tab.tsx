@@ -1722,6 +1722,24 @@ function ProjectSpendSummary({
 
   if (!data) return null;
 
+  const validTotals = [
+    data.taskRewardsByCurrency,
+    data.reimbursementsByCurrency,
+    data.totalByCurrency,
+  ].every(
+    (group) =>
+      group &&
+      ["CNY", "USD"].every(
+        (currency) => typeof group[currency] === "string" && /^-?\d+$/.test(group[currency])
+      )
+  );
+  if (!validTotals)
+    return (
+      <div role="alert" className="mt-4 text-sm text-muted-foreground">
+        {t("metrics.unavailable")}
+      </div>
+    );
+
   const currencies = (["CNY", "USD"] as const).filter((c) => {
     const rewards = BigInt(data.taskRewardsByCurrency[c] ?? "0");
     const reimbursements = BigInt(data.reimbursementsByCurrency[c] ?? "0");
