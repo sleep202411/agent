@@ -1298,5 +1298,13 @@
   "thread.memberJoined": "{user}加入了劇組。",
   "thread.memberLeft": "{user}離開了劇組。",
   "thread.closePreview": "關閉預覽",
-  "thread.previewFailed": "預覽載入失敗，請再次開啟檔案重試。"
+  "thread.previewFailed": "預覽載入失敗，請再次開啟檔案重試。",
+  "taskSubmit.submitTitle": "提交任務版本",
+  "taskSubmit.submitDescription": "將目前畫布快照和選中的劇組資產一起提交審核。",
+  "taskSubmit.deliveryFolder": "交付資料夾",
+  "taskSubmit.automaticDeliveryFolder": "重用任務資料夾，或按任務名稱建立",
+  "taskSubmit.submitNotePlaceholder": "這一版修改了甚麼？還有哪些資訊需要審核人注意…",
+  "taskSubmit.submitAction": "提交審核",
+  "taskSubmit.selectFilesFirst": "請先在上方選擇檔案，再將檔案分配到此交付欄位。",
+  "taskSubmit.completeRequired": "請填寫標有 * 的必填項後再提交。"
 }

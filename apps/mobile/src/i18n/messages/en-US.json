@@ -1298,5 +1298,13 @@
   "thread.memberJoined": "{user} joined the crew.",
   "thread.memberLeft": "{user} left the crew.",
   "thread.closePreview": "Close preview",
-  "thread.previewFailed": "Preview could not load. Open the file again to retry."
+  "thread.previewFailed": "Preview could not load. Open the file again to retry.",
+  "taskSubmit.submitTitle": "Submit task version",
+  "taskSubmit.submitDescription": "Submit the current canvas snapshot and any selected crew assets for review.",
+  "taskSubmit.deliveryFolder": "Delivery folder",
+  "taskSubmit.automaticDeliveryFolder": "Reuse the task folder, or create one named after this task",
+  "taskSubmit.submitNotePlaceholder": "What changed in this version? Add anything the reviewer should know…",
+  "taskSubmit.submitAction": "Submit for Review",
+  "taskSubmit.selectFilesFirst": "Choose files above, then assign them to this delivery field.",
+  "taskSubmit.completeRequired": "Complete the required fields marked * before submitting."
 }

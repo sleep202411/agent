@@ -1298,5 +1298,13 @@
   "thread.memberJoined": "{user}加入了剧组。",
   "thread.memberLeft": "{user}离开了剧组。",
   "thread.closePreview": "关闭预览",
-  "thread.previewFailed": "预览加载失败，请再次打开文件重试。"
+  "thread.previewFailed": "预览加载失败，请再次打开文件重试。",
+  "taskSubmit.submitTitle": "提交任务版本",
+  "taskSubmit.submitDescription": "将当前画布快照和选中的剧组资产一起提交审核。",
+  "taskSubmit.deliveryFolder": "交付文件夹",
+  "taskSubmit.automaticDeliveryFolder": "复用任务文件夹，或按任务名称创建",
+  "taskSubmit.submitNotePlaceholder": "这一版修改了什么？还有哪些信息需要审核人注意…",
+  "taskSubmit.submitAction": "提交审核",
+  "taskSubmit.selectFilesFirst": "请先在上方选择文件，再将文件分配到此交付字段。",
+  "taskSubmit.completeRequired": "请填写标有 * 的必填项后再提交。"
 }

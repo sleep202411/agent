@@ -5,6 +5,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
+import { TaskSubmit } from "./task-submit";
 import { TaskReview } from "./task-review";
 import { TaskDelivery } from "./task-delivery";
 import { TaskCommitments } from "./task-commitments";
@@ -49,7 +50,10 @@ function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }:
   const date = (value: string | null) =>
     value ? new Date(value).toLocaleString(locale) : t("thread.taskUnset");
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{ padding: 16, gap: 12 }}
+    >
       <Pressable accessibilityRole="button" onPress={onClose} style={{ padding: 12 }}>
         <ThemedText>{t("thread.backToChat")}</ThemedText>
       </Pressable>
@@ -85,6 +89,13 @@ function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }:
             taskId={taskId}
             generation={generation}
             submissions={data.submissions}
+          />
+          <TaskSubmit
+            key={`submit:${revision}`}
+            task={data}
+            userId={userId}
+            generation={generation}
+            onRefresh={() => setRevision((v) => v + 1)}
           />
           <TaskReview
             key={`review:${revision}`}
