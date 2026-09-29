@@ -57,7 +57,8 @@ export class CopilotQuotaService
 {
   private readonly logger = new Logger(CopilotQuotaService.name);
   private reconcileTimer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private stopping = false;
 
   constructor(
     private readonly quota: QuotaService,
@@ -66,6 +67,7 @@ export class CopilotQuotaService
   ) {}
 
   onModuleInit(): void {
+    if (this.stopping || this.reconcileTimer) return;
     this.reconcileTimer = setInterval(() => {
       this.runDrainSafely();
     }, RECONCILE_INTERVAL_MS);
@@ -73,9 +75,11 @@ export class CopilotQuotaService
     this.runDrainSafely();
   }
 
-  onApplicationShutdown(): void {
+  async onApplicationShutdown(): Promise<void> {
+    this.stopping = true;
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
     this.reconcileTimer = null;
+    await this.draining;
   }
 
   /** Run before claiming a turn so rate-limit rejection never mutates chat. */
@@ -279,40 +283,47 @@ export class CopilotQuotaService
   }
 
   async drainPendingAttempts(): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
-    try {
-      const terminalAttempts =
-        await this.prisma.copilotQuotaChargeAttempt.findMany({
-          where: {
-            OR: [
-              {
-                status: {
-                  in: [
-                    CopilotQuotaChargeStatus.refund_pending,
-                    CopilotQuotaChargeStatus.settle_pending,
-                  ],
-                },
+    if (this.stopping) return;
+    if (this.draining) return this.draining;
+    this.draining = this.reconcilePendingAttempts().finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async reconcilePendingAttempts(): Promise<void> {
+    const terminalAttempts =
+      await this.prisma.copilotQuotaChargeAttempt.findMany({
+        where: {
+          OR: [
+            {
+              status: {
+                in: [
+                  CopilotQuotaChargeStatus.refund_pending,
+                  CopilotQuotaChargeStatus.settle_pending,
+                ],
               },
-              {
-                status: {
-                  in: [
-                    CopilotQuotaChargeStatus.refunded,
-                    CopilotQuotaChargeStatus.settled,
-                  ],
-                },
-                redisFinalizedAt: null,
+            },
+            {
+              status: {
+                in: [
+                  CopilotQuotaChargeStatus.refunded,
+                  CopilotQuotaChargeStatus.settled,
+                ],
               },
-            ],
-          },
-          orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
-          take: RECONCILE_BATCH_SIZE,
-          select: { id: true },
-        });
-      const remaining = RECONCILE_BATCH_SIZE - terminalAttempts.length;
-      const recoverableChargedAttempts =
-        remaining > 0
-          ? await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+              redisFinalizedAt: null,
+            },
+          ],
+        },
+        orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+        take: RECONCILE_BATCH_SIZE,
+        select: { id: true },
+      });
+    if (this.stopping) return;
+    const remaining = RECONCILE_BATCH_SIZE - terminalAttempts.length;
+    const recoverableChargedAttempts =
+      remaining > 0
+        ? await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
               SELECT attempt."id"
               FROM "copilot_quota_charge_attempts" AS attempt
               LEFT JOIN "copilot_conversations" AS conversation
@@ -332,11 +343,12 @@ export class CopilotQuotaService
               ORDER BY attempt."updated_at" ASC, attempt."id" ASC
               LIMIT ${remaining}
             `)
-          : [];
-      const consumeRemaining = remaining - recoverableChargedAttempts.length;
-      const abandonedConsumeAttempts =
-        consumeRemaining > 0
-          ? await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        : [];
+    if (this.stopping) return;
+    const consumeRemaining = remaining - recoverableChargedAttempts.length;
+    const abandonedConsumeAttempts =
+      consumeRemaining > 0
+        ? await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
               SELECT attempt."id"
               FROM "copilot_quota_charge_attempts" AS attempt
               LEFT JOIN "copilot_conversations" AS conversation
@@ -352,22 +364,20 @@ export class CopilotQuotaService
               ORDER BY attempt."updated_at" ASC, attempt."id" ASC
               LIMIT ${consumeRemaining}
             `)
-          : [];
-      for (const attempt of [
-        ...terminalAttempts,
-        ...recoverableChargedAttempts,
-        ...abandonedConsumeAttempts,
-      ]) {
-        try {
-          await this.reconcileChargeAttempt(attempt.id);
-        } catch (error) {
-          this.logger.error(
-            `copilot.quota_reconcile_failed attemptId=${attempt.id} error=${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
+        : [];
+    for (const attempt of [
+      ...terminalAttempts,
+      ...recoverableChargedAttempts,
+      ...abandonedConsumeAttempts,
+    ]) {
+      if (this.stopping) return;
+      try {
+        await this.reconcileChargeAttempt(attempt.id);
+      } catch (error) {
+        this.logger.error(
+          `copilot.quota_reconcile_failed attemptId=${attempt.id} error=${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-    } finally {
-      this.draining = false;
     }
   }
 
