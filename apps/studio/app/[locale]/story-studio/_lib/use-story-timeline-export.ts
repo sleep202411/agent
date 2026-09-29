@@ -58,10 +58,16 @@ export function useStoryTimelineExport({
     () => ({ sequenceId: sequence?.id, projectId, chapterId, mediaKey }),
     [sequence?.id, projectId, chapterId, mediaKey]
   );
-  const owner = useRef<{ scope: typeof scope; operation: AbortController | null } | null>(null);
+  type Recovery = { blob: Blob; mediaAssetId?: string };
+  type Owner = {
+    scope: typeof scope;
+    operation: AbortController | null;
+    recovery: Recovery | null;
+  };
+  const owner = useRef<Owner | null>(null);
 
   useEffect(() => {
-    const current = { scope, operation: null as AbortController | null };
+    const current: Owner = { scope, operation: null, recovery: null };
     owner.current = current;
     return () => {
       current.operation?.abort();
@@ -94,6 +100,7 @@ export function useStoryTimelineExport({
       owned.operation.abort();
       owned.operation = null;
     }
+    owned.recovery = null;
     setStage("idle");
     setProgress(null);
   }, [scope]);
@@ -108,7 +115,7 @@ export function useStoryTimelineExport({
       return;
     }
 
-    if (!isExportSupported()) {
+    if (!owned.recovery && !isExportSupported()) {
       setError("browser_unsupported");
       toast.error(t("unsupported"));
       return;
@@ -126,48 +133,49 @@ export function useStoryTimelineExport({
     setProgress({ scope, ratio: 0 });
 
     try {
-      const blob = await exportTimelineToMp4(validShots, {
-        signal,
-        onProgress: (ratio) => {
-          if (current()) {
-            setProgress({ scope, ratio });
-          }
-        },
-      });
+      let recovery = owned.recovery;
+      if (!recovery) {
+        const blob = await exportTimelineToMp4(validShots, {
+          signal,
+          onProgress: (ratio) => {
+            if (current()) setProgress({ scope, ratio });
+          },
+        });
+        if (!current()) return;
+        recovery = { blob };
+        owned.recovery = recovery;
+        setLastBlob({ scope, blob });
+      }
 
-      if (!current()) return;
-      setLastBlob({ scope, blob });
+      // Resume only this exact timeline snapshot. A failed asset attachment
+      // must not create another stored video; candidate attachment is an upsert.
+      let mediaAssetId = recovery.mediaAssetId;
+      if (!mediaAssetId) {
+        const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
+        const file = new File([recovery.blob], filename, { type: "video/mp4" });
+        setStage("uploading");
+        setProgress({ scope, ratio: 0 });
+        const uploaded = await uploadFileViaSignedUrl(file, {
+          kind: "ai_reference_video",
+          scope: { storyProjectId: projectId },
+          onProgress: (uploadPercent) => {
+            if (current()) setProgress({ scope, ratio: uploadPercent / 100 });
+          },
+          signal,
+        });
+        if (!current()) return;
+        mediaAssetId = uploaded.mediaAssetId;
+        owned.recovery = { blob: recovery.blob, mediaAssetId };
+      }
 
-      // Step d: Create file object
-      const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
-      const file = new File([blob], filename, { type: "video/mp4" });
-
-      // Upload the export before adding it to project assets.
-      setStage("uploading");
-      setProgress({ scope, ratio: 0 });
-      const uploaded = await uploadFileViaSignedUrl(file, {
-        kind: "ai_reference_video",
-        scope: { storyProjectId: projectId },
-        onProgress: (uploadPercent) => {
-          if (current()) {
-            // Upload reports 0–100; export progress and its UI use 0–1.
-            setProgress({ scope, ratio: uploadPercent / 100 });
-          }
-        },
-        signal,
-      });
-
-      if (!current()) return;
-
-      // Step f: Add candidate asset
       setStage("saving");
-      await addStoryCandidateAsset(projectId, uploaded.mediaAssetId);
-
+      await addStoryCandidateAsset(projectId, mediaAssetId);
       if (!current()) return;
+      owned.recovery = null;
 
       // Step g: On complete
       toast.success(t("saved"));
-      onComplete?.(uploaded.mediaAssetId);
+      onComplete?.(mediaAssetId);
     } catch (err: unknown) {
       if (!current()) return;
       console.error("[StoryTimelineExport] failed:", err);

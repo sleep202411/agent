@@ -133,6 +133,9 @@ it.each(["upload", "save"] as const)(
     if (stage === "upload") expect(h.save).not.toHaveBeenCalled();
     await act(async () => api.handleExport());
     expect(options.onComplete).toHaveBeenCalledTimes(1);
+    expect(h.export).toHaveBeenCalledTimes(1);
+    expect(h.upload).toHaveBeenCalledTimes(stage === "upload" ? 2 : 1);
+    expect(h.save).toHaveBeenLastCalledWith("project", "asset");
   }
 );
 it("does not save a late upload after switching project", async () => {
@@ -301,4 +304,40 @@ it("normalizes storage upload percentages to the export progress ratio", async (
     await work;
   });
   expect(h.save).toHaveBeenCalledWith("project", "asset");
+});
+
+it.each(["project", "chapter", "media", "duration"])(
+  "discards upload recovery when %s changes",
+  async (change) => {
+    h.save.mockRejectedValueOnce(new Error("Temporary attachment failure"));
+    await render();
+    await act(async () => api.handleExport());
+    if (change === "project") options = { ...options, projectId: "replacement" };
+    if (change === "chapter") options = { ...options, chapterId: "replacement" };
+    if (change === "media")
+      options = { ...options, sequence: sequence("https://example.test/b.mp4") };
+    if (change === "duration") {
+      const next = sequence()!;
+      next.clips[0]!.durationMs = 5000;
+      options = { ...options, sequence: next };
+    }
+    h.upload.mockResolvedValueOnce({ mediaAssetId: "replacement-asset" });
+    await render();
+    await act(async () => api.handleExport());
+    expect(h.export).toHaveBeenCalledTimes(2);
+    expect(h.upload).toHaveBeenCalledTimes(2);
+    expect(h.save).toHaveBeenLastCalledWith(options.projectId, "replacement-asset");
+  }
+);
+
+it("clears recovery after completion or explicit cancellation", async () => {
+  h.save.mockRejectedValueOnce(new Error("Temporary attachment failure"));
+  await render();
+  await act(async () => api.handleExport());
+  await act(async () => api.cancel());
+  await act(async () => api.handleExport());
+  expect(h.export).toHaveBeenCalledTimes(2);
+  await act(async () => api.handleExport());
+  expect(h.export).toHaveBeenCalledTimes(3);
+  expect(h.upload).toHaveBeenCalledTimes(3);
 });
