@@ -2172,5 +2172,20 @@
   "assetOrganization.save": "保存",
   "assetOrganization.favorite": "添加到收藏",
   "assetOrganization.unfavorite": "取消收藏",
-  "assetOrganization.recheck": "请刷新并检查资产后再重试。"
+  "assetOrganization.recheck": "请刷新并检查资产后再重试。",
+  "assetLifecycle.trash": "回收站",
+  "assetLifecycle.empty": "回收站为空。",
+  "assetLifecycle.reload": "重新加载回收站",
+  "assetLifecycle.moveTrash": "移到回收站",
+  "assetLifecycle.confirmTrash": "确认移到回收站",
+  "assetLifecycle.trashHelp": "将此资产移到回收站？文件夹中未删除的内容也会一并移入，之后可以恢复。",
+  "assetLifecycle.restore": "恢复",
+  "assetLifecycle.confirmRestore": "确认恢复",
+  "assetLifecycle.restoreHelp": "将资产恢复到原文件夹。与文件夹同时删除的内容会一并恢复；此前删除的内容仍留在回收站。",
+  "assetLifecycle.delete": "永久删除",
+  "assetLifecycle.confirmDelete": "确认永久删除",
+  "assetLifecycle.deleteHelp": "永久删除此资产及文件夹内容？此操作无法撤销。未被其他资产引用的剧组上传文件也可能从存储中移除。",
+  "assetLifecycle.typeName": "输入“{name}”以确认。",
+  "assetLifecycle.name": "资产名称确认",
+  "assetLifecycle.recheck": "请返回并刷新资产状态后再重试。"
 }

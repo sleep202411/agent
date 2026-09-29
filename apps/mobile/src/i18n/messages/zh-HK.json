@@ -2172,5 +2172,20 @@
   "assetOrganization.save": "儲存",
   "assetOrganization.favorite": "加入收藏",
   "assetOrganization.unfavorite": "取消收藏",
-  "assetOrganization.recheck": "請重新整理並檢查資產後再重試。"
+  "assetOrganization.recheck": "請重新整理並檢查資產後再重試。",
+  "assetLifecycle.trash": "垃圾桶",
+  "assetLifecycle.empty": "垃圾桶是空的。",
+  "assetLifecycle.reload": "重新載入垃圾桶",
+  "assetLifecycle.moveTrash": "移至垃圾桶",
+  "assetLifecycle.confirmTrash": "確認移至垃圾桶",
+  "assetLifecycle.trashHelp": "將此資產移至垃圾桶？資料夾中未刪除的內容也會一併移入，之後可以還原。",
+  "assetLifecycle.restore": "還原",
+  "assetLifecycle.confirmRestore": "確認還原",
+  "assetLifecycle.restoreHelp": "將資產還原至原資料夾。與資料夾同時刪除的內容會一併還原；此前刪除的內容仍留在垃圾桶。",
+  "assetLifecycle.delete": "永久刪除",
+  "assetLifecycle.confirmDelete": "確認永久刪除",
+  "assetLifecycle.deleteHelp": "永久刪除此資產及資料夾內容？此操作無法復原。未被其他資產引用的劇組上傳檔案也可能從儲存空間移除。",
+  "assetLifecycle.typeName": "輸入「{name}」以確認。",
+  "assetLifecycle.name": "資產名稱確認",
+  "assetLifecycle.recheck": "請返回並重新整理資產狀態後再重試。"
 }

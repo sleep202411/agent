@@ -1,3 +1,4 @@
+import { AssetTrash, AssetLifecycleAction } from "./lifecycle";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -26,6 +27,7 @@ export function AssetOrganization(props: Props) {
 }
 function Browser(props: Props) {
   const t = useTranslations();
+  const [showTrash, setShowTrash] = useState(false);
   const [path, setPath] = useState<{ id: string; name: string }[]>([]),
     [selection, setSelection] = useState<string>();
   const [source, setSource] = useState<"all" | "recent" | "favorites">("all");
@@ -37,6 +39,16 @@ function Browser(props: Props) {
     setSelection(undefined);
     listing.refresh();
   };
+  if (showTrash)
+    return (
+      <AssetTrash
+        {...props}
+        onClose={() => {
+          setShowTrash(false);
+          listing.refresh();
+        }}
+      />
+    );
   if (selection)
     return (
       <Editor
@@ -49,6 +61,7 @@ function Browser(props: Props) {
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{t("assetOrganization.title")}</ThemedText>
+      <Button label={t("assetLifecycle.trash")} onPress={() => setShowTrash(true)} />
       {(["all", "recent", "favorites"] as const).map((value) => (
         <Button
           key={value}
@@ -168,6 +181,7 @@ function Form(
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
+  const [showLifecycle, setShowLifecycle] = useState(false);
   const [name, setName] = useState(props.node?.name ?? ""),
     [parentId, setParentId] = useState(props.node ? props.node.parentId : props.initialParentId);
   const [attempted, setAttempted] = useState(false),
@@ -226,6 +240,8 @@ function Form(
       (e) => setError(e instanceof Error ? e.message : String(e))
     );
   };
+  if (showLifecycle && props.node)
+    return <AssetLifecycleAction {...props} node={props.node} onClose={props.onClose} />;
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -284,6 +300,13 @@ function Form(
           )}
           disabled={locked}
           onPress={() => actOn(true)}
+        />
+      )}
+      {props.node && canEdit && (
+        <Button
+          label={t("assetLifecycle.moveTrash")}
+          disabled={locked}
+          onPress={() => setShowLifecycle(true)}
         />
       )}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}

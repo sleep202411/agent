@@ -2172,5 +2172,20 @@
   "assetOrganization.save": "Save",
   "assetOrganization.favorite": "Add to Favorites",
   "assetOrganization.unfavorite": "Remove from Favorites",
-  "assetOrganization.recheck": "Refresh and review the asset before trying again."
+  "assetOrganization.recheck": "Refresh and review the asset before trying again.",
+  "assetLifecycle.trash": "Trash",
+  "assetLifecycle.empty": "Trash is empty.",
+  "assetLifecycle.reload": "Reload Trash",
+  "assetLifecycle.moveTrash": "Move to Trash",
+  "assetLifecycle.confirmTrash": "Confirm Move to Trash",
+  "assetLifecycle.trashHelp": "Move this asset to Trash? A folder’s active contents are moved with it. You can restore it later.",
+  "assetLifecycle.restore": "Restore",
+  "assetLifecycle.confirmRestore": "Confirm Restore",
+  "assetLifecycle.restoreHelp": "Restore this asset to its original folder. Contents trashed together with a folder are restored with it; previously trashed items remain in Trash.",
+  "assetLifecycle.delete": "Delete Permanently",
+  "assetLifecycle.confirmDelete": "Confirm Permanent Deletion",
+  "assetLifecycle.deleteHelp": "Permanently delete this asset and its folder contents? This cannot be undone. Unreferenced Crew uploads may also be removed from storage.",
+  "assetLifecycle.typeName": "Type “{name}” to confirm.",
+  "assetLifecycle.name": "Asset Name Confirmation",
+  "assetLifecycle.recheck": "Go back and refresh the asset state before trying again."
 }

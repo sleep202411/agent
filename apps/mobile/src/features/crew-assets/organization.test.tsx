@@ -14,6 +14,14 @@ const h = vi.hoisted(() => ({
   refresh: vi.fn(),
   items: [] as unknown[],
 }));
+vi.mock("./lifecycle", () => ({
+  AssetTrash: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close trash</button>
+  ),
+  AssetLifecycleAction: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close lifecycle</button>
+  ),
+}));
 vi.mock("./organization-api", async (original) => ({
   ...(await original<typeof import("./organization-api")>()),
   fetchOrganizationFolders: h.folders,
@@ -218,4 +226,20 @@ it("does not accept old-account reads", async () => {
   h.generation = 2;
   await act(async () => finish(node));
   expect(button("assetOrganization.save")).toBeUndefined();
+});
+
+it("opens trash and returns to refreshed assets", async () => {
+  await render();
+  await click("assetLifecycle.trash");
+  expect(button("close trash")).toBeTruthy();
+  await click("close trash");
+  expect(h.refresh).toHaveBeenCalled();
+});
+it("opens trash confirmation from asset details", async () => {
+  await render();
+  await click("assetOrganization.manage: Art");
+  await click("assetLifecycle.moveTrash");
+  expect(button("close lifecycle")).toBeTruthy();
+  await click("close lifecycle");
+  expect(h.refresh).toHaveBeenCalled();
 });
