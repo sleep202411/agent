@@ -6,6 +6,7 @@ export type AgreementView = (typeof agreementViews)[number];
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 const count = z.number().int().nonnegative();
 const response = z.object({
+  capabilities: z.object({ create: z.boolean() }),
   items: z.array(agreement),
   nextCursor: id.nullable(),
   total: count,

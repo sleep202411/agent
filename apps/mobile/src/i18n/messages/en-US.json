@@ -1624,5 +1624,16 @@
   "agreementActions.help_send": "Retry the failed initial delivery to this signer through BoldSign.",
   "agreementActions.help_archive": "Retry saving the signed document and audit trail to the Crew archive.",
   "agreementActions.confirm": "Confirm Action",
-  "agreementActions.refreshHelp": "Refresh the agreement to check the result before trying another action."
+  "agreementActions.refreshHelp": "Refresh the agreement to check the result before trying another action.",
+  "agreementCreate.title": "Create Agreement",
+  "agreementCreate.help": "Choose an active Crew member and review the recipient details. Confirming queues delivery through BoldSign.",
+  "agreementCreate.member": "Crew Member",
+  "agreementCreate.signerName": "Signer Name",
+  "agreementCreate.signerEmail": "Signer Email",
+  "agreementCreate.review": "Review Agreement",
+  "agreementCreate.confirm": "Confirm and Queue Delivery",
+  "agreementCreate.edit": "Edit Details",
+  "agreementCreate.invalid": "Choose a member and enter a name, valid email, and agreement title.",
+  "agreementCreate.checkList": "The request was attempted. Return to the refreshed list to check its status before creating another agreement.",
+  "agreementCreate.agreementTitle": "Agreement Title"
 }

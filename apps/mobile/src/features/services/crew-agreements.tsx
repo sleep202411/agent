@@ -4,6 +4,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTranslations } from "@/i18n";
+import { AgreementCreate } from "./agreement-create";
 import { AgreementDetail } from "./agreement-detail";
 import {
   agreementViews,
@@ -42,6 +43,10 @@ function Session(props: Props) {
         key={`${view}:${revision}`}
         {...props}
         view={view}
+        created={() => {
+          setView("all");
+          setRevision((n) => n + 1);
+        }}
         refresh={() => setRevision((n) => n + 1)}
       />
       <Pressable
@@ -57,12 +62,13 @@ function Session(props: Props) {
     </View>
   );
 }
-function Listing(props: Props & { view: AgreementView; refresh: () => void }) {
+function Listing(props: Props & { view: AgreementView; refresh: () => void; created: () => void }) {
   const t = useTranslations();
   const [page, setPage] = useState<AgreementPage>(),
     [cursor, setCursor] = useState<string | null>(null),
     [busy, setBusy] = useState(true),
     [error, setError] = useState<string>();
+  const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState<AgreementPage["items"][number]>();
   const collected = useRef<AgreementPage["items"]>([]),
     seen = useRef(new Set<string>()),
@@ -96,6 +102,8 @@ function Listing(props: Props & { view: AgreementView; refresh: () => void }) {
       });
     return () => c.abort();
   }, [props.crewId, props.view, props.generation, cursor]);
+  if (creating && page?.capabilities.create)
+    return <AgreementCreate {...props} onClose={props.refresh} onSaved={props.created} />;
   if (selected)
     return (
       <AgreementDetail
@@ -111,6 +119,15 @@ function Listing(props: Props & { view: AgreementView; refresh: () => void }) {
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewAgreements.scopeHelp")}</ThemedText>
+      {page?.capabilities.create && (
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 12 }}
+          onPress={() => setCreating(true)}
+        >
+          <ThemedText>{t("agreementCreate.title")}</ThemedText>
+        </Pressable>
+      )}
       {page && (
         <View>
           {agreementViews.map((value) => (

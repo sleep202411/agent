@@ -1624,5 +1624,16 @@
   "agreementActions.help_send": "透過 BoldSign 重試向此簽署人發送之前失敗的協議。",
   "agreementActions.help_archive": "重試將已簽署文件和審計記錄儲存到劇組檔案。",
   "agreementActions.confirm": "確認操作",
-  "agreementActions.refreshHelp": "請重新整理協議，確認結果後再進行下一項操作。"
+  "agreementActions.refreshHelp": "請重新整理協議，確認結果後再進行下一項操作。",
+  "agreementCreate.title": "建立協議",
+  "agreementCreate.help": "選擇在職劇組成員並核對收件人資料。確認後將透過 BoldSign 排隊發送。",
+  "agreementCreate.member": "劇組成員",
+  "agreementCreate.signerName": "簽署人姓名",
+  "agreementCreate.signerEmail": "簽署人電郵",
+  "agreementCreate.review": "核對協議",
+  "agreementCreate.confirm": "確認並排隊發送",
+  "agreementCreate.edit": "修改資料",
+  "agreementCreate.invalid": "請選擇成員並填寫姓名、有效電郵及協議標題。",
+  "agreementCreate.checkList": "已嘗試提交請求。再次建立協議前，請返回重新整理後的列表檢查狀態。",
+  "agreementCreate.agreementTitle": "協議標題"
 }

@@ -31,6 +31,7 @@ const record = {
 };
 
 const page = {
+  capabilities: { create: false },
   items: [record],
   nextCursor: null,
   total: 1,

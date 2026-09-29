@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewAgreements } from "./crew-agreements";
 
+vi.mock("./agreement-create", () => ({ AgreementCreate: () => <span>create form</span> }));
 vi.mock("./earning-decision", () => ({ EarningDecision: () => <span>earning actions</span> }));
 vi.mock("./payout-decision", () => ({ PayoutDecision: () => <span>payout actions</span> }));
 const h = vi.hoisted(() => ({
@@ -108,6 +109,7 @@ vi.mock("./agreement-detail", () => ({
   ),
 }));
 const page = {
+  capabilities: { create: false },
   items: [record],
   nextCursor: null,
   total: 120,
@@ -200,4 +202,13 @@ it("blocks stale agreement selection after account switch", async () => {
   h.generation = 2;
   await act(async () => button("Production Agreement · agreementDetail.open").click());
   expect(host.textContent).not.toContain(`agreement ${record.id}:user`);
+});
+
+it("only offers creation when server capability allows it", async () => {
+  await render();
+  expect(button("agreementCreate.title")).toBeUndefined();
+  h.detail.mockResolvedValue({ ...page, capabilities: { create: true } });
+  await act(async () => button("thread.refresh").click());
+  await act(async () => button("agreementCreate.title").click());
+  expect(host.textContent).toContain("create form");
 });
