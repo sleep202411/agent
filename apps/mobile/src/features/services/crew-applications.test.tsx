@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewApplications } from "./crew-applications";
 vi.mock("./application-interview", () => ({ ApplicationInterview: () => <span>Interview</span> }));
+vi.mock("./position-invitations", () => ({ PositionInvitations: () => <span>Invitations</span> }));
 const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
@@ -235,4 +236,10 @@ it("opens native interview history from an application", async () => {
   await open();
   await click("crewInterview.title");
   expect(host.textContent).toBe("Interview");
+});
+
+it("opens native invitation inbox", async () => {
+  await render();
+  await click("crewPositionInvites.title");
+  expect(host.textContent).toBe("Invitations");
 });

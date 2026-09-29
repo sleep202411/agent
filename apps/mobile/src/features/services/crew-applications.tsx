@@ -14,6 +14,7 @@ import {
   type Application,
   type Terms,
 } from "./application-terms-api";
+import { PositionInvitations } from "./position-invitations";
 import { ApplicationInterview } from "./application-interview";
 type Props = { userId: string; generation: number; onWeb: () => void };
 export function CrewApplications(props: Props) {
@@ -23,8 +24,19 @@ export function CrewApplications(props: Props) {
   ) : null;
 }
 function Applications(props: Props) {
+  const [invitations, setInvitations] = useState(false);
   const [revision, setRevision] = useState(0),
     [selected, setSelected] = useState<Application>();
+  if (invitations)
+    return (
+      <PositionInvitations
+        {...props}
+        onClose={() => {
+          setInvitations(false);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (selected)
     return (
       <TermsReview
@@ -40,6 +52,7 @@ function Applications(props: Props) {
     <ApplicationPage
       key={revision}
       {...props}
+      onInvitations={() => setInvitations(true)}
       onSelect={setSelected}
       onRefresh={() => {
         setRevision((n) => n + 1);
@@ -48,7 +61,11 @@ function Applications(props: Props) {
   );
 }
 function ApplicationPage(
-  props: Props & { onSelect: (app: Application) => void; onRefresh: () => void }
+  props: Props & {
+    onInvitations: () => void;
+    onSelect: (app: Application) => void;
+    onRefresh: () => void;
+  }
 ) {
   const t = useTranslations();
   const [cursor, setCursor] = useState<string | null>(null);
@@ -90,6 +107,7 @@ function ApplicationPage(
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewTerms.myApplications")}</ThemedText>
+      <Action label={t("crewPositionInvites.title")} onPress={props.onInvitations} />
       <Action label={t("nativeApplications.webWorkflow")} onPress={props.onWeb} />
       {loading && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
