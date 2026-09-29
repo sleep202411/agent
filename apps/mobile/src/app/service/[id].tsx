@@ -1,3 +1,4 @@
+import { ServiceDetailsEditor } from "@/features/services/service-details-editor";
 import { ServiceOwnerActions } from "@/features/services/service-owner-actions";
 import { ServiceOrder } from "@/features/services/service-order";
 import { ServiceContact } from "@/features/services/service-contact";
@@ -109,6 +110,7 @@ export default function CreatorServiceDetailScreen() {
         )}
 
         <View style={styles.body}>
+          <ServiceDetailsEditor service={service} refresh={retry} />
           <ServiceOwnerActions
             id={service.id}
             creatorId={service.creatorId}

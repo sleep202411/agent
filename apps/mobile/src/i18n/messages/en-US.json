@@ -1107,5 +1107,12 @@
   "myServices.confirmHint": "Confirm this service status change.",
   "myServices.archiveHint": "Archiving is permanent. Existing order history is retained.",
   "myServices.confirm": "Confirm",
-  "myServices.cancel": "Cancel"
+  "myServices.cancel": "Cancel",
+  "serviceEdit.title": "Edit Service Details",
+  "serviceEdit.name": "Title (required, up to 120 characters)",
+  "serviceEdit.summary": "Summary (required, up to 1,000 characters)",
+  "serviceEdit.category": "Category",
+  "serviceEdit.tags": "Tags (one per line; up to 10, 48 characters each)",
+  "serviceEdit.invalid": "Check the required title, summary, category and tag limits.",
+  "serviceEdit.reload": "Discard Changes and Reload"
 }

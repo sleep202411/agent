@@ -24,6 +24,22 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
+it("sends PATCH updates as JSON and does not retry conflicts", async () => {
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ message: "Version conflict" }), { status: 409 })
+  );
+  await expect(
+    api.patch("/creator-services/s", {
+      service: "aurora",
+      data: { title: "Film", expectedVersion: 3 },
+    })
+  ).rejects.toMatchObject({ status: 409 });
+  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(fetchMock.mock.calls[0][1]).toMatchObject({
+    method: "PATCH",
+    body: JSON.stringify({ title: "Film", expectedVersion: 3 }),
+  });
+});
 it("preserves no active authoring run through the actual API lookup", async () => {
   const { getActiveStoryAgentRun } = await import("@/features/agent/api/story-agent-runs-api");
   fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: 200, data: null })));

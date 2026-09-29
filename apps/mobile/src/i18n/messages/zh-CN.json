@@ -1107,5 +1107,12 @@
   "myServices.confirmHint": "确认更改此服务状态。",
   "myServices.archiveHint": "归档后无法恢复，现有订单历史将保留。",
   "myServices.confirm": "确认",
-  "myServices.cancel": "取消"
+  "myServices.cancel": "取消",
+  "serviceEdit.title": "编辑服务详情",
+  "serviceEdit.name": "标题（必填，最多120字）",
+  "serviceEdit.summary": "简介（必填，最多1000字）",
+  "serviceEdit.category": "分类",
+  "serviceEdit.tags": "标签（每行一个，最多10个，每个最多48字）",
+  "serviceEdit.invalid": "请检查必填标题、简介、分类及标签限制。",
+  "serviceEdit.reload": "放弃更改并重新加载"
 }

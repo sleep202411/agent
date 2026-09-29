@@ -1107,5 +1107,12 @@
   "myServices.confirmHint": "確認更改此服務狀態。",
   "myServices.archiveHint": "封存後無法恢復，現有訂單歷史將保留。",
   "myServices.confirm": "確認",
-  "myServices.cancel": "取消"
+  "myServices.cancel": "取消",
+  "serviceEdit.title": "編輯服務詳情",
+  "serviceEdit.name": "標題（必填，最多120字）",
+  "serviceEdit.summary": "簡介（必填，最多1000字）",
+  "serviceEdit.category": "分類",
+  "serviceEdit.tags": "標籤（每行一個，最多10個，每個最多48字）",
+  "serviceEdit.invalid": "請檢查必填標題、簡介、分類及標籤限制。",
+  "serviceEdit.reload": "放棄更改並重新載入"
 }
