@@ -1306,5 +1306,13 @@
   "taskSubmit.submitNotePlaceholder": "這一版修改了甚麼？還有哪些資訊需要審核人注意…",
   "taskSubmit.submitAction": "提交審核",
   "taskSubmit.selectFilesFirst": "請先在上方選擇檔案，再將檔案分配到此交付欄位。",
-  "taskSubmit.completeRequired": "請填寫標有 * 的必填項後再提交。"
+  "taskSubmit.completeRequired": "請填寫標有 * 的必填項後再提交。",
+  "taskRelations.parentTask": "父任務",
+  "taskRelations.subtasks": "子任務",
+  "taskRelations.blockedBy": "被以下任務阻塞",
+  "taskRelations.blocking": "正在阻塞",
+  "taskRelations.blockedSubmitHint": "請先完成所有前置任務，再提交審核。",
+  "taskRelations.backToTask": "返回任務",
+  "taskRelations.resolved": "已解除阻塞",
+  "taskRelations.unresolved": "未解除阻塞"
 }

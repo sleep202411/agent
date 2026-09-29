@@ -82,6 +82,7 @@ function SubmissionForm({
   }, [task, userId, generation]);
   if (context?.allowed === false) return null;
   const locked = attempted || op.busy;
+  const blocked = task.blockedBy.some((dependency) => !dependency.resolved);
   const input: TaskSubmitInput = {
     note,
     assetNodeIds: assets.map((a) => a.id),
@@ -234,13 +235,19 @@ function SubmissionForm({
               )}
             </View>
           ))}
+          {blocked && (
+            <ThemedText accessibilityRole="alert">
+              {t("taskRelations.blockedSubmitHint")}
+            </ThemedText>
+          )}
           {!valid && <ThemedText>{t("taskSubmit.completeRequired")}</ThemedText>}
           <Pressable
             accessibilityRole="button"
-            disabled={locked || !valid}
+            disabled={locked || !valid || blocked}
             style={{ padding: 12 }}
             onPress={() => {
-              if (attemptedRef.current || !valid || generation !== getAuthGeneration()) return;
+              if (attemptedRef.current || !valid || blocked || generation !== getAuthGeneration())
+                return;
               void op.run(
                 () => {
                   attemptedRef.current = true;

@@ -13,6 +13,10 @@ const detail = {
   version: 1,
   revisionLimit: null,
   revisionRoundsUsed: 0,
+  parent: null,
+  children: [],
+  blockedBy: [],
+  blocking: [],
   status: "submitted",
   workflowState: { name: "Review" },
   startAt: null,
@@ -36,6 +40,34 @@ it("rejects invalid task IDs before requesting and rejects mismatched task/Crew 
     { dueAt: "invalid" },
   ]) {
     vi.mocked(api.get).mockResolvedValue({ ...detail, ...change });
+    await expect(fetchTaskDetail("crew", id, new AbortController().signal)).rejects.toThrow();
+  }
+});
+
+it("preserves parent, subtask and dependency identities and resolution flags", async () => {
+  const related = {
+    id: "22222222-2222-4222-8222-222222222222",
+    number: 2,
+    title: "Dependency",
+    status: "approved",
+    workflowState: { name: "Approved" },
+    parentId: null,
+  };
+  const value = {
+    ...detail,
+    parent: related,
+    children: [related],
+    blockedBy: [{ ...related, resolved: true }],
+    blocking: [related],
+  };
+  vi.mocked(api.get).mockResolvedValue(value);
+  expect(await fetchTaskDetail("crew", id, new AbortController().signal)).toEqual(value);
+  for (const blockedBy of [
+    [{ ...related, resolved: "yes" }],
+    [{ ...related, id: "invalid", resolved: false }],
+    [{ ...related }],
+  ]) {
+    vi.mocked(api.get).mockResolvedValue({ ...value, blockedBy });
     await expect(fetchTaskDetail("crew", id, new AbortController().signal)).rejects.toThrow();
   }
 });

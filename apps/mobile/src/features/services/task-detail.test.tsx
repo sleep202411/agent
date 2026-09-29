@@ -45,6 +45,10 @@ vi.mock("react-native", () => ({
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const detail = {
+  parent: null,
+  children: [],
+  blockedBy: [],
+  blocking: [],
   number: 7,
   title: "Scene",
   description: "Private brief",
@@ -131,4 +135,55 @@ it("aborts replaced/backgrounded requests and suppresses late private results", 
   h.generation = 2;
   await render("other");
   expect(host.textContent).toBe("");
+});
+
+it("navigates related tasks, returns to the previous task and hands off the current task to Web", async () => {
+  const related = {
+    id: "related",
+    number: 8,
+    title: "Blocking render",
+    status: "in_progress",
+    workflowState: { name: "In progress" },
+    parentId: null,
+    resolved: false,
+  };
+  h.fetch.mockImplementation((_crew: string, id: string) =>
+    Promise.resolve(
+      id === "task" ? { ...detail, blockedBy: [related] } : { ...detail, title: "Related detail" }
+    )
+  );
+  await render();
+  expect(host.textContent).toContain("taskRelations.unresolved");
+  await act(async () => click("TASK-8 · Blocking renderIn progress · taskRelations.unresolved"));
+  expect(h.fetch).toHaveBeenLastCalledWith("crew", "related", expect.any(AbortSignal));
+  expect(host.textContent).toContain("Related detail");
+  await act(async () => click("thread.taskOpenWorkspace"));
+  expect(h.web).toHaveBeenLastCalledWith("related");
+  await act(async () => {
+    click("taskRelations.backToTask");
+    click("taskRelations.backToTask");
+  });
+  expect(h.fetch).toHaveBeenLastCalledWith("crew", "task", expect.any(AbortSignal));
+  expect(h.close).not.toHaveBeenCalled();
+  await act(async () => click("thread.backToChat"));
+  expect(h.close).toHaveBeenCalledOnce();
+});
+it("shows denied related-task access without retaining the previous task data", async () => {
+  const related = {
+    id: "related",
+    number: 8,
+    title: "Parent",
+    status: "open",
+    workflowState: { name: "Open" },
+    parentId: null,
+  };
+  h.fetch
+    .mockResolvedValueOnce({ ...detail, parent: related })
+    .mockRejectedValueOnce(new Error("Task not found"));
+  await render();
+  await act(async () => click("TASK-8 · ParentOpen"));
+  expect(host.textContent).toContain("Task not found");
+  expect(host.textContent).not.toContain("Private brief");
+  expect(host.textContent).not.toContain("thread.taskOpenWorkspace");
+  expect(host.textContent).toContain("taskRelations.backToTask");
 });

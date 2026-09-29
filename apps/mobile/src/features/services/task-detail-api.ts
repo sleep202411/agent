@@ -3,10 +3,19 @@ import { api } from "@/lib/api-client";
 import { taskSubmission } from "./task-delivery-api";
 import { taskOption } from "./task-options";
 const date = z.string().datetime({ offset: true }).nullable();
+export const taskReference = taskOption.extend({
+  status: z.string().min(1),
+  workflowState: z.object({ name: z.string().min(1) }),
+  parentId: z.string().uuid().nullable(),
+});
 export const taskDetailSchema = taskOption.extend({
   crewId: z.string().min(1),
   description: z.string(),
   submissions: z.array(taskSubmission),
+  parent: taskReference.nullable(),
+  children: z.array(taskReference),
+  blockedBy: z.array(taskReference.extend({ resolved: z.boolean() })),
+  blocking: z.array(taskReference),
   version: z.number().int().positive(),
   status: z.string().min(1),
   revisionLimit: z.number().int().nonnegative().nullable(),

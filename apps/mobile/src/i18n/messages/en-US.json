@@ -1306,5 +1306,13 @@
   "taskSubmit.submitNotePlaceholder": "What changed in this version? Add anything the reviewer should know…",
   "taskSubmit.submitAction": "Submit for Review",
   "taskSubmit.selectFilesFirst": "Choose files above, then assign them to this delivery field.",
-  "taskSubmit.completeRequired": "Complete the required fields marked * before submitting."
+  "taskSubmit.completeRequired": "Complete the required fields marked * before submitting.",
+  "taskRelations.parentTask": "Parent task",
+  "taskRelations.subtasks": "Subtasks",
+  "taskRelations.blockedBy": "Blocked by",
+  "taskRelations.blocking": "Blocking",
+  "taskRelations.blockedSubmitHint": "Complete every blocking task before submitting.",
+  "taskRelations.backToTask": "Back to task",
+  "taskRelations.resolved": "Resolved",
+  "taskRelations.unresolved": "Unresolved"
 }

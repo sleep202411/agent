@@ -166,9 +166,9 @@ export function NativeConversation({
         userId={userId}
         generation={generation}
         onClose={() => setSelectedTask(undefined)}
-        onOpenWeb={() => {
+        onOpenWeb={(taskId) => {
           setTaskTarget(
-            `/crews/${encodeURIComponent(selectedTask.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(selectedTask.taskId)}`
+            `/crews/${encodeURIComponent(selectedTask.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(taskId)}`
           );
           setSelectedTask(undefined);
           setWeb(true);

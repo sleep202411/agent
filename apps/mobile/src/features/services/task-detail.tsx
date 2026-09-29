@@ -5,6 +5,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
+import { TaskRelations } from "./task-relations";
 import { TaskSubmit } from "./task-submit";
 import { TaskReview } from "./task-review";
 import { TaskDelivery } from "./task-delivery";
@@ -17,15 +18,50 @@ type Props = {
   generation: number;
   userId: string;
   onClose: () => void;
-  onOpenWeb: () => void;
+  onOpenWeb: (taskId: string) => void;
 };
 export function TaskDetail(props: Props) {
   const active = useScreenActive();
   return active && props.generation === getAuthGeneration() ? (
-    <TaskContent key={`${props.crewId}:${props.taskId}:${props.generation}`} {...props} />
+    <TaskNavigator key={`${props.crewId}:${props.taskId}:${props.generation}`} {...props} />
   ) : null;
 }
-function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }: Props) {
+function TaskNavigator(props: Props) {
+  const [history, setHistory] = useState([props.taskId]);
+  const taskId = history[history.length - 1]!;
+  return (
+    <TaskContent
+      {...props}
+      key={taskId}
+      taskId={taskId}
+      backToTask={history.length > 1}
+      onOpenTask={(id) =>
+        setHistory((current) => {
+          const index = current.indexOf(id);
+          return index >= 0 ? current.slice(0, index + 1) : [...current, id];
+        })
+      }
+      onClose={() =>
+        history.length > 1
+          ? setHistory((current) => (current.length > 1 ? current.slice(0, -1) : current))
+          : props.onClose()
+      }
+    />
+  );
+}
+function TaskContent({
+  crewId,
+  taskId,
+  generation,
+  userId,
+  onClose,
+  onOpenWeb,
+  onOpenTask,
+  backToTask,
+}: Props & {
+  onOpenTask: (id: string) => void;
+  backToTask: boolean;
+}) {
   const t = useTranslations(),
     locale = useLocale();
   const [revision, setRevision] = useState(0);
@@ -55,7 +91,7 @@ function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }:
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <Pressable accessibilityRole="button" onPress={onClose} style={{ padding: 12 }}>
-        <ThemedText>{t("thread.backToChat")}</ThemedText>
+        <ThemedText>{t(backToTask ? "taskRelations.backToTask" : "thread.backToChat")}</ThemedText>
       </Pressable>
       {!current && <ActivityIndicator accessibilityLabel={t("courses.loading")} />}
       {current?.error && <ThemedText accessibilityRole="alert">{current.error}</ThemedText>}
@@ -84,6 +120,7 @@ function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }:
               <ThemedText key={label.id}>{label.name}</ThemedText>
             ))}
           </View>
+          <TaskRelations task={data} onOpenTask={onOpenTask} />
           <TaskDelivery
             key={`delivery:${revision}`}
             taskId={taskId}
@@ -112,7 +149,11 @@ function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }:
             onRefresh={() => setRevision((v) => v + 1)}
           />
           <TaskTimeline crewId={crewId} taskId={taskId} userId={userId} generation={generation} />
-          <Pressable accessibilityRole="button" onPress={onOpenWeb} style={{ padding: 12 }}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onOpenWeb(taskId)}
+            style={{ padding: 12 }}
+          >
             <ThemedText>{t("thread.taskOpenWorkspace")}</ThemedText>
           </Pressable>
         </>

@@ -1306,5 +1306,13 @@
   "taskSubmit.submitNotePlaceholder": "这一版修改了什么？还有哪些信息需要审核人注意…",
   "taskSubmit.submitAction": "提交审核",
   "taskSubmit.selectFilesFirst": "请先在上方选择文件，再将文件分配到此交付字段。",
-  "taskSubmit.completeRequired": "请填写标有 * 的必填项后再提交。"
+  "taskSubmit.completeRequired": "请填写标有 * 的必填项后再提交。",
+  "taskRelations.parentTask": "父任务",
+  "taskRelations.subtasks": "子任务",
+  "taskRelations.blockedBy": "被以下任务阻塞",
+  "taskRelations.blocking": "正在阻塞",
+  "taskRelations.blockedSubmitHint": "请先完成所有前置任务，再提交审核。",
+  "taskRelations.backToTask": "返回任务",
+  "taskRelations.resolved": "已解除阻塞",
+  "taskRelations.unresolved": "未解除阻塞"
 }

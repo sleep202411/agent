@@ -82,6 +82,10 @@ const task: TaskDetail = {
   status: "open",
   revisionLimit: null,
   revisionRoundsUsed: 0,
+  parent: null,
+  children: [],
+  blockedBy: [],
+  blocking: [],
   workflowState: { name: "Open" },
   startAt: null,
   dueAt: null,
@@ -218,4 +222,27 @@ it("ignores successful submission callbacks after an account change", async () =
   h.generation = 2;
   await act(async () => finish());
   expect(h.refresh).not.toHaveBeenCalled();
+});
+
+it("shows unresolved blockers and prevents submission until refreshed dependencies are resolved", async () => {
+  const dependency = {
+    id,
+    number: 2,
+    title: "Render",
+    status: "in_progress",
+    workflowState: { name: "In progress" },
+    parentId: null,
+    resolved: false,
+  };
+  await render({ ...task, blockedBy: [dependency] });
+  expect(host.textContent).toContain("taskRelations.blockedSubmitHint");
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(h.submit).not.toHaveBeenCalled();
+  await render({
+    ...task,
+    version: 2,
+    blockedBy: [{ ...dependency, status: "approved", resolved: true }],
+  });
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
 });

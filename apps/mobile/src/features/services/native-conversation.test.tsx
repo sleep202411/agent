@@ -43,12 +43,12 @@ vi.mock("./task-detail", () => ({
   }: {
     taskId: string;
     onClose: () => void;
-    onOpenWeb: () => void;
+    onOpenWeb: (taskId: string) => void;
   }) => (
     <div>
       task-detail:{taskId}
       <button onClick={onClose}>close-detail</button>
-      <button onClick={onOpenWeb}>open-task-web</button>
+      <button onClick={() => onOpenWeb(taskId)}>open-task-web</button>
     </div>
   ),
 }));
