@@ -1,3 +1,4 @@
+import { parsePlanningNumber } from "./task-planning-number";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -85,6 +86,8 @@ function Editor({
   const [title, setTitle] = useState(""),
     [description, setDescription] = useState("");
   const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">("normal");
+  const [estimate, setEstimate] = useState("");
+  const [revisionLimit, setRevisionLimit] = useState("");
   const [start, setStart] = useState(""),
     [due, setDue] = useState("");
   const [assignees, setAssignees] = useState<TaskMention[]>([]),
@@ -100,6 +103,8 @@ function Editor({
       description,
       priority,
       taskKind,
+      estimatePoints: parsePlanningNumber(estimate, 1_000_000),
+      revisionLimit: parsePlanningNumber(revisionLimit, 100),
       ...(workflow ? { workflowStateId: workflow.id } : {}),
       cycleId: planning.cycle?.id ?? null,
       episodeId: planning.episode?.id ?? null,
@@ -185,6 +190,27 @@ function Editor({
         placeholderTextColor={theme.textSecondary}
         style={{ color: theme.text, padding: 12 }}
       />
+      <ThemedText>{t("taskPlanning.estimate")}</ThemedText>
+      <TextInput
+        accessibilityLabel={t("taskPlanning.estimate")}
+        value={estimate}
+        onChangeText={setEstimate}
+        editable={!locked}
+        keyboardType="number-pad"
+        maxLength={16}
+        style={{ color: theme.text, padding: 12 }}
+      />
+      <ThemedText>{t("taskPlanning.revisionLimit")}</ThemedText>
+      <TextInput
+        accessibilityLabel={t("taskPlanning.revisionLimit")}
+        value={revisionLimit}
+        onChangeText={setRevisionLimit}
+        editable={!locked}
+        keyboardType="number-pad"
+        maxLength={16}
+        style={{ color: theme.text, padding: 12 }}
+      />
+      <ThemedText>{t("taskPlanning.numberHelp")}</ThemedText>
       <TaskKindField
         crewId={crewId}
         generation={generation}

@@ -166,3 +166,36 @@ it("validates task kind and requires matching creation acknowledgement", async (
     taskKind: null,
   });
 });
+
+it("preserves explicit zero and nullable planning limits and rejects mismatched acknowledgements", async () => {
+  for (const value of [0, null, 5]) {
+    const limits = { estimatePoints: value, revisionLimit: value };
+    vi.mocked(api.post).mockResolvedValue({ ...detail, ...limits });
+    await createTask("crew", { ...input, ...limits });
+    expect(api.post).toHaveBeenLastCalledWith("/crews/crew/tasks", {
+      service: "aurora",
+      data: expect.objectContaining(limits),
+    });
+  }
+  for (const result of [
+    { estimatePoints: null, revisionLimit: 0 },
+    { estimatePoints: 0, revisionLimit: null },
+  ]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, ...result });
+    await expect(
+      createTask("crew", { ...input, estimatePoints: 0, revisionLimit: 0 })
+    ).rejects.toThrow("acknowledgement");
+  }
+});
+it("rejects out-of-range and fractional creation limits before writing", async () => {
+  for (const change of [
+    { estimatePoints: -1 },
+    { estimatePoints: 1000001 },
+    { estimatePoints: 1.5 },
+    { revisionLimit: -1 },
+    { revisionLimit: 101 },
+    { revisionLimit: 1.5 },
+  ])
+    await expect(createTask("crew", { ...input, ...change })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});

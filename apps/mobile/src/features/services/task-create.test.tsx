@@ -437,3 +437,38 @@ it("starts contextual creation with its parent already selected", async () => {
     expect.objectContaining({ parentId: relatedId, title: "Child task" })
   );
 });
+
+it("includes explicit zero planning values in creation", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => {
+    type(0, "Task");
+    type(4, "0");
+    type(5, "0");
+  });
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ estimatePoints: 0, revisionLimit: 0 })
+  );
+});
+it("blocks invalid limits and sends null when planning inputs are cleared", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Task"));
+  for (const [n, value] of [
+    [4, "1000001"],
+    [4, "1.5"],
+    [5, "101"],
+    [5, "-1"],
+  ] as const) {
+    await act(async () => type(n, value));
+    expect(button("taskCreate.submit")!.disabled).toBe(true);
+    await act(async () => type(n, ""));
+  }
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ estimatePoints: null, revisionLimit: null })
+  );
+});

@@ -5,6 +5,8 @@ import { taskDetailSchema } from "./task-detail-api";
 export const taskCreateInput = z
   .object({
     taskKind: taskKindSchema.nullable().optional(),
+    estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
+    revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
     cycleId: z.string().uuid().nullable().optional(),
     episodeId: z.string().uuid().nullable().optional(),
     labelIds: z
@@ -59,6 +61,8 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     a === null || b === null ? a === b : Date.parse(a) === Date.parse(b);
   if (
     result.crewId !== crewId ||
+    (data.estimatePoints !== undefined && result.estimatePoints !== data.estimatePoints) ||
+    (data.revisionLimit !== undefined && result.revisionLimit !== data.revisionLimit) ||
     (data.workflowStateId !== undefined && result.workflowStateId !== data.workflowStateId) ||
     (data.cycleId !== undefined && result.cycleId !== data.cycleId) ||
     (data.episodeId !== undefined && result.episodeId !== data.episodeId) ||
