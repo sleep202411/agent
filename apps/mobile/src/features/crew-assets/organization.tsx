@@ -1,3 +1,4 @@
+import { AssetFileUpload } from "./file-upload";
 import { ConversationFile } from "../services/conversation-file";
 import { AssetPermissions } from "./permissions";
 import { AssetTrash, AssetLifecycleAction } from "./lifecycle";
@@ -37,6 +38,7 @@ function Browser(props: Props) {
     setSearch("");
     setQuery("");
   };
+  const [showUpload, setShowUpload] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [path, setPath] = useState<{ id: string; name: string }[]>([]),
     [selection, setSelection] = useState<string>();
@@ -51,6 +53,18 @@ function Browser(props: Props) {
     setSelection(undefined);
     listing.refresh();
   };
+  if (showUpload)
+    return (
+      <AssetFileUpload
+        {...props}
+        parentId={path.at(-1)?.id ?? null}
+        destination={path.map((p) => p.name).join(" / ") || t("studioMedia.root")}
+        onClose={() => {
+          setShowUpload(false);
+          listing.refresh();
+        }}
+      />
+    );
   if (showTrash)
     return (
       <AssetTrash
@@ -121,6 +135,9 @@ function Browser(props: Props) {
             clearSearch();
           }}
         />
+      )}
+      {source === "all" && (
+        <Button label={t("thread.uploadFile")} onPress={() => setShowUpload(true)} />
       )}
       {source === "all" && (
         <Button label={t("assetOrganization.create")} onPress={() => setSelection("new")} />

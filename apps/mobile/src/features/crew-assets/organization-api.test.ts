@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import {
   assetName,
+  attachOrganizationFile,
   createOrganizationFolder,
   eligibleMoveFolders,
   fetchOrganizationNode,
@@ -166,4 +167,49 @@ it("rejects account changes during writes", async () => {
   });
   await expect(setOrganizationFavorite("crew", "1", 1, id(1), true)).rejects.toThrow("session");
   expect(api.put).toHaveBeenCalledOnce();
+});
+
+it("attaches an uploaded file and accepts server collision renaming", async () => {
+  vi.mocked(api.post).mockResolvedValue({
+    ...row(),
+    kind: "file",
+    name: "Art (2)",
+    media: { id: id(9) },
+  });
+  const result = await attachOrganizationFile("crew", "1", 1, {
+    name: "Art",
+    parentId: null,
+    mediaAssetId: id(9),
+  });
+  expect(result.name).toBe("Art (2)");
+  expect(api.post).toHaveBeenCalledWith("/crews/crew/assets/files", {
+    service: "aurora",
+    data: { name: "Art", parentId: null, mediaAssetId: id(9) },
+  });
+});
+it("rejects attachment receipts with a different media or destination", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...row(), kind: "file", media: { id: id(8) } });
+  await expect(
+    attachOrganizationFile("crew", "1", 1, { name: "Art", parentId: null, mediaAssetId: id(9) })
+  ).rejects.toThrow("could not be verified");
+});
+it("rejects attachment without destination permission", async () => {
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("members/me")
+      ? { userId: "1", permissions: ["assets.view"] }
+      : { capabilities: { upload: false } }
+  );
+  await expect(
+    attachOrganizationFile("crew", "1", 1, { name: "Art", parentId: null, mediaAssetId: id(9) })
+  ).rejects.toThrow("upload permission");
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("retries attachment with the identical media ID rather than making a new upload", async () => {
+  vi.mocked(api.post)
+    .mockRejectedValueOnce(new Error("Lost response"))
+    .mockResolvedValueOnce({ ...row(), kind: "file", media: { id: id(9) } });
+  const input = { name: "Art", parentId: null, mediaAssetId: id(9) };
+  await expect(attachOrganizationFile("crew", "1", 1, input)).rejects.toThrow("Lost response");
+  await attachOrganizationFile("crew", "1", 1, input);
+  expect(vi.mocked(api.post).mock.calls[0]).toEqual(vi.mocked(api.post).mock.calls[1]);
 });

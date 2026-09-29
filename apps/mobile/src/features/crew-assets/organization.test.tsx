@@ -22,6 +22,11 @@ vi.mock("../services/conversation-file", () => ({
     return <span>file preview</span>;
   },
 }));
+vi.mock("./file-upload", () => ({
+  AssetFileUpload: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close upload</button>
+  ),
+}));
 vi.mock("./permissions", () => ({
   AssetPermissions: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close permissions</button>
@@ -325,4 +330,11 @@ it("shows the empty state for an empty completed listing", async () => {
   h.items = [];
   await render();
   expect(host.textContent).toContain("crewAssets.empty");
+});
+
+it("opens file upload and refreshes the list on return", async () => {
+  await render();
+  await click("thread.uploadFile");
+  await click("close upload");
+  expect(h.refresh).toHaveBeenCalled();
 });

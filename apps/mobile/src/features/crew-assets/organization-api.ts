@@ -89,7 +89,7 @@ export function eligibleMoveFolders(rows: OrganizationFolder[], nodeId?: string)
     return true;
   });
 }
-async function destination(
+export async function validateAssetDestination(
   crewId: string,
   userId: string,
   generation: number,
@@ -123,7 +123,7 @@ export async function createOrganizationFolder(
   parentId: string | null
 ) {
   const normalized = assetName.parse(name);
-  await destination(crewId, userId, generation, parentId);
+  await validateAssetDestination(crewId, userId, generation, parentId);
   current(generation);
   const result = organizationNode.parse(
     await api.post(`/crews/${crewId}/assets/folders`, {
@@ -179,7 +179,7 @@ export async function updateOrganizationNode(
       if (!eligibleMoveFolders(rows, original.id).some((r) => r.id === parentId))
         throw new Error("Choose an accessible destination outside this folder.");
     }
-    await destination(crewId, userId, generation, parentId);
+    await validateAssetDestination(crewId, userId, generation, parentId);
     changes.parentId = parentId;
   }
   current(generation);
@@ -220,4 +220,33 @@ export async function setOrganizationFavorite(
   current(generation);
   if (result.favorite !== favorite) throw new Error("Favorite update could not be verified.");
   return result.favorite;
+}
+
+/** The server deduplicates attachment by media ID; retry the same upload, never re-upload it. */
+export async function attachOrganizationFile(
+  crewId: string,
+  userId: string,
+  generation: number,
+  input: { mediaAssetId: string; name: string; parentId: string | null }
+) {
+  const data = z
+    .object({ mediaAssetId: uuid, name: assetName, parentId: uuid.nullable() })
+    .strict()
+    .parse(input);
+  await validateAssetDestination(crewId, userId, generation, data.parentId);
+  current(generation);
+  const result = organizationNode.parse(
+    await api.post(`/crews/${crewId}/assets/files`, { service: "aurora", data })
+  );
+  current(generation);
+  // Name collisions are resolved by the server. A changed destination requires fresh review.
+  if (
+    result.kind !== "file" ||
+    result.media?.id !== data.mediaAssetId ||
+    result.parentId !== data.parentId
+  )
+    throw new Error(
+      "File attachment could not be verified. Refresh the asset list before continuing."
+    );
+  return result;
 }

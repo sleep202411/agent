@@ -2210,5 +2210,10 @@
   "assetOrganization.sort": "資產排序",
   "assetOrganization.sort.modified": "最近修改",
   "assetOrganization.sort.name": "名稱順序",
-  "assetOrganization.sort.size": "大小降序"
+  "assetOrganization.sort.size": "大小降序",
+  "assetUpload.help": "選擇檔案上傳，然後確認加入此資料夾。伺服器可能調整名稱以避免重名。",
+  "assetUpload.attach": "加入資產庫",
+  "assetUpload.discard": "捨棄已上傳檔案",
+  "assetUpload.retryHelp": "重試將使用同一份上傳檔案。如果目標資料夾已變更，請返回重新整理後的資產清單檢查結果。",
+  "assetUpload.leaveHelp": "加入檔案前離開會放棄此草稿。未關聯的上傳檔案由伺服器清理。"
 }

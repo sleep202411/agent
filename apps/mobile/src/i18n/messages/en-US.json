@@ -2210,5 +2210,10 @@
   "assetOrganization.sort": "Sort Assets",
   "assetOrganization.sort.modified": "Recently Modified",
   "assetOrganization.sort.name": "Name A–Z",
-  "assetOrganization.sort.size": "Largest First"
+  "assetOrganization.sort.size": "Largest First",
+  "assetUpload.help": "Select a file to upload, then confirm adding it to this folder. The server may adjust its name to avoid duplicates.",
+  "assetUpload.attach": "Add to Asset Library",
+  "assetUpload.discard": "Discard Uploaded File",
+  "assetUpload.retryHelp": "Retry uses the same uploaded file. If the destination changed, return to the refreshed asset list to check the result.",
+  "assetUpload.leaveHelp": "Leaving before adding the file abandons this draft. Unattached uploads are cleaned up by the server."
 }

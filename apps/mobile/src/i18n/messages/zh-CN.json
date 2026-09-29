@@ -2210,5 +2210,10 @@
   "assetOrganization.sort": "资产排序",
   "assetOrganization.sort.modified": "最近修改",
   "assetOrganization.sort.name": "名称顺序",
-  "assetOrganization.sort.size": "大小降序"
+  "assetOrganization.sort.size": "大小降序",
+  "assetUpload.help": "选择文件上传，然后确认加入此文件夹。服务器可能调整名称以避免重名。",
+  "assetUpload.attach": "加入资产库",
+  "assetUpload.discard": "丢弃已上传文件",
+  "assetUpload.retryHelp": "重试将使用同一份上传文件。如果目标文件夹已变更，请返回刷新后的资产列表检查结果。",
+  "assetUpload.leaveHelp": "加入文件前离开会放弃此草稿。未关联的上传文件由服务器清理。"
 }
