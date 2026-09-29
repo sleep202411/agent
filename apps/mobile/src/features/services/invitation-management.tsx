@@ -1,6 +1,7 @@
+import { PositionLifecycle } from "./position-lifecycle";
 import { PositionCreate } from "./position-create";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, TextInput } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -19,9 +20,23 @@ import {
 type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function InvitationManagement(props: Props) {
   const [creating, setCreating] = useState(false);
+  const [managing, setManaging] = useState<ManagedPosition>();
   const [position, setPosition] = useState<ManagedPosition>(),
     [cursor, setCursor] = useState<string | null>(null),
     [revision, setRevision] = useState(0);
+  if (managing)
+    return (
+      <PositionLifecycle
+        position={managing}
+        userId={props.userId}
+        generation={props.generation}
+        onClose={() => {
+          setManaging(undefined);
+          setCursor(null);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (creating)
     return (
       <PositionCreate
@@ -50,6 +65,7 @@ export function InvitationManagement(props: Props) {
       key={`${revision}:${cursor}`}
       {...props}
       cursor={cursor}
+      onManage={setManaging}
       onCreate={() => setCreating(true)}
       onSelect={setPosition}
       onMore={setCursor}
@@ -63,6 +79,7 @@ export function InvitationManagement(props: Props) {
 function Positions(
   props: Props & {
     cursor: string | null;
+    onManage: (position: ManagedPosition) => void;
     onCreate: () => void;
     onSelect: (position: ManagedPosition) => void;
     onMore: (cursor: string) => void;
@@ -98,11 +115,19 @@ function Positions(
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {page && <Action label={t("positionCreate.title")} onPress={props.onCreate} />}
       {page?.items.map((row) => (
-        <Action
-          key={row.id}
-          label={`${crewPositionLabel(row.positionType, t)} · ${row.recruitedCount}/${row.targetCount}`}
-          onPress={() => props.onSelect(row)}
-        />
+        <View key={row.id} style={{ gap: 8 }}>
+          <Action
+            label={`${crewPositionLabel(row.positionType, t)} · ${row.recruitedCount}/${row.targetCount}`}
+            onPress={() => props.onSelect(row)}
+          />
+          <Action
+            label={t("positionLifecycle.manage").replace(
+              "{role}",
+              crewPositionLabel(row.positionType, t)
+            )}
+            onPress={() => props.onManage(row)}
+          />
+        </View>
       ))}
       {page?.items.length === 0 && <ThemedText>{t("crewPositionInvites.empty")}</ThemedText>}
       {page?.nextCursor && (

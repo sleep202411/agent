@@ -1962,5 +1962,20 @@
   "positionCreate.publish": "发布职位",
   "positionCreate.saved": "职位 {id} 已创建。请返回职位列表查看。",
   "positionCreate.recheck": "结果尚未确认。请返回刷新后的职位列表，确认新职位是否已创建，再决定是否重新创建。",
-  "positionCreate.invalid": "请检查必填描述、人数、地点、薪酬范围与币种精度、任期、分成及日期。技能最多 20 项。"
+  "positionCreate.invalid": "请检查必填描述、人数、地点、薪酬范围与币种精度、任期、分成及日期。技能最多 20 项。",
+  "positionLifecycle.title": "职位状态",
+  "positionLifecycle.manage": "管理{role}",
+  "positionLifecycle.open": "招聘中",
+  "positionLifecycle.full": "已满员",
+  "positionLifecycle.frozen": "已冻结",
+  "positionLifecycle.freeze": "冻结招聘",
+  "positionLifecycle.reopen": "重新开放招聘",
+  "positionLifecycle.remove": "删除职位",
+  "positionLifecycle.confirmFreeze": "确定冻结此职位的招聘吗？",
+  "positionLifecycle.confirmReopen": "确定重新开放此职位吗？招聘仍受剩余名额和截止日期限制。",
+  "positionLifecycle.confirmRemove": "确定删除此职位吗？必须先处理待审核的申请。",
+  "positionLifecycle.confirm": "确认",
+  "positionLifecycle.cancel": "取消",
+  "positionLifecycle.saved": "职位已更新。请返回刷新后的职位列表。",
+  "positionLifecycle.recheck": "无法确认此次变更。请返回刷新后的职位列表后再操作。"
 }

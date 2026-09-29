@@ -3,6 +3,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { InvitationManagement } from "./invitation-management";
 const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), post: vi.fn(), close: vi.fn() }));
+vi.mock("./position-lifecycle", () => ({
+  PositionLifecycle: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>Lifecycle Form</button>
+  ),
+}));
 vi.mock("./position-create", () => ({
   PositionCreate: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>Create Position Form</button>
@@ -19,6 +24,7 @@ vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>loading</span>,
   Pressable: ({
@@ -214,5 +220,12 @@ it("opens position creation and refreshes the list on return", async () => {
   await click("positionCreate.title");
   expect(host.textContent).toBe("Create Position Form");
   await click("Create Position Form");
+  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/positions")).toHaveLength(2);
+});
+
+it("opens lifecycle controls and refreshes the list on return", async () => {
+  await render();
+  await click("positionLifecycle.manage");
+  await click("Lifecycle Form");
   expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/positions")).toHaveLength(2);
 });

@@ -1962,5 +1962,20 @@
   "positionCreate.publish": "發佈職位",
   "positionCreate.saved": "職位 {id} 已建立。請返回職位列表查看。",
   "positionCreate.recheck": "結果尚未確認。請返回重新整理後的職位列表，確認新職位是否已建立，再決定是否重新建立。",
-  "positionCreate.invalid": "請檢查必填描述、人數、地點、薪酬範圍與幣種精度、任期、分成及日期。技能最多 20 項。"
+  "positionCreate.invalid": "請檢查必填描述、人數、地點、薪酬範圍與幣種精度、任期、分成及日期。技能最多 20 項。",
+  "positionLifecycle.title": "職位狀態",
+  "positionLifecycle.manage": "管理{role}",
+  "positionLifecycle.open": "招聘中",
+  "positionLifecycle.full": "已滿員",
+  "positionLifecycle.frozen": "已凍結",
+  "positionLifecycle.freeze": "凍結招聘",
+  "positionLifecycle.reopen": "重新開放招聘",
+  "positionLifecycle.remove": "刪除職位",
+  "positionLifecycle.confirmFreeze": "確定凍結此職位的招聘嗎？",
+  "positionLifecycle.confirmReopen": "確定重新開放此職位嗎？招聘仍受剩餘名額和截止日期限制。",
+  "positionLifecycle.confirmRemove": "確定刪除此職位嗎？必須先處理待審核的申請。",
+  "positionLifecycle.confirm": "確認",
+  "positionLifecycle.cancel": "取消",
+  "positionLifecycle.saved": "職位已更新。請返回重新整理後的職位列表。",
+  "positionLifecycle.recheck": "無法確認此次變更。請返回重新整理後的職位列表再操作。"
 }

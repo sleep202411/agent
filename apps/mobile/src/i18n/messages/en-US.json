@@ -1962,5 +1962,20 @@
   "positionCreate.publish": "Publish Position",
   "positionCreate.saved": "Position {id} Created. Return to the Positions List to Review It.",
   "positionCreate.recheck": "The result is not confirmed. Return to the refreshed positions list and check for the new role before creating again.",
-  "positionCreate.invalid": "Check the required description, headcount, location, salary range and currency precision, duration, share and calendar date. Use no more than 20 skills."
+  "positionCreate.invalid": "Check the required description, headcount, location, salary range and currency precision, duration, share and calendar date. Use no more than 20 skills.",
+  "positionLifecycle.title": "Position Status",
+  "positionLifecycle.manage": "Manage {role}",
+  "positionLifecycle.open": "Recruiting",
+  "positionLifecycle.full": "Full",
+  "positionLifecycle.frozen": "Frozen",
+  "positionLifecycle.freeze": "Freeze Recruitment",
+  "positionLifecycle.reopen": "Reopen Recruitment",
+  "positionLifecycle.remove": "Delete Position",
+  "positionLifecycle.confirmFreeze": "Freeze recruitment for this position?",
+  "positionLifecycle.confirmReopen": "Reopen this position? Recruitment still depends on available places and the closing date.",
+  "positionLifecycle.confirmRemove": "Delete this position? Pending applications must be resolved first.",
+  "positionLifecycle.confirm": "Confirm",
+  "positionLifecycle.cancel": "Cancel",
+  "positionLifecycle.saved": "Position updated. Return to the refreshed positions list.",
+  "positionLifecycle.recheck": "The change could not be confirmed. Return to the refreshed positions list before another action."
 }
