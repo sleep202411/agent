@@ -1704,5 +1704,10 @@
   "crewExpenses.submit": "提交已保存草稿",
   "crewExpenses.discard": "丢弃修改",
   "mobileExpenses.empty": "暂无已保存的费用申请。",
-  "mobileExpenses.backToClaims": "返回申请列表"
+  "mobileExpenses.backToClaims": "返回申请列表",
+  "mobileExpenses.edit": "编辑草稿",
+  "mobileExpenses.saveHelp": "保存会创建新版本，不会提交审核。现有收据引用将保留。",
+  "mobileExpenses.invalidDraft": "请检查字段长度并填写有效日期（YYYY-MM-DD）。",
+  "mobileExpenses.retrySave": "重试同一次保存",
+  "mobileExpenses.retrySaveHelp": "尝试保存后信息固定。重试沿用同一草稿和版本。如结果不确定，请刷新申请列表。"
 }

@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewExpenses } from "./crew-expenses";
 
+vi.mock("./expense-edit", () => ({ ExpenseEdit: () => <span>expense edit form</span> }));
 vi.mock("./earning-decision", () => ({ EarningDecision: () => <span>earning actions</span> }));
 vi.mock("./payout-decision", () => ({ PayoutDecision: () => <span>payout actions</span> }));
 const h = vi.hoisted(() => ({
@@ -177,4 +178,16 @@ it("does not open a receipt after account changes", async () => {
   h.generation = 2;
   await act(async () => resolve("https://storage.example.com/receipt"));
   expect(h.link).not.toHaveBeenCalled();
+});
+it("opens new draft creation and hides edit for pending claims", async () => {
+  await render();
+  expect(button("mobileExpenses.edit")).toBeUndefined();
+  await act(async () => button("crewExpenses.new").click());
+  expect(host.textContent).toContain("expense edit form");
+});
+it("opens editing for a saved non-pending claim", async () => {
+  h.detail.mockResolvedValue({ ...page, items: [{ ...row, submissionStatus: null }] });
+  await render();
+  await act(async () => button("mobileExpenses.edit").click());
+  expect(host.textContent).toContain("expense edit form");
 });

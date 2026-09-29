@@ -1,3 +1,4 @@
+import { ExpenseEdit } from "./expense-edit";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -13,16 +14,43 @@ import { formatFinanceMoney } from "./crew-finance-api";
 type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function CrewExpenses(props: Props) {
   const t = useTranslations();
+  const [editing, setEditing] = useState<ExpenseRecord | "new">();
   const [revision, setRevision] = useState(0),
     [draft, setDraft] = useState<string>();
+  if (editing)
+    return (
+      <ExpenseEdit
+        {...props}
+        record={editing === "new" ? undefined : editing}
+        onSaved={() => {
+          setEditing(undefined);
+          setDraft(undefined);
+          setRevision((n) => n + 1);
+        }}
+        onClose={() => {
+          setEditing(undefined);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   return (
     <View style={{ flex: 1 }}>
       <ThemedText>{t(draft ? "crewExpenses.history" : "crewExpenses.title")}</ThemedText>
+      {!draft && (
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 12 }}
+          onPress={() => setEditing("new")}
+        >
+          <ThemedText>{t("crewExpenses.new")}</ThemedText>
+        </Pressable>
+      )}
       <Records
         key={`${revision}:${draft ?? "list"}`}
         {...props}
         draftId={draft}
         onSelect={setDraft}
+        onEdit={setEditing}
       />
       <Pressable
         accessibilityRole="button"
@@ -44,7 +72,13 @@ export function CrewExpenses(props: Props) {
     </View>
   );
 }
-function Records(props: Props & { draftId?: string; onSelect: (id: string) => void }) {
+function Records(
+  props: Props & {
+    draftId?: string;
+    onSelect: (id: string) => void;
+    onEdit: (record: ExpenseRecord) => void;
+  }
+) {
   const t = useTranslations();
   const [items, setItems] = useState<ExpenseRecord[]>([]),
     [cursor, setCursor] = useState<string | number | null>(null),
@@ -136,6 +170,15 @@ function Records(props: Props & { draftId?: string; onSelect: (id: string) => vo
               index={index + 1}
             />
           ))}
+          {!props.draftId && row.submissionStatus !== "pending" && (
+            <Pressable
+              accessibilityRole="button"
+              style={{ padding: 12 }}
+              onPress={() => props.onEdit(row)}
+            >
+              <ThemedText>{t("mobileExpenses.edit")}</ThemedText>
+            </Pressable>
+          )}
           {!props.draftId && (
             <Pressable
               accessibilityRole="button"
