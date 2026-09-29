@@ -99,3 +99,33 @@ it("opens Finance on iOS and Android while preserving all existing actions", () 
   buttons[1].onPress();
   expect(h.alert.mock.calls[1][2][0].text).toBe("crewTasks.title");
 });
+
+it.each([false, true])("adds iOS Agreements with correct optional indices (tasks=%s)", (tasks) => {
+  const onAgreements = vi.fn(),
+    onTasks = tasks ? vi.fn() : undefined;
+  showCrewActionsMenu({ ...options, onTasks, onAgreements });
+  const [config, select] = h.sheet.mock.calls[0];
+  const index = config.options.indexOf("crewAgreements.title");
+  expect(index).toBe(tasks ? 5 : 4);
+  select(index);
+  expect(onAgreements).toHaveBeenCalledOnce();
+  if (onTasks) expect(onTasks).not.toHaveBeenCalled();
+});
+it("keeps Android agreements, tasks, applications and safety reachable with three buttons", () => {
+  h.platform.OS = "android";
+  const onAgreements = vi.fn(),
+    onFinance = vi.fn(),
+    onTasks = vi.fn();
+  showCrewActionsMenu({ ...options, onAgreements, onFinance, onTasks });
+  h.alert.mock.calls[0][2][1].onPress();
+  expect(h.alert.mock.calls[1][2][0].text).toBe("crewAgreements.title");
+  h.alert.mock.calls[1][2][0].onPress();
+  expect(onAgreements).toHaveBeenCalledOnce();
+  h.alert.mock.calls[1][2][1].onPress();
+  expect(h.alert.mock.calls[2][2][0].text).toBe("crewTasks.title");
+  h.alert.mock.calls[2][2][1].onPress();
+  expect(h.alert.mock.calls[3][2][0].text).toBe("crewDetail.applicationsAction");
+  h.alert.mock.calls[3][2][1].onPress();
+  expect(h.safety).toHaveBeenCalledOnce();
+  for (const call of h.alert.mock.calls) expect(call[2]).toHaveLength(3);
+});

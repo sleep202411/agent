@@ -1608,5 +1608,13 @@
   "agreementDetail.archive_pending": "Pending",
   "agreementDetail.archive_processing": "Processing",
   "agreementDetail.archive_ready": "Ready",
-  "agreementDetail.archive_failed": "Failed"
+  "agreementDetail.archive_failed": "Failed",
+  "crewAgreements.title": "Agreements",
+  "crewAgreements.all": "All",
+  "crewAgreements.active": "Active",
+  "crewAgreements.signed": "Signed",
+  "crewAgreements.attention": "Needs Attention",
+  "crewAgreements.backToList": "Back to Agreements",
+  "crewAgreements.scopeHelp": "Shows agreements you are permitted to view in this Crew.",
+  "crewAgreements.empty": "No agreements in this view."
 }

@@ -111,6 +111,7 @@ export default function CrewDetailScreen() {
     showCrewActionsMenu({
       t,
       onApplications: () => router.push(toHref("/crew-applications")),
+      onAgreements: () => router.push(toHref(`/crew-agreements/${encodeURIComponent(crew.id)}`)),
       onFinance: () => router.push(toHref(`/crew-finance/${encodeURIComponent(crew.id)}`)),
       onTasks: () => router.push(toHref(`/crew-tasks/${encodeURIComponent(crew.id)}`)),
       onReport: () => setReportOpen(true),

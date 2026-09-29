@@ -18,6 +18,7 @@ type Props = {
   userId: string;
   generation: number;
   onClose: () => void;
+  closeLabel?: string;
 };
 export function AgreementDetail(props: Props) {
   const active = useScreenActive();
@@ -172,7 +173,7 @@ function Session(props: Props) {
         <ThemedText>{t("thread.refresh")}</ThemedText>
       </Pressable>
       <Pressable accessibilityRole="button" style={{ padding: 12 }} onPress={props.onClose}>
-        <ThemedText>{t("crewFinance.backToRecord")}</ThemedText>
+        <ThemedText>{props.closeLabel ?? t("crewFinance.backToRecord")}</ThemedText>
       </Pressable>
     </ScrollView>
   );

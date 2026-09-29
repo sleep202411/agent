@@ -1608,5 +1608,13 @@
   "agreementDetail.archive_pending": "待處理",
   "agreementDetail.archive_processing": "處理中",
   "agreementDetail.archive_ready": "已就緒",
-  "agreementDetail.archive_failed": "失敗"
+  "agreementDetail.archive_failed": "失敗",
+  "crewAgreements.title": "協議",
+  "crewAgreements.all": "全部",
+  "crewAgreements.active": "進行中",
+  "crewAgreements.signed": "已簽署",
+  "crewAgreements.attention": "需處理",
+  "crewAgreements.backToList": "返回協議列表",
+  "crewAgreements.scopeHelp": "顯示您有權查看的劇組協議。",
+  "crewAgreements.empty": "此分類下暫無協議。"
 }
