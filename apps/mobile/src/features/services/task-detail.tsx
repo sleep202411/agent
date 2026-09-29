@@ -139,6 +139,15 @@ function TaskContent({
               {t(data.taskKind ? `taskKind.${data.taskKind}` : "taskKind.unset")}
             </ThemedText>
           )}
+          {data.estimatePoints !== undefined && (
+            <ThemedText>
+              {t("taskPlanning.estimate")}: {data.estimatePoints ?? t("taskPlanning.unset")}
+            </ThemedText>
+          )}
+          <ThemedText>
+            {t("taskPlanning.revisionsUsed")}: {data.revisionRoundsUsed} /{" "}
+            {data.revisionLimit ?? t("taskPlanning.unlimited")}
+          </ThemedText>
           <TaskSchedule
             key={`schedule:${revision}`}
             task={data}

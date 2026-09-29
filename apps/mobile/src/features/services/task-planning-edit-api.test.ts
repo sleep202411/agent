@@ -35,6 +35,7 @@ const other = "22222222-2222-4222-8222-222222222222";
 const snapshot = {
   ...detail,
   taskKind: "storyboard" as const,
+  estimatePoints: 8,
   cycleId: id,
   cycle: { id, name: "Sprint" },
   episodeId: id,
@@ -158,4 +159,59 @@ it("requires the kind to match both changed and retained acknowledgements", asyn
   await expect(updateTaskPlanning(snapshot, { expectedVersion: 1, labelIds: [] })).rejects.toThrow(
     "acknowledgement"
   );
+});
+
+it("updates or clears estimate and revision limit without resending retained planning", async () => {
+  for (const values of [
+    { estimatePoints: 0, revisionLimit: 3 },
+    { estimatePoints: null, revisionLimit: null },
+  ]) {
+    const parsed = planningChanges(snapshot, planningDraft(snapshot), snapshot.taskKind, values);
+    const expected = {
+      expectedVersion: 1,
+      ...(values.estimatePoints !== snapshot.estimatePoints
+        ? { estimatePoints: values.estimatePoints }
+        : {}),
+      ...(values.revisionLimit !== snapshot.revisionLimit
+        ? { revisionLimit: values.revisionLimit }
+        : {}),
+    };
+    expect(parsed.data).toEqual(expected);
+    vi.mocked(api.patch).mockResolvedValue({ ...snapshot, ...values, version: 2 });
+    await expect(updateTaskPlanning(snapshot, expected)).resolves.toMatchObject(values);
+  }
+});
+it("rejects invalid bounds and a limit below already-used rounds before writing", async () => {
+  const used = { ...snapshot, revisionRoundsUsed: 2 };
+  for (const fields of [
+    { estimatePoints: -1 },
+    { estimatePoints: 1000001 },
+    { estimatePoints: 1.2 },
+    { revisionLimit: 101 },
+    { revisionLimit: 1 },
+    { revisionLimit: 1.5 },
+  ])
+    await expect(updateTaskPlanning(used, { expectedVersion: 1, ...fields })).rejects.toThrow();
+  expect(api.patch).not.toHaveBeenCalled();
+  expect(
+    planningChanges(used, planningDraft(used), used.taskKind, {
+      estimatePoints: 8,
+      revisionLimit: 1,
+    }).success
+  ).toBe(false);
+});
+it("requires complete estimate data and validates updated and retained numeric acknowledgements", async () => {
+  vi.mocked(api.get).mockResolvedValue({ ...snapshot, estimatePoints: undefined });
+  await expect(fetchTaskPlanning(detail, new AbortController().signal)).rejects.toThrow();
+  for (const change of [{ estimatePoints: 8 }, { revisionLimit: 1 }]) {
+    vi.mocked(api.patch).mockResolvedValue({
+      ...snapshot,
+      version: 2,
+      estimatePoints: 10,
+      ...change,
+    });
+    await expect(
+      updateTaskPlanning(snapshot, { expectedVersion: 1, estimatePoints: 10 })
+    ).rejects.toThrow("acknowledgement");
+  }
 });

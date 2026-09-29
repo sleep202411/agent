@@ -93,6 +93,7 @@ beforeEach(() => {
   h.fetch.mockResolvedValue({
     ...task,
     taskKind: "storyboard",
+    estimatePoints: 8,
     cycleId: "11111111-1111-4111-8111-111111111111",
     cycle: { id: "11111111-1111-4111-8111-111111111111", name: "Sprint" },
     episodeId: null,
@@ -223,4 +224,58 @@ it("supports explicitly clearing the kind", async () => {
   await act(async () => button("taskKind.unset")!.click());
   await act(async () => button("taskPlanning.save")!.click());
   expect(h.update).toHaveBeenCalledWith(expect.anything(), { expectedVersion: 4, taskKind: null });
+});
+
+const typeNumber = (index: number, value: string) => {
+  const input = host.querySelectorAll("input")[index]!;
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+};
+it("preserves numeric values and saves only changed estimates and limits", async () => {
+  h.update.mockResolvedValue({});
+  await render();
+  await act(async () => button("taskPlanning.edit")!.click());
+  expect(host.querySelectorAll("input")[0]!.value).toBe("8");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("");
+  await act(async () => {
+    typeNumber(0, "0");
+    typeNumber(1, "3");
+  });
+  await act(async () => button("taskPlanning.save")!.click());
+  expect(h.update).toHaveBeenCalledWith(expect.anything(), {
+    expectedVersion: 4,
+    estimatePoints: 0,
+    revisionLimit: 3,
+  });
+});
+it("disables saving fractional or below-usage limits while retaining the draft", async () => {
+  const snapshot = await h.fetch();
+  h.fetch.mockResolvedValue({ ...snapshot, revisionRoundsUsed: 2 });
+  await render();
+  await act(async () => button("taskPlanning.edit")!.click());
+  await act(async () => typeNumber(1, "1"));
+  expect(button("taskPlanning.save")!.disabled).toBe(true);
+  await act(async () => typeNumber(1, "2"));
+  expect(button("taskPlanning.save")!.disabled).toBe(false);
+  await act(async () => typeNumber(0, "1.5"));
+  expect(button("taskPlanning.save")!.disabled).toBe(true);
+  expect(host.querySelectorAll("input")[0]!.value).toBe("1.5");
+  expect(h.update).not.toHaveBeenCalled();
+});
+it("clears numeric values explicitly instead of converting them to zero", async () => {
+  const snapshot = await h.fetch();
+  h.fetch.mockResolvedValue({ ...snapshot, revisionLimit: 3 });
+  h.update.mockResolvedValue({});
+  await render();
+  await act(async () => button("taskPlanning.edit")!.click());
+  await act(async () => {
+    typeNumber(0, "");
+    typeNumber(1, "");
+  });
+  await act(async () => button("taskPlanning.save")!.click());
+  expect(h.update).toHaveBeenCalledWith(expect.anything(), {
+    expectedVersion: 4,
+    estimatePoints: null,
+    revisionLimit: null,
+  });
 });

@@ -54,6 +54,9 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const detail = {
   taskKind: "music",
+  estimatePoints: 8,
+  revisionLimit: 3,
+  revisionRoundsUsed: 2,
   parent: null,
   children: [],
   blockedBy: [],
@@ -203,4 +206,10 @@ it("displays the returned task kind to task viewers", async () => {
   await render();
   expect(host.textContent).toContain("taskKind.label");
   expect(host.textContent).toContain("taskKind.music");
+});
+
+it("shows estimate and revision usage to task viewers", async () => {
+  await render();
+  expect(host.textContent).toContain("taskPlanning.estimate: 8");
+  expect(host.textContent).toContain("taskPlanning.revisionsUsed: 2 / 3");
 });

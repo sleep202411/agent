@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
@@ -12,6 +12,8 @@ import {
   updateTaskPlanning,
   type PlanningSnapshot,
 } from "./task-planning-edit-api";
+import { useTheme } from "@/hooks/use-theme";
+import { parsePlanningNumber } from "./task-planning-number";
 import { TaskKindField } from "./task-kind-field";
 import type { TaskKind } from "./task-kind-api";
 import { TaskPlanningFields } from "./task-planning-fields";
@@ -117,17 +119,57 @@ function Editor({
   onCancel: () => void;
 }) {
   const t = useTranslations(),
+    theme = useTheme(),
     op = useAuthFormOperation(snapshot.id, true);
+  const [estimate, setEstimate] = useState(
+    snapshot.estimatePoints == null ? "" : String(snapshot.estimatePoints)
+  );
+  const [revisionLimit, setRevisionLimit] = useState(
+    snapshot.revisionLimit == null ? "" : String(snapshot.revisionLimit)
+  );
   const [taskKind, setTaskKind] = useState<TaskKind | null>(snapshot.taskKind);
   const [draft, setDraft] = useState(() => planningDraft(snapshot));
   const [attempted, setAttempted] = useState(false),
     [error, setError] = useState<string>();
   const attemptedRef = useRef(false),
     locked = attempted || op.busy;
-  const parsed = planningChanges(snapshot, draft, taskKind);
+  const parsed = (() => {
+    try {
+      return planningChanges(snapshot, draft, taskKind, {
+        estimatePoints: parsePlanningNumber(estimate, 1_000_000),
+        revisionLimit: parsePlanningNumber(revisionLimit, 100),
+      });
+    } catch {
+      return undefined;
+    }
+  })();
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("taskPlanning.edit")}</ThemedText>
+      <ThemedText>{t("taskPlanning.estimate")}</ThemedText>
+      <TextInput
+        accessibilityLabel={t("taskPlanning.estimate")}
+        value={estimate}
+        onChangeText={setEstimate}
+        editable={!locked}
+        keyboardType="number-pad"
+        maxLength={16}
+        style={{ color: theme.text, padding: 12 }}
+      />
+      <ThemedText>{t("taskPlanning.revisionLimit")}</ThemedText>
+      <TextInput
+        accessibilityLabel={t("taskPlanning.revisionLimit")}
+        value={revisionLimit}
+        onChangeText={setRevisionLimit}
+        editable={!locked}
+        keyboardType="number-pad"
+        maxLength={16}
+        style={{ color: theme.text, padding: 12 }}
+      />
+      <ThemedText>
+        {t("taskPlanning.revisionsUsed")}: {snapshot.revisionRoundsUsed}
+      </ThemedText>
+      <ThemedText>{t("taskPlanning.numberHelp")}</ThemedText>
       <TaskKindField
         crewId={snapshot.crewId}
         generation={generation}
@@ -153,11 +195,11 @@ function Editor({
       )}
       <Pressable
         accessibilityRole="button"
-        disabled={!parsed.success || locked}
+        disabled={!parsed?.success || locked}
         style={{ padding: 12 }}
         onPress={() => {
           if (
-            !parsed.success ||
+            !parsed?.success ||
             locked ||
             attemptedRef.current ||
             generation !== getAuthGeneration()

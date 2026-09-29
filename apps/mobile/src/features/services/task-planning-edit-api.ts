@@ -7,6 +7,7 @@ const ref = z.object({ id: z.string().uuid(), name: z.string().min(1) });
 const planningSnapshotSchema = taskDetailSchema
   .extend({
     taskKind: taskKindSchema.nullable(),
+    estimatePoints: z.number().int().min(0).max(1_000_000).nullable(),
     cycleId: z.string().uuid().nullable(),
     cycle: ref.nullable(),
     episodeId: z.string().uuid().nullable(),
@@ -28,6 +29,8 @@ export const planningEditInput = z
   .object({
     taskKind: taskKindSchema.nullable().optional(),
     expectedVersion: z.number().int().positive(),
+    estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
+    revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
     cycleId: z.string().uuid().nullable().optional(),
     episodeId: z.string().uuid().nullable().optional(),
     labelIds: z
@@ -39,6 +42,8 @@ export const planningEditInput = z
   .strict()
   .refine(
     (data) =>
+      data.estimatePoints !== undefined ||
+      data.revisionLimit !== undefined ||
       data.taskKind !== undefined ||
       data.cycleId !== undefined ||
       data.episodeId !== undefined ||
@@ -57,21 +62,36 @@ export function planningDraft(task: PlanningSnapshot): TaskPlanningDraft {
 export function planningChanges(
   task: PlanningSnapshot,
   draft: TaskPlanningDraft,
-  taskKind: TaskKind | null = task.taskKind
+  taskKind: TaskKind | null = task.taskKind,
+  numbers: { estimatePoints: number | null; revisionLimit: number | null } = {
+    estimatePoints: task.estimatePoints,
+    revisionLimit: task.revisionLimit,
+  }
 ) {
   const cycleId = draft.cycle?.id ?? null,
     episodeId = draft.episode?.id ?? null;
   const ids = draft.labels.map((label) => label.id);
-  return planningEditInput.safeParse({
-    expectedVersion: task.version,
-    ...(taskKind !== task.taskKind ? { taskKind } : {}),
-    ...(cycleId !== task.cycleId ? { cycleId } : {}),
-    ...(episodeId !== task.episodeId ? { episodeId } : {}),
-    ...(ids.length !== task.labels.length ||
-    ids.some((id) => !task.labels.some((label) => label.id === id))
-      ? { labelIds: ids }
-      : {}),
-  });
+  return planningEditInput
+    .refine(
+      (value) => value.revisionLimit == null || value.revisionLimit >= task.revisionRoundsUsed,
+      "Revision limit is below used rounds"
+    )
+    .safeParse({
+      expectedVersion: task.version,
+      ...(numbers.estimatePoints !== task.estimatePoints
+        ? { estimatePoints: numbers.estimatePoints }
+        : {}),
+      ...(numbers.revisionLimit !== task.revisionLimit
+        ? { revisionLimit: numbers.revisionLimit }
+        : {}),
+      ...(taskKind !== task.taskKind ? { taskKind } : {}),
+      ...(cycleId !== task.cycleId ? { cycleId } : {}),
+      ...(episodeId !== task.episodeId ? { episodeId } : {}),
+      ...(ids.length !== task.labels.length ||
+      ids.some((id) => !task.labels.some((label) => label.id === id))
+        ? { labelIds: ids }
+        : {}),
+    });
 }
 export async function fetchTaskPlanning(task: TaskDetail, signal: AbortSignal) {
   z.string().uuid().parse(task.id);
@@ -89,6 +109,8 @@ export async function updateTaskPlanning(
   z.string().uuid().parse(task.id);
   const data = planningEditInput.parse(value);
   if (data.expectedVersion !== task.version) throw new Error("Task planning version mismatch");
+  if (data.revisionLimit != null && data.revisionLimit < task.revisionRoundsUsed)
+    throw new Error("Revision limit is below used rounds");
   const result = planningSnapshotSchema.parse(
     await api.patch(`/crew-tasks/${task.id}`, { service: "aurora", data })
   );
@@ -100,6 +122,10 @@ export async function updateTaskPlanning(
     result.crewId !== task.crewId ||
     result.version !== data.expectedVersion + 1 ||
     result.taskKind !== (data.taskKind === undefined ? task.taskKind : data.taskKind) ||
+    result.estimatePoints !==
+      (data.estimatePoints === undefined ? task.estimatePoints : data.estimatePoints) ||
+    result.revisionLimit !==
+      (data.revisionLimit === undefined ? task.revisionLimit : data.revisionLimit) ||
     result.cycleId !== cycleId ||
     result.episodeId !== episodeId ||
     result.labels.length !== labels.length ||
