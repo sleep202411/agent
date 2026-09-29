@@ -392,6 +392,58 @@ describe('episode multipart uploads', () => {
     expect(f.storage.completeMultipartUpload).not.toHaveBeenCalled();
   });
 
+  it.each(['query', 'lease', 'discard'])(
+    'stops cleanup admission during %s shutdown',
+    async (phase) => {
+      const f = fixture();
+      f.patch({ expiresAt: new Date(0) });
+      let release!: () => void;
+      let entered!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const pause = async () => {
+        entered();
+        await pending;
+      };
+      f.prisma.episodeUpload.findMany.mockImplementation(async () => {
+        if (phase === 'query') await pause();
+        return [f.row(), { ...f.row(), id: 'second' }];
+      });
+      if (phase === 'lease')
+        f.prisma.episodeUpload.updateMany.mockImplementationOnce(async () => {
+          await pause();
+          return { count: 1 };
+        });
+      if (phase === 'discard')
+        f.storage.abortMultipartUpload.mockImplementationOnce(pause);
+      const work = f.service.sweepExpired();
+      await started;
+      let stopped = false;
+      const shutdown = Promise.resolve(f.service.onModuleDestroy()).then(() => {
+        stopped = true;
+      });
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(stopped).toBe(false);
+      } finally {
+        release();
+        await Promise.all([work, shutdown]);
+      }
+      expect(f.storage.abortMultipartUpload).toHaveBeenCalledTimes(
+        phase === 'discard' ? 1 : 0,
+      );
+      expect(f.prisma.episodeUpload.delete).toHaveBeenCalledTimes(
+        phase === 'discard' ? 1 : 0,
+      );
+      await f.service.sweepExpired();
+      expect(f.prisma.episodeUpload.findMany).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('reclaims expired upload data while keeping completed media', async () => {
     const f = fixture();
     f.patch({ expiresAt: new Date(0) });

@@ -53,7 +53,8 @@ function kindFromStorageKey(storageKey: string): UploadKind {
 export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EpisodeUploadService.name);
   private timer?: ReturnType<typeof setInterval>;
-  private sweeping = false;
+  private sweeping: Promise<void> | null = null;
+  private stopping = false;
   private cleanupCursor: string | undefined;
 
   constructor(
@@ -63,12 +64,16 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit() {
+    if (this.stopping || this.timer) return;
     this.timer = setInterval(() => void this.sweepExpired(), 60_000);
     this.timer.unref();
   }
 
-  onModuleDestroy() {
+  async onModuleDestroy() {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
+    this.timer = undefined;
+    await this.sweeping;
   }
 
   async start(
@@ -406,8 +411,15 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
   }
 
   async sweepExpired() {
-    if (this.sweeping) return;
-    this.sweeping = true;
+    if (this.stopping) return;
+    if (this.sweeping) return this.sweeping;
+    this.sweeping = this.cleanupExpired().finally(() => {
+      this.sweeping = null;
+    });
+    return this.sweeping;
+  }
+
+  private async cleanupExpired() {
     try {
       const expired = await this.prisma.episodeUpload.findMany({
         where: {
@@ -418,8 +430,10 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
         take: 20,
       });
       for (const session of expired) {
+        if (this.stopping) return;
         try {
           await this.withLease(session.id, async (current) => {
+            if (this.stopping) return;
             if (
               current.status !== 'completed' &&
               !(await this.hasAsset(current))
@@ -442,8 +456,6 @@ export class EpisodeUploadService implements OnModuleInit, OnModuleDestroy {
       if (expired.length < 20) this.cleanupCursor = undefined;
     } catch (error) {
       this.logger.error(`Episode upload cleanup failed: ${String(error)}`);
-    } finally {
-      this.sweeping = false;
     }
   }
 }
