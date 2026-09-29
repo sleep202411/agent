@@ -1870,5 +1870,16 @@
   "inviteManagement.title": "Manage Recruitment Invitations",
   "inviteManagement.lookup": "Find Creator",
   "inviteManagement.uncertain": "The creation response was not confirmed. Review the refreshed invitation list before creating another invitation.",
-  "inviteManagement.saved": "Response saved. Refresh to review the latest invitations."
+  "inviteManagement.saved": "Response saved. Refresh to review the latest invitations.",
+  "applicationReview.title": "Review Applications",
+  "applicationReview.expected": "Expected Compensation",
+  "applicationReview.start": "Available Start Date",
+  "applicationReview.experience": "Years of Experience",
+  "applicationReview.approve": "Approve Application",
+  "applicationReview.reject": "Reject Application",
+  "applicationReview.confirm": "Confirm Decision",
+  "applicationReview.approveHelp": "Approval may add this creator to the Crew and activate agreed task assignments and compensation. Confirm that you have reviewed their application and final terms.",
+  "applicationReview.rejectHelp": "Reject this application? The creator will not be admitted through this application.",
+  "applicationReview.requirements": "Confirmed final terms are required for task recruitment. Resolve pending interviews before approval. Use the Web workflow to propose terms or manage interviews.",
+  "applicationReview.recheck": "The decision was not confirmed. Refresh and check the application status before another action."
 }

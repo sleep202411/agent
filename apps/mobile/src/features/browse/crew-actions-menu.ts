@@ -6,6 +6,7 @@ import type { MessageKey } from "@/i18n";
 export function showCrewActionsMenu(options: {
   t: (key: MessageKey) => string;
   onApplications: () => void;
+  onReviews?: () => void;
   onInvitations?: () => void;
   onFinance?: () => void;
   onAgreements?: () => void;
@@ -13,8 +14,17 @@ export function showCrewActionsMenu(options: {
   onReport: () => void;
   onBlock: () => void;
 }) {
-  const { t, onApplications, onReport, onBlock, onTasks, onFinance, onAgreements, onInvitations } =
-    options;
+  const {
+    t,
+    onApplications,
+    onReport,
+    onBlock,
+    onTasks,
+    onFinance,
+    onAgreements,
+    onInvitations,
+    onReviews,
+  } = options;
   if (Platform.OS === "ios") {
     ActionSheetIOS.showActionSheetWithOptions(
       {
@@ -27,11 +37,21 @@ export function showCrewActionsMenu(options: {
           ...(onFinance ? [t("crewFinance.title")] : []),
           ...(onAgreements ? [t("crewAgreements.title")] : []),
           ...(onInvitations ? [t("inviteManagement.title")] : []),
+          ...(onReviews ? [t("applicationReview.title")] : []),
         ],
         cancelButtonIndex: 0,
         destructiveButtonIndex: 3,
       },
       (index) => {
+        if (
+          index ===
+          4 +
+            Number(!!onTasks) +
+            Number(!!onFinance) +
+            Number(!!onAgreements) +
+            Number(!!onInvitations)
+        )
+          onReviews?.();
         if (index === 1) onApplications();
         if (index === 2) onReport();
         if (index === 3) onBlock();
@@ -42,6 +62,27 @@ export function showCrewActionsMenu(options: {
           onInvitations?.();
       }
     );
+    return;
+  }
+  if (onReviews) {
+    Alert.alert(t("report.moreActions"), undefined, [
+      { text: t("applicationReview.title"), onPress: onReviews },
+      {
+        text: t("report.moreActions"),
+        onPress: () =>
+          showCrewActionsMenu({
+            t,
+            onApplications,
+            onTasks,
+            onAgreements,
+            onFinance,
+            onInvitations,
+            onReport,
+            onBlock,
+          }),
+      },
+      { text: t("report.cancel"), style: "cancel" },
+    ]);
     return;
   }
   if (onInvitations) {

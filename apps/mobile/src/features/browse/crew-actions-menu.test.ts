@@ -158,3 +158,27 @@ it("preserves Android finance and safety after invitations", () => {
   h.alert.mock.calls[2][2][1].onPress();
   expect(h.safety).toHaveBeenCalledOnce();
 });
+it.each([false, true])("opens reviewer inbox with optional prior actions (%s)", (full) => {
+  const onReviews = vi.fn();
+  showCrewActionsMenu({
+    ...options,
+    onReviews,
+    ...(full
+      ? { onTasks: vi.fn(), onFinance: vi.fn(), onAgreements: vi.fn(), onInvitations: vi.fn() }
+      : {}),
+  });
+  const [config, select] = h.sheet.mock.calls[0];
+  select(config.options.indexOf("applicationReview.title"));
+  expect(onReviews).toHaveBeenCalledOnce();
+});
+it("keeps Android reviewer and invitation actions reachable", () => {
+  h.platform.OS = "android";
+  const onReviews = vi.fn(),
+    onInvitations = vi.fn();
+  showCrewActionsMenu({ ...options, onReviews, onInvitations });
+  h.alert.mock.calls[0][2][0].onPress();
+  expect(onReviews).toHaveBeenCalledOnce();
+  h.alert.mock.calls[0][2][1].onPress();
+  h.alert.mock.calls[1][2][0].onPress();
+  expect(onInvitations).toHaveBeenCalledOnce();
+});
