@@ -4,10 +4,27 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskComment } from "./task-comment";
 const h = vi.hoisted(() => ({
   permission: vi.fn(),
+  picker: vi.fn(),
   post: vi.fn(),
   sent: vi.fn(),
   generation: 1,
   active: true,
+}));
+vi.mock("@/features/crew-assets/asset-picker", () => ({
+  CrewAssetPicker: (props: { onSelect: (assets: unknown[]) => void; onClose: () => void }) => {
+    h.picker(props);
+    return (
+      <div>
+        <button onClick={() => props.onSelect([{ id: "asset", name: "Scene.mp4" }])}>
+          select-file
+        </button>
+        <button onClick={props.onClose}>close-picker</button>
+      </div>
+    );
+  },
+}));
+vi.mock("react-native-safe-area-context", () => ({
+  SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("./task-comment-api", () => ({
   fetchTaskCommentPermission: h.permission,
@@ -22,6 +39,7 @@ vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
+  Modal: ({ children }: { children: ReactNode }) => <div role="dialog">{children}</div>,
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <div>loading</div>,
   Pressable: ({
@@ -186,4 +204,46 @@ it("cancels an unsubmitted reply without posting or clearing the text draft", as
   expect(clear).toHaveBeenCalledTimes(1);
   expect(h.post).not.toHaveBeenCalled();
   expect(host.querySelector("input")!.value).toBe("Keep draft");
+});
+
+it("sends existing Crew files without text and retries the exact attachment set", async () => {
+  const byText = (text: string) =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
+  await render();
+  expect(byText("taskActivity.sendComment").disabled).toBe(true);
+  await act(async () => byText("crewAssets.choose").click());
+  expect(h.picker.mock.calls.at(-1)![0]).toMatchObject({
+    crewId: "crew",
+    excludedIds: [],
+    remaining: 10,
+  });
+  await act(async () => byText("select-file").click());
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  expect(host.textContent).toContain("Scene.mp4");
+  h.post.mockRejectedValueOnce(new Error("Offline")).mockResolvedValueOnce({});
+  await act(async () => byText("taskActivity.sendComment").click());
+  expect(byText("crewAssets.choose").disabled).toBe(true);
+  expect(byText("Scene.mp4 · crewAssets.remove").disabled).toBe(true);
+  await act(async () => byText("inbox.retry").click());
+  const request = [
+    "task",
+    "1",
+    { body: "", clientKey: "stable", attachments: [{ source: "asset", assetNodeId: "asset" }] },
+  ];
+  expect(h.post.mock.calls).toEqual([request, request]);
+  expect(host.textContent).not.toContain("Scene.mp4");
+});
+it("removes selected files without deleting assets and aborts the picker on background", async () => {
+  const byText = (text: string) =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
+  await render();
+  await act(async () => byText("crewAssets.choose").click());
+  await act(async () => byText("select-file").click());
+  await act(async () => byText("Scene.mp4 · crewAssets.remove").click());
+  expect(byText("taskActivity.sendComment").disabled).toBe(true);
+  expect(h.post).not.toHaveBeenCalled();
+  await act(async () => byText("crewAssets.choose").click());
+  h.active = false;
+  await render();
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
 });

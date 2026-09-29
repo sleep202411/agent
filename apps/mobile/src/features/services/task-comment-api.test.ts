@@ -62,3 +62,38 @@ it("sends a validated reply target and rejects a different reply acknowledgement
     postTaskComment(id, "1", { body: "Reply", clientKey: "key", replyToId: replyId })
   ).rejects.toThrow("acknowledgement mismatch");
 });
+
+it("allows file-only comments while rejecting duplicate, excessive and malformed references", async () => {
+  vi.mocked(api.post).mockResolvedValue({
+    ...comment,
+    attachments: [
+      { id, name: "Clip", mediaAssetId: id, mediaKind: "video", contentType: "video/mp4" },
+    ],
+  });
+  const attachment = { source: "asset" as const, assetNodeId: id };
+  await postTaskComment(id, "1", { body: "", clientKey: "files", attachments: [attachment] });
+  expect(api.post).toHaveBeenCalledWith(`/crew-tasks/${id}/comments`, {
+    service: "aurora",
+    data: { body: "", clientKey: "files", attachments: [attachment] },
+  });
+  for (const attachments of [
+    [attachment, attachment],
+    Array.from({ length: 11 }, () => attachment),
+    [{ source: "asset" as const, assetNodeId: "invalid" }],
+  ])
+    await expect(
+      postTaskComment(id, "1", { body: "", clientKey: "files", attachments })
+    ).rejects.toThrow();
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+
+it("rejects missing files in the comment acknowledgement", async () => {
+  vi.mocked(api.post).mockResolvedValue(comment);
+  await expect(
+    postTaskComment(id, "1", {
+      body: "",
+      clientKey: "files",
+      attachments: [{ source: "asset", assetNodeId: id }],
+    })
+  ).rejects.toThrow("acknowledgement mismatch");
+});

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
+import { ActivityIndicator, Modal, Pressable, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
+import type { CrewAsset } from "@/features/crew-assets/api";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -7,7 +10,11 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
 import { inquiryKey } from "./inquiry-api";
-import { fetchTaskCommentPermission, postTaskComment } from "./task-comment-api";
+import {
+  fetchTaskCommentPermission,
+  postTaskComment,
+  type TaskCommentInput,
+} from "./task-comment-api";
 type Props = {
   crewId: string;
   taskId: string;
@@ -46,9 +53,9 @@ function Composer({
   const [body, setBody] = useState(""),
     [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
-  const intent = useRef<{ body: string; clientKey: string; replyToId?: string } | undefined>(
-    undefined
-  );
+  const intent = useRef<TaskCommentInput | undefined>(undefined);
+  const [assets, setAssets] = useState<CrewAsset[]>([]);
+  const [picking, setPicking] = useState(false);
   const [submittedReply, setSubmittedReply] = useState<Props["reply"]>();
   useEffect(() => {
     const controller = new AbortController();
@@ -67,8 +74,8 @@ function Composer({
   const current = access?.revision === revision ? access : undefined;
   const allowed = current?.allowed === true;
   useEffect(() => {
-    onReplyAvailability?.({ allowed, locked: attempted || op.busy });
-  }, [allowed, attempted, op.busy, onReplyAvailability]);
+    onReplyAvailability?.({ allowed, locked: attempted || op.busy || picking });
+  }, [allowed, attempted, op.busy, picking, onReplyAvailability]);
   useEffect(() => {
     if (allowed && reply && !attempted) input.current?.focus();
   }, [allowed, reply, attempted]);
@@ -123,7 +130,7 @@ function Composer({
       )}
       <Pressable
         accessibilityRole="button"
-        disabled={op.busy || !body.trim()}
+        disabled={op.busy || picking || (!body.trim() && !assets.length)}
         style={{ padding: 12 }}
         onPress={() => {
           void op.run(
@@ -132,6 +139,14 @@ function Composer({
                 body: body.trim(),
                 clientKey: inquiryKey(),
                 ...(reply ? { replyToId: reply.id } : {}),
+                ...(assets.length
+                  ? {
+                      attachments: assets.map((asset) => ({
+                        source: "asset" as const,
+                        assetNodeId: asset.id,
+                      })),
+                    }
+                  : {}),
               };
               if (!attempted) setSubmittedReply(reply);
               setAttempted(true);
@@ -141,6 +156,7 @@ function Composer({
               intent.current = undefined;
               setAttempted(false);
               setBody("");
+              setAssets([]);
               setSubmittedReply(undefined);
               onClearReply?.();
               setError(undefined);
@@ -165,6 +181,48 @@ function Composer({
           )}
         </ThemedText>
       </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        disabled={op.busy || attempted || assets.length >= 10}
+        onPress={() => setPicking(true)}
+        style={{ padding: 12 }}
+      >
+        <ThemedText>{t("crewAssets.choose")}</ThemedText>
+      </Pressable>
+      {assets.map((asset) => (
+        <Pressable
+          key={asset.id}
+          accessibilityRole="button"
+          disabled={op.busy || attempted}
+          onPress={() => setAssets((value) => value.filter((item) => item.id !== asset.id))}
+          style={{ padding: 12 }}
+        >
+          <ThemedText>
+            {asset.name} · {t("crewAssets.remove")}
+          </ThemedText>
+        </Pressable>
+      ))}
+      {picking && (
+        <Modal visible animationType="slide" onRequestClose={() => setPicking(false)}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+            <CrewAssetPicker
+              crewId={crewId}
+              excludedIds={assets.map((asset) => asset.id)}
+              remaining={10 - assets.length}
+              onClose={() => setPicking(false)}
+              onSelect={(selected) => {
+                if (generation !== getAuthGeneration() || attempted || op.busy) return;
+                setAssets((value) =>
+                  Array.from(
+                    new Map([...value, ...selected].map((asset) => [asset.id, asset])).values()
+                  ).slice(0, 10)
+                );
+                setPicking(false);
+              }}
+            />
+          </SafeAreaView>
+        </Modal>
+      )}
     </View>
   );
 }
