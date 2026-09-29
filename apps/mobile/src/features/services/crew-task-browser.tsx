@@ -183,6 +183,7 @@ export function CrewTaskBrowser({
         <ThemedText>{t("episodeManagement.title")}</ThemedText>
       </Pressable>
       <TaskViewBrowser
+        userId={userId}
         crewId={crewId}
         generation={generation}
         viewId={viewId}

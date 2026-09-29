@@ -13,6 +13,25 @@ const h = vi.hoisted(() => ({
   more: vi.fn(),
   retry: vi.fn(),
 }));
+vi.mock("./task-view-editor", () => ({
+  TaskViewEditor: ({
+    viewId,
+    userId,
+    onSaved,
+    onClose,
+  }: {
+    viewId: string;
+    userId: string;
+    onSaved: () => void;
+    onClose: () => void;
+  }) => (
+    <>
+      <span>{`editing:${viewId}:${userId}`}</span>
+      <button onClick={onSaved}>save editor</button>
+      <button onClick={onClose}>close editor</button>
+    </>
+  ),
+}));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("./task-view-api", () => ({ fetchTaskViews: h.views }));
 vi.mock("./use-task-view-tasks", () => ({ useTaskViewTasks: h.query }));
@@ -73,6 +92,7 @@ function Harness() {
   return (
     <TaskViewBrowser
       crewId="crew"
+      userId="1"
       generation={1}
       viewId={viewId}
       onViewChange={setViewId}
@@ -162,4 +182,19 @@ it("clears task rows when refreshed project access fails", async () => {
   await click("thread.refresh");
   expect(host.textContent).toContain("denied");
   expect(host.textContent).not.toContain("Shot");
+});
+
+it("opens the selected view editor and refreshes project and rows after saving", async () => {
+  await render();
+  await click("viewEdit.title");
+  expect(host.textContent).toContain("editing:first:1");
+  const reads = h.views.mock.calls.length;
+  await click("save editor");
+  expect(h.views.mock.calls.length).toBe(reads + 1);
+  expect(host.textContent).not.toContain("editing:");
+  expect(h.query).toHaveBeenLastCalledWith(
+    "1",
+    "crew",
+    expect.objectContaining({ viewId: "first" })
+  );
 });

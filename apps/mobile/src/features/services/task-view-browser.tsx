@@ -1,3 +1,4 @@
+import { TaskViewEditor } from "./task-view-editor";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -9,6 +10,7 @@ import { fetchTaskViews, type TaskView, type TaskViewQuery } from "./task-view-a
 import { useTaskViewTasks } from "./use-task-view-tasks";
 import { taskLabel, type TaskOption } from "./task-options";
 type Props = {
+  userId: string;
   crewId: string;
   generation: number;
   viewId?: string;
@@ -26,7 +28,8 @@ function Session(props: Props) {
   const t = useTranslations(),
     [result, setResult] = useState<{ revision: number; views?: TaskView[]; error?: string }>(),
     [revision, setRevision] = useState(0),
-    [choosing, setChoosing] = useState(false);
+    [choosing, setChoosing] = useState(false),
+    [editing, setEditing] = useState(false);
   useEffect(() => {
     const c = new AbortController();
     void fetchTaskViews(props.crewId, c.signal).then(
@@ -44,6 +47,23 @@ function Session(props: Props) {
   const views = result?.revision === revision ? result.views : undefined;
   const error = result?.revision === revision ? result.error : undefined;
   const active = views?.find((v) => v.id === props.viewId) ?? views?.[0];
+  if (editing && active)
+    return (
+      <TaskViewEditor
+        crewId={props.crewId}
+        userId={props.userId}
+        generation={props.generation}
+        viewId={active.id}
+        onClose={() => {
+          setEditing(false);
+          setRevision((v) => v + 1);
+        }}
+        onSaved={() => {
+          setEditing(false);
+          setRevision((v) => v + 1);
+        }}
+      />
+    );
   return (
     <View style={{ flex: 1, padding: 12, gap: 10 }}>
       <ThemedText>{t("crewTasks.title")}</ThemedText>
@@ -72,6 +92,9 @@ function Session(props: Props) {
                 <ThemedText>{v.name}</ThemedText>
               </Pressable>
             ))}
+          <Pressable accessibilityRole="button" onPress={() => setEditing(true)}>
+            <ThemedText>{t("viewEdit.title")}</ThemedText>
+          </Pressable>
           <Rows key={`${active.id}:${revision}`} {...props} view={active} />
         </>
       )}
