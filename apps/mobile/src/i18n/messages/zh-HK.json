@@ -1091,5 +1091,21 @@
   "inbox.activity.order.completed": "訂單已完成。",
   "inbox.activity.order.cancelled": "訂單已取消。",
   "inbox.activity.crew.member.joined": "有成員加入。",
-  "inbox.activity.crew.member.left": "有成員離開。"
+  "inbox.activity.crew.member.left": "有成員離開。",
+  "myServices.title": "我的服務",
+  "myServices.signIn": "登入以管理您的服務",
+  "myServices.all": "全部",
+  "myServices.status.draft": "草稿",
+  "myServices.status.listed": "已上架",
+  "myServices.status.paused": "已暫停",
+  "myServices.status.archived": "已封存",
+  "myServices.empty": "此分類暫無服務。",
+  "myServices.action.publish": "發佈",
+  "myServices.action.pause": "暫停",
+  "myServices.action.resume": "恢復",
+  "myServices.action.archive": "封存",
+  "myServices.confirmHint": "確認更改此服務狀態。",
+  "myServices.archiveHint": "封存後無法恢復，現有訂單歷史將保留。",
+  "myServices.confirm": "確認",
+  "myServices.cancel": "取消"
 }

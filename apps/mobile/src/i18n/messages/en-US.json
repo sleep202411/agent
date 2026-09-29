@@ -1091,5 +1091,21 @@
   "inbox.activity.order.completed": "Order completed.",
   "inbox.activity.order.cancelled": "Order cancelled.",
   "inbox.activity.crew.member.joined": "A member joined.",
-  "inbox.activity.crew.member.left": "A member left."
+  "inbox.activity.crew.member.left": "A member left.",
+  "myServices.title": "My Services",
+  "myServices.signIn": "Sign in to manage your services",
+  "myServices.all": "All",
+  "myServices.status.draft": "Draft",
+  "myServices.status.listed": "Listed",
+  "myServices.status.paused": "Paused",
+  "myServices.status.archived": "Archived",
+  "myServices.empty": "No services in this category.",
+  "myServices.action.publish": "Publish",
+  "myServices.action.pause": "Pause",
+  "myServices.action.resume": "Resume",
+  "myServices.action.archive": "Archive",
+  "myServices.confirmHint": "Confirm this service status change.",
+  "myServices.archiveHint": "Archiving is permanent. Existing order history is retained.",
+  "myServices.confirm": "Confirm",
+  "myServices.cancel": "Cancel"
 }

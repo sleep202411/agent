@@ -1,3 +1,4 @@
+import { ServiceOwnerActions } from "@/features/services/service-owner-actions";
 import { ServiceOrder } from "@/features/services/service-order";
 import { ServiceContact } from "@/features/services/service-contact";
 import { Stack, useLocalSearchParams } from "expo-router";
@@ -108,6 +109,12 @@ export default function CreatorServiceDetailScreen() {
         )}
 
         <View style={styles.body}>
+          <ServiceOwnerActions
+            id={service.id}
+            creatorId={service.creatorId}
+            status={service.status}
+            refresh={retry}
+          />
           <ServiceContact
             key={service.id}
             serviceId={service.id}
