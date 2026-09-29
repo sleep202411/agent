@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { financeProfitShare } from "./crew-finance-trend-data";
 import { api } from "@/lib/api-client";
 const money = z.string().regex(/^-?(0|[1-9]\d*)$/);
 const uuid = z.string().uuid();
@@ -46,6 +47,8 @@ const earningsPage = z.object({
       reversed: amountGroup,
     }),
     postedThisMonthAmountMinor: money,
+    postedDaily: z.unknown().optional(),
+    postedBySource: z.unknown().optional(),
   }),
 });
 const payoutsPage = z.object({
@@ -72,6 +75,8 @@ export type FinanceRow = {
   withholdingAmountMinor?: string;
 };
 export type FinancePage = {
+  postedDaily?: unknown;
+  profitShare?: string;
   items: FinanceRow[];
   nextCursor: string | null;
   summary: {
@@ -142,6 +147,8 @@ export async function fetchFinancePage(
   if ("byStatus" in page.summary)
     return {
       items,
+      postedDaily: page.summary.postedDaily,
+      profitShare: financeProfitShare(page.summary.postedBySource),
       nextCursor: page.nextCursor,
       summary: [
         { label: "posted", amount: page.summary.byStatus.posted.amountMinor },

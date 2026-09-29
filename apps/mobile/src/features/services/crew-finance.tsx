@@ -1,3 +1,4 @@
+import { CrewFinanceTrend } from "./crew-finance-trend";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -180,6 +181,16 @@ function Ledger(props: Props & { view: FinanceView; scope: FinanceScope; status:
           {t(`crewFinance.${item.label}`)} · {formatFinanceMoney(item.amount, currency)}
         </ThemedText>
       ))}
+      {props.view === "earnings" && page && (
+        <>
+          {page.profitShare !== undefined && (
+            <ThemedText>
+              {t("crewFinance.profitShare")} · {formatFinanceMoney(page.profitShare, currency)}
+            </ThemedText>
+          )}
+          <CrewFinanceTrend value={page.postedDaily} currency={currency} failed={!!error} />
+        </>
+      )}
       {page?.items.length === 0 && <ThemedText>{t("crewFinance.empty")}</ThemedText>}
       {page?.items.map((row) => (
         <View key={row.id} style={{ paddingVertical: 12, gap: 6 }}>

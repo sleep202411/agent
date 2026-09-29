@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewFinance } from "./crew-finance";
+vi.mock("./crew-finance-trend", () => ({ CrewFinanceTrend: () => <span>income trend</span> }));
 const h = vi.hoisted(() => ({ generation: 1, access: vi.fn(), page: vi.fn(), close: vi.fn() }));
 vi.mock("@/config/app-env", () => ({ isChinaRegion: false }));
 vi.mock("./crew-finance-api", async (original) => ({
@@ -151,4 +152,11 @@ it("ignores ledger responses after account changes", async () => {
   expect(host.textContent).not.toContain("Reward");
   await render();
   expect(host.textContent).toBe("");
+});
+
+it("shows the trend only for earnings", async () => {
+  await render();
+  expect(host.textContent).toContain("income trend");
+  await click("crewFinance.payouts");
+  expect(host.textContent).not.toContain("income trend");
 });

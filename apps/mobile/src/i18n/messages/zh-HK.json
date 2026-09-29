@@ -1505,5 +1505,12 @@
   "crewFinance.source_milestone_bonus": "里程碑獎勵",
   "crewFinance.source_revenue_share": "收益分成",
   "crewFinance.source_discretionary_bonus": "額外獎勵",
-  "crewFinance.source_adjustment": "調整"
+  "crewFinance.source_adjustment": "調整",
+  "crewFinance.trend": "收入趨勢",
+  "crewFinance.trendBasis": "按入帳日期統計最近30個UTC日的已確認收入，使用目前收款範圍和幣種，不受記錄狀態篩選影響。",
+  "crewFinance.trendUnavailable": "收入趨勢暫不可用，請重新整理重試。",
+  "crewFinance.trendMax": "最高值",
+  "crewFinance.trendMin": "最低值",
+  "crewFinance.dailyAmounts": "每日金額",
+  "crewFinance.profitShare": "已確認收益分成"
 }

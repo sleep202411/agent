@@ -1505,5 +1505,12 @@
   "crewFinance.source_milestone_bonus": "Milestone Bonus",
   "crewFinance.source_revenue_share": "Revenue Share",
   "crewFinance.source_discretionary_bonus": "Discretionary Bonus",
-  "crewFinance.source_adjustment": "Adjustment"
+  "crewFinance.source_adjustment": "Adjustment",
+  "crewFinance.trend": "Income Trend",
+  "crewFinance.trendBasis": "Confirmed earnings by posting date over the last 30 UTC days, for the selected recipient scope and currency. Independent of the record status filter.",
+  "crewFinance.trendUnavailable": "Income trend is unavailable. Refresh to try again.",
+  "crewFinance.trendMax": "Maximum",
+  "crewFinance.trendMin": "Minimum",
+  "crewFinance.dailyAmounts": "Daily Amounts",
+  "crewFinance.profitShare": "Confirmed Revenue Share"
 }

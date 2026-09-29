@@ -121,3 +121,18 @@ it("rejects invalid filters before making a request", async () => {
   ).rejects.toThrow();
   expect(api.get).not.toHaveBeenCalled();
 });
+
+it("preserves full-ledger trend and revenue-share summaries beyond loaded records", async () => {
+  const postedDaily = { timezone: "UTC", days: [] };
+  vi.mocked(api.get).mockResolvedValue({
+    ...page,
+    summary: {
+      ...page.summary,
+      postedDaily,
+      postedBySource: [{ sourceType: "revenue_share", amountMinor: "123456" }],
+    },
+  });
+  const result = await fetchFinancePage("crew", "user", input, signal);
+  expect(result.postedDaily).toEqual(postedDaily);
+  expect(result.profitShare).toBe("123456");
+});

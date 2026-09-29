@@ -1505,5 +1505,12 @@
   "crewFinance.source_milestone_bonus": "里程碑奖励",
   "crewFinance.source_revenue_share": "收益分成",
   "crewFinance.source_discretionary_bonus": "额外奖励",
-  "crewFinance.source_adjustment": "调整"
+  "crewFinance.source_adjustment": "调整",
+  "crewFinance.trend": "收入趋势",
+  "crewFinance.trendBasis": "按入账日期统计最近30个UTC日的已确认收入，使用当前收款范围和币种，不受记录状态筛选影响。",
+  "crewFinance.trendUnavailable": "收入趋势暂不可用，请刷新重试。",
+  "crewFinance.trendMax": "最高值",
+  "crewFinance.trendMin": "最低值",
+  "crewFinance.dailyAmounts": "每日金额",
+  "crewFinance.profitShare": "已确认收益分成"
 }
