@@ -14,6 +14,9 @@ type Props = {
   userId: string;
   generation: number;
   onSent: () => void;
+  reply?: { id: string; body: string | null };
+  onClearReply?: () => void;
+  onReplyAvailability?: (state: { allowed: boolean; locked: boolean }) => void;
 };
 export function TaskComment(props: Props) {
   const active = useScreenActive();
@@ -24,16 +27,29 @@ export function TaskComment(props: Props) {
     />
   ) : null;
 }
-function Composer({ crewId, taskId, userId, generation, onSent }: Props) {
+function Composer({
+  crewId,
+  taskId,
+  userId,
+  generation,
+  onSent,
+  reply,
+  onClearReply,
+  onReplyAvailability,
+}: Props) {
   const t = useTranslations(),
     theme = useTheme();
+  const input = useRef<TextInput>(null);
   const op = useAuthFormOperation(taskId, true);
   const [revision, setRevision] = useState(0);
   const [access, setAccess] = useState<{ revision: number; allowed?: boolean; error?: string }>();
   const [body, setBody] = useState(""),
     [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
-  const intent = useRef<{ body: string; clientKey: string } | undefined>(undefined);
+  const intent = useRef<{ body: string; clientKey: string; replyToId?: string } | undefined>(
+    undefined
+  );
+  const [submittedReply, setSubmittedReply] = useState<Props["reply"]>();
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskCommentPermission(crewId, userId, controller.signal).then(
@@ -49,6 +65,14 @@ function Composer({ crewId, taskId, userId, generation, onSent }: Props) {
     return () => controller.abort();
   }, [crewId, userId, generation, revision]);
   const current = access?.revision === revision ? access : undefined;
+  const allowed = current?.allowed === true;
+  useEffect(() => {
+    onReplyAvailability?.({ allowed, locked: attempted || op.busy });
+  }, [allowed, attempted, op.busy, onReplyAvailability]);
+  useEffect(() => {
+    if (allowed && reply && !attempted) input.current?.focus();
+  }, [allowed, reply, attempted]);
+  const visibleReply = attempted ? submittedReply : reply;
   if (!current) return <ActivityIndicator accessibilityLabel={t("courses.loading")} />;
   if (current.error)
     return (
@@ -66,7 +90,23 @@ function Composer({ crewId, taskId, userId, generation, onSent }: Props) {
   if (!current.allowed) return null;
   return (
     <View style={{ gap: 8 }}>
+      {visibleReply && (
+        <View>
+          <ThemedText numberOfLines={3}>
+            {t("taskActivity.reply")}: {visibleReply.body || t("taskActivity.attachmentComment")}
+          </ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            disabled={attempted || op.busy}
+            onPress={onClearReply}
+            style={{ padding: 12 }}
+          >
+            <ThemedText>{t("taskActivity.cancelReply")}</ThemedText>
+          </Pressable>
+        </View>
+      )}
       <TextInput
+        ref={input}
         multiline
         accessibilityLabel={t("taskActivity.writeComment")}
         placeholder={t("taskActivity.writeComment")}
@@ -88,7 +128,12 @@ function Composer({ crewId, taskId, userId, generation, onSent }: Props) {
         onPress={() => {
           void op.run(
             async () => {
-              intent.current ??= { body: body.trim(), clientKey: inquiryKey() };
+              intent.current ??= {
+                body: body.trim(),
+                clientKey: inquiryKey(),
+                ...(reply ? { replyToId: reply.id } : {}),
+              };
+              if (!attempted) setSubmittedReply(reply);
               setAttempted(true);
               return postTaskComment(taskId, userId, intent.current);
             },
@@ -96,6 +141,8 @@ function Composer({ crewId, taskId, userId, generation, onSent }: Props) {
               intent.current = undefined;
               setAttempted(false);
               setBody("");
+              setSubmittedReply(undefined);
+              onClearReply?.();
               setError(undefined);
               onSent();
             },

@@ -42,3 +42,23 @@ it("validates bounded text and posts the supplied stable key, checking acknowled
     "acknowledgement mismatch"
   );
 });
+
+it("sends a validated reply target and rejects a different reply acknowledgement", async () => {
+  const replyId = "22222222-2222-4222-8222-222222222222";
+  vi.mocked(api.post).mockResolvedValue({
+    ...comment,
+    replyTo: { id: replyId, body: "Original", deleted: false },
+  });
+  await postTaskComment(id, "1", { body: "Reply", clientKey: "key", replyToId: replyId });
+  expect(api.post).toHaveBeenCalledWith(`/crew-tasks/${id}/comments`, {
+    service: "aurora",
+    data: { body: "Reply", clientKey: "key", replyToId: replyId },
+  });
+  await expect(
+    postTaskComment(id, "1", { body: "Reply", clientKey: "key", replyToId: "bad" })
+  ).rejects.toThrow();
+  vi.mocked(api.post).mockResolvedValue(comment);
+  await expect(
+    postTaskComment(id, "1", { body: "Reply", clientKey: "key", replyToId: replyId })
+  ).rejects.toThrow("acknowledgement mismatch");
+});

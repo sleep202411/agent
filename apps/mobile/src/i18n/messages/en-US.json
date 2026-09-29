@@ -1,4 +1,7 @@
 {
+  "taskActivity.replyAction": "Reply",
+  "taskActivity.cancelReply": "Cancel Reply",
+  "taskActivity.attachmentComment": "Attachment comment",
   "taskActivity.writeComment": "Write a comment",
   "taskActivity.sendComment": "Post Comment",
   "taskActivity.sendingComment": "Posting…",

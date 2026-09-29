@@ -1,4 +1,4 @@
-import { act, type ReactNode } from "react";
+import { act, useEffect, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskTimeline } from "./task-timeline";
@@ -6,11 +6,27 @@ import type { TaskActivity } from "./task-timeline-api";
 const h = vi.hoisted(() => ({
   items: [] as TaskActivity[],
   more: vi.fn(),
+  allowed: false,
+  locked: false,
+  composer: vi.fn(),
   retry: vi.fn(),
   error: undefined as string | undefined,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
-vi.mock("./task-comment", () => ({ TaskComment: () => null }));
+vi.mock("./task-comment", () => ({
+  TaskComment: function MockComment(props: {
+    reply?: { id: string };
+    onReplyAvailability: (value: { allowed: boolean; locked: boolean }) => void;
+  }) {
+    const { onReplyAvailability } = props;
+    h.composer(props);
+    const { allowed, locked } = h;
+    useEffect(() => {
+      onReplyAvailability({ allowed, locked });
+    }, [onReplyAvailability, allowed, locked]);
+    return null;
+  },
+}));
 vi.mock("./use-task-timeline", () => ({
   useTaskTimeline: () => ({
     items: h.items,
@@ -34,8 +50,18 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <div>loading</div>,
-  Pressable: ({ children, onPress }: { children: ReactNode; onPress: () => void }) => (
-    <button onClick={onPress}>{children}</button>
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+  }: {
+    children: ReactNode;
+    onPress: () => void;
+    disabled: boolean;
+  }) => (
+    <button onClick={onPress} disabled={disabled}>
+      {children}
+    </button>
   ),
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -67,6 +93,8 @@ const render = () =>
   );
 beforeEach(() => {
   vi.resetAllMocks();
+  h.allowed = false;
+  h.locked = false;
   h.items = [item];
   h.error = undefined;
   host = document.createElement("div");
@@ -100,4 +128,29 @@ it("never reveals a deleted comment body, reply or attachment and exposes retry"
   expect(host.textContent).toContain("Access revoked");
   await act(async () => host.querySelector("button")!.click());
   expect(h.retry).toHaveBeenCalledTimes(1);
+});
+
+it("allows replies only to live comments with permission and locks selection during retry", async () => {
+  h.items = [
+    item,
+    { ...item, id: "deleted", deletedAt: item.createdAt },
+    { ...item, id: "event", kind: "task.created" },
+  ];
+  await render();
+  const replies = () =>
+    Array.from(host.querySelectorAll("button")).filter(
+      (b) => b.textContent === "taskActivity.replyAction"
+    );
+  expect(replies()).toHaveLength(0);
+  h.allowed = true;
+  await render();
+  expect(replies()).toHaveLength(1);
+  await act(async () => replies()[0]!.click());
+  expect(h.composer.mock.calls.at(-1)![0].reply).toEqual({ id: "one", body: "Reply note" });
+  h.locked = true;
+  await render();
+  expect(replies()[0]!.disabled).toBe(true);
+  h.allowed = false;
+  await render();
+  expect(replies()).toHaveLength(0);
 });

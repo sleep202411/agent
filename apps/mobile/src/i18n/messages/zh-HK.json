@@ -1,4 +1,7 @@
 {
+  "taskActivity.replyAction": "回覆",
+  "taskActivity.cancelReply": "取消回覆",
+  "taskActivity.attachmentComment": "附件評論",
   "taskActivity.writeComment": "寫評論",
   "taskActivity.sendComment": "發表評論",
   "taskActivity.sendingComment": "正在發表…",

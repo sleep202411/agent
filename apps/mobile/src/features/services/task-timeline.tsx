@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
@@ -20,6 +21,8 @@ export function TaskTimeline({
 }) {
   const t = useTranslations(),
     locale = useLocale();
+  const [reply, setReply] = useState<{ id: string; body: string | null }>();
+  const [replyAccess, setReplyAccess] = useState({ allowed: false, locked: false });
   const history = useTaskTimeline(String(generation), taskId);
   const displays = useUserDisplays(
     String(generation),
@@ -50,6 +53,16 @@ export function TaskTimeline({
                 </ThemedText>
               )}
               {!!taskActivityNote(item) && <ThemedText>{taskActivityNote(item)}</ThemedText>}
+              {item.kind === "comment" && replyAccess.allowed && !history.error && (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={replyAccess.locked}
+                  onPress={() => setReply({ id: item.id, body: item.body })}
+                  style={{ padding: 12 }}
+                >
+                  <ThemedText>{t("taskActivity.replyAction")}</ThemedText>
+                </Pressable>
+              )}
               {!!item.body && <ThemedText>{item.body}</ThemedText>}
               {!!item.editedAt && <ThemedText type="small">{t("taskActivity.edited")}</ThemedText>}
               {item.attachments.map((file) =>
@@ -78,6 +91,9 @@ export function TaskTimeline({
           userId={userId}
           generation={generation}
           onSent={history.refresh}
+          reply={reply}
+          onClearReply={() => setReply(undefined)}
+          onReplyAvailability={setReplyAccess}
         />
       )}
       {history.loading && <ActivityIndicator />}

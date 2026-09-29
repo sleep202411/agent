@@ -19,6 +19,7 @@ export async function fetchTaskCommentPermission(
 export const taskCommentInput = z.object({
   body: z.string().trim().min(1).max(10000),
   clientKey: z.string().trim().min(1).max(64),
+  replyToId: z.string().uuid().optional(),
 });
 export async function postTaskComment(
   taskId: string,
@@ -33,7 +34,12 @@ export async function postTaskComment(
       data,
     })
   );
-  if (result.taskId !== taskId || result.actorUserId !== userId || result.kind !== "comment")
+  if (
+    result.taskId !== taskId ||
+    result.actorUserId !== userId ||
+    result.kind !== "comment" ||
+    (result.replyTo?.id ?? null) !== (data.replyToId ?? null)
+  )
     throw new Error("Task comment acknowledgement mismatch");
   return result;
 }

@@ -130,3 +130,60 @@ it("suppresses send callbacks after account change and aborts permission checks 
   await act(async () => finish({}));
   expect(h.sent).not.toHaveBeenCalled();
 });
+
+it("locks the reply preview and retry payload to the submitted target", async () => {
+  const clear = vi.fn(),
+    availability = vi.fn();
+  const show = (id: string, body: string) =>
+    act(async () =>
+      root.render(
+        <TaskComment
+          crewId="crew"
+          taskId="task"
+          userId="1"
+          generation={1}
+          onSent={h.sent}
+          reply={{ id, body }}
+          onClearReply={clear}
+          onReplyAvailability={availability}
+        />
+      )
+    );
+  await show("first", "Original note");
+  expect(availability).toHaveBeenLastCalledWith({ allowed: true, locked: false });
+  await act(async () => type("Reply"));
+  h.post.mockRejectedValueOnce(new Error("Timeout")).mockResolvedValueOnce({});
+  await act(async () => host.querySelectorAll("button")[1]!.click());
+  expect(availability).toHaveBeenLastCalledWith({ allowed: true, locked: true });
+  expect(host.querySelector("button")!.disabled).toBe(true);
+  await show("second", "New target");
+  expect(host.textContent).toContain("Original note");
+  expect(host.textContent).not.toContain("New target");
+  await act(async () => host.querySelectorAll("button")[1]!.click());
+  expect(h.post.mock.calls).toEqual([
+    ["task", "1", { body: "Reply", clientKey: "stable", replyToId: "first" }],
+    ["task", "1", { body: "Reply", clientKey: "stable", replyToId: "first" }],
+  ]);
+  expect(clear).toHaveBeenCalledTimes(1);
+});
+it("cancels an unsubmitted reply without posting or clearing the text draft", async () => {
+  const clear = vi.fn();
+  await act(async () =>
+    root.render(
+      <TaskComment
+        crewId="crew"
+        taskId="task"
+        userId="1"
+        generation={1}
+        onSent={h.sent}
+        reply={{ id: "target", body: null }}
+        onClearReply={clear}
+      />
+    )
+  );
+  await act(async () => type("Keep draft"));
+  await act(async () => click());
+  expect(clear).toHaveBeenCalledTimes(1);
+  expect(h.post).not.toHaveBeenCalled();
+  expect(host.querySelector("input")!.value).toBe("Keep draft");
+});
