@@ -68,6 +68,11 @@ vi.mock("./task-view-browser", () => ({
     </>
   ),
 }));
+vi.mock("./crew-studio-workspace", () => ({
+  CrewStudioWorkspace: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close workspace</button>
+  ),
+}));
 vi.mock("./task-workflow-management", () => ({
   TaskWorkflowManagement: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close workflows</button>
@@ -218,4 +223,11 @@ it("opens native workflow management and returns to tasks", async () => {
   expect(button("close workflows")).toBeTruthy();
   await act(async () => button("close workflows").click());
   expect(button("taskWorkflowManagement.title")).toBeTruthy();
+});
+
+it("opens native Studio workspace management and returns to tasks", async () => {
+  await act(async () => button("crewStudio.title").click());
+  expect(button("close workspace")).toBeTruthy();
+  await act(async () => button("close workspace").click());
+  expect(button("crewStudio.title")).toBeTruthy();
 });

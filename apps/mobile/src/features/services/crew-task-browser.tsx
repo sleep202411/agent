@@ -1,3 +1,4 @@
+import { CrewStudioWorkspace } from "./crew-studio-workspace";
 import { TaskWorkflowManagement } from "./task-workflow-management";
 import { TaskCycleManagement } from "./task-cycle-management";
 import { TaskLabelManagement } from "./task-label-management";
@@ -32,6 +33,7 @@ export function CrewTaskBrowser({
   const [creatingEpisode, setCreatingEpisode] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
+  const [studioWorkspace, setStudioWorkspace] = useState(false);
   const [managingWorkflows, setManagingWorkflows] = useState(false);
   const [managingCycles, setManagingCycles] = useState(false);
   const [managingLabels, setManagingLabels] = useState(false);
@@ -74,6 +76,15 @@ export function CrewTaskBrowser({
         crewId={crewId}
         generation={generation}
         onClose={() => setShowProgress(false)}
+      />
+    );
+  if (studioWorkspace)
+    return (
+      <CrewStudioWorkspace
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setStudioWorkspace(false)}
       />
     );
   if (managingWorkflows)
@@ -161,6 +172,15 @@ export function CrewTaskBrowser({
     );
   return (
     <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setStudioWorkspace(true);
+        }}
+      >
+        <ThemedText>{t("crewStudio.title")}</ThemedText>
+      </Pressable>
       <Pressable
         accessibilityRole="button"
         onPress={() => {
