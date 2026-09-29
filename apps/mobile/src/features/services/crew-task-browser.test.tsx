@@ -37,8 +37,8 @@ vi.mock("./asset-task-progress", () => ({
     <button onClick={onClose}>close progress</button>
   ),
 }));
-vi.mock("./task-create", () => ({
-  TaskCreate: ({ onCreated }: { onCreated: (id: string) => void }) => (
+vi.mock("./task-workbench", () => ({
+  TaskWorkbench: ({ onCreated }: { onCreated: (id: string) => void }) => (
     <button onClick={() => onCreated("new")}>create form</button>
   ),
 }));

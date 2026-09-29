@@ -524,3 +524,26 @@ it("ignores field definitions returned after account replacement", async () => {
   await act(async () => finish([]));
   expect(button("taskCreate.submit")!.disabled).toBe(true);
 });
+it("stages the validated form without creating a task and blocks duplicate staging", async () => {
+  const stage = vi.fn();
+  await act(async () =>
+    root.render(
+      <TaskCreate
+        crewId="crew"
+        userId="1"
+        generation={1}
+        onStage={stage}
+        onCreated={h.refresh}
+        onClose={h.refresh}
+      />
+    )
+  );
+  await act(async () => type(0, "Draft storyboard"));
+  await act(async () => {
+    button("taskWorkbench.stage")!.click();
+    button("taskWorkbench.stage")!.click();
+  });
+  expect(stage).toHaveBeenCalledTimes(1);
+  expect(stage.mock.calls[0]?.[0].title).toBe("Draft storyboard");
+  expect(h.update).not.toHaveBeenCalled();
+});

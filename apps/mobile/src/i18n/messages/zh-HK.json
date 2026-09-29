@@ -1796,5 +1796,19 @@
   "nativeApplications.review": "確認此版本前，請核對所顯示的條款。",
   "crewDeadline.overdue": "已逾期 · {count} 小時",
   "crewDeadline.soon": "即將到期 · 剩餘 {count} 小時",
-  "crewDeadline.upcoming": "剩餘 {count} 小時"
+  "crewDeadline.upcoming": "剩餘 {count} 小時",
+  "taskWorkbench.title": "任務建立工作台",
+  "taskWorkbench.help": "先暫存任務並核對詳情，再一起建立。草稿可在目前登入工作階段中跨頁面保留，但尚未儲存至伺服器；重新啟動應用或登出後會遺失。",
+  "taskWorkbench.stage": "暫存任務",
+  "taskWorkbench.count": "已暫存 {count} 個任務",
+  "taskWorkbench.staged": "已暫存",
+  "taskWorkbench.creating": "建立中…",
+  "taskWorkbench.created": "已建立",
+  "taskWorkbench.uncertain": "結果未確認",
+  "taskWorkbench.createAll": "建立全部任務",
+  "taskWorkbench.remove": "移除草稿",
+  "taskWorkbench.open": "開啟已建立的任務",
+  "taskWorkbench.forget": "我已核對任務列表",
+  "taskWorkbench.forgetHelp": "僅移除此本機記錄。伺服器上可能已存在任務；此操作不會刪除任務或重試建立。",
+  "taskWorkbench.confirmForget": "移除本機記錄"
 }

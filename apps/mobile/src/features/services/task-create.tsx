@@ -1,3 +1,4 @@
+import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
 import { TaskCustomFieldControl } from "./task-custom-field-control";
 import { useTaskCreationCustomFields } from "./task-creation-custom-fields";
 import { parsePlanningNumber } from "./task-planning-number";
@@ -29,6 +30,7 @@ type Props = {
   initialParent?: TaskOption;
   initialWorkflow?: TaskWorkflow;
   closeLabel?: string;
+  onStage?: (input: TaskDraftInput, review: TaskDraftReview) => void;
   onCreated: (id: string) => void;
   onClose: () => void;
 };
@@ -74,6 +76,7 @@ function Editor({
   initialWorkflow,
   closeLabel,
   onCreated,
+  onStage,
   onClose,
 }: Props) {
   const t = useTranslations(),
@@ -314,6 +317,30 @@ function Editor({
         onPress={() => {
           if (!input || attemptedRef.current || generation !== getAuthGeneration()) return;
           const data = input;
+          if (onStage) {
+            attemptedRef.current = true;
+            setAttempted(true);
+            onStage(data, {
+              context: [
+                planning.episode && `${t("taskPlanning.episode")}: ${planning.episode.name}`,
+                planning.cycle && `${t("taskPlanning.cycle")}: ${planning.cycle.name}`,
+                workflow && `${t("thread.taskState")}: ${workflow.name}`,
+                parent && `${t("taskRelations.parentTask")}: ${parent.title}`,
+                ...blockers.map((row) => `${t("taskRelations.blockedBy")}: ${row.title}`),
+                ...planning.labels.map((row) => `${t("taskPlanning.labels")}: ${row.name}`),
+              ].filter((value): value is string => !!value),
+              assignees: assignees.map((row) => row.label),
+              customFields: (custom.fields ?? []).flatMap((field) => {
+                const value = data.customFieldValues?.find(
+                  (row) => row.fieldId === field.id
+                )?.value;
+                return value == null
+                  ? []
+                  : [`${field.name}: ${Array.isArray(value) ? value.join(", ") : String(value)}`];
+              }),
+            });
+            return;
+          }
           void op.run(
             () => {
               attemptedRef.current = true;
@@ -325,7 +352,7 @@ function Editor({
           );
         }}
       >
-        <ThemedText>{t("taskCreate.submit")}</ThemedText>
+        <ThemedText>{t(onStage ? "taskWorkbench.stage" : "taskCreate.submit")}</ThemedText>
       </Pressable>
       {op.busy && <ActivityIndicator />}
       <Pressable

@@ -1796,5 +1796,19 @@
   "nativeApplications.review": "Review the displayed terms before confirming this version.",
   "crewDeadline.overdue": "Overdue · {count} h",
   "crewDeadline.soon": "Due soon · {count} h left",
-  "crewDeadline.upcoming": "{count} h left"
+  "crewDeadline.upcoming": "{count} h left",
+  "taskWorkbench.title": "Task Creation Workbench",
+  "taskWorkbench.help": "Stage tasks, review their details, then create them together. Drafts stay in this signed-in session while you switch screens; they are not saved on the server and are lost when the app restarts or you sign out.",
+  "taskWorkbench.stage": "Stage Task",
+  "taskWorkbench.count": "{count} Tasks Staged",
+  "taskWorkbench.staged": "Staged",
+  "taskWorkbench.creating": "Creating…",
+  "taskWorkbench.created": "Created",
+  "taskWorkbench.uncertain": "Result Uncertain",
+  "taskWorkbench.createAll": "Create All Tasks",
+  "taskWorkbench.remove": "Remove Draft",
+  "taskWorkbench.open": "Open Created Task",
+  "taskWorkbench.forget": "I Checked the Task List",
+  "taskWorkbench.forgetHelp": "Remove this local attempt only. A task may already exist on the server; this does not delete it or retry its creation.",
+  "taskWorkbench.confirmForget": "Remove Local Attempt"
 }

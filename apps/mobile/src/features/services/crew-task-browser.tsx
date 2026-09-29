@@ -9,7 +9,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { AuthedWebView } from "@/components/authed-web-view";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
-import { TaskCreate } from "./task-create";
+import { TaskWorkbench } from "./task-workbench";
 import { TaskDetail } from "./task-detail";
 import { TaskPicker } from "./task-picker";
 
@@ -80,7 +80,7 @@ export function CrewTaskBrowser({
     );
   if (creating)
     return (
-      <TaskCreate
+      <TaskWorkbench
         crewId={crewId}
         userId={userId}
         generation={generation}
