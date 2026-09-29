@@ -2055,5 +2055,14 @@
   "viewEdit.field.updatedAt": "Last Updated",
   "viewEdit.field.parent": "Parent Task",
   "viewEdit.field.subtasks": "Subtasks",
-  "viewEdit.field.blockedBy": "Blocked By"
+  "viewEdit.field.blockedBy": "Blocked By",
+  "viewLifecycle.create": "Create Task View",
+  "viewLifecycle.remove": "Delete Task View",
+  "viewLifecycle.copyHelp": "The new shared view copies this view’s filters, sorting, fields and visibility. You can edit its settings after creation.",
+  "viewLifecycle.deleteHelp": "This removes the shared view for the Crew. Tasks are kept.",
+  "viewLifecycle.system": "Built-in views cannot be deleted.",
+  "viewLifecycle.last": "Keep at least one task view.",
+  "viewLifecycle.confirmHelp": "Confirm deletion of the view named above.",
+  "viewLifecycle.confirmRemove": "Confirm Delete View",
+  "viewLifecycle.recheck": "Return to the refreshed view list and check the result before trying again."
 }

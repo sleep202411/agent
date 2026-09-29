@@ -2055,5 +2055,14 @@
   "viewEdit.field.updatedAt": "最近更新",
   "viewEdit.field.parent": "父任务",
   "viewEdit.field.subtasks": "子任务",
-  "viewEdit.field.blockedBy": "阻塞任务"
+  "viewEdit.field.blockedBy": "阻塞任务",
+  "viewLifecycle.create": "创建任务视图",
+  "viewLifecycle.remove": "删除任务视图",
+  "viewLifecycle.copyHelp": "新的共享视图将复制此视图的筛选、排序、字段和可见性设置。创建后可继续编辑。",
+  "viewLifecycle.deleteHelp": "此操作将移除剧组共享视图，任务会保留。",
+  "viewLifecycle.system": "内置视图不能删除。",
+  "viewLifecycle.last": "至少保留一个任务视图。",
+  "viewLifecycle.confirmHelp": "请确认删除上方名称对应的视图。",
+  "viewLifecycle.confirmRemove": "确认删除视图",
+  "viewLifecycle.recheck": "请返回刷新后的视图列表，检查结果后再操作。"
 }

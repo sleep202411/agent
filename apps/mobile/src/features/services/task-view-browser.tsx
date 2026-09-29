@@ -1,3 +1,4 @@
+import { TaskViewLifecycle } from "./task-view-lifecycle";
 import { TaskViewEditor } from "./task-view-editor";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, TextInput, View } from "react-native";
@@ -29,7 +30,8 @@ function Session(props: Props) {
     [result, setResult] = useState<{ revision: number; views?: TaskView[]; error?: string }>(),
     [revision, setRevision] = useState(0),
     [choosing, setChoosing] = useState(false),
-    [editing, setEditing] = useState(false);
+    [editing, setEditing] = useState(false),
+    [lifecycle, setLifecycle] = useState<"create" | "remove">();
   useEffect(() => {
     const c = new AbortController();
     void fetchTaskViews(props.crewId, c.signal).then(
@@ -47,6 +49,25 @@ function Session(props: Props) {
   const views = result?.revision === revision ? result.views : undefined;
   const error = result?.revision === revision ? result.error : undefined;
   const active = views?.find((v) => v.id === props.viewId) ?? views?.[0];
+  if (lifecycle && active)
+    return (
+      <TaskViewLifecycle
+        crewId={props.crewId}
+        userId={props.userId}
+        generation={props.generation}
+        viewId={active.id}
+        action={lifecycle}
+        onClose={() => {
+          setLifecycle(undefined);
+          setRevision((v) => v + 1);
+        }}
+        onChanged={(id) => {
+          props.onViewChange(id);
+          setLifecycle(undefined);
+          setRevision((v) => v + 1);
+        }}
+      />
+    );
   if (editing && active)
     return (
       <TaskViewEditor
@@ -94,6 +115,12 @@ function Session(props: Props) {
             ))}
           <Pressable accessibilityRole="button" onPress={() => setEditing(true)}>
             <ThemedText>{t("viewEdit.title")}</ThemedText>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setLifecycle("create")}>
+            <ThemedText>{t("viewLifecycle.create")}</ThemedText>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setLifecycle("remove")}>
+            <ThemedText>{t("viewLifecycle.remove")}</ThemedText>
           </Pressable>
           <Rows key={`${active.id}:${revision}`} {...props} view={active} />
         </>

@@ -32,6 +32,25 @@ vi.mock("./task-view-editor", () => ({
     </>
   ),
 }));
+vi.mock("./task-view-lifecycle", () => ({
+  TaskViewLifecycle: ({
+    viewId,
+    action,
+    onChanged,
+    onClose,
+  }: {
+    viewId: string;
+    action: string;
+    onChanged: (id: string) => void;
+    onClose: () => void;
+  }) => (
+    <>
+      <span>{`${action}:${viewId}`}</span>
+      <button onClick={() => onChanged("second")}>finish lifecycle</button>
+      <button onClick={onClose}>close lifecycle</button>
+    </>
+  ),
+}));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("./task-view-api", () => ({ fetchTaskViews: h.views }));
 vi.mock("./use-task-view-tasks", () => ({ useTaskViewTasks: h.query }));
@@ -197,4 +216,25 @@ it("opens the selected view editor and refreshes project and rows after saving",
     "crew",
     expect.objectContaining({ viewId: "first" })
   );
+});
+
+it.each(["create", "remove"])("refreshes and selects returned view after %s", async (action) => {
+  await render();
+  await click(`viewLifecycle.${action}`);
+  expect(host.textContent).toContain(`${action}:first`);
+  const reads = h.views.mock.calls.length;
+  await click("finish lifecycle");
+  expect(h.views.mock.calls.length).toBe(reads + 1);
+  expect(h.query).toHaveBeenLastCalledWith(
+    "1",
+    "crew",
+    expect.objectContaining({ viewId: "second" })
+  );
+});
+it("reloads views when returning from a failed or cancelled lifecycle action", async () => {
+  await render();
+  await click("viewLifecycle.create");
+  const reads = h.views.mock.calls.length;
+  await click("close lifecycle");
+  expect(h.views.mock.calls.length).toBe(reads + 1);
 });

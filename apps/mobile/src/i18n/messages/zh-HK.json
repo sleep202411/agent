@@ -2055,5 +2055,14 @@
   "viewEdit.field.updatedAt": "最近更新",
   "viewEdit.field.parent": "父任務",
   "viewEdit.field.subtasks": "子任務",
-  "viewEdit.field.blockedBy": "阻擋任務"
+  "viewEdit.field.blockedBy": "阻擋任務",
+  "viewLifecycle.create": "建立任務檢視",
+  "viewLifecycle.remove": "刪除任務檢視",
+  "viewLifecycle.copyHelp": "新的共用檢視將複製此檢視的篩選、排序、欄位與可見性設定。建立後可繼續編輯。",
+  "viewLifecycle.deleteHelp": "此操作將移除劇組共用檢視，任務會保留。",
+  "viewLifecycle.system": "內建檢視不能刪除。",
+  "viewLifecycle.last": "至少保留一個任務檢視。",
+  "viewLifecycle.confirmHelp": "請確認刪除上方名稱對應的檢視。",
+  "viewLifecycle.confirmRemove": "確認刪除檢視",
+  "viewLifecycle.recheck": "請返回重新整理後的檢視清單，檢查結果後再操作。"
 }
