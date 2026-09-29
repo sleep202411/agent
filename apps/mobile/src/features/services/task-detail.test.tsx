@@ -4,6 +4,23 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDetail } from "./task-detail";
 vi.mock("./task-workflow-editor", () => ({ TaskWorkflowEditor: () => <div>workflow editor</div> }));
 vi.mock("./task-planning-editor", () => ({ TaskPlanningEditor: () => <div>planning editor</div> }));
+vi.mock("./task-child-create", () => ({
+  TaskChildButton: ({ onOpen }: { onOpen: () => void }) => (
+    <button onClick={onOpen}>add subtask</button>
+  ),
+  TaskChildCreate: ({
+    onCreated,
+    onClose,
+  }: {
+    onCreated: (id: string) => void;
+    onClose: () => void;
+  }) => (
+    <div>
+      <button onClick={() => onCreated("child")}>created child</button>
+      <button onClick={onClose}>cancel child</button>
+    </div>
+  ),
+}));
 vi.mock("./task-assignments", () => ({ TaskAssignments: () => null }));
 const h = vi.hoisted(() => ({
   fetch: vi.fn(),
@@ -212,4 +229,22 @@ it("shows estimate and revision usage to task viewers", async () => {
   await render();
   expect(host.textContent).toContain("taskPlanning.estimate: 8");
   expect(host.textContent).toContain("taskPlanning.revisionsUsed: 2 / 3");
+});
+
+it("opens a created child and preserves back navigation to its parent", async () => {
+  await render();
+  await act(async () => click("add subtask"));
+  await act(async () => click("created child"));
+  expect(h.fetch).toHaveBeenLastCalledWith("crew", "child", expect.any(AbortSignal));
+  await act(async () => click("taskRelations.backToTask"));
+  expect(h.fetch).toHaveBeenLastCalledWith("crew", "task", expect.any(AbortSignal));
+  expect(h.close).not.toHaveBeenCalled();
+});
+it("returns to and refreshes the parent after cancelling child creation", async () => {
+  await render();
+  const count = h.fetch.mock.calls.length;
+  await act(async () => click("add subtask"));
+  await act(async () => click("cancel child"));
+  expect(h.fetch.mock.calls.length).toBe(count + 1);
+  expect(h.close).not.toHaveBeenCalled();
 });

@@ -1379,5 +1379,6 @@
   "taskPlanning.revisionsUsed": "已使用修改轮次",
   "taskPlanning.unset": "未设置",
   "taskPlanning.unlimited": "不限",
-  "taskPlanning.numberHelp": "请输入整数：预估工作量为 0–1,000,000；修改轮次上限为 0–100，且不得低于已使用轮次。留空可清除。"
+  "taskPlanning.numberHelp": "请输入整数：预估工作量为 0–1,000,000；修改轮次上限为 0–100，且不得低于已使用轮次。留空可清除。",
+  "taskCreate.addSubtask": "添加子任务"
 }

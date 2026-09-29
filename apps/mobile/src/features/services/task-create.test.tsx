@@ -60,11 +60,12 @@ vi.mock("react-native", () => ({
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
-const render = () =>
+const render = (initialParent?: { id: string; number: number; title: string }) =>
   act(async () =>
     root.render(
       <TaskCreate
         crewId="crew"
+        initialParent={initialParent}
         userId="1"
         generation={1}
         onCreated={h.refresh}
@@ -423,4 +424,16 @@ it("never applies late template responses to a newer draft", async () => {
     ])
   );
   expect(host.querySelector("input")!.value).toBe("New draft");
+});
+
+it("starts contextual creation with its parent already selected", async () => {
+  h.update.mockResolvedValue({ id: "child" });
+  await render({ id: relatedId, number: 9, title: "Parent task" });
+  expect(host.textContent).toContain("TASK-9 · Parent task");
+  await act(async () => type(0, "Child task"));
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ parentId: relatedId, title: "Child task" })
+  );
 });

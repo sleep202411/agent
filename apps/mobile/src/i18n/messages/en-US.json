@@ -1379,5 +1379,6 @@
   "taskPlanning.revisionsUsed": "Revision Rounds Used",
   "taskPlanning.unset": "Not Set",
   "taskPlanning.unlimited": "Unlimited",
-  "taskPlanning.numberHelp": "Use whole numbers: estimate 0–1,000,000; revision limit 0–100 and no lower than rounds already used. Leave blank to clear."
+  "taskPlanning.numberHelp": "Use whole numbers: estimate 0–1,000,000; revision limit 0–100 and no lower than rounds already used. Leave blank to clear.",
+  "taskCreate.addSubtask": "Add Subtask"
 }

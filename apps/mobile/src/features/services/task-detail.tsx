@@ -5,6 +5,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
+import { TaskChildButton, TaskChildCreate } from "./task-child-create";
 import { TaskAssignments } from "./task-assignments";
 import { TaskSchedule } from "./task-schedule";
 import { TaskWorkflowEditor } from "./task-workflow-editor";
@@ -72,6 +73,7 @@ function TaskContent({
 }) {
   const t = useTranslations(),
     locale = useLocale();
+  const [creatingChild, setCreatingChild] = useState(false);
   const [revision, setRevision] = useState(0);
   const [result, setResult] = useState<{ revision: number; data?: Detail; error?: string }>();
   useEffect(() => {
@@ -93,6 +95,24 @@ function TaskContent({
   const displays = useUserDisplays(String(generation), data?.assignees.map((a) => a.userId) ?? []);
   const date = (value: string | null) =>
     value ? new Date(value).toLocaleString(locale) : t("thread.taskUnset");
+  if (creatingChild && data)
+    return (
+      <TaskChildCreate
+        task={data}
+        userId={userId}
+        generation={generation}
+        onCreated={(id) => {
+          if (generation === getAuthGeneration()) {
+            setCreatingChild(false);
+            onOpenTask(id);
+          }
+        }}
+        onClose={() => {
+          setCreatingChild(false);
+          setRevision((value) => value + 1);
+        }}
+      />
+    );
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -189,6 +209,13 @@ function TaskContent({
             userId={userId}
             generation={generation}
             onRefresh={() => setRevision((v) => v + 1)}
+          />
+          <TaskChildButton
+            key={`child:${revision}`}
+            task={data}
+            userId={userId}
+            generation={generation}
+            onOpen={() => setCreatingChild(true)}
           />
           <TaskRelations task={data} onOpenTask={onOpenTask} />
           <TaskDelivery

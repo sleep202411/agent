@@ -23,6 +23,9 @@ type Props = {
   crewId: string;
   userId: string;
   generation: number;
+  initialParent?: TaskOption;
+  initialWorkflow?: TaskWorkflow;
+  closeLabel?: string;
   onCreated: (id: string) => void;
   onClose: () => void;
 };
@@ -52,12 +55,21 @@ export function TaskCreate(props: Props) {
         <ThemedText accessibilityRole="alert">{error ?? t("taskCreate.managerOnly")}</ThemedText>
       )}
       <Pressable accessibilityRole="button" onPress={props.onClose}>
-        <ThemedText>{t("crewTasks.back")}</ThemedText>
+        <ThemedText>{props.closeLabel ?? t("crewTasks.back")}</ThemedText>
       </Pressable>
     </View>
   );
 }
-function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
+function Editor({
+  crewId,
+  userId,
+  generation,
+  initialParent,
+  initialWorkflow,
+  closeLabel,
+  onCreated,
+  onClose,
+}: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
@@ -67,8 +79,8 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
     cycle: null,
     episode: null,
   });
-  const [workflow, setWorkflow] = useState<TaskWorkflow | null>(null);
-  const [parent, setParent] = useState<TaskOption | null>(null);
+  const [workflow, setWorkflow] = useState<TaskWorkflow | null>(initialWorkflow ?? null);
+  const [parent, setParent] = useState<TaskOption | null>(initialParent ?? null);
   const [blockers, setBlockers] = useState<TaskOption[]>([]);
   const [title, setTitle] = useState(""),
     [description, setDescription] = useState("");
@@ -267,7 +279,7 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
         onPress={onClose}
         style={{ padding: 12 }}
       >
-        <ThemedText>{t("crewTasks.back")}</ThemedText>
+        <ThemedText>{closeLabel ?? t("crewTasks.back")}</ThemedText>
       </Pressable>
       <Modal visible={picker} animationType="slide" onRequestClose={() => setPicker(false)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
