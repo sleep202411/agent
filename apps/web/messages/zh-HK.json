@@ -10714,5 +10714,21 @@
     "latest": "最新申請",
     "older": "更早申請",
     "loadFailed": "財務資料暫時無法載入，請重試。"
+  },
+  "crewTaskDeliveryLayout": {
+    "progress": "任務交付進度",
+    "work": "進行中",
+    "submit": "提交審批",
+    "decision": "審核結果",
+    "cancelled": "任務已取消",
+    "revision": "需要修改",
+    "approved": "已驗收",
+    "latest": "最新交付",
+    "version": "第 {version} 版",
+    "files": "交付檔案",
+    "notes": "交付說明",
+    "reviewNotes": "審核意見",
+    "notStarted": "未開始",
+    "unavailableFile": "檔案不可用"
   }
 }

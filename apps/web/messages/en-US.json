@@ -10714,5 +10714,21 @@
     "latest": "Latest requests",
     "older": "Older requests",
     "loadFailed": "Finance data could not be loaded. Please retry."
+  },
+  "crewTaskDeliveryLayout": {
+    "progress": "Task Delivery Progress",
+    "work": "In Progress",
+    "submit": "Submission",
+    "decision": "Review",
+    "cancelled": "Task Cancelled",
+    "revision": "Changes Requested",
+    "approved": "Approved",
+    "latest": "Latest Delivery",
+    "version": "Version {version}",
+    "files": "Submitted Files",
+    "notes": "Delivery Notes",
+    "reviewNotes": "Review Notes",
+    "notStarted": "Not Started",
+    "unavailableFile": "File Unavailable"
   }
 }
