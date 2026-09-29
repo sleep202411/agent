@@ -980,5 +980,18 @@
   "profileEdit.bannerUpdated": "Profile cover updated",
   "creatorDetail.present": "Present",
   "creatorDetail.experienceTitle": "Work Experience",
-  "creatorDetail.experienceFailed": "Work experience could not be loaded. Please retry."
+  "creatorDetail.experienceFailed": "Work experience could not be loaded. Please retry.",
+  "experienceEdit.role": "Role (required)",
+  "experienceEdit.organization": "Organization",
+  "experienceEdit.location": "Location",
+  "experienceEdit.description": "Description",
+  "experienceEdit.hint": "Experience changes are saved separately from your profile details.",
+  "experienceEdit.cancel": "Cancel",
+  "experienceEdit.empty": "No work experience added.",
+  "experienceEdit.edit": "Edit",
+  "experienceEdit.delete": "Delete",
+  "experienceEdit.deleteConfirm": "Delete this work experience?",
+  "experienceEdit.confirmDelete": "Confirm Delete",
+  "experienceEdit.add": "Add Experience",
+  "experienceEdit.manage": "Manage Work Experience"
 }

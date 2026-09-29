@@ -1,3 +1,4 @@
+import { toHref } from "@/lib/navigation";
 import { Stack, useIsFocused, useRouter } from "expo-router";
 import { useEffect, useEffectEvent, useState, useLayoutEffect, useRef } from "react";
 import {
@@ -207,6 +208,15 @@ function ProfileForm() {
             disabled={operation.busy}
             onChange={setEditedStudy}
           />
+        )}
+        {draft && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={operation.busy}
+            onPress={() => router.push(toHref("/profile-experience"))}
+          >
+            <ThemedText type="smallBold">{t("experienceEdit.manage")}</ThemedText>
+          </Pressable>
         )}
         {!!error && (
           <ThemedText accessibilityRole="alert" style={{ color: theme.brand }}>

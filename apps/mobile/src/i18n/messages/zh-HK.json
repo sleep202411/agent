@@ -980,5 +980,18 @@
   "profileEdit.bannerUpdated": "個人封面已更新",
   "creatorDetail.present": "至今",
   "creatorDetail.experienceTitle": "工作經歷",
-  "creatorDetail.experienceFailed": "工作經歷暫時無法載入，請重試。"
+  "creatorDetail.experienceFailed": "工作經歷暫時無法載入，請重試。",
+  "experienceEdit.role": "職位（必填）",
+  "experienceEdit.organization": "公司或組織",
+  "experienceEdit.location": "地點",
+  "experienceEdit.description": "描述",
+  "experienceEdit.hint": "工作經歷的更改與個人資料分別儲存。",
+  "experienceEdit.cancel": "取消",
+  "experienceEdit.empty": "尚未新增工作經歷。",
+  "experienceEdit.edit": "編輯",
+  "experienceEdit.delete": "刪除",
+  "experienceEdit.deleteConfirm": "刪除這條工作經歷？",
+  "experienceEdit.confirmDelete": "確認刪除",
+  "experienceEdit.add": "新增工作經歷",
+  "experienceEdit.manage": "管理工作經歷"
 }

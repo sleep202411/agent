@@ -16,6 +16,9 @@ export async function getCreatorExperience(
     service: "content",
     signal,
   });
+  return parseExperience(raw);
+}
+export function parseExperience(raw: unknown): ExperienceEntry[] {
   const list = Array.isArray(raw)
     ? raw
     : raw && typeof raw === "object" && "list" in raw
@@ -48,4 +51,30 @@ export async function getCreatorExperience(
         row.endTime ||
         row.description
     );
+}
+
+export async function getMyExperience(signal?: AbortSignal) {
+  return parseExperience(
+    await api.get<unknown>("/user/resumer/me", { service: "content", signal })
+  );
+}
+export async function saveExperience(entry: ExperienceEntry) {
+  if (!entry.title.trim()) throw new Error("Title is required");
+  const data = {
+    ...(entry.id !== undefined ? { id: entry.id } : {}),
+    title: entry.title.trim(),
+    organization: entry.organization.trim(),
+    location: entry.location.trim(),
+    startTime: entry.startTime.trim(),
+    endTime: entry.endTime.trim(),
+    description: entry.description.trim(),
+  };
+  await api.post(entry.id === undefined ? "/user/resumer/add" : "/user/resumer/update", {
+    service: "content",
+    data,
+  });
+}
+export async function deleteExperience(id: string) {
+  if (!id.trim()) throw new Error("Experience id is required");
+  await api.post(`/user/resumer/delete/${encodeURIComponent(id)}`, { service: "content" });
 }
