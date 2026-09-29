@@ -2205,5 +2205,10 @@
   "assetPermissions.confirmHelp": "確認修改權限？這可能改變誰可以存取此資產及繼承權限的子項目。",
   "assetPermissions.history": "權限歷史",
   "assetPermissions.historyHelp": "最近 50 次權限修改。",
-  "assetPermissions.emptyHistory": "暫無權限修改記錄。"
+  "assetPermissions.emptyHistory": "暫無權限修改記錄。",
+  "assetOrganization.clearSearch": "清除搜尋",
+  "assetOrganization.sort": "資產排序",
+  "assetOrganization.sort.modified": "最近修改",
+  "assetOrganization.sort.name": "名稱順序",
+  "assetOrganization.sort.size": "大小降序"
 }

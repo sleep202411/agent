@@ -4,6 +4,8 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { AssetOrganization } from "./organization";
 const h = vi.hoisted(() => ({
   generation: 1,
+  listing: vi.fn(),
+  preview: vi.fn(),
   folders: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
@@ -13,6 +15,12 @@ const h = vi.hoisted(() => ({
   context: vi.fn(),
   refresh: vi.fn(),
   items: [] as unknown[],
+}));
+vi.mock("../services/conversation-file", () => ({
+  ConversationFile: (props: unknown) => {
+    h.preview(props);
+    return <span>file preview</span>;
+  },
 }));
 vi.mock("./permissions", () => ({
   AssetPermissions: ({ onClose }: { onClose: () => void }) => (
@@ -38,13 +46,16 @@ vi.mock("./organization-api", async (original) => ({
 vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("./api", () => ({ fetchCrewAssetContext: h.context }));
 vi.mock("./use-crew-assets", () => ({
-  useCrewAssets: () => ({
-    items: h.items,
-    loading: false,
-    error: undefined,
-    hasMore: false,
-    refresh: h.refresh,
-  }),
+  useCrewAssets: (...args: unknown[]) => {
+    h.listing(...args);
+    return {
+      items: h.items,
+      loading: false,
+      error: undefined,
+      hasMore: false,
+      refresh: h.refresh,
+    };
+  },
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
@@ -255,4 +266,63 @@ it("opens asset permissions from its editor", async () => {
   await click("assetPermissions.title");
   await click("close permissions");
   expect(h.refresh).toHaveBeenCalled();
+});
+
+it("applies trimmed search only when submitted and sends sorting to the server", async () => {
+  await render();
+  await type(0, "  Art  ");
+  expect(h.listing.mock.lastCall?.[2].query).toBeUndefined();
+  await click("crewAssets.searchAction");
+  expect(h.listing.mock.lastCall?.[2]).toMatchObject({ query: "Art", sort: "modified" });
+  await click("assetOrganization.sort.size");
+  expect(h.listing.mock.lastCall?.[2]).toMatchObject({ query: "Art", sort: "size" });
+  await click("assetOrganization.clearSearch");
+  expect(h.listing.mock.lastCall?.[2].query).toBeUndefined();
+  expect(host.querySelector("input")!.value).toBe("");
+});
+it("clears search when entering and leaving a folder", async () => {
+  await render();
+  await type(0, "Art");
+  await click("crewAssets.searchAction");
+  await click("Art");
+  expect(h.listing.mock.lastCall?.[2]).toMatchObject({ parentId: id(1), query: undefined });
+  await type(0, "Nested");
+  await click("crewAssets.searchAction");
+  await click("crewAssets.back");
+  expect(h.listing.mock.lastCall?.[2]).toMatchObject({ parentId: undefined, query: undefined });
+});
+it("clears folder and search when switching to favorites", async () => {
+  await render();
+  await click("Art");
+  await type(0, "Nested");
+  await click("crewAssets.searchAction");
+  await click("crewAssets.source.favorites");
+  expect(h.listing.mock.lastCall?.[2]).toEqual({
+    source: "favorites",
+    parentId: undefined,
+    query: undefined,
+    sort: "modified",
+  });
+});
+it("opens media using its media ID rather than the asset node ID", async () => {
+  h.items = [
+    { ...node, kind: "file", media: { id: id(8), kind: "video", contentType: "video/mp4" } },
+  ];
+  await render();
+  expect(h.preview).toHaveBeenCalledWith({
+    mediaAssetId: id(8),
+    name: "Art",
+    mediaKind: "video",
+    contentType: "video/mp4",
+  });
+});
+it("does not offer media preview for folders or files without media", async () => {
+  h.items = [node, { ...node, id: id(2), kind: "file", media: null }];
+  await render();
+  expect(h.preview).not.toHaveBeenCalled();
+});
+it("shows the empty state for an empty completed listing", async () => {
+  h.items = [];
+  await render();
+  expect(host.textContent).toContain("crewAssets.empty");
 });

@@ -2205,5 +2205,10 @@
   "assetPermissions.confirmHelp": "Confirm these access changes? They may change who can open this asset and its inheriting descendants.",
   "assetPermissions.history": "Permission History",
   "assetPermissions.historyHelp": "Latest 50 permission changes.",
-  "assetPermissions.emptyHistory": "No permission changes recorded."
+  "assetPermissions.emptyHistory": "No permission changes recorded.",
+  "assetOrganization.clearSearch": "Clear Search",
+  "assetOrganization.sort": "Sort Assets",
+  "assetOrganization.sort.modified": "Recently Modified",
+  "assetOrganization.sort.name": "Name A–Z",
+  "assetOrganization.sort.size": "Largest First"
 }

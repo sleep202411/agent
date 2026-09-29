@@ -1,3 +1,4 @@
+import { ConversationFile } from "../services/conversation-file";
 import { AssetPermissions } from "./permissions";
 import { AssetTrash, AssetLifecycleAction } from "./lifecycle";
 import { useEffect, useState } from "react";
@@ -27,13 +28,23 @@ export function AssetOrganization(props: Props) {
   ) : null;
 }
 function Browser(props: Props) {
-  const t = useTranslations();
+  const t = useTranslations(),
+    theme = useTheme();
+  const [search, setSearch] = useState(""),
+    [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"modified" | "name" | "size">("modified");
+  const clearSearch = () => {
+    setSearch("");
+    setQuery("");
+  };
   const [showTrash, setShowTrash] = useState(false);
   const [path, setPath] = useState<{ id: string; name: string }[]>([]),
     [selection, setSelection] = useState<string>();
   const [source, setSource] = useState<"all" | "recent" | "favorites">("all");
   const listing = useCrewAssets(String(props.generation), props.crewId, {
     source,
+    query: query || undefined,
+    sort,
     parentId: source === "all" ? path.at(-1)?.id : undefined,
   });
   const back = () => {
@@ -71,12 +82,45 @@ function Browser(props: Props) {
           onPress={() => {
             setSource(value);
             setPath([]);
+            clearSearch();
           }}
         />
       ))}
+      <TextInput
+        accessibilityLabel={t("crewAssets.search")}
+        placeholder={t("crewAssets.search")}
+        placeholderTextColor={theme.text}
+        value={search}
+        editable
+        maxLength={256}
+        onChangeText={setSearch}
+        onSubmitEditing={() => setQuery(search.trim())}
+        style={{ color: theme.text, padding: 12, backgroundColor: theme.backgroundElement }}
+      />
+      <Button label={t("crewAssets.searchAction")} onPress={() => setQuery(search.trim())} />
+      {!!(search || query) && (
+        <Button label={t("assetOrganization.clearSearch")} onPress={clearSearch} />
+      )}
+      <ThemedText>{t("assetOrganization.sort")}</ThemedText>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+        {(["modified", "name", "size"] as const).map((value) => (
+          <Button
+            key={value}
+            label={t(`assetOrganization.sort.${value}`)}
+            selected={sort === value}
+            onPress={() => setSort(value)}
+          />
+        ))}
+      </View>
       <ThemedText>{path.map((p) => p.name).join(" / ") || t("studioMedia.root")}</ThemedText>
       {!!path.length && (
-        <Button label={t("crewAssets.back")} onPress={() => setPath((p) => p.slice(0, -1))} />
+        <Button
+          label={t("crewAssets.back")}
+          onPress={() => {
+            setPath((p) => p.slice(0, -1));
+            clearSearch();
+          }}
+        />
       )}
       {source === "all" && (
         <Button label={t("assetOrganization.create")} onPress={() => setSelection("new")} />
@@ -89,7 +133,17 @@ function Browser(props: Props) {
               onPress={() => {
                 setSource("all");
                 setPath((p) => [...p, { id: row.id, name: row.name }]);
+                clearSearch();
               }}
+            />
+          )}
+          {row.kind === "file" && row.media && (
+            <ConversationFile
+              key={row.media.id}
+              mediaAssetId={row.media.id}
+              name={row.name}
+              mediaKind={row.media.kind}
+              contentType={row.media.contentType}
             />
           )}
           <Button
@@ -98,6 +152,9 @@ function Browser(props: Props) {
           />
         </View>
       ))}
+      {!listing.loading && !listing.error && !listing.hasMore && listing.items.length === 0 && (
+        <ThemedText>{t("crewAssets.empty")}</ThemedText>
+      )}
       {listing.loading && <ActivityIndicator />}
       {listing.error && <ThemedText accessibilityRole="alert">{listing.error}</ThemedText>}
       {listing.hasMore && (

@@ -2205,5 +2205,10 @@
   "assetPermissions.confirmHelp": "确认修改权限？这可能改变谁可以访问此资产及继承权限的子项目。",
   "assetPermissions.history": "权限历史",
   "assetPermissions.historyHelp": "最近 50 次权限修改。",
-  "assetPermissions.emptyHistory": "暂无权限修改记录。"
+  "assetPermissions.emptyHistory": "暂无权限修改记录。",
+  "assetOrganization.clearSearch": "清除搜索",
+  "assetOrganization.sort": "资产排序",
+  "assetOrganization.sort.modified": "最近修改",
+  "assetOrganization.sort.name": "名称顺序",
+  "assetOrganization.sort.size": "大小降序"
 }
