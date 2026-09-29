@@ -71,6 +71,7 @@ export default function RootLayout() {
                 <Stack.Screen name="conversation/[id]" />
                 <Stack.Screen name="order/[id]" />
                 <Stack.Screen name="orders" />
+                <Stack.Screen name="inbox" />
                 <Stack.Screen
                   name="pay/index"
                   options={{ contentStyle: { backgroundColor: Colors.dark.background } }}

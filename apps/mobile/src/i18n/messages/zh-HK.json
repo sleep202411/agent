@@ -1061,5 +1061,21 @@
   "orderDetail.action.cancel": "取消訂單",
   "orderDetail.confirmHint": "請確認此次訂單狀態變更。",
   "orderDetail.reason": "原因（必填）",
-  "orderDetail.confirm": "確認"
+  "orderDetail.confirm": "確認",
+  "inbox.title": "訊息",
+  "inbox.signIn": "登入查看訊息",
+  "inbox.all": "全部",
+  "inbox.filter.service": "服務",
+  "inbox.filter.order": "訂單",
+  "inbox.filter.crew": "劇組",
+  "inbox.person": "用戶",
+  "inbox.community": "社區",
+  "inbox.team": "團隊",
+  "inbox.preview.image": "圖片",
+  "inbox.preview.file": "檔案",
+  "inbox.preview.proposal": "方案",
+  "inbox.preview.system": "會話動態",
+  "inbox.unread": "未讀訊息：",
+  "inbox.empty": "暫無會話",
+  "inbox.retry": "重試"
 }

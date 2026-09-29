@@ -1061,5 +1061,21 @@
   "orderDetail.action.cancel": "取消订单",
   "orderDetail.confirmHint": "请确认此次订单状态变更。",
   "orderDetail.reason": "原因（必填）",
-  "orderDetail.confirm": "确认"
+  "orderDetail.confirm": "确认",
+  "inbox.title": "消息",
+  "inbox.signIn": "登录查看消息",
+  "inbox.all": "全部",
+  "inbox.filter.service": "服务",
+  "inbox.filter.order": "订单",
+  "inbox.filter.crew": "剧组",
+  "inbox.person": "用户",
+  "inbox.community": "社区",
+  "inbox.team": "团队",
+  "inbox.preview.image": "图片",
+  "inbox.preview.file": "文件",
+  "inbox.preview.proposal": "方案",
+  "inbox.preview.system": "会话动态",
+  "inbox.unread": "未读消息：",
+  "inbox.empty": "暂无会话",
+  "inbox.retry": "重试"
 }

@@ -1061,5 +1061,21 @@
   "orderDetail.action.cancel": "Cancel Order",
   "orderDetail.confirmHint": "Confirm this change to the order status.",
   "orderDetail.reason": "Reason (required)",
-  "orderDetail.confirm": "Confirm"
+  "orderDetail.confirm": "Confirm",
+  "inbox.title": "Messages",
+  "inbox.signIn": "Sign in to view messages",
+  "inbox.all": "All",
+  "inbox.filter.service": "Services",
+  "inbox.filter.order": "Orders",
+  "inbox.filter.crew": "Crews",
+  "inbox.person": "User",
+  "inbox.community": "Community",
+  "inbox.team": "Team",
+  "inbox.preview.image": "Image",
+  "inbox.preview.file": "File",
+  "inbox.preview.proposal": "Proposal",
+  "inbox.preview.system": "Conversation activity",
+  "inbox.unread": "Unread messages:",
+  "inbox.empty": "No conversations found",
+  "inbox.retry": "Retry"
 }
