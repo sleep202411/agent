@@ -57,6 +57,7 @@ const task: TaskDetail = {
   number: 1,
   title: "Shot",
   description: "",
+  submissions: [],
   version: 4,
   status: "in_progress",
   workflowState: { name: "Doing" },

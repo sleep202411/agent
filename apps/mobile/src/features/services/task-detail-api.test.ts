@@ -9,6 +9,7 @@ const detail = {
   number: 1,
   title: "Shot",
   description: "Render",
+  submissions: [],
   version: 1,
   status: "submitted",
   workflowState: { name: "Review" },

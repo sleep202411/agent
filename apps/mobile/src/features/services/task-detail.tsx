@@ -5,6 +5,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
+import { TaskDelivery } from "./task-delivery";
 import { TaskCommitments } from "./task-commitments";
 import { TaskTimeline } from "./task-timeline";
 import { useUserDisplays } from "./user-displays";
@@ -78,6 +79,12 @@ function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }:
               <ThemedText key={label.id}>{label.name}</ThemedText>
             ))}
           </View>
+          <TaskDelivery
+            key={`delivery:${revision}`}
+            taskId={taskId}
+            generation={generation}
+            submissions={data.submissions}
+          />
           <TaskCommitments
             key={revision}
             task={data}

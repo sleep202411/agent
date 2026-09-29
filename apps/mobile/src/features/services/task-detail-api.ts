@@ -1,10 +1,12 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
+import { taskSubmission } from "./task-delivery-api";
 import { taskOption } from "./task-options";
 const date = z.string().datetime({ offset: true }).nullable();
 const schema = taskOption.extend({
   crewId: z.string().min(1),
   description: z.string(),
+  submissions: z.array(taskSubmission),
   version: z.number().int().positive(),
   status: z.string().min(1),
   workflowState: z.object({ name: z.string().min(1) }),

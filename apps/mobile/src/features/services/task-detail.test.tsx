@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   close: vi.fn(),
   web: vi.fn(),
 }));
+vi.mock("./task-delivery", () => ({ TaskDelivery: () => <div>delivery</div> }));
 vi.mock("./task-commitments", () => ({ TaskCommitments: () => <div>commitments</div> }));
 vi.mock("./task-timeline", () => ({ TaskTimeline: () => <div>timeline</div> }));
 vi.mock("./task-detail-api", () => ({ fetchTaskDetail: h.fetch }));
