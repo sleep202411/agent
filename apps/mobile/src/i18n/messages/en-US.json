@@ -1114,5 +1114,15 @@
   "serviceEdit.category": "Category",
   "serviceEdit.tags": "Tags (one per line; up to 10, 48 characters each)",
   "serviceEdit.invalid": "Check the required title, summary, category and tag limits.",
-  "serviceEdit.reload": "Discard Changes and Reload"
+  "serviceEdit.reload": "Discard Changes and Reload",
+  "serviceQuestions.title": "Edit Buyer Questions",
+  "serviceQuestions.hint": "Up to 20 questions, 240 characters per prompt or helper text. Changes apply after saving; existing orders retain their original answers.",
+  "serviceQuestions.prompt": "Question",
+  "serviceQuestions.help": "Helper text (optional)",
+  "serviceQuestions.required": "Answer required",
+  "serviceQuestions.up": "Move Up",
+  "serviceQuestions.down": "Move Down",
+  "serviceQuestions.remove": "Remove",
+  "serviceQuestions.add": "Add Question",
+  "serviceQuestions.invalid": "Complete every question before saving."
 }

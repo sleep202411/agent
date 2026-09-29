@@ -1114,5 +1114,15 @@
   "serviceEdit.category": "分類",
   "serviceEdit.tags": "標籤（每行一個，最多10個，每個最多48字）",
   "serviceEdit.invalid": "請檢查必填標題、簡介、分類及標籤限制。",
-  "serviceEdit.reload": "放棄更改並重新載入"
+  "serviceEdit.reload": "放棄更改並重新載入",
+  "serviceQuestions.title": "編輯買家問題",
+  "serviceQuestions.hint": "最多20個問題，問題及提示各限240字。儲存後生效，現有訂單保留原始答案。",
+  "serviceQuestions.prompt": "問題",
+  "serviceQuestions.help": "提示（選填）",
+  "serviceQuestions.required": "必須回答",
+  "serviceQuestions.up": "上移",
+  "serviceQuestions.down": "下移",
+  "serviceQuestions.remove": "移除",
+  "serviceQuestions.add": "新增問題",
+  "serviceQuestions.invalid": "請填寫所有問題後再儲存。"
 }

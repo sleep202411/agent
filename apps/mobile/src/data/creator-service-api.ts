@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { appEnv, resolveAssetUrl } from "@/config";
 import { api, ApiRequestError } from "@/lib/api-client";
 
@@ -127,14 +128,25 @@ function mapDetail(dto: CreatorServiceDetailDto): CreatorServiceDetail | undefin
     currency: cheapest?.currency ?? summary.currency,
     startingDeliveryDays: cheapest?.deliveryDays ?? summary.startingDeliveryDays,
     packageCount: packages.length || summary.packageCount,
-    requirementQuestions: (dto.requirementQuestions ?? [])
-      .map((question) => ({
-        id: nonEmpty(question.id) ?? nonEmpty(question.prompt) ?? "",
-        prompt: nonEmpty(question.prompt) ?? "",
-        helpText: nonEmpty(question.helpText),
-        required: question.required === true,
-      }))
-      .filter((question) => question.id && question.prompt),
+    requirementQuestions: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(64),
+          prompt: z.string().trim().min(1).max(240),
+          helpText: z
+            .string()
+            .max(240)
+            .nullish()
+            .transform((value) => value ?? ""),
+          required: z.boolean(),
+        })
+      )
+      .max(20)
+      .refine(
+        (items) => new Set(items.map((item) => item.id)).size === items.length,
+        "Duplicate question IDs"
+      )
+      .parse(dto.requirementQuestions ?? []),
     status: nonEmpty(dto.status) ?? "listed",
     updatedAt: nonEmpty(dto.updatedAt) ?? "",
   };

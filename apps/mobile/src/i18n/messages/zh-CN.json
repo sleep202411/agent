@@ -1114,5 +1114,15 @@
   "serviceEdit.category": "分类",
   "serviceEdit.tags": "标签（每行一个，最多10个，每个最多48字）",
   "serviceEdit.invalid": "请检查必填标题、简介、分类及标签限制。",
-  "serviceEdit.reload": "放弃更改并重新加载"
+  "serviceEdit.reload": "放弃更改并重新加载",
+  "serviceQuestions.title": "编辑买家问题",
+  "serviceQuestions.hint": "最多20个问题，问题及提示各限240字。保存后生效，现有订单保留原始答案。",
+  "serviceQuestions.prompt": "问题",
+  "serviceQuestions.help": "提示（选填）",
+  "serviceQuestions.required": "必须回答",
+  "serviceQuestions.up": "上移",
+  "serviceQuestions.down": "下移",
+  "serviceQuestions.remove": "移除",
+  "serviceQuestions.add": "添加问题",
+  "serviceQuestions.invalid": "请填写所有问题后再保存。"
 }

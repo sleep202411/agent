@@ -52,3 +52,16 @@ it("distinguishes a missing service from a failed load and forwards cancellation
   vi.mocked(api.get).mockRejectedValue(new ApiRequestError(404, "Not found", 404));
   expect(await fetchCreatorServiceById("missing")).toBeUndefined();
 });
+
+it("rejects malformed question identities rather than inventing or silently removing them", async () => {
+  for (const requirementQuestions of [
+    [{ prompt: "Brief?", required: true }],
+    [
+      { id: "same", prompt: "A", required: false },
+      { id: "same", prompt: "B", required: true },
+    ],
+  ]) {
+    vi.mocked(api.get).mockResolvedValue({ ...detail, requirementQuestions });
+    await expect(fetchCreatorServiceById("service")).rejects.toThrow();
+  }
+});
