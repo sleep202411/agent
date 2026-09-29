@@ -1,13 +1,6 @@
 import { useLocalSearchParams } from "expo-router";
-import { AuthedWebView } from "@/components/authed-web-view";
-import { useTranslations } from "@/i18n";
+import { OrderDetail } from "@/features/services/order-detail";
 export default function OrderRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const t = useTranslations();
-  return (
-    <AuthedWebView
-      path={typeof id === "string" && id ? `/orders/${encodeURIComponent(id)}` : "/orders"}
-      title={t("serviceOrder.open")}
-    />
-  );
+  return <OrderDetail id={typeof id === "string" ? id : ""} />;
 }
