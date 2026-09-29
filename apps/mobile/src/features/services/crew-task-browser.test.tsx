@@ -17,6 +17,11 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("@/components/authed-web-view", () => ({
   AuthedWebView: ({ path }: { path: string }) => <span>{path}</span>,
 }));
+vi.mock("./episode-management", () => ({
+  EpisodeManagement: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close episodes</button>
+  ),
+}));
 vi.mock("./episode-create", () => ({
   EpisodeCreate: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close episode</button>
@@ -142,5 +147,12 @@ it("opens native episode creation and returns to the task browser", async () => 
   await act(async () => button("episodeCreate.title").click());
   expect(button("close episode")).toBeDefined();
   await act(async () => button("close episode").click());
+  expect(button("pick")).toBeDefined();
+});
+
+it("opens the native episode list and returns to the task browser", async () => {
+  await act(async () => button("episodeManagement.title").click());
+  expect(button("close episodes")).toBeDefined();
+  await act(async () => button("close episodes").click());
   expect(button("pick")).toBeDefined();
 });

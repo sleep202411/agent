@@ -1,3 +1,4 @@
+import { EpisodeManagement } from "./episode-management";
 import { EpisodeCreate } from "./episode-create";
 import { EpisodeTaskTemplate } from "./episode-task-template";
 import { AssetTaskProgress } from "./asset-task-progress";
@@ -24,6 +25,7 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [managingEpisodes, setManagingEpisodes] = useState(false);
   const [creatingEpisode, setCreatingEpisode] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
@@ -32,6 +34,15 @@ export function CrewTaskBrowser({
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (managingEpisodes)
+    return (
+      <EpisodeManagement
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setManagingEpisodes(false)}
+      />
+    );
   if (creatingEpisode)
     return (
       <EpisodeCreate
@@ -159,6 +170,15 @@ export function CrewTaskBrowser({
         }}
       >
         <ThemedText>{t("episodeCreate.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setManagingEpisodes(true);
+        }}
+      >
+        <ThemedText>{t("episodeManagement.title")}</ThemedText>
       </Pressable>
       <TaskPicker
         crewId={crewId}
