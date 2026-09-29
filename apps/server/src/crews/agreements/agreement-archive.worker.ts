@@ -117,7 +117,9 @@ export class CrewAgreementArchiveWorker
         if (this.stopped) return;
         // Downloading and storing one agreement must not age queued leases.
         const [job] = await this.claim(1);
-        if (!job) break;
+        // A database claim may complete after shutdown begins. Its lease can
+        // expire for another worker; do not start new provider/storage I/O.
+        if (!job || this.stopped) break;
         await this.archiveOne(job);
       }
     } catch (error) {

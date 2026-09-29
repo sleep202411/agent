@@ -146,7 +146,7 @@ describe('CrewAgreementArchiveWorker', () => {
       await Promise.all([drain, shutdown]);
       expect(endedEarly).toBe(false);
       expect(claim).toHaveBeenCalledTimes(1);
-      expect(archive).toHaveBeenCalledTimes(1);
+      expect(archive).toHaveBeenCalledTimes(stage === 'archive' ? 1 : 0);
       await worker.drainOnce();
       worker.onApplicationBootstrap();
       expect(claim).toHaveBeenCalledTimes(1);
