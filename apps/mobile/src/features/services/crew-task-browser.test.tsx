@@ -68,6 +68,11 @@ vi.mock("./task-view-browser", () => ({
     </>
   ),
 }));
+vi.mock("../crew-assets/organization", () => ({
+  AssetOrganization: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close asset organization</button>
+  ),
+}));
 vi.mock("../crew-assets/studio-media", () => ({
   StudioMedia: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close studio media</button>
@@ -242,4 +247,11 @@ it("opens native Studio media and returns to tasks", async () => {
   expect(button("close studio media")).toBeTruthy();
   await act(async () => button("close studio media").click());
   expect(button("studioMedia.title")).toBeTruthy();
+});
+
+it("opens asset organization and returns to tasks", async () => {
+  await act(async () => button("assetOrganization.title").click());
+  expect(button("close asset organization")).toBeTruthy();
+  await act(async () => button("close asset organization").click());
+  expect(button("assetOrganization.title")).toBeTruthy();
 });

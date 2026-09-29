@@ -2160,5 +2160,17 @@
   "studioMedia.unlink": "Remove Studio Link",
   "studioMedia.confirmUnlink": "Confirm Removal",
   "studioMedia.unlinkHelp": "Remove the Studio association while keeping this file and its contents?",
-  "studioMedia.recheck": "Refresh and review the asset state before trying again."
+  "studioMedia.recheck": "Refresh and review the asset state before trying again.",
+  "assetOrganization.title": "Organize Assets",
+  "assetOrganization.create": "Create Folder",
+  "assetOrganization.manage": "Manage Asset",
+  "assetOrganization.name": "Name",
+  "assetOrganization.destination": "Destination Folder",
+  "assetOrganization.keepParent": "Keep the current folder unless you choose another destination.",
+  "assetOrganization.confirmHelp": "Save this name and destination? Moving a folder also moves its contents and may change inherited access.",
+  "assetOrganization.confirm": "Confirm Save",
+  "assetOrganization.save": "Save",
+  "assetOrganization.favorite": "Add to Favorites",
+  "assetOrganization.unfavorite": "Remove from Favorites",
+  "assetOrganization.recheck": "Refresh and review the asset before trying again."
 }

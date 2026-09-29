@@ -2160,5 +2160,17 @@
   "studioMedia.unlink": "移除 Studio 关联",
   "studioMedia.confirmUnlink": "确认移除",
   "studioMedia.unlinkHelp": "移除 Studio 关联并保留文件及其内容？",
-  "studioMedia.recheck": "请刷新并检查资产状态后再重试。"
+  "studioMedia.recheck": "请刷新并检查资产状态后再重试。",
+  "assetOrganization.title": "整理资产",
+  "assetOrganization.create": "创建文件夹",
+  "assetOrganization.manage": "管理资产",
+  "assetOrganization.name": "名称",
+  "assetOrganization.destination": "目标文件夹",
+  "assetOrganization.keepParent": "未选择其他目标时保留当前文件夹。",
+  "assetOrganization.confirmHelp": "保存此名称和目标位置？移动文件夹也会移动其内容，并可能改变继承的访问权限。",
+  "assetOrganization.confirm": "确认保存",
+  "assetOrganization.save": "保存",
+  "assetOrganization.favorite": "添加到收藏",
+  "assetOrganization.unfavorite": "取消收藏",
+  "assetOrganization.recheck": "请刷新并检查资产后再重试。"
 }

@@ -2160,5 +2160,17 @@
   "studioMedia.unlink": "移除 Studio 連結",
   "studioMedia.confirmUnlink": "確認移除",
   "studioMedia.unlinkHelp": "移除 Studio 連結並保留檔案及其內容？",
-  "studioMedia.recheck": "請重新整理並檢查資產狀態後再重試。"
+  "studioMedia.recheck": "請重新整理並檢查資產狀態後再重試。",
+  "assetOrganization.title": "整理資產",
+  "assetOrganization.create": "建立資料夾",
+  "assetOrganization.manage": "管理資產",
+  "assetOrganization.name": "名稱",
+  "assetOrganization.destination": "目標資料夾",
+  "assetOrganization.keepParent": "未選擇其他目標時保留目前資料夾。",
+  "assetOrganization.confirmHelp": "儲存此名稱和目標位置？移動資料夾也會移動其內容，並可能改變繼承的存取權限。",
+  "assetOrganization.confirm": "確認儲存",
+  "assetOrganization.save": "儲存",
+  "assetOrganization.favorite": "加入收藏",
+  "assetOrganization.unfavorite": "取消收藏",
+  "assetOrganization.recheck": "請重新整理並檢查資產後再重試。"
 }
