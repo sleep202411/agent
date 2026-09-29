@@ -266,7 +266,7 @@ export function compileStoryBuild(
     } else {
       const mediaIdentities: StoryExperienceMediaIdentity[] =
         includedSegments.map((segment) => ({
-          runtimeAssetId: storyRuntimeAssetId(segment.clipKey),
+          runtimeAssetId: storyRuntimeAssetId(segment.clipId),
           variantId: segment.asset.variantId,
           mediaType: segment.asset.contentType,
         }));
@@ -748,7 +748,7 @@ function compileIntermediateRelease(
       };
       const landscape = input.frameProfile === 'landscape_16_9';
       return {
-        assetId: storyRuntimeAssetId(segment.clipKey),
+        assetId: storyRuntimeAssetId(segment.clipId),
         kind: 'video' as const,
         orientationPolicy: 'single-master' as const,
         variants: landscape ? { landscape: variant } : { portrait: variant },
@@ -811,7 +811,7 @@ function compileIntermediateRelease(
         // "ends" the moment it is shown and holds for its storyboard length.
         sequence: segments.map((segment) => ({
           clipId: segment.clipId,
-          assetId: storyRuntimeAssetId(segment.clipKey),
+          assetId: storyRuntimeAssetId(segment.clipId),
           endBehavior:
             segment.kind === 'video'
               ? ({ behavior: 'advance' } as const)
@@ -909,8 +909,11 @@ function compileExit(
   };
 }
 
-export function storyRuntimeAssetId(clipKey: string): string {
-  return `video:${clipKey}`;
+/** Clip keys are only unique within a storyboard sequence; database clip IDs
+ * are unique across every scene included in a build. Keep this identity shared
+ * by the media table, renderer references and persisted frozen asset records. */
+export function storyRuntimeAssetId(clipId: string): string {
+  return `video:${clipId}`;
 }
 
 /**

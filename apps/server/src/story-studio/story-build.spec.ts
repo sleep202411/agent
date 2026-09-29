@@ -145,6 +145,44 @@ function input(
 }
 
 describe('compileStoryBuild', () => {
+  it.each(['preview', 'production'] as const)(
+    'allows repeated scene-local clip keys without mixing media in %s builds',
+    (channel) => {
+      const timelines = ['opening', 'left', 'right'].map((nodeId) =>
+        timeline(nodeId, [{ ...videoSegment(nodeId), clipKey: 'a1' }]),
+      );
+      const result = compileStoryBuild(input({ channel, timelines }));
+      expect(
+        result.diagnostics.filter((item) => item.severity === 'error'),
+      ).toEqual([]);
+      expect(result.runtime).not.toBeNull();
+      for (const nodeId of ['opening', 'left', 'right']) {
+        const scene = result.runtime?.graph.nodes.find(
+          (node) => 'sceneId' in node && node.sceneId === nodeId,
+        ) as {
+          renderers: Array<{
+            config: { sequence: Array<{ assetId: string }> };
+          }>;
+        };
+        expect(scene.renderers[0].config.sequence[0].assetId).toBe(
+          `video:clip-${nodeId}-a`,
+        );
+        expect(
+          result.runtime?.assets.find(
+            (asset) => asset.assetId === `video:clip-${nodeId}-a`,
+          ),
+        ).toMatchObject({
+          variants: [
+            expect.objectContaining({
+              sourceAssetId: `asset-${nodeId}-a`,
+              uri: `https://cdn.example/${nodeId}-a.mp4`,
+            }),
+          ],
+        });
+      }
+    },
+  );
+
   it('saves disconnected choices and compiles an independent decision without a video placeholder', () => {
     const content = draft();
     const opening = content.graph.nodes[0];

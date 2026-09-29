@@ -406,7 +406,7 @@ export class StoryBuildService {
                     data: {
                       buildId,
                       storyProjectId: projectId,
-                      logicalKey: storyRuntimeAssetId(segment.clipKey),
+                      logicalKey: storyRuntimeAssetId(segment.clipId),
                       role: StoryAssetRole.video,
                       assetId: asset.assetId,
                       variantId: asset.variantId,
