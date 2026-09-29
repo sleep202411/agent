@@ -1078,5 +1078,18 @@
   "inbox.unread": "Unread messages:",
   "inbox.empty": "No conversations found",
   "inbox.retry": "Retry",
-  "inbox.liveUnavailable": "Live updates are unavailable. Pull down to refresh."
+  "inbox.liveUnavailable": "Live updates are unavailable. Pull down to refresh.",
+  "inbox.preview.empty": "(no messages yet)",
+  "inbox.activity.conversation.created": "Conversation started.",
+  "inbox.activity.conversation.context_changed_to_order": "Order created from this conversation.",
+  "inbox.activity.proposal.declined": "Proposal declined.",
+  "inbox.activity.order.submitted": "Order submitted, awaiting creator.",
+  "inbox.activity.order.accepted": "Order accepted.",
+  "inbox.activity.order.declined": "Order declined.",
+  "inbox.activity.order.delivered": "Marked delivered.",
+  "inbox.activity.order.revision_requested": "Revision requested.",
+  "inbox.activity.order.completed": "Order completed.",
+  "inbox.activity.order.cancelled": "Order cancelled.",
+  "inbox.activity.crew.member.joined": "A member joined.",
+  "inbox.activity.crew.member.left": "A member left."
 }

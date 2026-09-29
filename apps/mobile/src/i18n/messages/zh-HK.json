@@ -1078,5 +1078,18 @@
   "inbox.unread": "未讀訊息：",
   "inbox.empty": "暫無會話",
   "inbox.retry": "重試",
-  "inbox.liveUnavailable": "即時更新暫不可用，請下拉重新整理。"
+  "inbox.liveUnavailable": "即時更新暫不可用，請下拉重新整理。",
+  "inbox.preview.empty": "（尚無訊息）",
+  "inbox.activity.conversation.created": "會話已建立。",
+  "inbox.activity.conversation.context_changed_to_order": "已從這條會話建立訂單。",
+  "inbox.activity.proposal.declined": "報價已拒絕。",
+  "inbox.activity.order.submitted": "訂單已提交，等待創作者。",
+  "inbox.activity.order.accepted": "訂單已接受。",
+  "inbox.activity.order.declined": "訂單已被拒絕。",
+  "inbox.activity.order.delivered": "已標記交付。",
+  "inbox.activity.order.revision_requested": "已請求修改。",
+  "inbox.activity.order.completed": "訂單已完成。",
+  "inbox.activity.order.cancelled": "訂單已取消。",
+  "inbox.activity.crew.member.joined": "有成員加入。",
+  "inbox.activity.crew.member.left": "有成員離開。"
 }

@@ -1,3 +1,4 @@
+import { inboxPreview } from "@/features/services/inbox-preview";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useInboxRealtime } from "@/features/services/use-inbox-realtime";
 import { useUserDisplays } from "@/features/services/user-displays";
@@ -100,11 +101,7 @@ export default function InboxScreen() {
                     ? ` · ${t(item.crewChannel === "community" ? "inbox.community" : "inbox.team")}`
                     : ""}
                 </ThemedText>
-                <ThemedText numberOfLines={2}>
-                  {item.lastMessageType === "text"
-                    ? item.lastMessagePreview
-                    : t(`inbox.preview.${item.lastMessageType}`)}
-                </ThemedText>
+                <ThemedText numberOfLines={2}>{inboxPreview(item, t)}</ThemedText>
                 {item.unreadCount > 0 && (
                   <ThemedText>
                     {t("inbox.unread")} {item.unreadCount}

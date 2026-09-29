@@ -1078,5 +1078,18 @@
   "inbox.unread": "未读消息：",
   "inbox.empty": "暂无会话",
   "inbox.retry": "重试",
-  "inbox.liveUnavailable": "实时更新暂不可用，请下拉刷新。"
+  "inbox.liveUnavailable": "实时更新暂不可用，请下拉刷新。",
+  "inbox.preview.empty": "（暂无消息）",
+  "inbox.activity.conversation.created": "会话已建立。",
+  "inbox.activity.conversation.context_changed_to_order": "已从这条会话创建订单。",
+  "inbox.activity.proposal.declined": "报价已拒绝。",
+  "inbox.activity.order.submitted": "订单已提交，等待创作者。",
+  "inbox.activity.order.accepted": "订单已接受。",
+  "inbox.activity.order.declined": "订单已被拒绝。",
+  "inbox.activity.order.delivered": "已标记交付。",
+  "inbox.activity.order.revision_requested": "已请求修改。",
+  "inbox.activity.order.completed": "订单已完成。",
+  "inbox.activity.order.cancelled": "订单已取消。",
+  "inbox.activity.crew.member.joined": "有成员加入。",
+  "inbox.activity.crew.member.left": "有成员离开。"
 }
