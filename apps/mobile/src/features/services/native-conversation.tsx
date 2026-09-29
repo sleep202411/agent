@@ -33,6 +33,7 @@ import { ConversationProposal, ConversationProposalEditor } from "./conversation
 import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
 import type { CrewAsset } from "@/features/crew-assets/api";
 import { canAttachCrewFiles, sendConversationAttachments } from "./conversation-attachments";
+import { TaskDetail } from "./task-detail";
 import { TaskPicker } from "./task-picker";
 import { taskLabel } from "./task-options";
 import { ConversationFile } from "./conversation-file";
@@ -94,6 +95,7 @@ export function NativeConversation({
     [mentionQuery, setMentionQuery] = useState("");
   const [taskPicker, setTaskPicker] = useState(false),
     [taskReferences, setTaskReferences] = useState<{ taskId: string; label: string }[]>([]);
+  const [selectedTask, setSelectedTask] = useState<{ crewId: string; taskId: string }>();
   const [taskTarget, setTaskTarget] = useState<string>();
   const intent = useRef<
     | {
@@ -116,7 +118,7 @@ export function NativeConversation({
   const requiresWeb =
     contextType === "crew" && crewChannel !== "team" && crewChannel !== "community";
   useEffect(() => {
-    if (!active || !visibleId || !detailId || web || requiresWeb) return;
+    if (!active || !visibleId || !detailId || web || requiresWeb || selectedTask) return;
     const controller = new AbortController();
     void markConversationRead(id, visibleId, controller.signal).then(
       () => {
@@ -128,7 +130,7 @@ export function NativeConversation({
       }
     );
     return () => controller.abort();
-  }, [id, visibleId, active, detailId, requiresWeb, web, readRetry]);
+  }, [id, visibleId, active, detailId, requiresWeb, web, readRetry, selectedTask]);
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -156,6 +158,21 @@ export function NativeConversation({
         {history.error && <ThemedText accessibilityRole="alert">{history.error}</ThemedText>}
         {button(t("inbox.retry"), history.retry, history.loading)}
       </View>
+    );
+  if (selectedTask)
+    return (
+      <TaskDetail
+        {...selectedTask}
+        generation={generation}
+        onClose={() => setSelectedTask(undefined)}
+        onOpenWeb={() => {
+          setTaskTarget(
+            `/crews/${encodeURIComponent(selectedTask.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(selectedTask.taskId)}`
+          );
+          setSelectedTask(undefined);
+          setWeb(true);
+        }}
+      />
     );
   const conversation = history.detail;
   const canAttach = canAttachCrewFiles(conversation, userId);
@@ -305,10 +322,7 @@ export function NativeConversation({
                     key={task.taskId}
                     accessibilityRole="button"
                     onPress={() => {
-                      setTaskTarget(
-                        `/crews/${encodeURIComponent(task.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(task.taskId)}`
-                      );
-                      setWeb(true);
+                      setSelectedTask({ crewId: task.crewId, taskId: task.taskId });
                     }}
                     style={{ padding: 10 }}
                   >

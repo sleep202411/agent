@@ -1,4 +1,11 @@
 {
+  "thread.taskState": "Workflow",
+  "thread.taskUnset": "Not set",
+  "thread.taskNoDescription": "No description",
+  "thread.taskStart": "Starts",
+  "thread.taskDue": "Due",
+  "thread.taskAssignees": "Assignees",
+  "thread.taskOpenWorkspace": "Open Task Workspace",
   "thread.audioPlay": "Play",
   "thread.audioPause": "Pause",
   "thread.audioReplay": "Replay",

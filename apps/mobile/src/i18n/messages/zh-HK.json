@@ -1,4 +1,11 @@
 {
+  "thread.taskState": "工作流程",
+  "thread.taskUnset": "未設定",
+  "thread.taskNoDescription": "暫無描述",
+  "thread.taskStart": "開始時間",
+  "thread.taskDue": "截止時間",
+  "thread.taskAssignees": "負責人",
+  "thread.taskOpenWorkspace": "開啟任務工作區",
   "thread.audioPlay": "播放",
   "thread.audioPause": "暫停",
   "thread.audioReplay": "重新播放",

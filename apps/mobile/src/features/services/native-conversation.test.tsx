@@ -35,6 +35,23 @@ vi.mock("@/features/crew-assets/upload", () => ({
   pickAndUploadCrewFile: h.upload,
   discardCrewUpload: h.discard,
 }));
+vi.mock("./task-detail", () => ({
+  TaskDetail: ({
+    taskId,
+    onClose,
+    onOpenWeb,
+  }: {
+    taskId: string;
+    onClose: () => void;
+    onOpenWeb: () => void;
+  }) => (
+    <div>
+      task-detail:{taskId}
+      <button onClick={onClose}>close-detail</button>
+      <button onClick={onOpenWeb}>open-task-web</button>
+    </div>
+  ),
+}));
 vi.mock("./task-options", () => ({
   taskLabel: (task: { number: number; title: string }) => `TASK-${task.number} ${task.title}`,
 }));
@@ -408,7 +425,7 @@ it("sends task references with immutable retry metadata and removes deleted toke
   await act(async () => click("thread.send"));
   expect(h.send.mock.calls[2][1]).not.toHaveProperty("tasks");
 });
-it("opens a received same-Crew task through the existing authenticated workspace", async () => {
+it("opens same-Crew task details natively with explicit workspace continuation", async () => {
   h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
   h.messages = [
     {
@@ -424,6 +441,9 @@ it("opens a received same-Crew task through the existing authenticated workspace
   ];
   await render();
   await act(async () => click("#TASK-7 Scene"));
+  expect(host.textContent).toContain("task-detail:task");
+  expect(host.textContent).not.toContain("web:");
+  await act(async () => click("open-task-web"));
   expect(host.textContent).toContain("web:/crews/crew/workspace?tab=tasks&task=task");
   await act(async () => click("thread.backToChat"));
   expect(host.textContent).not.toContain("#Foreign");
