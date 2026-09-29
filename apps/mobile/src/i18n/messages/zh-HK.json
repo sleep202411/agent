@@ -1866,5 +1866,9 @@
   "crewPositionInvites.decline": "拒絕",
   "crewPositionInvites.invalid": "請選擇其他使用者及 1 至 30 天的有效期。",
   "crewPositionInvites.invalidPortfolio": "請輸入有效的 HTTP 或 HTTPS 作品集網址。",
-  "crewPositionInvites.notFound": "未找到相符的使用者。"
+  "crewPositionInvites.notFound": "未找到相符的使用者。",
+  "inviteManagement.title": "管理招募邀請",
+  "inviteManagement.lookup": "尋找創作者",
+  "inviteManagement.uncertain": "尚未確認建立結果。請重新整理並檢查邀請清單，再決定是否建立新邀請。",
+  "inviteManagement.saved": "操作已儲存。請重新整理查看最新邀請。"
 }

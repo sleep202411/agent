@@ -1866,5 +1866,9 @@
   "crewPositionInvites.decline": "Decline",
   "crewPositionInvites.invalid": "Choose another user and an expiry from 1 to 30 days.",
   "crewPositionInvites.invalidPortfolio": "Enter a valid HTTP or HTTPS portfolio URL.",
-  "crewPositionInvites.notFound": "No matching user found."
+  "crewPositionInvites.notFound": "No matching user found.",
+  "inviteManagement.title": "Manage Recruitment Invitations",
+  "inviteManagement.lookup": "Find Creator",
+  "inviteManagement.uncertain": "The creation response was not confirmed. Review the refreshed invitation list before creating another invitation.",
+  "inviteManagement.saved": "Response saved. Refresh to review the latest invitations."
 }

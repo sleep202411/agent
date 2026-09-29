@@ -6,13 +6,15 @@ import type { MessageKey } from "@/i18n";
 export function showCrewActionsMenu(options: {
   t: (key: MessageKey) => string;
   onApplications: () => void;
+  onInvitations?: () => void;
   onFinance?: () => void;
   onAgreements?: () => void;
   onTasks?: () => void;
   onReport: () => void;
   onBlock: () => void;
 }) {
-  const { t, onApplications, onReport, onBlock, onTasks, onFinance, onAgreements } = options;
+  const { t, onApplications, onReport, onBlock, onTasks, onFinance, onAgreements, onInvitations } =
+    options;
   if (Platform.OS === "ios") {
     ActionSheetIOS.showActionSheetWithOptions(
       {
@@ -24,6 +26,7 @@ export function showCrewActionsMenu(options: {
           ...(onTasks ? [t("crewTasks.title")] : []),
           ...(onFinance ? [t("crewFinance.title")] : []),
           ...(onAgreements ? [t("crewAgreements.title")] : []),
+          ...(onInvitations ? [t("inviteManagement.title")] : []),
         ],
         cancelButtonIndex: 0,
         destructiveButtonIndex: 3,
@@ -35,8 +38,30 @@ export function showCrewActionsMenu(options: {
         if (index === 4 && onTasks) onTasks();
         if (index === (onTasks ? 5 : 4)) onFinance?.();
         if (index === 4 + Number(!!onTasks) + Number(!!onFinance)) onAgreements?.();
+        if (index === 4 + Number(!!onTasks) + Number(!!onFinance) + Number(!!onAgreements))
+          onInvitations?.();
       }
     );
+    return;
+  }
+  if (onInvitations) {
+    Alert.alert(t("report.moreActions"), undefined, [
+      { text: t("inviteManagement.title"), onPress: onInvitations },
+      {
+        text: t("report.moreActions"),
+        onPress: () =>
+          showCrewActionsMenu({
+            t,
+            onApplications,
+            onTasks,
+            onAgreements,
+            onFinance,
+            onReport,
+            onBlock,
+          }),
+      },
+      { text: t("report.cancel"), style: "cancel" },
+    ]);
     return;
   }
   if (onFinance) {

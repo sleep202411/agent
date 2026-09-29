@@ -1866,5 +1866,9 @@
   "crewPositionInvites.decline": "拒绝",
   "crewPositionInvites.invalid": "请选择其他用户及 1 至 30 天的有效期。",
   "crewPositionInvites.invalidPortfolio": "请输入有效的 HTTP 或 HTTPS 作品集网址。",
-  "crewPositionInvites.notFound": "未找到匹配的用户。"
+  "crewPositionInvites.notFound": "未找到匹配的用户。",
+  "inviteManagement.title": "管理招募邀请",
+  "inviteManagement.lookup": "查找创作者",
+  "inviteManagement.uncertain": "尚未确认创建结果。请刷新并检查邀请列表，再决定是否创建新邀请。",
+  "inviteManagement.saved": "操作已保存。请刷新查看最新邀请。"
 }

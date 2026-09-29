@@ -129,3 +129,32 @@ it("keeps Android agreements, tasks, applications and safety reachable with thre
   expect(h.safety).toHaveBeenCalledOnce();
   for (const call of h.alert.mock.calls) expect(call[2]).toHaveLength(3);
 });
+it.each([0, 1, 2, 3, 4, 5, 6, 7])(
+  "routes invitation management with optional iOS actions (%s)",
+  (mask) => {
+    const onInvitations = vi.fn();
+    showCrewActionsMenu({
+      ...options,
+      onInvitations,
+      onTasks: mask & 1 ? vi.fn() : undefined,
+      onFinance: mask & 2 ? vi.fn() : undefined,
+      onAgreements: mask & 4 ? vi.fn() : undefined,
+    });
+    const [config, select] = h.sheet.mock.calls[0];
+    select(config.options.indexOf("inviteManagement.title"));
+    expect(onInvitations).toHaveBeenCalledOnce();
+    expect(config.destructiveButtonIndex).toBe(3);
+  }
+);
+it("preserves Android finance and safety after invitations", () => {
+  h.platform.OS = "android";
+  const onInvitations = vi.fn();
+  showCrewActionsMenu({ ...options, onInvitations, onFinance: vi.fn() });
+  h.alert.mock.calls[0][2][0].onPress();
+  expect(onInvitations).toHaveBeenCalledOnce();
+  h.alert.mock.calls[0][2][1].onPress();
+  expect(h.alert.mock.calls[1][2][0].text).toBe("crewFinance.title");
+  h.alert.mock.calls[1][2][1].onPress();
+  h.alert.mock.calls[2][2][1].onPress();
+  expect(h.safety).toHaveBeenCalledOnce();
+});
