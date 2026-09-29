@@ -12,6 +12,7 @@ export const customField = z.object({
   id: z.string().uuid(),
   crewId: z.string().min(1),
   name: z.string().min(1),
+  required: z.boolean(),
   type: z.enum(["text", "number", "date", "checkbox", "single_select", "multi_select", "user"]),
   options: z.array(z.object({ id: z.string().min(1), label: z.string() })),
 });

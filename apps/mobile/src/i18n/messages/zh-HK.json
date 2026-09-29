@@ -1383,5 +1383,9 @@
   "taskCreate.addSubtask": "新增子任務",
   "taskCustomFields.title": "自訂欄位",
   "taskCustomFields.yes": "是",
-  "taskCustomFields.no": "否"
+  "taskCustomFields.no": "否",
+  "taskCustomFields.edit": "編輯欄位",
+  "taskCustomFields.chooseMember": "選擇成員",
+  "taskCustomFields.clear": "清空欄位",
+  "taskCustomFields.invalid": "請輸入有效值，必填欄位不能為空。"
 }

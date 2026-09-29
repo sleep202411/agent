@@ -16,6 +16,7 @@ vi.mock("./task-custom-fields-api", async (original) => ({
   ...(await original<typeof import("./task-custom-fields-api")>()),
   fetchTaskCustomFields: h.fetch,
 }));
+vi.mock("./task-custom-field-editor", () => ({ TaskCustomFieldEditing: () => null }));
 vi.mock("./user-displays", () => ({ useUserDisplays: () => undefined }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s }));
@@ -59,6 +60,7 @@ const rows = [
       id: "field",
       crewId: "crew",
       name: "Department",
+      required: false,
       type: "single_select",
       options: [{ id: "art", label: "Art" }],
     },
@@ -77,7 +79,10 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-const render = () => act(async () => root.render(<TaskCustomFields task={task} generation={1} />));
+const render = () =>
+  act(async () =>
+    root.render(<TaskCustomFields task={task} generation={1} userId="1" onRefresh={h.open} />)
+  );
 it("displays field labels and resolved options", async () => {
   await render();
   expect(host.textContent).toContain("DepartmentArt");

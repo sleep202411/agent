@@ -1,3 +1,4 @@
+import { TaskCustomFieldEditing } from "./task-custom-field-editor";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
@@ -6,7 +7,17 @@ import { useTranslations } from "@/i18n";
 import type { TaskDetail } from "./task-detail-api";
 import { fetchTaskCustomFields, customFieldText } from "./task-custom-fields-api";
 import { useUserDisplays } from "./user-displays";
-export function TaskCustomFields({ task, generation }: { task: TaskDetail; generation: number }) {
+export function TaskCustomFields({
+  task,
+  generation,
+  userId,
+  onRefresh,
+}: {
+  task: TaskDetail;
+  generation: number;
+  userId: string;
+  onRefresh: () => void;
+}) {
   const t = useTranslations();
   const [rows, setRows] = useState<Awaited<ReturnType<typeof fetchTaskCustomFields>>>();
   const [error, setError] = useState<string>();
@@ -48,6 +59,15 @@ export function TaskCustomFields({ task, generation }: { task: TaskDetail; gener
             <ThemedText>{t("inbox.retry")}</ThemedText>
           </Pressable>
         </>
+      )}
+      {rows && (
+        <TaskCustomFieldEditing
+          task={task}
+          generation={generation}
+          userId={userId}
+          fields={rows.map((r) => r.field)}
+          onRefresh={onRefresh}
+        />
       )}
       {rows?.map(({ field, value }) => (
         <View key={field.id}>

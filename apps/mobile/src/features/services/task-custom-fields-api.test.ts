@@ -30,6 +30,7 @@ const field: CustomField = {
   id,
   crewId: "crew",
   name: "Department",
+  required: false,
   type: "single_select",
   options: [{ id: "art", label: "Art" }],
 };

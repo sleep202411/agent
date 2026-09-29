@@ -218,7 +218,13 @@ function TaskContent({
             generation={generation}
             onOpen={() => setCreatingChild(true)}
           />
-          <TaskCustomFields key={`fields:${revision}`} task={data} generation={generation} />
+          <TaskCustomFields
+            key={`fields:${revision}`}
+            task={data}
+            generation={generation}
+            userId={userId}
+            onRefresh={() => setRevision((v) => v + 1)}
+          />
           <TaskRelations task={data} onOpenTask={onOpenTask} />
           <TaskDelivery
             key={`delivery:${revision}`}

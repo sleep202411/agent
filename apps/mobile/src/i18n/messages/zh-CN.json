@@ -1383,5 +1383,9 @@
   "taskCreate.addSubtask": "添加子任务",
   "taskCustomFields.title": "自定义字段",
   "taskCustomFields.yes": "是",
-  "taskCustomFields.no": "否"
+  "taskCustomFields.no": "否",
+  "taskCustomFields.edit": "编辑字段",
+  "taskCustomFields.chooseMember": "选择成员",
+  "taskCustomFields.clear": "清空字段",
+  "taskCustomFields.invalid": "请输入有效值，必填字段不能为空。"
 }

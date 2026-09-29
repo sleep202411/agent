@@ -1383,5 +1383,9 @@
   "taskCreate.addSubtask": "Add Subtask",
   "taskCustomFields.title": "Custom Fields",
   "taskCustomFields.yes": "Yes",
-  "taskCustomFields.no": "No"
+  "taskCustomFields.no": "No",
+  "taskCustomFields.edit": "Edit Field",
+  "taskCustomFields.chooseMember": "Choose Member",
+  "taskCustomFields.clear": "Clear Field",
+  "taskCustomFields.invalid": "Enter a valid value. Required fields cannot be empty."
 }
