@@ -1124,5 +1124,19 @@
   "serviceQuestions.down": "下移",
   "serviceQuestions.remove": "移除",
   "serviceQuestions.add": "添加问题",
-  "serviceQuestions.invalid": "请填写所有问题后再保存。"
+  "serviceQuestions.invalid": "请填写所有问题后再保存。",
+  "servicePackages.title": "编辑套餐",
+  "servicePackages.hint": "保存将替换套餐列表，现有订单保留原始条款。",
+  "servicePackages.tier.basic": "基础",
+  "servicePackages.tier.standard": "标准",
+  "servicePackages.tier.premium": "高级",
+  "servicePackages.description": "描述（必填，最多2000字）",
+  "servicePackages.price": "价格（0–100,000,000，以所选币种计）",
+  "servicePackages.deliveryDays": "交付天数（1–365）",
+  "servicePackages.revisions": "修改次数（0–200，-1表示不限）",
+  "servicePackages.scope": "服务范围（每行一项，最多12项，每项200字）",
+  "servicePackages.currency": "币种",
+  "servicePackages.pauseFirst": "移除最后一个套餐前请先暂停服务。",
+  "servicePackages.invalid": "请按限制填写所有启用的套餐。",
+  "servicePackages.name": "标题（必填，最多80字）"
 }

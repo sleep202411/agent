@@ -114,6 +114,12 @@ function mapDetail(dto: CreatorServiceDetailDto): CreatorServiceDetail | undefin
   const packages = (dto.packages ?? [])
     .map(mapPackage)
     .filter((pkg): pkg is CreatorServicePackage => !!pkg);
+  if (
+    packages.length !== (dto.packages ?? []).length ||
+    new Set(packages.map((p) => p.tier)).size !== packages.length
+  ) {
+    throw new Error("Invalid service packages; reload before editing");
+  }
   const cheapest = packages.reduce<CreatorServicePackage | undefined>(
     (current, pkg) => (!current || pkg.price < current.price ? pkg : current),
     undefined

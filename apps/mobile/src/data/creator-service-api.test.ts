@@ -36,7 +36,7 @@ it.each([
   "does not offer an incomplete package as free or with an invented tier/currency",
   async (invalid) => {
     vi.mocked(api.get).mockResolvedValue({ ...detail, packages: [{ ...pkg, ...invalid }] });
-    expect((await fetchCreatorServiceById("service"))?.packages).toEqual([]);
+    await expect(fetchCreatorServiceById("service")).rejects.toThrow("Invalid service packages");
   }
 );
 

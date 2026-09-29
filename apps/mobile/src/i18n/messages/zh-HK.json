@@ -1124,5 +1124,19 @@
   "serviceQuestions.down": "下移",
   "serviceQuestions.remove": "移除",
   "serviceQuestions.add": "新增問題",
-  "serviceQuestions.invalid": "請填寫所有問題後再儲存。"
+  "serviceQuestions.invalid": "請填寫所有問題後再儲存。",
+  "servicePackages.title": "編輯套餐",
+  "servicePackages.hint": "儲存將替換套餐列表，現有訂單保留原始條款。",
+  "servicePackages.tier.basic": "基礎",
+  "servicePackages.tier.standard": "標準",
+  "servicePackages.tier.premium": "高級",
+  "servicePackages.description": "描述（必填，最多2000字）",
+  "servicePackages.price": "價格（0–100,000,000，以所選幣種計）",
+  "servicePackages.deliveryDays": "交付天數（1–365）",
+  "servicePackages.revisions": "修改次數（0–200，-1表示不限）",
+  "servicePackages.scope": "服務範圍（每行一項，最多12項，每項200字）",
+  "servicePackages.currency": "幣種",
+  "servicePackages.pauseFirst": "移除最後一個套餐前請先暫停服務。",
+  "servicePackages.invalid": "請按限制填寫所有啟用的套餐。",
+  "servicePackages.name": "標題（必填，最多80字）"
 }
