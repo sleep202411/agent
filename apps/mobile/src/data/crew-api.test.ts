@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchCrewById, fetchMyCrews } from "./crew-api";
+import { fetchCrewById, fetchCrewFeedPage, fetchMyCrews } from "./crew-api";
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ api: { get } }));
@@ -27,7 +27,8 @@ describe("Crew detail positions", () => {
     expect((await fetchCrewById("crew"))?.roles).toEqual([
       {
         id: "role",
-        title: "Art Director",
+        title: "art_director",
+        positionType: "art_director",
         count: 2,
         location: undefined,
         employmentType: undefined,
@@ -49,6 +50,33 @@ describe("Crew detail positions", () => {
     respond([{ items: [], nextCursor: null }]);
     expect((await fetchCrewById("crew"))?.roles).toEqual([]);
     expect(get).toHaveBeenCalledTimes(2);
+  });
+});
+
+it("retains canonical role codes for localized cards and detail, and preserves custom titles", async () => {
+  get.mockResolvedValueOnce({
+    items: [{ id: "crew", openPositionPreview: ["storyboard", "VFX / AI lead"] }],
+  });
+  expect((await fetchCrewFeedPage()).items[0].roleTags).toEqual(["storyboard", "VFX / AI lead"]);
+  respond([
+    {
+      items: [
+        { id: "preset", status: "open", positionType: "storyboard" },
+        { id: "custom", status: "open", positionType: "VFX / AI lead" },
+      ],
+      nextCursor: null,
+    },
+  ]);
+  const roles = (await fetchCrewById("crew"))!.roles;
+  expect(roles[0]).toMatchObject({
+    id: "preset",
+    positionType: "storyboard",
+    title: "Storyboard Artist",
+  });
+  expect(roles[1]).toMatchObject({
+    id: "custom",
+    positionType: "VFX / AI lead",
+    title: "VFX / AI lead",
   });
 });
 

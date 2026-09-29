@@ -938,5 +938,18 @@
   "courses.lessons": "課程影片",
   "courses.noLessons": "暫無課程影片",
   "courses.playError": "無法播放本節課程，請重試。",
-  "courses.invalid": "課程連結無效。"
+  "courses.invalid": "課程連結無效。",
+  "crewRoles.director": "導演",
+  "crewRoles.screenwriter": "編劇",
+  "crewRoles.storyboard": "分鏡師",
+  "crewRoles.character_design": "角色設計師",
+  "crewRoles.background_design": "場景設計師",
+  "crewRoles.animator": "動畫師",
+  "crewRoles.voice_actor": "配音演員",
+  "crewRoles.sound_designer": "音效設計師",
+  "crewRoles.music_composer": "作曲",
+  "crewRoles.editor": "剪輯師",
+  "crewRoles.compositor": "合成師",
+  "crewRoles.producer": "監製",
+  "crewRoles.marketing": "市場負責人"
 }

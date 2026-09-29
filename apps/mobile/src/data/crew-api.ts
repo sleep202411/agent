@@ -7,6 +7,7 @@
  * the CN host 404s these routes.
  */
 import { appEnv, resolveAssetUrl } from "@/config";
+import { PRESET_POSITIONS } from "@repo/shared/crew";
 import { api } from "@/lib/api-client";
 
 import type { IpReportReason } from "./ip-api";
@@ -36,10 +37,10 @@ type PositionDto = {
   status?: string;
 };
 
-/** "art_director" / "editor" → "Art Director" / "Editor". */
+/** Keep custom titles intact; known role codes have a canonical English fallback. */
 function prettyRole(code?: string | null): string {
   if (!code) return "Role";
-  return code.replace(/[_-]+/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  return PRESET_POSITIONS.find((position) => position.value === code)?.label ?? code;
 }
 
 function logoUrl(logo?: string | null): string | undefined {
@@ -59,7 +60,7 @@ function mapSummary(dto: CrewDto): CrewSummary {
     coverUrl: logoUrl(dto.logo),
     status: crewStatus(dto),
     openRoles: dto.openPositionCount ?? 0,
-    roleTags: (dto.openPositionPreview ?? []).map(prettyRole),
+    roleTags: dto.openPositionPreview ?? [],
     summary: dto.description ?? "",
     memberCount: dto.memberCount,
   };
@@ -85,6 +86,7 @@ async function fetchPositions(crewId: string): Promise<CrewRoleOpening[]> {
       .map((position) => ({
         id: position.id,
         title: prettyRole(position.positionType),
+        positionType: position.positionType ?? undefined,
         count: position.targetCount ?? 1,
         location: position.location ?? undefined,
         employmentType: position.employmentType ?? undefined,

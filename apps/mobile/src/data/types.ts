@@ -169,6 +169,8 @@ export type CrewStatus = "recruiting" | "in-production" | "closed";
 export interface CrewRoleOpening {
   id: string;
   title: string;
+  /** Canonical recruitment role code, or the author's custom title. */
+  positionType?: string;
   count: number;
   location?: string;
   /** Raw EmploymentType enum (full_time | part_time | contract | freelance | project_based). */

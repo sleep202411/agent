@@ -938,5 +938,18 @@
   "courses.lessons": "课程视频",
   "courses.noLessons": "暂无课程视频",
   "courses.playError": "无法播放本节课程，请重试。",
-  "courses.invalid": "课程链接无效。"
+  "courses.invalid": "课程链接无效。",
+  "crewRoles.director": "导演",
+  "crewRoles.screenwriter": "编剧",
+  "crewRoles.storyboard": "分镜师",
+  "crewRoles.character_design": "角色设计师",
+  "crewRoles.background_design": "场景设计师",
+  "crewRoles.animator": "动画师",
+  "crewRoles.voice_actor": "配音演员",
+  "crewRoles.sound_designer": "音效设计师",
+  "crewRoles.music_composer": "作曲",
+  "crewRoles.editor": "剪辑师",
+  "crewRoles.compositor": "合成师",
+  "crewRoles.producer": "制片人",
+  "crewRoles.marketing": "市场负责人"
 }

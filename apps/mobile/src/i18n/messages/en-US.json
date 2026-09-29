@@ -938,5 +938,18 @@
   "courses.lessons": "Lessons",
   "courses.noLessons": "No lessons available",
   "courses.playError": "Unable to play this lesson. Please retry.",
-  "courses.invalid": "Invalid course link."
+  "courses.invalid": "Invalid course link.",
+  "crewRoles.director": "Director",
+  "crewRoles.screenwriter": "Screenwriter",
+  "crewRoles.storyboard": "Storyboard Artist",
+  "crewRoles.character_design": "Character Designer",
+  "crewRoles.background_design": "Background Designer",
+  "crewRoles.animator": "Animator",
+  "crewRoles.voice_actor": "Voice Actor",
+  "crewRoles.sound_designer": "Sound Designer",
+  "crewRoles.music_composer": "Music Composer",
+  "crewRoles.editor": "Editor",
+  "crewRoles.compositor": "Compositor",
+  "crewRoles.producer": "Producer",
+  "crewRoles.marketing": "Marketing Lead"
 }

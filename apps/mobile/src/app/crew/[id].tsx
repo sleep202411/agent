@@ -30,6 +30,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 import { useCrewApplication } from "@/features/browse/use-crew-application";
+import { crewPositionLabel } from "@/lib/crew-position-label";
 
 function crewStatusTag(
   status: CrewStatus,
@@ -105,6 +106,8 @@ export default function CrewDetailScreen() {
   }
 
   const tag = crewStatusTag(crew.status, t);
+  const roleTitle = (role: CrewRoleOpening) =>
+    crewPositionLabel(role.positionType ?? role.title, t);
 
   const showActions = () => {
     showContentActionsMenu({
@@ -199,7 +202,7 @@ export default function CrewDetailScreen() {
         const roles = crew.roles;
         if (roles.length === 0) return;
         if (roles.length === 1) {
-          Alert.alert(t("crewDetail.applyConfirmTitle"), roles[0].title, [
+          Alert.alert(t("crewDetail.applyConfirmTitle"), roleTitle(roles[0]), [
             { text: t("report.cancel"), style: "cancel" },
             {
               text: t("crewDetail.applyConfirmAction"),
@@ -212,7 +215,7 @@ export default function CrewDetailScreen() {
           ActionSheetIOS.showActionSheetWithOptions(
             {
               title: t("crewDetail.applyPickTitle"),
-              options: [t("report.cancel"), ...roles.map((role) => role.title)],
+              options: [t("report.cancel"), ...roles.map(roleTitle)],
               cancelButtonIndex: 0,
             },
             (index) => {
@@ -222,7 +225,10 @@ export default function CrewDetailScreen() {
           return;
         }
         Alert.alert(t("crewDetail.applyPickTitle"), undefined, [
-          ...roles.map((role) => ({ text: role.title, onPress: () => void submitApply(role.id) })),
+          ...roles.map((role) => ({
+            text: roleTitle(role),
+            onPress: () => void submitApply(role.id),
+          })),
           { text: t("report.cancel"), style: "cancel" as const },
         ]);
       },
@@ -315,7 +321,7 @@ export default function CrewDetailScreen() {
                       ]}
                     >
                       <View style={styles.roleCopy}>
-                        <ThemedText type="smallBold">{role.title}</ThemedText>
+                        <ThemedText type="smallBold">{roleTitle(role)}</ThemedText>
                         {meta ? (
                           <ThemedText type="code" themeColor="textSecondary">
                             {meta}

@@ -21,6 +21,7 @@ import { useBrowseVersion } from "@/data/browse-refresh";
 import { getMarketFeed, type MarketFeed } from "@/data/market-service";
 import type { CreatorServiceSummary, CreatorSummary, CrewStatus, CrewSummary } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
+import { crewPositionLabel } from "@/lib/crew-position-label";
 import { type MessageKey, useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
 import { toHref } from "@/lib/navigation";
@@ -280,7 +281,7 @@ function CrewMarketCard({ crew }: { crew: CrewSummary }) {
             {crew.summary}
           </ThemedText>
           <View style={styles.metaRow}>
-            {crew.roleTags[0] ? <Tag label={crew.roleTags[0]} /> : null}
+            {crew.roleTags[0] ? <Tag label={crewPositionLabel(crew.roleTags[0], t)} /> : null}
             {crew.memberCount ? (
               <View style={styles.memberMeta}>
                 <SymbolView
