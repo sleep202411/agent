@@ -53,12 +53,16 @@ export function useStoryTimelineExport({
     return result;
   }, [clips]);
 
-  const mediaKey = JSON.stringify(validShots);
+  const missingShots = (clips?.length ?? 0) - validShots.length;
+  const mediaKey = JSON.stringify({
+    shots: validShots,
+    clipIds: clips?.map((clip) => clip.id) ?? [],
+  });
   const scope = useMemo(
     () => ({ sequenceId: sequence?.id, projectId, chapterId, mediaKey }),
     [sequence?.id, projectId, chapterId, mediaKey]
   );
-  type Recovery = { blob: Blob; mediaAssetId?: string };
+  type Recovery = { blob: Blob; incompleteShots: number; mediaAssetId?: string };
   type Owner = {
     scope: typeof scope;
     operation: AbortController | null;
@@ -86,7 +90,11 @@ export function useStoryTimelineExport({
     (error: StoryTimelineExportError) => setFailure({ scope, error }),
     [scope]
   );
-  const [lastBlob, setLastBlob] = useState<{ scope: typeof scope; blob: Blob } | null>(null);
+  const [lastBlob, setLastBlob] = useState<{
+    scope: typeof scope;
+    blob: Blob;
+    incompleteShots: number;
+  } | null>(null);
 
   const isExporting = progress?.scope === scope && stage !== "idle";
   const exportProgress = progress?.scope === scope ? progress.ratio : 0;
@@ -135,16 +143,20 @@ export function useStoryTimelineExport({
     try {
       let recovery = owned.recovery;
       if (!recovery) {
+        let incompleteShots = missingShots;
         const blob = await exportTimelineToMp4(validShots, {
           signal,
+          onReport: (report) => {
+            incompleteShots = missingShots + report.requestedShots - report.completedShots;
+          },
           onProgress: (ratio) => {
             if (current()) setProgress({ scope, ratio });
           },
         });
         if (!current()) return;
-        recovery = { blob };
+        recovery = { blob, incompleteShots };
         owned.recovery = recovery;
-        setLastBlob({ scope, blob });
+        setLastBlob({ scope, blob, incompleteShots });
       }
 
       // Resume only this exact timeline snapshot. A failed asset attachment
@@ -165,7 +177,7 @@ export function useStoryTimelineExport({
         });
         if (!current()) return;
         mediaAssetId = uploaded.mediaAssetId;
-        owned.recovery = { blob: recovery.blob, mediaAssetId };
+        owned.recovery = { ...recovery, mediaAssetId };
       }
 
       setStage("saving");
@@ -174,7 +186,11 @@ export function useStoryTimelineExport({
       owned.recovery = null;
 
       // Step g: On complete
-      toast.success(t("saved"));
+      if (recovery.incompleteShots > 0) {
+        toast.warning(t("partialSaved", { count: recovery.incompleteShots }));
+      } else {
+        toast.success(t("saved"));
+      }
       onComplete?.(mediaAssetId);
     } catch (err: unknown) {
       if (!current()) return;
@@ -193,7 +209,7 @@ export function useStoryTimelineExport({
         setProgress(null);
       }
     }
-  }, [scope, validShots, projectId, onComplete, setError, t]);
+  }, [scope, validShots, missingShots, projectId, onComplete, setError, t]);
 
   const downloadOnly = useCallback(async () => {
     const owned = owner.current;
@@ -203,7 +219,11 @@ export function useStoryTimelineExport({
       const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
       try {
         triggerBlobDownload(lastBlob.blob, filename);
-        toast.success(t("downloadStarted"));
+        if (lastBlob.incompleteShots > 0) {
+          toast.warning(t("partialDownload", { count: lastBlob.incompleteShots }));
+        } else {
+          toast.success(t("downloadStarted"));
+        }
       } catch (err: unknown) {
         setError("failed");
         toast.error(err instanceof Error && err.message ? err.message : t("failed"));
@@ -233,18 +253,26 @@ export function useStoryTimelineExport({
     setProgress({ scope, ratio: 0 });
 
     try {
+      let incompleteShots = missingShots;
       const blob = await exportTimelineToMp4(validShots, {
         signal,
+        onReport: (report) => {
+          incompleteShots = missingShots + report.requestedShots - report.completedShots;
+        },
         onProgress: (ratio) => {
           if (current()) setProgress({ scope, ratio });
         },
       });
 
       if (!current()) return;
-      setLastBlob({ scope, blob });
+      setLastBlob({ scope, blob, incompleteShots });
       const filename = `story-${projectId.slice(0, 8)}-stitched-${Date.now()}.mp4`;
       triggerBlobDownload(blob, filename);
-      toast.success(t("downloadStarted"));
+      if (incompleteShots > 0) {
+        toast.warning(t("partialDownload", { count: incompleteShots }));
+      } else {
+        toast.success(t("downloadStarted"));
+      }
     } catch (err: unknown) {
       if (!current()) return;
       setError(err instanceof TimelineExportUnsupportedError ? "browser_unsupported" : "failed");
@@ -256,7 +284,7 @@ export function useStoryTimelineExport({
         setProgress(null);
       }
     }
-  }, [scope, lastBlob, validShots, projectId, setError, t]);
+  }, [scope, lastBlob, validShots, missingShots, projectId, setError, t]);
 
   return {
     isExporting,

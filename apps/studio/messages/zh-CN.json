@@ -4100,6 +4100,8 @@
       "failed": "无法移动项目。"
     },
     "timelineExport": {
+      "partialSaved": "成片已保存，其中有 {count} 个镜头缺失或不完整。请检查后再发布。",
+      "partialDownload": "已开始下载，其中有 {count} 个镜头缺失或不完整。请检查成片后再发布。",
       "noMedia": "没有可导出的媒体片段。",
       "unsupported": "当前浏览器不支持视频导出，请尝试使用 Chrome。",
       "saved": "成片已保存到项目资产库。",

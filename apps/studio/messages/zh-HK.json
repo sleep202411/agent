@@ -4100,6 +4100,8 @@
       "failed": "無法移動項目。"
     },
     "timelineExport": {
+      "partialSaved": "成片已儲存，其中有 {count} 個鏡頭缺失或不完整。請檢查後再發佈。",
+      "partialDownload": "已開始下載，其中有 {count} 個鏡頭缺失或不完整。請檢查成片後再發佈。",
       "noMedia": "沒有可匯出的媒體片段。",
       "unsupported": "目前瀏覽器不支援影片匯出，請嘗試使用 Chrome。",
       "saved": "成片已儲存至專案資產庫。",

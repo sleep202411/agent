@@ -16,7 +16,10 @@ const h = vi.hoisted(() => ({
   warning: vi.fn(),
   supported: vi.fn(),
 }));
-vi.mock("next-intl", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string, values?: { count: number }) =>
+    values ? `${key}:${values.count}` : key,
+}));
 vi.mock("sonner", () => ({ toast: { success: h.success, error: h.error, warning: h.warning } }));
 vi.mock("@repo/timeline-export", () => ({
   exportTimelineToMp4: h.export,
@@ -340,4 +343,55 @@ it("clears recovery after completion or explicit cancellation", async () => {
   await act(async () => api.handleExport());
   expect(h.export).toHaveBeenCalledTimes(3);
   expect(h.upload).toHaveBeenCalledTimes(3);
+});
+
+it("warns about timeline shots without media when saving and downloading the cached film", async () => {
+  options.sequence!.clips.push({
+    ...options.sequence!.clips[0]!,
+    id: "missing",
+    selectedMediaVersion: null,
+  });
+  await render();
+  await act(async () => api.handleExport());
+  expect(h.warning).toHaveBeenCalledWith("partialSaved:1");
+  expect(h.success).not.toHaveBeenCalled();
+  expect(options.onComplete).toHaveBeenCalledWith("asset");
+  await act(async () => api.downloadOnly());
+  expect(h.warning).toHaveBeenCalledWith("partialDownload:1");
+  expect(h.export).toHaveBeenCalledTimes(1);
+});
+
+it("preserves encoder partial-result warnings through failed attachment and retry", async () => {
+  h.export.mockImplementationOnce(async (_shots, options) => {
+    options.onReport({
+      requestedShots: 1,
+      completedShots: 0,
+      partial: true,
+      issues: [{ index: 0, shotId: "clip", reason: "encoding_failed" }],
+    });
+    return new Blob(["partial video"]);
+  });
+  h.save.mockRejectedValueOnce(new Error("Attachment temporarily unavailable"));
+  await render();
+  await act(async () => api.handleExport());
+  expect(h.warning).not.toHaveBeenCalled();
+  await act(async () => api.handleExport());
+  expect(h.warning).toHaveBeenCalledWith("partialSaved:1");
+  expect(h.success).not.toHaveBeenCalled();
+  expect(h.export).toHaveBeenCalledTimes(1);
+  expect(h.upload).toHaveBeenCalledTimes(1);
+});
+
+it("recomputes completeness after adding a shot without media to a cached timeline", async () => {
+  await render();
+  await act(async () => api.downloadOnly());
+  h.success.mockClear();
+  const next = sequence()!;
+  next.clips.push({ ...next.clips[0]!, id: "missing", selectedMediaVersion: null });
+  options = { ...options, sequence: next };
+  await render();
+  await act(async () => api.downloadOnly());
+  expect(h.export).toHaveBeenCalledTimes(2);
+  expect(h.warning).toHaveBeenCalledWith("partialDownload:1");
+  expect(h.success).not.toHaveBeenCalled();
 });
