@@ -1,3 +1,4 @@
+import { TaskFieldManagement } from "./task-field-management";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -20,10 +21,20 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [managingFields, setManagingFields] = useState(false);
   const [creating, setCreating] = useState(false);
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (managingFields)
+    return (
+      <TaskFieldManagement
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setManagingFields(false)}
+      />
+    );
   if (creating)
     return (
       <TaskCreate
@@ -80,6 +91,15 @@ export function CrewTaskBrowser({
         style={{ padding: 12 }}
       >
         <ThemedText>{t("taskCreate.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => {
+          if (generation === getAuthGeneration()) setManagingFields(true);
+        }}
+        style={{ padding: 12 }}
+      >
+        <ThemedText>{t("taskFields.title")}</ThemedText>
       </Pressable>
       <TaskPicker
         crewId={crewId}

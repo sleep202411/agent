@@ -1387,5 +1387,22 @@
   "taskCustomFields.edit": "編輯欄位",
   "taskCustomFields.chooseMember": "選擇成員",
   "taskCustomFields.clear": "清空欄位",
-  "taskCustomFields.invalid": "請輸入有效值，必填欄位不能為空。"
+  "taskCustomFields.invalid": "請輸入有效值，必填欄位不能為空。",
+  "taskFields.title": "任務欄位設定",
+  "taskFields.add": "新增欄位",
+  "taskFields.edit": "編輯欄位",
+  "taskFields.name": "欄位名稱",
+  "taskFields.description": "說明",
+  "taskFields.options": "選項（逗號分隔）",
+  "taskFields.required": "必填",
+  "taskFields.delete": "刪除欄位",
+  "taskFields.confirmDelete": "確認刪除",
+  "taskFields.deleteWarning": "此操作將刪除該欄位及所有劇組任務中儲存的值。",
+  "taskFields.text": "文字",
+  "taskFields.number": "數字",
+  "taskFields.date": "日期",
+  "taskFields.checkbox": "核取方塊",
+  "taskFields.single_select": "單選",
+  "taskFields.multi_select": "多選",
+  "taskFields.user": "成員"
 }

@@ -1387,5 +1387,22 @@
   "taskCustomFields.edit": "Edit Field",
   "taskCustomFields.chooseMember": "Choose Member",
   "taskCustomFields.clear": "Clear Field",
-  "taskCustomFields.invalid": "Enter a valid value. Required fields cannot be empty."
+  "taskCustomFields.invalid": "Enter a valid value. Required fields cannot be empty.",
+  "taskFields.title": "Task Field Settings",
+  "taskFields.add": "Add Field",
+  "taskFields.edit": "Edit Field",
+  "taskFields.name": "Field Name",
+  "taskFields.description": "Description",
+  "taskFields.options": "Options (Comma-Separated)",
+  "taskFields.required": "Required",
+  "taskFields.delete": "Delete Field",
+  "taskFields.confirmDelete": "Confirm Delete",
+  "taskFields.deleteWarning": "This removes the field and its saved values from all Crew tasks.",
+  "taskFields.text": "Text",
+  "taskFields.number": "Number",
+  "taskFields.date": "Date",
+  "taskFields.checkbox": "Checkbox",
+  "taskFields.single_select": "Single Select",
+  "taskFields.multi_select": "Multiple Select",
+  "taskFields.user": "Member"
 }

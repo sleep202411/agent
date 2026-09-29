@@ -1387,5 +1387,22 @@
   "taskCustomFields.edit": "编辑字段",
   "taskCustomFields.chooseMember": "选择成员",
   "taskCustomFields.clear": "清空字段",
-  "taskCustomFields.invalid": "请输入有效值，必填字段不能为空。"
+  "taskCustomFields.invalid": "请输入有效值，必填字段不能为空。",
+  "taskFields.title": "任务字段设置",
+  "taskFields.add": "添加字段",
+  "taskFields.edit": "编辑字段",
+  "taskFields.name": "字段名称",
+  "taskFields.description": "说明",
+  "taskFields.options": "选项（逗号分隔）",
+  "taskFields.required": "必填",
+  "taskFields.delete": "删除字段",
+  "taskFields.confirmDelete": "确认删除",
+  "taskFields.deleteWarning": "此操作将删除该字段及所有剧组任务中保存的值。",
+  "taskFields.text": "文本",
+  "taskFields.number": "数字",
+  "taskFields.date": "日期",
+  "taskFields.checkbox": "复选框",
+  "taskFields.single_select": "单选",
+  "taskFields.multi_select": "多选",
+  "taskFields.user": "成员"
 }

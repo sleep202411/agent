@@ -36,6 +36,11 @@ vi.mock("./task-picker", () => ({
     </>
   ),
 }));
+vi.mock("./task-field-management", () => ({
+  TaskFieldManagement: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close fields</button>
+  ),
+}));
 vi.mock("./task-detail", () => ({
   TaskDetail: (props: {
     onClose: () => void;
@@ -96,4 +101,10 @@ it("opens the newly created task directly", async () => {
   await act(async () => button("taskCreate.title").click());
   await act(async () => button("create form").click());
   expect(h.detail).toHaveBeenLastCalledWith(expect.objectContaining({ taskId: "new" }));
+});
+
+it("opens field settings and returns to the task browser", async () => {
+  await act(async () => button("taskFields.title").click());
+  await act(async () => button("close fields").click());
+  expect(button("pick")).toBeDefined();
 });

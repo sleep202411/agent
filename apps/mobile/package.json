@@ -26,6 +26,7 @@
     "expo-linking": "~57.0.3",
     "expo-localization": "~57.0.1",
     "expo-media-library": "~57.0.2",
+    "expo-modules-core": "~57.0.10",
     "expo-router": "~57.0.6",
     "expo-screen-orientation": "~57.0.1",
     "expo-secure-store": "~57.0.1",
