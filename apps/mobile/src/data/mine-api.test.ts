@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { fetchMyWorksPage } from "./mine-api";
+import { findMyWork, fetchMyWorksPage } from "./mine-api";
 import { api } from "@/lib/api-client";
 vi.mock("@/lib/api-client", () => ({ api: { postForm: vi.fn() } }));
 vi.mock("@/config", () => ({
@@ -37,4 +37,29 @@ it("does not disguise malformed data or failed requests as an empty portfolio", 
   await expect(fetchMyWorksPage(1)).rejects.toThrow();
   vi.mocked(api.postForm).mockRejectedValueOnce(new Error("offline"));
   await expect(fetchMyWorksPage(1)).rejects.toThrow("offline");
+});
+
+it("finds an interrupted work on later owner pages", async () => {
+  vi.mocked(api.postForm)
+    .mockResolvedValueOnce(Array.from({ length: 30 }, (_, id) => ({ id, title: "old" })))
+    .mockResolvedValueOnce([
+      { id: 42, title: "Draft", introduction: "Continue", videoLink: "video/key", viewStatus: 0 },
+    ]);
+  const result = await findMyWork("42", new AbortController().signal);
+  expect(result.introduction).toBe("Continue");
+  expect(result.hasVideo).toBe(true);
+  expect(result.isPrivate).toBe(true);
+});
+it("stops when a backend repeats the same full page", async () => {
+  vi.mocked(api.postForm).mockResolvedValue(Array.from({ length: 30 }, (_, id) => ({ id })));
+  await expect(findMyWork("foreign", new AbortController().signal)).rejects.toThrow(
+    "did not advance"
+  );
+});
+it("does not look up an aborted owner session", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const count = vi.mocked(api.postForm).mock.calls.length;
+  await expect(findMyWork("42", controller.signal)).rejects.toThrow();
+  expect(api.postForm).toHaveBeenCalledTimes(count);
 });

@@ -36,6 +36,7 @@ interface Tile {
   subtitle?: string;
   badge?: string;
   href?: string;
+  editHref?: string;
   /** Tap feedback for tiles with no destination (e.g. unpublished IPs). */
   alert?: { title: string; message: string };
   /** Invisible spacer that pads a partial last row to keep the grid aligned. */
@@ -145,6 +146,7 @@ export default function MineScreen() {
         id: work.id,
         title: work.title,
         href: `/work/${encodeURIComponent(work.id)}`,
+        editHref: `/publish-work?workId=${encodeURIComponent(work.id)}`,
         coverUrl: work.coverUrl,
         badge:
           work.reviewStatus === 0
@@ -470,6 +472,15 @@ export default function MineScreen() {
               accessibilityRole={onPress ? "button" : undefined}
               disabled={!onPress}
               onPress={onPress}
+              onLongPress={item.editHref ? () => router.push(toHref(item.editHref!)) : undefined}
+              accessibilityHint={item.editHref ? t("publishWork.editHint") : undefined}
+              accessibilityActions={
+                item.editHref ? [{ name: "edit", label: t("publishWork.edit") }] : undefined
+              }
+              onAccessibilityAction={(event) => {
+                if (event.nativeEvent.actionName === "edit" && item.editHref)
+                  router.push(toHref(item.editHref));
+              }}
               style={styles.cell}
             >
               <View style={styles.tile}>

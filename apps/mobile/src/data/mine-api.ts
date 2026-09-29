@@ -4,6 +4,8 @@ import { api } from "@/lib/api-client";
 export interface MyWork {
   id: string;
   title: string;
+  introduction?: string;
+  hasVideo?: boolean;
   coverUrl?: string;
   reviewStatus?: number;
   isPrivate: boolean;
@@ -44,6 +46,8 @@ export async function fetchMyWorksPage(page: number, signal?: AbortSignal) {
     works.push({
       id: String(row.id),
       title: typeof row.title === "string" ? row.title : "",
+      introduction: typeof row.introduction === "string" ? row.introduction : "",
+      hasVideo: typeof row.videoLink === "string" && !!row.videoLink.trim(),
       coverUrl:
         typeof row.videoBanner === "string" && row.videoBanner.trim()
           ? resolveAssetUrl(row.videoBanner, appEnv.assets.bannerBaseUrl)
@@ -53,4 +57,20 @@ export async function fetchMyWorksPage(page: number, signal?: AbortSignal) {
     });
   }
   return { works, hasMore: rows.length >= MY_WORKS_PAGE_SIZE };
+}
+
+/** No dedicated detail API exists in Web; resolve only from the current owner's list. */
+export async function findMyWork(id: string, signal: AbortSignal): Promise<MyWork> {
+  const seen = new Set<string>();
+  for (let page = 1; ; page++) {
+    signal.throwIfAborted();
+    const result = await fetchMyWorksPage(page, signal);
+    signal.throwIfAborted();
+    const found = result.works.find((work) => work.id === id);
+    if (found) return found;
+    if (!result.hasMore) throw new Error("Work is not available in this account");
+    const previous = seen.size;
+    result.works.forEach((work) => seen.add(work.id));
+    if (seen.size === previous) throw new Error("Work listing did not advance");
+  }
 }

@@ -100,3 +100,19 @@ export async function uploadWorkFile(
     { service: "content", signal, timeout: 30 * 60 * 1000 }
   );
 }
+
+/** Preserve visibility and tags; this endpoint only edits the supplied fields. */
+export async function updateWork(
+  id: string,
+  title: string,
+  description: string,
+  signal?: AbortSignal
+) {
+  if (!id.trim() || !title.trim() || !description.trim())
+    throw new Error("Incomplete work information");
+  await api.postForm(
+    "/vedio/update/personal/video",
+    { id, title: title.trim(), introduction: description.trim() },
+    { service: "content", signal }
+  );
+}

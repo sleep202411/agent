@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import ProfileEditScreen from "@/app/publish-work";
 const h = vi.hoisted(() => ({
+  workId: undefined as string | undefined,
+  find: vi.fn(),
+  update: vi.fn(),
   focused: true,
   generation: 1,
   authenticated: true,
@@ -18,12 +21,15 @@ const h = vi.hoisted(() => ({
 vi.mock("./publish-work-api", () => ({
   getWorkTags: h.get,
   createWork: h.create,
+  updateWork: h.update,
   pickWorkFile: h.pick,
   uploadWorkFile: h.upload,
 }));
+vi.mock("@/data/mine-api", () => ({ findMyWork: h.find }));
 vi.mock("./work-refresh", () => ({ refreshPersonalWorks: vi.fn() }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
+  useLocalSearchParams: () => ({ workId: h.workId }),
   useIsFocused: () => h.focused,
   useRouter: () => ({ back: h.back }),
 }));
@@ -98,6 +104,7 @@ const user = {
 let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   vi.resetAllMocks();
+  h.workId = undefined;
   h.focused = true;
   h.generation = 1;
   h.authenticated = true;
@@ -189,4 +196,37 @@ it("hides publishing from signed-out deep links", async () => {
   await render();
   expect(h.get).not.toHaveBeenCalled();
   expect(host.querySelector("input")).toBeNull();
+});
+
+it("reopens an owned work, updates metadata without creating and reuses its upload ID", async () => {
+  h.workId = "42";
+  h.find.mockResolvedValue({
+    id: "42",
+    title: "Existing",
+    introduction: "Story",
+    hasVideo: true,
+    isPrivate: true,
+  });
+  await render();
+  expect(input("publishWork.name").value).toBe("Existing");
+  expect(h.get).not.toHaveBeenCalled();
+  await act(async () => {
+    change("publishWork.name", "Changed");
+    click("publishWork.next");
+  });
+  expect(h.create).not.toHaveBeenCalled();
+  expect(h.update.mock.calls[0].slice(0, 3)).toEqual(["42", "Changed", "Story"]);
+  await act(async () => click("publishWork.cover"));
+  expect(h.upload.mock.calls[0][0]).toBe("42");
+  await act(async () => click("publishWork.done"));
+  expect(h.back).toHaveBeenCalled();
+});
+it("does not expose editing for an unavailable foreign work", async () => {
+  h.workId = "foreign";
+  h.find.mockRejectedValue(new Error("not found"));
+  await render();
+  expect(host.textContent).toContain("publishWork.loadFailed");
+  expect(host.querySelector("input")).toBeNull();
+  expect(h.create).not.toHaveBeenCalled();
+  expect(h.update).not.toHaveBeenCalled();
 });

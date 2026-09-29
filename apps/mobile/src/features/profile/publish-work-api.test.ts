@@ -1,5 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { createWork, getWorkTags, pickWorkFile, uploadWorkFile } from "./publish-work-api";
+import {
+  updateWork,
+  createWork,
+  getWorkTags,
+  pickWorkFile,
+  uploadWorkFile,
+} from "./publish-work-api";
 const h = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -7,7 +13,9 @@ const h = vi.hoisted(() => ({
   pick: vi.fn(),
   platform: { OS: "ios" },
 }));
-vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post, postFormData: h.upload } }));
+vi.mock("@/lib/api-client", () => ({
+  api: { get: h.get, post: h.post, postFormData: h.upload, postForm: h.post },
+}));
 vi.mock("expo-document-picker", () => ({ getDocumentAsync: h.pick }));
 vi.mock("react-native", () => ({ Platform: h.platform }));
 beforeEach(() => {
@@ -90,4 +98,13 @@ it("does not send an aborted upload", async () => {
     )
   ).rejects.toThrow();
   expect(h.upload).not.toHaveBeenCalled();
+});
+
+it("updates only title and introduction, leaving privacy and tags untouched", async () => {
+  await updateWork("42", " Film ", " Description ");
+  expect(h.post).toHaveBeenCalledWith(
+    "/vedio/update/personal/video",
+    { id: "42", title: "Film", introduction: "Description" },
+    { service: "content", signal: undefined }
+  );
 });

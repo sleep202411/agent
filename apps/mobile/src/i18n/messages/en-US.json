@@ -1006,5 +1006,8 @@
   "publishWork.cover": "Upload Cover",
   "publishWork.video": "Upload Video",
   "publishWork.limits": "Cover: image up to 10 MiB. Video: up to 5 GiB.",
-  "publishWork.done": "Done"
+  "publishWork.done": "Done",
+  "publishWork.edit": "Edit Work",
+  "publishWork.editHint": "Long press to edit or resume uploads.",
+  "publishWork.loadFailed": "Could not load this work from your account."
 }

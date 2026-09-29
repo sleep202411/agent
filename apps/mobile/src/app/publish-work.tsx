@@ -1,4 +1,5 @@
-import { Stack, useIsFocused, useRouter } from "expo-router";
+import { findMyWork, type MyWork } from "@/data/mine-api";
+import { Stack, useIsFocused, useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useAuth, useLoginGateOnFocus } from "@/auth";
@@ -9,6 +10,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import {
   createWork,
+  updateWork,
   getWorkTags,
   pickWorkFile,
   uploadWorkFile,
@@ -20,6 +22,7 @@ export default function PublishWorkScreen() {
     theme = useTheme(),
     t = useTranslations();
   useLoginGateOnFocus();
+  const { workId } = useLocalSearchParams<{ workId?: string }>();
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <Stack.Screen
@@ -31,30 +34,70 @@ export default function PublishWorkScreen() {
         }}
       />
       {auth.status === "authenticated" ? (
-        <PublishForm key={auth.generation} />
+        <OwnedWorkForm
+          key={JSON.stringify([auth.generation, workId])}
+          workId={typeof workId === "string" ? workId : undefined}
+        />
       ) : (
         <ActivityIndicator />
       )}
     </View>
   );
 }
-function PublishForm() {
+function OwnedWorkForm({ workId }: { workId?: string }) {
+  const t = useTranslations();
+  const [work, setWork] = useState<MyWork>();
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!workId) return;
+    const controller = new AbortController();
+    void findMyWork(workId, controller.signal)
+      .then((value) => {
+        if (!controller.signal.aborted) setWork(value);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      });
+    return () => controller.abort();
+  }, [workId, attempt]);
+  if (!workId) return <PublishForm />;
+  if (work) return <PublishForm initial={work} />;
+  if (failed)
+    return (
+      <View style={{ padding: 16 }}>
+        <ThemedText accessibilityRole="alert">{t("publishWork.loadFailed")}</ThemedText>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            setFailed(false);
+            setAttempt((n) => n + 1);
+          }}
+        >
+          <ThemedText>{t("profileEdit.retry")}</ThemedText>
+        </Pressable>
+      </View>
+    );
+  return <ActivityIndicator />;
+}
+function PublishForm({ initial }: { initial?: MyWork }) {
   const auth = useAuth(),
     theme = useTheme(),
     t = useTranslations(),
     router = useRouter(),
     focused = useIsFocused();
   const op = useAuthFormOperation("publish-work", focused);
-  const [title, setTitle] = useState(""),
-    [description, setDescription] = useState(""),
+  const [title, setTitle] = useState(initial?.title ?? ""),
+    [description, setDescription] = useState(initial?.introduction ?? ""),
     [selected, setSelected] = useState<number[]>([]);
   const [tags, setTags] = useState<WorkTag[]>(),
     [tagError, setTagError] = useState(false),
     [attempt, setAttempt] = useState(0);
-  const [id, setId] = useState<string>(),
-    [video, setVideo] = useState(false),
-    [cover, setCover] = useState(false),
+  const [id, setId] = useState<string | undefined>(initial?.id),
+    [video, setVideo] = useState(initial?.hasVideo ?? false),
+    [cover, setCover] = useState(!!initial?.coverUrl),
     [error, setError] = useState<string>();
+  const [basic, setBasic] = useState(true);
   const scope = useRef<AbortController | null>(null);
   useLayoutEffect(() => {
     const controller = new AbortController();
@@ -65,6 +108,7 @@ function PublishForm() {
     };
   }, [focused]);
   useEffect(() => {
+    if (initial) return;
     const controller = new AbortController();
     void getWorkTags(controller.signal)
       .then((value) => {
@@ -74,17 +118,22 @@ function PublishForm() {
         if (!controller.signal.aborted) setTagError(true);
       });
     return () => controller.abort();
-  }, [attempt]);
+  }, [attempt, initial]);
   const next = () => {
     const request = scope.current;
     if (!request) return;
     void op.run(
       async () => {
         setError(undefined);
+        if (initial) {
+          await updateWork(initial.id, title, description, request.signal);
+          return initial.id;
+        }
         return createWork({ title, description, tagIds: selected }, request.signal);
       },
       (value) => {
         setId(value);
+        setBasic(false);
         refreshPersonalWorks();
       },
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
@@ -127,7 +176,7 @@ function PublishForm() {
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ padding: 16, gap: 16 }}
     >
-      {!id ? (
+      {basic ? (
         <>
           <ThemedText>{t("publishWork.name")}</ThemedText>
           <TextInput
@@ -148,50 +197,56 @@ function PublishForm() {
             maxLength={500}
             style={fieldStyle}
           />
-          <ThemedText>{t("publishWork.tags")}</ThemedText>
-          {tagError ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setTagError(false);
-                setAttempt((n) => n + 1);
-              }}
-            >
-              <ThemedText>{t("profileEdit.retry")}</ThemedText>
-            </Pressable>
-          ) : !tags ? (
-            <ActivityIndicator />
-          ) : (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {tags.map((tag) => (
+          {!initial && (
+            <>
+              <ThemedText>{t("publishWork.tags")}</ThemedText>
+              {tagError ? (
                 <Pressable
-                  key={tag.id}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected.includes(tag.id) }}
-                  disabled={op.busy || (!selected.includes(tag.id) && selected.length >= 5)}
-                  onPress={() =>
-                    setSelected((current) =>
-                      current.includes(tag.id)
-                        ? current.filter((id) => id !== tag.id)
-                        : [...current, tag.id]
-                    )
-                  }
-                  style={{
-                    padding: 10,
-                    borderRadius: 8,
-                    backgroundColor: selected.includes(tag.id)
-                      ? theme.brand
-                      : theme.backgroundElement,
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setTagError(false);
+                    setAttempt((n) => n + 1);
                   }}
                 >
-                  <ThemedText>{tag.name}</ThemedText>
+                  <ThemedText>{t("profileEdit.retry")}</ThemedText>
                 </Pressable>
-              ))}
-            </View>
+              ) : !tags ? (
+                <ActivityIndicator />
+              ) : (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {tags.map((tag) => (
+                    <Pressable
+                      key={tag.id}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: selected.includes(tag.id) }}
+                      disabled={op.busy || (!selected.includes(tag.id) && selected.length >= 5)}
+                      onPress={() =>
+                        setSelected((current) =>
+                          current.includes(tag.id)
+                            ? current.filter((id) => id !== tag.id)
+                            : [...current, tag.id]
+                        )
+                      }
+                      style={{
+                        padding: 10,
+                        borderRadius: 8,
+                        backgroundColor: selected.includes(tag.id)
+                          ? theme.brand
+                          : theme.backgroundElement,
+                      }}
+                    >
+                      <ThemedText>{tag.name}</ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </>
           )}
           <Pressable
             accessibilityRole="button"
-            disabled={op.busy || !title.trim() || !description.trim() || !selected.length}
+            disabled={
+              op.busy || !title.trim() || !description.trim() || (!initial && !selected.length)
+            }
             onPress={next}
           >
             <ThemedText>{t("publishWork.next")}</ThemedText>

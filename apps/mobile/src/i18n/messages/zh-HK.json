@@ -1006,5 +1006,8 @@
   "publishWork.cover": "上傳封面",
   "publishWork.video": "上傳影片",
   "publishWork.limits": "封面圖片不超過 10 MiB，影片不超過 5 GiB。",
-  "publishWork.done": "完成"
+  "publishWork.done": "完成",
+  "publishWork.edit": "編輯作品",
+  "publishWork.editHint": "長按可編輯或繼續上傳。",
+  "publishWork.loadFailed": "無法從目前帳戶載入此作品。"
 }
