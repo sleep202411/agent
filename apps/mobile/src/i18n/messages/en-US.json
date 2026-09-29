@@ -993,5 +993,8 @@
   "experienceEdit.deleteConfirm": "Delete this work experience?",
   "experienceEdit.confirmDelete": "Confirm Delete",
   "experienceEdit.add": "Add Experience",
-  "experienceEdit.manage": "Manage Work Experience"
+  "experienceEdit.manage": "Manage Work Experience",
+  "creatorDetail.personalWorksTitle": "Personal Videos",
+  "creatorDetail.personalWorksError": "Could not load personal videos.",
+  "creatorDetail.personalWorksMore": "Load More"
 }

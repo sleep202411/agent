@@ -993,5 +993,8 @@
   "experienceEdit.deleteConfirm": "刪除這條工作經歷？",
   "experienceEdit.confirmDelete": "確認刪除",
   "experienceEdit.add": "新增工作經歷",
-  "experienceEdit.manage": "管理工作經歷"
+  "experienceEdit.manage": "管理工作經歷",
+  "creatorDetail.personalWorksTitle": "個人影片作品",
+  "creatorDetail.personalWorksError": "暫時無法載入個人影片作品。",
+  "creatorDetail.personalWorksMore": "載入更多"
 }

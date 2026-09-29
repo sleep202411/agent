@@ -28,6 +28,7 @@ import { type MessageKey, useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
 import { toHref } from "@/lib/navigation";
 
+import { CreatorPersonalWorks } from "@/features/profile/creator-personal-works";
 import { CreatorExperience } from "@/features/profile/creator-experience";
 import { CreatorEducation } from "@/features/profile/creator-education";
 
@@ -153,6 +154,7 @@ export default function CreatorDetailScreen() {
 
           <CreatorEducation study={creator.study} />
           <CreatorExperience creatorId={creator.id} />
+          <CreatorPersonalWorks creatorId={creator.id} />
 
           {creator.levels.length ? (
             <View style={styles.section}>
