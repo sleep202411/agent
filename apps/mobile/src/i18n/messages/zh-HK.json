@@ -1880,8 +1880,14 @@
   "applicationReview.confirm": "確認決定",
   "applicationReview.approveHelp": "批准可能將創作者加入劇組，並生效已約定的任務分配和報酬。請確認已審閱申請和最終條款。",
   "applicationReview.rejectHelp": "拒絕此申請？創作者不會透過此申請加入劇組。",
-  "applicationReview.requirements": "任務招募需確認最終條款。批准前請完成或取消待處理的面試。可前往網頁版擬定條款。",
+  "applicationReview.requirements": "任務招聘需申請人確認最終條款。批准前請完成或取消待處理的面試。",
   "applicationReview.recheck": "尚未確認審核結果。請重新整理並檢查申請狀態，再進行其他操作。",
   "reviewerInterview.open": "管理面試",
-  "reviewerInterview.time": "面試時間"
+  "reviewerInterview.time": "面試時間",
+  "termsProposal.open": "查看／提出條款",
+  "termsProposal.saved": "條款已儲存。請重新整理以查看最新確認狀態。",
+  "termsProposal.taskFee": "任務招聘使用按項目計費，金額上限為所示幣種的 100,000,000。",
+  "termsProposal.retryHelp": "結果尚未確認。重試將提交完全相同的條款和版本。",
+  "termsProposal.retry": "重試相同條款",
+  "termsProposal.changed": "條款或權限已變更。請捨棄草稿並重新載入後再提出條款。"
 }

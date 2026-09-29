@@ -1880,8 +1880,14 @@
   "applicationReview.confirm": "Confirm Decision",
   "applicationReview.approveHelp": "Approval may add this creator to the Crew and activate agreed task assignments and compensation. Confirm that you have reviewed their application and final terms.",
   "applicationReview.rejectHelp": "Reject this application? The creator will not be admitted through this application.",
-  "applicationReview.requirements": "Confirmed final terms are required for task recruitment. Resolve pending interviews before approval. Use the Web workflow to propose terms.",
+  "applicationReview.requirements": "Confirmed final terms are required for task recruitment. Resolve pending interviews before approval.",
   "applicationReview.recheck": "The decision was not confirmed. Refresh and check the application status before another action.",
   "reviewerInterview.open": "Manage Interview",
-  "reviewerInterview.time": "Interview Time"
+  "reviewerInterview.time": "Interview Time",
+  "termsProposal.open": "Review / Propose Terms",
+  "termsProposal.saved": "Proposal Saved. Refresh to See the Latest Confirmation Status.",
+  "termsProposal.taskFee": "Task recruitment uses a per-project fee, up to 100,000,000 in the displayed currency.",
+  "termsProposal.retryHelp": "The result is uncertain. Retry sends exactly the same proposal and version.",
+  "termsProposal.retry": "Retry Same Proposal",
+  "termsProposal.changed": "Terms or access changed. Discard this draft and reload before proposing again."
 }

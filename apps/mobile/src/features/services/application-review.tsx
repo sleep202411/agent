@@ -1,3 +1,4 @@
+import { TermsProposalScreen } from "./terms-proposal";
 import { ApplicationInterview } from "./application-interview";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView } from "react-native";
@@ -122,7 +123,18 @@ function ReviewList(
 }
 function Review(props: Props & { applicationId: string }) {
   const [revision, setRevision] = useState(0);
+  const [proposal, setProposal] = useState(false);
   const [interviewApplicant, setInterviewApplicant] = useState<string>();
+  if (proposal)
+    return (
+      <TermsProposalScreen
+        {...props}
+        onClose={() => {
+          setProposal(false);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (interviewApplicant)
     return (
       <ApplicationInterview
@@ -141,6 +153,7 @@ function Review(props: Props & { applicationId: string }) {
     <ReviewDetail
       key={revision}
       {...props}
+      onProposal={() => setProposal(true)}
       onInterview={setInterviewApplicant}
       onRefresh={() => setRevision((n) => n + 1)}
     />
@@ -149,6 +162,7 @@ function Review(props: Props & { applicationId: string }) {
 function ReviewDetail(
   props: Props & {
     applicationId: string;
+    onProposal: () => void;
     onInterview: (applicantId: string) => void;
     onRefresh: () => void;
   }
@@ -242,6 +256,7 @@ function ReviewDetail(
             label={t("reviewerInterview.open")}
             onPress={() => props.onInterview(review.app.applicantId)}
           />
+          <Action disabled={op.busy} label={t("termsProposal.open")} onPress={props.onProposal} />
           <ThemedText>{t("applicationReview.requirements")}</ThemedText>
           {review.app.status === "pending" && !result && !attempted && (
             <>

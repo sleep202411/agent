@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApplicationReview } from "./application-review";
+vi.mock("./terms-proposal", () => ({
+  TermsProposalScreen: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>Proposal</button>
+  ),
+}));
 vi.mock("./application-interview", () => ({
   ApplicationInterview: ({
     applicantId,
@@ -241,5 +246,13 @@ it("opens reviewer interview for the selected applicant and reloads on return", 
   expect(host.textContent).toBe("Interview: creator");
   await click("Interview: creator");
   expect(button("applicationReview.approve")).toBeTruthy();
+  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
+});
+
+it("opens terms proposals and refreshes approval readiness on return", async () => {
+  await open();
+  await click("termsProposal.open");
+  expect(host.textContent).toBe("Proposal");
+  await click("Proposal");
   expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
 });
