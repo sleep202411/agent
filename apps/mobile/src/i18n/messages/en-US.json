@@ -965,5 +965,13 @@
   "profileEdit.avatarChange": "Change Avatar",
   "profileEdit.avatarHint": "Image up to 5 MB. Avatar changes are saved immediately.",
   "profileEdit.avatarInvalid": "Choose an image no larger than 5 MB.",
-  "profileEdit.avatarUpdated": "Avatar updated"
+  "profileEdit.avatarUpdated": "Avatar updated",
+  "profileEdit.education": "Education",
+  "profileEdit.educationEmpty": "No education added",
+  "profileEdit.school": "School",
+  "profileEdit.major": "Major",
+  "profileEdit.startDate": "Start date",
+  "profileEdit.endDate": "End date (blank if ongoing)",
+  "profileEdit.removeEducation": "Remove education",
+  "profileEdit.addEducation": "Add education"
 }

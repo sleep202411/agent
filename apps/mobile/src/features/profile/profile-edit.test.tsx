@@ -266,3 +266,55 @@ it("locks repeated picks and makes a late picker stale on blur", async () => {
   await act(async () => finish(true));
   expect(h.refresh).toHaveBeenCalledTimes(1);
 });
+it("preserves education when saving unrelated fields", async () => {
+  await render();
+  expect(input("profileEdit.school 1").value).toBe("Keep education");
+  await act(async () => save());
+  expect(h.post.mock.calls[0][1].data).not.toHaveProperty("study");
+});
+it("saves structured education and supports removing the last entry", async () => {
+  await render();
+  await act(async () => change("profileEdit.school 1", " Film school "));
+  await act(async () => change("profileEdit.major 1", " Animation "));
+  await act(async () => change("profileEdit.startDate 1", "2020-09"));
+  await act(async () => save());
+  expect(JSON.parse(h.post.mock.calls[0][1].data.study)).toEqual([
+    { schoolName: "Film school", major: "Animation", startDate: "2020-09", endDate: "" },
+  ]);
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "profileEdit.removeEducation")!
+      .click()
+  );
+  await act(async () => save());
+  expect(h.post.mock.calls[1][1].data.study).toBe("");
+});
+it("adds multiple education entries without losing the existing one", async () => {
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "profileEdit.addEducation")!
+      .click()
+  );
+  await act(async () => change("profileEdit.school 2", "Second school"));
+  await act(async () => save());
+  expect(
+    JSON.parse(h.post.mock.calls[0][1].data.study).map((e: { schoolName: string }) => e.schoolName)
+  ).toEqual(["Keep education", "Second school"]);
+});
+it("keeps unreadable legacy education untouched during an unrelated save", async () => {
+  h.refresh.mockResolvedValue({ ...user, study: "[broken legacy JSON" });
+  await render();
+  await act(async () => change("profileEdit.contact", "updated"));
+  await act(async () => save());
+  expect(h.post.mock.calls[0][1].data).not.toHaveProperty("study");
+});
+it("loads structured education with optional end dates", async () => {
+  h.refresh.mockResolvedValue({
+    ...user,
+    study: JSON.stringify([{ schoolName: "School", major: "Film", startDate: "2025-01" }]),
+  });
+  await render();
+  expect(input("profileEdit.school 1").value).toBe("School");
+  expect(input("profileEdit.endDate 1").value).toBe("");
+});

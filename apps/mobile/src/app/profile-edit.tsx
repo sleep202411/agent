@@ -21,6 +21,8 @@ import { useTranslations, type MessageKey } from "@/i18n";
 
 import { AvatarValidationError, pickAndUploadAvatar } from "@/features/profile/avatar-upload";
 
+import { EducationEditor } from "@/features/profile/education-editor";
+
 const fields: { key: keyof ProfileDraft; label: MessageKey; multiline?: boolean }[] = [
   { key: "nickName", label: "profileEdit.nickname" },
   { key: "contact", label: "profileEdit.contact" },
@@ -62,6 +64,8 @@ function ProfileForm() {
   const [draft, setDraft] = useState<ProfileDraft>();
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
+  const [originalStudy, setOriginalStudy] = useState("");
+  const [editedStudy, setEditedStudy] = useState<string>();
   const refresh = auth.refreshCurrentUser;
   const uploadScope = useRef<AbortController | null>(null);
   const [avatarUpdated, setAvatarUpdated] = useState(false);
@@ -111,6 +115,7 @@ function ProfileForm() {
           return;
         }
         setDraft(profileDraft(user));
+        setOriginalStudy("study" in user && typeof user.study === "string" ? user.study : "");
       })
       .catch((cause: unknown) => {
         if (active) loadFailed(cause);
@@ -125,7 +130,7 @@ function ProfileForm() {
     await operation.run(
       async () => {
         setError(undefined);
-        await updateProfile(draft);
+        await updateProfile(draft, editedStudy);
         if (getAuthGeneration() === generation) await refresh();
       },
       () => router.back(),
@@ -176,6 +181,13 @@ function ProfileForm() {
               />
             </View>
           ))}
+        {draft && (
+          <EducationEditor
+            study={originalStudy}
+            disabled={operation.busy}
+            onChange={setEditedStudy}
+          />
+        )}
         {!!error && (
           <ThemedText accessibilityRole="alert" style={{ color: theme.brand }}>
             {error}

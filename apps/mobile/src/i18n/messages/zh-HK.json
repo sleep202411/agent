@@ -965,5 +965,13 @@
   "profileEdit.avatarChange": "更換頭像",
   "profileEdit.avatarHint": "圖片不超過 5 MB。頭像更改會立即儲存。",
   "profileEdit.avatarInvalid": "請選擇不超過 5 MB 的圖片。",
-  "profileEdit.avatarUpdated": "頭像已更新"
+  "profileEdit.avatarUpdated": "頭像已更新",
+  "profileEdit.education": "教育經歷",
+  "profileEdit.educationEmpty": "尚未新增教育經歷",
+  "profileEdit.school": "學校",
+  "profileEdit.major": "專業",
+  "profileEdit.startDate": "開始日期",
+  "profileEdit.endDate": "結束日期（在讀請留空）",
+  "profileEdit.removeEducation": "刪除教育經歷",
+  "profileEdit.addEducation": "新增教育經歷"
 }
