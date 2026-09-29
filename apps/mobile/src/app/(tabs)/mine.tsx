@@ -12,7 +12,8 @@ import { appEnv, resolveAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { fetchMyCrews } from "@/data/crew-api";
 import { fetchMyIps, type MyIp } from "@/data/ip-api";
-import { fetchMyWorks, type MyWork } from "@/data/mine-api";
+import { useMyWorks } from "@/features/profile/use-my-works";
+import { ListFooter } from "@/components/ui";
 import type { CrewSummary } from "@/data/types";
 import { openPaywall } from "@/features/paywall";
 import { usePersonalBalances } from "@/features/profile/use-personal-balances";
@@ -85,7 +86,7 @@ export default function MineScreen() {
 
   const [tab, setTab] = useState<TabKey>("works");
   const [languageOpen, setLanguageOpen] = useState(false);
-  const [works, setWorks] = useState<MyWork[]>();
+  const ownerWorks = useMyWorks(authOwnerKey);
   const [ips, setIps] = useState<MyIp[]>();
   const [crews, setCrews] = useState<CrewSummary[]>();
   const balances = usePersonalBalances(authOwnerKey);
@@ -98,17 +99,15 @@ export default function MineScreen() {
     // guest never fires (and 401s) these requests.
     if (!authOwnerKey) return;
     let active = true;
-    void Promise.all([fetchMyWorks(), fetchMyIps(), fetchMyCrews()])
-      .then(([nextWorks, nextIps, nextCrews]) => {
+    void Promise.all([fetchMyIps(), fetchMyCrews()])
+      .then(([nextIps, nextCrews]) => {
         if (!active) return;
-        setWorks(nextWorks);
         setIps(nextIps);
         setCrews(nextCrews);
         setLoadedFor(authOwnerKey);
       })
       .catch(() => {
         if (!active) return;
-        setWorks([]);
         setIps([]);
         setCrews([]);
         setLoadedFor(authOwnerKey);
@@ -136,7 +135,7 @@ export default function MineScreen() {
       : undefined;
 
   const hasCurrentUserData = Boolean(authOwnerKey && loadedFor === authOwnerKey);
-  const currentWorks = hasCurrentUserData ? works : undefined;
+  const currentWorks = ownerWorks.works;
   const currentIps = hasCurrentUserData ? ips : undefined;
   const currentCrews = hasCurrentUserData ? crews : undefined;
 
@@ -224,6 +223,24 @@ export default function MineScreen() {
         columnWrapperStyle={styles.column}
         contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         showsVerticalScrollIndicator={false}
+        onEndReached={tab === "works" ? ownerWorks.loadMore : undefined}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={
+          tab === "works" ? (
+            ownerWorks.failed ? (
+              <View style={styles.empty}>
+                <ThemedText accessibilityRole="alert">
+                  {t("creatorDetail.personalWorksError")}
+                </ThemedText>
+                <Pressable accessibilityRole="button" onPress={ownerWorks.retry}>
+                  <ThemedText>{t("profileEdit.retry")}</ThemedText>
+                </Pressable>
+              </View>
+            ) : (
+              <ListFooter loading={ownerWorks.loading} />
+            )
+          ) : null
+        }
         ListHeaderComponent={
           <View>
             {/* Profile header — avatar as a blurred banner */}
@@ -426,7 +443,9 @@ export default function MineScreen() {
         }
         ListEmptyComponent={
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-            {loading ? "" : emptyText}
+            {loading || (tab === "works" && (ownerWorks.failed || ownerWorks.loading))
+              ? ""
+              : emptyText}
           </ThemedText>
         }
         renderItem={({ item }) => {
