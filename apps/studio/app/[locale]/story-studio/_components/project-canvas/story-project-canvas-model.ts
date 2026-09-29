@@ -573,3 +573,40 @@ function graphNodeDisplayTitle(
   if (node.kind === "decision") return "Player choice";
   return node.name?.trim() || (clipOrdinal ? `${clipLabel} ${clipOrdinal}` : node.clipKey);
 }
+
+/** Stable enough to tell whether a card must repaint. Key order follows the projection builder. */
+function storyCanvasNodeDataKey(data: StoryCanvasNodeData): string {
+  return JSON.stringify(data);
+}
+
+/**
+ * Keep the previous React Flow node when a draft edit did not change that card.
+ * Typing in one inspector field must not allocate a new object for every node.
+ */
+export function reuseStoryCanvasNodes(
+  previous: readonly StoryCanvasNode[],
+  next: readonly StoryCanvasNode[]
+): readonly StoryCanvasNode[] {
+  const previousById = new Map(previous.map((node) => [node.id, node]));
+  let identical = previous.length === next.length;
+  const reused = next.map((node, index) => {
+    const kept = reuseStoryCanvasNode(previousById.get(node.id), node);
+    if (kept !== previous[index]) identical = false;
+    return kept;
+  });
+  return identical ? previous : reused;
+}
+
+function reuseStoryCanvasNode(
+  previous: StoryCanvasNode | undefined,
+  next: StoryCanvasNode
+): StoryCanvasNode {
+  if (!previous) return next;
+  const sameData = storyCanvasNodeDataKey(previous.data) === storyCanvasNodeDataKey(next.data);
+  const samePosition =
+    previous.position.x === next.position.x && previous.position.y === next.position.y;
+  const sameSelected = Boolean(previous.selected) === Boolean(next.selected);
+  if (sameData && samePosition && sameSelected) return previous;
+  if (sameData) return { ...previous, selected: next.selected, position: next.position };
+  return next;
+}

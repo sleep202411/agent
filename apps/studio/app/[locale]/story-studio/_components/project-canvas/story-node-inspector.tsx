@@ -3,7 +3,6 @@
 import { IconArrowRight, IconFlag, IconFocusCentered, IconTrash, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import type {
   InteractiveStoryDraftContent,
   StoryClipGraphNode,
@@ -249,16 +248,17 @@ function GraphNodeEditor({
   );
   return (
     <>
-      <label className="mt-6 block" htmlFor="story-clip-name">
+      <label className="mt-6 block">
         <span className="text-[9px] font-semibold text-white/32">{t("inspector.nodeName")}</span>
-        <Input
-          id="story-clip-name"
+        <StoryCanvasTextInput
+          key={node.nodeId}
           value={node.name ?? ""}
           disabled={!canEdit}
           maxLength={120}
+          aria-label={t("inspector.nodeName")}
           placeholder={node.clipKey}
-          onChange={(event) => onUpdateClipMeta(node.nodeId, { name: event.target.value })}
-          className="mt-1.5 h-9! rounded-lg bg-white/[0.05] px-3 text-xs"
+          onValueChange={(name) => onUpdateClipMeta(node.nodeId, { name })}
+          className="mt-1.5 h-9! w-full rounded-lg bg-white/[0.05] px-3 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
         />
       </label>
 

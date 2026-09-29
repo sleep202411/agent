@@ -120,6 +120,7 @@ import {
 } from "@/lib/story-projects-api";
 import {
   buildStoryCanvasModel,
+  reuseStoryCanvasNodes,
   storyDecisionCanvasNodeId,
   type StoryCanvasEdge,
   type StoryCanvasNode,
@@ -1514,7 +1515,7 @@ function StoryProjectCanvasInner({
       setHistoryVersion((current) => current + 1);
     }
     const placedNodeIds: string[] = [];
-    const nextNodes = model.nodes.map((node) => {
+    const projectedNodes = model.nodes.map((node) => {
       const pendingPosition = pendingNodePositionsRef.current.get(node.id);
       if (pendingPosition) placedNodeIds.push(node.id);
       return {
@@ -1528,10 +1529,13 @@ function StoryProjectCanvasInner({
           node.position,
       };
     });
+    const nextNodes = reuseStoryCanvasNodes(canvasNodesRef.current, projectedNodes);
     placedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
-    canvasNodesRef.current = nextNodes;
-    setCanvasNodes(nextNodes);
-    reconcileFocusAfterModel(nextNodes);
+    if (nextNodes !== canvasNodesRef.current) {
+      canvasNodesRef.current = [...nextNodes];
+      setCanvasNodes([...nextNodes]);
+    }
+    reconcileFocusAfterModel(canvasNodesRef.current);
     if (shouldAdoptAuthoritativeLayout) {
       const adoptedLayout = canvasLayoutPayload(nextNodes);
       latestDesiredLayoutRef.current = adoptedLayout;
