@@ -9956,9 +9956,9 @@
     "discard": "丢弃修改"
   },
   "crewDeadline": {
-    "overdue": "已逾期 · {{count}} 小时",
-    "soon": "即将到期 · 剩余 {{count}} 小时",
-    "upcoming": "剩余 {{count}} 小时",
+    "overdue": "已逾期 · {count} 小时",
+    "soon": "即将到期 · 剩余 {count} 小时",
+    "upcoming": "剩余 {count} 小时",
     "warningWindow": "标记此时间内到期的任务",
     "hours": "{count} 小时"
   },

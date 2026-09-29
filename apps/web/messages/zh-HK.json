@@ -9956,9 +9956,9 @@
     "discard": "捨棄修改"
   },
   "crewDeadline": {
-    "overdue": "已逾期 · {{count}} 小時",
-    "soon": "即將到期 · 剩餘 {{count}} 小時",
-    "upcoming": "剩餘 {{count}} 小時",
+    "overdue": "已逾期 · {count} 小時",
+    "soon": "即將到期 · 剩餘 {count} 小時",
+    "upcoming": "剩餘 {count} 小時",
     "warningWindow": "標記此時間內到期的任務",
     "hours": "{count} 小時"
   },

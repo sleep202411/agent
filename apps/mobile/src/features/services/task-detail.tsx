@@ -1,3 +1,4 @@
+import { TaskDeadline } from "./task-deadline";
 import { TaskCustomFields } from "./task-custom-fields";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -140,6 +141,7 @@ function TaskContent({
           </ThemedText>
           <ThemedText>
             {t("thread.taskDue")}: {date(data.dueAt)}
+            <TaskDeadline dueAt={data.dueAt} status={data.status} />
           </ThemedText>
           <ThemedText>{t("thread.taskAssignees")}</ThemedText>
           {data.assignees.length === 0 && <ThemedText>{t("thread.taskUnset")}</ThemedText>}

@@ -1793,5 +1793,8 @@
   "nativeApplications.history": "Older Terms",
   "nativeApplications.back": "Back to Applications",
   "nativeApplications.retry": "Retry This Version",
-  "nativeApplications.review": "Review the displayed terms before confirming this version."
+  "nativeApplications.review": "Review the displayed terms before confirming this version.",
+  "crewDeadline.overdue": "Overdue · {count} h",
+  "crewDeadline.soon": "Due soon · {count} h left",
+  "crewDeadline.upcoming": "{count} h left"
 }

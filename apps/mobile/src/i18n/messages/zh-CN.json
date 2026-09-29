@@ -1793,5 +1793,8 @@
   "nativeApplications.history": "历史条款",
   "nativeApplications.back": "返回申请列表",
   "nativeApplications.retry": "重试此版本",
-  "nativeApplications.review": "确认此版本前，请核对所显示的条款。"
+  "nativeApplications.review": "确认此版本前，请核对所显示的条款。",
+  "crewDeadline.overdue": "已逾期 · {count} 小时",
+  "crewDeadline.soon": "即将到期 · 剩余 {count} 小时",
+  "crewDeadline.upcoming": "剩余 {count} 小时"
 }

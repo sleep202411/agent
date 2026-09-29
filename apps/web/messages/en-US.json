@@ -9956,9 +9956,9 @@
     "discard": "Discard edits"
   },
   "crewDeadline": {
-    "overdue": "Overdue · {{count}} h",
-    "soon": "Due soon · {{count}} h left",
-    "upcoming": "{{count}} h left",
+    "overdue": "Overdue · {count} h",
+    "soon": "Due soon · {count} h left",
+    "upcoming": "{count} h left",
     "warningWindow": "Highlight deadlines within",
     "hours": "{count} hours"
   },
