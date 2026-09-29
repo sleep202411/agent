@@ -32,6 +32,7 @@ import {
   useCrewEpisodes,
   useCrewTaskKindTemplates,
   useDraftCrewTask,
+  type CreateCrewTaskInput,
   type CrewMemberDTO,
   type CrewTaskDraftDTO,
   type CrewTaskDTO,
@@ -54,8 +55,11 @@ interface TaskQuickCreateProps {
   project: CrewTaskProjectDTO;
   activeView: CrewTaskViewDTO;
   presetWorkflowStateId?: string | null;
+  presetEpisodeId?: string | null;
   parentId?: string | null;
   onCreated?: (task: CrewTaskDTO) => void;
+  onStage?: (input: CreateCrewTaskInput) => void;
+  keyboardShortcut?: boolean;
 }
 
 export function TaskQuickCreate({
@@ -67,8 +71,11 @@ export function TaskQuickCreate({
   project,
   activeView,
   presetWorkflowStateId,
+  presetEpisodeId,
   parentId,
   onCreated,
+  onStage,
+  keyboardShortcut = true,
 }: TaskQuickCreateProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
@@ -92,7 +99,7 @@ export function TaskQuickCreate({
   const [assigneeUserId, setAssigneeUserId] = useState("");
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [cycleId, setCycleId] = useState<string | null>(null);
-  const [episodeId, setEpisodeId] = useState<string | null>(null);
+  const [episodeId, setEpisodeId] = useState<string | null>(presetEpisodeId ?? null);
   const [dueDate, setDueDate] = useState("");
   const [createMore, setCreateMore] = useState(false);
   const [draft, setDraft] = useState<CrewTaskDraftDTO | null>(null);
@@ -109,7 +116,7 @@ export function TaskQuickCreate({
     setAssigneeUserId("");
     setLabelIds([]);
     setCycleId(null);
-    setEpisodeId(null);
+    setEpisodeId(presetEpisodeId ?? null);
     setDueDate("");
     setDraft(null);
   }
@@ -165,6 +172,7 @@ export function TaskQuickCreate({
   }, [open]);
 
   useEffect(() => {
+    if (!keyboardShortcut) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target;
@@ -182,7 +190,7 @@ export function TaskQuickCreate({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onOpenChange]);
+  }, [onOpenChange, keyboardShortcut]);
 
   const reset = () => {
     draftRevision.current += 1;
@@ -194,7 +202,7 @@ export function TaskQuickCreate({
     setAssigneeUserId("");
     setLabelIds([]);
     setCycleId(null);
-    setEpisodeId(null);
+    setEpisodeId(presetEpisodeId ?? null);
     setDueDate("");
     setDraft(null);
     draftTask.reset();
@@ -251,8 +259,9 @@ export function TaskQuickCreate({
     if (!resolvedWorkflowStateId) return;
     operationInFlight.current = true;
     const requestedSession = session.current;
+    let staged = false;
     try {
-      const task = await create.mutateAsync({
+      const input: CreateCrewTaskInput = {
         title: nextTitle,
         description: description.trim(),
         workflowStateId: resolvedWorkflowStateId,
@@ -268,7 +277,14 @@ export function TaskQuickCreate({
         blockedByTaskIds: draft?.blockedByTaskIds ?? [],
         labelIds,
         assignees: assigneeUserId ? [{ userId: assigneeUserId, currency: CREW_CURRENCY }] : [],
-      });
+      };
+      if (onStage) {
+        staged = true;
+        onStage(input);
+        setOpen(false);
+        return;
+      }
+      const task = await create.mutateAsync(input);
       if (session.current !== requestedSession) return;
       toast.success(t("created"));
       onCreated?.(task);
@@ -283,7 +299,7 @@ export function TaskQuickCreate({
         toast.error(error instanceof Error ? error.message : t("createFailed"));
       }
     } finally {
-      if (session.current === requestedSession) operationInFlight.current = false;
+      if (!staged && session.current === requestedSession) operationInFlight.current = false;
     }
   };
 
@@ -493,36 +509,42 @@ export function TaskQuickCreate({
           </div>
         </div>
 
-        <footer className="mt-[11.5px] flex h-[52.5px] items-center px-3">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={createMore}
-            onClick={() => setCreateMore((value) => !value)}
-            className="ml-auto inline-flex items-center gap-2 text-[12px] font-[450] text-[#a4a4ac]"
-          >
-            <span
-              className={cn(
-                "relative h-3.5 w-[22px] rounded-full bg-[#6e6e77] transition-colors",
-                createMore && "bg-[#5e6ad2]"
-              )}
+        <footer className="mt-[11.5px] flex h-[52.5px] items-center justify-end px-3">
+          {!onStage ? (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={createMore}
+              onClick={() => setCreateMore((value) => !value)}
+              className="ml-auto inline-flex items-center gap-2 text-[12px] font-[450] text-[#a4a4ac]"
             >
               <span
                 className={cn(
-                  "absolute top-0.5 left-0.5 size-2.5 rounded-full bg-white shadow-sm transition-transform",
-                  createMore && "translate-x-2"
+                  "relative h-3.5 w-[22px] rounded-full bg-[#6e6e77] transition-colors",
+                  createMore && "bg-[#5e6ad2]"
                 )}
-              />
-            </span>
-            {t("createMore")}
-          </button>
+              >
+                <span
+                  className={cn(
+                    "absolute top-0.5 left-0.5 size-2.5 rounded-full bg-white shadow-sm transition-transform",
+                    createMore && "translate-x-2"
+                  )}
+                />
+              </span>
+              {t("createMore")}
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={!resolvedWorkflowStateId || draftTask.isPending || create.isPending}
             onClick={() => void submit()}
-            className="ml-4 inline-flex h-7 min-w-[92.625px] items-center justify-center rounded-full bg-[#5e6ad2] px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-[#6874df] disabled:cursor-not-allowed disabled:bg-[#34343a] disabled:text-[#777780]"
+            className="ml-4 inline-flex h-7 min-w-[92.625px] items-center justify-center rounded-full bg-[#E52227] px-2.5 text-[12px] font-medium text-white transition-colors hover:bg-[#c91c21] disabled:cursor-not-allowed disabled:bg-[#34343a] disabled:text-[#777780]"
           >
-            {create.isPending ? t("creating") : t("createTask")}
+            {create.isPending
+              ? t("creating")
+              : onStage
+                ? projectT("workbench.stage")
+                : t("createTask")}
           </button>
         </footer>
       </DialogContent>

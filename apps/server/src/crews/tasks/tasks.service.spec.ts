@@ -771,6 +771,30 @@ describe('CrewTasksService', () => {
     ).toBe(false);
   });
 
+  it('uses an unfiltered, bounded production view without consulting personal saved views', async () => {
+    const t = build();
+    t.prisma.crewTask.findMany.mockResolvedValue([]);
+    t.prisma.crewTask.count.mockResolvedValue(0);
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
+    await t.service.list(
+      CREW_ID,
+      OWNER_ID,
+      ListCrewTasksQuerySchema.parse({ viewId: 'production' }),
+    );
+    expect(t.roles.require).toHaveBeenCalledWith(
+      CREW_ID,
+      OWNER_ID,
+      'tasks.view',
+    );
+    expect(t.prisma.crewTaskView.findFirst).not.toHaveBeenCalled();
+    expect(t.prisma.crewTask.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { crewId: CREW_ID, AND: [{ deletedAt: null }] },
+        take: 51,
+      }),
+    );
+  });
+
   it('evaluates persisted task views on the server and cursor-paginates a bounded page', async () => {
     const t = build();
     const viewId = '01910d50-4c88-7c78-92d4-16892c06b101';

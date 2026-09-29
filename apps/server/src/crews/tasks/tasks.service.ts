@@ -1698,9 +1698,18 @@ export class CrewTasksService {
 
   async list(crewId: string, userId: string, query: ListCrewTasksQuery) {
     await this.authorization.require(crewId, userId, 'tasks.view');
-    const view = await this.prisma.crewTaskView.findFirst({
-      where: { id: query.viewId, crewId },
-    });
+    // The production dashboard is a fixed platform view, independent of saved filters.
+    const view =
+      query.viewId === 'production'
+        ? {
+            completedMode: 'all' as const,
+            showSubIssues: true,
+            filters: {},
+            sorts: [],
+          }
+        : await this.prisma.crewTaskView.findFirst({
+            where: { id: query.viewId, crewId },
+          });
     if (!view) {
       throw new NotFoundException('Task view not found.');
     }

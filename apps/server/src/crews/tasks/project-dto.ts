@@ -105,7 +105,7 @@ export type UpdateCrewTaskViewInput = z.infer<typeof UpdateCrewTaskViewSchema>;
  */
 export const ListCrewTasksQuerySchema = z
   .object({
-    viewId: z.string().uuid(),
+    viewId: z.union([z.string().uuid(), z.literal('production')]),
     cursor: z.string().uuid().optional(),
     limit: z.coerce.number().int().min(1).max(100).default(50),
     query: z.string().trim().max(180).optional(),

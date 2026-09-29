@@ -170,8 +170,11 @@ function CrewFormDialog({
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [selectedStoryProjectId, setSelectedStoryProjectId] = useState<string>("");
   const [plotTreeData, setPlotTreeData] = useState<{
-    plotTree: any;
-    storyboardClipsByNode?: Record<string, any[]>;
+    plotTree: Record<string, unknown> & { nodes: unknown[] };
+    storyboardClipsByNode?: Record<
+      string,
+      Array<{ clipId: string; title: string; order: number; durationSeconds: number | null }>
+    >;
   } | null>(null);
   const [plotTreeLoading, setPlotTreeLoading] = useState(false);
   const [plotTreeIssues, setPlotTreeIssues] = useState<Array<{
@@ -198,14 +201,17 @@ function CrewFormDialog({
       const res = await crewApi.get<{
         projectId: string;
         title: string;
-        plotTree: any;
-        storyboardClipsByNode?: Record<string, any[]>;
+        plotTree: Record<string, unknown> & { nodes: unknown[] };
+        storyboardClipsByNode?: Record<
+          string,
+          Array<{ clipId: string; title: string; order: number; durationSeconds: number | null }>
+        >;
       }>(`/story-projects/${encodeURIComponent(projectId)}/plot-tree`);
       setPlotTreeData({
         plotTree: res.plotTree,
         storyboardClipsByNode: res.storyboardClipsByNode,
       });
-    } catch (err: any) {
+    } catch (err) {
       if (!alive.current) return;
       if (
         err instanceof CrewApiError &&
@@ -574,6 +580,8 @@ function CrewFormDialog({
                       <input
                         type="radio"
                         name="workspace-mode"
+                        className="accent-[#E52227]"
+                        disabled={creating}
                         checked={workspaceMode === "link"}
                         onChange={() => setWorkspaceMode("link")}
                       />
@@ -603,6 +611,8 @@ function CrewFormDialog({
                       <input
                         type="radio"
                         name="workspace-mode"
+                        className="accent-[#E52227]"
+                        disabled={creating}
                         checked={workspaceMode === "create"}
                         onChange={() => setWorkspaceMode("create")}
                       />

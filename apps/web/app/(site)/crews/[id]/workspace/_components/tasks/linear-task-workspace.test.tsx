@@ -1,3 +1,7 @@
+vi.mock("./task-creation-workbench", () => ({
+  TaskCreationWorkbench: ({ active }: { active: boolean }) =>
+    active ? <div data-workbench /> : null,
+}));
 vi.mock("./trust-appeal-link", () => ({ TrustAppealLink: () => null }));
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -165,7 +169,7 @@ afterEach(() => {
   state.missing = false;
   state.retry.mockClear();
 });
-async function render(deeplinkTaskId?: string | null, reuse = false) {
+async function render(deeplinkTaskId?: string | null, reuse = false, production = false) {
   if (!reuse) {
     const el = document.createElement("div");
     document.body.append(el);
@@ -189,6 +193,8 @@ async function render(deeplinkTaskId?: string | null, reuse = false) {
       />
     )
   );
+  if (!production)
+    await act(async () => (document.querySelectorAll("nav button")[1] as HTMLElement)?.click());
 }
 describe("Crew task navigation", () => {
   it.each(["en-US", "zh-CN", "zh-HK"])(
@@ -196,21 +202,23 @@ describe("Crew task navigation", () => {
     async (locale) => {
       state.locale = locale;
       state.layout = "board";
-      await render();
+      await render(undefined, false, true);
       const m = (locale === "zh-CN" ? cn : locale === "zh-HK" ? hk : en).crewTaskProject;
       const tabs = [...document.querySelectorAll("nav button")];
-      expect(tabs.slice(0, 3).map((el) => el.textContent)).toEqual([
+      expect(tabs.slice(0, 4).map((el) => el.textContent)).toEqual([
+        m.workbench.title,
         m.issues,
         m.overview,
         m.activity,
       ]);
-      expect(document.querySelector('[data-layout="board"]')).not.toBeNull();
-      await act(async () => (tabs[1] as HTMLElement).click());
-      expect(document.querySelector("[data-overview]")).not.toBeNull();
+      expect(document.querySelector("[data-workbench]")).not.toBeNull();
+      expect(document.querySelector("[data-layout]")).toBeNull();
       await act(async () => (tabs[2] as HTMLElement).click());
+      expect(document.querySelector("[data-overview]")).not.toBeNull();
+      await act(async () => (tabs[3] as HTMLElement).click());
       expect(document.querySelector("[data-overview]")).toBeNull();
       expect(document.querySelector("[data-layout]")).toBeNull();
-      await act(async () => (tabs[0] as HTMLElement).click());
+      await act(async () => (tabs[1] as HTMLElement).click());
       expect(document.querySelector('[data-layout="board"]')).not.toBeNull();
     }
   );

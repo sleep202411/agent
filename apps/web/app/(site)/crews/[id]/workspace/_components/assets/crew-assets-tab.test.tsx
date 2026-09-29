@@ -462,6 +462,16 @@ describe("crew asset center", () => {
     });
   });
 
+  it("opens a workbench folder link inside that folder", async () => {
+    await render("folder-1");
+    await act(async () => {
+      await vi.waitFor(() =>
+        expect(requests.some((request) => request.url.includes("parentId=folder-1"))).toBe(true)
+      );
+    });
+    expect(document.querySelector('aside[aria-label="Asset preview and details"]')).toBeNull();
+  });
+
   it("opens folders in place and updates the API parent scope", async () => {
     await render();
 

@@ -63,7 +63,9 @@ import { TaskSelect } from "./task-select";
 import { ProductionOverview } from "./production-overview";
 import { ProductionActivityComposer, ProductionActivityEntry } from "./production-project-update";
 
-type PrimarySection = "overview" | "activity" | "issues";
+import { TaskCreationWorkbench } from "./task-creation-workbench";
+
+type PrimarySection = "production" | "overview" | "activity" | "issues";
 
 interface LinearTaskWorkspaceProps {
   crewId: string;
@@ -116,7 +118,7 @@ function LinearTaskSession({
   const deleteView = useDeleteCrewTaskView(crewId);
   const createWorkflowState = useCreateCrewTaskWorkflowState(crewId);
   const updateWorkflowState = useUpdateCrewTaskWorkflowState(crewId);
-  const [section, setSection] = useState<PrimarySection>("issues");
+  const [section, setSection] = useState<PrimarySection>("production");
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(deeplinkTaskId ?? null);
   const [query, setQuery] = useState("");
@@ -326,6 +328,11 @@ function LinearTaskSession({
           aria-label={t("projectViews")}
         >
           <ProjectTab
+            active={section === "production"}
+            label={t("workbench.title")}
+            onClick={() => openSection("production")}
+          />
+          <ProjectTab
             active={section === "issues" && activeView.id === project.views[0]?.id}
             label={t("issues")}
             onClick={() => openSection("issues", project.views[0]?.id)}
@@ -522,6 +529,17 @@ function LinearTaskSession({
           }}
         />
       ) : null}
+
+      <TaskCreationWorkbench
+        crewId={crewId}
+        crewName={crewName}
+        project={project}
+        members={members}
+        canManage={isOwner}
+        canManageEpisodes={productionOverviewQuery.data?.capabilities.manage === true}
+        active={section === "production"}
+        onSelectTask={selectTask}
+      />
 
       {section === "issues" ? (
         <>
@@ -770,7 +788,7 @@ function LinearTaskSession({
         </SheetContent>
       </Sheet>
 
-      {isOwner ? (
+      {isOwner && section !== "production" ? (
         <TaskQuickCreate
           open={createTaskStateId !== undefined}
           onOpenChange={(open) => setCreateTaskStateId(open ? null : undefined)}
