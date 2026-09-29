@@ -8,6 +8,85 @@ import {
 import { StoryGenerationBatchDispatcherService } from './story-generation-batch-dispatcher.service';
 
 describe('Story generation batch fair dispatcher', () => {
+  it.each([
+    'reconcile',
+    'stopSequentialBatchesAfterFailure',
+    'claim',
+    'dispatch',
+  ] as const)(
+    'stops new dispatch admission when shutdown begins during %s',
+    async (stage) => {
+      const service = new StoryGenerationBatchDispatcherService(
+        {} as never,
+        {} as never,
+      );
+      const internal = service as unknown as {
+        reconcile(): Promise<void>;
+        stopSequentialBatchesAfterFailure(): Promise<void>;
+        claim(limit: number): Promise<unknown[]>;
+        dispatch(item: unknown): Promise<void>;
+        refreshBatchStatuses(): Promise<void>;
+      };
+      let release!: () => void;
+      let entered!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const pause = async () => {
+        entered();
+        await pending;
+      };
+      const reconcile = jest
+        .spyOn(internal, 'reconcile')
+        .mockImplementation(async () => {
+          if (stage === 'reconcile') await pause();
+        });
+      const stop = jest
+        .spyOn(internal, 'stopSequentialBatchesAfterFailure')
+        .mockImplementation(async () => {
+          if (stage === 'stopSequentialBatchesAfterFailure') await pause();
+        });
+      const claim = jest
+        .spyOn(internal, 'claim')
+        .mockImplementation(async () => {
+          if (stage === 'claim') await pause();
+          return [{}];
+        });
+      const dispatch = jest
+        .spyOn(internal, 'dispatch')
+        .mockImplementation(async () => {
+          if (stage === 'dispatch') await pause();
+        });
+      const refresh = jest
+        .spyOn(internal, 'refreshBatchStatuses')
+        .mockResolvedValue(undefined);
+      const draining = service.drainOnce();
+      await started;
+      let stopped = false;
+      const shutdown = Promise.resolve(service.onModuleDestroy()).then(() => {
+        stopped = true;
+      });
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(stopped).toBe(false);
+      } finally {
+        release();
+        await Promise.all([draining, shutdown]);
+      }
+      expect(dispatch).toHaveBeenCalledTimes(stage === 'dispatch' ? 1 : 0);
+      expect(claim).toHaveBeenCalledTimes(
+        stage === 'claim' || stage === 'dispatch' ? 1 : 0,
+      );
+      expect(stop).toHaveBeenCalledTimes(stage === 'reconcile' ? 0 : 1);
+      expect(refresh).not.toHaveBeenCalled();
+      await service.drainOnce();
+      expect(reconcile).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('admits at most one item per least-recently-served actor and skips locked work', async () => {
     const queryRaw = jest
       .fn<Promise<unknown[]>, [unknown]>()

@@ -46,7 +46,8 @@ export class StoryGenerationBatchDispatcherService
   );
   private readonly workerId = `story-generation-batch:${hostname().slice(0, 48)}:${process.pid}:${randomUUID()}`;
   private timer: NodeJS.Timeout | null = null;
-  private draining = false;
+  private draining: Promise<void> | null = null;
+  private stopping = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -54,6 +55,7 @@ export class StoryGenerationBatchDispatcherService
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopping || this.timer) return;
     if (process.env.STORY_GENERATION_BATCH_DISPATCHER_ENABLED === 'false') {
       this.logger.log('Story generation batch dispatcher is disabled');
       return;
@@ -70,24 +72,35 @@ export class StoryGenerationBatchDispatcherService
     );
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    await this.draining;
   }
 
   async drainOnce(limit = DEFAULT_ACTORS_PER_SWEEP): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
+    if (this.stopping) return;
+    if (this.draining) return this.draining;
+    this.draining = this.drain(limit).finally(() => {
+      this.draining = null;
+    });
+    return this.draining;
+  }
+
+  private async drain(limit: number): Promise<void> {
     try {
       await this.reconcile();
+      if (this.stopping) return;
       await this.stopSequentialBatchesAfterFailure();
+      if (this.stopping) return;
       const claimed = await this.claim(Math.max(1, Math.min(100, limit)));
+      if (this.stopping) return;
       await Promise.all(claimed.map((item) => this.dispatch(item)));
+      if (this.stopping) return;
       await this.refreshBatchStatuses();
     } catch (error) {
       this.logger.warn(`Batch dispatch sweep failed: ${errorText(error)}`);
-    } finally {
-      this.draining = false;
     }
   }
 
