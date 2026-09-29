@@ -105,3 +105,10 @@ it("stops after local reading if cancellation happened during blob resolution", 
   ).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
+
+it("rejects actual oversized bytes before reserving storage", async () => {
+  await expect(
+    uploadMobileMediaFile(file, { kind: "crew_asset_file", scope: { crewId: "crew" }, maxBytes: 3 })
+  ).rejects.toThrow("allowed upload size");
+  expect(api.post).not.toHaveBeenCalled();
+});

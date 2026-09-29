@@ -11,6 +11,12 @@ import {
   type ViewToken,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { getAuthGeneration } from "@/auth/auth-store";
+import {
+  pickAndUploadCrewFile,
+  discardCrewUpload,
+  type CrewUpload,
+} from "@/features/crew-assets/upload";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
@@ -55,8 +61,35 @@ export function NativeConversation({
   const [assets, setAssets] = useState<CrewAsset[]>([]),
     [picking, setPicking] = useState(false),
     [web, setWeb] = useState(false);
+  const [uploads, setUploads] = useState<CrewUpload[]>([]),
+    [uploading, setUploading] = useState(false);
+  const uploadRequest = useRef<AbortController | undefined>(undefined);
+  const pendingUploads = useRef<{ crewId: string; items: CrewUpload[]; attempted: boolean }>({
+    crewId: "",
+    items: [],
+    attempted: false,
+  });
+  useEffect(
+    () => () => {
+      uploadRequest.current?.abort();
+    },
+    [active]
+  );
+  useEffect(
+    () => () => {
+      const pending = pendingUploads.current;
+      if (generation !== getAuthGeneration() || pending.attempted) return;
+      for (const file of pending.items)
+        void discardCrewUpload(pending.crewId, file.mediaAssetId).catch(() => undefined);
+    },
+    [generation]
+  );
   const intent = useRef<
-    | { body: string; clientKey: string; attachments: { source: "asset"; assetNodeId: string }[] }
+    | {
+        body: string;
+        clientKey: string;
+        attachments: ({ source: "asset"; assetNodeId: string } | CrewUpload)[];
+      }
     | undefined
   >(undefined);
   const [visibleId, setVisibleId] = useState<string>(),
@@ -122,7 +155,7 @@ export function NativeConversation({
       <CrewAssetPicker
         crewId={conversation.contextId}
         excludedIds={assets.map((a) => a.id)}
-        remaining={10 - assets.length}
+        remaining={10 - assets.length - uploads.length}
         onClose={() => setPicking(false)}
         onSelect={(selected) => {
           setAssets((previous) =>
@@ -144,7 +177,7 @@ export function NativeConversation({
     >
       <View style={{ flexDirection: "row", paddingHorizontal: 12 }}>
         {conversation.contextType === "crew"
-          ? button(t("thread.openWebChat"), () => setWeb(true))
+          ? button(t("thread.openWebChat"), () => setWeb(true), uploading || op.busy)
           : button(
               t(conversation.contextType === "order" ? "thread.openOrder" : "thread.openService"),
               () =>
@@ -253,9 +286,75 @@ export function NativeConversation({
             {button(
               t("crewAssets.choose"),
               () => setPicking(true),
-              op.busy || attempted || assets.length >= 10
+              op.busy || attempted || uploading || assets.length + uploads.length >= 10
             )}
+            <Pressable
+              accessibilityRole="button"
+              disabled={op.busy || attempted || uploading || assets.length + uploads.length >= 10}
+              onPress={() => {
+                if (!active || uploadRequest.current || pendingUploads.current.attempted) return;
+                const controller = new AbortController();
+                uploadRequest.current = controller;
+                setUploading(true);
+                setSendError(undefined);
+                void (async () => {
+                  try {
+                    const file = await pickAndUploadCrewFile(
+                      conversation.contextId,
+                      controller.signal
+                    );
+                    if (!file) return;
+                    if (controller.signal.aborted || generation !== getAuthGeneration()) {
+                      if (generation === getAuthGeneration())
+                        void discardCrewUpload(conversation.contextId, file.mediaAssetId).catch(
+                          () => undefined
+                        );
+                      return;
+                    }
+                    pendingUploads.current = {
+                      crewId: conversation.contextId,
+                      items: [...pendingUploads.current.items, file],
+                      attempted: false,
+                    };
+                    setUploads(pendingUploads.current.items);
+                  } catch (cause) {
+                    if (!controller.signal.aborted && generation === getAuthGeneration())
+                      setSendError(cause instanceof Error ? cause.message : String(cause));
+                  } finally {
+                    if (uploadRequest.current === controller) {
+                      uploadRequest.current = undefined;
+                      setUploading(false);
+                    }
+                  }
+                })();
+              }}
+              style={{ padding: 10 }}
+            >
+              <ThemedText>{t("thread.uploadFile")}</ThemedText>
+            </Pressable>
+            {uploading && <ActivityIndicator />}
             <ScrollView horizontal>
+              {uploads.map((file) => (
+                <Pressable
+                  key={file.mediaAssetId}
+                  accessibilityRole="button"
+                  disabled={op.busy || attempted || uploading}
+                  onPress={() => {
+                    pendingUploads.current.items = pendingUploads.current.items.filter(
+                      (item) => item.mediaAssetId !== file.mediaAssetId
+                    );
+                    setUploads(pendingUploads.current.items);
+                    void discardCrewUpload(conversation.contextId, file.mediaAssetId).catch(
+                      () => undefined
+                    );
+                  }}
+                  style={{ padding: 10 }}
+                >
+                  <ThemedText>
+                    {file.name} · {t("crewAssets.remove")}
+                  </ThemedText>
+                </Pressable>
+              ))}
               {assets.map((asset) => (
                 <Pressable
                   key={asset.id}
@@ -293,16 +392,21 @@ export function NativeConversation({
         {sendError && <ThemedText accessibilityRole="alert">{sendError}</ThemedText>}
         <Pressable
           accessibilityRole="button"
-          disabled={op.busy || (!body.trim() && !assets.length)}
+          disabled={op.busy || uploading || (!body.trim() && !assets.length && !uploads.length)}
           onPress={() => {
-            if (!body.trim() && !assets.length) return;
+            if (uploadRequest.current || (!body.trim() && !assets.length && !uploads.length))
+              return;
             if (!intent.current)
               intent.current = {
                 body: body.trim(),
                 clientKey: inquiryKey(),
-                attachments: assets.map((a) => ({ source: "asset", assetNodeId: a.id })),
+                attachments: [
+                  ...assets.map((a) => ({ source: "asset" as const, assetNodeId: a.id })),
+                  ...uploads,
+                ],
               };
             const submitted = intent.current;
+            pendingUploads.current.attempted = true;
             setAttempted(true);
             void op.run(
               () =>
@@ -317,6 +421,9 @@ export function NativeConversation({
                 setAttempted(false);
                 setBody("");
                 setAssets([]);
+                pendingUploads.current.items = [];
+                pendingUploads.current.attempted = false;
+                setUploads([]);
                 setSendError(undefined);
                 history.refresh();
               },

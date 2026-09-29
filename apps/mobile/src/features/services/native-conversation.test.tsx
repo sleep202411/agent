@@ -8,6 +8,8 @@ const h = vi.hoisted(() => ({
   active: true,
   send: vi.fn(),
   attach: vi.fn(),
+  upload: vi.fn(),
+  discard: vi.fn(),
   read: vi.fn(),
   refresh: vi.fn(),
   retry: vi.fn(),
@@ -28,6 +30,10 @@ vi.mock("./conversation-attachments", () => ({
 }));
 vi.mock("./conversation-file", () => ({
   ConversationFile: ({ name }: { name: string }) => <div>file:{name}</div>,
+}));
+vi.mock("@/features/crew-assets/upload", () => ({
+  pickAndUploadCrewFile: h.upload,
+  discardCrewUpload: h.discard,
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
@@ -160,6 +166,7 @@ beforeEach(() => {
   h.active = true;
   h.detail = detail;
   h.messages = [message];
+  h.discard.mockResolvedValue(undefined);
   h.read.mockResolvedValue({ lastReadMessageId: "message" });
   host = document.createElement("div");
   document.body.append(host);
@@ -281,4 +288,58 @@ it("renders received file links and keeps community conversations on Web", async
   await render();
   expect(host.textContent).toContain("web:/messages/chat");
   expect(host.textContent).not.toContain("crewAssets.choose");
+});
+
+it("uploads a file then retries the same attachment without uploading again", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  h.upload.mockResolvedValue({ source: "upload", mediaAssetId: "media", name: "New.mp4" });
+  h.attach.mockRejectedValueOnce(new Error("uncertain")).mockResolvedValueOnce(message);
+  await render();
+  await act(async () => click("thread.uploadFile"));
+  expect(host.textContent).toContain("New.mp4");
+  await act(async () => click("thread.send"));
+  expect(h.attach.mock.calls[0][2].attachments).toEqual([
+    { source: "upload", mediaAssetId: "media", name: "New.mp4" },
+  ]);
+  await act(async () => click("inbox.retry"));
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  expect(h.attach.mock.calls[1][2]).toEqual(h.attach.mock.calls[0][2]);
+  expect(h.discard).not.toHaveBeenCalled();
+});
+it("discards an unsent removed upload but never cleans up an uncertain send", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  h.upload.mockResolvedValue({ source: "upload", mediaAssetId: "media", name: "New.mp4" });
+  await render();
+  await act(async () => click("thread.uploadFile"));
+  await act(async () => click("New.mp4 · crewAssets.remove"));
+  expect(h.discard).toHaveBeenCalledWith("crew", "media");
+  h.discard.mockClear();
+  await act(async () => click("thread.uploadFile"));
+  h.attach.mockRejectedValue(new Error("uncertain"));
+  await act(async () => click("thread.send"));
+  await act(async () => root.render(<div />));
+  expect(h.discard).not.toHaveBeenCalled();
+});
+it("suppresses duplicate uploads and ignores an upload completed after account change", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  let finish!: (v: unknown) => void;
+  h.upload.mockImplementation(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      })
+  );
+  await render();
+  await act(async () => {
+    click("thread.uploadFile");
+    click("thread.uploadFile");
+  });
+  expect(h.upload).toHaveBeenCalledTimes(1);
+  const signal = h.upload.mock.calls[0][1];
+  h.generation++;
+  await render();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ source: "upload", mediaAssetId: "media", name: "Old.mp4" }));
+  expect(host.textContent).not.toContain("Old.mp4");
+  expect(h.discard).not.toHaveBeenCalled();
 });

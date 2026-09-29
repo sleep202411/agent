@@ -1190,5 +1190,6 @@
   "discovery.empty": "没有符合筛选条件的作品。",
   "thread.openFile": "打开文件",
   "thread.backToChat": "返回聊天",
-  "thread.openWebChat": "上传和提及"
+  "thread.openWebChat": "上传和提及",
+  "thread.uploadFile": "上传文件"
 }

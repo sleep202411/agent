@@ -1190,5 +1190,6 @@
   "discovery.empty": "沒有符合篩選條件的作品。",
   "thread.openFile": "開啟檔案",
   "thread.backToChat": "返回聊天",
-  "thread.openWebChat": "上傳和提及"
+  "thread.openWebChat": "上傳和提及",
+  "thread.uploadFile": "上傳檔案"
 }

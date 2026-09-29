@@ -27,6 +27,7 @@ export interface MobileUploadFile {
 
 export interface MobileUploadOptions {
   kind: string;
+  maxBytes?: number;
   signal?: AbortSignal;
   scope?: { crewId?: string };
   onProgress?: (percent: number) => void;
@@ -51,6 +52,13 @@ export async function uploadMobileMediaFile(
   options.signal?.throwIfAborted();
   if (!Number.isSafeInteger(blob.size) || blob.size <= 0)
     throw new Error("Selected file is empty or has an invalid size");
+  if (
+    options.maxBytes !== undefined &&
+    (!Number.isSafeInteger(options.maxBytes) ||
+      options.maxBytes <= 0 ||
+      blob.size > options.maxBytes)
+  )
+    throw new Error("Selected file exceeds the allowed upload size");
   const contentType = file.type || blob.type || "application/octet-stream";
 
   // 1. Request signed URL
