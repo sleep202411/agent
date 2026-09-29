@@ -5,6 +5,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
+import { TaskAssignments } from "./task-assignments";
 import { TaskSchedule } from "./task-schedule";
 import { TaskBrief } from "./task-brief";
 import { TaskRelationshipEditor } from "./task-relationship-editor";
@@ -136,6 +137,13 @@ function TaskContent({
             userId={userId}
             generation={generation}
             onRefresh={() => setRevision((v) => v + 1)}
+          />
+          <TaskAssignments
+            key={`assignments:${revision}`}
+            task={data}
+            userId={userId}
+            generation={generation}
+            onRefresh={() => setRevision((value) => value + 1)}
           />
           <TaskBrief
             key={`brief:${revision}`}
