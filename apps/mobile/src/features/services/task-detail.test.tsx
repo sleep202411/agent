@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   close: vi.fn(),
   web: vi.fn(),
 }));
+vi.mock("./task-timeline", () => ({ TaskTimeline: () => <div>timeline</div> }));
 vi.mock("./task-detail-api", () => ({ fetchTaskDetail: h.fetch }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
