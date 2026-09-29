@@ -61,6 +61,7 @@ export default function RootLayout() {
                 <Stack.Screen name="settings" />
                 <Stack.Screen name="profile-edit" />
                 <Stack.Screen name="profile-experience" />
+                <Stack.Screen name="publish-work" />
                 <Stack.Screen name="work/[id]" options={detailHeader} />
                 <Stack.Screen name="about" />
                 <Stack.Screen name="account-security" />

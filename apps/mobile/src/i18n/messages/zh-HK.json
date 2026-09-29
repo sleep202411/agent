@@ -996,5 +996,15 @@
   "experienceEdit.manage": "管理工作經歷",
   "creatorDetail.personalWorksTitle": "個人影片作品",
   "creatorDetail.personalWorksError": "暫時無法載入個人影片作品。",
-  "creatorDetail.personalWorksMore": "載入更多"
+  "creatorDetail.personalWorksMore": "載入更多",
+  "publishWork.title": "發佈影片",
+  "publishWork.name": "標題（必填）",
+  "publishWork.description": "簡介（必填）",
+  "publishWork.tags": "標籤（選擇 1–5 個）",
+  "publishWork.next": "繼續上傳",
+  "publishWork.saved": "作品記錄已儲存。上傳立即儲存，離開不會刪除記錄。發佈仍需審核。",
+  "publishWork.cover": "上傳封面",
+  "publishWork.video": "上傳影片",
+  "publishWork.limits": "封面圖片不超過 10 MiB，影片不超過 5 GiB。",
+  "publishWork.done": "完成"
 }

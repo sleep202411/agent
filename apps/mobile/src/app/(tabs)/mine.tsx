@@ -409,6 +409,15 @@ export default function MineScreen() {
               </View>
             </Pressable>
 
+            {tab === "works" && (
+              <Pressable
+                accessibilityRole="button"
+                style={{ padding: 16 }}
+                onPress={() => router.push(toHref("/publish-work"))}
+              >
+                <ThemedText type="smallBold">{t("publishWork.title")}</ThemedText>
+              </Pressable>
+            )}
             {/* Tab bar */}
             <View style={[styles.tabBar, { borderBottomColor: theme.border }]}>
               {TABS.map((item) => {

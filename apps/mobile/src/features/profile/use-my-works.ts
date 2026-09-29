@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { getWorkRevision, subscribeWorks } from "./work-refresh";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { fetchMyWorksPage, type MyWork } from "@/data/mine-api";
 type Session = {
   owner: string;
@@ -12,6 +13,7 @@ type Session = {
 type Snapshot = { owner: string; works: MyWork[]; loading: boolean; failed: boolean };
 /** Owner includes auth generation so logging back into the same account starts fresh. */
 export function useMyWorks(owner: string | undefined) {
+  const revision = useSyncExternalStore(subscribeWorks, getWorkRevision, getWorkRevision);
   const current = useRef<Session | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const load = useCallback(async (session: Session) => {
@@ -57,7 +59,7 @@ export function useMyWorks(owner: string | undefined) {
       session.controller.abort();
       current.current = undefined;
     };
-  }, [owner, load]);
+  }, [owner, load, revision]);
   const request = (retry: boolean) => {
     const session = current.current;
     if (

@@ -1,6 +1,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { refreshPersonalWorks } from "./work-refresh";
 import { useMyWorks } from "./use-my-works";
 const h = vi.hoisted(() => ({ load: vi.fn() }));
 vi.mock("@/data/mine-api", () => ({ fetchMyWorksPage: h.load }));
@@ -90,4 +91,15 @@ it("aborts an old account and ignores its delayed page", async () => {
   expect(host.textContent).not.toContain("First");
   await render();
   expect(host.textContent).not.toContain("Bob");
+});
+
+it("refreshes the first page after a publishing mutation", async () => {
+  h.load.mockResolvedValueOnce({ works: [work], hasMore: false }).mockResolvedValueOnce({
+    works: [{ ...work, id: "new", title: "Uploaded" }, work],
+    hasMore: false,
+  });
+  await render("alice:1");
+  await act(async () => refreshPersonalWorks());
+  expect(h.load.mock.calls[1][0]).toBe(1);
+  expect(host.textContent).toContain("Uploaded");
 });
