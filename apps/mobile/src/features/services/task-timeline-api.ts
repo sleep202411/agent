@@ -1,10 +1,13 @@
 import { z } from "zod";
+import { taskMention } from "./task-mentions";
 import { api } from "@/lib/api-client";
 const date = z.string().datetime({ offset: true });
 export const taskActivity = z.object({
   id: z.string().uuid(),
   taskId: z.string().uuid(),
   kind: z.string(),
+  version: z.number().int().positive(),
+  mentions: z.array(taskMention),
   payload: z.record(z.string(), z.unknown()),
   actorUserId: z.string().nullable(),
   body: z.string().nullable(),

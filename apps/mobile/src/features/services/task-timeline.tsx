@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "@/i18n";
 import { useTaskTimeline } from "./use-task-timeline";
 import { useUserDisplays } from "./user-displays";
 import { taskActivityLabel, taskActivityNote } from "./task-timeline-api";
+import { TaskCommentEdit } from "./task-comment-edit";
 import { TaskCommentRemove } from "./task-comment-remove";
 import { TaskComment } from "./task-comment";
 import { ConversationFile } from "./conversation-file";
@@ -72,16 +73,27 @@ export function TaskTimeline({
                 replyAccess.allowed &&
                 !history.error &&
                 (item.actorUserId === userId || replyAccess.canManage) && (
-                  <TaskCommentRemove
-                    commentId={item.id}
-                    generation={generation}
-                    disabled={replyAccess.locked}
-                    onRemoved={() => {
-                      if (reply?.id === item.id) setReply(undefined);
-                      history.refresh();
-                    }}
-                    onRefresh={history.refresh}
-                  />
+                  <>
+                    <TaskCommentEdit
+                      item={item}
+                      crewId={crewId}
+                      userId={userId}
+                      generation={generation}
+                      disabled={replyAccess.locked}
+                      onSaved={history.refresh}
+                      onRefresh={history.refresh}
+                    />
+                    <TaskCommentRemove
+                      commentId={item.id}
+                      generation={generation}
+                      disabled={replyAccess.locked}
+                      onRemoved={() => {
+                        if (reply?.id === item.id) setReply(undefined);
+                        history.refresh();
+                      }}
+                      onRefresh={history.refresh}
+                    />
+                  </>
                 )}
               {!!item.body && <ThemedText>{item.body}</ThemedText>}
               {!!item.editedAt && <ThemedText type="small">{t("taskActivity.edited")}</ThemedText>}

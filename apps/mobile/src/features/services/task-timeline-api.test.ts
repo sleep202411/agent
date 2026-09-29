@@ -12,6 +12,8 @@ const item: TaskActivity = {
   id,
   taskId: id,
   kind: "comment",
+  version: 1,
+  mentions: [],
   actorUserId: "1",
   body: "Note",
   createdAt: "2026-09-29T00:00:00Z",

@@ -1,4 +1,8 @@
 {
+  "taskActivity.editComment": "編輯評論",
+  "taskActivity.saveComment": "儲存變更",
+  "taskActivity.savingComment": "正在儲存…",
+  "taskActivity.editRefreshHint": "請重新整理評論後再編輯；上次儲存可能已成功。",
   "taskActivity.deleteComment": "刪除評論",
   "taskActivity.confirmDelete": "刪除此評論？此操作無法復原。",
   "taskActivity.confirmDeleteAction": "確認刪除",

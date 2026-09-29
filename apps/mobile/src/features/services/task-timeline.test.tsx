@@ -15,6 +15,11 @@ const h = vi.hoisted(() => ({
   error: undefined as string | undefined,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
+vi.mock("./task-comment-edit", () => ({
+  TaskCommentEdit: ({ disabled }: { disabled: boolean }) => (
+    <button disabled={disabled}>edit-comment</button>
+  ),
+}));
 vi.mock("./task-comment-remove", () => ({
   TaskCommentRemove: ({ onRemoved, disabled }: { onRemoved: () => void; disabled: boolean }) => (
     <button disabled={disabled} onClick={onRemoved}>
@@ -84,6 +89,8 @@ const item: TaskActivity = {
   id: "one",
   taskId: "task",
   kind: "comment",
+  version: 1,
+  mentions: [],
   actorUserId: "1",
   body: "Reply note",
   createdAt: "2026-09-29T00:00:00Z",
@@ -184,6 +191,9 @@ it("limits removal to live comments by self or explicit task managers", async ()
   h.allowed = true;
   await render();
   expect(removals()).toHaveLength(1);
+  expect(
+    Array.from(host.querySelectorAll("button")).filter((b) => b.textContent === "edit-comment")
+  ).toHaveLength(1);
   await act(async () => removals()[0]!.click());
   expect(h.refresh).toHaveBeenCalledTimes(1);
   h.canManage = true;

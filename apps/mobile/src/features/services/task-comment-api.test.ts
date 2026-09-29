@@ -1,12 +1,21 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
-import { fetchTaskCommentAccess, postTaskComment, removeTaskComment } from "./task-comment-api";
-vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }));
+import {
+  fetchTaskCommentAccess,
+  postTaskComment,
+  removeTaskComment,
+  editTaskComment,
+} from "./task-comment-api";
+vi.mock("@/lib/api-client", () => ({
+  api: { get: vi.fn(), post: vi.fn(), delete: vi.fn(), patch: vi.fn() },
+}));
 const id = "11111111-1111-4111-8111-111111111111";
 const comment = {
   id,
   taskId: id,
   kind: "comment",
+  version: 1,
+  mentions: [],
   actorUserId: "1",
   body: "Note",
   payload: {},
@@ -195,4 +204,37 @@ it("uses explicit manage permission and the existing comment deletion endpoint",
   await expect(removeTaskComment("bad")).rejects.toThrow();
   vi.mocked(api.delete).mockRejectedValue(new Error("Forbidden"));
   await expect(removeTaskComment(id)).rejects.toThrow("Forbidden");
+});
+
+it("edits at the expected version and rejects incorrect acknowledgements", async () => {
+  const input = {
+    expectedVersion: 1,
+    body: "Updated @Artist",
+    mentions: [{ userId: "2", label: "Artist" }],
+  };
+  const updated = { ...comment, body: input.body, mentions: input.mentions, version: 2 };
+  vi.mocked(api.patch).mockResolvedValue(updated);
+  await editTaskComment(id, id, input);
+  expect(api.patch).toHaveBeenCalledExactlyOnceWith(`/crew-task-comments/${id}`, {
+    service: "aurora",
+    data: input,
+  });
+  for (const changed of [
+    { ...updated, version: 1 },
+    { ...updated, body: "Other" },
+    { ...updated, mentions: [] },
+    { ...updated, deletedAt: comment.createdAt },
+    { ...updated, taskId: "22222222-2222-4222-8222-222222222222" },
+  ]) {
+    vi.mocked(api.patch).mockResolvedValue(changed);
+    await expect(editTaskComment(id, id, input)).rejects.toThrow("acknowledgement mismatch");
+  }
+  vi.mocked(api.patch).mockClear();
+  for (const bad of [
+    { ...input, body: " " },
+    { ...input, expectedVersion: 0 },
+    { ...input, body: "Missing label" },
+  ])
+    await expect(editTaskComment(id, id, bad)).rejects.toThrow();
+  expect(api.patch).not.toHaveBeenCalled();
 });

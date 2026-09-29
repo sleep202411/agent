@@ -1,4 +1,8 @@
 {
+  "taskActivity.editComment": "Edit Comment",
+  "taskActivity.saveComment": "Save Changes",
+  "taskActivity.savingComment": "Saving…",
+  "taskActivity.editRefreshHint": "Refresh comments before editing again; your previous save may have succeeded.",
   "taskActivity.deleteComment": "Delete Comment",
   "taskActivity.confirmDelete": "Delete this comment? This cannot be undone.",
   "taskActivity.confirmDeleteAction": "Confirm Delete",

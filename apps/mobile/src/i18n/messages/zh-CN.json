@@ -1,4 +1,8 @@
 {
+  "taskActivity.editComment": "编辑评论",
+  "taskActivity.saveComment": "保存更改",
+  "taskActivity.savingComment": "正在保存…",
+  "taskActivity.editRefreshHint": "请刷新评论后再编辑；上次保存可能已成功。",
   "taskActivity.deleteComment": "删除评论",
   "taskActivity.confirmDelete": "删除此评论？此操作无法撤销。",
   "taskActivity.confirmDeleteAction": "确认删除",

@@ -75,7 +75,7 @@ export async function postTaskComment(
   const data = taskCommentInput.parse(input);
   if (data.mentions?.some((item) => item.userId === userId))
     throw new Error("You cannot mention yourself");
-  const result = taskActivity.extend({ mentions: z.array(taskMention).optional() }).parse(
+  const result = taskActivity.parse(
     await api.post(`/crew-tasks/${encodeURIComponent(taskId)}/comments`, {
       service: "aurora",
       data,
@@ -110,4 +110,45 @@ export async function postTaskComment(
 export async function removeTaskComment(commentId: string) {
   z.string().uuid().parse(commentId);
   await api.delete(`/crew-task-comments/${encodeURIComponent(commentId)}`, { service: "aurora" });
+}
+
+export const taskCommentEdit = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    body: z.string().trim().min(1).max(10000),
+    mentions: z
+      .array(taskMention)
+      .max(20)
+      .refine(
+        (items) => new Set(items.map((item) => item.userId)).size === items.length,
+        "Duplicate mention"
+      ),
+  })
+  .refine(
+    (input) => input.mentions.every((item) => input.body.includes(`@${item.label}`)),
+    "Mention missing from comment text"
+  );
+export type TaskCommentEdit = z.infer<typeof taskCommentEdit>;
+export async function editTaskComment(taskId: string, commentId: string, input: TaskCommentEdit) {
+  z.string().uuid().parse(taskId);
+  z.string().uuid().parse(commentId);
+  const data = taskCommentEdit.parse(input);
+  const result = taskActivity.parse(
+    await api.patch(`/crew-task-comments/${commentId}`, { service: "aurora", data })
+  );
+  if (
+    result.id !== commentId ||
+    result.taskId !== taskId ||
+    result.kind !== "comment" ||
+    result.deletedAt ||
+    result.version !== data.expectedVersion + 1 ||
+    result.body !== data.body ||
+    result.mentions.length !== data.mentions.length ||
+    result.mentions.some(
+      (item, index) =>
+        item.userId !== data.mentions[index]?.userId || item.label !== data.mentions[index]?.label
+    )
+  )
+    throw new Error("Task comment edit acknowledgement mismatch");
+  return result;
 }
