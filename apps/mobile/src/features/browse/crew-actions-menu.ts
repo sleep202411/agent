@@ -6,11 +6,12 @@ import type { MessageKey } from "@/i18n";
 export function showCrewActionsMenu(options: {
   t: (key: MessageKey) => string;
   onApplications: () => void;
+  onFinance?: () => void;
   onTasks?: () => void;
   onReport: () => void;
   onBlock: () => void;
 }) {
-  const { t, onApplications, onReport, onBlock, onTasks } = options;
+  const { t, onApplications, onReport, onBlock, onTasks, onFinance } = options;
   if (Platform.OS === "ios") {
     ActionSheetIOS.showActionSheetWithOptions(
       {
@@ -20,6 +21,7 @@ export function showCrewActionsMenu(options: {
           t("report.reportAction"),
           t("crewDetail.blockAction"),
           ...(onTasks ? [t("crewTasks.title")] : []),
+          ...(onFinance ? [t("crewFinance.title")] : []),
         ],
         cancelButtonIndex: 0,
         destructiveButtonIndex: 3,
@@ -28,9 +30,21 @@ export function showCrewActionsMenu(options: {
         if (index === 1) onApplications();
         if (index === 2) onReport();
         if (index === 3) onBlock();
-        if (index === 4) onTasks?.();
+        if (index === 4 && onTasks) onTasks();
+        if (index === (onTasks ? 5 : 4)) onFinance?.();
       }
     );
+    return;
+  }
+  if (onFinance) {
+    Alert.alert(t("report.moreActions"), undefined, [
+      { text: t("crewFinance.title"), onPress: onFinance },
+      {
+        text: t("report.moreActions"),
+        onPress: () => showCrewActionsMenu({ t, onApplications, onTasks, onReport, onBlock }),
+      },
+      { text: t("report.cancel"), style: "cancel" },
+    ]);
     return;
   }
   if (onTasks) {

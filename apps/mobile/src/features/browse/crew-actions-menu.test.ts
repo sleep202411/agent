@@ -81,3 +81,21 @@ it("opens native tasks from iOS and Android without losing existing actions", ()
   buttons[1].onPress();
   expect(h.alert.mock.calls[1][2][0].text).toBe("crewDetail.applicationsAction");
 });
+
+it("opens Finance on iOS and Android while preserving all existing actions", () => {
+  const onFinance = vi.fn(),
+    onTasks = vi.fn();
+  showCrewActionsMenu({ ...options, onTasks, onFinance });
+  const [config, select] = h.sheet.mock.calls[0];
+  expect(config.options[5]).toBe("crewFinance.title");
+  select(5);
+  expect(onFinance).toHaveBeenCalledOnce();
+  h.platform.OS = "android";
+  showCrewActionsMenu({ ...options, onTasks, onFinance });
+  const buttons = h.alert.mock.calls[0][2];
+  expect(buttons).toHaveLength(3);
+  buttons[0].onPress();
+  expect(onFinance).toHaveBeenCalledTimes(2);
+  buttons[1].onPress();
+  expect(h.alert.mock.calls[1][2][0].text).toBe("crewTasks.title");
+});
