@@ -93,7 +93,7 @@ describe('CrewAssetUploadCleanupWorker', () => {
         crewAssetNodes: { none: {} },
       },
       select: { id: true },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      orderBy: { id: 'asc' },
       take: 50,
     });
     expect(assets.reclaimExpiredPendingUpload).toHaveBeenNthCalledWith(
@@ -126,16 +126,14 @@ describe('CrewAssetUploadCleanupWorker', () => {
       assets as never,
     );
     await worker.drainOnce();
-    expect(findMany).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          status: 'deleted',
-          deletedAt: { not: null },
-          crewAssetNodes: { none: {} },
-        }),
-        take: 50,
-      }),
-    );
+    expect((findMany.mock.calls as unknown[][]).at(-1)?.[0]).toMatchObject({
+      where: {
+        status: 'deleted',
+        deletedAt: { not: null },
+        crewAssetNodes: { none: {} },
+      },
+      take: 50,
+    });
     expect(assets.reclaimDeletedCrewUpload.mock.calls).toEqual([
       ['deleted-1'],
       ['deleted-2'],
@@ -164,4 +162,51 @@ describe('CrewAssetUploadCleanupWorker', () => {
     resolvePending([]);
     await Promise.all([first, second]);
   });
+});
+
+describe('cleanup queue fairness', () => {
+  it.each(['ready', 'deleted'] as const)(
+    'advances past a full failing %s batch and wraps for retry',
+    async (status) => {
+      const rows = Array.from({ length: 51 }, (_, index) => ({
+        id: String(index + 1).padStart(3, '0'),
+      }));
+      const findMany = jest.fn(
+        (query: {
+          where: { status: string; id?: { gt: string } };
+          take: number;
+        }) =>
+          Promise.resolve(
+            query.where.status === status
+              ? rows
+                  .filter(
+                    (row) => !query.where.id || row.id > query.where.id.gt,
+                  )
+                  .slice(0, query.take)
+              : [],
+          ),
+      );
+      const reclaim = jest.fn((id: string) =>
+        id !== '051'
+          ? Promise.reject(new Error('Storage temporarily unavailable'))
+          : Promise.resolve(),
+      );
+      const worker = new CrewAssetUploadCleanupWorker(
+        { mediaAsset: { findMany } } as never,
+        {
+          cleanupUploadReservations: jest.fn(),
+          reclaimExpiredPendingUpload: status === 'ready' ? reclaim : jest.fn(),
+          reclaimDeletedCrewUpload: status === 'deleted' ? reclaim : jest.fn(),
+        } as never,
+      );
+      await worker.drainOnce();
+      expect(reclaim).toHaveBeenCalledTimes(50);
+      await worker.drainOnce();
+      expect(reclaim.mock.calls.map(([id]) => id)).toContain('051');
+      expect(reclaim).toHaveBeenCalledTimes(51);
+      await worker.drainOnce();
+      expect(reclaim.mock.calls[51][0]).toBe('001');
+      expect(reclaim).toHaveBeenCalledTimes(101);
+    },
+  );
 });

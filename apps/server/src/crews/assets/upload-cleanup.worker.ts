@@ -48,6 +48,10 @@ export class CrewAssetUploadCleanupWorker
   private timer: NodeJS.Timeout | null = null;
   private draining: Promise<void> | null = null;
   private stopped = false;
+  // Traverse each bounded queue independently, even when rows fail to reclaim.
+  // ID keysets stay usable after successful cleanup removes the cursor row.
+  private pendingCursor: string | undefined;
+  private deletedCursor: string | undefined;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -103,6 +107,7 @@ export class CrewAssetUploadCleanupWorker
     const candidates = await this.prisma.mediaAsset.findMany({
       where: {
         status: MediaAssetStatus.ready,
+        ...(this.pendingCursor ? { id: { gt: this.pendingCursor } } : {}),
         deletedAt: null,
         createdAt: { lt: createdBefore },
         metadata: {
@@ -112,7 +117,7 @@ export class CrewAssetUploadCleanupWorker
         crewAssetNodes: { none: {} },
       },
       select: { id: true },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      orderBy: { id: 'asc' },
       take: this.batchSize,
     });
 
@@ -130,11 +135,14 @@ export class CrewAssetUploadCleanupWorker
           }`,
         );
       }
+      this.pendingCursor = candidate.id;
     }
+    if (candidates.length < this.batchSize) this.pendingCursor = undefined;
     if (this.stopped) return;
     const deleted = await this.prisma.mediaAsset.findMany({
       where: {
         status: MediaAssetStatus.deleted,
+        ...(this.deletedCursor ? { id: { gt: this.deletedCursor } } : {}),
         deletedAt: { not: null },
         AND: [
           { metadata: { path: ['uploadKind'], equals: 'crew_asset_file' } },
@@ -143,7 +151,7 @@ export class CrewAssetUploadCleanupWorker
         crewAssetNodes: { none: {} },
       },
       select: { id: true },
-      orderBy: [{ deletedAt: 'asc' }, { id: 'asc' }],
+      orderBy: { id: 'asc' },
       take: this.batchSize,
     });
     for (const asset of deleted) {
@@ -155,6 +163,8 @@ export class CrewAssetUploadCleanupWorker
           `Crew deleted-media cleanup failed asset=${asset.id}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
+      this.deletedCursor = asset.id;
     }
+    if (deleted.length < this.batchSize) this.deletedCursor = undefined;
   }
 }
