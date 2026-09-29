@@ -2,11 +2,7 @@ import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskMention } from "./task-mentions";
 import { taskActivity } from "./task-timeline-api";
-export async function fetchTaskCommentPermission(
-  crewId: string,
-  userId: string,
-  signal: AbortSignal
-) {
+export async function fetchTaskCommentAccess(crewId: string, userId: string, signal: AbortSignal) {
   z.string().min(1).max(64).parse(crewId);
   const membership = z.object({ userId: z.string(), permissions: z.array(z.string()) }).parse(
     await api.get(`/crews/${encodeURIComponent(crewId)}/members/me`, {
@@ -15,7 +11,10 @@ export async function fetchTaskCommentPermission(
     })
   );
   if (membership.userId !== userId) throw new Error("Crew membership account mismatch");
-  return membership.permissions.includes("tasks.comment");
+  return {
+    allowed: membership.permissions.includes("tasks.comment"),
+    canManage: membership.permissions.includes("tasks.manage"),
+  };
 }
 export const taskCommentInput = z
   .object({
@@ -106,4 +105,9 @@ export async function postTaskComment(
   )
     throw new Error("Task comment acknowledgement mismatch");
   return result;
+}
+
+export async function removeTaskComment(commentId: string) {
+  z.string().uuid().parse(commentId);
+  await api.delete(`/crew-task-comments/${encodeURIComponent(commentId)}`, { service: "aurora" });
 }

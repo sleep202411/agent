@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from "@/i18n";
 import { useTaskTimeline } from "./use-task-timeline";
 import { useUserDisplays } from "./user-displays";
 import { taskActivityLabel, taskActivityNote } from "./task-timeline-api";
+import { TaskCommentRemove } from "./task-comment-remove";
 import { TaskComment } from "./task-comment";
 import { ConversationFile } from "./conversation-file";
 /** Parent task detail is scoped to account/focus and revalidates tasks.view first. */
@@ -22,7 +23,11 @@ export function TaskTimeline({
   const t = useTranslations(),
     locale = useLocale();
   const [reply, setReply] = useState<{ id: string; body: string | null }>();
-  const [replyAccess, setReplyAccess] = useState({ allowed: false, locked: false });
+  const [replyAccess, setReplyAccess] = useState<{
+    allowed: boolean;
+    locked: boolean;
+    canManage?: boolean;
+  }>({ allowed: false, locked: false });
   const history = useTaskTimeline(String(generation), taskId);
   const displays = useUserDisplays(
     String(generation),
@@ -63,6 +68,21 @@ export function TaskTimeline({
                   <ThemedText>{t("taskActivity.replyAction")}</ThemedText>
                 </Pressable>
               )}
+              {item.kind === "comment" &&
+                replyAccess.allowed &&
+                !history.error &&
+                (item.actorUserId === userId || replyAccess.canManage) && (
+                  <TaskCommentRemove
+                    commentId={item.id}
+                    generation={generation}
+                    disabled={replyAccess.locked}
+                    onRemoved={() => {
+                      if (reply?.id === item.id) setReply(undefined);
+                      history.refresh();
+                    }}
+                    onRefresh={history.refresh}
+                  />
+                )}
               {!!item.body && <ThemedText>{item.body}</ThemedText>}
               {!!item.editedAt && <ThemedText type="small">{t("taskActivity.edited")}</ThemedText>}
               {item.attachments.map((file) =>

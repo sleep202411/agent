@@ -8,22 +8,35 @@ const h = vi.hoisted(() => ({
   more: vi.fn(),
   allowed: false,
   locked: false,
+  canManage: false,
+  refresh: vi.fn(),
   composer: vi.fn(),
   retry: vi.fn(),
   error: undefined as string | undefined,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
+vi.mock("./task-comment-remove", () => ({
+  TaskCommentRemove: ({ onRemoved, disabled }: { onRemoved: () => void; disabled: boolean }) => (
+    <button disabled={disabled} onClick={onRemoved}>
+      remove-comment
+    </button>
+  ),
+}));
 vi.mock("./task-comment", () => ({
   TaskComment: function MockComment(props: {
     reply?: { id: string };
-    onReplyAvailability: (value: { allowed: boolean; locked: boolean }) => void;
+    onReplyAvailability: (value: {
+      allowed: boolean;
+      locked: boolean;
+      canManage?: boolean;
+    }) => void;
   }) {
     const { onReplyAvailability } = props;
     h.composer(props);
-    const { allowed, locked } = h;
+    const { allowed, locked, canManage } = h;
     useEffect(() => {
-      onReplyAvailability({ allowed, locked });
-    }, [onReplyAvailability, allowed, locked]);
+      onReplyAvailability({ allowed, locked, canManage });
+    }, [onReplyAvailability, allowed, locked, canManage]);
     return null;
   },
 }));
@@ -35,6 +48,7 @@ vi.mock("./use-task-timeline", () => ({
     error: h.error,
     loadMore: h.more,
     retry: h.retry,
+    refresh: h.refresh,
   }),
 }));
 vi.mock("./user-displays", () => ({
@@ -95,6 +109,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.allowed = false;
   h.locked = false;
+  h.canManage = false;
   h.items = [item];
   h.error = undefined;
   host = document.createElement("div");
@@ -153,4 +168,31 @@ it("allows replies only to live comments with permission and locks selection dur
   h.allowed = false;
   await render();
   expect(replies()).toHaveLength(0);
+});
+
+it("limits removal to live comments by self or explicit task managers", async () => {
+  h.items = [
+    item,
+    { ...item, id: "other", actorUserId: "2" },
+    { ...item, id: "gone", deletedAt: item.createdAt },
+    { ...item, id: "event", kind: "task.created" },
+  ];
+  const removals = () =>
+    Array.from(host.querySelectorAll("button")).filter((b) => b.textContent === "remove-comment");
+  await render();
+  expect(removals()).toHaveLength(0);
+  h.allowed = true;
+  await render();
+  expect(removals()).toHaveLength(1);
+  await act(async () => removals()[0]!.click());
+  expect(h.refresh).toHaveBeenCalledTimes(1);
+  h.canManage = true;
+  await render();
+  expect(removals()).toHaveLength(2);
+  h.locked = true;
+  await render();
+  expect(removals().every((b) => b.disabled)).toBe(true);
+  h.error = "Forbidden";
+  await render();
+  expect(removals()).toHaveLength(0);
 });

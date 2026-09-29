@@ -38,7 +38,7 @@ vi.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("./task-comment-api", () => ({
-  fetchTaskCommentPermission: h.permission,
+  fetchTaskCommentAccess: h.permission,
   postTaskComment: h.post,
 }));
 vi.mock("./inquiry-api", () => ({ inquiryKey: () => "stable" }));
@@ -94,7 +94,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   h.active = true;
   h.generation = 1;
-  h.permission.mockResolvedValue(true);
+  h.permission.mockResolvedValue({ allowed: true, canManage: false });
   h.discard.mockResolvedValue(undefined);
   host = document.createElement("div");
   document.body.append(host);
@@ -105,7 +105,9 @@ afterEach(async () => {
   host.remove();
 });
 it("withholds composition without comment permission and retries permission failures", async () => {
-  h.permission.mockRejectedValueOnce(new Error("Offline")).mockResolvedValueOnce(false);
+  h.permission
+    .mockRejectedValueOnce(new Error("Offline"))
+    .mockResolvedValueOnce({ allowed: false, canManage: false });
   await render();
   expect(host.querySelector("input")).toBeNull();
   expect(host.textContent).toContain("Offline");
@@ -134,7 +136,9 @@ it("guards rapid sends and preserves exact text/key for uncertain retry", async 
 });
 it("rechecks permissions when the backend revokes access", async () => {
   h.post.mockRejectedValue(Object.assign(new Error("Denied"), { status: 403 }));
-  h.permission.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  h.permission
+    .mockResolvedValueOnce({ allowed: true, canManage: false })
+    .mockResolvedValueOnce({ allowed: false, canManage: false });
   await render();
   await act(async () => type("Note"));
   await act(async () => click());
@@ -180,11 +184,11 @@ it("locks the reply preview and retry payload to the submitted target", async ()
       )
     );
   await show("first", "Original note");
-  expect(availability).toHaveBeenLastCalledWith({ allowed: true, locked: false });
+  expect(availability).toHaveBeenLastCalledWith({ allowed: true, locked: false, canManage: false });
   await act(async () => type("Reply"));
   h.post.mockRejectedValueOnce(new Error("Timeout")).mockResolvedValueOnce({});
   await act(async () => host.querySelectorAll("button")[1]!.click());
-  expect(availability).toHaveBeenLastCalledWith({ allowed: true, locked: true });
+  expect(availability).toHaveBeenLastCalledWith({ allowed: true, locked: true, canManage: false });
   expect(host.querySelector("button")!.disabled).toBe(true);
   await show("second", "New target");
   expect(host.textContent).toContain("Original note");

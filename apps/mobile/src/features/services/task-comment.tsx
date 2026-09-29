@@ -17,11 +17,7 @@ import { ThemedText } from "@/components/themed-text";
 import { TaskMentionPicker } from "./task-mention-picker";
 import type { TaskMention } from "./task-mentions";
 import { inquiryKey } from "./inquiry-api";
-import {
-  fetchTaskCommentPermission,
-  postTaskComment,
-  type TaskCommentInput,
-} from "./task-comment-api";
+import { fetchTaskCommentAccess, postTaskComment, type TaskCommentInput } from "./task-comment-api";
 type Props = {
   crewId: string;
   taskId: string;
@@ -30,7 +26,7 @@ type Props = {
   onSent: () => void;
   reply?: { id: string; body: string | null };
   onClearReply?: () => void;
-  onReplyAvailability?: (state: { allowed: boolean; locked: boolean }) => void;
+  onReplyAvailability?: (state: { allowed: boolean; locked: boolean; canManage?: boolean }) => void;
 };
 export function TaskComment(props: Props) {
   const active = useScreenActive();
@@ -56,7 +52,12 @@ function Composer({
   const input = useRef<TextInput>(null);
   const op = useAuthFormOperation(taskId, true);
   const [revision, setRevision] = useState(0);
-  const [access, setAccess] = useState<{ revision: number; allowed?: boolean; error?: string }>();
+  const [access, setAccess] = useState<{
+    revision: number;
+    allowed?: boolean;
+    canManage?: boolean;
+    error?: string;
+  }>();
   const [body, setBody] = useState(""),
     [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
@@ -84,10 +85,10 @@ function Composer({
   const [submittedReply, setSubmittedReply] = useState<Props["reply"]>();
   useEffect(() => {
     const controller = new AbortController();
-    void fetchTaskCommentPermission(crewId, userId, controller.signal).then(
-      (allowed) => {
+    void fetchTaskCommentAccess(crewId, userId, controller.signal).then(
+      (access) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
-          setAccess({ revision, allowed });
+          setAccess({ revision, ...access });
       },
       (cause) => {
         if (!controller.signal.aborted && generation === getAuthGeneration())
@@ -98,9 +99,14 @@ function Composer({
   }, [crewId, userId, generation, revision]);
   const current = access?.revision === revision ? access : undefined;
   const allowed = current?.allowed === true;
+  const canManage = allowed && current?.canManage === true;
   useEffect(() => {
-    onReplyAvailability?.({ allowed, locked: attempted || op.busy || picking || uploading });
-  }, [allowed, attempted, op.busy, picking, uploading, onReplyAvailability]);
+    onReplyAvailability?.({
+      allowed,
+      canManage,
+      locked: attempted || op.busy || picking || uploading,
+    });
+  }, [allowed, canManage, attempted, op.busy, picking, uploading, onReplyAvailability]);
   useEffect(() => {
     if (allowed && reply && !attempted) input.current?.focus();
   }, [allowed, reply, attempted]);

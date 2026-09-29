@@ -1,4 +1,9 @@
 {
+  "taskActivity.deleteComment": "刪除評論",
+  "taskActivity.confirmDelete": "刪除此評論？此操作無法復原。",
+  "taskActivity.confirmDeleteAction": "確認刪除",
+  "taskActivity.deletingComment": "正在刪除…",
+  "taskActivity.refreshComments": "重新整理評論",
   "taskActivity.noMembers": "已載入的列表中沒有符合的成員。",
   "taskActivity.mentionTooLong": "請縮短評論後再加入此提及。",
   "taskActivity.replyAction": "回覆",

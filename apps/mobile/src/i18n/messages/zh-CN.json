@@ -1,4 +1,9 @@
 {
+  "taskActivity.deleteComment": "删除评论",
+  "taskActivity.confirmDelete": "删除此评论？此操作无法撤销。",
+  "taskActivity.confirmDeleteAction": "确认删除",
+  "taskActivity.deletingComment": "正在删除…",
+  "taskActivity.refreshComments": "刷新评论",
   "taskActivity.noMembers": "已加载的列表中没有匹配成员。",
   "taskActivity.mentionTooLong": "请缩短评论后再添加此提及。",
   "taskActivity.replyAction": "回复",

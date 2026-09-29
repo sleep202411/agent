@@ -1,4 +1,9 @@
 {
+  "taskActivity.deleteComment": "Delete Comment",
+  "taskActivity.confirmDelete": "Delete this comment? This cannot be undone.",
+  "taskActivity.confirmDeleteAction": "Confirm Delete",
+  "taskActivity.deletingComment": "Deleting…",
+  "taskActivity.refreshComments": "Refresh Comments",
   "taskActivity.noMembers": "No matching members in the loaded list.",
   "taskActivity.mentionTooLong": "Shorten the comment before adding this mention.",
   "taskActivity.replyAction": "Reply",
