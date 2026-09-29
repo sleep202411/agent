@@ -1977,5 +1977,12 @@
   "positionLifecycle.confirm": "确认",
   "positionLifecycle.cancel": "取消",
   "positionLifecycle.saved": "职位已更新。请返回刷新后的职位列表。",
-  "positionLifecycle.recheck": "无法确认此次变更。请返回刷新后的职位列表后再操作。"
+  "positionLifecycle.recheck": "无法确认此次变更。请返回刷新后的职位列表后再操作。",
+  "positionEdit.title": "编辑职位",
+  "positionEdit.action": "编辑{role}",
+  "positionEdit.save": "保存更改",
+  "positionEdit.saved": "职位 {id} 已更新。",
+  "positionEdit.recheck": "请返回刷新后的职位列表后再更新。",
+  "positionEdit.help": "更改适用于此招聘职位。已接受的条款请通过修订流程管理。",
+  "positionEdit.noChanges": "没有需要保存的更改。"
 }

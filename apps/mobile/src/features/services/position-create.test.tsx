@@ -1,3 +1,4 @@
+import { PositionEdit } from "./position-edit";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
@@ -20,8 +21,14 @@ vi.mock("./task-picker", () => ({
     </button>
   ),
 }));
-const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), post: vi.fn(), close: vi.fn() }));
-vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
+const h = vi.hoisted(() => ({
+  generation: 1,
+  get: vi.fn(),
+  post: vi.fn(),
+  patch: vi.fn(),
+  close: vi.fn(),
+}));
+vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post, patch: h.patch } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white", border: "gray" }) }));
 vi.mock("@/i18n", () => ({
@@ -237,4 +244,123 @@ it("ignores late success after leaving", async () => {
   await act(async () => root.render(null));
   await act(async () => resolve(receipt(h.post.mock.calls[0]![1].data)));
   expect(host.textContent).toBe("");
+});
+
+const editing: import("./position-edit-api").EditablePosition = {
+  id: "position",
+  crewId: "crew",
+  taskId: null,
+  recruitmentVisibility: "public",
+  positionType: "director",
+  description: "Existing role",
+  targetCount: 3,
+  recruitedCount: 1,
+  status: "frozen",
+  workMode: "remote",
+  location: null,
+  employmentType: "project_based",
+  experienceLevel: "any",
+  requiredSkills: ["Editing"],
+  salary: {
+    currency: "USD",
+    period: "project",
+    minAmount: 1234,
+    maxAmount: 5000,
+    negotiable: false,
+  },
+  durationMonths: 6,
+  revenueSharePercent: 2.5,
+  closeDate: "2028-02-29",
+};
+const renderEdit = async () => {
+  h.get.mockImplementation(async (path: string) =>
+    path.endsWith("members/me")
+      ? { userId: "manager", permissions: ["openings.manage"] }
+      : { items: [editing], nextCursor: null }
+  );
+  await act(async () =>
+    root.render(
+      <PositionCreate
+        crewId="crew"
+        userId="manager"
+        generation={1}
+        onClose={h.close}
+        editing={editing}
+      />
+    )
+  );
+};
+it("prefills editing values and keeps task and role immutable", async () => {
+  await renderEdit();
+  expect(
+    (host.querySelector('[aria-label="positionCreate.min"]') as HTMLTextAreaElement).value
+  ).toBe("12.34");
+  expect(
+    (host.querySelector('[aria-label="positionCreate.duration"]') as HTMLTextAreaElement).value
+  ).toBe("6");
+  expect(button("positionCreate.task")).toBeUndefined();
+  expect(button("positionCreate.role · crew.positions.director")).toBeUndefined();
+  await type("positionCreate.description", "New description");
+  h.patch.mockResolvedValue({ ...editing, description: "New description" });
+  await click("positionEdit.save");
+  expect(h.patch).toHaveBeenCalledWith("/crews/crew/positions/position", {
+    service: "aurora",
+    data: { description: "New description" },
+  });
+  expect(h.post).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("positionEdit.saved");
+});
+it("requires returning after an uncertain edit", async () => {
+  await renderEdit();
+  await type("positionCreate.description", "New description");
+  h.patch.mockRejectedValue(new Error("offline"));
+  await click("positionEdit.save");
+  expect(host.textContent).toContain("positionEdit.recheck");
+  expect(button("positionEdit.save")).toBeUndefined();
+});
+
+it("loads the editor from the scoped server list", async () => {
+  h.get.mockImplementation(async (path: string) =>
+    path.endsWith("members/me")
+      ? { userId: "manager", permissions: ["openings.manage"] }
+      : { items: [editing], nextCursor: null }
+  );
+  await act(async () =>
+    root.render(
+      <PositionEdit
+        crewId="crew"
+        positionId="position"
+        userId="manager"
+        generation={1}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(
+    (host.querySelector('[aria-label="positionCreate.description"]') as HTMLTextAreaElement).value
+  ).toBe("Existing role");
+});
+it("does not render an editor when the position cannot be loaded", async () => {
+  h.get.mockRejectedValue(new Error("permission denied"));
+  await act(async () =>
+    root.render(
+      <PositionEdit
+        crewId="crew"
+        positionId="position"
+        userId="manager"
+        generation={1}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(host.textContent).toContain("permission denied");
+  expect(button("positionEdit.save")).toBeUndefined();
+});
+
+it("keeps unchanged edits open without sending a write", async () => {
+  await renderEdit();
+  await click("positionEdit.save");
+  expect(host.textContent).toContain("positionEdit.noChanges");
+  expect(button("positionEdit.save")).toBeDefined();
+  expect(h.patch).not.toHaveBeenCalled();
 });

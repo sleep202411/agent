@@ -3,6 +3,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { InvitationManagement } from "./invitation-management";
 const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), post: vi.fn(), close: vi.fn() }));
+vi.mock("./position-edit", () => ({
+  PositionEdit: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>Edit Form</button>
+  ),
+}));
 vi.mock("./position-lifecycle", () => ({
   PositionLifecycle: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>Lifecycle Form</button>
@@ -227,5 +232,12 @@ it("opens lifecycle controls and refreshes the list on return", async () => {
   await render();
   await click("positionLifecycle.manage");
   await click("Lifecycle Form");
+  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/positions")).toHaveLength(2);
+});
+
+it("opens editing and refreshes positions on return", async () => {
+  await render();
+  await click("positionEdit.action");
+  await click("Edit Form");
   expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/positions")).toHaveLength(2);
 });

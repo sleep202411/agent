@@ -1977,5 +1977,12 @@
   "positionLifecycle.confirm": "Confirm",
   "positionLifecycle.cancel": "Cancel",
   "positionLifecycle.saved": "Position updated. Return to the refreshed positions list.",
-  "positionLifecycle.recheck": "The change could not be confirmed. Return to the refreshed positions list before another action."
+  "positionLifecycle.recheck": "The change could not be confirmed. Return to the refreshed positions list before another action.",
+  "positionEdit.title": "Edit Position",
+  "positionEdit.action": "Edit {role}",
+  "positionEdit.save": "Save Changes",
+  "positionEdit.saved": "Position {id} updated.",
+  "positionEdit.recheck": "Return to the refreshed positions list before another update.",
+  "positionEdit.help": "Changes apply to this recruitment listing. Existing accepted terms are managed through the amendment workflow.",
+  "positionEdit.noChanges": "No changes to save."
 }

@@ -1,3 +1,4 @@
+import { PositionEdit } from "./position-edit";
 import { PositionLifecycle } from "./position-lifecycle";
 import { PositionCreate } from "./position-create";
 import { useEffect, useState } from "react";
@@ -20,10 +21,23 @@ import {
 type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function InvitationManagement(props: Props) {
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<ManagedPosition>();
   const [managing, setManaging] = useState<ManagedPosition>();
   const [position, setPosition] = useState<ManagedPosition>(),
     [cursor, setCursor] = useState<string | null>(null),
     [revision, setRevision] = useState(0);
+  if (editing)
+    return (
+      <PositionEdit
+        {...props}
+        positionId={editing.id}
+        onClose={() => {
+          setEditing(undefined);
+          setCursor(null);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (managing)
     return (
       <PositionLifecycle
@@ -65,6 +79,7 @@ export function InvitationManagement(props: Props) {
       key={`${revision}:${cursor}`}
       {...props}
       cursor={cursor}
+      onEdit={setEditing}
       onManage={setManaging}
       onCreate={() => setCreating(true)}
       onSelect={setPosition}
@@ -79,6 +94,7 @@ export function InvitationManagement(props: Props) {
 function Positions(
   props: Props & {
     cursor: string | null;
+    onEdit: (position: ManagedPosition) => void;
     onManage: (position: ManagedPosition) => void;
     onCreate: () => void;
     onSelect: (position: ManagedPosition) => void;
@@ -119,6 +135,13 @@ function Positions(
           <Action
             label={`${crewPositionLabel(row.positionType, t)} · ${row.recruitedCount}/${row.targetCount}`}
             onPress={() => props.onSelect(row)}
+          />
+          <Action
+            label={t("positionEdit.action").replace(
+              "{role}",
+              crewPositionLabel(row.positionType, t)
+            )}
+            onPress={() => props.onEdit(row)}
           />
           <Action
             label={t("positionLifecycle.manage").replace(

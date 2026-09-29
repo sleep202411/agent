@@ -73,7 +73,7 @@ export const newPosition = z
       (v.recruitmentVisibility !== "private" || !!v.taskId)
   );
 export type NewPosition = z.infer<typeof newPosition>;
-const receipt = z.object({
+export const positionReceipt = z.object({
   id,
   crewId: id,
   taskId: z.string().uuid().nullable(),
@@ -136,7 +136,7 @@ export async function createPosition(
   if (data.taskId && !access.canLinkTask)
     throw new Error("Task management and viewing permissions are required.");
   current(generation);
-  const result = receipt.parse(
+  const result = positionReceipt.parse(
     await api.post(`/crews/${crewId}/positions`, { service: "aurora", data })
   );
   current(generation);

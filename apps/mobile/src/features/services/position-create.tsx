@@ -1,3 +1,10 @@
+import {
+  positionDraft,
+  positionEditDraft,
+  editPosition,
+  type EditablePosition,
+  type PositionEditDraft,
+} from "./position-edit-api";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import {
@@ -30,29 +37,45 @@ export function PositionCreate(props: {
   userId: string;
   generation: number;
   onClose: () => void;
+  editing?: EditablePosition;
 }) {
+  const initial = props.editing ? positionDraft(props.editing) : undefined;
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
   const [access, setAccess] = useState<Awaited<ReturnType<typeof fetchPositionCreateAccess>>>(),
     [error, setError] = useState<string>();
-  const [role, setRole] = useState("director"),
-    [description, setDescription] = useState(""),
-    [count, setCount] = useState("1"),
-    [skills, setSkills] = useState(""),
-    [location, setLocation] = useState(""),
-    [min, setMin] = useState(""),
-    [max, setMax] = useState(""),
-    [duration, setDuration] = useState(""),
-    [share, setShare] = useState(""),
-    [closeDate, setCloseDate] = useState("");
-  const [mode, setMode] = useState<NewPosition["workMode"]>("remote"),
-    [employment, setEmployment] = useState<NewPosition["employmentType"]>("project_based"),
-    [experience, setExperience] = useState<NewPosition["experienceLevel"]>("any"),
-    [period, setPeriod] = useState<NewPosition["salary"]["period"]>("project"),
-    [currency, setCurrency] = useState<CurrencyCode>(isChinaRegion ? "CNY" : "USD"),
-    [negotiable, setNegotiable] = useState(false),
-    [visibility, setVisibility] = useState<"public" | "private">("public");
+  const [role, setRole] = useState(initial?.positionType ?? "director"),
+    [description, setDescription] = useState(initial?.description ?? ""),
+    [count, setCount] = useState(String(initial?.targetCount ?? 1)),
+    [skills, setSkills] = useState(initial?.requiredSkills.join(", ") ?? ""),
+    [location, setLocation] = useState(initial?.location ?? ""),
+    [min, setMin] = useState(initial?.salary.min == null ? "" : String(initial.salary.min)),
+    [max, setMax] = useState(initial?.salary.max == null ? "" : String(initial.salary.max)),
+    [duration, setDuration] = useState(
+      initial?.durationMonths == null ? "" : String(initial.durationMonths)
+    ),
+    [share, setShare] = useState(
+      initial?.revenueSharePercent == null ? "" : String(initial.revenueSharePercent)
+    ),
+    [closeDate, setCloseDate] = useState(initial?.closeDate ?? "");
+  const [mode, setMode] = useState<NewPosition["workMode"]>(initial?.workMode ?? "remote"),
+    [employment, setEmployment] = useState<NewPosition["employmentType"]>(
+      initial?.employmentType ?? "project_based"
+    ),
+    [experience, setExperience] = useState<NewPosition["experienceLevel"]>(
+      initial?.experienceLevel ?? "any"
+    ),
+    [period, setPeriod] = useState<NewPosition["salary"]["period"]>(
+      initial?.salary.period ?? "project"
+    ),
+    [currency, setCurrency] = useState<CurrencyCode>(
+      initial?.salary.currency ?? (isChinaRegion ? "CNY" : "USD")
+    ),
+    [negotiable, setNegotiable] = useState(initial?.salary.negotiable ?? false),
+    [visibility, setVisibility] = useState<"public" | "private">(
+      initial?.recruitmentVisibility ?? "public"
+    );
   const [task, setTask] = useState<TaskOption>(),
     [picking, setPicking] = useState(false),
     [expanded, setExpanded] = useState<string>(),
@@ -148,7 +171,7 @@ export function PositionCreate(props: {
   );
   const submit = () => {
     if (!access || locked || props.generation !== getAuthGeneration()) return;
-    let data: NewPosition;
+    let data: PositionEditDraft;
     try {
       if (
         !/^\d+$/.test(count) ||
@@ -156,7 +179,7 @@ export function PositionCreate(props: {
         (share && !/^\d+(\.\d)?$/.test(share))
       )
         throw new Error("Invalid number");
-      data = newPosition.parse({
+      data = (props.editing ? positionEditDraft : newPosition).parse({
         positionType: role,
         description,
         targetCount: Number(count),
@@ -178,18 +201,38 @@ export function PositionCreate(props: {
         durationMonths: duration ? Number(duration) : null,
         revenueSharePercent: share ? Number(share) : null,
         closeDate: closeDate.trim() || null,
-        ...(task ? { taskId: task.id } : {}),
+        ...(props.editing?.taskId
+          ? { taskId: props.editing.taskId }
+          : task
+            ? { taskId: task.id }
+            : {}),
         recruitmentVisibility: visibility,
       });
     } catch {
       setError(t("positionCreate.invalid"));
       return;
     }
+    if (props.editing && initial) {
+      if (data.targetCount < props.editing.recruitedCount) {
+        setError(t("positionCreate.invalid"));
+        return;
+      }
+      if (
+        (Object.keys(initial) as (keyof PositionEditDraft)[]).every(
+          (key) => JSON.stringify(initial[key]) === JSON.stringify(data[key])
+        )
+      ) {
+        setError(t("positionEdit.noChanges"));
+        return;
+      }
+    }
     void op.run(
       () => {
         setAttempted(true);
         setError(undefined);
-        return createPosition(props.crewId, props.userId, props.generation, data);
+        return props.editing
+          ? editPosition(props.editing, props.userId, props.generation, data)
+          : createPosition(props.crewId, props.userId, props.generation, newPosition.parse(data));
       },
       (result) => setSaved(result.id),
       (cause) => setError(cause instanceof Error ? cause.message : String(cause))
@@ -215,19 +258,31 @@ export function PositionCreate(props: {
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
-      <ThemedText>{t("positionCreate.title")}</ThemedText>
+      <ThemedText>{t(props.editing ? "positionEdit.title" : "positionCreate.title")}</ThemedText>
       {!access && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {saved && <ThemedText>{t("positionCreate.saved").replace("{id}", saved)}</ThemedText>}
-      {attempted && !saved && !op.busy && <ThemedText>{t("positionCreate.recheck")}</ThemedText>}
+      {saved && (
+        <ThemedText>
+          {t(props.editing ? "positionEdit.saved" : "positionCreate.saved").replace("{id}", saved)}
+        </ThemedText>
+      )}
+      {attempted && !saved && !op.busy && (
+        <ThemedText>
+          {t(props.editing ? "positionEdit.recheck" : "positionCreate.recheck")}
+        </ThemedText>
+      )}
       {access && !attempted && (
         <>
-          {choice(
-            "positionCreate.role",
-            role,
-            PRESET_POSITIONS.map((p) => p.value),
-            setRole,
-            (v) => crewPositionLabel(v, t)
+          {props.editing ? (
+            <ThemedText>{crewPositionLabel(role, t)}</ThemedText>
+          ) : (
+            choice(
+              "positionCreate.role",
+              role,
+              PRESET_POSITIONS.map((p) => p.value),
+              setRole,
+              (v) => crewPositionLabel(v, t)
+            )
           )}
           {field("positionCreate.description", description, setDescription, 1000, true)}
           {field("positionCreate.count", count, setCount, 2)}
@@ -257,7 +312,7 @@ export function PositionCreate(props: {
           {field("positionCreate.duration", duration, setDuration, 2)}
           {field("positionCreate.share", share, setShare, 4)}
           {field("positionCreate.closeDate", closeDate, setCloseDate, 10)}
-          {access.canLinkTask && (
+          {!props.editing && access.canLinkTask && (
             <>
               {action(
                 task ? taskLabel(task) : t("positionCreate.task"),
@@ -275,7 +330,8 @@ export function PositionCreate(props: {
                 )}
             </>
           )}
-          {task &&
+          {!props.editing &&
+            task &&
             choice(
               "positionCreate.visibility",
               visibility,
@@ -283,8 +339,14 @@ export function PositionCreate(props: {
               setVisibility,
               (v) => t(`positionCreate.${v}`)
             )}
-          <ThemedText>{t("positionCreate.visibilityHelp")}</ThemedText>
-          {action(t("positionCreate.publish"), submit, locked)}
+          <ThemedText>
+            {t(props.editing ? "positionEdit.help" : "positionCreate.visibilityHelp")}
+          </ThemedText>
+          {action(
+            t(props.editing ? "positionEdit.save" : "positionCreate.publish"),
+            submit,
+            locked
+          )}
         </>
       )}
       {op.busy && <ActivityIndicator />}
