@@ -1357,5 +1357,7 @@
   "taskPlanning.remove": "Remove Label",
   "taskPlanning.clearCycle": "Clear Cycle",
   "taskPlanning.clearEpisode": "Clear Episode",
-  "taskPlanning.empty": "No available options."
+  "taskPlanning.empty": "No available options.",
+  "taskPlanning.edit": "Edit Planning",
+  "taskPlanning.save": "Save Planning"
 }

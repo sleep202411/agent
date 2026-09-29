@@ -15,7 +15,7 @@ export type TaskPlanningDraft = {
   cycle: PlanningOption | null;
   episode: PlanningOption | null;
 };
-export function TaskCreationPlanning({
+export function TaskPlanningFields({
   crewId,
   generation,
   value,

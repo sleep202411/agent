@@ -11,7 +11,7 @@ import { fetchTaskCommentAccess } from "./task-comment-api";
 import { createTask, taskCreateInput } from "./task-create-api";
 import { parseScheduleDate } from "./task-schedule-api";
 import { TaskMentionPicker } from "./task-mention-picker";
-import { TaskCreationPlanning, type TaskPlanningDraft } from "./task-creation-planning";
+import { TaskPlanningFields, type TaskPlanningDraft } from "./task-planning-fields";
 import { TaskCreationWorkflow } from "./task-creation-workflow";
 import type { TaskWorkflow } from "./task-workflow-api";
 import { TaskCreationRelations } from "./task-creation-relations";
@@ -176,7 +176,7 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
         locked={locked}
         onSelect={setWorkflow}
       />
-      <TaskCreationPlanning
+      <TaskPlanningFields
         crewId={crewId}
         generation={generation}
         value={planning}

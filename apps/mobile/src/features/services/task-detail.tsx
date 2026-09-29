@@ -7,6 +7,7 @@ import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
 import { TaskAssignments } from "./task-assignments";
 import { TaskSchedule } from "./task-schedule";
+import { TaskPlanningEditor } from "./task-planning-editor";
 import { TaskBrief } from "./task-brief";
 import { TaskRelationshipEditor } from "./task-relationship-editor";
 import { TaskRelations } from "./task-relations";
@@ -144,6 +145,13 @@ function TaskContent({
             userId={userId}
             generation={generation}
             onRefresh={() => setRevision((value) => value + 1)}
+          />
+          <TaskPlanningEditor
+            key={`planning:${revision}`}
+            task={data}
+            userId={userId}
+            generation={generation}
+            onRefresh={() => setRevision((n) => n + 1)}
           />
           <TaskBrief
             key={`brief:${revision}`}

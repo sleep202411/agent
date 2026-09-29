@@ -1357,5 +1357,7 @@
   "taskPlanning.remove": "移除标签",
   "taskPlanning.clearCycle": "清除周期",
   "taskPlanning.clearEpisode": "清除集",
-  "taskPlanning.empty": "暂无可用选项。"
+  "taskPlanning.empty": "暂无可用选项。",
+  "taskPlanning.edit": "编辑任务规划",
+  "taskPlanning.save": "保存任务规划"
 }
