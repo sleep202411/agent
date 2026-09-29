@@ -145,6 +145,7 @@ export default function MineScreen() {
       return currentWorks?.map((work) => ({
         id: work.id,
         title: work.title,
+        href: `/work/${encodeURIComponent(work.id)}`,
         coverUrl: work.coverUrl,
         badge:
           work.reviewStatus === 0
