@@ -68,6 +68,11 @@ vi.mock("./task-view-browser", () => ({
     </>
   ),
 }));
+vi.mock("./task-cycle-management", () => ({
+  TaskCycleManagement: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close cycles</button>
+  ),
+}));
 vi.mock("./task-label-management", () => ({
   TaskLabelManagement: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close labels</button>
@@ -193,5 +198,12 @@ it("opens native label management and returns to tasks", async () => {
   await act(async () => button("taskLabels.title").click());
   expect(button("close labels")).toBeTruthy();
   await act(async () => button("close labels").click());
+  expect(button("pick")).toBeTruthy();
+});
+
+it("opens native cycle management and returns to tasks", async () => {
+  await act(async () => button("taskCycles.title").click());
+  expect(button("close cycles")).toBeTruthy();
+  await act(async () => button("close cycles").click());
   expect(button("pick")).toBeTruthy();
 });
