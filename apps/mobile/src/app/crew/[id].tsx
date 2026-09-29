@@ -24,17 +24,12 @@ import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
 import { invalidateBrowse } from "@/data/browse-refresh";
-import {
-  applyToCrewPosition,
-  blockCrew,
-  getCrewById,
-  reportCrew,
-  type IpReportReason,
-} from "@/data/browse-service";
+import { blockCrew, getCrewById, reportCrew, type IpReportReason } from "@/data/browse-service";
 import type { CrewDetail, CrewRoleOpening, CrewStatus, Person } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { type MessageKey, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
+import { useCrewApplication } from "@/features/browse/use-crew-application";
 
 function crewStatusTag(
   status: CrewStatus,
@@ -68,7 +63,7 @@ export default function CrewDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
-  const [applying, setApplying] = useState(false);
+  const { applying, submit: apply } = useCrewApplication(id);
 
   useEffect(() => {
     let alive = true;
@@ -172,20 +167,20 @@ export default function CrewDetailScreen() {
   };
 
   const submitApply = async (positionId: string) => {
-    setApplying(true);
-    try {
-      await applyToCrewPosition(crew.id, positionId);
-      Alert.alert(t("crewDetail.applySubmittedTitle"), t("crewDetail.applySubmittedBody"));
-    } catch (error) {
-      if (error instanceof ApiRequestError && error.status === 401) {
-        authGate.openLogin({ onAuthenticated: () => void submitApply(positionId) });
-        return;
+    await apply(
+      positionId,
+      () => {
+        Alert.alert(t("crewDetail.applySubmittedTitle"), t("crewDetail.applySubmittedBody"));
+      },
+      (error) => {
+        if (error instanceof ApiRequestError && error.status === 401) {
+          authGate.openLogin({ onAuthenticated: () => void submitApply(positionId) });
+          return;
+        }
+        const detail = error instanceof ApiRequestError ? error.message : undefined;
+        Alert.alert(t("crewDetail.applyFailed"), detail);
       }
-      const detail = error instanceof ApiRequestError ? error.message : undefined;
-      Alert.alert(t("crewDetail.applyFailed"), detail);
-    } finally {
-      setApplying(false);
-    }
+    );
   };
 
   const roleMeta = (role: CrewRoleOpening) => {
