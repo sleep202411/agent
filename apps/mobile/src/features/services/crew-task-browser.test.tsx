@@ -68,6 +68,11 @@ vi.mock("./task-view-browser", () => ({
     </>
   ),
 }));
+vi.mock("./task-workflow-management", () => ({
+  TaskWorkflowManagement: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close workflows</button>
+  ),
+}));
 vi.mock("./task-cycle-management", () => ({
   TaskCycleManagement: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close cycles</button>
@@ -206,4 +211,11 @@ it("opens native cycle management and returns to tasks", async () => {
   expect(button("close cycles")).toBeTruthy();
   await act(async () => button("close cycles").click());
   expect(button("pick")).toBeTruthy();
+});
+
+it("opens native workflow management and returns to tasks", async () => {
+  await act(async () => button("taskWorkflowManagement.title").click());
+  expect(button("close workflows")).toBeTruthy();
+  await act(async () => button("close workflows").click());
+  expect(button("taskWorkflowManagement.title")).toBeTruthy();
 });
