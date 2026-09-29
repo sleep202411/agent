@@ -1709,5 +1709,10 @@
   "mobileExpenses.saveHelp": "Saving creates a new revision. It does not submit the claim for review. Existing receipt references are preserved.",
   "mobileExpenses.invalidDraft": "Check the field limits and enter a valid date in YYYY-MM-DD format.",
   "mobileExpenses.retrySave": "Retry Same Save",
-  "mobileExpenses.retrySaveHelp": "Details are fixed after a save attempt. Retry keeps the same draft and version. Refresh the claims list if the result is uncertain."
+  "mobileExpenses.retrySaveHelp": "Details are fixed after a save attempt. Retry keeps the same draft and version. Refresh the claims list if the result is uncertain.",
+  "expenseSubmit.incomplete": "Complete and save the category, purpose, expense date and a positive amount before submitting.",
+  "expenseSubmit.review": "Review Saved Claim",
+  "expenseSubmit.confirm": "Confirm Submission",
+  "expenseSubmit.retry": "Retry Same Submission",
+  "expenseSubmit.retryHelp": "Retry submits the same saved revision. Refresh the claims list to check its current review status."
 }

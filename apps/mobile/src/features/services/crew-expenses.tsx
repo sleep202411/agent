@@ -1,3 +1,4 @@
+import { ExpenseSubmit } from "./expense-submit";
 import { ExpenseEdit } from "./expense-edit";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
@@ -51,6 +52,7 @@ export function CrewExpenses(props: Props) {
         draftId={draft}
         onSelect={setDraft}
         onEdit={setEditing}
+        onSaved={() => setRevision((n) => n + 1)}
       />
       <Pressable
         accessibilityRole="button"
@@ -77,6 +79,7 @@ function Records(
     draftId?: string;
     onSelect: (id: string) => void;
     onEdit: (record: ExpenseRecord) => void;
+    onSaved: () => void;
   }
 ) {
   const t = useTranslations();
@@ -170,6 +173,14 @@ function Records(
               index={index + 1}
             />
           ))}
+          {!props.draftId && (
+            <ExpenseSubmit
+              record={row}
+              userId={props.userId}
+              generation={props.generation}
+              onSaved={props.onSaved}
+            />
+          )}
           {!props.draftId && row.submissionStatus !== "pending" && (
             <Pressable
               accessibilityRole="button"

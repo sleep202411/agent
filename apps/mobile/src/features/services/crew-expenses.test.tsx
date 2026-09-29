@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewExpenses } from "./crew-expenses";
 
+vi.mock("./expense-submit", () => ({ ExpenseSubmit: () => <span>expense submit control</span> }));
 vi.mock("./expense-edit", () => ({ ExpenseEdit: () => <span>expense edit form</span> }));
 vi.mock("./earning-decision", () => ({ EarningDecision: () => <span>earning actions</span> }));
 vi.mock("./payout-decision", () => ({ PayoutDecision: () => <span>payout actions</span> }));

@@ -1709,5 +1709,10 @@
   "mobileExpenses.saveHelp": "保存会创建新版本，不会提交审核。现有收据引用将保留。",
   "mobileExpenses.invalidDraft": "请检查字段长度并填写有效日期（YYYY-MM-DD）。",
   "mobileExpenses.retrySave": "重试同一次保存",
-  "mobileExpenses.retrySaveHelp": "尝试保存后信息固定。重试沿用同一草稿和版本。如结果不确定，请刷新申请列表。"
+  "mobileExpenses.retrySaveHelp": "尝试保存后信息固定。重试沿用同一草稿和版本。如结果不确定，请刷新申请列表。",
+  "expenseSubmit.incomplete": "提交前请填写并保存类别、用途、费用日期和正数金额。",
+  "expenseSubmit.review": "核对已保存的申请",
+  "expenseSubmit.confirm": "确认提交",
+  "expenseSubmit.retry": "重试同一次提交",
+  "expenseSubmit.retryHelp": "重试提交相同的已保存版本。请刷新申请列表检查当前审核状态。"
 }

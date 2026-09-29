@@ -1709,5 +1709,10 @@
   "mobileExpenses.saveHelp": "儲存會建立新版本，不會提交審核。現有收據引用將保留。",
   "mobileExpenses.invalidDraft": "請檢查欄位長度並填寫有效日期（YYYY-MM-DD）。",
   "mobileExpenses.retrySave": "重試同一次儲存",
-  "mobileExpenses.retrySaveHelp": "嘗試儲存後資料固定。重試沿用同一草稿和版本。如結果不確定，請重新整理申請列表。"
+  "mobileExpenses.retrySaveHelp": "嘗試儲存後資料固定。重試沿用同一草稿和版本。如結果不確定，請重新整理申請列表。",
+  "expenseSubmit.incomplete": "提交前請填寫並儲存類別、用途、費用日期和正數金額。",
+  "expenseSubmit.review": "核對已儲存的申請",
+  "expenseSubmit.confirm": "確認提交",
+  "expenseSubmit.retry": "重試同一次提交",
+  "expenseSubmit.retryHelp": "重試提交相同的已儲存版本。請重新整理申請列表檢查目前審核狀態。"
 }
