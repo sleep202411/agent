@@ -1,3 +1,4 @@
+import { CrewCompute } from "./crew-compute";
 import { PayoutCreate } from "./payout-create";
 import { EarningCreate } from "./earning-create";
 import { CrewFinanceDetail } from "./crew-finance-detail";
@@ -27,6 +28,7 @@ export function CrewFinance(props: Props) {
 }
 function Session(props: Props) {
   const t = useTranslations();
+  const [compute, setCompute] = useState(false);
   const [revision, setRevision] = useState(0),
     [access, setAccess] = useState<{ revision: number; allowed?: boolean; error?: string }>();
   const [view, setView] = useState<FinanceView>("earnings"),
@@ -48,9 +50,26 @@ function Session(props: Props) {
   }, [props.crewId, props.userId, props.generation, revision]);
   const visible = access?.revision === revision ? access : undefined;
   const effectiveScope = visible?.allowed ? scope : "mine";
+  if (compute)
+    return (
+      <CrewCompute
+        {...props}
+        onClose={() => {
+          setCompute(false);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   return (
     <View style={{ flex: 1 }}>
       <ThemedText>{t("crewFinance.title")}</ThemedText>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => setCompute(true)}
+      >
+        <ThemedText>{t("crewComputeFinance.title")}</ThemedText>
+      </Pressable>
       {view === "earnings" ? (
         <EarningCreate
           key={`earning-create:${revision}`}
