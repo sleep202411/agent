@@ -34,3 +34,17 @@ it("rejects overlong search and invalid task IDs/cursors", async () => {
 it("builds bounded task tokens without forbidden label characters", () => {
   expect(taskLabel({ id, number: 7, title: "Scene #1\nNext" })).toBe("TASK-7 Scene  1 Next");
 });
+
+it("requests recruitment eligibility only when selected by the caller", async () => {
+  vi.mocked(api.get).mockResolvedValue({ items: [], nextCursor: null });
+  await fetchTaskOptions(
+    "crew",
+    { query: "shot", recruitmentOnly: true },
+    null,
+    new AbortController().signal
+  );
+  expect(api.get).toHaveBeenCalledWith(
+    "/crews/crew/task-options",
+    expect.objectContaining({ params: { query: "shot", limit: 30, recruitmentOnly: "true" } })
+  );
+});

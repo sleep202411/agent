@@ -15,6 +15,7 @@ export function TaskPicker({
   title,
   closeLabel,
   excludedIds = [],
+  recruitmentOnly = false,
 }: {
   crewId: string;
   generation: number;
@@ -23,6 +24,7 @@ export function TaskPicker({
   title?: string;
   closeLabel?: string;
   excludedIds?: string[];
+  recruitmentOnly?: boolean;
 }) {
   const selected = useRef(false);
   const active = useScreenActive(),
@@ -33,7 +35,7 @@ export function TaskPicker({
   const tasks = useTaskOptions(
     active && generation === getAuthGeneration() ? String(generation) : undefined,
     crewId,
-    { query: search }
+    { query: search, ...(recruitmentOnly ? { recruitmentOnly: true } : {}) }
   );
   return (
     <View style={{ flex: 1, padding: 12, gap: 10 }}>

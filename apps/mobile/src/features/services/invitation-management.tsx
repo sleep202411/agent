@@ -1,3 +1,4 @@
+import { PositionCreate } from "./position-create";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -17,9 +18,21 @@ import {
 } from "./invitation-management-api";
 type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
 export function InvitationManagement(props: Props) {
+  const [creating, setCreating] = useState(false);
   const [position, setPosition] = useState<ManagedPosition>(),
     [cursor, setCursor] = useState<string | null>(null),
     [revision, setRevision] = useState(0);
+  if (creating)
+    return (
+      <PositionCreate
+        {...props}
+        onClose={() => {
+          setCreating(false);
+          setCursor(null);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (position)
     return (
       <PositionInvites
@@ -37,6 +50,7 @@ export function InvitationManagement(props: Props) {
       key={`${revision}:${cursor}`}
       {...props}
       cursor={cursor}
+      onCreate={() => setCreating(true)}
       onSelect={setPosition}
       onMore={setCursor}
       onRefresh={() => {
@@ -49,6 +63,7 @@ export function InvitationManagement(props: Props) {
 function Positions(
   props: Props & {
     cursor: string | null;
+    onCreate: () => void;
     onSelect: (position: ManagedPosition) => void;
     onMore: (cursor: string) => void;
     onRefresh: () => void;
@@ -81,6 +96,7 @@ function Positions(
       <ThemedText>{t("inviteManagement.title")}</ThemedText>
       {!page && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
+      {page && <Action label={t("positionCreate.title")} onPress={props.onCreate} />}
       {page?.items.map((row) => (
         <Action
           key={row.id}

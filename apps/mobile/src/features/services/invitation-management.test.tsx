@@ -3,6 +3,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { InvitationManagement } from "./invitation-management";
 const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), post: vi.fn(), close: vi.fn() }));
+vi.mock("./position-create", () => ({
+  PositionCreate: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>Create Position Form</button>
+  ),
+}));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({ text: "white", border: "gray" }) }));
@@ -202,4 +207,12 @@ it("blocks writes after account changes", async () => {
   h.generation = 2;
   await click("crewPositionInvites.invite");
   expect(h.post).not.toHaveBeenCalled();
+});
+
+it("opens position creation and refreshes the list on return", async () => {
+  await render();
+  await click("positionCreate.title");
+  expect(host.textContent).toBe("Create Position Form");
+  await click("Create Position Form");
+  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/positions")).toHaveLength(2);
 });

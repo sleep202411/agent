@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchTaskOptions, type TaskOption } from "./task-options";
-type TaskQuery = { query?: string };
+type TaskQuery = { query?: string; recruitmentOnly?: boolean };
 type Session = {
   key: string;
   abort: AbortController;

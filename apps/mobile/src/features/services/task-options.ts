@@ -8,7 +8,7 @@ export const taskOption = z.object({
 export type TaskOption = z.infer<typeof taskOption>;
 export async function fetchTaskOptions(
   crewId: string,
-  query: { query?: string },
+  query: { query?: string; recruitmentOnly?: boolean },
   cursor: string | null,
   signal: AbortSignal
 ) {
@@ -24,6 +24,7 @@ export async function fetchTaskOptions(
       signal,
       params: {
         query: search || undefined,
+        ...(query.recruitmentOnly ? { recruitmentOnly: "true" } : {}),
         limit: 30,
         ...(cursor ? { cursor: z.string().uuid().parse(cursor) } : {}),
       },
