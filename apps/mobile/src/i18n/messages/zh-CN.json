@@ -1361,5 +1361,17 @@
   "taskPlanning.edit": "编辑任务规划",
   "taskPlanning.save": "保存任务规划",
   "taskWorkflow.edit": "移动工作流列",
-  "taskWorkflow.save": "保存工作流"
+  "taskWorkflow.save": "保存工作流",
+  "taskKind.label": "任务类型",
+  "taskKind.unset": "未设置类型",
+  "taskKind.script": "剧本",
+  "taskKind.gameplay": "玩法",
+  "taskKind.plot_tree": "剧情树",
+  "taskKind.art": "美术",
+  "taskKind.storyboard": "分镜",
+  "taskKind.voice": "配音",
+  "taskKind.music": "音乐",
+  "taskKind.edit": "剪辑",
+  "taskKind.qa": "质量检查",
+  "taskKind.other": "其他"
 }

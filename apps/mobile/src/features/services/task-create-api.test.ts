@@ -149,3 +149,20 @@ it("validates planning references and exact creation acknowledgement", async () 
     createTask("crew", { ...input, cycleId: null, episodeId: null, labelIds: [] })
   ).resolves.toBeDefined();
 });
+
+it("validates task kind and requires matching creation acknowledgement", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, taskKind: "storyboard" });
+  await expect(createTask("crew", { ...input, taskKind: "storyboard" })).resolves.toMatchObject({
+    taskKind: "storyboard",
+  });
+  for (const taskKind of [undefined, null, "art"]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, taskKind });
+    await expect(createTask("crew", { ...input, taskKind: "storyboard" })).rejects.toThrow(
+      "acknowledgement"
+    );
+  }
+  vi.mocked(api.post).mockResolvedValue({ ...detail, taskKind: null });
+  await expect(createTask("crew", { ...input, taskKind: null })).resolves.toMatchObject({
+    taskKind: null,
+  });
+});

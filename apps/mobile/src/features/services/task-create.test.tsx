@@ -8,9 +8,14 @@ const h = vi.hoisted(() => ({
   refresh: vi.fn(),
   workflows: vi.fn(),
   planning: vi.fn(),
+  templates: vi.fn(),
   generation: 1,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock("./task-kind-api", async (original) => ({
+  ...(await original<typeof import("./task-kind-api")>()),
+  fetchTaskKindTemplates: h.templates,
+}));
 vi.mock("./task-planning-api", () => ({ fetchTaskPlanningOptions: h.planning }));
 vi.mock("./task-workflow-api", () => ({ fetchManualTaskWorkflows: h.workflows }));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
@@ -77,6 +82,15 @@ const type = (n: number, text: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.templates.mockResolvedValue([
+    {
+      id: "55555555-5555-4555-8555-555555555555",
+      kind: "storyboard",
+      name: "Storyboard",
+      title: "Template shot",
+      description: "Template brief",
+    },
+  ]);
   h.planning.mockImplementation((_crew: string, kind: string) =>
     Promise.resolve([{ id: "44444444-4444-4444-8444-444444444444", name: `Pick ${kind}` }])
   );
@@ -346,4 +360,67 @@ it("ignores late planning options after an account change", async () => {
     finish([{ id: "44444444-4444-4444-8444-444444444444", name: "Private Cycle" }])
   );
   expect(host.textContent).not.toContain("Private Cycle");
+});
+
+it("selects a kind and fills only an empty title from its first template", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(1, "My brief"));
+  await act(async () => button("taskKind.unset")!.click());
+  await act(async () => button("taskKind.storyboard")!.click());
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Template shot");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("My brief");
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({
+      taskKind: "storyboard",
+      title: "Template shot",
+      description: "My brief",
+    })
+  );
+});
+it("preserves entered text when changing or clearing the kind", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "My title"));
+  await act(async () => button("taskKind.unset")!.click());
+  await act(async () => button("taskKind.storyboard")!.click());
+  expect(host.querySelector("input")!.value).toBe("My title");
+  await act(async () => button("taskKind.storyboard")!.click());
+  await act(async () => button("taskKind.unset")!.click());
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ taskKind: null, title: "My title" })
+  );
+});
+it("keeps kind selection available if template loading fails and supports retry", async () => {
+  h.templates.mockRejectedValueOnce(new Error("Template service unavailable"));
+  await render();
+  await act(async () => button("taskKind.unset")!.click());
+  expect(host.textContent).toContain("Template service unavailable");
+  expect(button("taskKind.art")!.disabled).toBe(false);
+  await act(async () => button("inbox.retry")!.click());
+  await act(async () => button("taskKind.storyboard")!.click());
+  expect(host.querySelector("input")!.value).toBe("Template shot");
+});
+it("never applies late template responses to a newer draft", async () => {
+  let finish!: (items: unknown[]) => void;
+  h.templates.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => button("taskKind.unset")!.click());
+  await act(async () => button("taskKind.storyboard")!.click());
+  await act(async () => type(0, "New draft"));
+  await act(async () =>
+    finish([
+      { id: "55555555-5555-4555-8555-555555555555", kind: "storyboard", title: "Old template" },
+    ])
+  );
+  expect(host.querySelector("input")!.value).toBe("New draft");
 });

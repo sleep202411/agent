@@ -1361,5 +1361,17 @@
   "taskPlanning.edit": "編輯任務規劃",
   "taskPlanning.save": "儲存任務規劃",
   "taskWorkflow.edit": "移動工作流程欄",
-  "taskWorkflow.save": "儲存工作流程"
+  "taskWorkflow.save": "儲存工作流程",
+  "taskKind.label": "任務類型",
+  "taskKind.unset": "未設定類型",
+  "taskKind.script": "劇本",
+  "taskKind.gameplay": "玩法",
+  "taskKind.plot_tree": "劇情樹",
+  "taskKind.art": "美術",
+  "taskKind.storyboard": "分鏡",
+  "taskKind.voice": "配音",
+  "taskKind.music": "音樂",
+  "taskKind.edit": "剪輯",
+  "taskKind.qa": "品質檢查",
+  "taskKind.other": "其他"
 }

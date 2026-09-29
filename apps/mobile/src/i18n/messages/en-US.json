@@ -1361,5 +1361,17 @@
   "taskPlanning.edit": "Edit Planning",
   "taskPlanning.save": "Save Planning",
   "taskWorkflow.edit": "Move Workflow Column",
-  "taskWorkflow.save": "Save Workflow"
+  "taskWorkflow.save": "Save Workflow",
+  "taskKind.label": "Task Kind",
+  "taskKind.unset": "No Task Kind",
+  "taskKind.script": "Script",
+  "taskKind.gameplay": "Gameplay",
+  "taskKind.plot_tree": "Plot Tree",
+  "taskKind.art": "Art",
+  "taskKind.storyboard": "Storyboard",
+  "taskKind.voice": "Voice",
+  "taskKind.music": "Music",
+  "taskKind.edit": "Editing",
+  "taskKind.qa": "Quality Assurance",
+  "taskKind.other": "Other"
 }

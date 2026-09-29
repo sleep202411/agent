@@ -12,6 +12,8 @@ import { createTask, taskCreateInput } from "./task-create-api";
 import { parseScheduleDate } from "./task-schedule-api";
 import { TaskMentionPicker } from "./task-mention-picker";
 import { TaskPlanningFields, type TaskPlanningDraft } from "./task-planning-fields";
+import { TaskKindField } from "./task-kind-field";
+import type { TaskKind } from "./task-kind-api";
 import { TaskWorkflowField } from "./task-workflow-field";
 import type { TaskWorkflow } from "./task-workflow-api";
 import { TaskCreationRelations } from "./task-creation-relations";
@@ -59,6 +61,7 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
+  const [taskKind, setTaskKind] = useState<TaskKind | null>(null);
   const [planning, setPlanning] = useState<TaskPlanningDraft>({
     labels: [],
     cycle: null,
@@ -84,6 +87,7 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
       title,
       description,
       priority,
+      taskKind,
       ...(workflow ? { workflowStateId: workflow.id } : {}),
       cycleId: planning.cycle?.id ?? null,
       episodeId: planning.episode?.id ?? null,
@@ -168,6 +172,16 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
         placeholder="YYYY-MM-DD HH:mm"
         placeholderTextColor={theme.textSecondary}
         style={{ color: theme.text, padding: 12 }}
+      />
+      <TaskKindField
+        crewId={crewId}
+        generation={generation}
+        selected={taskKind}
+        locked={locked}
+        onSelect={(kind, templateTitle) => {
+          setTaskKind(kind);
+          if (templateTitle) setTitle((current) => (current.trim() ? current : templateTitle));
+        }}
       />
       <TaskWorkflowField
         crewId={crewId}

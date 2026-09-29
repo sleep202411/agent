@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
+import { taskKindSchema } from "./task-kind-api";
 import { taskDetailSchema } from "./task-detail-api";
 export const taskCreateInput = z
   .object({
+    taskKind: taskKindSchema.nullable().optional(),
     cycleId: z.string().uuid().nullable().optional(),
     episodeId: z.string().uuid().nullable().optional(),
     labelIds: z
@@ -45,6 +47,7 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
   const data = taskCreateInput.parse(input);
   const result = taskDetailSchema
     .extend({
+      taskKind: taskKindSchema.nullable().optional(),
       workflowStateId: z.string().uuid().optional(),
       cycleId: z.string().uuid().nullable().optional(),
       episodeId: z.string().uuid().nullable().optional(),
@@ -62,6 +65,7 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     (data.labelIds !== undefined &&
       (result.labels.length !== data.labelIds.length ||
         data.labelIds.some((id) => !result.labels.some((label) => label.id === id)))) ||
+    (data.taskKind !== undefined && result.taskKind !== data.taskKind) ||
     result.title !== data.title ||
     result.description !== data.description ||
     result.priority !== data.priority ||
