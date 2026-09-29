@@ -5,6 +5,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
+import { TaskCommitments } from "./task-commitments";
 import { TaskTimeline } from "./task-timeline";
 import { useUserDisplays } from "./user-displays";
 type Props = {
@@ -77,6 +78,13 @@ function TaskContent({ crewId, taskId, generation, userId, onClose, onOpenWeb }:
               <ThemedText key={label.id}>{label.name}</ThemedText>
             ))}
           </View>
+          <TaskCommitments
+            key={revision}
+            task={data}
+            userId={userId}
+            generation={generation}
+            onRefresh={() => setRevision((v) => v + 1)}
+          />
           <TaskTimeline crewId={crewId} taskId={taskId} userId={userId} generation={generation} />
           <Pressable accessibilityRole="button" onPress={onOpenWeb} style={{ padding: 12 }}>
             <ThemedText>{t("thread.taskOpenWorkspace")}</ThemedText>

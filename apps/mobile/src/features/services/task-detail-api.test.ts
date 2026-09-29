@@ -9,6 +9,8 @@ const detail = {
   number: 1,
   title: "Shot",
   description: "Render",
+  version: 1,
+  status: "submitted",
   workflowState: { name: "Review" },
   startAt: null,
   dueAt: "2026-10-01T00:00:00Z",
