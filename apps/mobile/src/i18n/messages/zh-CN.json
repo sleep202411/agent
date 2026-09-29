@@ -1717,5 +1717,10 @@
   "expenseSubmit.retryHelp": "重试提交相同的已保存版本。请刷新申请列表检查当前审核状态。",
   "receiptUpload.retry": "重试收据上传",
   "receiptUpload.chooseAnother": "选择其他文件",
-  "receiptUpload.refresh": "刷新已上传收据"
+  "receiptUpload.refresh": "刷新已上传收据",
+  "crewSpend.heading": "项目支出",
+  "crewSpend.rewards": "任务报酬",
+  "crewSpend.reimbursements": "报销",
+  "crewSpend.total": "合计",
+  "crewSpend.help": "剧组已入账的任务报酬与已批准的费用申请，按币种分别列出。这些合计不代表已支付现金。"
 }

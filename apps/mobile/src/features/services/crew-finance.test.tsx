@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewFinance } from "./crew-finance";
+vi.mock("./crew-spend", () => ({ CrewSpendSummary: () => <span>spending summary screen</span> }));
 vi.mock("./crew-expenses", () => ({ CrewExpenses: () => <span>expense history screen</span> }));
 vi.mock("./crew-compute", () => ({ CrewCompute: () => <span>compute request screen</span> }));
 vi.mock("./payout-create", () => ({ PayoutCreate: () => <span>payout creation entry</span> }));
@@ -181,4 +182,12 @@ it("shows the creation action for the selected ledger type", async () => {
   await act(async () => button("crewFinance.payouts").click());
   expect(host.textContent).toContain("payout creation entry");
   expect(host.textContent).not.toContain("earning creation entry");
+});
+it("gates project spending entry on Crew ledger permission", async () => {
+  await render();
+  expect(button("crewSpend.heading")).toBeUndefined();
+  h.access.mockResolvedValue(true);
+  await click("thread.refresh");
+  await click("crewSpend.heading");
+  expect(host.textContent).toContain("spending summary screen");
 });

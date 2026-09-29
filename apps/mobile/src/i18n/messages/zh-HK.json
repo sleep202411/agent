@@ -1717,5 +1717,10 @@
   "expenseSubmit.retryHelp": "重試提交相同的已儲存版本。請重新整理申請列表檢查目前審核狀態。",
   "receiptUpload.retry": "重試收據上傳",
   "receiptUpload.chooseAnother": "選擇其他檔案",
-  "receiptUpload.refresh": "重新整理已上傳收據"
+  "receiptUpload.refresh": "重新整理已上傳收據",
+  "crewSpend.heading": "項目支出",
+  "crewSpend.rewards": "任務報酬",
+  "crewSpend.reimbursements": "報銷",
+  "crewSpend.total": "合計",
+  "crewSpend.help": "劇組已入帳的任務報酬與已批准的費用申請，按幣別分別列出。這些合計不代表已支付現金。"
 }

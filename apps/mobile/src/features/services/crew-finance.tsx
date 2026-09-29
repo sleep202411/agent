@@ -1,3 +1,4 @@
+import { CrewSpendSummary } from "./crew-spend";
 import { CrewExpenses } from "./crew-expenses";
 import { CrewCompute } from "./crew-compute";
 import { PayoutCreate } from "./payout-create";
@@ -29,6 +30,7 @@ export function CrewFinance(props: Props) {
 }
 function Session(props: Props) {
   const t = useTranslations();
+  const [spend, setSpend] = useState(false);
   const [expenses, setExpenses] = useState(false);
   const [compute, setCompute] = useState(false);
   const [revision, setRevision] = useState(0),
@@ -52,6 +54,16 @@ function Session(props: Props) {
   }, [props.crewId, props.userId, props.generation, revision]);
   const visible = access?.revision === revision ? access : undefined;
   const effectiveScope = visible?.allowed ? scope : "mine";
+  if (spend && visible?.allowed)
+    return (
+      <CrewSpendSummary
+        {...props}
+        onClose={() => {
+          setSpend(false);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
   if (expenses)
     return (
       <CrewExpenses
@@ -101,6 +113,15 @@ function Session(props: Props) {
           {...props}
           onSaved={() => setRevision((n) => n + 1)}
         />
+      )}
+      {visible?.allowed && (
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 12 }}
+          onPress={() => setSpend(true)}
+        >
+          <ThemedText>{t("crewSpend.heading")}</ThemedText>
+        </Pressable>
       )}
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
