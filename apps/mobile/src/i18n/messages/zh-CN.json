@@ -1334,5 +1334,7 @@
   "taskRelationships.removeParent": "移除父任务",
   "taskRelationships.addBlocker": "添加前置任务",
   "taskRelationships.removeBlocker": "移除前置任务",
-  "taskRelationships.save": "保存修改"
+  "taskRelationships.save": "保存修改",
+  "crewTasks.title": "剧组任务",
+  "crewTasks.back": "返回任务列表"
 }

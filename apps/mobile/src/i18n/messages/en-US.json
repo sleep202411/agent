@@ -1334,5 +1334,7 @@
   "taskRelationships.removeParent": "Remove Parent Task",
   "taskRelationships.addBlocker": "Add Blocking Task",
   "taskRelationships.removeBlocker": "Remove Blocking Task",
-  "taskRelationships.save": "Save Changes"
+  "taskRelationships.save": "Save Changes",
+  "crewTasks.title": "Crew Tasks",
+  "crewTasks.back": "Back to Tasks"
 }

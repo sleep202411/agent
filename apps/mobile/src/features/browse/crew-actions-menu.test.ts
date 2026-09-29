@@ -63,3 +63,21 @@ it("retains all Android actions within the native three-button limit", () => {
     onBlock: options.onBlock,
   });
 });
+
+it("opens native tasks from iOS and Android without losing existing actions", () => {
+  const onTasks = vi.fn();
+  showCrewActionsMenu({ ...options, onTasks });
+  const [config, select] = h.sheet.mock.calls[0];
+  expect(config.options[4]).toBe("crewTasks.title");
+  expect(config.destructiveButtonIndex).toBe(3);
+  select(4);
+  expect(onTasks).toHaveBeenCalledOnce();
+  h.platform.OS = "android";
+  showCrewActionsMenu({ ...options, onTasks });
+  const buttons = h.alert.mock.calls[0][2];
+  expect(buttons).toHaveLength(3);
+  buttons[0].onPress();
+  expect(onTasks).toHaveBeenCalledTimes(2);
+  buttons[1].onPress();
+  expect(h.alert.mock.calls[1][2][0].text).toBe("crewDetail.applicationsAction");
+});

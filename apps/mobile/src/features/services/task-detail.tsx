@@ -21,6 +21,7 @@ type Props = {
   generation: number;
   userId: string;
   onClose: () => void;
+  closeLabel?: string;
   onOpenWeb: (taskId: string) => void;
 };
 export function TaskDetail(props: Props) {
@@ -61,6 +62,7 @@ function TaskContent({
   onOpenWeb,
   onOpenTask,
   backToTask,
+  closeLabel,
 }: Props & {
   onOpenTask: (id: string) => void;
   backToTask: boolean;
@@ -94,7 +96,9 @@ function TaskContent({
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <Pressable accessibilityRole="button" onPress={onClose} style={{ padding: 12 }}>
-        <ThemedText>{t(backToTask ? "taskRelations.backToTask" : "thread.backToChat")}</ThemedText>
+        <ThemedText>
+          {backToTask ? t("taskRelations.backToTask") : (closeLabel ?? t("thread.backToChat"))}
+        </ThemedText>
       </Pressable>
       {!current && <ActivityIndicator accessibilityLabel={t("courses.loading")} />}
       {current?.error && <ThemedText accessibilityRole="alert">{current.error}</ThemedText>}

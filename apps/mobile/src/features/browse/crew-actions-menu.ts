@@ -6,10 +6,11 @@ import type { MessageKey } from "@/i18n";
 export function showCrewActionsMenu(options: {
   t: (key: MessageKey) => string;
   onApplications: () => void;
+  onTasks?: () => void;
   onReport: () => void;
   onBlock: () => void;
 }) {
-  const { t, onApplications, onReport, onBlock } = options;
+  const { t, onApplications, onReport, onBlock, onTasks } = options;
   if (Platform.OS === "ios") {
     ActionSheetIOS.showActionSheetWithOptions(
       {
@@ -18,6 +19,7 @@ export function showCrewActionsMenu(options: {
           t("crewDetail.applicationsAction"),
           t("report.reportAction"),
           t("crewDetail.blockAction"),
+          ...(onTasks ? [t("crewTasks.title")] : []),
         ],
         cancelButtonIndex: 0,
         destructiveButtonIndex: 3,
@@ -26,8 +28,20 @@ export function showCrewActionsMenu(options: {
         if (index === 1) onApplications();
         if (index === 2) onReport();
         if (index === 3) onBlock();
+        if (index === 4) onTasks?.();
       }
     );
+    return;
+  }
+  if (onTasks) {
+    Alert.alert(t("report.moreActions"), undefined, [
+      { text: t("crewTasks.title"), onPress: onTasks },
+      {
+        text: t("report.moreActions"),
+        onPress: () => showCrewActionsMenu({ t, onApplications, onReport, onBlock }),
+      },
+      { text: t("report.cancel"), style: "cancel" },
+    ]);
     return;
   }
   // Android supports at most three Alert buttons. Keep safety actions in their
