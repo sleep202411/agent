@@ -688,12 +688,16 @@ describe('StoryWorkingPreviewService', () => {
     expect(preview.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'STORY_WORKING_PREVIEW_CLIP_MEDIA_MISSING',
-          severity: 'warning',
-        }),
-        expect.objectContaining({
           code: 'STORY_BUILD_CLIP_MEDIA_REQUIRED',
           severity: 'warning',
+          details: expect.objectContaining({ kind: 'shot' }),
+        }),
+      ]),
+    );
+    expect(preview.diagnostics).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_WORKING_PREVIEW_CLIP_MEDIA_MISSING',
         }),
       ]),
     );

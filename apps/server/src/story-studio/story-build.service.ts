@@ -57,8 +57,9 @@ import {
   type InteractiveStoryDraftContent,
 } from './dto';
 import {
+  assignStoryPlaybackSlots,
   compileStoryBuild,
-  storyRuntimeAssetId,
+  storyPlaybackSlotKey,
   type FrozenStoryVideoAsset,
   type StoryBuildNodeTimelineInput,
   type StoryBuildSegmentInput,
@@ -383,6 +384,20 @@ export class StoryBuildService {
                   node.kind === 'clip' ? [[node.nodeId, index] as const] : [],
                 ),
               );
+              const playbackSlots = assignStoryPlaybackSlots(
+                compilation.includedGraphNodeIds.flatMap((graphNodeId) => {
+                  const timeline = timelineByNodeId.get(graphNodeId);
+                  if (!timeline) return [];
+                  return [
+                    {
+                      graphNodeId,
+                      segments: timeline.segments.filter(
+                        (segment) => segment.asset !== null,
+                      ),
+                    },
+                  ];
+                }),
+              );
               for (const graphNodeId of compilation.includedGraphNodeIds) {
                 const timeline = timelineByNodeId.get(graphNodeId);
                 const nodeRank = nodeRankById.get(graphNodeId);
@@ -406,7 +421,10 @@ export class StoryBuildService {
                     data: {
                       buildId,
                       storyProjectId: projectId,
-                      logicalKey: storyRuntimeAssetId(segment.clipId),
+                      logicalKey:
+                        playbackSlots.get(
+                          storyPlaybackSlotKey(graphNodeId, segmentRank),
+                        )?.assetId ?? `video:${segment.clipId}`,
                       role: StoryAssetRole.video,
                       assetId: asset.assetId,
                       variantId: asset.variantId,
@@ -993,9 +1011,11 @@ function prepareBuildSegment(
   graphNodeId: string,
   clip: BuildTimelineClipRow,
 ): StoryBuildSegmentInput {
+  const shot = clip.title?.trim() || clip.stableKey;
   const base = {
     clipId: clip.id,
     clipKey: clip.stableKey,
+    title: shot,
     kind: clip.kind as 'image' | 'video',
     durationMs: clip.durationMs,
     clipVersion: clip.version,
@@ -1007,7 +1027,7 @@ function prepareBuildSegment(
   const diagnostics: StoryBuildDiagnosticDto[] = [];
   const asset = media.mediaAsset;
   const variant = chooseClipVariant(media);
-  const label = `Storyboard clip ${clip.stableKey}`;
+  const label = `"${shot}"`;
   if (!variant) {
     diagnostics.push(
       buildDiagnostic(

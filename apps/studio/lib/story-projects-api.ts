@@ -374,15 +374,30 @@ export interface StoryBuildDiagnostic {
   entityType: "revision" | "node" | "clip" | "reference" | "choice" | "asset" | null;
   entityId: string | null;
   chapterId?: string;
-  details?: {
-    kind: "state-effect-type";
-    nodeTitle: string;
-    choiceLabel: string | null;
-    effectIndex: number;
-    variableName: string;
-    operation: "add" | "set";
-    variableType: "number" | "boolean";
-  };
+  details?:
+    | {
+        kind: "state-effect-type";
+        nodeTitle: string;
+        choiceLabel: string | null;
+        effectIndex: number;
+        variableName: string;
+        operation: "add" | "set";
+        variableType: "number" | "boolean";
+      }
+    | {
+        kind: "shot";
+        sceneTitle: string;
+        shotTitle: string;
+      }
+    | {
+        kind: "missing-sequence";
+        sceneTitle: string;
+      }
+    | {
+        kind: "duplicate-playback";
+        playbackId: string;
+        shots: Array<{ sceneTitle: string; shotTitle: string }>;
+      };
 }
 
 export interface StoryBuildPathReport {

@@ -345,7 +345,7 @@
   "play.playtest.loading": "Preparing the playtest…",
   "play.playtest.errorFallback": "The playtest could not be loaded.",
   "play.playtest.unavailableTitle": "The story is not playable yet",
-  "play.playtest.unavailableDescription": "{errors} blocking errors · {warnings} warnings. Complete the missing production inputs below; you can keep editing.",
+  "play.playtest.unavailableDescription": "{errors} blocking problems · {warnings} notes. The lines below name the scene and the shot.",
   "play.playtest.refresh": "Refresh preview",
   "play.playtest.draftRevision": "Draft r{revision}",
   "play.playtest.missingProjectId": "Missing project id.",

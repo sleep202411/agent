@@ -363,7 +363,7 @@
   "play.playtest.loading": "正在准备试玩…",
   "play.playtest.errorFallback": "无法加载试玩。",
   "play.playtest.unavailableTitle": "当前故事还不能试玩",
-  "play.playtest.unavailableDescription": "{errors} 个阻塞错误 · {warnings} 个警告。只需补齐下方列出的生产输入，仍可继续编辑。",
+  "play.playtest.unavailableDescription": "{errors} 个问题挡住了试玩 · {warnings} 条提醒。下面每条都会写明是哪一场、哪一镜。",
   "play.playtest.refresh": "刷新试玩",
   "play.playtest.draftRevision": "草稿 r{revision}",
   "play.playtest.missingProjectId": "缺少项目 ID。",
