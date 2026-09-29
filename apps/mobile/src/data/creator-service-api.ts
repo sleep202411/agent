@@ -1,5 +1,5 @@
 import { appEnv, resolveAssetUrl } from "@/config";
-import { api } from "@/lib/api-client";
+import { api, ApiRequestError } from "@/lib/api-client";
 
 import type { CreatorServiceDetail, CreatorServicePackage, CreatorServiceSummary } from "./types";
 
@@ -161,14 +161,20 @@ export async function fetchCreatorServices(
 }
 
 export async function fetchCreatorServiceById(
-  id: string
+  id: string,
+  signal?: AbortSignal
 ): Promise<CreatorServiceDetail | undefined> {
   try {
-    const res = await api.get<CreatorServiceDetailDto>(`/creator-services/${id}`, {
-      service: "aurora",
-    });
+    const res = await api.get<CreatorServiceDetailDto>(
+      `/creator-services/${encodeURIComponent(id)}`,
+      {
+        service: "aurora",
+        signal,
+      }
+    );
     return mapDetail(res);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return undefined;
+    throw error;
   }
 }

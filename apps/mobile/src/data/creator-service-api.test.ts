@@ -1,7 +1,18 @@
 import { expect, it, vi } from "vitest";
-import { api } from "@/lib/api-client";
+import { api, ApiRequestError } from "@/lib/api-client";
 import { fetchCreatorServiceById } from "./creator-service-api";
-vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
+vi.mock("@/lib/api-client", () => ({
+  api: { get: vi.fn() },
+  ApiRequestError: class extends Error {
+    constructor(
+      public code: number,
+      message: string,
+      public status: number
+    ) {
+      super(message);
+    }
+  },
+}));
 vi.mock("@/config", () => ({ appEnv: { assets: {} }, resolveAssetUrl: (s: string) => s }));
 const pkg = { id: "package", title: "Film", tier: "basic", price: 12, currency: "USD" };
 const detail = { id: "service", creatorId: "creator", title: "Film", version: 3, packages: [pkg] };
@@ -28,3 +39,16 @@ it.each([
     expect((await fetchCreatorServiceById("service"))?.packages).toEqual([]);
   }
 );
+
+it("distinguishes a missing service from a failed load and forwards cancellation", async () => {
+  const signal = new AbortController().signal;
+  const failure = new ApiRequestError(503, "Temporarily unavailable", 503);
+  vi.mocked(api.get).mockRejectedValue(failure);
+  await expect(fetchCreatorServiceById("a/b", signal)).rejects.toBe(failure);
+  expect(api.get).toHaveBeenLastCalledWith("/creator-services/a%2Fb", {
+    service: "aurora",
+    signal,
+  });
+  vi.mocked(api.get).mockRejectedValue(new ApiRequestError(404, "Not found", 404));
+  expect(await fetchCreatorServiceById("missing")).toBeUndefined();
+});
