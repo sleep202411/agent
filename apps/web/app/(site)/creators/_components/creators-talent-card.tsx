@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import { IconCalendar } from "@tabler/icons-react";
-import { useTranslations } from "@/src/i18n/i18n";
+import type { Locale } from "@/src/i18n/config";
+import { localizePath } from "@/src/i18n/locale-url";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { UserAvatar } from "@/components/user-avatar";
 import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
 
@@ -16,6 +18,7 @@ function formatJoined(value: string | null | undefined): string {
 
 export function CreatorsTalentCard({ creator }: { creator: Creator }) {
   const t = useTranslations("creator");
+  const locale = useLocale() as Locale;
 
   const id = creator?.id ?? "";
   const name = (creator?.name || "").trim() || "Unknown";
@@ -28,7 +31,7 @@ export function CreatorsTalentCard({ creator }: { creator: Creator }) {
 
   return (
     <Link
-      href={`/creators/${encodeUserId(id)}`}
+      href={localizePath(`/creators/${encodeUserId(id)}`, locale)}
       prefetch={false}
       className="group relative mt-8 flex h-full w-full flex-col rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-sm transition-all hover:border-primary/30 hover:bg-white/6 hover:shadow-lg hover:shadow-primary/5"
     >

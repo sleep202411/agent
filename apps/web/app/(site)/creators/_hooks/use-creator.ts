@@ -254,34 +254,26 @@ export function useCreatorSearch(key: string, enabled = true) {
   });
 }
 
-/**
- * Resolve a creator by id. Tries the list cache first (the Talent Market
- * grid usually populated it), then falls back to
- * `POST /user/query/user/info { userId }` so direct URL hits and
- * page reloads still work.
- */
+/** Seed the profile from a fresh directory row, then refresh from its own API.
+ * Directory data must not intercept refetches or extend the row's freshness. */
 export function useCreatorDetail(id: string) {
   const locale = useLocale();
   const qc = useQueryClient();
+  const listKey = creatorKeys.list(locale);
   return useQuery<Creator | null>({
     queryKey: creatorKeys.detail(id, locale),
-    queryFn: async () => {
-      // The list cache stores the raw infinite-query envelope (pages + pageParams);
-      // flatten + map before searching so deep-link arrivals reuse a row already
-      // fetched by the talent-market grid.
-      const cached = qc.getQueryData<{ pages: CreatorListResult[] }>(creatorKeys.list(locale));
-      if (cached?.pages) {
-        for (const page of cached.pages) {
-          for (const row of page.list) {
-            const mapped = toCreator(row);
-            if (mapped?.id === id) return mapped;
-          }
+    initialData: () => {
+      const cached = qc.getQueryData<{ pages: CreatorListResult[] }>(listKey);
+      for (const page of cached?.pages ?? []) {
+        for (const row of page.list) {
+          const mapped = toCreator(row);
+          if (mapped?.id === id) return mapped;
         }
       }
-      if (!id) return null;
-      const row = await getCreatorBasicInfo(id);
-      return toCreator(row);
+      return undefined;
     },
+    initialDataUpdatedAt: () => qc.getQueryState(listKey)?.dataUpdatedAt,
+    queryFn: async () => toCreator(await getCreatorBasicInfo(id)),
     enabled: !!id,
     staleTime: 30_000,
   });
