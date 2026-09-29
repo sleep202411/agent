@@ -577,16 +577,26 @@ type WalletDto = {
 /** The signed-in user's spendable community-points balance (whole points, as a
  *  string). `GET /aurora/ip-commerce/wallet` (auth). Filters to the
  *  community_point/consumable account (NOT the withdrawable earnings pool).
- *  Returns "0" on any failure so callers can render unconditionally. */
-export async function fetchCommunityPointBalance(): Promise<string> {
+ *  Returns null when the wallet cannot be read; a valid empty wallet is zero. */
+export async function fetchCommunityPointBalance(): Promise<string | null> {
   try {
     const res = await api.get<WalletDto>("/ip-commerce/wallet", AURORA);
-    const account = (res.accounts ?? []).find(
-      (a) => a.currency === "community_point" && a.balanceKind === "consumable"
+    if (
+      !Array.isArray(res.accounts) ||
+      res.accounts.some(
+        (account) => !account || typeof account !== "object" || Array.isArray(account)
+      )
+    )
+      return null;
+    const account = res.accounts.find(
+      (a) => a?.currency === "community_point" && a.balanceKind === "consumable"
     );
-    return account?.availableBalance ?? "0";
+    if (!account) return "0";
+    return typeof account.availableBalance === "string" && /^\d+$/.test(account.availableBalance)
+      ? account.availableBalance
+      : null;
   } catch {
-    return "0";
+    return null;
   }
 }
 

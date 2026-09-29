@@ -11,11 +11,11 @@ import { ThemedText } from "@/components/themed-text";
 import { appEnv, resolveAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { fetchMyCrews } from "@/data/crew-api";
-import { fetchCommunityPointBalance, fetchMyIps, type MyIp } from "@/data/ip-api";
+import { fetchMyIps, type MyIp } from "@/data/ip-api";
 import { fetchMyWorks, type MyWork } from "@/data/mine-api";
 import type { CrewSummary } from "@/data/types";
 import { openPaywall } from "@/features/paywall";
-import { fetchComputeWalletBalance } from "@/features/paywall/lib/compute-wallet";
+import { usePersonalBalances } from "@/features/profile/use-personal-balances";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
@@ -72,14 +72,15 @@ export default function MineScreen() {
 
   const isAuthed = auth.status === "authenticated";
   const authOwnerKey = isAuthed
-    ? String(
+    ? JSON.stringify([
+        auth.generation,
         auth.user?.userId ??
           auth.user?.id ??
           auth.user?.email ??
           auth.user?.phone ??
           auth.session?.updatedAt ??
-          "authenticated"
-      )
+          "authenticated",
+      ])
     : undefined;
 
   const [tab, setTab] = useState<TabKey>("works");
@@ -87,47 +88,22 @@ export default function MineScreen() {
   const [works, setWorks] = useState<MyWork[]>();
   const [ips, setIps] = useState<MyIp[]>();
   const [crews, setCrews] = useState<CrewSummary[]>();
-  // Spendable balances (whole points, string); undefined until loaded.
-  const [pointsBalance, setPointsBalance] = useState<string>();
-  const [computeBalance, setComputeBalance] = useState<string>();
+  const balances = usePersonalBalances(authOwnerKey);
+  const pointsBalance = balances?.community;
+  const computeBalance = balances?.compute;
   const [loadedFor, setLoadedFor] = useState<string>();
-
-  useFocusEffect(
-    useCallback(() => {
-      if (auth.status !== "authenticated") return;
-      let active = true;
-      void Promise.all([fetchCommunityPointBalance(), fetchComputeWalletBalance()]).then(
-        ([community, compute]) => {
-          if (!active) return;
-          setPointsBalance(community);
-          setComputeBalance(compute ?? undefined);
-        }
-      );
-      return () => {
-        active = false;
-      };
-    }, [auth.status])
-  );
 
   useEffect(() => {
     // Personal collections are user-scoped — only fetch once signed in, so a
     // guest never fires (and 401s) these requests.
     if (!authOwnerKey) return;
     let active = true;
-    void Promise.all([
-      fetchMyWorks(),
-      fetchMyIps(),
-      fetchMyCrews(),
-      fetchCommunityPointBalance(),
-      fetchComputeWalletBalance(),
-    ])
-      .then(([nextWorks, nextIps, nextCrews, nextBalance, nextCompute]) => {
+    void Promise.all([fetchMyWorks(), fetchMyIps(), fetchMyCrews()])
+      .then(([nextWorks, nextIps, nextCrews]) => {
         if (!active) return;
         setWorks(nextWorks);
         setIps(nextIps);
         setCrews(nextCrews);
-        setPointsBalance(nextBalance);
-        setComputeBalance(nextCompute ?? undefined);
         setLoadedFor(authOwnerKey);
       })
       .catch(() => {
