@@ -7,6 +7,8 @@ import type {
   StoryDecisionGraphNode,
   StoryGraphChoice,
   StoryGraphNode,
+  StoryChoiceExit,
+  StoryInteractionAction,
 } from "@/lib/story-projects-api";
 import {
   MAX_STORY_EXIT_ROUTES,
@@ -149,6 +151,215 @@ export function createDecisionNode(
     },
   };
   return { content: appendGraphNode(content, created), created };
+}
+
+const STORY_DUPLICATE_CHOICE_KEY = "__choice_exit__:";
+
+export type StoryDuplicateSource = {
+  /** Canvas card the author selected. Derived choice cards use their own id. */
+  canvasId: string;
+  /** Graph node to clone, or the clip that owns a derived choice exit. */
+  nodeId: string;
+  role: "node" | "choice-exit";
+};
+
+/**
+ * Copy selected story nodes. Links that stay inside the selection are retargeted
+ * onto the copies. Links that leave the selection are dropped: each output can
+ * keep only one connection, and that connection stays on the original node.
+ * Ending targets are kept, because an ending is not another card's output.
+ */
+export function duplicateStoryNodes(
+  content: InteractiveStoryDraftContent,
+  sources: readonly StoryDuplicateSource[]
+): { content: InteractiveStoryDraftContent; created: Array<{ canvasId: string; nodeId: string }> } {
+  const plan = sources.flatMap((source) => {
+    if (source.role === "node") {
+      return content.graph.nodes.some((node) => node.nodeId === source.nodeId) ? [source] : [];
+    }
+    const clip = content.graph.nodes.find((node) => node.nodeId === source.nodeId);
+    if (!clip || clip.kind !== "clip" || clip.exit.kind !== "choice") return [];
+    if (
+      sources.some((candidate) => candidate.role === "node" && candidate.nodeId === source.nodeId)
+    ) {
+      return [];
+    }
+    return [source];
+  });
+  if (plan.length === 0) return { content, created: [] };
+
+  const takenIds = content.graph.nodes.map((node) => node.nodeId);
+  const takenKeys = content.graph.nodes.flatMap((node) =>
+    node.kind === "clip" ? [node.clipKey] : []
+  );
+  const takenDecisionIds = content.graph.nodes.flatMap((node) =>
+    node.exit.kind === "choice" ? [node.exit.decisionId] : []
+  );
+  const takenInteractionIds = content.graph.nodes.flatMap((node) =>
+    node.kind === "clip" ? node.interactions.map((interaction) => interaction.interactionId) : []
+  );
+  const idMap = new Map<string, string>();
+  const created: Array<{ canvasId: string; nodeId: string }> = [];
+
+  for (const source of plan) {
+    const original = content.graph.nodes.find((node) => node.nodeId === source.nodeId);
+    const preferred =
+      source.role === "choice-exit" || original?.kind === "decision"
+        ? "decision:choice"
+        : `clip:scene-${takenIds.length + 1}`;
+    const createdId = allocateStableId(takenIds, preferred);
+    takenIds.push(createdId);
+    idMap.set(
+      source.role === "node" ? source.nodeId : `${STORY_DUPLICATE_CHOICE_KEY}${source.nodeId}`,
+      createdId
+    );
+    created.push({ canvasId: source.canvasId, nodeId: createdId });
+  }
+
+  const clones = plan.flatMap((source): StoryGraphNode[] => {
+    if (source.role === "choice-exit") {
+      const clip = content.graph.nodes.find((node) => node.nodeId === source.nodeId);
+      const nodeId = idMap.get(`${STORY_DUPLICATE_CHOICE_KEY}${source.nodeId}`);
+      if (!clip || clip.kind !== "clip" || clip.exit.kind !== "choice" || !nodeId) return [];
+      return [
+        {
+          kind: "decision",
+          nodeId,
+          ...(clip.onEnterEffects ? { onEnterEffects: structuredClone(clip.onEnterEffects) } : {}),
+          exit: cloneChoiceExit(clip.exit, idMap, takenDecisionIds),
+        },
+      ];
+    }
+    const node = content.graph.nodes.find((candidate) => candidate.nodeId === source.nodeId);
+    const nodeId = idMap.get(source.nodeId);
+    if (!node || !nodeId) return [];
+    return [
+      cloneStoryGraphNode(node, nodeId, idMap, takenKeys, takenDecisionIds, takenInteractionIds),
+    ];
+  });
+
+  if (clones.length === 0) return { content, created: [] };
+  return {
+    content: {
+      ...content,
+      graph: {
+        entryNodeId: content.graph.entryNodeId,
+        nodes: [...content.graph.nodes, ...clones],
+      },
+    },
+    created,
+  };
+}
+
+function cloneStoryGraphNode(
+  node: StoryGraphNode,
+  nodeId: string,
+  idMap: ReadonlyMap<string, string>,
+  takenKeys: string[],
+  takenDecisionIds: string[],
+  takenInteractionIds: string[]
+): StoryGraphNode {
+  if (node.kind === "decision") {
+    return {
+      kind: "decision",
+      nodeId,
+      ...(node.onEnterEffects ? { onEnterEffects: structuredClone(node.onEnterEffects) } : {}),
+      exit: cloneChoiceExit(node.exit, idMap, takenDecisionIds),
+    };
+  }
+  const clipKey = allocateClipKey(takenKeys, `SCENE_${takenKeys.length + 1}`);
+  takenKeys.push(clipKey);
+  return {
+    kind: "clip",
+    nodeId,
+    clipKey,
+    ...(node.name ? { name: node.name } : {}),
+    ...(node.description ? { description: node.description } : {}),
+    ...(node.communityPointPrice !== undefined
+      ? { communityPointPrice: node.communityPointPrice }
+      : {}),
+    ...(node.onEnterEffects ? { onEnterEffects: structuredClone(node.onEnterEffects) } : {}),
+    interactions: node.interactions.map((interaction) => {
+      const interactionId = allocateStableId(takenInteractionIds, `hotspot:${nodeId}`);
+      takenInteractionIds.push(interactionId);
+      return {
+        ...structuredClone(interaction),
+        interactionId,
+        outcomes: {
+          success: cloneInteractionAction(interaction.outcomes.success, idMap),
+          ...(interaction.outcomes.failure
+            ? { failure: cloneInteractionAction(interaction.outcomes.failure, idMap) }
+            : {}),
+          ...(interaction.outcomes.timeout
+            ? { timeout: cloneInteractionAction(interaction.outcomes.timeout, idMap) }
+            : {}),
+        },
+      };
+    }),
+    exit:
+      node.exit.kind === "choice"
+        ? cloneChoiceExit(node.exit, idMap, takenDecisionIds)
+        : { kind: "auto", routes: cloneAutoRoutes(node.exit.routes, idMap) },
+  };
+}
+
+function cloneChoiceExit(
+  exit: StoryChoiceExit,
+  idMap: ReadonlyMap<string, string>,
+  takenDecisionIds: string[]
+): StoryChoiceExit {
+  const decisionId = allocateStableId(takenDecisionIds, "decision:choice");
+  takenDecisionIds.push(decisionId);
+  return {
+    kind: "choice",
+    decisionId,
+    prompt: structuredClone(exit.prompt),
+    choices: exit.choices.map((choice) => ({
+      ...structuredClone(choice),
+      target: cloneRouteTarget(choice.target, idMap),
+    })),
+  };
+}
+
+function cloneAutoRoutes(
+  routes: StoryExitRoute[],
+  idMap: ReadonlyMap<string, string>
+): StoryExitRoute[] {
+  const cloned = routes.flatMap((route) => {
+    const nodeId = storyRouteNodeId(route.target);
+    if (nodeId && !idMap.has(nodeId)) {
+      return route.when ? [] : [{ ...structuredClone(route), target: null }];
+    }
+    return [{ ...structuredClone(route), target: cloneRouteTarget(route.target, idMap) }];
+  });
+  return cloned.length > 0 ? cloned : [{ target: null }];
+}
+
+function cloneRouteTarget(
+  target: StoryRouteTarget | null,
+  idMap: ReadonlyMap<string, string>
+): StoryRouteTarget | null {
+  const nodeId = storyRouteNodeId(target);
+  if (!nodeId) return target ? structuredClone(target) : null;
+  const cloned = idMap.get(nodeId);
+  return cloned ? storyNodeTarget(cloned) : null;
+}
+
+function cloneInteractionAction(
+  action: StoryInteractionAction,
+  idMap: ReadonlyMap<string, string>
+): StoryInteractionAction {
+  if (action.kind !== "goto") return structuredClone(action);
+  if (action.target.kind === "ending" || idMap.has(storyRouteNodeId(action.target) ?? "")) {
+    return {
+      ...structuredClone(action),
+      target: cloneRouteTarget(action.target, idMap) ?? action.target,
+    };
+  }
+  return {
+    kind: "continue",
+    ...(action.effects ? { effects: structuredClone(action.effects) } : {}),
+  };
 }
 
 /** Upgrade attached decisions without discarding any authored copy or target. */
