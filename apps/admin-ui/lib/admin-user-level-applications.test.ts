@@ -71,6 +71,26 @@ describe("admin user-level-applications Java boundary", () => {
     );
   });
 
+  it.each(["", null, undefined])(
+    "keeps applications with absent Crew/IP associations (%s)",
+    async (empty) => {
+      const raw = { ...SAMPLE, crewName: empty, crewLink: empty, ipName: empty, ipLink: empty };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => envelope([raw], { total: 1, page: 1, pageSize: 20 }))
+      );
+      const result = await listAdminUserLevelApplications({ page: 1, pageSize: 20 });
+      expect(result.items).toEqual([
+        { ...SAMPLE, crewName: "", crewLink: "", ipName: "", ipLink: "" },
+      ]);
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => envelope(raw))
+      );
+      await expect(getAdminUserLevelApplication(42)).resolves.toEqual(result.items[0]);
+    }
+  );
+
   it("loads application detail", async () => {
     const fetchMock = vi.fn(async () => envelope(SAMPLE));
     vi.stubGlobal("fetch", fetchMock);
