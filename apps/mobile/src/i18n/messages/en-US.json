@@ -1314,5 +1314,9 @@
   "taskRelations.blockedSubmitHint": "Complete every blocking task before submitting.",
   "taskRelations.backToTask": "Back to task",
   "taskRelations.resolved": "Resolved",
-  "taskRelations.unresolved": "Unresolved"
+  "taskRelations.unresolved": "Unresolved",
+  "taskBrief.edit": "Edit Task Brief",
+  "taskBrief.title": "Title",
+  "taskBrief.description": "Description",
+  "taskBrief.save": "Save Changes"
 }

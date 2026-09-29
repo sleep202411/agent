@@ -5,6 +5,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations, useLocale } from "@/i18n";
 import { fetchTaskDetail, type TaskDetail as Detail } from "./task-detail-api";
+import { TaskBrief } from "./task-brief";
 import { TaskRelations } from "./task-relations";
 import { TaskSubmit } from "./task-submit";
 import { TaskReview } from "./task-review";
@@ -120,6 +121,13 @@ function TaskContent({
               <ThemedText key={label.id}>{label.name}</ThemedText>
             ))}
           </View>
+          <TaskBrief
+            key={`brief:${revision}`}
+            task={data}
+            userId={userId}
+            generation={generation}
+            onRefresh={() => setRevision((v) => v + 1)}
+          />
           <TaskRelations task={data} onOpenTask={onOpenTask} />
           <TaskDelivery
             key={`delivery:${revision}`}

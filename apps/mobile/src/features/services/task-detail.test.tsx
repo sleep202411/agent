@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   close: vi.fn(),
   web: vi.fn(),
 }));
+vi.mock("./task-brief", () => ({ TaskBrief: () => <div>brief editor</div> }));
 vi.mock("./task-submit", () => ({ TaskSubmit: () => <div>submit</div> }));
 vi.mock("./task-review", () => ({ TaskReview: () => <div>review</div> }));
 vi.mock("./task-delivery", () => ({ TaskDelivery: () => <div>delivery</div> }));

@@ -1314,5 +1314,9 @@
   "taskRelations.blockedSubmitHint": "请先完成所有前置任务，再提交审核。",
   "taskRelations.backToTask": "返回任务",
   "taskRelations.resolved": "已解除阻塞",
-  "taskRelations.unresolved": "未解除阻塞"
+  "taskRelations.unresolved": "未解除阻塞",
+  "taskBrief.edit": "编辑任务说明",
+  "taskBrief.title": "标题",
+  "taskBrief.description": "说明",
+  "taskBrief.save": "保存修改"
 }

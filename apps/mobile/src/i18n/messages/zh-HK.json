@@ -1314,5 +1314,9 @@
   "taskRelations.blockedSubmitHint": "請先完成所有前置任務，再提交審核。",
   "taskRelations.backToTask": "返回任務",
   "taskRelations.resolved": "已解除阻塞",
-  "taskRelations.unresolved": "未解除阻塞"
+  "taskRelations.unresolved": "未解除阻塞",
+  "taskBrief.edit": "編輯任務說明",
+  "taskBrief.title": "標題",
+  "taskBrief.description": "說明",
+  "taskBrief.save": "儲存修改"
 }
