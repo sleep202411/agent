@@ -3,6 +3,13 @@ import { api } from "@/lib/api-client";
 import { taskDetailSchema } from "./task-detail-api";
 export const taskCreateInput = z
   .object({
+    cycleId: z.string().uuid().nullable().optional(),
+    episodeId: z.string().uuid().nullable().optional(),
+    labelIds: z
+      .array(z.string().uuid())
+      .max(20)
+      .refine((ids) => new Set(ids).size === ids.length, "Duplicate labels")
+      .optional(),
     workflowStateId: z.string().uuid().optional(),
     title: z.string().trim().min(1).max(180),
     description: z.string().trim().max(10_000),
@@ -37,7 +44,11 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     .parse(crewId);
   const data = taskCreateInput.parse(input);
   const result = taskDetailSchema
-    .extend({ workflowStateId: z.string().uuid().optional() })
+    .extend({
+      workflowStateId: z.string().uuid().optional(),
+      cycleId: z.string().uuid().nullable().optional(),
+      episodeId: z.string().uuid().nullable().optional(),
+    })
     .parse(
       await api.post(`/crews/${encodeURIComponent(crewId)}/tasks`, { service: "aurora", data })
     );
@@ -46,6 +57,11 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
   if (
     result.crewId !== crewId ||
     (data.workflowStateId !== undefined && result.workflowStateId !== data.workflowStateId) ||
+    (data.cycleId !== undefined && result.cycleId !== data.cycleId) ||
+    (data.episodeId !== undefined && result.episodeId !== data.episodeId) ||
+    (data.labelIds !== undefined &&
+      (result.labels.length !== data.labelIds.length ||
+        data.labelIds.some((id) => !result.labels.some((label) => label.id === id)))) ||
     result.title !== data.title ||
     result.description !== data.description ||
     result.priority !== data.priority ||

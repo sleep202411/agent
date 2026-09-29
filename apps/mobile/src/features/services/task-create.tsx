@@ -11,6 +11,7 @@ import { fetchTaskCommentAccess } from "./task-comment-api";
 import { createTask, taskCreateInput } from "./task-create-api";
 import { parseScheduleDate } from "./task-schedule-api";
 import { TaskMentionPicker } from "./task-mention-picker";
+import { TaskCreationPlanning, type TaskPlanningDraft } from "./task-creation-planning";
 import { TaskCreationWorkflow } from "./task-creation-workflow";
 import type { TaskWorkflow } from "./task-workflow-api";
 import { TaskCreationRelations } from "./task-creation-relations";
@@ -58,6 +59,11 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
+  const [planning, setPlanning] = useState<TaskPlanningDraft>({
+    labels: [],
+    cycle: null,
+    episode: null,
+  });
   const [workflow, setWorkflow] = useState<TaskWorkflow | null>(null);
   const [parent, setParent] = useState<TaskOption | null>(null);
   const [blockers, setBlockers] = useState<TaskOption[]>([]);
@@ -79,6 +85,9 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
       description,
       priority,
       ...(workflow ? { workflowStateId: workflow.id } : {}),
+      cycleId: planning.cycle?.id ?? null,
+      episodeId: planning.episode?.id ?? null,
+      labelIds: planning.labels.map((item) => item.id),
       parentId: parent?.id ?? null,
       blockedByTaskIds: blockers.map((task) => task.id),
       startAt: parseScheduleDate(start, null),
@@ -166,6 +175,13 @@ function Editor({ crewId, userId, generation, onCreated, onClose }: Props) {
         selected={workflow}
         locked={locked}
         onSelect={setWorkflow}
+      />
+      <TaskCreationPlanning
+        crewId={crewId}
+        generation={generation}
+        value={planning}
+        onChange={setPlanning}
+        locked={locked}
       />
       <TaskCreationRelations
         crewId={crewId}

@@ -1350,5 +1350,12 @@
   "taskAssignments.help": "Blank means no reward. Existing currencies are retained; new assignments use the regional currency.",
   "taskAssignments.invalid": "Use a positive amount with at most two decimal places, up to 100,000,000.",
   "taskCreate.workflow": "Workflow Column",
-  "taskCreate.defaultWorkflow": "Default Open Column"
+  "taskCreate.defaultWorkflow": "Default Open Column",
+  "taskPlanning.labels": "Labels",
+  "taskPlanning.cycle": "Cycle",
+  "taskPlanning.episode": "Episode",
+  "taskPlanning.remove": "Remove Label",
+  "taskPlanning.clearCycle": "Clear Cycle",
+  "taskPlanning.clearEpisode": "Clear Episode",
+  "taskPlanning.empty": "No available options."
 }

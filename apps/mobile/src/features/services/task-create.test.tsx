@@ -7,9 +7,11 @@ const h = vi.hoisted(() => ({
   update: vi.fn(),
   refresh: vi.fn(),
   workflows: vi.fn(),
+  planning: vi.fn(),
   generation: 1,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock("./task-planning-api", () => ({ fetchTaskPlanningOptions: h.planning }));
 vi.mock("./task-workflow-api", () => ({ fetchCreationWorkflows: h.workflows }));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
 vi.mock("./task-create-api", async (original) => ({
@@ -75,6 +77,9 @@ const type = (n: number, text: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.planning.mockImplementation((_crew: string, kind: string) =>
+    Promise.resolve([{ id: "44444444-4444-4444-8444-444444444444", name: `Pick ${kind}` }])
+  );
   h.workflows.mockResolvedValue([
     {
       id: "33333333-3333-4333-8333-333333333333",
@@ -270,4 +275,75 @@ it("discards workflow options arriving after an account change", async () => {
     finish([{ id: "33333333-3333-4333-8333-333333333333", name: "Private Column" }])
   );
   expect(host.textContent).not.toContain("Private Column");
+});
+
+it("creates a task with selected cycle, episode and labels", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Task"));
+  for (const kind of ["cycle", "episode", "labels"]) {
+    await act(async () =>
+      button(`taskPlanning.${kind}${kind === "labels" ? " · 0/20" : ""}`)!.click()
+    );
+    await act(async () => button(`Pick ${kind}`)!.click());
+  }
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({
+      cycleId: "44444444-4444-4444-8444-444444444444",
+      episodeId: "44444444-4444-4444-8444-444444444444",
+      labelIds: ["44444444-4444-4444-8444-444444444444"],
+    })
+  );
+});
+it("clears planning choices and prevents duplicate label selection", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Task"));
+  for (const kind of ["cycle", "episode", "labels"]) {
+    await act(async () =>
+      button(`taskPlanning.${kind}${kind === "labels" ? " · 0/20" : ""}`)!.click()
+    );
+    await act(async () => button(`Pick ${kind}`)!.click());
+  }
+  await act(async () => button("taskPlanning.labels · 1/20")!.click());
+  expect(button("Pick labels")!.disabled).toBe(true);
+  await act(async () => button("common.cancel")!.click());
+  await act(async () => button("Pick labels ×")!.click());
+  await act(async () => button("taskPlanning.clearCycle")!.click());
+  await act(async () => button("taskPlanning.clearEpisode")!.click());
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ cycleId: null, episodeId: null, labelIds: [] })
+  );
+});
+it("keeps creation usable when episode access fails and retries inside the picker", async () => {
+  h.planning.mockRejectedValueOnce(new Error("Production permission required"));
+  await render();
+  await act(async () => type(0, "Draft"));
+  await act(async () => button("taskPlanning.episode")!.click());
+  expect(host.textContent).toContain("Production permission required");
+  await act(async () => button("inbox.retry")!.click());
+  expect(button("Pick episode")).toBeDefined();
+  await act(async () => button("common.cancel")!.click());
+  expect(button("taskCreate.submit")!.disabled).toBe(false);
+  expect(host.querySelector("input")!.value).toBe("Draft");
+});
+it("ignores late planning options after an account change", async () => {
+  let finish!: (items: unknown[]) => void;
+  h.planning.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  await act(async () => button("taskPlanning.cycle")!.click());
+  h.generation = 2;
+  await act(async () =>
+    finish([{ id: "44444444-4444-4444-8444-444444444444", name: "Private Cycle" }])
+  );
+  expect(host.textContent).not.toContain("Private Cycle");
 });

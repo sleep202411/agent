@@ -1350,5 +1350,12 @@
   "taskAssignments.help": "留空表示无报酬。保留已有币种；新增分工使用本区域币种。",
   "taskAssignments.invalid": "请输入正数，最多两位小数，上限100,000,000。",
   "taskCreate.workflow": "工作流列",
-  "taskCreate.defaultWorkflow": "默认待处理列"
+  "taskCreate.defaultWorkflow": "默认待处理列",
+  "taskPlanning.labels": "标签",
+  "taskPlanning.cycle": "周期",
+  "taskPlanning.episode": "集",
+  "taskPlanning.remove": "移除标签",
+  "taskPlanning.clearCycle": "清除周期",
+  "taskPlanning.clearEpisode": "清除集",
+  "taskPlanning.empty": "暂无可用选项。"
 }

@@ -1350,5 +1350,12 @@
   "taskAssignments.help": "留空表示無報酬。保留已有幣種；新增分工使用本區域幣種。",
   "taskAssignments.invalid": "請輸入正數，最多兩位小數，上限100,000,000。",
   "taskCreate.workflow": "工作流程欄",
-  "taskCreate.defaultWorkflow": "預設待處理欄"
+  "taskCreate.defaultWorkflow": "預設待處理欄",
+  "taskPlanning.labels": "標籤",
+  "taskPlanning.cycle": "週期",
+  "taskPlanning.episode": "集",
+  "taskPlanning.remove": "移除標籤",
+  "taskPlanning.clearCycle": "清除週期",
+  "taskPlanning.clearEpisode": "清除集",
+  "taskPlanning.empty": "暫無可用選項。"
 }

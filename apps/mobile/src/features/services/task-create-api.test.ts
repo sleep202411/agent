@@ -120,3 +120,32 @@ it("validates an explicit workflow and requires its exact acknowledgement", asyn
     await expect(createTask("crew", selected)).rejects.toThrow("acknowledgement");
   }
 });
+
+it("validates planning references and exact creation acknowledgement", async () => {
+  for (const fields of [
+    { cycleId: "bad" },
+    { episodeId: "bad" },
+    { labelIds: [id, id] },
+    { labelIds: Array(21).fill(id) },
+  ]) {
+    await expect(createTask("crew", { ...input, ...fields })).rejects.toThrow();
+  }
+  expect(api.post).not.toHaveBeenCalled();
+  const data = { ...input, cycleId: id, episodeId: id, labelIds: [id] };
+  const response = { ...detail, cycleId: id, episodeId: id, labels: [{ id, name: "Art" }] };
+  vi.mocked(api.post).mockResolvedValue(response);
+  await expect(createTask("crew", data)).resolves.toMatchObject({ cycleId: id, episodeId: id });
+  for (const fields of [
+    { cycleId: null },
+    { episodeId: null },
+    { labels: [] },
+    { labels: [{ id: "22222222-2222-4222-8222-222222222222", name: "Wrong" }] },
+  ]) {
+    vi.mocked(api.post).mockResolvedValue({ ...response, ...fields });
+    await expect(createTask("crew", data)).rejects.toThrow("acknowledgement");
+  }
+  vi.mocked(api.post).mockResolvedValue({ ...detail, cycleId: null, episodeId: null });
+  await expect(
+    createTask("crew", { ...input, cycleId: null, episodeId: null, labelIds: [] })
+  ).resolves.toBeDefined();
+});
