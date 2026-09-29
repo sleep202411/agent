@@ -1451,5 +1451,22 @@
   "episodeManagement.refreshHelp": "请返回分集列表刷新后再编辑。",
   "episodeManagement.saved": "分集已保存",
   "episodeManagement.save": "保存修改",
-  "episodeManagement.back": "返回分集列表"
+  "episodeManagement.back": "返回分集列表",
+  "episodeDelivery.title": "交付与审批",
+  "episodeDelivery.help": "从剧组资产中选择视频。批准前，本集所有任务须已批准或已取消。",
+  "episodeDelivery.empty": "暂无交付版本。",
+  "episodeDelivery.version": "版本",
+  "episodeDelivery.submitted": "待审批",
+  "episodeDelivery.approved": "已批准",
+  "episodeDelivery.rejected": "已退回",
+  "episodeDelivery.reviewNote": "审批说明（退回时必填）",
+  "episodeDelivery.approve": "批准交付",
+  "episodeDelivery.reject": "退回修改",
+  "episodeDelivery.pendingHelp": "请先审批待审版本，再提交新版本。",
+  "episodeDelivery.select": "选择交付视频",
+  "episodeDelivery.note": "交付说明",
+  "episodeDelivery.submit": "提交审批",
+  "episodeDelivery.saved": "已保存，请刷新查看最新状态。",
+  "episodeDelivery.refreshHelp": "请刷新并检查交付记录后再进行其他操作。",
+  "episodeDelivery.videoRequired": "请选择剧组资产中的视频文件。"
 }

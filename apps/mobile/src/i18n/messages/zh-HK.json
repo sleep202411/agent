@@ -1451,5 +1451,22 @@
   "episodeManagement.refreshHelp": "請返回分集列表重新整理後再編輯。",
   "episodeManagement.saved": "分集已儲存",
   "episodeManagement.save": "儲存修改",
-  "episodeManagement.back": "返回分集列表"
+  "episodeManagement.back": "返回分集列表",
+  "episodeDelivery.title": "交付與審批",
+  "episodeDelivery.help": "從劇組資產中選擇影片。批准前，本集所有任務須已批准或已取消。",
+  "episodeDelivery.empty": "暫無交付版本。",
+  "episodeDelivery.version": "版本",
+  "episodeDelivery.submitted": "待審批",
+  "episodeDelivery.approved": "已批准",
+  "episodeDelivery.rejected": "已退回",
+  "episodeDelivery.reviewNote": "審批說明（退回時必填）",
+  "episodeDelivery.approve": "批准交付",
+  "episodeDelivery.reject": "退回修改",
+  "episodeDelivery.pendingHelp": "請先審批待審版本，再提交新版本。",
+  "episodeDelivery.select": "選擇交付影片",
+  "episodeDelivery.note": "交付說明",
+  "episodeDelivery.submit": "提交審批",
+  "episodeDelivery.saved": "已儲存，請重新整理查看最新狀態。",
+  "episodeDelivery.refreshHelp": "請重新整理並檢查交付記錄後再進行其他操作。",
+  "episodeDelivery.videoRequired": "請選擇劇組資產中的影片檔案。"
 }

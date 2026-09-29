@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EpisodeManagement } from "./episode-management";
+vi.mock("./episode-delivery", () => ({ EpisodeDelivery: () => <span>episode delivery</span> }));
 const h = vi.hoisted(() => ({
   generation: 1,
   access: vi.fn(),
@@ -173,4 +174,11 @@ it("does not write after the account changes", async () => {
   h.generation = 2;
   await act(async () => button("episodeManagement.save").click());
   expect(h.update).not.toHaveBeenCalled();
+});
+
+it("opens delivery history for viewers without metadata editing rights", async () => {
+  h.access.mockResolvedValue(false);
+  await render();
+  await act(async () => button("episodeDelivery.title").click());
+  expect(host.textContent).toContain("episode delivery");
 });

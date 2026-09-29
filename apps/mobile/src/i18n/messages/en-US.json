@@ -1451,5 +1451,22 @@
   "episodeManagement.refreshHelp": "Return to the episode list to refresh before editing again.",
   "episodeManagement.saved": "Episode Saved",
   "episodeManagement.save": "Save Changes",
-  "episodeManagement.back": "Back to Episodes"
+  "episodeManagement.back": "Back to Episodes",
+  "episodeDelivery.title": "Delivery & Approval",
+  "episodeDelivery.help": "Select a video from Crew assets. Approval requires all episode tasks to be approved or cancelled.",
+  "episodeDelivery.empty": "No deliveries yet.",
+  "episodeDelivery.version": "Version",
+  "episodeDelivery.submitted": "Awaiting Review",
+  "episodeDelivery.approved": "Approved",
+  "episodeDelivery.rejected": "Rejected",
+  "episodeDelivery.reviewNote": "Review Note (Required for Rejection)",
+  "episodeDelivery.approve": "Approve Delivery",
+  "episodeDelivery.reject": "Request Revision",
+  "episodeDelivery.pendingHelp": "Review the pending delivery before submitting another version.",
+  "episodeDelivery.select": "Select Delivery Video",
+  "episodeDelivery.note": "Delivery Note",
+  "episodeDelivery.submit": "Submit for Approval",
+  "episodeDelivery.saved": "Saved. Refresh to see the latest episode status.",
+  "episodeDelivery.refreshHelp": "Refresh and check delivery history before making another change.",
+  "episodeDelivery.videoRequired": "Select a video file from Crew assets."
 }
