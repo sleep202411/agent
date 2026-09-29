@@ -8,9 +8,9 @@ jest.mock('../infra/storage/imm-transcode.service', () => ({
 }));
 
 type Worker = {
-  drainOnce: () => Promise<void>;
+  drainOnce: (batch?: number) => Promise<void>;
   onModuleDestroy: () => void;
-  claim: () => Promise<unknown[]>;
+  claim: (batch: number) => Promise<unknown[]>;
   purgeOne?: (row: unknown) => Promise<void>;
   runOne?: (row: unknown) => Promise<void>;
   processOne?: (row: unknown) => Promise<void>;
@@ -44,6 +44,34 @@ const cases = [
   },
 ];
 describe.each(cases)('$name shutdown', ({ create, method }) => {
+  it('claims only the next job while processing and preserves the batch limit', async () => {
+    const worker = create(undefined) as unknown as Worker;
+    const queue = [{ id: 'first' }, { id: 'second' }, { id: 'third' }];
+    const claim = jest
+      .spyOn(worker, 'claim')
+      .mockImplementation((batch) => Promise.resolve(queue.splice(0, batch)));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const process = jest
+      .spyOn(worker, method)
+      .mockResolvedValue(undefined)
+      .mockReturnValueOnce(pending);
+    const draining = worker.drainOnce(2);
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(claim).toHaveBeenCalledTimes(1);
+      expect(claim).toHaveBeenCalledWith(1);
+      expect(queue).toHaveLength(2);
+    } finally {
+      release();
+      await draining;
+    }
+    expect(process).toHaveBeenCalledTimes(2);
+    expect(queue).toEqual([{ id: 'third' }]);
+  });
+
   it('does not claim or dispatch after shutdown during candidate lookup', async () => {
     let finish!: (rows: { id: string }[]) => void;
     const findMany = jest.fn(

@@ -92,9 +92,15 @@ export class MediaProcessingWorkerService
 
   private async drain(batch: number): Promise<void> {
     try {
-      const rows = await this.claim(batch);
-      for (const row of rows) {
-        if (this.stopped) break;
+      for (
+        let processed = 0;
+        processed < batch && !this.stopped;
+        processed += 1
+      ) {
+        // Do not age later jobs' leases while a poster or transcode operation
+        // is still running. Keep the per-drain work cap without preclaiming it.
+        const [row] = await this.claim(1);
+        if (!row || this.stopped) break;
         await this.processOne(row);
       }
     } catch (err) {

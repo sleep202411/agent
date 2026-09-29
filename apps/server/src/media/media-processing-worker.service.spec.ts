@@ -136,6 +136,7 @@ describe('MediaProcessingWorkerService', () => {
       mediaProcessingJob: {
         findMany: jest
           .fn()
+          .mockResolvedValue([])
           .mockResolvedValueOnce([{ id: row.id }])
           .mockResolvedValueOnce([row]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
