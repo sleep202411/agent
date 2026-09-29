@@ -23,15 +23,18 @@ export const agreement = z.object({
   title: z.string(),
   provider: z.literal("boldsign"),
   providerStatus: z.string().nullable(),
+  providerDocumentId: z.string().nullable(),
   status: z.enum(agreementStatuses),
   capabilities: z.object({ sign: z.boolean() }),
   delivery: z.object({
     status: z.enum(["pending", "processing", "completed", "failed"]),
     error: z.string().nullable(),
     attempt: z.number().int().nonnegative(),
+    canRetry: z.boolean(),
   }),
   archive: z.object({
     status: z.enum(["not_applicable", "pending", "processing", "ready", "failed"]),
+    canRetry: z.boolean(),
     signedDocumentUrl: z.string().nullable(),
     auditTrailUrl: z.string().nullable(),
   }),
@@ -77,7 +80,7 @@ export async function fetchLinkedAgreement(
     const match = page.items.find((item) => item.id === agreementId);
     if (match) {
       if (match.memberUserId !== memberUserId) throw new Error("Agreement recipient mismatch");
-      return match;
+      return { ...match, canSync: page.capabilities.sync };
     }
     if (!page.nextCursor) return null;
     if (page.nextCursor === cursor || seenCursors.has(page.nextCursor))
@@ -87,7 +90,11 @@ export async function fetchLinkedAgreement(
   }
 }
 function pageSchema() {
-  return z.object({ items: z.array(agreement), nextCursor: id.nullable() });
+  return z.object({
+    items: z.array(agreement),
+    nextCursor: id.nullable(),
+    capabilities: z.object({ sync: z.boolean() }),
+  });
 }
 export function agreementMediaId(path: string | null): string | null {
   const match = path?.match(/^\/aurora\/media\/assets\/([0-9a-f-]{36})\/content$/i);

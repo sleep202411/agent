@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { AgreementDetail } from "./agreement-detail";
+vi.mock("./agreement-actions", () => ({ AgreementActions: () => null }));
 
 vi.mock("./earning-decision", () => ({ EarningDecision: () => <span>earning actions</span> }));
 vi.mock("./payout-decision", () => ({ PayoutDecision: () => <span>payout actions</span> }));
@@ -74,10 +75,16 @@ const record = {
   title: "Production Agreement",
   provider: "boldsign" as const,
   providerStatus: null,
+  providerDocumentId: "provider-document",
   status: "sent" as const,
   capabilities: { sign: true },
-  delivery: { status: "completed" as const, error: null, attempt: 1 },
-  archive: { status: "not_applicable" as const, signedDocumentUrl: null, auditTrailUrl: null },
+  delivery: { status: "completed" as const, error: null, attempt: 1, canRetry: false },
+  archive: {
+    status: "not_applicable" as const,
+    canRetry: false,
+    signedDocumentUrl: null,
+    auditTrailUrl: null,
+  },
   sentAt: "2026-09-30T00:00:00Z",
   signedAt: null,
   lastSyncedAt: null,

@@ -1616,5 +1616,13 @@
   "crewAgreements.attention": "Needs Attention",
   "crewAgreements.backToList": "Back to Agreements",
   "crewAgreements.scopeHelp": "Shows agreements you are permitted to view in this Crew.",
-  "crewAgreements.empty": "No agreements in this view."
+  "crewAgreements.empty": "No agreements in this view.",
+  "agreementActions.sync": "Sync Status",
+  "agreementActions.send": "Retry Delivery",
+  "agreementActions.archive": "Retry Archive",
+  "agreementActions.help_sync": "Check the latest agreement status with BoldSign.",
+  "agreementActions.help_send": "Retry the failed initial delivery to this signer through BoldSign.",
+  "agreementActions.help_archive": "Retry saving the signed document and audit trail to the Crew archive.",
+  "agreementActions.confirm": "Confirm Action",
+  "agreementActions.refreshHelp": "Refresh the agreement to check the result before trying another action."
 }

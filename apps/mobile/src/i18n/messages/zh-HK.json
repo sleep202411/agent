@@ -1616,5 +1616,13 @@
   "crewAgreements.attention": "需處理",
   "crewAgreements.backToList": "返回協議列表",
   "crewAgreements.scopeHelp": "顯示您有權查看的劇組協議。",
-  "crewAgreements.empty": "此分類下暫無協議。"
+  "crewAgreements.empty": "此分類下暫無協議。",
+  "agreementActions.sync": "同步狀態",
+  "agreementActions.send": "重試發送",
+  "agreementActions.archive": "重試歸檔",
+  "agreementActions.help_sync": "向 BoldSign 查詢協議的最新狀態。",
+  "agreementActions.help_send": "透過 BoldSign 重試向此簽署人發送之前失敗的協議。",
+  "agreementActions.help_archive": "重試將已簽署文件和審計記錄儲存到劇組檔案。",
+  "agreementActions.confirm": "確認操作",
+  "agreementActions.refreshHelp": "請重新整理協議，確認結果後再進行下一項操作。"
 }

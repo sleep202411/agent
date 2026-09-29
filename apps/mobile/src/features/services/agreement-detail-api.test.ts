@@ -17,10 +17,16 @@ const record = {
   title: "Production Agreement",
   provider: "boldsign" as const,
   providerStatus: null,
+  providerDocumentId: "provider-document",
   status: "sent" as const,
   capabilities: { sign: true },
-  delivery: { status: "completed" as const, error: null, attempt: 1 },
-  archive: { status: "not_applicable" as const, signedDocumentUrl: null, auditTrailUrl: null },
+  delivery: { status: "completed" as const, error: null, attempt: 1, canRetry: false },
+  archive: {
+    status: "not_applicable" as const,
+    canRetry: false,
+    signedDocumentUrl: null,
+    auditTrailUrl: null,
+  },
   sentAt: "2026-09-30T00:00:00Z",
   signedAt: null,
   lastSyncedAt: null,
@@ -39,10 +45,11 @@ it("finds a linked agreement beyond the first page without narrowing server auth
   vi.mocked(api.get)
     .mockResolvedValueOnce({
       items: [{ ...record, id: "22222222-2222-4222-8222-222222222222" }],
+      capabilities: { sync: true },
       nextCursor: "next",
     })
-    .mockResolvedValueOnce({ items: [record], nextCursor: null });
-  expect(await fetch()).toEqual(record);
+    .mockResolvedValueOnce({ items: [record], capabilities: { sync: true }, nextCursor: null });
+  expect(await fetch()).toEqual({ ...record, canSync: true });
   expect(api.get).toHaveBeenLastCalledWith(
     "/crews/crew/agreements",
     expect.objectContaining({
@@ -52,24 +59,40 @@ it("finds a linked agreement beyond the first page without narrowing server auth
   );
 });
 it("returns unavailable if the authorized list does not contain the reference", async () => {
-  vi.mocked(api.get).mockResolvedValue({ items: [], nextCursor: null });
+  vi.mocked(api.get).mockResolvedValue({
+    items: [],
+    capabilities: { sync: true },
+    nextCursor: null,
+  });
   expect(await fetch()).toBeNull();
 });
 it.each([{ crewId: "other" }, { memberUserId: "other" }])(
   "rejects foreign scope %j",
   async (change) => {
-    vi.mocked(api.get).mockResolvedValue({ items: [{ ...record, ...change }], nextCursor: null });
+    vi.mocked(api.get).mockResolvedValue({
+      items: [{ ...record, ...change }],
+      capabilities: { sync: true },
+      nextCursor: null,
+    });
     await expect(fetch()).rejects.toThrow();
   }
 );
 it("rejects cursor loops", async () => {
-  vi.mocked(api.get).mockResolvedValue({ items: [], nextCursor: "next" });
+  vi.mocked(api.get).mockResolvedValue({
+    items: [],
+    capabilities: { sync: true },
+    nextCursor: "next",
+  });
   await expect(fetch()).rejects.toThrow("pagination repeated");
   expect(api.get).toHaveBeenCalledTimes(2);
 });
 it("rejects duplicate records across pages", async () => {
   const item = { ...record, id: "22222222-2222-4222-8222-222222222222" };
-  vi.mocked(api.get).mockResolvedValue({ items: [item], nextCursor: "next" });
+  vi.mocked(api.get).mockResolvedValue({
+    items: [item],
+    capabilities: { sync: true },
+    nextCursor: "next",
+  });
   await expect(fetch()).rejects.toThrow("pagination changed");
 });
 it("preserves access errors", async () => {
@@ -79,7 +102,7 @@ it("preserves access errors", async () => {
 it("aborts before scanning the next page after account change", async () => {
   vi.mocked(api.get).mockImplementation(async () => {
     h.generation = 2;
-    return { items: [], nextCursor: "next" };
+    return { items: [], capabilities: { sync: true }, nextCursor: "next" };
   });
   await expect(fetch()).rejects.toThrow("session expired");
   expect(api.get).toHaveBeenCalledTimes(1);

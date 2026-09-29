@@ -1,3 +1,4 @@
+import { AgreementActions } from "./agreement-actions";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -9,7 +10,6 @@ import {
   fetchLinkedAgreement,
   agreementMediaId,
   openAgreementSigning,
-  type Agreement,
 } from "./agreement-detail-api";
 type Props = {
   crewId: string;
@@ -31,7 +31,7 @@ function Session(props: Props) {
   const [revision, setRevision] = useState(0),
     [snapshot, setSnapshot] = useState<{
       revision: number;
-      data?: Agreement | null;
+      data?: Awaited<ReturnType<typeof fetchLinkedAgreement>>;
       error?: string;
     }>();
   const [busy, setBusy] = useState(false),
@@ -76,6 +76,12 @@ function Session(props: Props) {
       {record && (
         <>
           <ThemedText>{record.title}</ThemedText>
+          <AgreementActions
+            key={`${record.id}:${revision}`}
+            record={record}
+            generation={props.generation}
+            onSaved={() => setRevision((n) => n + 1)}
+          />
           <ThemedText>{t(`agreementDetail.status_${record.status}`)}</ThemedText>
           <ThemedText>
             {t("agreementDetail.signer")} · {record.signerName} · {record.memberUserId}

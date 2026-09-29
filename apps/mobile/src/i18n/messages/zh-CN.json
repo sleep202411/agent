@@ -1616,5 +1616,13 @@
   "crewAgreements.attention": "需处理",
   "crewAgreements.backToList": "返回协议列表",
   "crewAgreements.scopeHelp": "显示您有权查看的剧组协议。",
-  "crewAgreements.empty": "此分类下暂无协议。"
+  "crewAgreements.empty": "此分类下暂无协议。",
+  "agreementActions.sync": "同步状态",
+  "agreementActions.send": "重试发送",
+  "agreementActions.archive": "重试归档",
+  "agreementActions.help_sync": "向 BoldSign 查询协议的最新状态。",
+  "agreementActions.help_send": "通过 BoldSign 重试向此签署人发送之前失败的协议。",
+  "agreementActions.help_archive": "重试将已签署文件和审计记录保存到剧组档案。",
+  "agreementActions.confirm": "确认操作",
+  "agreementActions.refreshHelp": "请刷新协议，确认结果后再进行下一项操作。"
 }
