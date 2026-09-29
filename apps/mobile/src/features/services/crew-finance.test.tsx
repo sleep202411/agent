@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewFinance } from "./crew-finance";
 vi.mock("./crew-finance-trend", () => ({ CrewFinanceTrend: () => <span>income trend</span> }));
+vi.mock("./crew-finance-detail", () => ({
+  CrewFinanceDetail: () => <span>finance record detail</span>,
+}));
 const h = vi.hoisted(() => ({ generation: 1, access: vi.fn(), page: vi.fn(), close: vi.fn() }));
 vi.mock("@/config/app-env", () => ({ isChinaRegion: false }));
 vi.mock("./crew-finance-api", async (original) => ({
@@ -159,4 +162,10 @@ it("shows the trend only for earnings", async () => {
   expect(host.textContent).toContain("income trend");
   await click("crewFinance.payouts");
   expect(host.textContent).not.toContain("income trend");
+});
+
+it("opens a selected native financial record", async () => {
+  await render();
+  await click("Reward · crewFinance.details");
+  expect(host.textContent).toContain("finance record detail");
 });

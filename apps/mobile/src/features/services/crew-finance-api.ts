@@ -16,7 +16,7 @@ const base = z.object({
   amountMinor: money,
   createdAt: z.string().datetime({ offset: true }),
 });
-const earning = base.extend({
+export const earning = base.extend({
   title: z.string(),
   description: z.string().nullable(),
   sourceType: z.enum([
@@ -29,7 +29,7 @@ const earning = base.extend({
   ]),
   status: z.enum(earningStatuses),
 });
-const payout = base.extend({
+export const payout = base.extend({
   netAmountMinor: money,
   withholdingAmountMinor: money,
   note: z.string().nullable(),

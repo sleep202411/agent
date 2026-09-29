@@ -1,3 +1,4 @@
+import { CrewFinanceDetail } from "./crew-finance-detail";
 import { CrewFinanceTrend } from "./crew-finance-trend";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -129,6 +130,7 @@ function Ledger(props: Props & { view: FinanceView; scope: FinanceScope; status:
     [page, setPage] = useState<FinancePage>(),
     [error, setError] = useState<string>(),
     [busy, setBusy] = useState(true);
+  const [selected, setSelected] = useState<FinancePage["items"][number]>();
   const collected = useRef<FinancePage["items"]>([]),
     seen = useRef(new Set<string>()),
     requesting = useRef(false);
@@ -173,6 +175,16 @@ function Ledger(props: Props & { view: FinanceView; scope: FinanceScope; status:
     currency,
     cursor,
   ]);
+  if (selected)
+    return (
+      <CrewFinanceDetail
+        crewId={props.crewId}
+        view={props.view}
+        selected={selected}
+        generation={props.generation}
+        onClose={() => setSelected(undefined)}
+      />
+    );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewFinance.recordHelp")}</ThemedText>
@@ -194,7 +206,17 @@ function Ledger(props: Props & { view: FinanceView; scope: FinanceScope; status:
       {page?.items.length === 0 && <ThemedText>{t("crewFinance.empty")}</ThemedText>}
       {page?.items.map((row) => (
         <View key={row.id} style={{ paddingVertical: 12, gap: 6 }}>
-          <ThemedText>{row.title || t("crewFinance.payouts")}</ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            style={{ paddingVertical: 12 }}
+            onPress={() => {
+              if (props.generation === getAuthGeneration()) setSelected(row);
+            }}
+          >
+            <ThemedText>
+              {row.title || t("crewFinance.payouts")} · {t("crewFinance.details")}
+            </ThemedText>
+          </Pressable>
           <ThemedText>
             {formatFinanceMoney(row.amountMinor, row.currency)} · {t(`crewFinance.${row.status}`)}
           </ThemedText>
