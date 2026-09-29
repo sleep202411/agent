@@ -1014,5 +1014,12 @@
   "serviceContact.message": "Message",
   "serviceContact.send": "Send",
   "serviceContact.sent": "Message sent.",
-  "serviceContact.open": "Open Conversation"
+  "serviceContact.open": "Open Conversation",
+  "serviceOrder.title": "Request Service",
+  "serviceOrder.hint": "Submit a request for the creator to accept. This does not confirm payment.",
+  "serviceOrder.sent": "Request submitted for creator acceptance.",
+  "serviceOrder.open": "Open Order",
+  "serviceOrder.note": "Additional note (optional)",
+  "serviceOrder.submit": "Submit Request",
+  "serviceOrder.retryHint": "Retry sends the same request. Check your orders before starting a new request."
 }

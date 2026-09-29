@@ -38,6 +38,7 @@ type CreatorServiceQuestionDto = {
 };
 
 type CreatorServiceDetailDto = CreatorServiceCardDto & {
+  version?: number;
   packages?: CreatorServicePackageDto[] | null;
   requirementQuestions?: CreatorServiceQuestionDto[] | null;
   status?: string | null;
@@ -80,14 +81,26 @@ function mapService(dto: CreatorServiceCardDto): CreatorServiceSummary | undefin
 function mapPackage(dto: CreatorServicePackageDto): CreatorServicePackage | undefined {
   const id = nonEmpty(dto.id);
   const title = nonEmpty(dto.title);
-  if (!id || !title) return undefined;
+  const tier = nonEmpty(dto.tier);
+  const currency = nonEmpty(dto.currency);
+  if (
+    !id ||
+    !title ||
+    !tier ||
+    !["basic", "standard", "premium"].includes(tier) ||
+    !currency ||
+    typeof dto.price !== "number" ||
+    !Number.isFinite(dto.price) ||
+    dto.price < 0
+  )
+    return undefined;
   return {
     id,
-    tier: nonEmpty(dto.tier) ?? "basic",
+    tier,
     title,
     description: nonEmpty(dto.description) ?? "",
-    price: typeof dto.price === "number" ? dto.price : 0,
-    currency: nonEmpty(dto.currency) ?? "USD",
+    price: dto.price,
+    currency,
     deliveryDays: typeof dto.deliveryDays === "number" ? dto.deliveryDays : 0,
     revisions: typeof dto.revisions === "number" ? dto.revisions : 0,
     scope: (dto.scope ?? []).filter((item): item is string => typeof item === "string" && !!item),
@@ -107,6 +120,8 @@ function mapDetail(dto: CreatorServiceDetailDto): CreatorServiceDetail | undefin
 
   return {
     ...summary,
+    version:
+      Number.isSafeInteger(dto.version) && Number(dto.version) >= 0 ? dto.version : undefined,
     packages,
     startingPrice: cheapest?.price ?? summary.startingPrice,
     currency: cheapest?.currency ?? summary.currency,

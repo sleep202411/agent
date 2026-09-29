@@ -1014,5 +1014,12 @@
   "serviceContact.message": "消息",
   "serviceContact.send": "发送",
   "serviceContact.sent": "消息已发送。",
-  "serviceContact.open": "打开会话"
+  "serviceContact.open": "打开会话",
+  "serviceOrder.title": "申请服务",
+  "serviceOrder.hint": "提交申请后等待创作者接受，不表示已付款。",
+  "serviceOrder.sent": "申请已提交，等待创作者接受。",
+  "serviceOrder.open": "打开订单",
+  "serviceOrder.note": "补充说明（选填）",
+  "serviceOrder.submit": "提交申请",
+  "serviceOrder.retryHint": "重试将提交同一申请。重新申请前请先检查订单。"
 }

@@ -1,3 +1,4 @@
+import { ServiceOrder } from "@/features/services/service-order";
 import { ServiceContact } from "@/features/services/service-contact";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
@@ -132,6 +133,7 @@ export default function CreatorServiceDetailScreen() {
             ) : null}
           </View>
 
+          <ServiceOrder key={`${service.id}-${service.version}`} service={service} />
           <View style={styles.section}>
             <SectionHeader title={t("serviceDetail.packagesTitle")} />
             <View style={styles.packageList}>

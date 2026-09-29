@@ -249,6 +249,7 @@ export interface CreatorServicePackage {
 }
 
 export interface CreatorServiceDetail extends CreatorServiceSummary {
+  version?: number;
   packages: CreatorServicePackage[];
   requirementQuestions: { id: string; prompt: string; helpText?: string; required: boolean }[];
   status: string;
