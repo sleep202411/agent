@@ -42,3 +42,28 @@ it.each(
   mocks.post.mockResolvedValue({ info: { id: "creator", nickName: "Artist" }, level });
   expect(await fetchCreatorById("creator")).toMatchObject({ name: "Artist", levels: [] });
 });
+
+it("carries public education without exposing private profile fields", async () => {
+  const study = JSON.stringify([
+    { schoolName: "Film School", major: "Animation", startDate: "2024-09" },
+  ]);
+  mocks.post.mockResolvedValue({
+    info: {
+      id: "artist",
+      nickName: "Artist",
+      study,
+      contact: "private@example.com",
+      other: "private notes",
+    },
+  });
+  const creator = await fetchCreatorById("artist");
+  expect(creator?.study).toBe(study);
+  expect(creator).not.toHaveProperty("contact");
+  expect(creator).not.toHaveProperty("other");
+});
+it("ignores non-string education without losing the public profile", async () => {
+  mocks.post.mockResolvedValue({
+    info: { id: "artist", nickName: "Artist", study: { bad: true } },
+  });
+  expect(await fetchCreatorById("artist")).toMatchObject({ name: "Artist", study: undefined });
+});

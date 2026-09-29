@@ -977,5 +977,6 @@
   "profileEdit.bannerChange": "更换个人封面",
   "profileEdit.bannerHint": "图片不超过 10 MB。公开资料封面会立即保存。",
   "profileEdit.bannerInvalid": "请选择不超过 10 MB 的图片。",
-  "profileEdit.bannerUpdated": "个人封面已更新"
+  "profileEdit.bannerUpdated": "个人封面已更新",
+  "creatorDetail.present": "至今"
 }

@@ -28,6 +28,8 @@ import { type MessageKey, useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
 import { toHref } from "@/lib/navigation";
 
+import { CreatorEducation } from "@/features/profile/creator-education";
+
 export default function CreatorDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -147,6 +149,8 @@ export default function CreatorDetailScreen() {
               {creator.bio || t("creatorDetail.bioEmpty")}
             </ThemedText>
           </View>
+
+          <CreatorEducation study={creator.study} />
 
           {creator.levels.length ? (
             <View style={styles.section}>

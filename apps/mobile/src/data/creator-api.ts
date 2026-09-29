@@ -10,6 +10,7 @@ type CreatorInfoDto = {
   avatar?: string | null;
   banner?: string | null;
   description?: string | null;
+  study?: string | null;
   createTime?: string | null;
   jobseeking?: number | boolean | null;
 };
@@ -75,6 +76,7 @@ function mapCreator(row: CreatorRowDto): CreatorSummary | undefined {
     avatarUrl: resolveMaybe(nonEmpty(info.avatar), appEnv.assets.userBaseUrl),
     bannerUrl: resolveMaybe(nonEmpty(info.banner), appEnv.assets.bannerBaseUrl),
     bio: nonEmpty(info.description),
+    study: nonEmpty(info.study),
     joinedAt: nonEmpty(info.createTime),
     levels,
     primaryLevel: levels[0]?.name,

@@ -215,6 +215,7 @@ export interface CreatorSummary {
   bannerUrl?: string;
   bio?: string;
   joinedAt?: string;
+  study?: string;
   levels: CreatorLevel[];
   primaryLevel?: string;
   openToWork: boolean;
