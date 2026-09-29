@@ -1328,5 +1328,11 @@
   "taskSchedule.localTime": "当地时间",
   "taskSchedule.clearHelp": "留空可移除日期。",
   "taskSchedule.invalid": "请输入有效日期，截止时间不得早于开始时间。",
-  "taskSchedule.save": "保存修改"
+  "taskSchedule.save": "保存修改",
+  "taskRelationships.edit": "编辑任务关系",
+  "taskRelationships.chooseParent": "选择父任务",
+  "taskRelationships.removeParent": "移除父任务",
+  "taskRelationships.addBlocker": "添加前置任务",
+  "taskRelationships.removeBlocker": "移除前置任务",
+  "taskRelationships.save": "保存修改"
 }

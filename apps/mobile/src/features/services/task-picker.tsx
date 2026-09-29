@@ -12,11 +12,17 @@ export function TaskPicker({
   generation,
   onSelect,
   onClose,
+  title,
+  closeLabel,
+  excludedIds = [],
 }: {
   crewId: string;
   generation: number;
   onSelect: (task: TaskOption) => void;
   onClose: () => void;
+  title?: string;
+  closeLabel?: string;
+  excludedIds?: string[];
 }) {
   const selected = useRef(false);
   const active = useScreenActive(),
@@ -31,7 +37,7 @@ export function TaskPicker({
   );
   return (
     <View style={{ flex: 1, padding: 12, gap: 10 }}>
-      <ThemedText>{t("thread.tagTask")}</ThemedText>
+      <ThemedText>{title ?? t("thread.tagTask")}</ThemedText>
       <TextInput
         accessibilityLabel={t("thread.searchTasks")}
         value={draft}
@@ -49,13 +55,20 @@ export function TaskPicker({
         renderItem={({ item }) => (
           <Pressable
             accessibilityRole="button"
+            disabled={excludedIds.includes(item.id)}
+            accessibilityState={{ disabled: excludedIds.includes(item.id) }}
             onPress={() => {
-              if (active && generation === getAuthGeneration() && !selected.current) {
+              if (
+                active &&
+                generation === getAuthGeneration() &&
+                !selected.current &&
+                !excludedIds.includes(item.id)
+              ) {
                 selected.current = true;
                 onSelect(item);
               }
             }}
-            style={{ padding: 12 }}
+            style={{ padding: 12, opacity: excludedIds.includes(item.id) ? 0.45 : 1 }}
           >
             <ThemedText>{taskLabel(item)}</ThemedText>
           </Pressable>
@@ -79,7 +92,7 @@ export function TaskPicker({
         </Pressable>
       )}
       <Pressable accessibilityRole="button" onPress={onClose}>
-        <ThemedText>{t("thread.backToChat")}</ThemedText>
+        <ThemedText>{closeLabel ?? t("thread.backToChat")}</ThemedText>
       </Pressable>
     </View>
   );
