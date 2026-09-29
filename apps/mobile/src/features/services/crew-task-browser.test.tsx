@@ -2,7 +2,12 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CrewTaskBrowser } from "./crew-task-browser";
-const h = vi.hoisted(() => ({ generation: 1, close: vi.fn(), detail: vi.fn() }));
+const h = vi.hoisted(() => ({
+  generation: 1,
+  close: vi.fn(),
+  detail: vi.fn(),
+  workbench: vi.fn(),
+}));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("react-native", () => ({
@@ -38,9 +43,10 @@ vi.mock("./asset-task-progress", () => ({
   ),
 }));
 vi.mock("./task-workbench", () => ({
-  TaskWorkbench: ({ onCreated }: { onCreated: (id: string) => void }) => (
-    <button onClick={() => onCreated("new")}>create form</button>
-  ),
+  TaskWorkbench: (props: { onCreated: (id: string) => void }) => {
+    h.workbench(props);
+    return <button onClick={() => props.onCreated("new")}>create form</button>;
+  },
 }));
 vi.mock("./task-view-browser", () => ({
   TaskViewBrowser: ({
@@ -168,4 +174,12 @@ it("retains the selected saved view after returning from a task", async () => {
   await act(async () => button("pick").click());
   await act(async () => button("crewTasks.back").click());
   expect(host.textContent).toContain("selected-view");
+});
+
+it("passes the selected task view into staged creation", async () => {
+  await act(async () => button("change view").click());
+  await act(async () => button("taskCreate.title").click());
+  expect(h.workbench).toHaveBeenLastCalledWith(
+    expect.objectContaining({ viewId: "selected-view" })
+  );
 });

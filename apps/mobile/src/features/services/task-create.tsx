@@ -1,3 +1,4 @@
+import { fetchTaskCreationDefaults, type TaskCreationDefaults } from "./task-creation-defaults";
 import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
 import { TaskCustomFieldControl } from "./task-custom-field-control";
 import { useTaskCreationCustomFields } from "./task-creation-custom-fields";
@@ -27,6 +28,7 @@ type Props = {
   crewId: string;
   userId: string;
   generation: number;
+  viewId?: string;
   initialParent?: TaskOption;
   initialWorkflow?: TaskWorkflow;
   closeLabel?: string;
@@ -35,27 +37,43 @@ type Props = {
   onClose: () => void;
 };
 export function TaskCreate(props: Props) {
-  return <Access key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
+  return (
+    <Access
+      key={`${props.crewId}:${props.userId}:${props.generation}:${props.viewId ?? ""}:${props.initialWorkflow?.id ?? ""}:${props.initialParent?.id ?? ""}`}
+      {...props}
+    />
+  );
 }
 function Access(props: Props) {
   const t = useTranslations();
+  const [defaults, setDefaults] = useState<TaskCreationDefaults>();
   const [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>();
   useEffect(() => {
     const controller = new AbortController();
-    void fetchTaskCommentAccess(props.crewId, props.userId, controller.signal).then(
-      (access) => {
-        if (!controller.signal.aborted && props.generation === getAuthGeneration())
-          setAllowed(access.canManage);
-      },
-      (cause) => {
-        if (!controller.signal.aborted && props.generation === getAuthGeneration())
-          setError(cause instanceof Error ? cause.message : String(cause));
+    void (async () => {
+      const access = await fetchTaskCommentAccess(props.crewId, props.userId, controller.signal);
+      if (controller.signal.aborted || props.generation !== getAuthGeneration()) return;
+      if (!access.canManage) {
+        setAllowed(false);
+        return;
       }
-    );
+      const context = await fetchTaskCreationDefaults(
+        props.crewId,
+        props.viewId,
+        props.initialWorkflow?.id,
+        controller.signal
+      );
+      if (controller.signal.aborted || props.generation !== getAuthGeneration()) return;
+      setDefaults(context);
+      setAllowed(true);
+    })().then(undefined, (cause) => {
+      if (!controller.signal.aborted && props.generation === getAuthGeneration())
+        setError(cause instanceof Error ? cause.message : String(cause));
+    });
     return () => controller.abort();
-  }, [props.crewId, props.userId, props.generation]);
-  if (allowed) return <Editor {...props} />;
+  }, [props.crewId, props.userId, props.generation, props.viewId, props.initialWorkflow?.id]);
+  if (allowed && defaults) return <Editor {...props} defaults={defaults} />;
   return (
     <View style={{ padding: 16, gap: 12 }}>
       {allowed === undefined && !error && <ActivityIndicator />}
@@ -73,12 +91,12 @@ function Editor({
   userId,
   generation,
   initialParent,
-  initialWorkflow,
+  defaults,
   closeLabel,
   onCreated,
   onStage,
   onClose,
-}: Props) {
+}: Props & { defaults: TaskCreationDefaults }) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
@@ -86,10 +104,10 @@ function Editor({
   const [taskKind, setTaskKind] = useState<TaskKind | null>(null);
   const [planning, setPlanning] = useState<TaskPlanningDraft>({
     labels: [],
-    cycle: null,
+    cycle: defaults.cycle,
     episode: null,
   });
-  const [workflow, setWorkflow] = useState<TaskWorkflow | null>(initialWorkflow ?? null);
+  const [workflow, setWorkflow] = useState<TaskWorkflow | null>(defaults.workflow);
   const [parent, setParent] = useState<TaskOption | null>(initialParent ?? null);
   const [blockers, setBlockers] = useState<TaskOption[]>([]);
   const [title, setTitle] = useState(""),

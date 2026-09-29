@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskCreate } from "./task-create";
 const h = vi.hoisted(() => ({
   access: vi.fn(),
+  defaults: vi.fn(),
   fields: vi.fn(),
   update: vi.fn(),
   refresh: vi.fn(),
@@ -12,6 +13,7 @@ const h = vi.hoisted(() => ({
   templates: vi.fn(),
   generation: 1,
 }));
+vi.mock("./task-creation-defaults", () => ({ fetchTaskCreationDefaults: h.defaults }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
 vi.mock("./task-custom-fields-api", async (original) => ({
   ...(await original<typeof import("./task-custom-fields-api")>()),
@@ -88,6 +90,7 @@ const type = (n: number, text: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.defaults.mockResolvedValue({ cycle: null, workflow: null });
   h.fields.mockResolvedValue([]);
   h.templates.mockResolvedValue([
     {
@@ -546,4 +549,76 @@ it("stages the validated form without creating a task and blocks duplicate stagi
   expect(stage).toHaveBeenCalledTimes(1);
   expect(stage.mock.calls[0]?.[0].title).toBe("Draft storyboard");
   expect(h.update).not.toHaveBeenCalled();
+});
+
+it("loads view defaults before editing and includes them in the submitted draft", async () => {
+  const cycle = { id: "44444444-4444-4444-8444-444444444444", name: "Next cycle" };
+  const workflow = {
+    id: "33333333-3333-4333-8333-333333333333",
+    name: "Active shots",
+    semantic: "in_progress",
+    crewId: "crew",
+    archived: false,
+  };
+  h.defaults.mockResolvedValue({ cycle, workflow });
+  await render();
+  expect(host.textContent).toContain("Next cycle");
+  expect(host.textContent).toContain("Active shots");
+  await act(async () => type(0, "Shot"));
+  h.update.mockResolvedValue({ id: "created" });
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update.mock.calls[0]?.[1]).toMatchObject({
+    cycleId: cycle.id,
+    workflowStateId: workflow.id,
+    priority: "normal",
+    labelIds: [],
+    assignees: [],
+  });
+});
+it("keeps editor unavailable when defaults cannot load", async () => {
+  h.defaults.mockRejectedValue(new Error("Project unavailable"));
+  await render();
+  expect(host.textContent).toContain("Project unavailable");
+  expect(host.querySelector("input")).toBeNull();
+});
+it("does not request defaults for a non-manager", async () => {
+  h.access.mockResolvedValue({ canManage: false });
+  await render();
+  expect(h.defaults).not.toHaveBeenCalled();
+});
+it("ignores defaults returned after account changes", async () => {
+  let finish!: (value: unknown) => void;
+  h.defaults.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  h.generation = 2;
+  await act(async () => finish({ cycle: null, workflow: null }));
+  expect(host.querySelector("input")).toBeNull();
+});
+
+it("lets the creator clear default cycle and choose server default workflow", async () => {
+  h.defaults.mockResolvedValue({
+    cycle: { id: "44444444-4444-4444-8444-444444444444", name: "Next cycle" },
+    workflow: {
+      id: "33333333-3333-4333-8333-333333333333",
+      name: "Active shots",
+      semantic: "in_progress",
+      crewId: "crew",
+      archived: false,
+    },
+  });
+  await render();
+  await act(async () => button("taskPlanning.clearCycle")!.click());
+  await act(async () => button("Active shots")!.click());
+  await act(async () => button("taskCreate.defaultWorkflow")!.click());
+  await act(async () => type(0, "Shot"));
+  h.update.mockResolvedValue({ id: "created" });
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update.mock.calls[0]?.[1]).toMatchObject({ cycleId: null });
+  expect(h.update.mock.calls[0]?.[1].workflowStateId).toBeUndefined();
 });

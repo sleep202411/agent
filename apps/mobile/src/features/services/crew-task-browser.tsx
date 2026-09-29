@@ -82,6 +82,7 @@ export function CrewTaskBrowser({
   if (creating)
     return (
       <TaskWorkbench
+        viewId={viewId}
         crewId={crewId}
         userId={userId}
         generation={generation}

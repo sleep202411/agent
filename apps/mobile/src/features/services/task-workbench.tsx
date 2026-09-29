@@ -8,6 +8,7 @@ import { TaskCreate } from "./task-create";
 import { fetchTaskCommentAccess } from "./task-comment-api";
 import { getTaskDraftSession } from "./task-draft-session";
 type Props = {
+  viewId?: string;
   crewId: string;
   userId: string;
   generation: number;
