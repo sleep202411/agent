@@ -1993,5 +1993,10 @@
   "taskClosure.confirm": "确认取消任务",
   "taskClosure.retryHelp": "结果尚未确认。请重试同一关闭请求以确认结果。",
   "taskClosure.retry": "重试关闭",
-  "taskClosure.done": "任务已取消。请刷新以加载当前状态。"
+  "taskClosure.done": "任务已取消。请刷新以加载当前状态。",
+  "taskDelete.title": "删除任务",
+  "taskDelete.confirmTitle": "删除“{title}”？",
+  "taskDelete.notice": "任务将从活动列表移除，证据会保留。子任务将移至最近的有效父任务，或成为顶层任务。此操作不结算付款或争议。",
+  "taskDelete.confirm": "确认删除",
+  "taskDelete.recheck": "无法确认删除结果。请刷新并重新审核任务后再尝试。"
 }

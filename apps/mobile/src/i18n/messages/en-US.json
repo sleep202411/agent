@@ -1993,5 +1993,10 @@
   "taskClosure.confirm": "Confirm Task Cancellation",
   "taskClosure.retryHelp": "The result is uncertain. Retry the same closure request to check its outcome.",
   "taskClosure.retry": "Retry Closure",
-  "taskClosure.done": "Task cancelled. Refresh to load its current status."
+  "taskClosure.done": "Task cancelled. Refresh to load its current status.",
+  "taskDelete.title": "Delete Task",
+  "taskDelete.confirmTitle": "Delete “{title}”?",
+  "taskDelete.notice": "This removes the task from active lists. Evidence is retained. Subtasks move to the nearest active parent, or become top-level tasks. This does not settle payments or disputes.",
+  "taskDelete.confirm": "Confirm Deletion",
+  "taskDelete.recheck": "Deletion could not be confirmed. Refresh and review the task before another attempt."
 }

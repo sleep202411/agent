@@ -1,3 +1,4 @@
+import { TaskDelete } from "./task-delete";
 import { TaskClosure } from "./task-closure";
 import { TaskDeadline } from "./task-deadline";
 import { TaskCustomFields } from "./task-custom-fields";
@@ -199,6 +200,14 @@ function TaskContent({
             userId={userId}
             generation={generation}
             onRefresh={() => setRevision((n) => n + 1)}
+          />
+          <TaskDelete
+            key={`delete:${revision}`}
+            task={data}
+            userId={userId}
+            generation={generation}
+            onDeleted={onClose}
+            onRefresh={() => setRevision((v) => v + 1)}
           />
           <TaskClosure
             key={`closure:${revision}`}

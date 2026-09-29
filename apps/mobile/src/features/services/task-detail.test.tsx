@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDetail } from "./task-detail";
+vi.mock("./task-delete", () => ({
+  TaskDelete: ({ onDeleted }: { onDeleted: () => void }) => (
+    <button onClick={onDeleted}>deleted task</button>
+  ),
+}));
 vi.mock("./task-closure", () => ({
   TaskClosure: ({ onRefresh }: { onRefresh: () => void }) => (
     <button onClick={onRefresh}>refresh after closure</button>
@@ -259,4 +264,10 @@ it("reloads the task after closure", async () => {
   await render();
   await act(async () => click("refresh after closure"));
   expect(h.fetch).toHaveBeenCalledTimes(2);
+});
+
+it("leaves the deleted task detail", async () => {
+  await render();
+  await act(async () => click("deleted task"));
+  expect(h.close).toHaveBeenCalledOnce();
 });

@@ -1993,5 +1993,10 @@
   "taskClosure.confirm": "確認取消任務",
   "taskClosure.retryHelp": "結果尚未確認。請重試同一關閉請求以確認結果。",
   "taskClosure.retry": "重試關閉",
-  "taskClosure.done": "任務已取消。請重新整理以載入目前狀態。"
+  "taskClosure.done": "任務已取消。請重新整理以載入目前狀態。",
+  "taskDelete.title": "刪除任務",
+  "taskDelete.confirmTitle": "刪除「{title}」？",
+  "taskDelete.notice": "任務將從活動列表移除，證據會保留。子任務將移至最近的有效父任務，或成為頂層任務。此操作不結算付款或爭議。",
+  "taskDelete.confirm": "確認刪除",
+  "taskDelete.recheck": "無法確認刪除結果。請重新整理並審核任務後再嘗試。"
 }
