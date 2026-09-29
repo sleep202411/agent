@@ -388,6 +388,20 @@ function build() {
 }
 
 describe('CrewTasksService', () => {
+  it.each([null, { clipId: 'clip-1' }, { clipId: 123 }])(
+    'exposes only the linked storyboard clip identifier (%s)',
+    async (metadata) => {
+      const t = build();
+      t.prisma.crewTask.findUnique.mockResolvedValue(
+        task({ canvasProjectId: null, metadata }),
+      );
+      const result = await t.service.get(TASK_ID, OWNER_ID);
+      expect(result.storyboardClipId).toBe(
+        typeof metadata?.clipId === 'string' ? metadata.clipId : null,
+      );
+      expect(result).not.toHaveProperty('metadata');
+    },
+  );
   it.each([
     [null, 'USD', 1000, 'USD'],
     [1000n, 'CNY', 1000, 'USD'],

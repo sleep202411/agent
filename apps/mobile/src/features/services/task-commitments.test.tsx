@@ -59,6 +59,8 @@ const task: TaskDetail = {
   description: "",
   submissions: [],
   version: 4,
+  revisionLimit: null,
+  revisionRoundsUsed: 0,
   status: "in_progress",
   workflowState: { name: "Doing" },
   startAt: null,

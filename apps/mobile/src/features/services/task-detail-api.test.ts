@@ -11,6 +11,8 @@ const detail = {
   description: "Render",
   submissions: [],
   version: 1,
+  revisionLimit: null,
+  revisionRoundsUsed: 0,
   status: "submitted",
   workflowState: { name: "Review" },
   startAt: null,

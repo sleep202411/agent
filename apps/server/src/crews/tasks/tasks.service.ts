@@ -5091,6 +5091,11 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     title: task.title,
     description: task.description,
     taskKind: task.taskKind,
+    storyboardClipId:
+      typeof (task.metadata as Record<string, unknown> | null)?.clipId ===
+      'string'
+        ? (task.metadata as Record<string, unknown>).clipId
+        : null,
     status: task.workflowState.semantic,
     workflowStateId: task.workflowStateId,
     workflowState: taskWorkflowStateDto(task.workflowState),
