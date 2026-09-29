@@ -1404,5 +1404,14 @@
   "taskFields.checkbox": "Checkbox",
   "taskFields.single_select": "Single Select",
   "taskFields.multi_select": "Multiple Select",
-  "taskFields.user": "Member"
+  "taskFields.user": "Member",
+  "assetTaskProgress.title": "Approved / Total Tasks",
+  "assetTaskProgress.help": "Approved deliverables / active deliverables. Group tasks and cancelled tasks are excluded. Unclassified art appears under Other Art.",
+  "assetTaskProgress.scripts": "Scripts",
+  "assetTaskProgress.characters": "Characters",
+  "assetTaskProgress.scenes": "Scenes",
+  "assetTaskProgress.props": "Props",
+  "assetTaskProgress.art": "Other Art",
+  "assetTaskProgress.music": "Music",
+  "assetTaskProgress.other": "Other Tasks"
 }

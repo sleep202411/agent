@@ -1404,5 +1404,14 @@
   "taskFields.checkbox": "核取方塊",
   "taskFields.single_select": "單選",
   "taskFields.multi_select": "多選",
-  "taskFields.user": "成員"
+  "taskFields.user": "成員",
+  "assetTaskProgress.title": "已驗收 / 任務總數",
+  "assetTaskProgress.help": "已驗收交付任務 / 有效交付任務。不含分組任務和已取消任務。未分類美術任務列於其他美術。",
+  "assetTaskProgress.scripts": "劇本",
+  "assetTaskProgress.characters": "角色",
+  "assetTaskProgress.scenes": "場景",
+  "assetTaskProgress.props": "道具",
+  "assetTaskProgress.art": "其他美術",
+  "assetTaskProgress.music": "音樂",
+  "assetTaskProgress.other": "其他任務"
 }

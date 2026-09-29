@@ -1,3 +1,4 @@
+import { AssetTaskProgress } from "./asset-task-progress";
 import { TaskFieldManagement } from "./task-field-management";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
@@ -21,11 +22,20 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [showProgress, setShowProgress] = useState(false);
   const [managingFields, setManagingFields] = useState(false);
   const [creating, setCreating] = useState(false);
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (showProgress)
+    return (
+      <AssetTaskProgress
+        crewId={crewId}
+        generation={generation}
+        onClose={() => setShowProgress(false)}
+      />
+    );
   if (managingFields)
     return (
       <TaskFieldManagement
@@ -100,6 +110,15 @@ export function CrewTaskBrowser({
         style={{ padding: 12 }}
       >
         <ThemedText>{t("taskFields.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowProgress(true);
+        }}
+      >
+        <ThemedText>{t("assetTaskProgress.title")}</ThemedText>
       </Pressable>
       <TaskPicker
         crewId={crewId}

@@ -1404,5 +1404,14 @@
   "taskFields.checkbox": "复选框",
   "taskFields.single_select": "单选",
   "taskFields.multi_select": "多选",
-  "taskFields.user": "成员"
+  "taskFields.user": "成员",
+  "assetTaskProgress.title": "已验收 / 任务总数",
+  "assetTaskProgress.help": "已验收交付任务 / 有效交付任务。不含分组任务和已取消任务。未分类美术任务列于其他美术。",
+  "assetTaskProgress.scripts": "剧本",
+  "assetTaskProgress.characters": "角色",
+  "assetTaskProgress.scenes": "场景",
+  "assetTaskProgress.props": "道具",
+  "assetTaskProgress.art": "其他美术",
+  "assetTaskProgress.music": "音乐",
+  "assetTaskProgress.other": "其他任务"
 }

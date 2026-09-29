@@ -17,6 +17,11 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("@/components/authed-web-view", () => ({
   AuthedWebView: ({ path }: { path: string }) => <span>{path}</span>,
 }));
+vi.mock("./asset-task-progress", () => ({
+  AssetTaskProgress: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close progress</button>
+  ),
+}));
 vi.mock("./task-create", () => ({
   TaskCreate: ({ onCreated }: { onCreated: (id: string) => void }) => (
     <button onClick={() => onCreated("new")}>create form</button>
@@ -106,5 +111,12 @@ it("opens the newly created task directly", async () => {
 it("opens field settings and returns to the task browser", async () => {
   await act(async () => button("taskFields.title").click());
   await act(async () => button("close fields").click());
+  expect(button("pick")).toBeDefined();
+});
+
+it("opens native asset progress and returns to the unchanged task browser", async () => {
+  await act(async () => button("assetTaskProgress.title").click());
+  expect(button("close progress")).toBeDefined();
+  await act(async () => button("close progress").click());
   expect(button("pick")).toBeDefined();
 });
