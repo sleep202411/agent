@@ -951,5 +951,7 @@
   "crewRoles.editor": "Editor",
   "crewRoles.compositor": "Compositor",
   "crewRoles.producer": "Producer",
-  "crewRoles.marketing": "Marketing Lead"
+  "crewRoles.marketing": "Marketing Lead",
+  "crewDetail.applicationsAction": "My applications",
+  "crewDetail.safetyActions": "Report or block"
 }

@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { runInNewContext } from "node:vm";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AuthedWebView } from "./authed-web-view";
+import CrewApplicationsScreen from "@/app/crew-applications";
 const state = vi.hoisted(() => ({
   token: { tokenName: "satoken", tokenValue: "fixture-token" } as {
     tokenName: string;
@@ -64,6 +65,29 @@ it("keeps first-request authentication on the configured app URL", async () => {
   expect(state.props.source).toEqual({
     uri: "https://app.example/en-US/referral",
     headers: { Cookie: "satoken=fixture-token" },
+  });
+});
+
+it("opens the existing Crew application workflow inside the authenticated native shell", async () => {
+  await act(async () => root.render(<CrewApplicationsScreen />));
+  expect(state.props.source).toEqual({
+    uri: "https://app.example/en-US/crews/applications",
+    headers: { Cookie: "satoken=fixture-token" },
+  });
+  expect(state.props.applicationNameForUserAgent).toBe("FizzDragonApp");
+});
+
+it("gates a direct application link and resumes that workflow after login", async () => {
+  state.token = null;
+  await act(async () => root.render(<CrewApplicationsScreen />));
+  expect(state.props).toBeNull();
+  expect(host.textContent).toContain("authedWeb.sessionNeeded");
+  state.token = { tokenName: "satoken", tokenValue: "fresh-session" };
+  await act(async () => root.render(<CrewApplicationsScreen />));
+  expect(host.textContent).not.toContain("authedWeb.sessionNeeded");
+  expect(state.props.source).toEqual({
+    uri: "https://app.example/en-US/crews/applications",
+    headers: { Cookie: "satoken=fresh-session" },
   });
 });
 it("writes the session cookie on the trusted origin", async () => {

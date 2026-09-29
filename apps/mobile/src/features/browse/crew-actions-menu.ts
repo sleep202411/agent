@@ -1,0 +1,49 @@
+import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { showContentActionsMenu } from "@/components/report-actions";
+import type { MessageKey } from "@/i18n";
+
+/** Crew follow-up lives in the existing ellipsis menu, without changing the detail layout. */
+export function showCrewActionsMenu(options: {
+  t: (key: MessageKey) => string;
+  onApplications: () => void;
+  onReport: () => void;
+  onBlock: () => void;
+}) {
+  const { t, onApplications, onReport, onBlock } = options;
+  if (Platform.OS === "ios") {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        options: [
+          t("report.cancel"),
+          t("crewDetail.applicationsAction"),
+          t("report.reportAction"),
+          t("crewDetail.blockAction"),
+        ],
+        cancelButtonIndex: 0,
+        destructiveButtonIndex: 3,
+      },
+      (index) => {
+        if (index === 1) onApplications();
+        if (index === 2) onReport();
+        if (index === 3) onBlock();
+      }
+    );
+    return;
+  }
+  // Android supports at most three Alert buttons. Keep safety actions in their
+  // existing submenu instead of silently dropping the fourth button.
+  Alert.alert(t("report.moreActions"), undefined, [
+    { text: t("crewDetail.applicationsAction"), onPress: onApplications },
+    {
+      text: t("crewDetail.safetyActions"),
+      onPress: () =>
+        showContentActionsMenu({
+          t,
+          blockLabel: t("crewDetail.blockAction"),
+          onReport,
+          onBlock,
+        }),
+    },
+    { text: t("report.cancel"), style: "cancel" },
+  ]);
+}

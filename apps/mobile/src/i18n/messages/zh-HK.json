@@ -951,5 +951,7 @@
   "crewRoles.editor": "剪輯師",
   "crewRoles.compositor": "合成師",
   "crewRoles.producer": "監製",
-  "crewRoles.marketing": "市場負責人"
+  "crewRoles.marketing": "市場負責人",
+  "crewDetail.applicationsAction": "我的申請",
+  "crewDetail.safetyActions": "舉報或屏蔽"
 }

@@ -14,11 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuthGate } from "@/auth";
-import {
-  MoreActionsButton,
-  ReportReasonSheet,
-  showContentActionsMenu,
-} from "@/components/report-actions";
+import { MoreActionsButton, ReportReasonSheet } from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
@@ -31,6 +27,8 @@ import { type MessageKey, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 import { useCrewApplication } from "@/features/browse/use-crew-application";
 import { crewPositionLabel } from "@/lib/crew-position-label";
+import { showCrewActionsMenu } from "@/features/browse/crew-actions-menu";
+import { toHref } from "@/lib/navigation";
 
 function crewStatusTag(
   status: CrewStatus,
@@ -110,9 +108,9 @@ export default function CrewDetailScreen() {
     crewPositionLabel(role.positionType ?? role.title, t);
 
   const showActions = () => {
-    showContentActionsMenu({
+    showCrewActionsMenu({
       t,
-      blockLabel: t("crewDetail.blockAction"),
+      onApplications: () => router.push(toHref("/crew-applications")),
       onReport: () => setReportOpen(true),
       onBlock: confirmBlock,
     });
