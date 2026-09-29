@@ -3501,6 +3501,13 @@
         "clipDescription": "直接继续到另一个生成的视频片段。",
         "choice": "玩家选择",
         "choiceDescription": "暂停播放，让玩家选择后续分支。",
+        "existing": "连接到已有的节点",
+        "existingDescription": "把这个场景接到画布上已有的镜头或玩家选择。",
+        "existingTitle": "连接到已有的节点",
+        "existingHint": "按镜头号或正文第一句搜索。",
+        "existingSearch": "搜索节点",
+        "existingEmpty": "没有匹配的节点",
+        "existingReplace": "已有连线，选择后将替换",
         "cancel": "取消"
       },
       "projection": {
@@ -3894,9 +3901,6 @@
       "error": {
         "title": "无法打开故事画布",
         "retry": "重试"
-      },
-      "tidy": {
-        "action": "整理画布"
       },
       "share": "分享",
       "catalogPanel": {

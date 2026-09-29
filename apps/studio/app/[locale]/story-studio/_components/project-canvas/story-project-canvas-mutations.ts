@@ -395,6 +395,40 @@ export function connectSceneContinuation(
       });
 }
 
+/** Drop every story-flow edge that currently arrives at this node, so a new one can take its place. */
+export function replaceIncomingStoryLinks(
+  content: InteractiveStoryDraftContent,
+  targetNodeId: string
+): InteractiveStoryDraftContent {
+  let next = content;
+  for (const node of content.graph.nodes) {
+    if (node.nodeId === targetNodeId) continue;
+    if (node.exit.kind === "choice") {
+      for (const choice of node.exit.choices) {
+        if (storyRouteNodeId(choice.target) === targetNodeId) {
+          next = disconnectChoiceTarget(next, node.nodeId, choice.choiceId);
+        }
+      }
+      continue;
+    }
+    const current = next.graph.nodes.find((candidate) => candidate.nodeId === node.nodeId);
+    if (!current || current.exit.kind !== "auto") continue;
+    if (storyAutoFallbackNodeId(current.exit) === targetNodeId) {
+      next = disconnectSceneContinuation(next, node.nodeId, targetNodeId);
+    }
+    const afterFallback = next.graph.nodes.find((candidate) => candidate.nodeId === node.nodeId);
+    if (
+      afterFallback?.exit.kind === "auto" &&
+      afterFallback.exit.routes.some(
+        (route) => route.when && storyRouteNodeId(route.target) === targetNodeId
+      )
+    ) {
+      next = disconnectSceneContinuation(next, node.nodeId, targetNodeId);
+    }
+  }
+  return next;
+}
+
 export function disconnectSceneContinuation(
   content: InteractiveStoryDraftContent,
   sourceNodeId: string,
