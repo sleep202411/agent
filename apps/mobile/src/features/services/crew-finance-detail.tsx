@@ -1,3 +1,4 @@
+import { AgreementDetail } from "./agreement-detail";
 import { TaskDetail } from "./task-detail";
 import { AuthedWebView } from "@/components/authed-web-view";
 import { PayoutDecision } from "./payout-decision";
@@ -43,6 +44,7 @@ function Session(props: Props) {
   const t = useTranslations(),
     [revision, setRevision] = useState(0),
     [proofError, setProofError] = useState<string>();
+  const [agreementId, setAgreementId] = useState<string>();
   const [taskId, setTaskId] = useState<string>(),
     [webTask, setWebTask] = useState<string>();
   const [snapshot, setSnapshot] = useState<{
@@ -67,6 +69,22 @@ function Session(props: Props) {
   const visible = snapshot?.revision === revision ? snapshot : undefined,
     record = visible?.record;
   const money = (value: string) => formatFinanceMoney(value, props.selected.currency);
+  if (agreementId)
+    return (
+      <AgreementDetail
+        crewId={props.crewId}
+        agreementId={agreementId}
+        memberUserId={props.selected.userId}
+        userId={props.userId}
+        generation={props.generation}
+        onClose={() => {
+          if (props.generation === getAuthGeneration()) {
+            setAgreementId(undefined);
+            setRevision((n) => n + 1);
+          }
+        }}
+      />
+    );
   if (webTask)
     return (
       <View style={{ flex: 1 }}>
@@ -139,9 +157,19 @@ function Session(props: Props) {
               {!!record.description && <ThemedText>{record.description}</ThemedText>}
               {record.task && taskLink(record.task)}
               {record.agreement && (
-                <ThemedText>
-                  {t("crewFinance.agreement")} · {record.agreement.id} · {record.agreement.status}
-                </ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  style={{ paddingVertical: 12 }}
+                  onPress={() => {
+                    if (props.generation === getAuthGeneration())
+                      setAgreementId(record.agreement!.id);
+                  }}
+                >
+                  <ThemedText>
+                    {t("crewFinance.agreement")} · {record.agreement.id} ·{" "}
+                    {t("agreementDetail.open")}
+                  </ThemedText>
+                </Pressable>
               )}
               {!!record.rejectionReason && (
                 <ThemedText>

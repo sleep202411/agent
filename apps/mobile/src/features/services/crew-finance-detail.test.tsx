@@ -242,3 +242,32 @@ it("does not navigate linked tasks from an expired account", async () => {
   await act(async () => button(taskButton).click());
   expect(host.textContent).not.toContain("native task");
 });
+
+vi.mock("./agreement-detail", () => ({
+  AgreementDetail: ({
+    agreementId,
+    memberUserId,
+    onClose,
+  }: {
+    agreementId: string;
+    memberUserId: string;
+    onClose: () => void;
+  }) => (
+    <div>
+      native agreement {agreementId}:{memberUserId}
+      <button onClick={onClose}>agreement back</button>
+    </div>
+  ),
+}));
+it("opens the linked agreement for the earning recipient and refreshes on return", async () => {
+  const agreement = { id: "22222222-2222-4222-8222-222222222222", status: "sent" };
+  h.detail.mockResolvedValue({ ...earning, agreement });
+  await render();
+  await act(async () =>
+    button(`crewFinance.agreement · ${agreement.id} · agreementDetail.open`).click()
+  );
+  expect(host.textContent).toContain(`native agreement ${agreement.id}:user`);
+  await act(async () => button("agreement back").click());
+  expect(h.detail).toHaveBeenCalledTimes(2);
+  expect(host.textContent).not.toContain("native agreement");
+});
