@@ -1021,5 +1021,20 @@
   "serviceOrder.open": "開啟訂單",
   "serviceOrder.note": "補充說明（選填）",
   "serviceOrder.submit": "提交申請",
-  "serviceOrder.retryHint": "重試將提交同一申請。重新申請前請先檢查訂單。"
+  "serviceOrder.retryHint": "重試將提交同一申請。重新申請前請先檢查訂單。",
+  "orders.title": "服務訂單",
+  "orders.signIn": "登入查看訂單",
+  "orders.role.both": "全部",
+  "orders.role.buyer": "我購買的",
+  "orders.role.creator": "我承接的",
+  "orders.all": "全部狀態",
+  "orders.status.pending_creator": "等待創作者確認",
+  "orders.status.in_progress": "進行中",
+  "orders.status.delivered": "已交付",
+  "orders.status.revision_requested": "待修改",
+  "orders.status.completed": "已完成",
+  "orders.status.cancelled": "已取消",
+  "orders.unread": "未讀訊息：",
+  "orders.empty": "暫無訂單",
+  "orders.retry": "重試"
 }

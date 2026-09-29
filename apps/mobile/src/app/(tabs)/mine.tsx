@@ -420,6 +420,13 @@ export default function MineScreen() {
                 <ThemedText type="smallBold">{t("publishWork.title")}</ThemedText>
               </Pressable>
             )}
+            <Pressable
+              accessibilityRole="button"
+              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
+              onPress={() => router.push(toHref("/orders"))}
+            >
+              <ThemedText type="smallBold">{t("orders.title")}</ThemedText>
+            </Pressable>
             {/* Tab bar */}
             <View style={[styles.tabBar, { borderBottomColor: theme.border }]}>
               {TABS.map((item) => {

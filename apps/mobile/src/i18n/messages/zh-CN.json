@@ -1021,5 +1021,20 @@
   "serviceOrder.open": "打开订单",
   "serviceOrder.note": "补充说明（选填）",
   "serviceOrder.submit": "提交申请",
-  "serviceOrder.retryHint": "重试将提交同一申请。重新申请前请先检查订单。"
+  "serviceOrder.retryHint": "重试将提交同一申请。重新申请前请先检查订单。",
+  "orders.title": "服务订单",
+  "orders.signIn": "登录查看订单",
+  "orders.role.both": "全部",
+  "orders.role.buyer": "我购买的",
+  "orders.role.creator": "我承接的",
+  "orders.all": "全部状态",
+  "orders.status.pending_creator": "等待创作者确认",
+  "orders.status.in_progress": "进行中",
+  "orders.status.delivered": "已交付",
+  "orders.status.revision_requested": "待修改",
+  "orders.status.completed": "已完成",
+  "orders.status.cancelled": "已取消",
+  "orders.unread": "未读消息：",
+  "orders.empty": "暂无订单",
+  "orders.retry": "重试"
 }
