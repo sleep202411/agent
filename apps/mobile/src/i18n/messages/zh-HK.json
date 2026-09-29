@@ -1,4 +1,9 @@
 {
+  "thread.audioPlay": "播放",
+  "thread.audioPause": "暫停",
+  "thread.audioReplay": "重新播放",
+  "thread.audioBack": "後退15秒",
+  "thread.audioForward": "前進15秒",
   "thread.teamChat": "團隊聊天",
   "thread.communityChat": "社群聊天",
   "login.accountAccess": "帳號登入",

@@ -1,4 +1,9 @@
 {
+  "thread.audioPlay": "Play",
+  "thread.audioPause": "Pause",
+  "thread.audioReplay": "Replay",
+  "thread.audioBack": "Back 15 seconds",
+  "thread.audioForward": "Forward 15 seconds",
   "thread.teamChat": "Team Chat",
   "thread.communityChat": "Community Chat",
   "login.accountAccess": "Account access",

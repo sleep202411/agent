@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ConversationFile } from "./conversation-file";
 const h = vi.hoisted(() => ({ access: vi.fn(), open: vi.fn(), active: true, generation: 1 }));
+vi.mock("./conversation-audio", () => ({
+  ConversationAudio: () => <div data-audio>audio-preview</div>,
+}));
 vi.mock("./conversation-video", () => ({
   ConversationVideo: () => <div data-video>video-preview</div>,
 }));
@@ -214,4 +217,27 @@ it("mounts video only after authorized access and removes it on close", async ()
       .click()
   );
   expect(host.querySelector("[data-video]")).toBeNull();
+});
+
+it("opens audio only after authorization and removes it when backgrounded", async () => {
+  h.access.mockResolvedValue({ url: "https://files.test/audio", expiresAt: null });
+  const show = () =>
+    act(async () =>
+      root.render(
+        <ConversationFile
+          mediaAssetId="media"
+          name="Sound"
+          mediaKind="audio"
+          contentType="audio/mpeg"
+        />
+      )
+    );
+  await show();
+  expect(host.querySelector("[data-audio]")).toBeNull();
+  await act(async () => click());
+  expect(host.querySelector("[data-audio]")).not.toBeNull();
+  expect(h.open).not.toHaveBeenCalled();
+  h.active = false;
+  await show();
+  expect(host.querySelector("[data-audio]")).toBeNull();
 });

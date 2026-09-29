@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Linking, Modal, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ConversationAudio } from "./conversation-audio";
 import { ConversationVideo } from "./conversation-video";
 import { Image } from "expo-image";
 import { useTheme } from "@/hooks/use-theme";
@@ -17,7 +18,9 @@ function File({ mediaAssetId, name, mediaKind, contentType }: Props) {
     theme = useTheme();
   const [preview, setPreview] = useState<{ url: string; expiresAt: string | null } | undefined>();
   const isVideo = mediaKind === "video" && /^video\//i.test(contentType || "");
+  const isAudio = mediaKind === "audio" && /^audio\//i.test(contentType || "");
   const canPreview =
+    isAudio ||
     isVideo ||
     (mediaKind === "image" &&
       /^image\/(jpeg|png|webp|gif|avif|heic|heif)$/i.test(contentType || ""));
@@ -98,7 +101,9 @@ function File({ mediaAssetId, name, mediaKind, contentType }: Props) {
               <ThemedText>{t("thread.closePreview")}</ThemedText>
             </Pressable>
             <ThemedText numberOfLines={2}>{name}</ThemedText>
-            {isVideo ? (
+            {isAudio ? (
+              <ConversationAudio url={preview.url} />
+            ) : isVideo ? (
               <ConversationVideo url={preview.url} onRetry={() => setPreview(undefined)} />
             ) : (
               <Image
