@@ -11,7 +11,7 @@ import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { TaskWorkbench } from "./task-workbench";
 import { TaskDetail } from "./task-detail";
-import { TaskPicker } from "./task-picker";
+import { TaskViewBrowser } from "./task-view-browser";
 
 export function CrewTaskBrowser({
   crewId,
@@ -31,6 +31,7 @@ export function CrewTaskBrowser({
   const [showProgress, setShowProgress] = useState(false);
   const [managingFields, setManagingFields] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [viewId, setViewId] = useState<string>();
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
@@ -180,11 +181,11 @@ export function CrewTaskBrowser({
       >
         <ThemedText>{t("episodeManagement.title")}</ThemedText>
       </Pressable>
-      <TaskPicker
+      <TaskViewBrowser
         crewId={crewId}
         generation={generation}
-        title={t("crewTasks.title")}
-        closeLabel={t("report.close")}
+        viewId={viewId}
+        onViewChange={setViewId}
         onClose={onClose}
         onSelect={(task) => {
           if (generation === getAuthGeneration()) setTaskId(task.id);

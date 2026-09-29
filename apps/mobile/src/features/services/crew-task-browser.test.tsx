@@ -42,15 +42,21 @@ vi.mock("./task-workbench", () => ({
     <button onClick={() => onCreated("new")}>create form</button>
   ),
 }));
-vi.mock("./task-picker", () => ({
-  TaskPicker: ({
+vi.mock("./task-view-browser", () => ({
+  TaskViewBrowser: ({
     onSelect,
     onClose,
+    viewId,
+    onViewChange,
   }: {
+    viewId?: string;
+    onViewChange: (id: string) => void;
     onSelect: (task: { id: string }) => void;
     onClose: () => void;
   }) => (
     <>
+      <span>{viewId}</span>
+      <button onClick={() => onViewChange("selected-view")}>change view</button>
       <button onClick={() => onSelect({ id: "task" })}>pick</button>
       <button onClick={onClose}>close</button>
     </>
@@ -155,4 +161,11 @@ it("opens the native episode list and returns to the task browser", async () => 
   expect(button("close episodes")).toBeDefined();
   await act(async () => button("close episodes").click());
   expect(button("pick")).toBeDefined();
+});
+
+it("retains the selected saved view after returning from a task", async () => {
+  await act(async () => button("change view").click());
+  await act(async () => button("pick").click());
+  await act(async () => button("crewTasks.back").click());
+  expect(host.textContent).toContain("selected-view");
 });

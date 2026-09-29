@@ -1998,5 +1998,14 @@
   "taskDelete.confirmTitle": "Delete “{title}”?",
   "taskDelete.notice": "This removes the task from active lists. Evidence is retained. Subtasks move to the nearest active parent, or become top-level tasks. This does not settle payments or disputes.",
   "taskDelete.confirm": "Confirm Deletion",
-  "taskDelete.recheck": "Deletion could not be confirmed. Refresh and review the task before another attempt."
+  "taskDelete.recheck": "Deletion could not be confirmed. Refresh and review the task before another attempt.",
+  "taskViews.view": "View",
+  "taskViews.empty": "No task views are available.",
+  "taskViews.all": "All Completed Tasks",
+  "taskViews.recent": "Recently Completed Tasks",
+  "taskViews.hidden": "Completed Tasks Hidden",
+  "taskViews.subtasks": "Including Subtasks",
+  "taskViews.topLevel": "Top-Level Tasks",
+  "taskViews.priority": "Priority",
+  "taskViews.anyPriority": "Any Priority"
 }

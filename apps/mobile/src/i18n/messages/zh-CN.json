@@ -1998,5 +1998,14 @@
   "taskDelete.confirmTitle": "删除“{title}”？",
   "taskDelete.notice": "任务将从活动列表移除，证据会保留。子任务将移至最近的有效父任务，或成为顶层任务。此操作不结算付款或争议。",
   "taskDelete.confirm": "确认删除",
-  "taskDelete.recheck": "无法确认删除结果。请刷新并重新审核任务后再尝试。"
+  "taskDelete.recheck": "无法确认删除结果。请刷新并重新审核任务后再尝试。",
+  "taskViews.view": "视图",
+  "taskViews.empty": "暂无任务视图。",
+  "taskViews.all": "显示全部已完成任务",
+  "taskViews.recent": "显示最近完成的任务",
+  "taskViews.hidden": "隐藏已完成任务",
+  "taskViews.subtasks": "包含子任务",
+  "taskViews.topLevel": "顶层任务",
+  "taskViews.priority": "优先级",
+  "taskViews.anyPriority": "所有优先级"
 }
