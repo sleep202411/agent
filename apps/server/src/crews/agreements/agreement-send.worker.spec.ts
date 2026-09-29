@@ -101,6 +101,58 @@ function build(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CrewAgreementSendWorker', () => {
+  it('waits for the current dispatch on shutdown without claiming more work', async () => {
+    const { worker } = build();
+    const internal = worker as unknown as {
+      claim(limit: number): Promise<unknown[]>;
+      dispatchOne(value: unknown): Promise<void>;
+    };
+    const claim = jest.spyOn(internal, 'claim').mockResolvedValue([job()]);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const dispatch = jest
+      .spyOn(internal, 'dispatchOne')
+      .mockReturnValue(pending);
+    const draining = worker.drainOnce();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    let stopped = false;
+    const shutdown = worker.onModuleDestroy().then(() => {
+      stopped = true;
+    });
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(stopped).toBe(false);
+    } finally {
+      release();
+      await Promise.all([draining, shutdown]);
+    }
+    expect(claim).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    await worker.drainOnce();
+    expect(claim).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not dispatch a claim that returns after shutdown starts', async () => {
+    const { worker, provider } = build();
+    const internal = worker as unknown as {
+      claim(limit: number): Promise<unknown[]>;
+    };
+    let release!: (rows: unknown[]) => void;
+    jest.spyOn(internal, 'claim').mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const draining = worker.drainOnce();
+    const shutdown = worker.onModuleDestroy();
+    release([job()]);
+    await Promise.all([draining, shutdown]);
+    expect(provider.findDocumentForAgreement).not.toHaveBeenCalled();
+    expect(provider.sendFromTemplate).not.toHaveBeenCalled();
+  });
+
   it('claims only ready-to-send work and retains the sweep limit', async () => {
     const { worker } = build();
     const internals = worker as unknown as {

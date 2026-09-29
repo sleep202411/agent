@@ -61,6 +61,7 @@ export class CrewAgreementSendWorker
   );
   private timer: NodeJS.Timeout | null = null;
   private draining: Promise<void> | null = null;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -69,6 +70,7 @@ export class CrewAgreementSendWorker
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopped || this.timer) return;
     if (!this.provider.isEnabled()) {
       this.logger.log('Crew agreement send worker disabled');
       return;
@@ -85,6 +87,7 @@ export class CrewAgreementSendWorker
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     try {
@@ -106,6 +109,7 @@ export class CrewAgreementSendWorker
 
   /** Public for deterministic readiness checks and focused tests. */
   async drainOnce(): Promise<void> {
+    if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain().finally(() => {
       this.draining = null;
@@ -115,9 +119,12 @@ export class CrewAgreementSendWorker
 
   private async drain(): Promise<void> {
     for (let sent = 0; sent < this.batchSize; sent += 1) {
+      if (this.stopped) return;
       // Do not consume later jobs' leases while waiting on the provider.
       const [job] = await this.claim(1);
-      if (!job) break;
+      // A claim already in flight may finish during shutdown. Leave its lease
+      // recoverable instead of starting another external provider operation.
+      if (!job || this.stopped) break;
       await this.dispatchOne(job);
     }
   }
