@@ -1560,5 +1560,18 @@
   "earningCreate.confirm": "确认收入",
   "earningCreate.edit": "编辑",
   "earningCreate.retry": "重试同一笔收入",
-  "earningCreate.retryHelp": "若保存中断，请在此重试以恢复同一笔收入。新建另一笔前请先检查账本，避免重复记录。"
+  "earningCreate.retryHelp": "若保存中断，请在此重试以恢复同一笔收入。新建另一笔前请先检查账本，避免重复记录。",
+  "payoutCreate.add": "创建付款",
+  "payoutCreate.help": "为此成员预留已审核且可用的收入。此操作创建待付款记录，不会转账。",
+  "payoutCreate.select": "选择成员",
+  "payoutCreate.amount": "总额",
+  "payoutCreate.gross": "总额",
+  "payoutCreate.note": "备注",
+  "payoutCreate.invalidAmount": "请输入账本支持范围内的正数金额，最多两位小数。",
+  "payoutCreate.invalidNet": "代扣金额必须不小于零且小于总额。",
+  "payoutCreate.review": "核对付款",
+  "payoutCreate.confirm": "确认付款",
+  "payoutCreate.edit": "编辑",
+  "payoutCreate.retry": "重试同一笔付款",
+  "payoutCreate.retryHelp": "若保存中断，请在此重试以恢复同一笔付款。新建另一笔前请先检查账本，避免重复预留资金。"
 }

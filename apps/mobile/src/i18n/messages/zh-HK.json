@@ -1560,5 +1560,18 @@
   "earningCreate.confirm": "確認收入",
   "earningCreate.edit": "編輯",
   "earningCreate.retry": "重試同一筆收入",
-  "earningCreate.retryHelp": "若儲存中斷，請在此重試以恢復同一筆收入。新增另一筆前請先檢查帳本，避免重複記錄。"
+  "earningCreate.retryHelp": "若儲存中斷，請在此重試以恢復同一筆收入。新增另一筆前請先檢查帳本，避免重複記錄。",
+  "payoutCreate.add": "建立付款",
+  "payoutCreate.help": "為此成員預留已審核且可用的收入。此操作建立待付款記錄，不會轉帳。",
+  "payoutCreate.select": "選擇成員",
+  "payoutCreate.amount": "總額",
+  "payoutCreate.gross": "總額",
+  "payoutCreate.note": "備註",
+  "payoutCreate.invalidAmount": "請輸入帳本支援範圍內的正數金額，最多兩位小數。",
+  "payoutCreate.invalidNet": "代扣金額必須不小於零且小於總額。",
+  "payoutCreate.review": "核對付款",
+  "payoutCreate.confirm": "確認付款",
+  "payoutCreate.edit": "編輯",
+  "payoutCreate.retry": "重試同一筆付款",
+  "payoutCreate.retryHelp": "若儲存中斷，請在此重試以恢復同一筆付款。新增另一筆前請先檢查帳本，避免重複預留資金。"
 }

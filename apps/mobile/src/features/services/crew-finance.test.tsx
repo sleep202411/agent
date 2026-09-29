@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewFinance } from "./crew-finance";
+vi.mock("./payout-create", () => ({ PayoutCreate: () => <span>payout creation entry</span> }));
 vi.mock("./earning-create", () => ({ EarningCreate: () => <span>earning creation entry</span> }));
 vi.mock("./crew-finance-trend", () => ({ CrewFinanceTrend: () => <span>income trend</span> }));
 vi.mock("./crew-finance-detail", () => ({
@@ -169,4 +170,13 @@ it("opens a selected native financial record", async () => {
   await render();
   await click("Reward · crewFinance.details");
   expect(host.textContent).toContain("finance record detail");
+});
+
+it("shows the creation action for the selected ledger type", async () => {
+  await render();
+  expect(host.textContent).toContain("earning creation entry");
+  expect(host.textContent).not.toContain("payout creation entry");
+  await act(async () => button("crewFinance.payouts").click());
+  expect(host.textContent).toContain("payout creation entry");
+  expect(host.textContent).not.toContain("earning creation entry");
 });

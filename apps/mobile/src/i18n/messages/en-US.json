@@ -1560,5 +1560,18 @@
   "earningCreate.confirm": "Confirm Earning",
   "earningCreate.edit": "Edit",
   "earningCreate.retry": "Retry Same Earning",
-  "earningCreate.retryHelp": "If saving was interrupted, retry here to recover the same earning. Before starting another entry, check the ledger to avoid recording it twice."
+  "earningCreate.retryHelp": "If saving was interrupted, retry here to recover the same earning. Before starting another entry, check the ledger to avoid recording it twice.",
+  "payoutCreate.add": "Create Payout",
+  "payoutCreate.help": "Reserve approved, available earnings for this member. This creates a pending payout; it does not transfer money.",
+  "payoutCreate.select": "Select Member",
+  "payoutCreate.amount": "Gross Amount",
+  "payoutCreate.gross": "Gross Amount",
+  "payoutCreate.note": "Note",
+  "payoutCreate.invalidAmount": "Enter a positive amount with up to two decimal places within the supported ledger range.",
+  "payoutCreate.invalidNet": "Withholding must be zero or more and less than the gross amount.",
+  "payoutCreate.review": "Review Payout",
+  "payoutCreate.confirm": "Confirm Payout",
+  "payoutCreate.edit": "Edit",
+  "payoutCreate.retry": "Retry Same Payout",
+  "payoutCreate.retryHelp": "If saving was interrupted, retry here to recover the same payout. Check the ledger before creating another payout to avoid reserving funds twice."
 }

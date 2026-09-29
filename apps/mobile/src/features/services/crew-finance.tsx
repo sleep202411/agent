@@ -1,3 +1,4 @@
+import { PayoutCreate } from "./payout-create";
 import { EarningCreate } from "./earning-create";
 import { CrewFinanceDetail } from "./crew-finance-detail";
 import { CrewFinanceTrend } from "./crew-finance-trend";
@@ -50,11 +51,19 @@ function Session(props: Props) {
   return (
     <View style={{ flex: 1 }}>
       <ThemedText>{t("crewFinance.title")}</ThemedText>
-      <EarningCreate
-        key={`create:${revision}`}
-        {...props}
-        onSaved={() => setRevision((n) => n + 1)}
-      />
+      {view === "earnings" ? (
+        <EarningCreate
+          key={`earning-create:${revision}`}
+          {...props}
+          onSaved={() => setRevision((n) => n + 1)}
+        />
+      ) : (
+        <PayoutCreate
+          key={`payout-create:${revision}`}
+          {...props}
+          onSaved={() => setRevision((n) => n + 1)}
+        />
+      )}
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
       {visible?.allowed !== undefined && (
