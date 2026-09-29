@@ -1,3 +1,4 @@
+import { AmendmentFinance } from "./amendment-finance";
 import { CrewSpendSummary } from "./crew-spend";
 import { CrewExpenses } from "./crew-expenses";
 import { CrewCompute } from "./crew-compute";
@@ -87,6 +88,11 @@ function Session(props: Props) {
   return (
     <View style={{ flex: 1 }}>
       <ThemedText>{t("crewFinance.title")}</ThemedText>
+      <AmendmentFinance
+        key={`amendment:${revision}`}
+        {...props}
+        onClose={() => setRevision((n) => n + 1)}
+      />
       <Pressable
         accessibilityRole="button"
         style={{ padding: 12 }}

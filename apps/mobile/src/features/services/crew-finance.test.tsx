@@ -2,6 +2,9 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewFinance } from "./crew-finance";
+vi.mock("./amendment-finance", () => ({
+  AmendmentFinance: () => <span>amendment finance entry</span>,
+}));
 vi.mock("./crew-spend", () => ({ CrewSpendSummary: () => <span>spending summary screen</span> }));
 vi.mock("./crew-expenses", () => ({ CrewExpenses: () => <span>expense history screen</span> }));
 vi.mock("./crew-compute", () => ({ CrewCompute: () => <span>compute request screen</span> }));
