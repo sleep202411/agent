@@ -14,6 +14,11 @@ const h = vi.hoisted(() => ({
   refresh: vi.fn(),
   items: [] as unknown[],
 }));
+vi.mock("./permissions", () => ({
+  AssetPermissions: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close permissions</button>
+  ),
+}));
 vi.mock("./lifecycle", () => ({
   AssetTrash: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close trash</button>
@@ -241,5 +246,13 @@ it("opens trash confirmation from asset details", async () => {
   await click("assetLifecycle.moveTrash");
   expect(button("close lifecycle")).toBeTruthy();
   await click("close lifecycle");
+  expect(h.refresh).toHaveBeenCalled();
+});
+
+it("opens asset permissions from its editor", async () => {
+  await render();
+  await click("assetOrganization.manage: Art");
+  await click("assetPermissions.title");
+  await click("close permissions");
   expect(h.refresh).toHaveBeenCalled();
 });

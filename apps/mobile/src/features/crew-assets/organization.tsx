@@ -1,3 +1,4 @@
+import { AssetPermissions } from "./permissions";
 import { AssetTrash, AssetLifecycleAction } from "./lifecycle";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
@@ -181,6 +182,7 @@ function Form(
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(props.crewId, true);
+  const [showPermissions, setShowPermissions] = useState(false);
   const [showLifecycle, setShowLifecycle] = useState(false);
   const [name, setName] = useState(props.node?.name ?? ""),
     [parentId, setParentId] = useState(props.node ? props.node.parentId : props.initialParentId);
@@ -240,6 +242,8 @@ function Form(
       (e) => setError(e instanceof Error ? e.message : String(e))
     );
   };
+  if (showPermissions && props.node)
+    return <AssetPermissions {...props} nodeId={props.node.id} onClose={props.onClose} />;
   if (showLifecycle && props.node)
     return <AssetLifecycleAction {...props} node={props.node} onClose={props.onClose} />;
   return (
@@ -300,6 +304,13 @@ function Form(
           )}
           disabled={locked}
           onPress={() => actOn(true)}
+        />
+      )}
+      {props.node && (
+        <Button
+          label={t("assetPermissions.title")}
+          disabled={locked}
+          onPress={() => setShowPermissions(true)}
         />
       )}
       {props.node && canEdit && (
