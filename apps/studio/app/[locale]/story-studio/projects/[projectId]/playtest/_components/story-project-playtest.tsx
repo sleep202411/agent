@@ -18,6 +18,7 @@ import {
   type StoryBuildDiagnostic,
   type StoryWorkingPreview,
 } from "@/lib/story-projects-api";
+import { playtestDiagnosticText } from "../_lib/playtest-diagnostic-text";
 import type { StoryProjectPlaytestSource } from "../_lib/story-playtest-source";
 
 type LoadedPlaytestRuntime =
@@ -233,23 +234,12 @@ function PlaytestFailure({
         {diagnostics.length > 0 ? (
           <ul className="mt-6 max-h-[48vh] space-y-2 overflow-y-auto">
             {diagnostics.map((diagnostic, index) => {
-              const details = diagnostic.details;
-              const description =
-                details?.kind === "state-effect-type" &&
-                details.operation === "add" &&
-                details.variableType === "boolean" &&
-                details.choiceLabel
-                  ? t("booleanEffectError", {
-                      node: details.nodeTitle,
-                      choice: details.choiceLabel,
-                      effect: details.effectIndex,
-                      variable: details.variableName,
-                    })
-                  : diagnostic.message;
+              const description = playtestDiagnosticText(diagnostic, (key, values) =>
+                t(key as never, values as never)
+              );
               const content = (
                 <>
-                  <p className="text-[10px] font-semibold text-white/42">{diagnostic.code}</p>
-                  <p className="mt-1 text-xs leading-5 text-white/78">{description}</p>
+                  <p className="text-xs leading-5 text-white/78">{description}</p>
                   {diagnostic.entityType === "node" && diagnostic.entityId ? (
                     <p className="mt-2 text-xs font-semibold text-brand-blue">
                       {t("locateNode")} →

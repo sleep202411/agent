@@ -46,6 +46,8 @@ export interface FrozenStoryVideoAsset {
 export interface StoryBuildSegmentInput {
   clipId: string;
   clipKey: string;
+  /** Creator-facing shot title. Playback identity stays `clipId`. */
+  title?: string;
   kind: 'image' | 'video';
   durationMs: number;
   clipVersion: number;
@@ -164,7 +166,7 @@ export function compileStoryBuild(
     .sort()
     .map((graphNodeId) => {
       const node = nodes.get(graphNodeId);
-      const nodeLabel = node?.kind === 'clip' ? node.clipKey : graphNodeId;
+      const scene = sceneTitle(node, graphNodeId);
       const timeline = timelines.get(graphNodeId);
       // The storyboard sequence is the node's production plan; a node without
       // one has never been planned and carries no playable content yet. That
@@ -174,9 +176,10 @@ export function compileStoryBuild(
           diagnostic(
             missingSeverity,
             'STORY_BUILD_SEQUENCE_REQUIRED',
-            `Scene ${nodeLabel} has no storyboard sequence to play.`,
-            'clip',
+            `"${scene}" has no storyboard yet, so playtest skips that scene.`,
+            'node',
             graphNodeId,
+            { kind: 'missing-sequence', sceneTitle: scene },
           ),
         );
         return { graphNodeId, segments: [] };
@@ -184,13 +187,15 @@ export function compileStoryBuild(
       const segments = timeline.segments.flatMap((segment) => {
         diagnostics.push(...segment.eligibilityDiagnostics);
         if (segment.asset) return [segment as FrozenStoryBuildSegment];
+        const shot = shotTitle(segment);
         diagnostics.push(
           diagnostic(
             missingSeverity,
             'STORY_BUILD_CLIP_MEDIA_REQUIRED',
-            `Storyboard clip ${segment.clipKey} of scene ${nodeLabel} has no selected media.`,
-            'clip',
+            `"${shot}" in "${scene}" has no selected video, so playtest skips that shot.`,
+            'node',
             graphNodeId,
+            { kind: 'shot', sceneTitle: scene, shotTitle: shot },
           ),
         );
         return [];
@@ -200,20 +205,33 @@ export function compileStoryBuild(
           diagnostic(
             missingSeverity,
             'STORY_BUILD_CLIP_MEDIA_REQUIRED',
-            `Scene ${nodeLabel} has an empty storyboard timeline.`,
-            'clip',
+            `"${scene}" has an empty storyboard, so playtest skips that scene.`,
+            'node',
             graphNodeId,
+            { kind: 'missing-sequence', sceneTitle: scene },
           ),
         );
       }
       return { graphNodeId, segments };
     });
-  const includedSegments = includedTimelines.flatMap(
-    (timeline) => timeline.segments,
-  );
-  includedSegments.forEach((segment) =>
-    validateFrozenSegment(segment, diagnostics),
-  );
+  const footageTimelines =
+    input.channel === 'preview'
+      ? omitUnplayablePreviewShots(includedTimelines, nodes, diagnostics)
+      : includedTimelines;
+  footageTimelines.forEach((timeline) => {
+    const scene = sceneTitle(
+      nodes.get(timeline.graphNodeId),
+      timeline.graphNodeId,
+    );
+    timeline.segments.forEach((segment) =>
+      validateFrozenSegment(
+        segment,
+        scene,
+        diagnostics,
+        input.channel === 'preview' ? 'warning' : 'error',
+      ),
+    );
+  });
 
   const analysis = analyzePaths(
     entryNodeId,
@@ -243,33 +261,38 @@ export function compileStoryBuild(
   }
   let runtime: ExperienceRuntimeManifest | null = null;
   if (!diagnostics.some((item) => item.severity === 'error') && entryNodeId) {
+    const playbackSlots = assignStoryPlaybackSlots(footageTimelines);
     const releaseCandidate = compileIntermediateRelease(
       input,
       entryNodeId,
       runtimeSelection,
       nodes,
-      includedTimelines,
+      footageTimelines,
+      playbackSlots,
     );
     const release = InteractiveFilmReleaseSchema.safeParse(releaseCandidate);
     if (!release.success) {
-      release.error.issues.forEach((issue) =>
-        diagnostics.push(
-          diagnostic(
-            'error',
-            'STORY_BUILD_INTERMEDIATE_RUNTIME_INVALID',
-            `${issue.path.join('.') || 'runtime'}: ${issue.message}`,
-            'revision',
-            String(input.sourceDraftRevision),
-          ),
+      diagnostics.push(
+        ...explainReleaseIssues(
+          release.error.issues,
+          footageTimelines,
+          nodes,
+          input.sourceDraftRevision,
         ),
       );
     } else {
       const mediaIdentities: StoryExperienceMediaIdentity[] =
-        includedSegments.map((segment) => ({
-          runtimeAssetId: storyRuntimeAssetId(segment.clipId),
-          variantId: segment.asset.variantId,
-          mediaType: segment.asset.contentType,
-        }));
+        footageTimelines.flatMap((timeline) =>
+          timeline.segments.map((segment, index) => ({
+            runtimeAssetId: requiredPlaybackSlot(
+              playbackSlots,
+              timeline.graphNodeId,
+              index,
+            ).assetId,
+            variantId: segment.asset.variantId,
+            mediaType: segment.asset.contentType,
+          })),
+        );
       const compiled = compileStoryExperienceManifest({
         release: release.data,
         experienceProfile: 'cinematic',
@@ -317,7 +340,7 @@ export function compileStoryBuild(
     diagnostics: sortAndDedupeDiagnostics(diagnostics),
     pathReport,
     runtime,
-    includedGraphNodeIds: includedTimelines
+    includedGraphNodeIds: footageTimelines
       .filter((timeline) => timeline.segments.length > 0)
       .map((timeline) => timeline.graphNodeId),
   };
@@ -430,9 +453,17 @@ function requiredVideoNodeIds(
  */
 function validateFrozenSegment(
   segment: FrozenStoryBuildSegment,
+  scene: string,
   diagnostics: StoryBuildDiagnosticDto[],
+  contentTypeSeverity: StoryBuildDiagnosticDto['severity'],
 ): void {
   const asset = segment.asset;
+  const shot = shotTitle(segment);
+  const shotDetails = {
+    kind: 'shot' as const,
+    sceneTitle: scene,
+    shotTitle: shot,
+  };
   const expectedPrefix = segment.kind === 'video' ? 'video/' : 'image/';
   if (
     asset.checksumSha256 !== null &&
@@ -442,20 +473,22 @@ function validateFrozenSegment(
       diagnostic(
         'warning',
         'STORY_BUILD_VIDEO_CHECKSUM_INVALID',
-        `Storyboard clip ${segment.clipKey} has no valid immutable SHA-256 checksum.`,
+        `"${shot}" in "${scene}" has no valid immutable SHA-256 checksum.`,
         'asset',
         asset.assetId,
+        shotDetails,
       ),
     );
   }
   if (!asset.contentType.toLowerCase().startsWith(expectedPrefix)) {
     diagnostics.push(
       diagnostic(
-        'error',
+        contentTypeSeverity,
         'STORY_BUILD_VIDEO_CONTENT_TYPE_INVALID',
-        `Storyboard clip ${segment.clipKey} resolves to ${asset.contentType}, not a ${segment.kind} media type.`,
+        `"${shot}" in "${scene}" resolves to ${asset.contentType}, not a ${segment.kind} media type.`,
         'asset',
         asset.assetId,
+        shotDetails,
       ),
     );
   }
@@ -467,9 +500,10 @@ function validateFrozenSegment(
       diagnostic(
         'warning',
         'STORY_BUILD_VIDEO_DURATION_INVALID',
-        `Storyboard clip ${segment.clipKey} has invalid duration metadata.`,
+        `"${shot}" in "${scene}" has invalid duration metadata.`,
         'asset',
         asset.assetId,
+        shotDetails,
       ),
     );
   }
@@ -485,9 +519,10 @@ function validateFrozenSegment(
       diagnostic(
         'warning',
         'STORY_BUILD_VIDEO_METADATA_INCOMPLETE',
-        `Storyboard clip ${segment.clipKey} has incomplete technical metadata; the original video will still be published.`,
+        `"${shot}" in "${scene}" is missing some technical metadata. Playback still uses the original video.`,
         'asset',
         asset.assetId,
+        shotDetails,
       ),
     );
   }
@@ -727,13 +762,19 @@ function compileIntermediateRelease(
     InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
   includedTimelines: FrozenNodeTimeline[],
+  playbackSlots: ReadonlyMap<string, StoryPlaybackSlot>,
 ): InteractiveFilmRelease {
   // Every clip is pinned to the project's film orientation. A still-image
   // segment carries no duration metadata: its screen time is the clip's
   // hold-last-frame endBehavior, not a media property.
   const segmentMedia = includedTimelines
-    .flatMap((timeline) => timeline.segments)
-    .map((segment) => {
+    .flatMap((timeline) =>
+      timeline.segments.map((segment, index) => ({
+        segment,
+        slot: requiredPlaybackSlot(playbackSlots, timeline.graphNodeId, index),
+      })),
+    )
+    .map(({ segment, slot }) => {
       const variant = {
         sourceAssetId: segment.asset.assetId,
         src: segment.asset.url,
@@ -748,7 +789,7 @@ function compileIntermediateRelease(
       };
       const landscape = input.frameProfile === 'landscape_16_9';
       return {
-        assetId: storyRuntimeAssetId(segment.clipId),
+        assetId: slot.assetId,
         kind: 'video' as const,
         orientationPolicy: 'single-master' as const,
         variants: landscape ? { landscape: variant } : { portrait: variant },
@@ -809,20 +850,23 @@ function compileIntermediateRelease(
         kind: 'video',
         // A video segment advances when its footage ends; a still segment
         // "ends" the moment it is shown and holds for its storyboard length.
-        sequence: segments.map((segment) => ({
-          clipId: segment.clipId,
-          assetId: storyRuntimeAssetId(segment.clipId),
-          endBehavior:
-            segment.kind === 'video'
-              ? ({ behavior: 'advance' } as const)
-              : ({
-                  behavior: 'hold-last-frame',
-                  durationMs: Math.min(
-                    120_000,
-                    Math.max(100, segment.durationMs),
-                  ),
-                } as const),
-        })),
+        sequence: segments.map((segment, index) => {
+          const slot = requiredPlaybackSlot(playbackSlots, node.nodeId, index);
+          return {
+            clipId: slot.sequenceClipId,
+            assetId: slot.assetId,
+            endBehavior:
+              segment.kind === 'video'
+                ? ({ behavior: 'advance' } as const)
+                : ({
+                    behavior: 'hold-last-frame',
+                    durationMs: Math.min(
+                      120_000,
+                      Math.max(100, segment.durationMs),
+                    ),
+                  } as const),
+          };
+        }),
         fit: 'contain',
       },
       overlays: [],
@@ -911,9 +955,118 @@ function compileExit(
 
 /** Clip keys are only unique within a storyboard sequence; database clip IDs
  * are unique across every scene included in a build. Keep this identity shared
- * by the media table, renderer references and persisted frozen asset records. */
+ * by the media table, renderer references and persisted frozen asset records.
+ * Never pass an imported shot label or a canvas node id here. */
 export function storyRuntimeAssetId(clipId: string): string {
   return `video:${clipId}`;
+}
+
+export type StoryPlaybackSlot = {
+  assetId: string;
+  sequenceClipId: string;
+};
+
+export function storyPlaybackSlotKey(
+  graphNodeId: string,
+  segmentIndex: number,
+): string {
+  return `${graphNodeId}\u0000${segmentIndex}`;
+}
+
+/** Playback ids come from clip rows. A repeated row id gets a suffix so an
+ * imported shot label, or one clip attached twice, cannot fail the film. */
+export function assignStoryPlaybackSlots(
+  timelines: ReadonlyArray<{
+    graphNodeId: string;
+    segments: ReadonlyArray<{ clipId: string }>;
+  }>,
+): Map<string, StoryPlaybackSlot> {
+  const usedAssetIds = new Set<string>();
+  const slots = new Map<string, StoryPlaybackSlot>();
+  timelines.forEach((timeline) => {
+    const usedSequenceClipIds = new Set<string>();
+    timeline.segments.forEach((segment, index) => {
+      slots.set(storyPlaybackSlotKey(timeline.graphNodeId, index), {
+        assetId: takeUniquePlaybackId(
+          storyRuntimeAssetId(segment.clipId),
+          usedAssetIds,
+        ),
+        sequenceClipId: takeUniquePlaybackId(
+          segment.clipId,
+          usedSequenceClipIds,
+        ),
+      });
+    });
+  });
+  return slots;
+}
+
+function takeUniquePlaybackId(base: string, used: Set<string>): string {
+  const normalized = base.trim().slice(0, 120);
+  if (!used.has(normalized)) {
+    used.add(normalized);
+    return normalized;
+  }
+  let n = 2;
+  while (n < 10_000) {
+    const suffix = `:${n}`;
+    const candidate = `${normalized.slice(0, 120 - suffix.length)}${suffix}`;
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+    n += 1;
+  }
+  throw new Error(`Unable to assign a unique playback id for ${base}.`);
+}
+
+function requiredPlaybackSlot(
+  slots: ReadonlyMap<string, StoryPlaybackSlot>,
+  graphNodeId: string,
+  segmentIndex: number,
+): StoryPlaybackSlot {
+  const slot = slots.get(storyPlaybackSlotKey(graphNodeId, segmentIndex));
+  if (!slot) {
+    throw new Error(
+      `Missing playback id for ${graphNodeId} segment ${segmentIndex}.`,
+    );
+  }
+  return slot;
+}
+
+function omitUnplayablePreviewShots(
+  timelines: FrozenNodeTimeline[],
+  nodes: ReadonlyMap<
+    string,
+    InteractiveStoryDraftContent['graph']['nodes'][number]
+  >,
+  diagnostics: StoryBuildDiagnosticDto[],
+): FrozenNodeTimeline[] {
+  return timelines.map((timeline) => {
+    const scene = sceneTitle(
+      nodes.get(timeline.graphNodeId),
+      timeline.graphNodeId,
+    );
+    return {
+      ...timeline,
+      segments: timeline.segments.filter((segment) => {
+        const url = segment.asset.url.trim();
+        if (url.startsWith('/') || url.startsWith('https://')) return true;
+        const shot = shotTitle(segment);
+        diagnostics.push(
+          diagnostic(
+            'warning',
+            'STORY_BUILD_VIDEO_STORAGE_UNAVAILABLE',
+            `"${shot}" in "${scene}" has no playable file, so playtest skips that shot.`,
+            'node',
+            timeline.graphNodeId,
+            { kind: 'shot', sceneTitle: scene, shotTitle: shot },
+          ),
+        );
+        return false;
+      }),
+    };
+  });
 }
 
 /**
@@ -953,8 +1106,89 @@ function diagnostic(
   message: string,
   entityType: StoryBuildDiagnosticDto['entityType'],
   entityId: string | null,
+  details?: StoryBuildDiagnosticDto['details'],
 ): StoryBuildDiagnosticDto {
-  return { severity, code, message, entityType, entityId };
+  return details
+    ? { severity, code, message, entityType, entityId, details }
+    : { severity, code, message, entityType, entityId };
+}
+
+function sceneTitle(
+  node: InteractiveStoryDraftContent['graph']['nodes'][number] | undefined,
+  fallback: string,
+): string {
+  if (node?.kind === 'clip' && node.name?.trim()) return node.name.trim();
+  if (node?.kind === 'clip') return node.clipKey;
+  return fallback;
+}
+
+function shotTitle(segment: { title?: string; clipKey: string }): string {
+  const title = segment.title?.trim();
+  return title || segment.clipKey;
+}
+
+function explainReleaseIssues(
+  issues: ReadonlyArray<{ message: string; path: PropertyKey[] }>,
+  includedTimelines: readonly FrozenNodeTimeline[],
+  nodes: ReadonlyMap<
+    string,
+    InteractiveStoryDraftContent['graph']['nodes'][number]
+  >,
+  sourceDraftRevision: number,
+): StoryBuildDiagnosticDto[] {
+  const owners = new Map<
+    string,
+    Array<{ sceneTitle: string; shotTitle: string }>
+  >();
+  includedTimelines.forEach((timeline) => {
+    const scene = sceneTitle(
+      nodes.get(timeline.graphNodeId),
+      timeline.graphNodeId,
+    );
+    timeline.segments.forEach((segment) => {
+      const playbackId = storyRuntimeAssetId(segment.clipId);
+      const shots = owners.get(playbackId) ?? [];
+      shots.push({ sceneTitle: scene, shotTitle: shotTitle(segment) });
+      owners.set(playbackId, shots);
+    });
+  });
+  const reported = new Set<string>();
+  const diagnostics: StoryBuildDiagnosticDto[] = [];
+  issues.forEach((issue) => {
+    const duplicate = /^Duplicate stable id (.+)$/.exec(issue.message);
+    if (!duplicate) {
+      diagnostics.push(
+        diagnostic(
+          'error',
+          'STORY_BUILD_INTERMEDIATE_RUNTIME_INVALID',
+          `${issue.path.join('.') || 'runtime'}: ${issue.message}`,
+          'revision',
+          String(sourceDraftRevision),
+        ),
+      );
+      return;
+    }
+    const playbackId = duplicate[1] ?? issue.message;
+    if (reported.has(playbackId)) return;
+    reported.add(playbackId);
+    const shots = owners.get(playbackId) ?? [];
+    const described = shots
+      .map((shot) => `"${shot.shotTitle}" in "${shot.sceneTitle}"`)
+      .join(', ');
+    diagnostics.push(
+      diagnostic(
+        'error',
+        'STORY_BUILD_INTERMEDIATE_RUNTIME_INVALID',
+        shots.length > 0
+          ? `${described} share playback id ${playbackId}.`
+          : `Playback id ${playbackId} was used more than once.`,
+        'revision',
+        String(sourceDraftRevision),
+        { kind: 'duplicate-playback', playbackId, shots },
+      ),
+    );
+  });
+  return diagnostics;
 }
 
 function storyNodeTitle(

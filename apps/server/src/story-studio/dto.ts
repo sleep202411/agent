@@ -795,16 +795,35 @@ export interface StoryBuildDiagnosticDto {
     | null;
   entityId: string | null;
   chapterId?: string;
-  details?: {
-    kind: 'state-effect-type';
-    nodeTitle: string;
-    choiceLabel: string | null;
-    effectIndex: number;
-    variableName: string;
-    operation: 'add' | 'set';
-    variableType: 'number' | 'boolean';
-  };
+  details?: StoryBuildDiagnosticDetails;
 }
+
+/** Structured fields the playtest screen turns into a sentence. The English
+ * `message` stays as the fallback for clients that do not know `kind`. */
+export type StoryBuildDiagnosticDetails =
+  | {
+      kind: 'state-effect-type';
+      nodeTitle: string;
+      choiceLabel: string | null;
+      effectIndex: number;
+      variableName: string;
+      operation: 'add' | 'set';
+      variableType: 'number' | 'boolean';
+    }
+  | {
+      kind: 'shot';
+      sceneTitle: string;
+      shotTitle: string;
+    }
+  | {
+      kind: 'missing-sequence';
+      sceneTitle: string;
+    }
+  | {
+      kind: 'duplicate-playback';
+      playbackId: string;
+      shots: Array<{ sceneTitle: string; shotTitle: string }>;
+    };
 
 export interface StoryBuildPathReportDto {
   enumeratedPathCount: number;

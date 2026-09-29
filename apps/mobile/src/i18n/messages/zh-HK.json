@@ -349,7 +349,7 @@
   "play.playtest.loading": "正在準備試玩…",
   "play.playtest.errorFallback": "無法載入試玩。",
   "play.playtest.unavailableTitle": "目前故事還不能試玩",
-  "play.playtest.unavailableDescription": "{errors} 個阻塞錯誤 · {warnings} 個警告。只需補齊下方列出的製作輸入，仍可繼續編輯。",
+  "play.playtest.unavailableDescription": "{errors} 個問題擋住了試玩 · {warnings} 條提醒。下面每條都會寫明是哪一場、哪一鏡。",
   "play.playtest.refresh": "重新整理試玩",
   "play.playtest.draftRevision": "草稿 r{revision}",
   "play.playtest.missingProjectId": "缺少專案 ID。",
