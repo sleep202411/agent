@@ -1187,5 +1187,8 @@
   "discovery.unlike": "取消喜歡",
   "discovery.more": "載入更多",
   "discovery.end": "已瀏覽至最後。",
-  "discovery.empty": "沒有符合篩選條件的作品。"
+  "discovery.empty": "沒有符合篩選條件的作品。",
+  "thread.openFile": "開啟檔案",
+  "thread.backToChat": "返回聊天",
+  "thread.openWebChat": "上傳和提及"
 }

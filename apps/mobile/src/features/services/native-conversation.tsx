@@ -24,6 +24,10 @@ import { useUserDisplays } from "./user-displays";
 import { inquiryKey } from "./inquiry-api";
 import { inboxPreview } from "./inbox-preview";
 import { ConversationProposal, ConversationProposalEditor } from "./conversation-proposal-ui";
+import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
+import type { CrewAsset } from "@/features/crew-assets/api";
+import { canAttachCrewFiles, sendConversationAttachments } from "./conversation-attachments";
+import { ConversationFile } from "./conversation-file";
 import { AuthedWebView } from "@/components/authed-web-view";
 
 export function NativeConversation({
@@ -48,7 +52,13 @@ export function NativeConversation({
   const op = useAuthFormOperation(id, active);
   const [body, setBody] = useState(""),
     [sendError, setSendError] = useState<string>();
-  const intent = useRef<{ body: string; clientKey: string } | undefined>(undefined);
+  const [assets, setAssets] = useState<CrewAsset[]>([]),
+    [picking, setPicking] = useState(false),
+    [web, setWeb] = useState(false);
+  const intent = useRef<
+    | { body: string; clientKey: string; attachments: { source: "asset"; assetNodeId: string }[] }
+    | undefined
+  >(undefined);
   const [visibleId, setVisibleId] = useState<string>(),
     [readError, setReadError] = useState<string>(),
     [readRetry, setReadRetry] = useState(0);
@@ -57,7 +67,14 @@ export function NativeConversation({
   const detailId = history.detail?.id;
   const contextType = history.detail?.contextType;
   useEffect(() => {
-    if (!active || !visibleId || !detailId || contextType === "crew") return;
+    if (
+      !active ||
+      !visibleId ||
+      !detailId ||
+      web ||
+      (contextType === "crew" && history.detail?.crewChannel !== "team")
+    )
+      return;
     const controller = new AbortController();
     void markConversationRead(id, visibleId, controller.signal).then(
       () => {
@@ -69,7 +86,7 @@ export function NativeConversation({
       }
     );
     return () => controller.abort();
-  }, [id, visibleId, active, detailId, contextType, readRetry]);
+  }, [id, visibleId, active, detailId, contextType, history.detail?.crewChannel, web, readRetry]);
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -80,12 +97,15 @@ export function NativeConversation({
       <ThemedText>{label}</ThemedText>
     </Pressable>
   );
-  if (history.detail?.contextType === "crew")
+  if (web || (history.detail?.contextType === "crew" && history.detail.crewChannel !== "team"))
     return (
-      <AuthedWebView
-        path={`/messages/${encodeURIComponent(id)}`}
-        title={t("serviceContact.open")}
-      />
+      <View style={{ flex: 1 }}>
+        {web && button(t("thread.backToChat"), () => setWeb(false))}
+        <AuthedWebView
+          path={`/messages/${encodeURIComponent(id)}`}
+          title={t("serviceContact.open")}
+        />
+      </View>
     );
   if (!history.detail)
     return (
@@ -96,6 +116,25 @@ export function NativeConversation({
       </View>
     );
   const conversation = history.detail;
+  const canAttach = canAttachCrewFiles(conversation, userId);
+  if (picking && canAttach)
+    return (
+      <CrewAssetPicker
+        crewId={conversation.contextId}
+        excludedIds={assets.map((a) => a.id)}
+        remaining={10 - assets.length}
+        onClose={() => setPicking(false)}
+        onSelect={(selected) => {
+          setAssets((previous) =>
+            Array.from(new Map([...previous, ...selected].map((a) => [a.id, a])).values()).slice(
+              0,
+              10
+            )
+          );
+          setPicking(false);
+        }}
+      />
+    );
   const openOrder = (orderId: string) =>
     router.push(toHref(`/order/${encodeURIComponent(orderId)}`));
   return (
@@ -104,13 +143,15 @@ export function NativeConversation({
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={{ flexDirection: "row", paddingHorizontal: 12 }}>
-        {button(
-          t(conversation.contextType === "order" ? "thread.openOrder" : "thread.openService"),
-          () =>
-            conversation.contextType === "order"
-              ? openOrder(conversation.contextId)
-              : router.push(toHref(`/service/${encodeURIComponent(conversation.contextId)}`))
-        )}
+        {conversation.contextType === "crew"
+          ? button(t("thread.openWebChat"), () => setWeb(true))
+          : button(
+              t(conversation.contextType === "order" ? "thread.openOrder" : "thread.openService"),
+              () =>
+                conversation.contextType === "order"
+                  ? openOrder(conversation.contextId)
+                  : router.push(toHref(`/service/${encodeURIComponent(conversation.contextId)}`))
+            )}
         {button(t("thread.refresh"), history.refresh, history.loading)}
       </View>
       {unavailable && <ThemedText>{t("inbox.liveUnavailable")}</ThemedText>}
@@ -177,6 +218,14 @@ export function NativeConversation({
                   : item.body}
               </ThemedText>
             )}
+            {item.payload?.kind === "attachments" &&
+              item.payload.attachments.map((file) => (
+                <ConversationFile
+                  key={file.assetNodeId}
+                  mediaAssetId={file.mediaAssetId}
+                  name={file.name}
+                />
+              ))}
             <ThemedText type="small">
               {Number.isNaN(Date.parse(item.createdAt))
                 ? ""
@@ -199,6 +248,30 @@ export function NativeConversation({
             refresh={history.refresh}
           />
         </ScrollView>
+        {canAttach && (
+          <View>
+            {button(
+              t("crewAssets.choose"),
+              () => setPicking(true),
+              op.busy || attempted || assets.length >= 10
+            )}
+            <ScrollView horizontal>
+              {assets.map((asset) => (
+                <Pressable
+                  key={asset.id}
+                  accessibilityRole="button"
+                  disabled={op.busy || attempted}
+                  onPress={() => setAssets((previous) => previous.filter((a) => a.id !== asset.id))}
+                  style={{ padding: 10 }}
+                >
+                  <ThemedText>
+                    {asset.name} · {t("crewAssets.remove")}
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
         <TextInput
           accessibilityLabel={t("thread.message")}
           placeholder={t("thread.message")}
@@ -220,18 +293,30 @@ export function NativeConversation({
         {sendError && <ThemedText accessibilityRole="alert">{sendError}</ThemedText>}
         <Pressable
           accessibilityRole="button"
-          disabled={op.busy || !body.trim()}
+          disabled={op.busy || (!body.trim() && !assets.length)}
           onPress={() => {
-            if (!body.trim()) return;
-            if (!intent.current) intent.current = { body: body.trim(), clientKey: inquiryKey() };
+            if (!body.trim() && !assets.length) return;
+            if (!intent.current)
+              intent.current = {
+                body: body.trim(),
+                clientKey: inquiryKey(),
+                attachments: assets.map((a) => ({ source: "asset", assetNodeId: a.id })),
+              };
             const submitted = intent.current;
             setAttempted(true);
             void op.run(
-              () => sendConversationText(id, submitted),
+              () =>
+                submitted.attachments.length
+                  ? sendConversationAttachments(conversation, userId, submitted)
+                  : sendConversationText(id, {
+                      body: submitted.body,
+                      clientKey: submitted.clientKey,
+                    }),
               () => {
                 intent.current = undefined;
                 setAttempted(false);
                 setBody("");
+                setAssets([]);
                 setSendError(undefined);
                 history.refresh();
               },

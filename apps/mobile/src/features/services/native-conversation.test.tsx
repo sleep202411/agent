@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
   send: vi.fn(),
+  attach: vi.fn(),
   read: vi.fn(),
   refresh: vi.fn(),
   retry: vi.fn(),
@@ -15,6 +16,18 @@ const h = vi.hoisted(() => ({
   detail: undefined as Detail | undefined,
   messages: [] as NativeMessage[],
   view: undefined as undefined | ((args: unknown) => void),
+}));
+vi.mock("@/features/crew-assets/asset-picker", () => ({
+  CrewAssetPicker: ({ onSelect }: { onSelect: (assets: unknown[]) => void }) => (
+    <button onClick={() => onSelect([{ id: "asset", name: "Scene.mp4" }])}>pick-file</button>
+  ),
+}));
+vi.mock("./conversation-attachments", () => ({
+  canAttachCrewFiles: (c: Detail) => c.contextType === "crew" && c.crewChannel === "team",
+  sendConversationAttachments: h.attach,
+}));
+vi.mock("./conversation-file", () => ({
+  ConversationFile: ({ name }: { name: string }) => <div>file:{name}</div>,
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
@@ -217,4 +230,55 @@ it("preserves Crew continuation and native service/order links", async () => {
   await render();
   expect(host.textContent).toContain("web:/messages/chat");
   expect(host.querySelector("input")).toBeNull();
+});
+
+it("sends selected team files with an immutable retry key and keeps Web tools available", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  h.attach.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(message);
+  await render();
+  await act(async () => click("crewAssets.choose"));
+  await act(async () => click("pick-file"));
+  expect(host.textContent).toContain("Scene.mp4");
+  await act(async () => click("thread.send"));
+  expect(h.send).not.toHaveBeenCalled();
+  expect(h.attach.mock.calls[0][2]).toEqual({
+    body: "",
+    clientKey: "stable-key",
+    attachments: [{ source: "asset", assetNodeId: "asset" }],
+  });
+  await act(async () => click("inbox.retry"));
+  expect(h.attach.mock.calls[1][2]).toEqual(h.attach.mock.calls[0][2]);
+  expect(host.textContent).not.toContain("Scene.mp4");
+  await act(async () => click("thread.openWebChat"));
+  expect(host.textContent).toContain("web:/messages/chat");
+  await act(async () => click("thread.backToChat"));
+  expect(host.querySelector("input")).not.toBeNull();
+});
+it("renders received file links and keeps community conversations on Web", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team" };
+  h.messages = [
+    {
+      ...message,
+      type: "file",
+      payload: {
+        kind: "attachments",
+        attachments: [
+          {
+            assetNodeId: "asset",
+            mediaAssetId: "media",
+            name: "Clip",
+            mediaKind: "video",
+            contentType: "video/mp4",
+            sizeBytes: 10,
+          },
+        ],
+      },
+    },
+  ];
+  await render();
+  expect(host.textContent).toContain("file:Clip");
+  h.detail = { ...h.detail, crewChannel: "community" };
+  await render();
+  expect(host.textContent).toContain("web:/messages/chat");
+  expect(host.textContent).not.toContain("crewAssets.choose");
 });

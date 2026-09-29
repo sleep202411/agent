@@ -1187,5 +1187,8 @@
   "discovery.unlike": "Unlike",
   "discovery.more": "Load more",
   "discovery.end": "You have reached the end.",
-  "discovery.empty": "No works match these filters."
+  "discovery.empty": "No works match these filters.",
+  "thread.openFile": "Open file",
+  "thread.backToChat": "Back to chat",
+  "thread.openWebChat": "Uploads and mentions"
 }
