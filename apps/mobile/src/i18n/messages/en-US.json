@@ -973,5 +973,9 @@
   "profileEdit.startDate": "Start date",
   "profileEdit.endDate": "End date (blank if ongoing)",
   "profileEdit.removeEducation": "Remove education",
-  "profileEdit.addEducation": "Add education"
+  "profileEdit.addEducation": "Add education",
+  "profileEdit.bannerChange": "Change Profile Cover",
+  "profileEdit.bannerHint": "Image up to 10 MB. Your public profile cover is saved immediately.",
+  "profileEdit.bannerInvalid": "Choose an image no larger than 10 MB.",
+  "profileEdit.bannerUpdated": "Profile cover updated"
 }

@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
 }));
 vi.mock("./avatar-upload", () => ({
   AvatarValidationError: class extends Error {},
-  pickAndUploadAvatar: h.upload,
+  pickAndUploadProfileImage: h.upload,
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
@@ -317,4 +317,21 @@ it("loads structured education with optional end dates", async () => {
   await render();
   expect(input("profileEdit.school 1").value).toBe("School");
   expect(input("profileEdit.endDate 1").value).toBe("");
+});
+
+it("uploads a public cover without saving the text draft or leaving the editor", async () => {
+  h.upload.mockResolvedValue(true);
+  await render();
+  await act(async () => change("profileEdit.nickname", "Unsaved"));
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "profileEdit.bannerChange")!
+      .click()
+  );
+  expect(h.upload.mock.calls[0][2]).toBe("banner");
+  expect(h.refresh).toHaveBeenCalledTimes(2);
+  expect(input("profileEdit.nickname").value).toBe("Unsaved");
+  expect(host.textContent).toContain("profileEdit.bannerUpdated");
+  expect(h.post).not.toHaveBeenCalled();
+  expect(h.back).not.toHaveBeenCalled();
 });

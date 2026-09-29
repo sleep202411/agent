@@ -19,7 +19,11 @@ import { profileDraft, updateProfile, type ProfileDraft } from "@/features/profi
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations, type MessageKey } from "@/i18n";
 
-import { AvatarValidationError, pickAndUploadAvatar } from "@/features/profile/avatar-upload";
+import {
+  AvatarValidationError,
+  pickAndUploadProfileImage,
+  type ProfileImageKind,
+} from "@/features/profile/avatar-upload";
 
 import { EducationEditor } from "@/features/profile/education-editor";
 
@@ -68,7 +72,7 @@ function ProfileForm() {
   const [editedStudy, setEditedStudy] = useState<string>();
   const refresh = auth.refreshCurrentUser;
   const uploadScope = useRef<AbortController | null>(null);
-  const [avatarUpdated, setAvatarUpdated] = useState(false);
+  const [updatedImage, setUpdatedImage] = useState<ProfileImageKind>();
   useLayoutEffect(() => {
     const scope = new AbortController();
     uploadScope.current = focused ? scope : null;
@@ -77,7 +81,7 @@ function ProfileForm() {
       uploadScope.current = null;
     };
   }, [focused]);
-  const changeAvatar = async () => {
+  const changeProfileImage = async (kind: ProfileImageKind = "avatar") => {
     const scope = uploadScope.current;
     if (!scope) return;
     const generation = getAuthGeneration();
@@ -85,16 +89,16 @@ function ProfileForm() {
     await operation.run(
       async () => {
         setError(undefined);
-        setAvatarUpdated(false);
-        const uploaded = await pickAndUploadAvatar(current, scope.signal);
+        setUpdatedImage(undefined);
+        const uploaded = await pickAndUploadProfileImage(current, scope.signal, kind);
         if (uploaded && current()) await refresh();
         return uploaded;
       },
-      (uploaded) => setAvatarUpdated(uploaded),
+      (uploaded) => setUpdatedImage(uploaded ? kind : undefined),
       (cause) => {
         setError(
           cause instanceof AvatarValidationError
-            ? t("profileEdit.avatarInvalid")
+            ? t(kind === "banner" ? "profileEdit.bannerInvalid" : "profileEdit.avatarInvalid")
             : cause instanceof Error
               ? cause.message
               : t("profileEdit.failed")
@@ -149,12 +153,28 @@ function ProfileForm() {
             <Pressable
               accessibilityRole="button"
               disabled={operation.busy}
-              onPress={() => void changeAvatar()}
+              onPress={() => void changeProfileImage()}
             >
               <ThemedText type="smallBold">{t("profileEdit.avatarChange")}</ThemedText>
             </Pressable>
             <ThemedText>{t("profileEdit.avatarHint")}</ThemedText>
-            {avatarUpdated && <ThemedText>{t("profileEdit.avatarUpdated")}</ThemedText>}
+            <Pressable
+              accessibilityRole="button"
+              disabled={operation.busy}
+              onPress={() => void changeProfileImage("banner")}
+            >
+              <ThemedText type="smallBold">{t("profileEdit.bannerChange")}</ThemedText>
+            </Pressable>
+            <ThemedText>{t("profileEdit.bannerHint")}</ThemedText>
+            {updatedImage && (
+              <ThemedText>
+                {t(
+                  updatedImage === "banner"
+                    ? "profileEdit.bannerUpdated"
+                    : "profileEdit.avatarUpdated"
+                )}
+              </ThemedText>
+            )}
           </View>
         )}
         {draft &&
