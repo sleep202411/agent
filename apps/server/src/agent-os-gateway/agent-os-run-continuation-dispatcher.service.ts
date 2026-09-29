@@ -25,6 +25,7 @@ export class AgentOsRunContinuationDispatcherService
   );
   private timer: ReturnType<typeof setInterval> | null = null;
   private sweepActive = false;
+  private stopping = false;
 
   constructor(
     private readonly journal: AgentOsRunJournalService,
@@ -32,21 +33,26 @@ export class AgentOsRunContinuationDispatcherService
   ) {}
 
   onModuleInit(): void {
+    if (this.stopping || this.timer) return;
     this.timer = setInterval(() => void this.drainOnce(), SWEEP_INTERVAL_MS);
     this.timer.unref();
     void this.drainOnce();
   }
 
   onApplicationShutdown(): void {
+    this.stopping = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
   }
 
   async dispatch(runId: string): Promise<AgentOsWorkerRunResponse | null> {
+    if (this.stopping) return null;
     const claim = await this.journal.claimRunContinuationDispatch(
       runId,
       CONTINUATION_LEASE_MS,
     );
+    // A claim obtained during shutdown remains recoverable after lease expiry.
+    if (this.stopping) return null;
     if (claim.kind === 'missing') return null;
     if (claim.kind === 'in_flight' || claim.kind === 'already_finished') {
       return this.durableResponse(runId);
@@ -81,13 +87,13 @@ export class AgentOsRunContinuationDispatcherService
   }
 
   private async drainOnce(): Promise<void> {
-    if (this.sweepActive) return;
+    if (this.stopping || this.sweepActive) return;
     this.sweepActive = true;
     try {
       const runIds = await this.journal.listPendingRunContinuations();
       for (
         let offset = 0;
-        offset < runIds.length;
+        !this.stopping && offset < runIds.length;
         offset += DISPATCH_CONCURRENCY
       ) {
         await Promise.all(
