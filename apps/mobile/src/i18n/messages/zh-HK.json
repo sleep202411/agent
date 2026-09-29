@@ -1200,5 +1200,7 @@
   "thread.taskTooLong": "加入任務引用後將超出訊息長度限制。",
   "thread.member": "一位成員",
   "thread.memberJoined": "{user}加入了劇組。",
-  "thread.memberLeft": "{user}離開了劇組。"
+  "thread.memberLeft": "{user}離開了劇組。",
+  "thread.closePreview": "關閉預覽",
+  "thread.previewFailed": "預覽載入失敗，請再次開啟檔案重試。"
 }

@@ -3,6 +3,25 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ConversationFile } from "./conversation-file";
 const h = vi.hoisted(() => ({ access: vi.fn(), open: vi.fn(), active: true, generation: 1 }));
+vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
+vi.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
+}));
+vi.mock("expo-image", () => ({
+  Image: ({
+    source,
+    cachePolicy,
+    onError,
+  }: {
+    source: { uri: string };
+    cachePolicy: string;
+    onError: () => void;
+  }) => (
+    <button data-image={source.uri} data-cache={cachePolicy} onClick={onError}>
+      image
+    </button>
+  ),
+}));
 vi.mock("@/features/crew-assets/api", () => ({ fetchCrewAssetAccess: h.access }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -12,6 +31,7 @@ vi.mock("@/components/themed-text", () => ({
 }));
 vi.mock("react-native", () => ({
   Linking: { openURL: h.open },
+  Modal: ({ children }: { children: ReactNode }) => <div role="dialog">{children}</div>,
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Pressable: ({
     children,
@@ -43,6 +63,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.useRealTimers();
 });
 it("resolves access on each open, guards rapid taps and never renders the signed URL", async () => {
   let finish!: (v: unknown) => void;
@@ -108,4 +129,62 @@ it("does not open for a changed account and keeps access failures retryable", as
   h.generation++;
   await act(async () => finish({ url: "https://files.test/stale" }));
   expect(h.open).not.toHaveBeenCalled();
+});
+
+const renderImage = () =>
+  act(async () =>
+    root.render(
+      <ConversationFile
+        mediaAssetId="media"
+        name="Photo"
+        mediaKind="image"
+        contentType="image/jpeg"
+      />
+    )
+  );
+it("previews images in-app without caching and refreshes authorization on reopening", async () => {
+  h.access.mockResolvedValue({ url: "https://files.test/image", expiresAt: null });
+  await renderImage();
+  await act(async () => click());
+  expect(h.open).not.toHaveBeenCalled();
+  expect(host.querySelector('[data-cache="none"]')).not.toBeNull();
+  await act(async () =>
+    Array.from(host.querySelectorAll("button"))
+      .find((b) => b.textContent === "thread.closePreview")!
+      .click()
+  );
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => click());
+  expect(h.access).toHaveBeenCalledTimes(2);
+});
+it("removes failed, expired and backgrounded previews", async () => {
+  vi.useFakeTimers();
+  h.access.mockResolvedValue({
+    url: "https://files.test/image",
+    expiresAt: new Date(Date.now() + 1000).toISOString(),
+  });
+  await renderImage();
+  await act(async () => click());
+  await act(async () => host.querySelector<HTMLButtonElement>("[data-image]")!.click());
+  expect(host.textContent).toContain("thread.previewFailed");
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () => click());
+  await act(async () => vi.advanceTimersByTime(1000));
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  h.access.mockResolvedValue({ url: "https://files.test/image", expiresAt: null });
+  await act(async () => click());
+  h.active = false;
+  await renderImage();
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+});
+it("clears image previews on account changes and leaves non-image files in the existing system viewer", async () => {
+  h.access.mockResolvedValue({ url: "https://files.test/image", expiresAt: null });
+  await renderImage();
+  await act(async () => click());
+  h.generation++;
+  await renderImage();
+  expect(host.querySelector('[role="dialog"]')).toBeNull();
+  await render();
+  await act(async () => click());
+  expect(h.open).toHaveBeenCalledTimes(1);
 });

@@ -1200,5 +1200,7 @@
   "thread.taskTooLong": "The task reference would exceed the message limit.",
   "thread.member": "A member",
   "thread.memberJoined": "{user} joined the crew.",
-  "thread.memberLeft": "{user} left the crew."
+  "thread.memberLeft": "{user} left the crew.",
+  "thread.closePreview": "Close preview",
+  "thread.previewFailed": "Preview could not load. Open the file again to retry."
 }

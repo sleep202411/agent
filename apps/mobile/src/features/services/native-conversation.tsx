@@ -290,6 +290,8 @@ export function NativeConversation({
                 <ConversationFile
                   key={file.assetNodeId}
                   mediaAssetId={file.mediaAssetId}
+                  mediaKind={file.mediaKind}
+                  contentType={file.contentType}
                   name={file.name}
                 />
               ))}

@@ -1200,5 +1200,7 @@
   "thread.taskTooLong": "加入任务引用后将超出消息长度限制。",
   "thread.member": "一位成员",
   "thread.memberJoined": "{user}加入了剧组。",
-  "thread.memberLeft": "{user}离开了剧组。"
+  "thread.memberLeft": "{user}离开了剧组。",
+  "thread.closePreview": "关闭预览",
+  "thread.previewFailed": "预览加载失败，请再次打开文件重试。"
 }
