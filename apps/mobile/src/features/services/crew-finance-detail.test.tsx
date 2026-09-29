@@ -158,3 +158,87 @@ it("shows allocations and opens payment proof only on an explicit tap", async ()
   await act(async () => button("crewFinance.proof").click());
   expect(h.open).toHaveBeenCalledWith("https://example.com/proof");
 });
+
+vi.mock("./task-detail", () => ({
+  TaskDetail: ({
+    crewId,
+    taskId,
+    userId,
+    onClose,
+    onOpenWeb,
+    closeLabel,
+  }: {
+    crewId: string;
+    taskId: string;
+    userId: string;
+    onClose: () => void;
+    onOpenWeb: (id: string) => void;
+    closeLabel: string;
+  }) => (
+    <div>
+      native task {crewId}:{taskId}:{userId}
+      <button onClick={onClose}>{closeLabel}</button>
+      <button onClick={() => onOpenWeb(taskId)}>open task web</button>
+    </div>
+  ),
+}));
+vi.mock("@/components/authed-web-view", () => ({
+  AuthedWebView: ({ path }: { path: string }) => <div>web {path}</div>,
+}));
+const task = { id: "11111111-1111-4111-8111-111111111111", number: 7, title: "Storyboard" };
+const taskButton = "crewFinance.task 7 · Storyboard · crewFinance.openTask";
+it("opens the native earning task and reloads financial details on return", async () => {
+  h.detail.mockResolvedValue({ ...earning, task });
+  await render();
+  await act(async () => button(taskButton).click());
+  expect(host.textContent).toContain(`native task crew:${task.id}:user`);
+  h.detail.mockResolvedValue({ ...earning, task, amountMinor: "200" });
+  await act(async () => button("crewFinance.backToRecord").click());
+  expect(h.detail).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("USD 2.00");
+  expect(host.textContent).not.toContain("native task");
+});
+it("rechecks finance permission on returning from a linked task", async () => {
+  h.detail.mockResolvedValue({ ...earning, task });
+  await render();
+  await act(async () => button(taskButton).click());
+  h.detail.mockRejectedValue(new Error("Forbidden"));
+  await act(async () => button("crewFinance.backToRecord").click());
+  expect(host.textContent).toContain("Forbidden");
+  expect(host.textContent).not.toContain("Needs evidence");
+  expect(button(taskButton)).toBeUndefined();
+});
+it("opens a payout allocation task without opening external URLs", async () => {
+  h.detail.mockResolvedValue({
+    ...row,
+    netAmountMinor: "80",
+    withholdingAmountMinor: "20",
+    note: null,
+    paymentMethod: null,
+    paymentReference: null,
+    paymentProofUrl: null,
+    voidReason: null,
+    allocations: [{ id: "allocation", amountMinor: "100", earning: { title: "Reward", task } }],
+    events: [],
+  });
+  await render();
+  await act(async () => button(taskButton).click());
+  expect(host.textContent).toContain(`native task crew:${task.id}:user`);
+  expect(h.open).not.toHaveBeenCalled();
+});
+it("keeps the existing explicit Web option and returns to the same native task", async () => {
+  h.detail.mockResolvedValue({ ...earning, task });
+  await render();
+  await act(async () => button(taskButton).click());
+  await act(async () => button("open task web").click());
+  expect(host.textContent).toContain(`/crews/crew/workspace?tab=tasks&task=${task.id}`);
+  await act(async () => button("taskRelations.backToTask").click());
+  expect(host.textContent).toContain(`native task crew:${task.id}:user`);
+});
+it("does not navigate linked tasks from an expired account", async () => {
+  h.detail.mockResolvedValue({ ...earning, task });
+  await render();
+  h.generation = 2;
+  await act(async () => button(taskButton).click());
+  expect(host.textContent).not.toContain("native task");
+});

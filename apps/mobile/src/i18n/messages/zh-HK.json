@@ -1573,5 +1573,7 @@
   "payoutCreate.confirm": "確認付款",
   "payoutCreate.edit": "編輯",
   "payoutCreate.retry": "重試同一筆付款",
-  "payoutCreate.retryHelp": "若儲存中斷，請在此重試以恢復同一筆付款。新增另一筆前請先檢查帳本，避免重複預留資金。"
+  "payoutCreate.retryHelp": "若儲存中斷，請在此重試以恢復同一筆付款。新增另一筆前請先檢查帳本，避免重複預留資金。",
+  "crewFinance.backToRecord": "返回財務記錄",
+  "crewFinance.openTask": "開啟任務"
 }

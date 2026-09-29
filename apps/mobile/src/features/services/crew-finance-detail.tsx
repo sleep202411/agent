@@ -1,3 +1,5 @@
+import { TaskDetail } from "./task-detail";
+import { AuthedWebView } from "@/components/authed-web-view";
 import { PayoutDecision } from "./payout-decision";
 import { EarningDecision } from "./earning-decision";
 import { useEffect, useState } from "react";
@@ -41,6 +43,8 @@ function Session(props: Props) {
   const t = useTranslations(),
     [revision, setRevision] = useState(0),
     [proofError, setProofError] = useState<string>();
+  const [taskId, setTaskId] = useState<string>(),
+    [webTask, setWebTask] = useState<string>();
   const [snapshot, setSnapshot] = useState<{
     revision: number;
     record?: Awaited<ReturnType<typeof fetchFinanceDetail>>;
@@ -63,6 +67,57 @@ function Session(props: Props) {
   const visible = snapshot?.revision === revision ? snapshot : undefined,
     record = visible?.record;
   const money = (value: string) => formatFinanceMoney(value, props.selected.currency);
+  if (webTask)
+    return (
+      <View style={{ flex: 1 }}>
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 12 }}
+          onPress={() => {
+            if (props.generation === getAuthGeneration()) setWebTask(undefined);
+          }}
+        >
+          <ThemedText>{t("taskRelations.backToTask")}</ThemedText>
+        </Pressable>
+        <AuthedWebView
+          path={`/crews/${encodeURIComponent(props.crewId)}/workspace?tab=tasks&task=${encodeURIComponent(webTask)}`}
+          title={t("crewTasks.title")}
+        />
+      </View>
+    );
+  if (taskId)
+    return (
+      <TaskDetail
+        crewId={props.crewId}
+        taskId={taskId}
+        userId={props.userId}
+        generation={props.generation}
+        closeLabel={t("crewFinance.backToRecord")}
+        onClose={() => {
+          if (props.generation !== getAuthGeneration()) return;
+          setTaskId(undefined);
+          setRevision((n) => n + 1);
+        }}
+        onOpenWeb={(id) => {
+          if (props.generation !== getAuthGeneration()) return;
+          setTaskId(id);
+          setWebTask(id);
+        }}
+      />
+    );
+  const taskLink = (task: { id: string; number: number; title: string }) => (
+    <Pressable
+      accessibilityRole="button"
+      style={{ paddingVertical: 12 }}
+      onPress={() => {
+        if (props.generation === getAuthGeneration()) setTaskId(task.id);
+      }}
+    >
+      <ThemedText>
+        {t("crewFinance.task")} {task.number} · {task.title} · {t("crewFinance.openTask")}
+      </ThemedText>
+    </Pressable>
+  );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{t("crewFinance.details")}</ThemedText>
@@ -82,11 +137,7 @@ function Session(props: Props) {
             <>
               <ThemedText>{t(`crewFinance.source_${record.sourceType}`)}</ThemedText>
               {!!record.description && <ThemedText>{record.description}</ThemedText>}
-              {record.task && (
-                <ThemedText>
-                  {t("crewFinance.task")} {record.task.number} · {record.task.title}
-                </ThemedText>
-              )}
+              {record.task && taskLink(record.task)}
               {record.agreement && (
                 <ThemedText>
                   {t("crewFinance.agreement")} · {record.agreement.id} · {record.agreement.status}
@@ -148,11 +199,7 @@ function Session(props: Props) {
                   <ThemedText>
                     {row.earning.title} · {money(row.amountMinor)}
                   </ThemedText>
-                  {row.earning.task && (
-                    <ThemedText>
-                      {t("crewFinance.task")} {row.earning.task.number} · {row.earning.task.title}
-                    </ThemedText>
-                  )}
+                  {row.earning.task && taskLink(row.earning.task)}
                 </View>
               ))}
             </>

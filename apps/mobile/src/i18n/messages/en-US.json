@@ -1573,5 +1573,7 @@
   "payoutCreate.confirm": "Confirm Payout",
   "payoutCreate.edit": "Edit",
   "payoutCreate.retry": "Retry Same Payout",
-  "payoutCreate.retryHelp": "If saving was interrupted, retry here to recover the same payout. Check the ledger before creating another payout to avoid reserving funds twice."
+  "payoutCreate.retryHelp": "If saving was interrupted, retry here to recover the same payout. Check the ledger before creating another payout to avoid reserving funds twice.",
+  "crewFinance.backToRecord": "Back to Finance Record",
+  "crewFinance.openTask": "Open Task"
 }
