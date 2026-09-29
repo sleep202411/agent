@@ -14,6 +14,7 @@ import {
   type Application,
   type Terms,
 } from "./application-terms-api";
+import { ApplicationInterview } from "./application-interview";
 type Props = { userId: string; generation: number; onWeb: () => void };
 export function CrewApplications(props: Props) {
   const active = useScreenActive();
@@ -118,12 +119,23 @@ function ApplicationPage(
   );
 }
 function TermsReview(props: Props & { application: Application; onClose: () => void }) {
+  const [interview, setInterview] = useState(false);
   const [before, setBefore] = useState<number | null>(null),
     [revision, setRevision] = useState(0);
+  if (interview)
+    return (
+      <ApplicationInterview
+        applicationId={props.application.id}
+        userId={props.userId}
+        generation={props.generation}
+        onClose={() => setInterview(false)}
+      />
+    );
   return (
     <TermsPage
       key={`${revision}:${before}`}
       {...props}
+      onInterview={() => setInterview(true)}
       before={before}
       onMore={setBefore}
       onRefresh={() => {
@@ -137,6 +149,7 @@ function TermsPage(
   props: Props & {
     application: Application;
     onClose: () => void;
+    onInterview: () => void;
     before: number | null;
     onMore: (before: number) => void;
     onRefresh: () => void;
@@ -169,6 +182,7 @@ function TermsPage(
       <ThemedText>
         {props.application.crewName} · {props.application.positionType}
       </ThemedText>
+      <Action disabled={op.busy} label={t("crewInterview.title")} onPress={props.onInterview} />
       <ThemedText>{t("crewTerms.title")}</ThemedText>
       {!page && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}

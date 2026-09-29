@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewApplications } from "./crew-applications";
+vi.mock("./application-interview", () => ({ ApplicationInterview: () => <span>Interview</span> }));
 const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
@@ -229,4 +230,9 @@ it("rejects duplicate applications across pages", async () => {
   await click("crewTerms.more");
   expect(host.textContent).toContain("pagination changed");
   expect(host.textContent).not.toContain("Director");
+});
+it("opens native interview history from an application", async () => {
+  await open();
+  await click("crewInterview.title");
+  expect(host.textContent).toBe("Interview");
 });
