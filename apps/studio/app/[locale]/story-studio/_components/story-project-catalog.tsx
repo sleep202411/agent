@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
-import { type StoryGraphNode } from "@/lib/story-projects-api";
+import { catalogNodeTitles } from "./story-project-catalog-titles";
 import { storyAutoFallbackNodeId, storyRouteNodeId } from "@repo/shared/story-stats";
 import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
@@ -31,15 +31,12 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
     [workbenchQuery.data?.draft.content.graph.nodes]
   );
 
-  // nodeId → display name within the selected chapter, so choice targets read
-  // as scene names instead of raw ids.
-  const nodeNames = useMemo(() => {
-    const names = new Map<string, string>();
-    for (const node of nodes) {
-      names.set(node.nodeId, nodeTitle(node, t("catalogPanel.choice")));
-    }
-    return names;
-  }, [nodes, t]);
+  // Automatic clip keys such as SCENE_1 are storage ids. The catalog uses the
+  // same readable title as the canvas card: a real name, otherwise Clip N.
+  const nodeNames = useMemo(
+    () => catalogNodeTitles(nodes, t("projection.clip"), t("catalogPanel.choice")),
+    [nodes, t]
+  );
 
   const rowHref = (nodeId: string) =>
     `/story-studio/projects/${projectId}/${nodes.find((node) => node.nodeId === nodeId)?.kind === "clip" ? "storyboard" : "canvas"}?chapter=${encodeURIComponent(
@@ -80,7 +77,7 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
                     ) : (
                       <IconWorld className="size-3.5 shrink-0 text-white/65" />
                     )}
-                    <span className="truncate">{nodeTitle(node, t("catalogPanel.choice"))}</span>
+                    <span className="truncate">{nodeNames.get(node.nodeId)}</span>
                     {isEnding ? (
                       <span className="ml-auto shrink-0 rounded bg-red-400/12 px-1.5 py-px text-[9px] font-semibold tracking-wide text-red-300/75">
                         {t("catalogPanel.end")}
@@ -123,11 +120,6 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
       ) : null}
     </nav>
   );
-}
-
-function nodeTitle(node: StoryGraphNode, choiceLabel: string): string {
-  if (node.kind === "decision") return choiceLabel;
-  return node.name?.trim() || node.clipKey;
 }
 
 function localized(values: Record<string, string> | undefined, locale: string): string {
