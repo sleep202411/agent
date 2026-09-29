@@ -1138,5 +1138,9 @@
   "servicePackages.currency": "币种",
   "servicePackages.pauseFirst": "移除最后一个套餐前请先暂停服务。",
   "servicePackages.invalid": "请按限制填写所有启用的套餐。",
-  "servicePackages.name": "标题（必填，最多80字）"
+  "servicePackages.name": "标题（必填，最多80字）",
+  "serviceCreate.title": "创建服务",
+  "serviceCreate.hint": "先创建私有草稿，再添加套餐和买家问题后发布。",
+  "serviceCreate.save": "创建草稿",
+  "serviceCreate.retryHint": "重试会恢复同一草稿。恢复前提交字段已锁定；创建其他草稿前请先检查我的服务。"
 }

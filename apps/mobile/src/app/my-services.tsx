@@ -1,3 +1,4 @@
+import { ServiceCreate } from "@/features/services/service-create";
 import { useState } from "react";
 import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
@@ -63,6 +64,16 @@ export default function MyServicesScreen() {
             </ScrollView>
           </View>
           <FlatList
+            keyboardShouldPersistTaps="handled"
+            ListHeaderComponent={
+              <ServiceCreate
+                key={auth.generation}
+                onCreated={(id) => {
+                  list.refresh();
+                  router.push(toHref(`/service/${encodeURIComponent(id)}`));
+                }}
+              />
+            }
             data={list.items}
             keyExtractor={(item) => item.id}
             onEndReached={list.loadMore}

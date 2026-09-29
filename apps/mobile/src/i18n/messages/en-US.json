@@ -1138,5 +1138,9 @@
   "servicePackages.currency": "Currency",
   "servicePackages.pauseFirst": "Pause the service before removing its last package.",
   "servicePackages.invalid": "Complete all enabled packages within the stated limits.",
-  "servicePackages.name": "Title (required, up to 80 characters)"
+  "servicePackages.name": "Title (required, up to 80 characters)",
+  "serviceCreate.title": "Create Service",
+  "serviceCreate.hint": "Create a private draft, then add packages and buyer questions before publishing.",
+  "serviceCreate.save": "Create Draft",
+  "serviceCreate.retryHint": "Retry recovers the same draft. Submitted fields are locked until recovery; check My Services before creating another draft."
 }
