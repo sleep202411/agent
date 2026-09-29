@@ -644,6 +644,49 @@ describePostgres('CopilotStore PostgreSQL integration', () => {
     });
   });
 
+  it.each(['refund_pending', 'charged', 'consume_pending'] as const)(
+    'recovery traverses a failing full page of %s attempts and wraps',
+    async (status) => {
+      const ids: string[] = [];
+      for (let i = 0; i < 33; i += 1) {
+        const scope = testScope(`recovery-page-${i}`);
+        const claim = await acquireAndClaim(
+          scope,
+          userMessage('Recovery pagination'),
+        );
+        await expireClaimInDatabase(scope);
+        ids.push(claim.turn.chargeAttemptId);
+      }
+      await prisma.copilotQuotaChargeAttempt.updateMany({
+        where: { id: { in: ids } },
+        data: { status },
+      });
+      const coordinator = new CopilotQuotaService(
+        {} as QuotaService,
+        prisma as unknown as PrismaService,
+        stubEntitlements(),
+      );
+      const visited: string[] = [];
+      const reconcile = jest
+        .spyOn(coordinator, 'reconcileChargeAttempt')
+        .mockImplementation((id) => {
+          visited.push(id);
+          return Promise.reject(new Error('Persistent recovery failure'));
+        });
+      try {
+        await coordinator.drainPendingAttempts();
+        expect(visited).toHaveLength(32);
+        await coordinator.drainPendingAttempts();
+        expect(new Set(visited)).toEqual(new Set(ids));
+        const beforeRetry = visited.length;
+        await coordinator.drainPendingAttempts();
+        expect(visited.length).toBeGreaterThan(beforeRetry);
+      } finally {
+        reconcile.mockRestore();
+      }
+    },
+  );
+
   it('worker refunds a charged provider attempt after its owner pod disappears', async () => {
     const scope = testScope('provider-crash');
     const claim = await acquireAndClaim(

@@ -59,6 +59,11 @@ export class CopilotQuotaService
   private reconcileTimer: NodeJS.Timeout | null = null;
   private draining: Promise<void> | null = null;
   private stopping = false;
+  // Independent keysets let bounded sweeps advance past failed attempts.
+  // Reset at the end so failures and newly eligible lower IDs are retried.
+  private terminalCursor?: string;
+  private chargedCursor?: string;
+  private consumeCursor?: string;
 
   constructor(
     private readonly quota: QuotaService,
@@ -295,6 +300,7 @@ export class CopilotQuotaService
     const terminalAttempts =
       await this.prisma.copilotQuotaChargeAttempt.findMany({
         where: {
+          ...(this.terminalCursor ? { id: { gt: this.terminalCursor } } : {}),
           OR: [
             {
               status: {
@@ -315,11 +321,15 @@ export class CopilotQuotaService
             },
           ],
         },
-        orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+        orderBy: { id: 'asc' },
         take: RECONCILE_BATCH_SIZE,
         select: { id: true },
       });
     if (this.stopping) return;
+    this.terminalCursor =
+      terminalAttempts.length === RECONCILE_BATCH_SIZE
+        ? terminalAttempts[terminalAttempts.length - 1].id
+        : undefined;
     const remaining = RECONCILE_BATCH_SIZE - terminalAttempts.length;
     const recoverableChargedAttempts =
       remaining > 0
@@ -329,6 +339,7 @@ export class CopilotQuotaService
               LEFT JOIN "copilot_conversations" AS conversation
                 ON conversation."billing_charge_attempt_id" = attempt."id"
               WHERE attempt."status" = 'charged'
+                ${this.chargedCursor ? Prisma.sql`AND attempt."id" > ${this.chargedCursor}::uuid` : Prisma.empty}
                 AND (
                   (attempt."client_tool_expires_at" IS NOT NULL AND
                    attempt."client_tool_expires_at" <= clock_timestamp()) OR
@@ -340,11 +351,16 @@ export class CopilotQuotaService
                     conversation."active_expires_at" <= clock_timestamp()
                   ))
                 )
-              ORDER BY attempt."updated_at" ASC, attempt."id" ASC
+              ORDER BY attempt."id" ASC
               LIMIT ${remaining}
             `)
         : [];
     if (this.stopping) return;
+    if (remaining > 0)
+      this.chargedCursor =
+        recoverableChargedAttempts.length === remaining
+          ? recoverableChargedAttempts[recoverableChargedAttempts.length - 1].id
+          : undefined;
     const consumeRemaining = remaining - recoverableChargedAttempts.length;
     const abandonedConsumeAttempts =
       consumeRemaining > 0
@@ -354,6 +370,7 @@ export class CopilotQuotaService
               LEFT JOIN "copilot_conversations" AS conversation
                 ON conversation."billing_charge_attempt_id" = attempt."id"
               WHERE attempt."status" = 'consume_pending'
+                ${this.consumeCursor ? Prisma.sql`AND attempt."id" > ${this.consumeCursor}::uuid` : Prisma.empty}
                 AND (
                   conversation."id" IS NULL OR
                   conversation."status" <> 'streaming' OR
@@ -361,10 +378,16 @@ export class CopilotQuotaService
                   conversation."active_expires_at" IS NULL OR
                   conversation."active_expires_at" <= clock_timestamp()
                 )
-              ORDER BY attempt."updated_at" ASC, attempt."id" ASC
+              ORDER BY attempt."id" ASC
               LIMIT ${consumeRemaining}
             `)
         : [];
+    if (this.stopping) return;
+    if (consumeRemaining > 0)
+      this.consumeCursor =
+        abandonedConsumeAttempts.length === consumeRemaining
+          ? abandonedConsumeAttempts[abandonedConsumeAttempts.length - 1].id
+          : undefined;
     for (const attempt of [
       ...terminalAttempts,
       ...recoverableChargedAttempts,
