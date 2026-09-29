@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { TaskDetail } from "./task-detail";
+vi.mock("./task-custom-fields", () => ({ TaskCustomFields: () => <div>custom fields</div> }));
 vi.mock("./task-workflow-editor", () => ({ TaskWorkflowEditor: () => <div>workflow editor</div> }));
 vi.mock("./task-planning-editor", () => ({ TaskPlanningEditor: () => <div>planning editor</div> }));
 vi.mock("./task-child-create", () => ({

@@ -1,3 +1,4 @@
+import { TaskCustomFields } from "./task-custom-fields";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -217,6 +218,7 @@ function TaskContent({
             generation={generation}
             onOpen={() => setCreatingChild(true)}
           />
+          <TaskCustomFields key={`fields:${revision}`} task={data} generation={generation} />
           <TaskRelations task={data} onOpenTask={onOpenTask} />
           <TaskDelivery
             key={`delivery:${revision}`}

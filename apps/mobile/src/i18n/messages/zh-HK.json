@@ -1380,5 +1380,8 @@
   "taskPlanning.unset": "未設定",
   "taskPlanning.unlimited": "不限",
   "taskPlanning.numberHelp": "請輸入整數：預估工作量為 0–1,000,000；修改輪次上限為 0–100，且不得低於已使用輪次。留空可清除。",
-  "taskCreate.addSubtask": "新增子任務"
+  "taskCreate.addSubtask": "新增子任務",
+  "taskCustomFields.title": "自訂欄位",
+  "taskCustomFields.yes": "是",
+  "taskCustomFields.no": "否"
 }
