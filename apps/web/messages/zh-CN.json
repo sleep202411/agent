@@ -5152,7 +5152,24 @@
       "more": "加载更多",
       "failed": "创建失败。",
       "uncertainHelp": "创建已停止：有一个请求未收到确认。再次创建前请核对制作任务；已确认的任务不会重复提交。",
-      "episodeUncertain": "剧集创建请求未收到确认。再次创建前请先核对剧集列表。"
+      "episodeUncertain": "剧集创建请求未收到确认。再次创建前请先核对剧集列表。",
+      "stageTemplate": "暂存标准任务组"
+    },
+    "episodeTemplate": {
+      "title": "核对本集任务模板",
+      "help": "创建前请核对已发布的任务组。任务与依赖关系将一并创建，不覆盖已有工作；创建后可编辑任务。",
+      "loading": "正在加载模板…",
+      "reload": "重新加载预览",
+      "created": "已创建 {count} 个任务。",
+      "reused": "此模板已应用（{count} 个任务）。",
+      "task": "任务",
+      "role": "所需角色",
+      "dependencies": "前置任务",
+      "done": "完成",
+      "cancel": "取消",
+      "creating": "创建中…",
+      "confirm": "创建本集任务",
+      "failed": "模板任务创建失败。"
     }
   },
   "crewProduction": {

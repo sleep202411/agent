@@ -39,6 +39,11 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   }),
   useCrewTaskView: () => ({ data: [], refetch: state.refresh }),
 }));
+vi.mock("./episode-template-preview", () => ({
+  EpisodeTemplatePreview: ({ episodeId }: { episodeId: string }) => (
+    <div data-testid="episode-preview">{episodeId}</div>
+  ),
+}));
 vi.mock("./task-quick-create", () => ({
   TaskQuickCreate: ({
     open,
@@ -156,4 +161,15 @@ it("removes a draft before confirmation", async () => {
   await act(async () => host.querySelector<HTMLButtonElement>("[aria-label]")!.click());
   expect(button("Create All Tasks").disabled).toBe(true);
   expect(state.create).not.toHaveBeenCalled();
+});
+
+it("opens the selected episode template without creating tasks", async () => {
+  await render();
+  await click("Stage Standard Tasks");
+  expect(host.querySelector('[data-testid="episode-preview"]')?.textContent).toBe("ep");
+  expect(state.create).not.toHaveBeenCalled();
+});
+it("hides template creation from members without task management permission", async () => {
+  await render(false);
+  expect(button("Stage Standard Tasks")).toBeUndefined();
 });

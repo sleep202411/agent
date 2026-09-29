@@ -5152,7 +5152,24 @@
       "more": "Load More",
       "failed": "Creation failed.",
       "uncertainHelp": "Creation stopped. A response was not confirmed. Check Production Tasks before creating anything again; confirmed tasks will not be submitted twice.",
-      "episodeUncertain": "The episode response was not confirmed. Check the episode list before attempting to create it again."
+      "episodeUncertain": "The episode response was not confirmed. Check the episode list before attempting to create it again.",
+      "stageTemplate": "Stage Standard Tasks"
+    },
+    "episodeTemplate": {
+      "title": "Review Episode Task Template",
+      "help": "Review the published task group before creating it. Tasks and dependencies are created together; existing work is never overwritten. You can edit tasks after creation.",
+      "loading": "Loading Template…",
+      "reload": "Reload Preview",
+      "created": "Created {count} Tasks.",
+      "reused": "This Template Was Already Applied ({count} Tasks).",
+      "task": "Task",
+      "role": "Required Role",
+      "dependencies": "Depends On",
+      "done": "Done",
+      "cancel": "Cancel",
+      "creating": "Creating…",
+      "confirm": "Create Episode Tasks",
+      "failed": "Template creation failed."
     }
   },
   "crewProduction": {

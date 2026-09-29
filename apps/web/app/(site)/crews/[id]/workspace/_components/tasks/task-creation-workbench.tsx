@@ -16,6 +16,7 @@ import {
   type CrewMemberDTO,
   type CrewTaskProjectDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
+import { EpisodeTemplatePreview } from "./episode-template-preview";
 import { TaskQuickCreate } from "./task-quick-create";
 
 type Draft = {
@@ -48,6 +49,7 @@ export function TaskCreationWorkbench({
   const tasksT = useTranslations("crewTasks");
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [open, setOpen] = useState(false);
+  const [templateEpisodeId, setTemplateEpisodeId] = useState<string | null>(null);
   const [episodeId, setEpisodeId] = useState<string | null>(null);
   const [episodeTitle, setEpisodeTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -294,21 +296,35 @@ export function TaskCreationWorkbench({
                         </td>
                         <td>
                           {canManage ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={
-                                busy ||
-                                unresolved ||
-                                ["completed", "cancelled"].includes(episode.status)
-                              }
-                              onClick={() => {
-                                setEpisodeId(episode.id);
-                                setOpen(true);
-                              }}
-                            >
-                              {t("addEpisodeTask")}
-                            </Button>
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={
+                                  busy ||
+                                  unresolved ||
+                                  ["completed", "cancelled"].includes(episode.status)
+                                }
+                                onClick={() => {
+                                  setEpisodeId(episode.id);
+                                  setOpen(true);
+                                }}
+                              >
+                                {t("addEpisodeTask")}
+                              </Button>
+                              <Button
+                                className="ml-2"
+                                variant="outline"
+                                size="sm"
+                                disabled={
+                                  busy ||
+                                  ["completed", "cancelled", "in_review"].includes(episode.status)
+                                }
+                                onClick={() => setTemplateEpisodeId(episode.id)}
+                              >
+                                {t("stageTemplate")}
+                              </Button>
+                            </>
                           ) : null}
                         </td>
                       </tr>
@@ -382,6 +398,13 @@ export function TaskCreationWorkbench({
           </div>
         </main>
       </div>
+      {canManage && active && templateEpisodeId ? (
+        <EpisodeTemplatePreview
+          crewId={crewId}
+          episodeId={templateEpisodeId}
+          onClose={() => setTemplateEpisodeId(null)}
+        />
+      ) : null}
       {canManage && active ? (
         <TaskQuickCreate
           key={`${episodeId ?? "shared"}:${open}`}

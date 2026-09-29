@@ -1,3 +1,7 @@
+import {
+  EpisodeTaskTemplateController,
+  EpisodeTaskTemplateService,
+} from './templates/episode-task-template';
 import { CrewComputeRequestsAdminController } from './compute-requests/compute-requests-admin.controller';
 import { CrewComputeRequestsController } from './compute-requests/compute-requests.controller';
 import { CrewComputeRequestsService } from './compute-requests/compute-requests.service';
@@ -149,6 +153,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    EpisodeTaskTemplateController,
     CrewApplicationAmendmentsController,
     CrewAmendmentSettlementQueueController,
     CrewTaskFeedbackAppealsController,
@@ -195,6 +200,7 @@ import { CrewProductionService } from './production/production.service';
     StoryStoryboardChildrenController,
   ],
   providers: [
+    EpisodeTaskTemplateService,
     StoryboardChildrenService,
     CrewApplicationAmendmentsService,
     CrewTaskFeedbackAppealsService,

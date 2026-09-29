@@ -5152,7 +5152,24 @@
       "more": "載入更多",
       "failed": "建立失敗。",
       "uncertainHelp": "建立已停止：有一個請求未收到確認。再次建立前請核對製作任務；已確認的任務不會重複提交。",
-      "episodeUncertain": "劇集建立請求未收到確認。再次建立前請先核對劇集清單。"
+      "episodeUncertain": "劇集建立請求未收到確認。再次建立前請先核對劇集清單。",
+      "stageTemplate": "暫存標準任務組"
+    },
+    "episodeTemplate": {
+      "title": "核對本集任務模板",
+      "help": "建立前請核對已發佈的任務組。任務與相依關係將一併建立，不覆蓋已有工作；建立後可編輯任務。",
+      "loading": "正在載入模板…",
+      "reload": "重新載入預覽",
+      "created": "已建立 {count} 個任務。",
+      "reused": "此模板已套用（{count} 個任務）。",
+      "task": "任務",
+      "role": "所需角色",
+      "dependencies": "前置任務",
+      "done": "完成",
+      "cancel": "取消",
+      "creating": "建立中…",
+      "confirm": "建立本集任務",
+      "failed": "模板任務建立失敗。"
     }
   },
   "crewProduction": {
