@@ -27,6 +27,8 @@ const detail = {
   assignees: [],
 };
 const input = {
+  parentId: null,
+  blockedByTaskIds: [],
   title: " Shot ",
   description: " Render ",
   priority: "normal" as const,
@@ -76,4 +78,33 @@ it("does not retry failed creation automatically", async () => {
   vi.mocked(api.post).mockRejectedValue(new Error("Offline"));
   await expect(createTask("crew", input)).rejects.toThrow("Offline");
   expect(api.post).toHaveBeenCalledOnce();
+});
+
+it("validates relationship identifiers, limits and acknowledgement", async () => {
+  const related = "22222222-2222-4222-8222-222222222222";
+  for (const fields of [
+    { parentId: "invalid" },
+    { blockedByTaskIds: [related, related] },
+    { blockedByTaskIds: Array(51).fill(related) },
+  ]) {
+    await expect(createTask("crew", { ...input, ...fields })).rejects.toThrow();
+  }
+  expect(api.post).not.toHaveBeenCalled();
+  const ref = {
+    id: related,
+    number: 2,
+    title: "Parent",
+    status: "open",
+    workflowState: { name: "Open" },
+    parentId: null,
+  };
+  const data = { ...input, parentId: related, blockedByTaskIds: [related] };
+  vi.mocked(api.post).mockResolvedValue({
+    ...detail,
+    parent: ref,
+    blockedBy: [{ ...ref, resolved: false }],
+  });
+  await expect(createTask("crew", data)).resolves.toMatchObject({ parent: ref });
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await expect(createTask("crew", data)).rejects.toThrow("acknowledgement");
 });

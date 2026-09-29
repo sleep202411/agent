@@ -156,3 +156,52 @@ it("ignores completion after an account change", async () => {
   await act(async () => finish({ id: "new" }));
   expect(h.refresh).not.toHaveBeenCalled();
 });
+
+const relatedId = "22222222-2222-4222-8222-222222222222";
+vi.mock("./task-picker", () => ({
+  TaskPicker: ({
+    onSelect,
+  }: {
+    onSelect: (task: { id: string; number: number; title: string }) => void;
+  }) => (
+    <button
+      onClick={() =>
+        onSelect({ id: "22222222-2222-4222-8222-222222222222", number: 2, title: "Related" })
+      }
+    >
+      choose task
+    </button>
+  ),
+}));
+it("creates a task with its parent and deduplicated blockers", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Child"));
+  await act(async () => button("taskRelationships.chooseParent")!.click());
+  await act(async () => button("choose task")!.click());
+  for (let n = 0; n < 2; n++) {
+    await act(async () => button("taskRelationships.addBlocker")!.click());
+    await act(async () => button("choose task")!.click());
+  }
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ parentId: relatedId, blockedByTaskIds: [relatedId] })
+  );
+});
+it("clears draft parent and blockers before creation", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Independent"));
+  await act(async () => button("taskRelationships.chooseParent")!.click());
+  await act(async () => button("choose task")!.click());
+  await act(async () => button("taskRelationships.removeParent")!.click());
+  await act(async () => button("taskRelationships.addBlocker")!.click());
+  await act(async () => button("choose task")!.click());
+  await act(async () => button("TASK-2 · Related ×")!.click());
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ parentId: null, blockedByTaskIds: [] })
+  );
+});

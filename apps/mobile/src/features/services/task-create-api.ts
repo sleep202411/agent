@@ -8,6 +8,11 @@ export const taskCreateInput = z
     priority: z.enum(["low", "normal", "high", "urgent"]),
     startAt: z.string().datetime({ offset: true }).nullable(),
     dueAt: z.string().datetime({ offset: true }).nullable(),
+    parentId: z.string().uuid().nullable(),
+    blockedByTaskIds: z
+      .array(z.string().uuid())
+      .max(50)
+      .refine((ids) => new Set(ids).size === ids.length, "Duplicate blocking tasks"),
     assignees: z
       .array(
         z
@@ -42,6 +47,9 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     result.priority !== data.priority ||
     !dateMatches(result.startAt, data.startAt) ||
     !dateMatches(result.dueAt, data.dueAt) ||
+    (result.parent?.id ?? null) !== data.parentId ||
+    result.blockedBy.length !== data.blockedByTaskIds.length ||
+    data.blockedByTaskIds.some((id) => !result.blockedBy.some((task) => task.id === id)) ||
     result.assignees.length !== data.assignees.length ||
     data.assignees.some((a) => !result.assignees.some((item) => item.userId === a.userId))
   )
