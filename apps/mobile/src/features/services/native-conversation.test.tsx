@@ -343,3 +343,43 @@ it("suppresses duplicate uploads and ignores an upload completed after account c
   expect(host.textContent).not.toContain("Old.mp4");
   expect(h.discard).not.toHaveBeenCalled();
 });
+it("sends explicit team mentions and retains them across an uncertain retry", async () => {
+  h.detail = {
+    ...detail,
+    contextType: "crew",
+    crewChannel: "team",
+    participants: [
+      ...detail.participants,
+      { userId: "colleague", role: "member", lastReadMessageId: null },
+    ],
+  };
+  h.send.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(message);
+  await render();
+  await act(async () => click("thread.mention"));
+  expect(host.textContent).not.toContain("@buyer");
+  await act(async () => click("@colleague"));
+  await act(async () => click("thread.send"));
+  expect(h.send.mock.calls[0][1].mentions).toEqual([{ userId: "colleague", label: "colleague" }]);
+  await act(async () => click("inbox.retry"));
+  expect(h.send.mock.calls[1][1]).toEqual(h.send.mock.calls[0][1]);
+});
+it("drops deleted mention tokens and never enables the picker for service chats", async () => {
+  await render();
+  expect(host.textContent).not.toContain("thread.mention");
+  h.detail = {
+    ...detail,
+    contextType: "crew",
+    crewChannel: "team",
+    participants: [
+      ...detail.participants,
+      { userId: "colleague", role: "member", lastReadMessageId: null },
+    ],
+  };
+  h.send.mockResolvedValue(message);
+  await render();
+  await act(async () => click("thread.mention"));
+  await act(async () => click("@colleague"));
+  await act(async () => type("plain text"));
+  await act(async () => click("thread.send"));
+  expect(h.send.mock.calls[0][1]).not.toHaveProperty("mentions");
+});

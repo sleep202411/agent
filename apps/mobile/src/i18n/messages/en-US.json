@@ -1190,6 +1190,8 @@
   "discovery.empty": "No works match these filters.",
   "thread.openFile": "Open file",
   "thread.backToChat": "Back to chat",
-  "thread.openWebChat": "Uploads and mentions",
-  "thread.uploadFile": "Upload file"
+  "thread.openWebChat": "More chat tools",
+  "thread.uploadFile": "Upload file",
+  "thread.mention": "Mention a member",
+  "thread.findMember": "Find a member"
 }

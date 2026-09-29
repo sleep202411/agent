@@ -84,11 +84,15 @@ export function NativeConversation({
     },
     [generation]
   );
+  const [mentions, setMentions] = useState<{ userId: string; label: string }[]>([]),
+    [mentionPicker, setMentionPicker] = useState(false),
+    [mentionQuery, setMentionQuery] = useState("");
   const intent = useRef<
     | {
         body: string;
         clientKey: string;
         attachments: ({ source: "asset"; assetNodeId: string } | CrewUpload)[];
+        mentions?: { userId: string; label: string }[];
       }
     | undefined
   >(undefined);
@@ -371,6 +375,65 @@ export function NativeConversation({
             </ScrollView>
           </View>
         )}
+        {canAttach && (
+          <View>
+            {button(
+              t("thread.mention"),
+              () => {
+                setMentionPicker((v) => !v);
+                setMentionQuery("");
+              },
+              op.busy || attempted || mentions.length >= 20
+            )}
+            {mentionPicker && (
+              <View>
+                <TextInput
+                  accessibilityLabel={t("thread.findMember")}
+                  value={mentionQuery}
+                  onChangeText={setMentionQuery}
+                  editable={!op.busy && !attempted}
+                  style={{ color: theme.text, padding: 10 }}
+                />
+                <ScrollView style={{ maxHeight: 140 }} keyboardShouldPersistTaps="handled">
+                  {conversation.participants
+                    .filter((p) => p.userId !== userId)
+                    .map((p) => ({
+                      userId: p.userId,
+                      label:
+                        (displays?.get(p.userId)?.nickname || p.userId)
+                          .replace(/[@\r\n]/g, " ")
+                          .trim()
+                          .slice(0, 80) || p.userId,
+                    }))
+                    .filter((p) =>
+                      p.label.toLocaleLowerCase().includes(mentionQuery.toLocaleLowerCase())
+                    )
+                    .map((p) => (
+                      <Pressable
+                        key={p.userId}
+                        accessibilityRole="button"
+                        disabled={op.busy || attempted || body.length + p.label.length + 3 > 4000}
+                        onPress={() => {
+                          setBody(
+                            (value) =>
+                              `${value}${value && !/\s$/.test(value) ? " " : ""}@${p.label} `
+                          );
+                          setMentions((value) => [
+                            ...value.filter((m) => m.userId !== p.userId),
+                            p,
+                          ]);
+                          setMentionPicker(false);
+                        }}
+                        style={{ padding: 10 }}
+                      >
+                        <ThemedText>@{p.label}</ThemedText>
+                      </Pressable>
+                    ))}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+        )}
         <TextInput
           accessibilityLabel={t("thread.message")}
           placeholder={t("thread.message")}
@@ -379,7 +442,10 @@ export function NativeConversation({
           maxLength={4000}
           value={body}
           editable={!op.busy && !attempted}
-          onChangeText={setBody}
+          onChangeText={(value) => {
+            setBody(value);
+            setMentions((previous) => previous.filter((m) => value.includes(`@${m.label}`)));
+          }}
           style={{
             color: theme.text,
             backgroundColor: theme.backgroundElement,
@@ -400,6 +466,9 @@ export function NativeConversation({
               intent.current = {
                 body: body.trim(),
                 clientKey: inquiryKey(),
+                ...(canAttach && mentions.length
+                  ? { mentions: mentions.filter((m) => body.includes(`@${m.label}`)) }
+                  : {}),
                 attachments: [
                   ...assets.map((a) => ({ source: "asset" as const, assetNodeId: a.id })),
                   ...uploads,
@@ -415,11 +484,14 @@ export function NativeConversation({
                   : sendConversationText(id, {
                       body: submitted.body,
                       clientKey: submitted.clientKey,
+                      ...(submitted.mentions ? { mentions: submitted.mentions } : {}),
                     }),
               () => {
                 intent.current = undefined;
                 setAttempted(false);
                 setBody("");
+                setMentions([]);
+                setMentionPicker(false);
                 setAssets([]);
                 pendingUploads.current.items = [];
                 pendingUploads.current.attempted = false;
