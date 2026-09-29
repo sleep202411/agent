@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CourseScreen, CoursesScreen } from "./screens";
 import { api } from "@/lib/api-client";
 import { appTabItems } from "@/components/app-tab-items";
+import { lessonProgressKey } from "./lesson-progress";
 const h = vi.hoisted(() => ({
   locale: "en-US",
   user: null as { id: string } | null,
@@ -12,6 +13,8 @@ const h = vi.hoisted(() => ({
   pause: vi.fn(),
   urls: [] as string[],
   status: "readyToPlay",
+  saved: new Map<string, string>(),
+  players: [] as { currentTime: number }[],
   t: (key: string) => key,
 }));
 vi.mock("@/auth", () => ({
@@ -25,10 +28,16 @@ vi.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
 }));
 vi.mock("@/config", () => ({
-  appEnv: { assets: { bannerBaseUrl: "https://assets.test" } },
+  appEnv: { siteRegion: "global", assets: { bannerBaseUrl: "https://assets.test" } },
   resolveAssetUrl: (path: string) => path,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock("@/lib/persistent-storage", () => ({
+  getStoredString: async (key: string) => h.saved.get(key) ?? null,
+  setStoredString: async (key: string, value: string) => {
+    h.saved.set(key, value);
+  },
+}));
 vi.mock("expo", () => ({
   useEvent: () => ({
     status: h.status,
@@ -38,7 +47,15 @@ vi.mock("expo", () => ({
 vi.mock("expo-video", () => ({
   useVideoPlayer: (url: string) => {
     h.urls.push(url);
-    return { pause: h.pause };
+    const player = {
+      pause: h.pause,
+      duration: 100,
+      currentTime: 0,
+      status: h.status,
+      addListener: () => ({ remove: vi.fn() }),
+    };
+    h.players.push(player);
+    return player;
   },
   VideoView: () => <div>video</div>,
 }));
@@ -122,6 +139,8 @@ beforeEach(() => {
   h.active = true;
   h.urls = [];
   h.status = "readyToPlay";
+  h.saved.clear();
+  h.players = [];
   vi.mocked(api.get).mockResolvedValue(course);
   vi.mocked(api.post).mockResolvedValue("https://media.test/lesson.mp4");
   host = document.createElement("div");
@@ -231,4 +250,35 @@ it("does not create a native player for an invalid signed URL", async () => {
   await detail();
   expect(host.textContent).toContain("courses.playError");
   expect(h.urls).toHaveLength(0);
+});
+it("restores each lesson independently and saves on background before resuming", async () => {
+  h.saved.set(
+    lessonProgressKey(null, "global", 7, 1),
+    JSON.stringify({ currentTime: 35, duration: 100 })
+  );
+  h.saved.set(
+    lessonProgressKey(null, "global", 7, 2),
+    JSON.stringify({ currentTime: 60, duration: 100 })
+  );
+  await detail();
+  expect(h.players.at(-1)?.currentTime).toBe(35);
+  await act(async () => button("Second").click());
+  expect(h.players.at(-1)?.currentTime).toBe(60);
+  h.players.at(-1)!.currentTime = 72;
+  h.active = false;
+  await detail();
+  h.active = true;
+  await detail();
+  expect(h.players.at(-1)?.currentTime).toBe(72);
+});
+it("does not restore guest playback into a newly signed-in account", async () => {
+  h.saved.set(
+    lessonProgressKey(null, "global", 7, 1),
+    JSON.stringify({ currentTime: 35, duration: 100 })
+  );
+  await detail();
+  expect(h.players.at(-1)?.currentTime).toBe(35);
+  h.user = { id: "alice" };
+  await detail();
+  expect(h.players.at(-1)?.currentTime).toBe(0);
 });

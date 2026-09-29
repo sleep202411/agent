@@ -29,6 +29,13 @@ import {
   type CourseDetail,
 } from "./api";
 import { useCourseRead } from "./use-course-read";
+import { appEnv } from "@/config";
+import {
+  lessonProgressKey,
+  readLessonProgress,
+  trackLessonProgress,
+  type LessonProgress,
+} from "./lesson-progress";
 
 function useScope() {
   const auth = useAuth();
@@ -163,11 +170,22 @@ function Detail({ id }: { id: string }) {
   );
 }
 function CourseContent({ course }: { course: CourseDetail }) {
+  const auth = useAuth();
   const t = useTranslations();
   const theme = useTheme();
   const lessons = useMemo(() => orderedLessons(course.videos ?? []), [course.videos]);
   const [selected, setSelected] = useState(lessons[0]?.id);
   const active = useScreenActive();
+  const userId = auth.user?.id ?? auth.user?.userId;
+  const progressKey =
+    selected == null
+      ? ""
+      : lessonProgressKey(
+          auth.status === "authenticated" && userId != null ? String(userId) : null,
+          appEnv.siteRegion,
+          course.id,
+          selected
+        );
   return (
     <View style={styles.section}>
       <ScreenHeader title={course.title} />
@@ -175,7 +193,9 @@ function CourseContent({ course }: { course: CourseDetail }) {
         {(course.instructors ?? []).map((i) => i.nickName).join(" · ")}
       </ThemedText>
       {!!course.description && <ThemedText type="small">{course.description}</ThemedText>}
-      {selected != null && active ? <LessonPlayback key={selected} id={selected} /> : null}
+      {selected != null && active ? (
+        <LessonPlayback key={selected} id={selected} progressKey={progressKey} />
+      ) : null}
       <ThemedText type="smallBold">{t("courses.lessons")}</ThemedText>
       {!lessons.length && (
         <EmptyState title={t("courses.noLessons")} detail={t("courses.emptyDetail")} />
@@ -202,7 +222,7 @@ function CourseContent({ course }: { course: CourseDetail }) {
     </View>
   );
 }
-function LessonPlayback({ id }: { id: number }) {
+function LessonPlayback({ id, progressKey }: { id: number; progressKey: string }) {
   const locale = useLocale();
   const t = useTranslations();
   const [attempt, setAttempt] = useState(0);
@@ -210,6 +230,7 @@ function LessonPlayback({ id }: { id: number }) {
     <LessonRead
       key={attempt}
       id={id}
+      progressKey={progressKey}
       locale={locale}
       retry={() => setAttempt((n) => n + 1)}
       loadingLabel={t("courses.loading")}
@@ -221,36 +242,60 @@ function LessonRead({
   locale,
   retry,
   loadingLabel,
+  progressKey,
 }: {
   id: number;
   locale: string;
   retry: () => void;
   loadingLabel: string;
+  progressKey: string;
 }) {
   const t = useTranslations();
   const read = useCourseRead(
     useCallback(
       async (signal: AbortSignal) => {
-        const url = await getLessonUrl(id, locale, signal);
+        const [url, progress] = await Promise.all([
+          getLessonUrl(id, locale, signal),
+          readLessonProgress(progressKey),
+        ]);
         if (!url || !/^https?:\/\//i.test(url)) throw new Error(t("courses.playError"));
-        return url;
+        return { url, progress };
       },
-      [id, locale, t]
+      [id, locale, t, progressKey]
     )
   );
   return read.error ? (
     <Failure message={read.error} retry={retry} />
   ) : read.data ? (
-    <LessonVideo url={read.data} retry={retry} />
+    <LessonVideo
+      url={read.data.url}
+      initial={read.data.progress}
+      progressKey={progressKey}
+      retry={retry}
+    />
   ) : (
     <ActivityIndicator accessibilityLabel={loadingLabel} />
   );
 }
-function LessonVideo({ url, retry }: { url: string; retry: () => void }) {
+function LessonVideo({
+  url,
+  retry,
+  initial,
+  progressKey,
+}: {
+  url: string;
+  retry: () => void;
+  initial: LessonProgress | null;
+  progressKey: string;
+}) {
   const t = useTranslations();
   const player = useVideoPlayer(url, (instance) => {
     instance.staysActiveInBackground = false;
   });
+  useLayoutEffect(
+    () => trackLessonProgress(player, progressKey, initial),
+    [player, progressKey, initial]
+  );
   useLayoutEffect(
     () => () => {
       try {
