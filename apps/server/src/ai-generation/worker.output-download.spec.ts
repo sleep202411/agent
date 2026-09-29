@@ -40,7 +40,7 @@ jest.mock('../media/uploaded-image-probe.service', () => ({
 }));
 
 type Downloads = {
-  fetchProviderBytes(url: string): Promise<Buffer>;
+  fetchProviderBytes(url: string, maxBytes?: number): Promise<Buffer>;
   spoolProviderUrlToFile(url: string, path: string): Promise<unknown>;
 };
 function worker(): Downloads {
@@ -106,4 +106,59 @@ it('retains successful buffer and disk output with exact hashing', async () => {
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+// Use a small ceiling to exercise the production reader without allocating GiB.
+it('rejects oversized Content-Length before reading buffered output', async () => {
+  const cancel = jest.fn();
+  const response = new Response(new ReadableStream({ cancel }), {
+    headers: { 'Content-Length': '9' },
+  });
+  jest.spyOn(global, 'fetch').mockResolvedValue(response);
+  // The old arrayBuffer path resolves small bytes instead of enforcing the limit.
+  jest.spyOn(response, 'arrayBuffer').mockResolvedValue(new ArrayBuffer(9));
+  await expect(
+    worker().fetchProviderBytes('https://provider.test/output', 8),
+  ).rejects.toThrow('provider output exceeds 8 bytes');
+  expect(cancel).toHaveBeenCalledTimes(1);
+});
+
+it.each([undefined, '1'])(
+  'enforces streamed byte count despite Content-Length %s',
+  async (length) => {
+    const cancel = jest.fn().mockRejectedValue(new Error('cleanup failure'));
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(9));
+        },
+        cancel,
+      }),
+      { headers: length ? { 'Content-Length': length } : {} },
+    );
+    jest.spyOn(global, 'fetch').mockResolvedValue(response);
+    jest.spyOn(response, 'arrayBuffer').mockResolvedValue(new ArrayBuffer(9));
+    await expect(
+      worker().fetchProviderBytes('https://provider.test/output', 8),
+    ).rejects.toThrow('provider output exceeds 8 bytes');
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(response.body?.locked).toBe(false);
+  },
+);
+
+it('accepts multiple chunks at the exact buffered byte ceiling', async () => {
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2]));
+        controller.enqueue(new Uint8Array([3, 4]));
+        controller.close();
+      },
+    }),
+  );
+  jest.spyOn(global, 'fetch').mockResolvedValue(response);
+  await expect(
+    worker().fetchProviderBytes('https://provider.test/output', 4),
+  ).resolves.toEqual(Buffer.from([1, 2, 3, 4]));
+  expect(response.body?.locked).toBe(false);
 });

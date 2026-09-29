@@ -1892,7 +1892,10 @@ export class AiGenerationWorkerService
     return `${job.provider}/${date.yyyy}/${date.mm}/${date.dd}/${job.userId}/${job.id}/${raw.index}-${contentHash}.${raw.ext}`;
   }
 
-  private async fetchProviderBytes(url: string): Promise<Buffer> {
+  private async fetchProviderBytes(
+    url: string,
+    maxBytes = MAX_PROVIDER_OUTPUT_BYTES,
+  ): Promise<Buffer> {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS),
     });
@@ -1900,8 +1903,31 @@ export class AiGenerationWorkerService
       await res.body?.cancel().catch(() => undefined);
       throw new Error(`provider URL fetch failed: HTTP ${res.status}`);
     }
-    const ab = await res.arrayBuffer();
-    return Buffer.from(ab);
+    const tooLarge = () =>
+      new Error(`provider output exceeds ${maxBytes} bytes`);
+    if (Number(res.headers.get('content-length')) > maxBytes) {
+      await res.body?.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    if (!res.body) return Buffer.alloc(0);
+    const reader = res.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > maxBytes) throw tooLarge();
+        chunks.push(value);
+      }
+      return Buffer.concat(chunks, bytes);
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
+    } finally {
+      reader.releaseLock();
+    }
   }
 
   private async spoolBufferToFile(
