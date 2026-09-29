@@ -5121,7 +5121,8 @@
     "unassigned": "未分配",
     "done": "完成",
     "cancel": "取消",
-    "create": "创建"
+    "create": "创建",
+    "initiateTask": "发起任务"
   },
   "crewProduction": {
     "eyebrow": "概览",

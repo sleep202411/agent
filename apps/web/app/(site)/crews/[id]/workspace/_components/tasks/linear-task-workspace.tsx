@@ -526,6 +526,17 @@ function LinearTaskSession({
       {section === "issues" ? (
         <>
           <div className="flex h-11 shrink-0 items-center gap-2 border-b border-white/[0.055] px-3">
+            {isOwner ? (
+              <Button
+                type="button"
+                size="sm"
+                className="shrink-0"
+                icon={<IconPlus />}
+                onClick={() => setCreateTaskStateId(null)}
+              >
+                {t("initiateTask")}
+              </Button>
+            ) : null}
             <div className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md border border-white/[0.07] bg-[#0e0f12] px-2.5 focus-within:border-white/[0.15]">
               <IconSearch className="size-3.5 text-[#555c67]" />
               <input
