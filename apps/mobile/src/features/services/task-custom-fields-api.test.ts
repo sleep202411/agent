@@ -1,3 +1,4 @@
+import { fetchTaskFieldDefinitions } from "./task-custom-fields-api";
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import { fetchTaskCustomFields, customFieldText, type CustomField } from "./task-custom-fields-api";
@@ -88,4 +89,18 @@ it("formats every supported type without confusing false, zero, or missing value
     expect(
       customFieldText({ ...field, type }, value, labels, new Map([["1", { nickname: "Artist" }]]))
     ).toBe(expected);
+});
+
+it("validates Crew field definitions before creation", async () => {
+  const signal = new AbortController().signal;
+  vi.mocked(api.get).mockResolvedValue({ fields: [field] });
+  expect(await fetchTaskFieldDefinitions("crew", signal)).toEqual([field]);
+  for (const fields of [
+    [field, field],
+    [{ ...field, crewId: "other" }],
+    [{ ...field, required: undefined }],
+  ]) {
+    vi.mocked(api.get).mockResolvedValue({ fields });
+    await expect(fetchTaskFieldDefinitions("crew", signal)).rejects.toThrow();
+  }
 });

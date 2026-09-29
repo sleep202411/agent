@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskCreate } from "./task-create";
 const h = vi.hoisted(() => ({
   access: vi.fn(),
+  fields: vi.fn(),
   update: vi.fn(),
   refresh: vi.fn(),
   workflows: vi.fn(),
@@ -12,6 +13,10 @@ const h = vi.hoisted(() => ({
   generation: 1,
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
+vi.mock("./task-custom-fields-api", async (original) => ({
+  ...(await original<typeof import("./task-custom-fields-api")>()),
+  fetchTaskFieldDefinitions: h.fields,
+}));
 vi.mock("./task-kind-api", async (original) => ({
   ...(await original<typeof import("./task-kind-api")>()),
   fetchTaskKindTemplates: h.templates,
@@ -83,6 +88,7 @@ const type = (n: number, text: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.fields.mockResolvedValue([]);
   h.templates.mockResolvedValue([
     {
       id: "55555555-5555-4555-8555-555555555555",
@@ -471,4 +477,50 @@ it("blocks invalid limits and sends null when planning inputs are cleared", asyn
     "crew",
     expect.objectContaining({ estimatePoints: null, revisionLimit: null })
   );
+});
+
+it("blocks creation while required custom fields are empty, then sends normalized values", async () => {
+  h.fields.mockResolvedValue([
+    {
+      id: relatedId,
+      crewId: "crew",
+      name: "Required Brief",
+      type: "text",
+      required: true,
+      options: [],
+    },
+  ]);
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => type(0, "Task"));
+  expect(button("taskCreate.submit")!.disabled).toBe(true);
+  await act(async () => type(6, "  New brief  "));
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ customFieldValues: [{ fieldId: relatedId, value: "New brief" }] })
+  );
+});
+it("requires successful definition loading and retries without dropping the title", async () => {
+  h.fields.mockRejectedValueOnce(new Error("Fields offline"));
+  await render();
+  await act(async () => type(0, "Task"));
+  expect(host.textContent).toContain("Fields offline");
+  expect(button("taskCreate.submit")!.disabled).toBe(true);
+  await act(async () => button("inbox.retry")!.click());
+  expect(host.querySelector("input")!.value).toBe("Task");
+  expect(button("taskCreate.submit")!.disabled).toBe(false);
+});
+it("ignores field definitions returned after account replacement", async () => {
+  let finish!: (v: unknown[]) => void;
+  h.fields.mockReturnValue(
+    new Promise((r) => {
+      finish = r;
+    })
+  );
+  await render();
+  await act(async () => type(0, "Task"));
+  h.generation = 2;
+  await act(async () => finish([]));
+  expect(button("taskCreate.submit")!.disabled).toBe(true);
 });

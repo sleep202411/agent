@@ -1342,7 +1342,7 @@
   "taskCreate.assignees": "负责人",
   "taskCreate.remove": "移除负责人",
   "taskCreate.add": "添加负责人",
-  "taskCreate.invalid": "请检查标题、说明和日期；截止时间不能早于开始时间。",
+  "taskCreate.invalid": "请检查标题、说明、日期、规划上限和自定义字段。请填写所有必填字段；截止时间不能早于开始时间。",
   "taskCreate.uncertain": "请求可能已创建任务。请返回任务列表核对后再创建，避免重复。",
   "taskCreate.submit": "创建任务",
   "taskAssignments.edit": "编辑负责人",

@@ -199,3 +199,43 @@ it("rejects out-of-range and fractional creation limits before writing", async (
     await expect(createTask("crew", { ...input, ...change })).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
+
+it("verifies sparse custom-field creation values including false and zero", async () => {
+  for (const value of [false, 0, "Brief", ["a", "b"]]) {
+    const rows = [{ fieldId: id, value }];
+    vi.mocked(api.post).mockResolvedValue({ ...detail, customFieldValues: rows });
+    await createTask("crew", { ...input, customFieldValues: rows });
+    expect(api.post).toHaveBeenLastCalledWith("/crews/crew/tasks", {
+      service: "aurora",
+      data: expect.objectContaining({ customFieldValues: rows }),
+    });
+  }
+  vi.mocked(api.post).mockResolvedValue({ ...detail, customFieldValues: [] });
+  await createTask("crew", { ...input, customFieldValues: [{ fieldId: id, value: null }] });
+  for (const rows of [
+    undefined,
+    [],
+    [{ fieldId: id, value: true }],
+    [
+      { fieldId: id, value: false },
+      { fieldId: id, value: false },
+    ],
+  ]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, customFieldValues: rows });
+    await expect(
+      createTask("crew", { ...input, customFieldValues: [{ fieldId: id, value: false }] })
+    ).rejects.toThrow("acknowledgement");
+  }
+});
+it("rejects duplicate or oversized custom values before creation", async () => {
+  for (const customFieldValues of [
+    [{ fieldId: id, value: "x".repeat(4001) }],
+    [
+      { fieldId: id, value: 0 },
+      { fieldId: id, value: 1 },
+    ],
+    Array.from({ length: 51 }, () => ({ fieldId: id, value: false })),
+  ])
+    await expect(createTask("crew", { ...input, customFieldValues })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});

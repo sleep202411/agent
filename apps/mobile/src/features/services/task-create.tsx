@@ -1,3 +1,5 @@
+import { TaskCustomFieldControl } from "./task-custom-field-control";
+import { useTaskCreationCustomFields } from "./task-creation-custom-fields";
 import { parsePlanningNumber } from "./task-planning-number";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from "react-native";
@@ -31,6 +33,9 @@ type Props = {
   onClose: () => void;
 };
 export function TaskCreate(props: Props) {
+  return <Access key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
+}
+function Access(props: Props) {
   const t = useTranslations();
   const [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>();
@@ -74,6 +79,7 @@ function Editor({
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
+  const custom = useTaskCreationCustomFields(crewId, generation);
   const [taskKind, setTaskKind] = useState<TaskKind | null>(null);
   const [planning, setPlanning] = useState<TaskPlanningDraft>({
     labels: [],
@@ -98,7 +104,9 @@ function Editor({
     locked = attempted || op.busy;
   let input: ReturnType<typeof taskCreateInput.parse> | undefined;
   try {
+    if (!custom.values) throw new Error("Custom fields are not ready");
     input = taskCreateInput.parse({
+      customFieldValues: custom.values,
       title,
       description,
       priority,
@@ -235,6 +243,27 @@ function Editor({
         onChange={setPlanning}
         locked={locked}
       />
+      {!custom.fields && !custom.error && <ActivityIndicator />}
+      {custom.error && (
+        <>
+          <ThemedText accessibilityRole="alert">{custom.error}</ThemedText>
+          <Pressable accessibilityRole="button" disabled={locked} onPress={custom.retry}>
+            <ThemedText>{t("inbox.retry")}</ThemedText>
+          </Pressable>
+        </>
+      )}
+      {custom.fields?.map((field) => (
+        <TaskCustomFieldControl
+          key={field.id}
+          field={field}
+          draft={custom.drafts[field.id] ?? null}
+          setDraft={(value) => custom.change(field.id, value)}
+          locked={locked}
+          crewId={crewId}
+          userId={userId}
+          generation={generation}
+        />
+      ))}
       <TaskCreationRelations
         crewId={crewId}
         generation={generation}

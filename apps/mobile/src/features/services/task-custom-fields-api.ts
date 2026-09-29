@@ -18,6 +18,25 @@ export const customField = z.object({
 });
 export type CustomField = z.infer<typeof customField>;
 export type CustomValue = z.infer<typeof value>;
+export async function fetchTaskFieldDefinitions(crewId: string, signal: AbortSignal) {
+  z.string()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    .parse(crewId);
+  const { fields } = z.object({ fields: z.array(customField) }).parse(
+    await api.get(`/crews/${encodeURIComponent(crewId)}/task-project`, {
+      service: "aurora",
+      signal,
+    })
+  );
+  if (
+    fields.some(
+      (f) => f.crewId !== crewId || new Set(f.options.map((o) => o.id)).size !== f.options.length
+    ) ||
+    new Set(fields.map((f) => f.id)).size !== fields.length
+  )
+    throw new Error("Task custom field definitions are inconsistent.");
+  return fields;
+}
 export async function fetchTaskCustomFields(task: TaskDetail, signal: AbortSignal) {
   z.string().uuid().parse(task.id);
   z.string()

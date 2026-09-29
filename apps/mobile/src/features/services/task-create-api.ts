@@ -4,6 +4,27 @@ import { taskKindSchema } from "./task-kind-api";
 import { taskDetailSchema } from "./task-detail-api";
 export const taskCreateInput = z
   .object({
+    customFieldValues: z
+      .array(
+        z
+          .object({
+            fieldId: z.string().uuid(),
+            value: z.union([
+              z.string().max(4000),
+              z.number().finite(),
+              z.boolean(),
+              z.array(z.string().max(128)).max(50),
+              z.null(),
+            ]),
+          })
+          .strict()
+      )
+      .max(50)
+      .refine(
+        (rows) => new Set(rows.map((r) => r.fieldId)).size === rows.length,
+        "Duplicate custom fields"
+      )
+      .optional(),
     taskKind: taskKindSchema.nullable().optional(),
     estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
     revisionLimit: z.number().int().min(0).max(100).nullable().optional(),
@@ -49,6 +70,9 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
   const data = taskCreateInput.parse(input);
   const result = taskDetailSchema
     .extend({
+      customFieldValues: z
+        .array(z.object({ fieldId: z.string().uuid(), value: z.unknown() }))
+        .optional(),
       taskKind: taskKindSchema.nullable().optional(),
       workflowStateId: z.string().uuid().optional(),
       cycleId: z.string().uuid().nullable().optional(),
@@ -59,7 +83,21 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     );
   const dateMatches = (a: string | null, b: string | null) =>
     a === null || b === null ? a === b : Date.parse(a) === Date.parse(b);
+  const customMatches =
+    data.customFieldValues === undefined ||
+    (result.customFieldValues !== undefined &&
+      result.customFieldValues.length ===
+        data.customFieldValues.filter((row) => row.value !== null).length &&
+      new Set(result.customFieldValues.map((row) => row.fieldId)).size ===
+        result.customFieldValues.length &&
+      data.customFieldValues.every((row) => {
+        const found = result.customFieldValues!.find((v) => v.fieldId === row.fieldId);
+        return row.value === null
+          ? !found
+          : !!found && JSON.stringify(row.value) === JSON.stringify(found.value);
+      }));
   if (
+    !customMatches ||
     result.crewId !== crewId ||
     (data.estimatePoints !== undefined && result.estimatePoints !== data.estimatePoints) ||
     (data.revisionLimit !== undefined && result.revisionLimit !== data.revisionLimit) ||

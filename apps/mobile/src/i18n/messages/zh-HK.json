@@ -1342,7 +1342,7 @@
   "taskCreate.assignees": "負責人",
   "taskCreate.remove": "移除負責人",
   "taskCreate.add": "添加負責人",
-  "taskCreate.invalid": "請檢查標題、說明和日期；截止時間不能早於開始時間。",
+  "taskCreate.invalid": "請檢查標題、說明、日期、規劃上限和自訂欄位。請填寫所有必填欄位；截止時間不能早於開始時間。",
   "taskCreate.uncertain": "請求可能已建立任務。請返回任務列表核對後再建立，避免重複。",
   "taskCreate.submit": "建立任務",
   "taskAssignments.edit": "編輯負責人",
