@@ -1,3 +1,4 @@
+import { ApplicationInterview } from "./application-interview";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -121,9 +122,37 @@ function ReviewList(
 }
 function Review(props: Props & { applicationId: string }) {
   const [revision, setRevision] = useState(0);
-  return <ReviewDetail key={revision} {...props} onRefresh={() => setRevision((n) => n + 1)} />;
+  const [interviewApplicant, setInterviewApplicant] = useState<string>();
+  if (interviewApplicant)
+    return (
+      <ApplicationInterview
+        applicationId={props.applicationId}
+        applicantId={interviewApplicant}
+        reviewer
+        userId={props.userId}
+        generation={props.generation}
+        onClose={() => {
+          setInterviewApplicant(undefined);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
+  return (
+    <ReviewDetail
+      key={revision}
+      {...props}
+      onInterview={setInterviewApplicant}
+      onRefresh={() => setRevision((n) => n + 1)}
+    />
+  );
 }
-function ReviewDetail(props: Props & { applicationId: string; onRefresh: () => void }) {
+function ReviewDetail(
+  props: Props & {
+    applicationId: string;
+    onInterview: (applicantId: string) => void;
+    onRefresh: () => void;
+  }
+) {
   const t = useTranslations(),
     locale = useLocale(),
     op = useAuthFormOperation(props.applicationId, true);
@@ -208,6 +237,11 @@ function ReviewDetail(props: Props & { applicationId: string; onRefresh: () => v
               {new Date(event.createdAt).toLocaleString(locale)} · {event.message}
             </ThemedText>
           ))}
+          <Action
+            disabled={op.busy}
+            label={t("reviewerInterview.open")}
+            onPress={() => props.onInterview(review.app.applicantId)}
+          />
           <ThemedText>{t("applicationReview.requirements")}</ThemedText>
           {review.app.status === "pending" && !result && !attempted && (
             <>

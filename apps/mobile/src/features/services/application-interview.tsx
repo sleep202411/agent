@@ -8,6 +8,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import {
   fetchApplicationInterview,
+  futureInterviewTime,
   interviewUpdate,
   updateApplicationInterview,
   type InterviewUpdate,
@@ -15,12 +16,17 @@ import {
 export function ApplicationInterview(props: {
   applicationId: string;
   userId: string;
+  applicantId?: string;
+  reviewer?: boolean;
   generation: number;
   onClose: () => void;
 }) {
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme();
+  const applicantId = props.applicantId ?? props.userId;
+  const applicant = applicantId === props.userId;
+  const [time, setTime] = useState("");
   const op = useAuthFormOperation(props.applicationId, true);
   const [before, setBefore] = useState<number | null>(null),
     [revision, setRevision] = useState(0);
@@ -48,12 +54,28 @@ export function ApplicationInterview(props: {
     setBefore(null);
     setRevision((n) => n + 1);
     setMessage("");
+    setTime("");
     setDenied(false);
   };
   const write = (action: InterviewUpdate["action"]) => {
     if (!page || props.generation !== getAuthGeneration()) return;
+    let scheduledAt: string | null = null;
+    if (!retry && action === "schedule") {
+      try {
+        scheduledAt = futureInterviewTime(time);
+      } catch {
+        setError(t("crewInterview.futureRequired"));
+        return;
+      }
+    }
     const parsed = interviewUpdate.safeParse(
-      retry ?? { expectedVersion: page.version, requestKey: uuid.v4(), action, message }
+      retry ?? {
+        expectedVersion: page.version,
+        requestKey: uuid.v4(),
+        action,
+        message,
+        ...(scheduledAt ? { scheduledAt } : {}),
+      }
     );
     if (!parsed.success) {
       setError(t("crewInterview.messageRequired"));
@@ -123,7 +145,8 @@ export function ApplicationInterview(props: {
             </>
           ) : (
             before === null &&
-            page.canUpdate && (
+            page.canUpdate &&
+            (applicant || props.reviewer) && (
               <>
                 <ThemedText>{t("crewInterview.messageLabel")}</ThemedText>
                 <TextInput
@@ -143,7 +166,35 @@ export function ApplicationInterview(props: {
                   }}
                 />
                 <ThemedText>{t("crewInterview.sharedNote")}</ThemedText>
-                {page.state === "proposed" &&
+                {!applicant && props.reviewer && (
+                  <>
+                    <ThemedText>
+                      {t("crewInterview.timeLabel").replace(
+                        "{timezone}",
+                        Intl.DateTimeFormat().resolvedOptions().timeZone
+                      )}
+                    </ThemedText>
+                    <TextInput
+                      accessibilityLabel={t("reviewerInterview.time")}
+                      placeholder="YYYY-MM-DD HH:mm"
+                      value={time}
+                      onChangeText={setTime}
+                      editable={!op.busy && !denied}
+                      style={{
+                        color: theme.text,
+                        borderWidth: 1,
+                        borderColor: theme.border,
+                        padding: 12,
+                        borderRadius: 8,
+                      }}
+                    />
+                    {button(t("crewInterview.schedule"), () => write("schedule"), denied)}
+                    {page.state === "confirmed" &&
+                      button(t("crewInterview.complete"), () => write("complete"), denied)}
+                  </>
+                )}
+                {applicant &&
+                  page.state === "proposed" &&
                   button(t("crewInterview.confirm"), () => write("confirm"), denied)}
                 {["proposed", "confirmed"].includes(page.state) &&
                   button(t("crewInterview.cancel"), () => write("cancel"), denied)}
@@ -165,7 +216,7 @@ export function ApplicationInterview(props: {
               <ThemedText>
                 {t(`crewInterview.${row.action}`)} ·{" "}
                 {t(
-                  row.actorUserId === props.userId
+                  row.actorUserId === applicantId
                     ? "crewInterview.applicant"
                     : "crewInterview.reviewer"
                 )}{" "}

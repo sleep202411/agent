@@ -1,3 +1,4 @@
+import { parseScheduleDate } from "./task-schedule-api";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -20,10 +21,15 @@ export const interviewUpdate = z
   .object({
     expectedVersion: z.number().int().min(0).max(2147483646),
     requestKey: z.string().uuid(),
-    action: z.enum(["confirm", "cancel", "message"]),
+    action: z.enum(["confirm", "cancel", "message", "schedule", "complete"]),
+    scheduledAt: date.optional(),
     message: z.string().trim().min(1).max(4000),
   })
-  .strict();
+  .strict()
+  .refine(
+    (value) => (value.action === "schedule") === (value.scheduledAt !== undefined),
+    "Only scheduling supplies an interview time."
+  );
 export type InterviewUpdate = z.infer<typeof interviewUpdate>;
 export async function fetchApplicationInterview(
   applicationId: string,
@@ -94,8 +100,20 @@ export async function updateApplicationInterview(
     result.action !== body.action ||
     result.message !== body.message ||
     (body.action === "confirm" && result.state !== "confirmed") ||
-    (body.action === "cancel" && result.state !== "cancelled")
+    (body.action === "cancel" && result.state !== "cancelled") ||
+    (body.action === "complete" && result.state !== "completed") ||
+    (body.action === "schedule" &&
+      (result.state !== "proposed" ||
+        !result.scheduledAt ||
+        Date.parse(result.scheduledAt) !== Date.parse(body.scheduledAt!)))
   )
     throw new Error("Interview update could not be verified. Retry the same request.");
   return result;
+}
+
+export function futureInterviewTime(value: string) {
+  const scheduledAt = parseScheduleDate(value, null);
+  if (!scheduledAt || Date.parse(scheduledAt) <= Date.now())
+    throw new Error("Interview time must be in the future.");
+  return scheduledAt;
 }

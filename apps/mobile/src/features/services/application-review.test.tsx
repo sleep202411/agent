@@ -2,6 +2,15 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApplicationReview } from "./application-review";
+vi.mock("./application-interview", () => ({
+  ApplicationInterview: ({
+    applicantId,
+    onClose,
+  }: {
+    applicantId: string;
+    onClose: () => void;
+  }) => <button onClick={onClose}>Interview: {applicantId}</button>,
+}));
 const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), post: vi.fn(), close: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get, post: h.post } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
@@ -224,4 +233,13 @@ it("blocks decisions after account change", async () => {
   h.generation = 2;
   await click("applicationReview.confirm");
   expect(h.post).not.toHaveBeenCalled();
+});
+
+it("opens reviewer interview for the selected applicant and reloads on return", async () => {
+  await open();
+  await click("reviewerInterview.open");
+  expect(host.textContent).toBe("Interview: creator");
+  await click("Interview: creator");
+  expect(button("applicationReview.approve")).toBeTruthy();
+  expect(h.get.mock.calls.filter((c) => c[0] === "/crews/crew/applications/app")).toHaveLength(2);
 });

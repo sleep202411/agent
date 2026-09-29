@@ -89,3 +89,41 @@ it("discards receipts after account change", async () => {
   });
   await expect(updateApplicationInterview("app", "creator", 1, body)).rejects.toThrow();
 });
+
+it("verifies a scheduling receipt time and proposed state", async () => {
+  const input = { ...body, action: "schedule" as const, scheduledAt: "2099-01-01T00:00:00Z" };
+  vi.mocked(api.post).mockResolvedValue({
+    ...row,
+    action: "schedule",
+    state: "proposed",
+    scheduledAt: "2099-01-01T00:00:00.000Z",
+  });
+  await expect(updateApplicationInterview("app", "creator", 1, input)).resolves.toMatchObject({
+    state: "proposed",
+  });
+  vi.mocked(api.post).mockResolvedValue({
+    ...row,
+    action: "schedule",
+    state: "proposed",
+    scheduledAt: "2099-01-02T00:00:00Z",
+  });
+  await expect(updateApplicationInterview("app", "creator", 1, input)).rejects.toThrow();
+});
+it("rejects missing schedule time and extraneous time on other actions", async () => {
+  await expect(
+    updateApplicationInterview("app", "creator", 1, { ...body, action: "schedule" })
+  ).rejects.toThrow();
+  await expect(
+    updateApplicationInterview("app", "creator", 1, {
+      ...body,
+      scheduledAt: "2099-01-01T00:00:00Z",
+    })
+  ).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("requires a completed receipt for completion", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...row, action: "complete", state: "confirmed" });
+  await expect(
+    updateApplicationInterview("app", "creator", 1, { ...body, action: "complete" })
+  ).rejects.toThrow();
+});

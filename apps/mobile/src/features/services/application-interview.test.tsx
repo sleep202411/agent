@@ -222,3 +222,106 @@ it("ignores late success after leaving the screen", async () => {
   );
   expect(h.get).toHaveBeenCalledTimes(1);
 });
+
+const renderReviewer = async () => {
+  await act(async () =>
+    root.render(
+      <ApplicationInterview
+        applicationId="app"
+        userId="manager"
+        applicantId="creator"
+        reviewer
+        generation={1}
+        onClose={h.close}
+      />
+    )
+  );
+};
+const timeInput = async (value: string) => {
+  await act(async () => {
+    const input = host.querySelectorAll("textarea")[1]!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      input,
+      value
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+};
+it("reviewers can schedule but cannot confirm for the applicant", async () => {
+  await renderReviewer();
+  expect(button("crewInterview.schedule")).toBeTruthy();
+  expect(button("crewInterview.confirm")).toBeUndefined();
+});
+it("schedules a future local time with exact version and request key", async () => {
+  h.post.mockImplementation(async (_path, options) => ({
+    ...row,
+    ...options.data,
+    version: 2,
+    actorUserId: "manager",
+    state: "proposed",
+  }));
+  await renderReviewer();
+  await type();
+  await timeInput("2099-01-01 12:30");
+  await click("crewInterview.schedule");
+  expect(h.post).toHaveBeenCalledWith(
+    "/applications/app/interview",
+    expect.objectContaining({
+      data: expect.objectContaining({
+        action: "schedule",
+        expectedVersion: 1,
+        scheduledAt: new Date(2099, 0, 1, 12, 30).toISOString(),
+        message: "Agreed",
+      }),
+    })
+  );
+});
+it.each(["", "2099-02-30 12:00", "2000-01-01 12:00"])(
+  "rejects invalid or past scheduling time %s",
+  async (value) => {
+    await renderReviewer();
+    await type();
+    await timeInput(value);
+    await click("crewInterview.schedule");
+    expect(h.post).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("crewInterview.futureRequired");
+  }
+);
+it("retries the same scheduled time after an ambiguous response", async () => {
+  h.post.mockRejectedValueOnce(new Error("Network")).mockImplementation(async (_path, options) => ({
+    ...row,
+    ...options.data,
+    version: 2,
+    actorUserId: "manager",
+    state: "proposed",
+  }));
+  await renderReviewer();
+  await type();
+  await timeInput("2099-01-01 12:30");
+  await click("crewInterview.schedule");
+  const original = h.post.mock.calls[0];
+  await click("crewInterview.retry");
+  expect(h.post.mock.calls[1]).toEqual(original);
+});
+it("offers completion only for a confirmed interview", async () => {
+  h.get.mockResolvedValue({ ...page, state: "confirmed", items: [{ ...row, state: "confirmed" }] });
+  h.post.mockImplementation(async (_path, options) => ({
+    ...row,
+    ...options.data,
+    version: 2,
+    actorUserId: "manager",
+    state: "completed",
+  }));
+  await renderReviewer();
+  await type();
+  await click("crewInterview.complete");
+  expect(h.post).toHaveBeenCalledWith(
+    "/applications/app/interview",
+    expect.objectContaining({ data: expect.objectContaining({ action: "complete" }) })
+  );
+});
+it("labels applicant history correctly when read by a reviewer", async () => {
+  h.get.mockResolvedValue({ ...page, items: [{ ...row, actorUserId: "creator" }] });
+  await renderReviewer();
+  expect(host.textContent).toContain("crewInterview.applicant");
+});
