@@ -24,6 +24,7 @@ const earning = {
   ...selected,
   crewId: "crew",
   sourceType: "task_reward",
+  version: 1,
   task: null,
   agreement: null,
   rejectionReason: null,

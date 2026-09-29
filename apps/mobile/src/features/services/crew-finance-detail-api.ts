@@ -10,6 +10,7 @@ const events = z.array(
   z.object({ id: uuid, actorUserId: z.string(), action: z.string(), createdAt: date })
 );
 const earningDetail = earning.extend({
+  version: z.number().int().positive(),
   task,
   agreement: z.object({ id: uuid, status: z.string() }).nullable(),
   rejectionReason: z.string().nullable(),

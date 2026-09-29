@@ -1536,5 +1536,12 @@
   "crewFinance.method_alipay": "支付宝",
   "crewFinance.method_wechat_pay": "微信支付",
   "crewFinance.method_paypal": "PayPal",
-  "crewFinance.method_other": "其他付款方式"
+  "crewFinance.method_other": "其他付款方式",
+  "crewFinance.decision_approve": "批准收入",
+  "crewFinance.decision_reject": "拒绝收入",
+  "crewFinance.decision_reverse": "冲销收入",
+  "crewFinance.decisionHelp": "请确认对收入记录的更改。此操作不会转账。已预留或已支付的收入不能冲销。",
+  "crewFinance.decisionReason": "原因（必填）",
+  "crewFinance.confirmDecision": "确认操作",
+  "crewFinance.decisionRefresh": "请刷新并检查记录后再执行其他操作。"
 }

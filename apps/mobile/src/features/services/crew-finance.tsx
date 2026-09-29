@@ -105,6 +105,7 @@ function Session(props: Props) {
             view={view}
             scope={effectiveScope}
             status={status}
+            refresh={() => setRevision((n) => n + 1)}
           />
         </>
       )}
@@ -123,7 +124,9 @@ function Session(props: Props) {
     </View>
   );
 }
-function Ledger(props: Props & { view: FinanceView; scope: FinanceScope; status: string }) {
+function Ledger(
+  props: Props & { view: FinanceView; scope: FinanceScope; status: string; refresh: () => void }
+) {
   const t = useTranslations(),
     currency = isChinaRegion ? "CNY" : "USD";
   const [cursor, setCursor] = useState<string | null>(null),
@@ -179,6 +182,8 @@ function Ledger(props: Props & { view: FinanceView; scope: FinanceScope; status:
     return (
       <CrewFinanceDetail
         crewId={props.crewId}
+        userId={props.userId}
+        onChanged={props.refresh}
         view={props.view}
         selected={selected}
         generation={props.generation}

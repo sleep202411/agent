@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewFinanceDetail } from "./crew-finance-detail";
 import type { FinanceRow } from "./crew-finance-api";
+vi.mock("./earning-decision", () => ({ EarningDecision: () => <span>earning actions</span> }));
 const h = vi.hoisted(() => ({ generation: 1, detail: vi.fn(), open: vi.fn(), close: vi.fn() }));
 vi.mock("./crew-finance-detail-api", async (original) => ({
   ...(await original<typeof import("./crew-finance-detail-api")>()),
@@ -82,6 +83,8 @@ const render = () =>
     root.render(
       <CrewFinanceDetail
         crewId="crew"
+        userId="user"
+        onChanged={h.close}
         view="earnings"
         selected={row}
         generation={1}

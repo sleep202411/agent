@@ -1536,5 +1536,12 @@
   "crewFinance.method_alipay": "Alipay",
   "crewFinance.method_wechat_pay": "WeChat Pay",
   "crewFinance.method_paypal": "PayPal",
-  "crewFinance.method_other": "Other Payment Method"
+  "crewFinance.method_other": "Other Payment Method",
+  "crewFinance.decision_approve": "Approve Earning",
+  "crewFinance.decision_reject": "Reject Earning",
+  "crewFinance.decision_reverse": "Reverse Earning",
+  "crewFinance.decisionHelp": "Confirm this change to the earning record. This does not transfer money. A reserved or paid earning cannot be reversed.",
+  "crewFinance.decisionReason": "Reason (Required)",
+  "crewFinance.confirmDecision": "Confirm Decision",
+  "crewFinance.decisionRefresh": "Refresh and check the record before taking another action."
 }

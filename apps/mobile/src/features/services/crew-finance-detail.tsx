@@ -1,3 +1,4 @@
+import { EarningDecision } from "./earning-decision";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -8,6 +9,8 @@ import { fetchFinanceDetail, financeProofUrl } from "./crew-finance-detail-api";
 import { formatFinanceMoney, type FinanceRow, type FinanceView } from "./crew-finance-api";
 type Props = {
   crewId: string;
+  userId: string;
+  onChanged: () => void;
   view: FinanceView;
   selected: FinanceRow;
   generation: number;
@@ -152,6 +155,15 @@ function Session(props: Props) {
                 </View>
               ))}
             </>
+          )}
+          {"sourceType" in record && (
+            <EarningDecision
+              key={`${record.id}:${record.version}`}
+              record={record}
+              userId={props.userId}
+              generation={props.generation}
+              onSaved={props.onChanged}
+            />
           )}
           <ThemedText>{t("crewFinance.audit")}</ThemedText>
           {record.events.length === 0 && <ThemedText>{t("crewFinance.noEvents")}</ThemedText>}
