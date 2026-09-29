@@ -2143,5 +2143,22 @@
   "crewStudio.initialize": "Create Crew Workspace",
   "crewStudio.confirmInitialize": "Confirm Creation",
   "crewStudio.initializeHelp": "Create and link a new Studio workspace for this Crew?",
-  "crewStudio.recheck": "Refresh to verify the current link before trying again."
+  "crewStudio.recheck": "Refresh to verify the current link before trying again.",
+  "studioMedia.title": "Studio Media",
+  "studioMedia.root": "Crew Asset Library",
+  "studioMedia.importHere": "Import Into This Folder",
+  "studioMedia.bind": "Link Studio Media",
+  "studioMedia.bindHelp": "Select one Studio asset to link to this file. The original file contents stay unchanged.",
+  "studioMedia.importHelp": "Select up to 40 assets. Media already present in this folder is skipped.",
+  "studioMedia.noWorkspace": "Link a Studio workspace to this Crew first.",
+  "studioMedia.allProjects": "All Projects",
+  "studioMedia.search": "Search Studio Media",
+  "studioMedia.empty": "No eligible media found.",
+  "studioMedia.confirmHelp": "Apply the selected Studio media to this destination?",
+  "studioMedia.save": "Apply Selection",
+  "studioMedia.confirm": "Confirm Selection",
+  "studioMedia.unlink": "Remove Studio Link",
+  "studioMedia.confirmUnlink": "Confirm Removal",
+  "studioMedia.unlinkHelp": "Remove the Studio association while keeping this file and its contents?",
+  "studioMedia.recheck": "Refresh and review the asset state before trying again."
 }

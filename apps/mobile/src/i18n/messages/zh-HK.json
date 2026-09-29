@@ -2143,5 +2143,22 @@
   "crewStudio.initialize": "建立劇組工作空間",
   "crewStudio.confirmInitialize": "確認建立",
   "crewStudio.initializeHelp": "為此劇組建立並連結新的 Studio 工作空間？",
-  "crewStudio.recheck": "請重新整理並確認目前連結後再重試。"
+  "crewStudio.recheck": "請重新整理並確認目前連結後再重試。",
+  "studioMedia.title": "Studio 媒體",
+  "studioMedia.root": "劇組資產庫",
+  "studioMedia.importHere": "匯入此資料夾",
+  "studioMedia.bind": "連結 Studio 媒體",
+  "studioMedia.bindHelp": "選擇一個 Studio 資產連結至此檔案，原始檔案內容保持不變。",
+  "studioMedia.importHelp": "最多選擇 40 個資產。此資料夾中已有的媒體會被略過。",
+  "studioMedia.noWorkspace": "請先為劇組連結 Studio 工作空間。",
+  "studioMedia.allProjects": "所有專案",
+  "studioMedia.search": "搜尋 Studio 媒體",
+  "studioMedia.empty": "沒有可用的媒體。",
+  "studioMedia.confirmHelp": "將所選 Studio 媒體套用至此目標？",
+  "studioMedia.save": "套用所選項",
+  "studioMedia.confirm": "確認所選項",
+  "studioMedia.unlink": "移除 Studio 連結",
+  "studioMedia.confirmUnlink": "確認移除",
+  "studioMedia.unlinkHelp": "移除 Studio 連結並保留檔案及其內容？",
+  "studioMedia.recheck": "請重新整理並檢查資產狀態後再重試。"
 }

@@ -68,6 +68,11 @@ vi.mock("./task-view-browser", () => ({
     </>
   ),
 }));
+vi.mock("../crew-assets/studio-media", () => ({
+  StudioMedia: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close studio media</button>
+  ),
+}));
 vi.mock("./crew-studio-workspace", () => ({
   CrewStudioWorkspace: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close workspace</button>
@@ -230,4 +235,11 @@ it("opens native Studio workspace management and returns to tasks", async () => 
   expect(button("close workspace")).toBeTruthy();
   await act(async () => button("close workspace").click());
   expect(button("crewStudio.title")).toBeTruthy();
+});
+
+it("opens native Studio media and returns to tasks", async () => {
+  await act(async () => button("studioMedia.title").click());
+  expect(button("close studio media")).toBeTruthy();
+  await act(async () => button("close studio media").click());
+  expect(button("studioMedia.title")).toBeTruthy();
 });

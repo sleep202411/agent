@@ -2143,5 +2143,22 @@
   "crewStudio.initialize": "创建剧组工作空间",
   "crewStudio.confirmInitialize": "确认创建",
   "crewStudio.initializeHelp": "为此剧组创建并关联新的 Studio 工作空间？",
-  "crewStudio.recheck": "请刷新并确认当前关联后再重试。"
+  "crewStudio.recheck": "请刷新并确认当前关联后再重试。",
+  "studioMedia.title": "Studio 媒体",
+  "studioMedia.root": "剧组资产库",
+  "studioMedia.importHere": "导入到此文件夹",
+  "studioMedia.bind": "关联 Studio 媒体",
+  "studioMedia.bindHelp": "选择一个 Studio 资产关联到此文件，原始文件内容保持不变。",
+  "studioMedia.importHelp": "最多选择 40 个资产。此文件夹中已有的媒体会被跳过。",
+  "studioMedia.noWorkspace": "请先为剧组关联 Studio 工作空间。",
+  "studioMedia.allProjects": "所有项目",
+  "studioMedia.search": "搜索 Studio 媒体",
+  "studioMedia.empty": "没有可用的媒体。",
+  "studioMedia.confirmHelp": "将所选 Studio 媒体应用到此目标？",
+  "studioMedia.save": "应用所选项",
+  "studioMedia.confirm": "确认所选项",
+  "studioMedia.unlink": "移除 Studio 关联",
+  "studioMedia.confirmUnlink": "确认移除",
+  "studioMedia.unlinkHelp": "移除 Studio 关联并保留文件及其内容？",
+  "studioMedia.recheck": "请刷新并检查资产状态后再重试。"
 }
