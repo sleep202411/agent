@@ -1178,5 +1178,14 @@
   "crewAssets.empty": "No accessible files in this view.",
   "crewAssets.more": "Load more",
   "crewAssets.attach": "Attach selected files",
-  "crewAssets.remove": "Remove selection"
+  "crewAssets.remove": "Remove selection",
+  "discovery.title": "Discover",
+  "discovery.entry": "Swipe through works",
+  "discovery.skip": "Next work (not saved)",
+  "discovery.open": "View work",
+  "discovery.like": "Like",
+  "discovery.unlike": "Unlike",
+  "discovery.more": "Load more",
+  "discovery.end": "You have reached the end.",
+  "discovery.empty": "No works match these filters."
 }

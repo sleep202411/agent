@@ -50,6 +50,7 @@ export async function getIpDiscovery(): Promise<IpDiscovery> {
 }
 
 export async function getIpCatalogPage(params?: {
+  signal?: AbortSignal;
   cursor?: string | null;
   genreCode?: string;
   limit?: number;

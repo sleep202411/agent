@@ -1178,5 +1178,14 @@
   "crewAssets.empty": "目前檢視沒有可存取的檔案。",
   "crewAssets.more": "載入更多",
   "crewAssets.attach": "加入所選檔案",
-  "crewAssets.remove": "移除選擇"
+  "crewAssets.remove": "移除選擇",
+  "discovery.title": "發現",
+  "discovery.entry": "上下滑動瀏覽作品",
+  "discovery.skip": "下一部作品（不儲存偏好）",
+  "discovery.open": "查看作品",
+  "discovery.like": "喜歡",
+  "discovery.unlike": "取消喜歡",
+  "discovery.more": "載入更多",
+  "discovery.end": "已瀏覽至最後。",
+  "discovery.empty": "沒有符合篩選條件的作品。"
 }

@@ -1178,5 +1178,14 @@
   "crewAssets.empty": "当前视图没有可访问的文件。",
   "crewAssets.more": "加载更多",
   "crewAssets.attach": "添加所选文件",
-  "crewAssets.remove": "移除选择"
+  "crewAssets.remove": "移除选择",
+  "discovery.title": "发现",
+  "discovery.entry": "上下滑动浏览作品",
+  "discovery.skip": "下一部作品（不保存偏好）",
+  "discovery.open": "查看作品",
+  "discovery.like": "喜欢",
+  "discovery.unlike": "取消喜欢",
+  "discovery.more": "加载更多",
+  "discovery.end": "已浏览到最后。",
+  "discovery.empty": "没有符合筛选条件的作品。"
 }
