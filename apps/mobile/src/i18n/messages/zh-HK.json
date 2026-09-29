@@ -1423,5 +1423,15 @@
   "episodeTaskTemplate.confirm": "建立分集任務",
   "episodeTaskTemplate.creating": "建立中…",
   "episodeTaskTemplate.created": "分集任務已建立",
-  "episodeTaskTemplate.reused": "已重用已有分集任務"
+  "episodeTaskTemplate.reused": "已重用已有分集任務",
+  "episodeCreate.title": "建立分集",
+  "episodeCreate.help": "新分集初始狀態為已計劃。集數留空將自動分配下一個編號。",
+  "episodeCreate.name": "分集標題",
+  "episodeCreate.number": "集數",
+  "episodeCreate.synopsis": "劇情簡介",
+  "episodeCreate.confirm": "建立分集",
+  "episodeCreate.creating": "建立中…",
+  "episodeCreate.created": "分集已建立",
+  "episodeCreate.denied": "需要製作管理權限。",
+  "episodeCreate.uncertain": "請求可能已成功，請先檢查分集列表再建立，此表單不會重複提交。"
 }

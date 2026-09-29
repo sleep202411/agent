@@ -1423,5 +1423,15 @@
   "episodeTaskTemplate.confirm": "Create Episode Tasks",
   "episodeTaskTemplate.creating": "Creating…",
   "episodeTaskTemplate.created": "Episode tasks created",
-  "episodeTaskTemplate.reused": "Existing episode tasks reused"
+  "episodeTaskTemplate.reused": "Existing episode tasks reused",
+  "episodeCreate.title": "Create Episode",
+  "episodeCreate.help": "New episodes start as Planned. Leave the number blank to assign the next available number.",
+  "episodeCreate.name": "Episode Title",
+  "episodeCreate.number": "Episode Number",
+  "episodeCreate.synopsis": "Synopsis",
+  "episodeCreate.confirm": "Create Episode",
+  "episodeCreate.creating": "Creating…",
+  "episodeCreate.created": "Episode Created",
+  "episodeCreate.denied": "Production management permission is required.",
+  "episodeCreate.uncertain": "The request may have succeeded. Check the episode list before creating again; this form will not resubmit."
 }

@@ -1423,5 +1423,15 @@
   "episodeTaskTemplate.confirm": "创建分集任务",
   "episodeTaskTemplate.creating": "创建中…",
   "episodeTaskTemplate.created": "分集任务已创建",
-  "episodeTaskTemplate.reused": "已复用已有分集任务"
+  "episodeTaskTemplate.reused": "已复用已有分集任务",
+  "episodeCreate.title": "创建分集",
+  "episodeCreate.help": "新分集初始状态为已计划。集数留空将自动分配下一个编号。",
+  "episodeCreate.name": "分集标题",
+  "episodeCreate.number": "集数",
+  "episodeCreate.synopsis": "剧情简介",
+  "episodeCreate.confirm": "创建分集",
+  "episodeCreate.creating": "创建中…",
+  "episodeCreate.created": "分集已创建",
+  "episodeCreate.denied": "需要制作管理权限。",
+  "episodeCreate.uncertain": "请求可能已成功，请先检查分集列表再创建，此表单不会重复提交。"
 }
