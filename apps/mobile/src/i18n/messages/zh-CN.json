@@ -1,4 +1,6 @@
 {
+  "taskActivity.noMembers": "已加载的列表中没有匹配成员。",
+  "taskActivity.mentionTooLong": "请缩短评论后再添加此提及。",
   "taskActivity.replyAction": "回复",
   "taskActivity.cancelReply": "取消回复",
   "taskActivity.attachmentComment": "附件评论",

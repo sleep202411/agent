@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
+import { taskMention } from "./task-mentions";
 import { taskActivity } from "./task-timeline-api";
 export async function fetchTaskCommentPermission(
   crewId: string,
@@ -21,6 +22,14 @@ export const taskCommentInput = z
     body: z.string().trim().max(10000),
     clientKey: z.string().trim().min(1).max(64),
     replyToId: z.string().uuid().optional(),
+    mentions: z
+      .array(taskMention)
+      .max(20)
+      .refine(
+        (items) => new Set(items.map((item) => item.userId)).size === items.length,
+        "Duplicate mention"
+      )
+      .optional(),
     attachments: z
       .array(
         z.discriminatedUnion("source", [
@@ -50,6 +59,10 @@ export const taskCommentInput = z
       .optional(),
   })
   .refine(
+    (input) => (input.mentions ?? []).every((item) => input.body.includes(`@${item.label}`)),
+    "Mention missing from comment text"
+  )
+  .refine(
     (input) => input.body.length > 0 || !!input.attachments?.length,
     "A comment needs text or an attachment"
   );
@@ -61,7 +74,9 @@ export async function postTaskComment(
 ) {
   z.string().uuid().parse(taskId);
   const data = taskCommentInput.parse(input);
-  const result = taskActivity.parse(
+  if (data.mentions?.some((item) => item.userId === userId))
+    throw new Error("You cannot mention yourself");
+  const result = taskActivity.extend({ mentions: z.array(taskMention).optional() }).parse(
     await api.post(`/crew-tasks/${encodeURIComponent(taskId)}/comments`, {
       service: "aurora",
       data,
@@ -71,6 +86,12 @@ export async function postTaskComment(
     result.taskId !== taskId ||
     result.actorUserId !== userId ||
     result.kind !== "comment" ||
+    (data.mentions?.length ?? 0) !== (result.mentions?.length ?? 0) ||
+    (data.mentions ?? []).some(
+      (mention, index) =>
+        result.mentions?.[index]?.userId !== mention.userId ||
+        result.mentions?.[index]?.label !== mention.label
+    ) ||
     result.attachments.length !== (data.attachments?.length ?? 0) ||
     result.attachments.some((file, index) => {
       const sent = data.attachments?.[index];

@@ -14,6 +14,8 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
+import { TaskMentionPicker } from "./task-mention-picker";
+import type { TaskMention } from "./task-mentions";
 import { inquiryKey } from "./inquiry-api";
 import {
   fetchTaskCommentPermission,
@@ -59,6 +61,8 @@ function Composer({
     [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
   const intent = useRef<TaskCommentInput | undefined>(undefined);
+  const [mentions, setMentions] = useState<TaskMention[]>([]);
+  const [mentionPicker, setMentionPicker] = useState(false);
   const [assets, setAssets] = useState<CrewAsset[]>([]);
   const [uploads, setUploads] = useState<CrewUpload[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -140,7 +144,10 @@ function Composer({
         placeholder={t("taskActivity.writeComment")}
         placeholderTextColor={theme.textSecondary}
         value={body}
-        onChangeText={setBody}
+        onChangeText={(value) => {
+          setBody(value);
+          setMentions((items) => items.filter((item) => value.includes(`@${item.label}`)));
+        }}
         editable={!op.busy && !attempted}
         maxLength={10000}
         style={{ color: theme.text, minHeight: 80, padding: 12 }}
@@ -162,6 +169,9 @@ function Composer({
                 body: body.trim(),
                 clientKey: inquiryKey(),
                 ...(reply ? { replyToId: reply.id } : {}),
+                ...(mentions.length
+                  ? { mentions: mentions.filter((item) => body.includes(`@${item.label}`)) }
+                  : {}),
                 ...(assets.length || uploads.length
                   ? {
                       attachments: [
@@ -183,6 +193,8 @@ function Composer({
               intent.current = undefined;
               setAttempted(false);
               setBody("");
+              setMentions([]);
+              setMentionPicker(false);
               setAssets([]);
               pendingUploads.current = { items: [], attempted: false };
               setUploads([]);
@@ -288,6 +300,42 @@ function Composer({
           </ThemedText>
         </Pressable>
       ))}
+      <Pressable
+        accessibilityRole="button"
+        disabled={op.busy || attempted || uploading || picking || mentions.length >= 20}
+        onPress={() => setMentionPicker(true)}
+        style={{ padding: 12 }}
+      >
+        <ThemedText>{t("thread.mention")}</ThemedText>
+      </Pressable>
+      {mentionPicker && (
+        <Modal visible animationType="slide" onRequestClose={() => setMentionPicker(false)}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+            <TaskMentionPicker
+              crewId={crewId}
+              userId={userId}
+              generation={generation}
+              excludedIds={mentions.map((item) => item.userId)}
+              onClose={() => setMentionPicker(false)}
+              onSelect={(mention) => {
+                if (generation !== getAuthGeneration() || attempted || op.busy) return;
+                const next = `${body}${body && !/\s$/.test(body) ? " " : ""}@${mention.label} `;
+                if (next.length > 10000) {
+                  setError(t("taskActivity.mentionTooLong"));
+                  setMentionPicker(false);
+                  return;
+                }
+                setBody(next);
+                setMentions((items) =>
+                  [...items.filter((item) => item.userId !== mention.userId), mention].slice(0, 20)
+                );
+                setMentionPicker(false);
+                input.current?.focus();
+              }}
+            />
+          </SafeAreaView>
+        </Modal>
+      )}
       {picking && (
         <Modal visible animationType="slide" onRequestClose={() => setPicking(false)}>
           <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>

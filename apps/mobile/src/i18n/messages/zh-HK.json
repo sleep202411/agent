@@ -1,4 +1,6 @@
 {
+  "taskActivity.noMembers": "已載入的列表中沒有符合的成員。",
+  "taskActivity.mentionTooLong": "請縮短評論後再加入此提及。",
   "taskActivity.replyAction": "回覆",
   "taskActivity.cancelReply": "取消回覆",
   "taskActivity.attachmentComment": "附件評論",

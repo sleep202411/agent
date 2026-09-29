@@ -136,3 +136,39 @@ it("accepts confirmed uploads and verifies their returned media identity", async
   });
   await expect(postTaskComment(id, "1", input)).rejects.toThrow("acknowledgement mismatch");
 });
+
+it("validates structured task mentions before posting", async () => {
+  const mention = { userId: "2", label: "Artist" };
+  vi.mocked(api.post).mockResolvedValue({ ...comment, mentions: [mention] });
+  await postTaskComment(id, "1", { body: "Hello @Artist", clientKey: "key", mentions: [mention] });
+  expect(api.post).toHaveBeenCalledWith(`/crew-tasks/${id}/comments`, {
+    service: "aurora",
+    data: { body: "Hello @Artist", clientKey: "key", mentions: [mention] },
+  });
+  vi.mocked(api.post).mockClear();
+  for (const mentions of [
+    [mention, mention],
+    [{ ...mention, userId: "1" }],
+    [{ ...mention, label: "@Artist" }],
+    Array.from({ length: 21 }, (_, i) => ({ userId: String(i + 2), label: "Artist" })),
+  ]) {
+    await expect(
+      postTaskComment(id, "1", { body: "@Artist", clientKey: "key", mentions })
+    ).rejects.toThrow();
+  }
+  await expect(
+    postTaskComment(id, "1", { body: "Gone", clientKey: "key", mentions: [mention] })
+  ).rejects.toThrow("Mention missing");
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+it("rejects an acknowledgement that lost the selected mention", async () => {
+  vi.mocked(api.post).mockResolvedValue(comment);
+  await expect(
+    postTaskComment(id, "1", {
+      body: "@Artist",
+      clientKey: "key",
+      mentions: [{ userId: "2", label: "Artist" }],
+    })
+  ).rejects.toThrow("acknowledgement mismatch");
+});

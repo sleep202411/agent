@@ -12,6 +12,11 @@ const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
 }));
+vi.mock("./task-mention-picker", () => ({
+  TaskMentionPicker: ({ onSelect }: { onSelect: (v: unknown) => void }) => (
+    <button onClick={() => onSelect({ userId: "2", label: "Artist" })}>select-member</button>
+  ),
+}));
 vi.mock("@/features/crew-assets/upload", () => ({
   pickAndUploadCrewFile: h.upload,
   discardCrewUpload: h.discard,
@@ -330,4 +335,35 @@ it("does not clean a former account's upload with the new account", async () => 
   h.generation = 2;
   await render();
   expect(h.discard).not.toHaveBeenCalled();
+});
+
+it("inserts a structured mention and keeps it frozen for uncertain retries", async () => {
+  const button = (text: string) =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
+  await render();
+  await act(async () => button("thread.mention").click());
+  await act(async () => button("select-member").click());
+  expect(host.querySelector("input")!.value).toBe("@Artist ");
+  h.post.mockRejectedValueOnce(new Error("Timeout")).mockResolvedValueOnce({});
+  await act(async () => button("taskActivity.sendComment").click());
+  expect(button("thread.mention").disabled).toBe(true);
+  await act(async () => button("inbox.retry").click());
+  expect(h.post.mock.calls).toEqual(
+    Array(2).fill([
+      "task",
+      "1",
+      { body: "@Artist", clientKey: "stable", mentions: [{ userId: "2", label: "Artist" }] },
+    ])
+  );
+});
+it("removes structured mentions when their label is removed from the draft", async () => {
+  const button = (text: string) =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent === text)!;
+  await render();
+  await act(async () => button("thread.mention").click());
+  await act(async () => button("select-member").click());
+  await act(async () => type("No mention"));
+  h.post.mockResolvedValue({});
+  await act(async () => button("taskActivity.sendComment").click());
+  expect(h.post).toHaveBeenCalledWith("task", "1", { body: "No mention", clientKey: "stable" });
 });

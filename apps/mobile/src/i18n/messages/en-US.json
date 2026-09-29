@@ -1,4 +1,6 @@
 {
+  "taskActivity.noMembers": "No matching members in the loaded list.",
+  "taskActivity.mentionTooLong": "Shorten the comment before adding this mention.",
   "taskActivity.replyAction": "Reply",
   "taskActivity.cancelReply": "Cancel Reply",
   "taskActivity.attachmentComment": "Attachment comment",
