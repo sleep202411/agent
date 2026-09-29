@@ -1164,5 +1164,19 @@
   "thread.you": "你",
   "thread.message": "訊息",
   "thread.send": "傳送",
-  "thread.unavailable": "無法存取此對話。"
+  "thread.unavailable": "無法存取此對話。",
+  "crewAssets.choose": "選擇劇組檔案",
+  "crewAssets.source.all": "資料夾",
+  "crewAssets.source.recent": "最近",
+  "crewAssets.source.favorites": "收藏",
+  "crewAssets.back": "返回上層資料夾",
+  "crewAssets.search": "搜尋目前檢視",
+  "crewAssets.searchAction": "搜尋",
+  "crewAssets.selected": "已選擇",
+  "crewAssets.folder": "資料夾",
+  "crewAssets.file": "檔案",
+  "crewAssets.empty": "目前檢視沒有可存取的檔案。",
+  "crewAssets.more": "載入更多",
+  "crewAssets.attach": "加入所選檔案",
+  "crewAssets.remove": "移除選擇"
 }

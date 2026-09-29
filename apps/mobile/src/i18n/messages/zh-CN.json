@@ -1164,5 +1164,19 @@
   "thread.you": "你",
   "thread.message": "消息",
   "thread.send": "发送",
-  "thread.unavailable": "无法访问此会话。"
+  "thread.unavailable": "无法访问此会话。",
+  "crewAssets.choose": "选择剧组文件",
+  "crewAssets.source.all": "文件夹",
+  "crewAssets.source.recent": "最近",
+  "crewAssets.source.favorites": "收藏",
+  "crewAssets.back": "返回上级文件夹",
+  "crewAssets.search": "搜索当前视图",
+  "crewAssets.searchAction": "搜索",
+  "crewAssets.selected": "已选择",
+  "crewAssets.folder": "文件夹",
+  "crewAssets.file": "文件",
+  "crewAssets.empty": "当前视图没有可访问的文件。",
+  "crewAssets.more": "加载更多",
+  "crewAssets.attach": "添加所选文件",
+  "crewAssets.remove": "移除选择"
 }

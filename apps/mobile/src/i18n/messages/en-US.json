@@ -1164,5 +1164,19 @@
   "thread.you": "You",
   "thread.message": "Message",
   "thread.send": "Send",
-  "thread.unavailable": "Conversation is unavailable."
+  "thread.unavailable": "Conversation is unavailable.",
+  "crewAssets.choose": "Choose Crew files",
+  "crewAssets.source.all": "Folders",
+  "crewAssets.source.recent": "Recent",
+  "crewAssets.source.favorites": "Favorites",
+  "crewAssets.back": "Back to parent folder",
+  "crewAssets.search": "Search this view",
+  "crewAssets.searchAction": "Search",
+  "crewAssets.selected": "Selected",
+  "crewAssets.folder": "Folder",
+  "crewAssets.file": "File",
+  "crewAssets.empty": "No accessible files in this view.",
+  "crewAssets.more": "Load more",
+  "crewAssets.attach": "Attach selected files",
+  "crewAssets.remove": "Remove selection"
 }
