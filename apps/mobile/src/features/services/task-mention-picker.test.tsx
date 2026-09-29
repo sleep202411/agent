@@ -150,3 +150,22 @@ it("allows self-assignment only when explicitly enabled", async () => {
   await act(async () => button("@1 · 1").click());
   expect(h.select).toHaveBeenCalledExactlyOnceWith({ userId: "1", label: "1" });
 });
+
+it("returns the crew membership identifier for earning recipients including self", async () => {
+  h.fetch.mockResolvedValue({ items: [member("1")], nextCursor: null });
+  await act(async () =>
+    root.render(
+      <TaskMentionPicker
+        crewId="crew"
+        userId="1"
+        generation={1}
+        excludedIds={[]}
+        includeSelf
+        onSelectMember={h.select}
+        onClose={() => {}}
+      />
+    )
+  );
+  await act(async () => button("@1 · 1").click());
+  expect(h.select).toHaveBeenCalledExactlyOnceWith({ crewMemberId: "m1", userId: "1", label: "1" });
+});

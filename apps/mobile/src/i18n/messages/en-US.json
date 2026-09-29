@@ -1548,5 +1548,17 @@
   "crewFinance.payout_void": "Void Pending Payout",
   "crewFinance.recordPaymentHelp": "Record a payment already completed outside the platform. This action does not send money. Enter its payment method and reference.",
   "crewFinance.voidHelp": "Void this pending payout and release its reserved earnings. This does not reverse an external payment.",
-  "crewFinance.proofUrl": "Payment Proof URL (HTTPS)"
+  "crewFinance.proofUrl": "Payment Proof URL (HTTPS)",
+  "earningCreate.add": "Add Earning",
+  "earningCreate.help": "Create a pending earning for an active Crew member. It must be approved before payout.",
+  "earningCreate.select": "Select Member",
+  "earningCreate.title": "Title",
+  "earningCreate.amount": "Amount",
+  "earningCreate.description": "Description",
+  "earningCreate.invalidAmount": "Enter a positive amount with up to two decimal places within the supported ledger range.",
+  "earningCreate.review": "Review Earning",
+  "earningCreate.confirm": "Confirm Earning",
+  "earningCreate.edit": "Edit",
+  "earningCreate.retry": "Retry Same Earning",
+  "earningCreate.retryHelp": "If saving was interrupted, retry here to recover the same earning. Before starting another entry, check the ledger to avoid recording it twice."
 }

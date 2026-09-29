@@ -12,6 +12,7 @@ export function TaskMentionPicker({
   generation,
   excludedIds,
   onSelect,
+  onSelectMember,
   onClose,
   includeSelf = false,
   title,
@@ -20,11 +21,13 @@ export function TaskMentionPicker({
   userId: string;
   generation: number;
   excludedIds: string[];
-  onSelect: (mention: TaskMention) => void;
   onClose: () => void;
   includeSelf?: boolean;
   title?: string;
-}) {
+} & (
+  | { onSelect: (mention: TaskMention) => void; onSelectMember?: never }
+  | { onSelect?: never; onSelectMember: (member: TaskMention & { crewMemberId: string }) => void }
+)) {
   const t = useTranslations(),
     theme = useTheme();
   const [items, setItems] = useState<MentionMember[]>([]),
@@ -89,6 +92,7 @@ export function TaskMentionPicker({
   const candidates = items
     .filter((item) => (includeSelf || item.userId !== userId) && !excludedIds.includes(item.userId))
     .map((item) => ({
+      crewMemberId: item.id,
       userId: item.userId,
       label:
         (displays?.get(item.userId)?.nickname || item.userId)
@@ -119,7 +123,8 @@ export function TaskMentionPicker({
             onPress={() => {
               if (!selected.current && generation === getAuthGeneration()) {
                 selected.current = true;
-                onSelect(item);
+                if (onSelectMember) onSelectMember(item);
+                else onSelect({ userId: item.userId, label: item.label });
               }
             }}
           >

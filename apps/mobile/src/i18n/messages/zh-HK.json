@@ -1548,5 +1548,17 @@
   "crewFinance.payout_void": "作廢待付款記錄",
   "crewFinance.recordPaymentHelp": "記錄已在平台外完成的付款。此操作不會轉帳，請填寫付款方式和參考號。",
   "crewFinance.voidHelp": "作廢此待付款記錄並釋放預留收入。此操作不會撤銷外部付款。",
-  "crewFinance.proofUrl": "付款憑證連結（HTTPS）"
+  "crewFinance.proofUrl": "付款憑證連結（HTTPS）",
+  "earningCreate.add": "新增收入",
+  "earningCreate.help": "為在職劇組成員建立待審核收入。審核通過後才可付款。",
+  "earningCreate.select": "選擇成員",
+  "earningCreate.title": "標題",
+  "earningCreate.amount": "金額",
+  "earningCreate.description": "說明",
+  "earningCreate.invalidAmount": "請輸入帳本支援範圍內的正數金額，最多兩位小數。",
+  "earningCreate.review": "核對收入",
+  "earningCreate.confirm": "確認收入",
+  "earningCreate.edit": "編輯",
+  "earningCreate.retry": "重試同一筆收入",
+  "earningCreate.retryHelp": "若儲存中斷，請在此重試以恢復同一筆收入。新增另一筆前請先檢查帳本，避免重複記錄。"
 }

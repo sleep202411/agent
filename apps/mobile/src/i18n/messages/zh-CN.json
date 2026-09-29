@@ -1548,5 +1548,17 @@
   "crewFinance.payout_void": "作废待付款记录",
   "crewFinance.recordPaymentHelp": "记录已在平台外完成的付款。此操作不会转账，请填写付款方式和参考号。",
   "crewFinance.voidHelp": "作废此待付款记录并释放预留收入。此操作不会撤销外部付款。",
-  "crewFinance.proofUrl": "付款凭证链接（HTTPS）"
+  "crewFinance.proofUrl": "付款凭证链接（HTTPS）",
+  "earningCreate.add": "添加收入",
+  "earningCreate.help": "为在职剧组成员创建待审核收入。审核通过后才可付款。",
+  "earningCreate.select": "选择成员",
+  "earningCreate.title": "标题",
+  "earningCreate.amount": "金额",
+  "earningCreate.description": "说明",
+  "earningCreate.invalidAmount": "请输入账本支持范围内的正数金额，最多两位小数。",
+  "earningCreate.review": "核对收入",
+  "earningCreate.confirm": "确认收入",
+  "earningCreate.edit": "编辑",
+  "earningCreate.retry": "重试同一笔收入",
+  "earningCreate.retryHelp": "若保存中断，请在此重试以恢复同一笔收入。新建另一笔前请先检查账本，避免重复记录。"
 }

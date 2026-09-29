@@ -1,3 +1,4 @@
+import { EarningCreate } from "./earning-create";
 import { CrewFinanceDetail } from "./crew-finance-detail";
 import { CrewFinanceTrend } from "./crew-finance-trend";
 import { useEffect, useRef, useState } from "react";
@@ -49,6 +50,11 @@ function Session(props: Props) {
   return (
     <View style={{ flex: 1 }}>
       <ThemedText>{t("crewFinance.title")}</ThemedText>
+      <EarningCreate
+        key={`create:${revision}`}
+        {...props}
+        onSaved={() => setRevision((n) => n + 1)}
+      />
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
       {visible?.allowed !== undefined && (
