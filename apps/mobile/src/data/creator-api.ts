@@ -15,6 +15,7 @@ type CreatorInfoDto = {
 };
 
 type CreatorLevelDto = {
+  type?: number | null;
   id?: number | string | null;
   name?: string | null;
   description?: string | null;
@@ -39,7 +40,16 @@ function resolveMaybe(path: string | undefined, baseUrl: string): string | undef
   return path ? resolveAssetUrl(path, baseUrl) : undefined;
 }
 
-function mapLevel(level: CreatorLevelDto): CreatorLevel | undefined {
+function mapLevel(level: CreatorLevelDto | null): CreatorLevel | undefined {
+  // Match Web's assigned creator qualifications: FD, AI Producer, skills.
+  // Account privileges and qualification application submissions are not badges.
+  if (
+    !level ||
+    !Number.isSafeInteger(level.id) ||
+    Number(level.id) <= 0 ||
+    !(level.id === 13 || level.type === 1 || level.type === 4)
+  )
+    return undefined;
   const name = nonEmpty(level.name);
   if (!name) return undefined;
   return {
@@ -55,7 +65,9 @@ function mapCreator(row: CreatorRowDto): CreatorSummary | undefined {
   if (!info?.id) return undefined;
   const id = String(info.id);
   const name = nonEmpty(info.nickName) ?? nonEmpty(info.name) ?? "Creator";
-  const levels = (row.level ?? []).map(mapLevel).filter((level): level is CreatorLevel => !!level);
+  const levels = (Array.isArray(row.level) ? row.level : [])
+    .map(mapLevel)
+    .filter((level): level is CreatorLevel => !!level);
 
   return {
     id,
