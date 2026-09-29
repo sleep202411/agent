@@ -33,12 +33,14 @@ import {
   type Project,
 } from "@/src/services/project";
 import { api } from "@/src/lib/api";
+import { isCreatorQualification } from "@/src/services/creator-qualification";
 import type { ExperienceEntry } from "@/app/(site)/profile/_hooks/use-profile-extras";
 import { env } from "@/src/env";
 import { useLocale } from "@/src/i18n/i18n";
 
 export interface CreatorLevel {
   id: number;
+  type?: number;
   name: string;
   /** Resolved icon URL (STATIC_BASE_URL + raw imagePath). Empty when
    *  the level has no badge image. */
@@ -124,9 +126,13 @@ function toCreator(row: CreatorRow | null | undefined): Creator | null {
   const name = safeStr(info.nickName).trim() || safeStr(info.name).trim() || "Unknown";
   const avatarPath = safeStr(info.avatar);
   const levels: CreatorLevel[] = levelRaw
-    .filter((l): l is NonNullable<typeof l> => !!l && typeof l.name === "string")
+    .filter(
+      (l): l is NonNullable<typeof l> =>
+        !!l && typeof l.name === "string" && l.name.trim().length > 0
+    )
     .map((l) => ({
       id: Number(l.id) || 0,
+      type: l.type,
       name: l.name,
       iconUrl: buildLevelIconUrl(safeStr(l.imagePath)),
       description: safeStr(l.description),
@@ -171,8 +177,12 @@ function selectCreators(data: { pages: CreatorListResult[] }): CreatorsView {
   const out: Creator[] = [];
   for (const page of data.pages) {
     for (const row of page.list) {
-      const c = toCreator(row);
-      if (!c || seen.has(c.id)) continue;
+      // The assigned level set is the public qualification source. Application
+      // submissions and unrelated privileges (e.g. free viewing) do not qualify.
+      const levels = Array.isArray(row?.level) ? row.level.filter(isCreatorQualification) : [];
+      if (levels.length === 0) continue;
+      const c = toCreator({ ...row, level: levels });
+      if (!c || c.levels.length === 0 || seen.has(c.id)) continue;
       seen.add(c.id);
       out.push(c);
     }
