@@ -31,6 +31,8 @@ export class AgentOsExternalHandoffReconcilerService
   private timer: ReturnType<typeof setInterval> | null = null;
   private draining = false;
   private stopped = false;
+  // Advance past failures; wrap to retry them and newly eligible lower IDs.
+  private recoveryCursor?: string;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -62,6 +64,7 @@ export class AgentOsExternalHandoffReconcilerService
         INNER JOIN "agent_os_runs" AS run
           ON run."id" = registration."source_agent_run_id"
         WHERE run."status" = 'running'
+          ${this.recoveryCursor ? Prisma.sql`AND registration."external_job_id" > ${this.recoveryCursor}::uuid` : Prisma.empty}
           AND registration."created_at" <= NOW() - (${RECOVERY_GRACE_MS} * INTERVAL '1 millisecond')
           AND run."updated_at" <= NOW() - (${RECOVERY_GRACE_MS} * INTERVAL '1 millisecond')
           AND (run."start_execution_lease_expires_at" IS NULL OR run."start_execution_lease_expires_at" <= NOW())
@@ -73,7 +76,7 @@ export class AgentOsExternalHandoffReconcilerService
               AND resolved."data"->>'externalJobId' = registration."external_job_id"::text
               AND resolved."data"->>'reason' LIKE 'external_job_%'
           )
-        ORDER BY registration."created_at" ASC, registration."external_job_id" ASC
+        ORDER BY registration."external_job_id" ASC
         LIMIT ${BATCH_SIZE}
       `);
       for (const candidate of candidates) {
@@ -85,7 +88,9 @@ export class AgentOsExternalHandoffReconcilerService
             `Agent OS external handoff recovery failed job=${candidate.externalJobId}: ${journalErrorText(error)}`,
           );
         }
+        this.recoveryCursor = candidate.externalJobId;
       }
+      if (candidates.length < BATCH_SIZE) this.recoveryCursor = undefined;
     } catch (error) {
       this.logger.warn(
         `Agent OS external handoff recovery sweep failed: ${journalErrorText(error)}`,

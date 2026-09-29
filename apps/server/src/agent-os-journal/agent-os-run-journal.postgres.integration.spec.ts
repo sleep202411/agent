@@ -109,6 +109,59 @@ describePostgres(
       }
     });
 
+    it('reaches later handoffs past a full failing recovery page and retries failures', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      try {
+        // Transaction-local tables exercise the real discovery SQL without
+        // constructing unrelated domain jobs or bypassing production constraints.
+        await prisma.$transaction(
+          async (tx) => {
+            await tx.$executeRawUnsafe(`CREATE TEMP TABLE agent_os_runs (
+            id uuid, status text, updated_at timestamptz,
+            start_execution_lease_expires_at timestamptz,
+            continuation_execution_lease_expires_at timestamptz
+          ) ON COMMIT DROP`);
+            await tx.$executeRawUnsafe(`CREATE TEMP TABLE agent_os_external_handoff_registrations (
+            external_job_id uuid, source_agent_run_id uuid, created_at timestamptz
+          ) ON COMMIT DROP`);
+            await tx.$executeRawUnsafe(`CREATE TEMP TABLE agent_os_run_events (
+            run_id uuid, type text, data jsonb
+          ) ON COMMIT DROP`);
+            const runId = randomUUID();
+            await tx.$executeRaw`INSERT INTO agent_os_runs (id,status,updated_at)
+            VALUES (${runId}::uuid, 'running', NOW() - INTERVAL '1 minute')`;
+            const ids = Array.from({ length: 26 }, () => randomUUID()).sort();
+            for (const id of ids) {
+              await tx.$executeRaw`INSERT INTO agent_os_external_handoff_registrations
+              VALUES (${id}::uuid, ${runId}::uuid, NOW() - INTERVAL '1 minute')`;
+            }
+            const visited: string[] = [];
+            const reconcile = jest.fn(async (id: string) => {
+              visited.push(id);
+              if (id !== ids[25]) throw new Error('Persistent handoff failure');
+              await tx.$executeRaw`DELETE FROM agent_os_external_handoff_registrations
+              WHERE external_job_id = ${id}::uuid`;
+            });
+            const reconciler = new AgentOsExternalHandoffReconcilerService(
+              tx as unknown as PrismaService,
+              {
+                reconcileExternalHandoff: reconcile,
+              } as unknown as AgentOsRunJournalService,
+            );
+            await reconciler.drainOnce();
+            expect(visited).toEqual(ids.slice(0, 25));
+            await reconciler.drainOnce();
+            expect(visited).toEqual(ids);
+            await reconciler.drainOnce();
+            expect(visited.slice(26)).toEqual(ids.slice(0, 25));
+          },
+          { timeout: 15000 },
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     it('serializes two pods and replays the first durable admission after response loss', async () => {
       const firstRunId = randomUUID();
       const retryRunId = randomUUID();
