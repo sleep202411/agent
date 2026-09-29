@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ORDER_STATUSES, canTransition, type OrderAction } from "@repo/shared/order";
 import { api } from "@/lib/api-client";
 const id = z.string().min(1);
-const schema = z.object({
+export const orderSchema = z.object({
   id,
   buyerId: id,
   creatorId: id,
@@ -37,7 +37,7 @@ const schema = z.object({
   cancelledAt: z.string().nullable(),
   cancelInfo: z.object({ by: z.enum(["buyer", "creator"]), reason: z.string() }).nullable(),
 });
-export type NativeOrder = z.infer<typeof schema>;
+export type NativeOrder = z.infer<typeof orderSchema>;
 export const ACTIONS = [
   "accept",
   "decline",
@@ -64,7 +64,7 @@ export function reasonLimit(action: OrderAction) {
       : 0;
 }
 function parseOrder(value: unknown, orderId: string) {
-  const order = schema.parse(value);
+  const order = orderSchema.parse(value);
   if (order.id !== orderId) throw new Error("Unexpected order response");
   return order;
 }
