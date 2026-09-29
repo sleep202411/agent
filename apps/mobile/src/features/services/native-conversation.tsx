@@ -28,7 +28,7 @@ import { useConversationHistory } from "./use-conversation-history";
 import { useInboxRealtime } from "./use-inbox-realtime";
 import { useUserDisplays } from "./user-displays";
 import { inquiryKey } from "./inquiry-api";
-import { inboxPreview } from "./inbox-preview";
+import { conversationActivity, conversationDisplayIds } from "./conversation-activity";
 import { ConversationProposal, ConversationProposalEditor } from "./conversation-proposal-ui";
 import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
 import type { CrewAsset } from "@/features/crew-assets/api";
@@ -55,7 +55,10 @@ export function NativeConversation({
   const unavailable = useInboxRealtime(userId, generation, active, history.refresh);
   const displays = useUserDisplays(
     active ? String(generation) : undefined,
-    history.detail?.participants.map((p) => p.userId) ?? []
+    conversationDisplayIds(
+      history.detail?.participants.map((p) => p.userId) ?? [],
+      history.messages
+    )
   );
   const op = useAuthFormOperation(id, active);
   const [body, setBody] = useState(""),
@@ -279,15 +282,7 @@ export function NativeConversation({
               />
             ) : (
               <ThemedText selectable>
-                {item.type === "system"
-                  ? inboxPreview(
-                      {
-                        lastMessageType: "system",
-                        lastMessagePreview: `[system:${item.payload?.kind === "system" ? item.payload.system.kind : ""}]`,
-                      },
-                      t
-                    )
-                  : item.body}
+                {item.type === "system" ? conversationActivity(item, displays, t) : item.body}
               </ThemedText>
             )}
             {item.payload?.kind === "attachments" &&

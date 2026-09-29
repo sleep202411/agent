@@ -1197,5 +1197,8 @@
   "thread.tagTask": "引用任务",
   "thread.searchTasks": "搜索剧组任务",
   "thread.noTasks": "没有匹配的任务",
-  "thread.taskTooLong": "加入任务引用后将超出消息长度限制。"
+  "thread.taskTooLong": "加入任务引用后将超出消息长度限制。",
+  "thread.member": "一位成员",
+  "thread.memberJoined": "{user}加入了剧组。",
+  "thread.memberLeft": "{user}离开了剧组。"
 }
