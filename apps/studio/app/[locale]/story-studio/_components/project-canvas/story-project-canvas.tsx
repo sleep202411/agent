@@ -165,7 +165,9 @@ import {
   applyStoryBiblePatch,
   connectSceneContinuation,
   createDecisionNode,
+  duplicateStoryNodes,
   materializeStoryDecisionNodes,
+  type StoryDuplicateSource,
   connectChoiceTarget,
   createStoryEndingForAutoRoute,
   createStoryEndingForChoice,
@@ -500,6 +502,7 @@ function StoryProjectCanvasInner({
   const pendingFitRef = useRef(false);
   const appliedFocusRef = useRef<string | null>(null);
   const pendingCanvasSelectionRef = useRef<string | null>(null);
+  const pendingCopiedNodeIdsRef = useRef<string[] | null>(null);
   const requestedCanvasFocusRef = useRef<string | null>(null);
   const marqueeSelectionActiveRef = useRef(false);
   const latestCanvasSelectionRef = useRef<string[]>([]);
@@ -1464,6 +1467,15 @@ function StoryProjectCanvasInner({
       pendingSelection,
       !hydrating
     );
+    const pendingCopies = pendingCopiedNodeIdsRef.current;
+    if (
+      pendingCopies &&
+      pendingCopies.every((nodeId) => model.nodes.some((node) => node.id === nodeId))
+    ) {
+      selectedNodeIds.clear();
+      pendingCopies.forEach((nodeId) => selectedNodeIds.add(nodeId));
+      pendingCopiedNodeIdsRef.current = null;
+    }
     if (pendingSelection && selectedNodeIds.has(pendingSelection)) {
       pendingCanvasSelectionRef.current = null;
     }
@@ -2042,6 +2054,87 @@ function StoryProjectCanvasInner({
     undo: undoStoryCanvas,
     redo: redoStoryCanvas,
   });
+
+  const storyClipboardRef = useRef<{
+    sources: StoryDuplicateSource[];
+    positions: Map<string, StoryCanvasPosition>;
+    pastes: number;
+  } | null>(null);
+  const pasteStorySelectionRef = useRef<() => void>(() => {});
+  useLayoutEffect(() => {
+    pasteStorySelectionRef.current = () => {
+      const clipboard = storyClipboardRef.current;
+      const current = latestContentRef.current;
+      if (!clipboard || clipboard.sources.length === 0 || !current) return;
+      if (!mutationBarrier.permits("content")) return;
+      const offset = 48 * (clipboard.pastes + 1);
+      try {
+        const duplicated = duplicateStoryNodes(current, clipboard.sources);
+        if (duplicated.created.length === 0) return;
+        for (const created of duplicated.created) {
+          const position = clipboard.positions.get(created.canvasId);
+          if (!position) continue;
+          pendingNodePositionsRef.current.set(created.nodeId, {
+            x: position.x + offset,
+            y: position.y + offset,
+          });
+        }
+        pendingCopiedNodeIdsRef.current = duplicated.created.map((created) => created.nodeId);
+        if (!commitContent(duplicated.content)) {
+          pendingCopiedNodeIdsRef.current = null;
+          for (const created of duplicated.created) {
+            pendingNodePositionsRef.current.delete(created.nodeId);
+          }
+          return;
+        }
+        clipboard.pastes += 1;
+        persistLayoutWithPendingPositions(duplicated.content);
+        setGraphError(null);
+      } catch {
+        setGraphError(t("graphError.generic"));
+      }
+    };
+  });
+
+  useEffect(() => {
+    if (!canMutateCanvasLayout) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          'input, textarea, select, [contenteditable="true"], [role="textbox"], .nokey'
+        )
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+      if (!event.metaKey && !event.ctrlKey) return;
+      const key = event.key.toLowerCase();
+      if (key !== "c" && key !== "v") return;
+      if (event.shiftKey || event.altKey) return;
+      if (key === "c") {
+        const sources = storyDuplicateSources(canvasNodesRef.current);
+        if (sources.length === 0) return;
+        event.preventDefault();
+        storyClipboardRef.current = {
+          sources,
+          positions: new Map(
+            canvasNodesRef.current
+              .filter((node) => sources.some((source) => source.canvasId === node.id))
+              .map((node) => [node.id, { ...node.position }])
+          ),
+          pastes: 0,
+        };
+        return;
+      }
+      if (!storyClipboardRef.current) return;
+      event.preventDefault();
+      pasteStorySelectionRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canMutateCanvasLayout]);
 
   const commitContent = (
     next: InteractiveStoryDraftContent,
@@ -3899,6 +3992,21 @@ function nodePositions(nodes: StoryCanvasNode[]): Record<string, StoryCanvasPosi
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((node) => [node.id, { x: node.position.x, y: node.position.y }])
   );
+}
+
+function storyDuplicateSources(nodes: readonly StoryCanvasNode[]): StoryDuplicateSource[] {
+  const selected = nodes.filter((node) => node.selected);
+  const selectedIds = new Set(selected.map((node) => node.id));
+  return selected.flatMap((node): StoryDuplicateSource[] => {
+    const sourceNodeId = node.data.sourceNodeId;
+    // A derived choice card is the clip's exit, not its own graph node.
+    // Copying the clip already copies that exit.
+    if (node.data.kind === "decision" && sourceNodeId && sourceNodeId !== node.id) {
+      if (selectedIds.has(sourceNodeId)) return [];
+      return [{ canvasId: node.id, nodeId: sourceNodeId, role: "choice-exit" }];
+    }
+    return [{ canvasId: node.id, nodeId: node.data.nodeId, role: "node" }];
+  });
 }
 
 function storyConnectionExistingTargets(
