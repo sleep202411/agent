@@ -1,4 +1,6 @@
 {
+  "thread.teamChat": "團隊聊天",
+  "thread.communityChat": "社群聊天",
   "login.accountAccess": "帳號登入",
   "login.agreementLead": "我已閱讀並同意",
   "login.and": "和",

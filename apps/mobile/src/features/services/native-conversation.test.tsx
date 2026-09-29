@@ -269,7 +269,7 @@ it("sends selected team files with an immutable retry key and keeps Web tools av
   await act(async () => click("thread.backToChat"));
   expect(host.querySelector("input")).not.toBeNull();
 });
-it("renders received file links and keeps community conversations on Web", async () => {
+it("renders received file links and keeps unknown Crew channels on Web", async () => {
   h.detail = { ...detail, contextType: "crew", crewChannel: "team" };
   h.messages = [
     {
@@ -292,7 +292,7 @@ it("renders received file links and keeps community conversations on Web", async
   ];
   await render();
   expect(host.textContent).toContain("file:Clip");
-  h.detail = { ...h.detail, crewChannel: "community" };
+  h.detail = { ...h.detail, crewChannel: null };
   await render();
   expect(host.textContent).toContain("web:/messages/chat");
   expect(host.textContent).not.toContain("crewAssets.choose");
@@ -427,4 +427,43 @@ it("opens a received same-Crew task through the existing authenticated workspace
   expect(host.textContent).toContain("web:/crews/crew/workspace?tab=tasks&task=task");
   await act(async () => click("thread.backToChat"));
   expect(host.textContent).not.toContain("#Foreign");
+});
+
+it("supports native community text and visible-message reads without team tools", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "community", contextId: "crew" };
+  h.send.mockResolvedValue(message);
+  await render();
+  expect(host.textContent).toContain("thread.communityChat");
+  expect(host.textContent).toContain("Hello buyer");
+  expect(host.textContent).not.toContain("web:");
+  for (const tool of ["crewAssets.choose", "thread.uploadFile", "thread.mention", "thread.tagTask"])
+    expect(host.textContent).not.toContain(tool);
+  expect(h.read).not.toHaveBeenCalled();
+  await act(async () =>
+    h.view!({ viewableItems: [{ item: message, index: 0, isViewable: true }] })
+  );
+  expect(h.read).toHaveBeenCalledExactlyOnceWith("chat", "message", expect.any(AbortSignal));
+  await act(async () => type("Community reply"));
+  await act(async () => click("thread.send"));
+  expect(h.send).toHaveBeenCalledExactlyOnceWith("chat", {
+    body: "Community reply",
+    clientKey: "stable-key",
+  });
+  expect(h.attach).not.toHaveBeenCalled();
+  await act(async () => click("thread.openWebChat"));
+  expect(host.textContent).toContain("web:/messages/chat");
+  await act(async () => click("thread.backToChat"));
+  expect(host.textContent).toContain("thread.communityChat");
+});
+
+it("removes the native community composer and history after access is revoked", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "community" };
+  await render();
+  expect(host.querySelector("input")).not.toBeNull();
+  h.detail = undefined;
+  h.messages = [];
+  await render();
+  expect(host.querySelector("input")).toBeNull();
+  expect(host.textContent).not.toContain("Hello buyer");
+  expect(h.send).not.toHaveBeenCalled();
 });

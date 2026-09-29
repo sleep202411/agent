@@ -112,15 +112,11 @@ export function NativeConversation({
   const [attempted, setAttempted] = useState(false);
   const detailId = history.detail?.id;
   const contextType = history.detail?.contextType;
+  const crewChannel = history.detail?.crewChannel;
+  const requiresWeb =
+    contextType === "crew" && crewChannel !== "team" && crewChannel !== "community";
   useEffect(() => {
-    if (
-      !active ||
-      !visibleId ||
-      !detailId ||
-      web ||
-      (contextType === "crew" && history.detail?.crewChannel !== "team")
-    )
-      return;
+    if (!active || !visibleId || !detailId || web || requiresWeb) return;
     const controller = new AbortController();
     void markConversationRead(id, visibleId, controller.signal).then(
       () => {
@@ -132,7 +128,7 @@ export function NativeConversation({
       }
     );
     return () => controller.abort();
-  }, [id, visibleId, active, detailId, contextType, history.detail?.crewChannel, web, readRetry]);
+  }, [id, visibleId, active, detailId, requiresWeb, web, readRetry]);
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -143,7 +139,7 @@ export function NativeConversation({
       <ThemedText>{label}</ThemedText>
     </Pressable>
   );
-  if (web || (history.detail?.contextType === "crew" && history.detail.crewChannel !== "team"))
+  if (web || requiresWeb)
     return (
       <View style={{ flex: 1 }}>
         {web && button(t("thread.backToChat"), () => setWeb(false))}
@@ -210,6 +206,11 @@ export function NativeConversation({
       style={{ flex: 1, backgroundColor: theme.background }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
+      {conversation.contextType === "crew" && (
+        <ThemedText type="smallBold" style={{ paddingHorizontal: 12, paddingTop: 8 }}>
+          {t(conversation.crewChannel === "community" ? "thread.communityChat" : "thread.teamChat")}
+        </ThemedText>
+      )}
       <View style={{ flexDirection: "row", paddingHorizontal: 12 }}>
         {conversation.contextType === "crew"
           ? button(

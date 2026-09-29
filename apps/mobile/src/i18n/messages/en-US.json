@@ -1,4 +1,6 @@
 {
+  "thread.teamChat": "Team Chat",
+  "thread.communityChat": "Community Chat",
   "login.accountAccess": "Account access",
   "login.agreementLead": "I have read and agree to the ",
   "login.and": " and ",
