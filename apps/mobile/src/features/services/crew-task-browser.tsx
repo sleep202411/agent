@@ -1,3 +1,4 @@
+import { ProjectActivity } from "./project-activity";
 import { ProjectDocument } from "./project-document";
 import { ProjectResources } from "./project-resources";
 import { ProjectProperties } from "./project-properties";
@@ -35,6 +36,7 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [showActivity, setShowActivity] = useState(false);
   const [showDocument, setShowDocument] = useState(false);
   const [showProjectProperties, setShowProjectProperties] = useState(false);
   const [showResources, setShowResources] = useState(false);
@@ -55,6 +57,15 @@ export function CrewTaskBrowser({
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (showActivity)
+    return (
+      <ProjectActivity
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowActivity(false)}
+      />
+    );
   if (showDocument)
     return (
       <ProjectDocument
@@ -239,6 +250,15 @@ export function CrewTaskBrowser({
     );
   return (
     <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowActivity(true);
+        }}
+      >
+        <ThemedText>{t("projectActivity.title")}</ThemedText>
+      </Pressable>
       <Pressable
         accessibilityRole="button"
         style={{ padding: 12 }}
