@@ -14,6 +14,8 @@ import { appEnv } from "@/config/app-env";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
+import { StudioMembers } from "./studio-members";
+import { StudioInvites } from "./studio-invites";
 import { studioInviteTargetUrl } from "./api/studio-invite-accept-api";
 import { canCreateStudioProject, type StudioWorkspace } from "./api/studio-projects-api";
 import {
@@ -37,6 +39,10 @@ function Session({ workspace, generation, onClose }: Props) {
     theme = useTheme(),
     active = useScreenActive();
   const [revision, setRevision] = useState(0);
+  const [collaboration, setCollaboration] = useState<{
+    project: PlatformProject;
+    kind: "members" | "invites";
+  }>();
   const [loaded, setLoaded] = useState<{
     revision: number;
     rows?: PlatformProject[];
@@ -78,7 +84,7 @@ function Session({ workspace, generation, onClose }: Props) {
     return () => c.abort();
   }, [workspace.id, generation, revision, active]);
   useEffect(() => {
-    if (!active) return;
+    if (!active || collaboration) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (!lock.current) {
         if (form) setForm(undefined);
@@ -87,7 +93,7 @@ function Session({ workspace, generation, onClose }: Props) {
       return true;
     });
     return () => sub.remove();
-  }, [active, form, onClose]);
+  }, [active, collaboration, form, onClose]);
   const visible = loaded?.revision === revision ? loaded : undefined;
   const locked = busy || uncertainAt !== undefined;
   const editable = form?.project
@@ -147,6 +153,22 @@ function Session({ workspace, generation, onClose }: Props) {
     backgroundColor: theme.backgroundElement,
   };
   if (!active) return null;
+  if (collaboration) {
+    const scope = {
+      kind: "project" as const,
+      id: collaboration.project.id,
+      name: collaboration.project.name,
+    };
+    const close = () => {
+      setCollaboration(undefined);
+      setRevision((v) => v + 1);
+    };
+    return collaboration.kind === "members" ? (
+      <StudioMembers scope={scope} generation={generation} onClose={close} />
+    ) : (
+      <StudioInvites scope={scope} generation={generation} onClose={close} />
+    );
+  }
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -251,6 +273,22 @@ function Session({ workspace, generation, onClose }: Props) {
                 disabled={locked}
                 onPress={() => edit(project)}
               />
+              <Action
+                label={t("studioMembers.title")}
+                disabled={locked}
+                onPress={() => {
+                  if (!lock.current && current()) setCollaboration({ project, kind: "members" });
+                }}
+              />
+              {["owner", "admin"].includes(project.role ?? "") && (
+                <Action
+                  label={t("studioInvites.title")}
+                  disabled={locked}
+                  onPress={() => {
+                    if (!lock.current && current()) setCollaboration({ project, kind: "invites" });
+                  }}
+                />
+              )}
               <Action
                 label={t("studioProjects.open")}
                 disabled={busy}

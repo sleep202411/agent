@@ -1,10 +1,14 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
-export type StudioInviteScope = { kind: "workspace" | "story-project"; id: string; name: string };
+export type StudioInviteScope = {
+  kind: "workspace" | "project" | "story-project";
+  id: string;
+  name: string;
+};
 export type StudioInviteRole = "admin" | "producer" | "editor" | "reviewer" | "viewer";
 export const inviteRoles = (scope: StudioInviteScope): StudioInviteRole[] =>
-  scope.kind === "workspace"
+  scope.kind !== "story-project"
     ? ["admin", "editor", "viewer"]
     : ["producer", "editor", "reviewer", "viewer"];
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{32}$/);
@@ -27,9 +31,9 @@ export class StudioInviteWriteError extends Error {
 }
 function base(scope: StudioInviteScope) {
   z.string().uuid().parse(scope.id);
-  if (scope.kind !== "workspace" && scope.kind !== "story-project")
+  if (scope.kind !== "workspace" && scope.kind !== "project" && scope.kind !== "story-project")
     throw new Error("Invalid sharing scope.");
-  return `/${scope.kind === "workspace" ? "workspaces" : "story-projects"}/${scope.id}/invites`;
+  return `/${scope.kind === "workspace" ? "workspaces" : scope.kind === "project" ? "projects" : "story-projects"}/${scope.id}/invites`;
 }
 function current(generation: number, signal?: AbortSignal) {
   if (generation !== getAuthGeneration() || signal?.aborted)
