@@ -2241,5 +2241,15 @@
   "memberPositions.remove": "移除岗位",
   "memberPositions.add": "添加岗位",
   "memberPositions.invalid": "请为每一项选择标准岗位或填写自定义名称。",
-  "memberPositions.confirmHelp": "确认修改岗位？移除招聘岗位可能释放名额。清空岗位不会移除剧组成员。"
+  "memberPositions.confirmHelp": "确认修改岗位？移除招聘岗位可能释放名额。清空岗位不会移除剧组成员。",
+  "memberAccess.title": "编辑成员权限",
+  "memberAccess.help": "选择管理与财务权限组合。已有的单项权限设置继续生效。",
+  "memberAccess.standard": "普通成员",
+  "memberAccess.both": "管理＋财务",
+  "memberAccess.confirmHelp": "请确认此成员所选的权限。",
+  "memberAccess.confirm": "确认权限变更",
+  "memberAccess.review": "检查权限变更",
+  "memberAccess.edit": "更改选择",
+  "memberAccess.recheck": "请返回成员列表刷新后再操作。",
+  "memberAccess.ownerProtected": "剧组负责人已拥有全部权限。"
 }

@@ -1,3 +1,4 @@
+import { CrewMemberAccess } from "./crew-member-access";
 import { CrewMemberPositions } from "./crew-member-positions";
 import { CrewMemberRemoval } from "./crew-member-removal";
 import { useEffect, useRef, useState } from "react";
@@ -32,6 +33,8 @@ function Session(props: Props) {
 function Directory(props: Props & { refresh: () => void; title: string }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [editingAccess, setEditingAccess] = useState<CrewMember>();
+  const [canManagePermissions, setCanManagePermissions] = useState(false);
   const [editingPositions, setEditingPositions] = useState<CrewMember>();
   const [removing, setRemoving] = useState<CrewMember>();
   const [canManage, setCanManage] = useState(false);
@@ -84,6 +87,7 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
         setItems(page.items);
         setTotal(page.total);
         setCanManage(page.canManageMembers);
+        setCanManagePermissions(page.canManagePermissions);
         setMore(state.more);
       } catch (e) {
         if (!state.controller.signal.aborted && props.generation === getAuthGeneration())
@@ -124,6 +128,7 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
       setItems(state.items);
       setTotal(page.total);
       setCanManage(page.canManageMembers);
+      setCanManagePermissions(page.canManagePermissions);
       setMore(state.more);
     } catch (e) {
       if (!state.controller.signal.aborted && props.generation === getAuthGeneration()) {
@@ -146,6 +151,15 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
     String(props.generation),
     items.map((m) => m.userId)
   );
+  if (editingAccess)
+    return (
+      <CrewMemberAccess
+        {...props}
+        member={editingAccess}
+        name={displays?.get(editingAccess.userId)?.nickname || editingAccess.userId}
+        onClose={props.refresh}
+      />
+    );
   if (editingPositions)
     return (
       <CrewMemberPositions
@@ -198,6 +212,15 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
               disabled={busy}
               onPress={() => {
                 if (props.generation === getAuthGeneration()) setEditingPositions(member);
+              }}
+            />
+          )}
+          {canManagePermissions && !member.isOwner && (
+            <Button
+              label={t("memberAccess.title")}
+              disabled={busy}
+              onPress={() => {
+                if (props.generation === getAuthGeneration()) setEditingAccess(member);
               }}
             />
           )}

@@ -64,7 +64,11 @@ export async function fetchCrewMemberPage(
     (cursor !== null && page.nextCursor === cursor)
   )
     throw new Error("Crew member page could not be verified. Refresh the directory.");
-  return { ...page, canManageMembers: access.permissions.includes("members.manage") };
+  return {
+    ...page,
+    canManageMembers: access.permissions.includes("members.manage"),
+    canManagePermissions: access.permissions.includes("members.permissions.manage"),
+  };
 }
 
 /** Removal has no version parameter. Revalidate the captured member; server locking remains authoritative. */

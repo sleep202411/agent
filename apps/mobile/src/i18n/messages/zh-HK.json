@@ -2241,5 +2241,15 @@
   "memberPositions.remove": "移除崗位",
   "memberPositions.add": "新增崗位",
   "memberPositions.invalid": "請為每一項選擇標準崗位或填寫自訂名稱。",
-  "memberPositions.confirmHelp": "確認修改崗位？移除招聘崗位可能釋放名額。清空崗位不會移除劇組成員。"
+  "memberPositions.confirmHelp": "確認修改崗位？移除招聘崗位可能釋放名額。清空崗位不會移除劇組成員。",
+  "memberAccess.title": "編輯成員權限",
+  "memberAccess.help": "選擇管理與財務權限組合。已有的單項權限設定繼續生效。",
+  "memberAccess.standard": "普通成員",
+  "memberAccess.both": "管理＋財務",
+  "memberAccess.confirmHelp": "請確認此成員所選的權限。",
+  "memberAccess.confirm": "確認權限變更",
+  "memberAccess.review": "檢查權限變更",
+  "memberAccess.edit": "更改選擇",
+  "memberAccess.recheck": "請返回成員列表重新整理後再操作。",
+  "memberAccess.ownerProtected": "劇組負責人已擁有全部權限。"
 }

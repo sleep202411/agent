@@ -2241,5 +2241,15 @@
   "memberPositions.remove": "Remove Position",
   "memberPositions.add": "Add Position",
   "memberPositions.invalid": "Choose a standard position or enter a custom title for every row.",
-  "memberPositions.confirmHelp": "Confirm these position changes? Removing a recruited position may release its vacancy. Clearing all positions keeps the person as a Crew member."
+  "memberPositions.confirmHelp": "Confirm these position changes? Removing a recruited position may release its vacancy. Clearing all positions keeps the person as a Crew member.",
+  "memberAccess.title": "Edit Member Access",
+  "memberAccess.help": "Choose a management and finance access combination. Individual permission overrides remain in effect.",
+  "memberAccess.standard": "Standard Member",
+  "memberAccess.both": "Management + Finance",
+  "memberAccess.confirmHelp": "Confirm the selected access for this member.",
+  "memberAccess.confirm": "Confirm Access Change",
+  "memberAccess.review": "Review Access Change",
+  "memberAccess.edit": "Change Selection",
+  "memberAccess.recheck": "Return to the directory and refresh before another attempt.",
+  "memberAccess.ownerProtected": "The Crew owner already has every permission."
 }

@@ -26,7 +26,7 @@ beforeEach(() => {
   );
 });
 it("loads member-scoped pages", async () => {
-  expect(await read()).toEqual({ ...page, canManageMembers: false });
+  expect(await read()).toEqual({ ...page, canManageMembers: false, canManagePermissions: false });
   expect(api.get).toHaveBeenLastCalledWith(
     "/crews/crew/members",
     expect.objectContaining({ params: { limit: 50 } })
@@ -142,3 +142,15 @@ it("does not retry a failed removal", async () => {
   await expect(remove()).rejects.toThrow("Already removed");
   expect(api.delete).toHaveBeenCalledTimes(1);
 });
+
+it.each(["members.manage", "members.permissions.manage"])(
+  "keeps member and permission management separate: %s",
+  async (permission) => {
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ userId: "1", permissions: ["members.view", permission] })
+      .mockResolvedValueOnce(page);
+    const result = await read();
+    expect(result.canManageMembers).toBe(permission === "members.manage");
+    expect(result.canManagePermissions).toBe(permission === "members.permissions.manage");
+  }
+);

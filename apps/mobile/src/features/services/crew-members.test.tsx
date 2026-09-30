@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewMembers } from "./crew-members";
+vi.mock("./crew-member-access", () => ({
+  CrewMemberAccess: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close access</button>
+  ),
+}));
 const h = vi.hoisted(() => ({ generation: 1, read: vi.fn(), close: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
@@ -182,4 +187,41 @@ it("edits positions including the owner and refreshes on return", async () => {
   await click("memberPositions.title");
   await click("close positions");
   expect(h.read).toHaveBeenCalledTimes(2);
+});
+
+it("opens access editing only with the specific permission and refreshes on return", async () => {
+  h.read.mockResolvedValue({
+    items: [{ ...member, isOwner: false }],
+    nextCursor: null,
+    total: 1,
+    canManagePermissions: true,
+  });
+  await render();
+  await click("memberAccess.title");
+  await click("close access");
+  expect(h.read).toHaveBeenCalledTimes(2);
+});
+it("hides access editing for ordinary managers and owners", async () => {
+  h.read.mockResolvedValue({
+    items: [member],
+    nextCursor: null,
+    total: 1,
+    canManagePermissions: true,
+    canManageMembers: true,
+  });
+  await render();
+  expect(button("memberAccess.title")).toBeUndefined();
+});
+
+it("does not offer access editing with only member management", async () => {
+  h.read.mockResolvedValue({
+    items: [{ ...member, isOwner: false }],
+    nextCursor: null,
+    total: 1,
+    canManagePermissions: false,
+    canManageMembers: true,
+  });
+  await render();
+  expect(button("memberAccess.title")).toBeUndefined();
+  expect(button("memberPositions.title")).toBeDefined();
 });
