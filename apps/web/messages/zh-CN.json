@@ -4915,7 +4915,7 @@
     },
     "status": {
       "backlog": "待规划",
-      "open": "待开始",
+      "open": "待交付",
       "in_progress": "进行中",
       "submitted": "待审核",
       "revision_requested": "待修改",
@@ -5551,7 +5551,7 @@
     },
     "status": {
       "backlog": "待规划",
-      "open": "待开始",
+      "open": "待交付",
       "in_progress": "制作中",
       "submitted": "待审核",
       "revision_requested": "待修改",

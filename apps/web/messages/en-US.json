@@ -4915,7 +4915,7 @@
     },
     "status": {
       "backlog": "Backlog",
-      "open": "To do",
+      "open": "Pending delivery",
       "in_progress": "In progress",
       "submitted": "In review",
       "revision_requested": "Revision",
@@ -5551,7 +5551,7 @@
     },
     "status": {
       "backlog": "Backlog",
-      "open": "Open",
+      "open": "Pending delivery",
       "in_progress": "In progress",
       "submitted": "In review",
       "revision_requested": "Revision",
