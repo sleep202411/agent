@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -30,6 +31,9 @@ import {
   type CreateStoryProjectValues,
   type StoryProjectSummary,
 } from "@/features/agent";
+import { StudioInviteAccept } from "@/features/agent/studio-invite-accept";
+import { studioInviteTargetUrl } from "@/features/agent/api/studio-invite-accept-api";
+import { appEnv } from "@/config/app-env";
 import { StudioInvites } from "@/features/agent/studio-invites";
 import type { StudioInviteScope } from "@/features/agent/api/studio-invites-api";
 import { useTheme } from "@/hooks/use-theme";
@@ -56,6 +60,7 @@ function AgentHubSession({ generation }: { generation: number }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { requireAuth, isAuthenticated } = useAuthGate();
+  const [joiningInvite, setJoiningInvite] = useState(false);
   const [inviteScope, setInviteScope] = useState<StudioInviteScope>();
   const [projects, setProjects] = useState<StoryProjectSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -177,6 +182,26 @@ function AgentHubSession({ generation }: { generation: number }) {
     [selectedWorkspace, generation, router, t]
   );
 
+  if (joiningInvite)
+    return (
+      <StudioInviteAccept
+        generation={generation}
+        onClose={() => setJoiningInvite(false)}
+        onOpen={async (target) => {
+          if (target.scope === "project") {
+            await Linking.openURL(studioInviteTargetUrl(target, appEnv.appRegion));
+            return;
+          }
+          setJoiningInvite(false);
+          if (target.scope === "story-project")
+            openThread(target.storyProjectId, target.targetName);
+          else {
+            setProjects([]);
+            void loadProjects({ blocking: true, workspaceId: target.workspaceId });
+          }
+        }}
+      />
+    );
   if (inviteScope)
     return (
       <StudioInvites
@@ -273,6 +298,15 @@ function AgentHubSession({ generation }: { generation: number }) {
               <ThemedText type="small">{t("studioInvites.title")}</ThemedText>
             </Pressable>
           )}
+        {isAuthenticated && (
+          <Pressable
+            disabled={creating}
+            onPress={() => setJoiningInvite(true)}
+            style={[styles.banner, { borderColor: theme.textSecondary }]}
+          >
+            <ThemedText type="small">{t("studioJoin.title")}</ThemedText>
+          </Pressable>
+        )}
         {!isAuthenticated ? (
           <Pressable
             onPress={() => requireAuth({ onAuthenticated: () => void loadProjects() })}

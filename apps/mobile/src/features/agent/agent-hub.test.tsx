@@ -11,6 +11,11 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
 }));
+vi.mock("@/features/agent/studio-invite-accept", () => ({
+  StudioInviteAccept: () => <span>Accept Invite</span>,
+}));
+vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
+vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("@/features/agent/studio-invites", () => ({
   StudioInvites: () => <span>Invite Manager</span>,
 }));
