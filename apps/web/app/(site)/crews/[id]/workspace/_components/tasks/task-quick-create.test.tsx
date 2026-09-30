@@ -318,33 +318,6 @@ describe("TaskQuickCreate", () => {
     );
   });
 
-  it("preserves an explicit Backlog choice when the active cycle refreshes", async () => {
-    const taskProject = {
-      ...project,
-      cycles: [{ id: "current", name: "Current", status: "active" }],
-    } as unknown as CrewTaskProjectDTO;
-    renderQuickCreate(vi.fn(), vi.fn(), taskProject);
-    act(() =>
-      fill(
-        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
-        "Keep in Backlog"
-      )
-    );
-    await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
-    await act(async () => click(document.querySelector('button[aria-label="Cycle"]')!));
-    const backlog = [...document.querySelectorAll('[role="option"]')].find(
-      (item) => item.textContent?.trim() === "Backlog"
-    );
-    await act(async () => click(backlog!));
-    renderQuickCreate(vi.fn(), vi.fn(), {
-      ...taskProject,
-      cycles: [{ ...taskProject.cycles[0]!, id: "next" }],
-    });
-    await act(async () => click(exactButton("Create")));
-    expect(state.create).toHaveBeenCalledWith(
-      expect.objectContaining({ cycleId: null, title: "Keep in Backlog" })
-    );
-  });
 
   it("creates a minimal task from the compact issue composer", async () => {
     const onCreated = vi.fn();
@@ -395,10 +368,7 @@ describe("TaskQuickCreate", () => {
 
     const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
     act(() => fill(input, "Isaac should finish the first-act storyboard next Friday"));
-    await act(async () => {
-      click(document.querySelector('button[aria-label="More actions"]')!);
-      await Promise.resolve();
-    });
+    
     await act(async () => {
       click(button("Organize with AI"));
       await Promise.resolve();
@@ -416,8 +386,7 @@ describe("TaskQuickCreate", () => {
     expect(state.create).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Finish the first-act storyboard",
-        priority: "high",
-        assignees: [{ userId: "member-1", currency: "USD" }],
+        description: "Deliver a reviewable storyboard.",
       })
     );
     expect(state.create.mock.calls[0]![0]).not.toHaveProperty("computeBudgetPoints");
@@ -436,7 +405,7 @@ describe("TaskQuickCreate", () => {
         'textarea[aria-label="Task title"]'
       )!;
       act(() => fill(title, "Original prompt"));
-      await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+      
       await act(async () => click(button("Organize with AI")));
       const input = document.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${label}"]`)!;
       act(() => fill(input, "Newer user text"));
@@ -462,7 +431,7 @@ describe("TaskQuickCreate", () => {
     }
   );
 
-  it.each(["deadline", "priority", "assignee", "cycle"])(
+  it.each(["deadline", "priority", "assignee"])(
     "preserves a %s choice made during AI preparation",
     async (field) => {
       let finish!: (value: unknown) => void;
@@ -479,7 +448,7 @@ describe("TaskQuickCreate", () => {
         'textarea[aria-label="Task title"]'
       )!;
       act(() => fill(title, "Current title"));
-      await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+      
       await act(async () => click(button("Organize with AI")));
       if (field === "deadline") {
         act(() =>
@@ -487,10 +456,10 @@ describe("TaskQuickCreate", () => {
         );
       } else {
         const label =
-          field === "priority" ? "Priority" : field === "assignee" ? "Assignees" : "Cycle";
+          field === "priority" ? "Priority" : "Assignees";
         await act(async () => click(document.querySelector(`button[aria-label="${label}"]`)!));
         const text =
-          field === "priority" ? "priority.low" : field === "assignee" ? "Isaac" : "Chosen cycle";
+          field === "priority" ? "priority.low" : "Isaac";
         const option = [...document.querySelectorAll('[role="option"]')].find(
           (item) => item.textContent?.trim() === text
         );
@@ -515,7 +484,6 @@ describe("TaskQuickCreate", () => {
           ...(field === "deadline" ? { dueAt: new Date("2026-10-01T23:59:59").toISOString() } : {}),
           ...(field === "priority" ? { priority: "low" } : {}),
           ...(field === "assignee" ? { assignees: [{ userId: "member-1", currency: "USD" }] } : {}),
-          ...(field === "cycle" ? { cycleId: "cycle-user" } : {}),
         })
       );
     }
@@ -537,7 +505,7 @@ describe("TaskQuickCreate", () => {
         "Old prompt"
       )
     );
-    await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+    
     await act(async () => click(button("Organize with AI")));
     renderQuickCreate(onCreated, onOpenChange, project, { open: false });
     renderQuickCreate(onCreated, onOpenChange);
@@ -660,7 +628,7 @@ describe("TaskQuickCreate", () => {
     renderQuickCreate();
     const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
     act(() => fill(input, "Prepare this task"));
-    act(() => click(document.querySelector('button[aria-label="More actions"]')!));
+    
     act(() => {
       click(button("Organize with AI"));
       click(button("Organize with AI"));
@@ -684,18 +652,16 @@ describe("TaskQuickCreate", () => {
     expect(state.create).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Prepared title",
-        assignees: [{ userId: "member-1", currency: "USD" }],
+        description: "Prepared brief",
       })
     );
   });
-  it.each(["", "2026-09-25"])("respects the user changing an AI deadline to %s", async (date) => {
+  it.each(["", "2026-09-25"])("respects the user changing a deadline to %s", async (date) => {
     renderQuickCreate();
     const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
     act(() => fill(input, "Prepare storyboard"));
-    act(() => click(document.querySelector('button[aria-label="More actions"]')!));
     await act(async () => click(button("Organize with AI")));
     const dateInput = document.querySelector<HTMLInputElement>('input[type="date"]')!;
-    expect(dateInput.value).toBe("2026-08-07");
     act(() => fill(dateInput, date));
     await act(async () => click(exactButton("Create")));
     expect(state.create).toHaveBeenCalledWith(

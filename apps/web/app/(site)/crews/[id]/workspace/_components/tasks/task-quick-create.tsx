@@ -242,12 +242,10 @@ export function TaskQuickCreate({
       if (session.current !== requestedSession || draftRevision.current !== requestedRevision)
         return;
       setDraft(next);
+      // AI 整理 rewrites content only. Scheduling/assignment are the
+      // user's explicit choices — leave them untouched.
       setTitle(next.title);
       setDescription(next.description);
-      setPriority(next.priority);
-      setAssigneeUserId(next.assigneeUserIds[0] ?? "");
-      setCycleId(next.cycleId ?? defaultCycleId);
-      setDueDate(next.dueDate ?? "");
     } catch (error) {
       if (session.current === requestedSession) {
         toast.error(error instanceof Error ? error.message : t("draftFailed"));
@@ -390,22 +388,44 @@ export function TaskQuickCreate({
             aria-label={t("taskTitle")}
             className="block h-6 min-h-6 w-full resize-none overflow-hidden bg-transparent p-0 text-[18px] leading-6 font-semibold tracking-[-0.1px] text-white outline-none placeholder:text-[#686871]"
           />
-          <textarea
-            value={description}
-            onChange={(event) => {
-              draftRevision.current += 1;
-              setDescription(event.target.value);
-              setDraft(null);
-            }}
-            rows={2}
-            maxLength={10_000}
-            placeholder={t("descriptionPlaceholder")}
-            aria-label={t("taskBrief")}
-            className={cn(
-              "mt-1.5 block h-[79.2px] w-full resize-none overflow-y-auto bg-transparent px-0 pt-1.5 pb-3 text-[15px] leading-6 font-[450] text-[#d5d5da] outline-none placeholder:text-[#6d6d76]",
-              expanded && "h-[140px]"
-            )}
-          />
+          <div className="relative">
+            <textarea
+              value={description}
+              onChange={(event) => {
+                draftRevision.current += 1;
+                setDescription(event.target.value);
+                setDraft(null);
+              }}
+              rows={2}
+              maxLength={10_000}
+              placeholder={t("descriptionPlaceholder")}
+              aria-label={t("taskBrief")}
+              className={cn(
+                "mt-1.5 block h-[79.2px] w-full resize-none overflow-y-auto bg-transparent px-0 pt-1.5 pb-3 text-[15px] leading-6 font-[450] text-[#d5d5da] outline-none placeholder:text-[#6d6d76]",
+                expanded && "h-[140px]"
+              )}
+            />
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                color="muted"
+                disabled={!title.trim() || create.isPending}
+                loading={draftTask.isPending}
+                onClick={() => void generateDraft()}
+                className="h-6 rounded-full px-2 text-[11px] text-[#a4a4ac] hover:bg-[#252529] hover:text-[#d8d8dd]"
+                icon={<IconSparkles className="size-3.5 text-[#7f8cff]" />}
+              >
+                {t("organizeWithAi")}
+              </Button>
+              {draft?.questions.length ? (
+                <p className="truncate text-[10px] text-amber-100/75">
+                  {draft.questions.join(" · ")}
+                </p>
+              ) : null}
+            </div>
+          </div>
 
           <div className="-mx-1.5 mt-1.5 flex min-w-0 flex-col gap-2">
             <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -513,22 +533,12 @@ export function TaskQuickCreate({
                     : t("labels")
                 }
               />
-              <MoreOptions
-                project={project}
-                cycleId={resolvedCycleId}
-                dueDate={dueDate}
-                draft={draft}
-                canGenerate={Boolean(title.trim()) && !create.isPending}
-                generating={draftTask.isPending}
-                onCycleChange={(value) => {
-                  draftRevision.current += 1;
-                  setCycleId(value);
-                }}
-                onDueDateChange={(value) => {
+              <DateChip
+                value={dueDate}
+                onChange={(value) => {
                   draftRevision.current += 1;
                   setDueDate(value);
                 }}
-                onGenerate={() => void generateDraft()}
               />
             </div>
           </div>
@@ -666,93 +676,28 @@ function LabelChip({
   );
 }
 
-function MoreOptions({
-  project,
-  cycleId,
-  dueDate,
-  draft,
-  canGenerate,
-  generating,
-  onCycleChange,
-  onDueDateChange,
-  onGenerate,
+function DateChip({
+  value,
+  onChange,
 }: {
-  project: CrewTaskProjectDTO;
-  cycleId: string;
-  dueDate: string;
-  draft: CrewTaskDraftDTO | null;
-  canGenerate: boolean;
-  generating: boolean;
-  onCycleChange: (value: string) => void;
-  onDueDateChange: (value: string) => void;
-  onGenerate: () => void;
+  value: string;
+  onChange: (value: string) => void;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
   return (
-    <span className="relative shrink-0">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="grid size-6 place-items-center rounded-full bg-[#252529] text-[#c5c5cc] hover:bg-[#2d2d32] hover:text-white"
-        aria-label={t("moreActions")}
-        aria-expanded={open}
-      >
-        <IconDots className="size-3.5" stroke={1.8} />
-      </button>
-      {open ? (
-        <span className="absolute top-8 right-0 z-60 flex w-72 flex-col gap-3 rounded-xl border border-white/[0.09] bg-[#1b1b1f] p-3 shadow-[0_18px_50px_rgba(0,0,0,.52)]">
-          <label className="space-y-1.5">
-            <span className="flex items-center gap-1.5 text-[10px] font-medium text-[#85858e]">
-              <IconAdjustmentsHorizontal className="size-3.5" />
-              {t("cycle")}
-            </span>
-            <TaskSelect
-              value={cycleId}
-              onValueChange={onCycleChange}
-              ariaLabel={t("cycle")}
-              className="rounded-lg bg-[#111114] text-[#c9c9cf] focus-visible:border-[#5e6ad2]/70 dark:bg-[#111114]"
-              options={[
-                { value: "", label: t("backlog") },
-                ...project.cycles
-                  .filter((cycle) => cycle.status !== "cancelled")
-                  .map((cycle) => ({ value: cycle.id, label: cycle.name })),
-              ]}
-            />
-          </label>
-          <label className="space-y-1.5">
-            <span className="flex items-center gap-1.5 text-[10px] font-medium text-[#85858e]">
-              <IconCalendar className="size-3.5" />
-              {t("due")}
-            </span>
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(event) => onDueDateChange(event.target.value)}
-              className="h-8 w-full rounded-lg border border-white/[0.09] bg-[#111114] px-2 text-[11px] text-[#c9c9cf] outline-none focus:border-[#5e6ad2]/70"
-            />
-          </label>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            color="muted"
-            disabled={!canGenerate}
-            loading={generating}
-            onClick={onGenerate}
-            className="h-8 w-full justify-start rounded-lg px-2 text-[11px]"
-            icon={<IconSparkles className="text-[#7f8cff]" />}
-          >
-            {t("organizeWithAi")}
-          </Button>
-          {draft?.questions.length ? (
-            <p className="rounded-lg bg-amber-300/[0.06] px-2.5 py-2 text-[10px] leading-5 text-amber-100/75">
-              {draft.questions.join(" · ")}
-            </p>
-          ) : null}
-        </span>
-      ) : null}
-    </span>
+    <label
+      className="inline-flex h-6 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
+      aria-label={t("due")}
+    >
+      <IconCalendar className="size-3.5 shrink-0" />
+      <input
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={t("due")}
+        className="w-auto cursor-pointer bg-transparent text-[11px] text-[#c9c9cf] outline-none"
+      />
+    </label>
   );
 }
 
