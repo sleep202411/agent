@@ -133,7 +133,7 @@ function readIdentifier(region, variant, platform) {
   if (variant === "production") {
     if (!regionValue) {
       throw new Error(
-        `[mobile config] Missing ${regionEnvName} for production ${region} ${platform} build`,
+        `[mobile config] Missing ${regionEnvName} for production ${region} ${platform} build`
       );
     }
 
@@ -225,6 +225,17 @@ module.exports = ({ config }) => {
   const defaults = REGION_DEFAULTS[appRegion];
 
   const wechatApplink = wechatAssociatedDomain();
+  const studioHost = appRegion === "cn" ? "studio.fizzspace.cn" : "studio.fizzdragon.com";
+  // The Studio host must publish matching AASA / assetlinks signing identities.
+  // Dev/preview builds use their configured custom scheme and must not claim release links.
+  const studioLinks = appVariant === "production";
+  const associatedDomains = [
+    ...new Set([
+      ...(config.ios?.associatedDomains ?? []),
+      ...(wechatApplink ? [wechatApplink] : []),
+      ...(studioLinks ? [`applinks:${studioHost}`] : []),
+    ]),
+  ];
 
   const appEnv = {
     appRegion,
@@ -235,17 +246,17 @@ module.exports = ({ config }) => {
       contentBaseUrl: readUrl(
         "EXPO_PUBLIC_API_CONTENT_BASE_URL",
         defaults.api.contentBaseUrl,
-        appVariant,
+        appVariant
       ),
       studioBaseUrl: readUrl(
         "EXPO_PUBLIC_API_STUDIO_BASE_URL",
         defaults.api.studioBaseUrl,
-        appVariant,
+        appVariant
       ),
       auroraBaseUrl: readUrl(
         "EXPO_PUBLIC_API_AURORA_BASE_URL",
         defaults.api.auroraBaseUrl,
-        appVariant,
+        appVariant
       ),
     },
     assets: {
@@ -254,12 +265,12 @@ module.exports = ({ config }) => {
       bannerBaseUrl: readUrl(
         "EXPO_PUBLIC_BANNER_BASE_URL",
         defaults.assets.bannerBaseUrl,
-        appVariant,
+        appVariant
       ),
       staticBaseUrl: readUrl(
         "EXPO_PUBLIC_STATIC_BASE_URL",
         defaults.assets.staticBaseUrl,
-        appVariant,
+        appVariant
       ),
     },
   };
@@ -290,12 +301,27 @@ module.exports = ({ config }) => {
       supportsTablet: false,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
-      ...(wechatApplink ? { associatedDomains: [wechatApplink] } : {}),
+      ...(associatedDomains.length ? { associatedDomains } : {}),
     },
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
       versionCode: 80,
+      intentFilters: [
+        ...(config.android?.intentFilters ?? []),
+        ...(studioLinks
+          ? [
+              {
+                action: "VIEW",
+                autoVerify: true,
+                category: ["BROWSABLE", "DEFAULT"],
+                data: ["/invite/", "/en-US/invite/", "/zh-CN/invite/", "/zh-HK/invite/"].map(
+                  (pathPrefix) => ({ scheme: "https", host: studioHost, pathPrefix })
+                ),
+              },
+            ]
+          : []),
+      ],
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {

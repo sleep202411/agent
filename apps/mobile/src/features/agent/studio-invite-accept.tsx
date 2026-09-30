@@ -16,20 +16,21 @@ import {
   type StudioInviteTarget,
 } from "./api/studio-invite-accept-api";
 type Props = {
+  initialLink?: string;
   generation: number;
   onClose: () => void;
   onOpen: (target: StudioInviteTarget) => void | Promise<void>;
 };
 export function StudioInviteAccept(props: Props) {
   return props.generation === getAuthGeneration() ? (
-    <Session key={props.generation} {...props} />
+    <Session key={`${props.generation}:${props.initialLink ?? ""}`} {...props} />
   ) : null;
 }
-function Session({ generation, onClose, onOpen }: Props) {
+function Session({ generation, onClose, onOpen, initialLink }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     active = useScreenActive();
-  const [link, setLink] = useState("");
+  const [link, setLink] = useState(initialLink ?? "");
   const [review, setReview] = useState<{ token: string; value: StudioInvitePreview }>();
   const [result, setResult] = useState<StudioInviteTarget>();
   const [error, setError] = useState<string>();

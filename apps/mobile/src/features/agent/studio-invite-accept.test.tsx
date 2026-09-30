@@ -65,9 +65,16 @@ const preview = {
 const target = { scope: "workspace", workspaceId: id, targetName: "Team" };
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
-const render = () =>
+const render = (initialLink?: string) =>
   act(async () =>
-    root.render(<StudioInviteAccept generation={1} onOpen={h.open} onClose={h.close} />)
+    root.render(
+      <StudioInviteAccept
+        initialLink={initialLink}
+        generation={1}
+        onOpen={h.open}
+        onClose={h.close}
+      />
+    )
   );
 const button = (s: string) => [...host.querySelectorAll("button")].find((b) => b.textContent === s);
 const click = (s: string) => act(async () => button(s)!.click());
@@ -147,4 +154,18 @@ it("hides pending results when the account changes", async () => {
   h.generation++;
   await render();
   expect(host.textContent).toBe("");
+});
+
+it("prefills a routed invite without joining and clears the previous review for a new link", async () => {
+  const first = `https://studio.fizzdragon.com/invite/${token}`;
+  await render(first);
+  expect(host.querySelector("input")!.value).toBe(first);
+  expect(h.accept).not.toHaveBeenCalled();
+  await click("studioJoin.preview");
+  expect(host.textContent).toContain("Team");
+  const second = `https://studio.fizzdragon.com/invite/${"b".repeat(32)}`;
+  await render(second);
+  expect(host.querySelector("input")!.value).toBe(second);
+  expect(button("studioJoin.accept")).toBeUndefined();
+  expect(h.accept).not.toHaveBeenCalled();
 });

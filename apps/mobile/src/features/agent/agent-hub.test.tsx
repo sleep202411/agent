@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import AgentHubScreen from "@/app/agent/index";
 const h = vi.hoisted(() => ({
   generation: 1,
+  workspaceParam: undefined as string | undefined,
   authenticated: true,
   focused: true,
   list: vi.fn(),
@@ -27,6 +28,7 @@ vi.mock("@/features/agent/studio-invites", () => ({
 }));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: h.push }),
+  useLocalSearchParams: () => ({ workspace: h.workspaceParam }),
   useFocusEffect: (fn: () => void | (() => void)) => {
     const focused = h.focused;
     useEffect(() => (focused ? fn() : undefined), [fn, focused]);
@@ -111,6 +113,7 @@ function deferred() {
 beforeEach(() => {
   vi.clearAllMocks();
   h.generation = 1;
+  h.workspaceParam = undefined;
   h.authenticated = true;
   h.focused = true;
   h.list.mockResolvedValue(result("Current"));
@@ -240,4 +243,15 @@ it("opens workspace creation from the hub", async () => {
       .click()
   );
   expect(host.textContent).toContain("Workspace Settings");
+});
+
+it("selects the workspace requested by an accepted invite and falls back after revocation", async () => {
+  h.workspaceParam = "shared";
+  await render();
+  expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "shared");
+  h.workspaces.mockResolvedValue([
+    { id: "workspace", name: "Personal", isDefault: true, role: "owner" },
+  ]);
+  await act(async () => host.querySelector("button")!.click());
+  expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "workspace");
 });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
+export { parseStudioInviteLink } from "../studio-invite-link";
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{32}$/);
 const targetFields = { workspaceId: z.string().uuid(), targetName: z.string() };
 const targetSchema = z.discriminatedUnion("scope", [
@@ -23,23 +24,7 @@ const previewSchema = z.object({
   currentRole: z.string().optional(),
 });
 export type StudioInvitePreview = z.infer<typeof previewSchema>;
-export function parseStudioInviteLink(value: string, region: "global" | "cn") {
-  const input = value.trim();
-  const url = new URL(input);
-  const origin = region === "cn" ? "https://studio.fizzspace.cn" : "https://studio.fizzdragon.com";
-  const match = /^\/(?:en-US\/|zh-CN\/|zh-HK\/)?invite\/([A-Za-z0-9_-]{32})\/?$/.exec(url.pathname);
-  if (
-    url.origin !== origin ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    input.includes("\\") ||
-    !match
-  )
-    throw new Error("Use a Studio invitation link for this app region.");
-  return tokenSchema.parse(match[1]);
-}
+
 function current(generation: number, signal?: AbortSignal) {
   if (signal?.aborted || generation !== getAuthGeneration())
     throw new Error("Invitation session expired or request cancelled.");

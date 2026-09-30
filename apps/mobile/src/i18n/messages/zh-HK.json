@@ -790,6 +790,7 @@
   "studioMembers.confirm": "確認變更",
   "studioMembers.uncertain": "無法確認操作結果。請重新整理並核對成員清單後再操作。",
   "studioMembers.reviewed": "我已核對成員",
+  "studioJoin.invalidLink": "請開啟適用於目前應用程式地區的有效 Studio 邀請連結。",
   "studioJoin.title": "透過 Studio 連結加入",
   "studioJoin.help": "貼上 Studio 邀請連結，先查看目標和角色，再確認加入。",
   "studioJoin.link": "Studio 邀請連結",

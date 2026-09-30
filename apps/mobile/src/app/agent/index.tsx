@@ -1,4 +1,4 @@
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -53,10 +53,25 @@ function chunkPairs<T>(items: T[]): [T, T | undefined][] {
 /** Create hub — name a new story project or continue an existing one. */
 export default function AgentHubScreen() {
   const { generation } = useAuth();
-  return <AgentHubSession key={generation} generation={generation} />;
+  const { workspace } = useLocalSearchParams<{ workspace?: string | string[] }>();
+  const initialWorkspace =
+    typeof workspace === "string" && isAgentOsId(workspace) ? workspace : undefined;
+  return (
+    <AgentHubSession
+      key={`${generation}:${initialWorkspace ?? ""}`}
+      generation={generation}
+      initialWorkspace={initialWorkspace}
+    />
+  );
 }
 
-function AgentHubSession({ generation }: { generation: number }) {
+function AgentHubSession({
+  generation,
+  initialWorkspace,
+}: {
+  generation: number;
+  initialWorkspace?: string;
+}) {
   const t = useTranslations();
   const theme = useTheme();
   const router = useRouter();
@@ -73,7 +88,7 @@ function AgentHubSession({ generation }: { generation: number }) {
   const loadedOnceRef = useRef(false);
   const [workspaces, setWorkspaces] = useState<StudioWorkspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string>();
-  const selectedWorkspaceRef = useRef<string | undefined>(undefined);
+  const selectedWorkspaceRef = useRef<string | undefined>(initialWorkspace);
   const creatingRef = useRef(false);
   const selectedWorkspace = workspaces.find((row) => row.id === workspaceId);
   const readController = useRef<AbortController | null>(null);

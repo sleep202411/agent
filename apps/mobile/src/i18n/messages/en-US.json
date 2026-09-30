@@ -790,6 +790,7 @@
   "studioMembers.confirm": "Confirm Change",
   "studioMembers.uncertain": "The result is uncertain. Refresh and review the member list before another change.",
   "studioMembers.reviewed": "I Have Reviewed the Members",
+  "studioJoin.invalidLink": "Open a valid Studio invitation link for this app region.",
   "studioJoin.title": "Join With a Studio Link",
   "studioJoin.help": "Paste a Studio invitation link to review its target and role before joining.",
   "studioJoin.link": "Studio Invitation Link",
