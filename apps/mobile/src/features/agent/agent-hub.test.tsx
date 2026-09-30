@@ -7,6 +7,8 @@ const h = vi.hoisted(() => ({
   authenticated: true,
   focused: true,
   list: vi.fn(),
+  workspaces: vi.fn(),
+  create: vi.fn(),
   push: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
@@ -39,10 +41,22 @@ vi.mock("@/components/themed-view", () => ({
 vi.mock("@/components/ui", () => ({ ScreenHeader: () => null }));
 vi.mock("@/features/agent", () => ({
   AGENT_OS_STORY_WORKBENCH_MODE: "story",
-  createAgentProject: vi.fn(),
+  createAgentProject: h.create,
+  loadAgentWorkspaces: h.workspaces,
+  canCreateStudioProject: (w: { role: string }) => w.role === "owner",
   isAgentOsId: () => true,
   loadAgentProjects: h.list,
-  CreateStoryProjectForm: () => null,
+  CreateStoryProjectForm: ({
+    busy,
+    onSubmit,
+  }: {
+    busy: boolean;
+    onSubmit: (v: unknown) => void;
+  }) => (
+    <button disabled={busy} onClick={() => onSubmit({ title: "New", summary: null })}>
+      Create
+    </button>
+  ),
   StoryProjectCard: ({ project }: { project: { title: string } }) => <span>{project.title}</span>,
 }));
 vi.mock("react-native", () => ({
@@ -86,6 +100,10 @@ beforeEach(() => {
   h.authenticated = true;
   h.focused = true;
   h.list.mockResolvedValue(result("Current"));
+  h.workspaces.mockResolvedValue([
+    { id: "workspace", name: "Personal", isDefault: true, role: "owner" },
+    { id: "shared", name: "Crew", isDefault: false, role: "viewer" },
+  ]);
   host = document.createElement("div");
   root = createRoot(host);
 });
@@ -139,4 +157,38 @@ it("discards pending reads on logout", async () => {
   expect(signal.aborted).toBe(true);
   await act(async () => old.resolve(result("Private")));
   expect(host.textContent).not.toContain("Private");
+});
+
+it("selects a shared workspace and withholds creation from viewers", async () => {
+  await render();
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Create")).toBe(true);
+  h.list.mockResolvedValue(result("Shared story"));
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Crew")!.click()
+  );
+  expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "shared");
+  expect(host.textContent).toContain("Shared story");
+  expect(host.textContent).toContain("agent.workspaceViewOnly");
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Create")).toBe(false);
+});
+it("creates explicitly in the selected editable workspace", async () => {
+  h.workspaces.mockResolvedValue([{ id: "shared", name: "Crew", isDefault: false, role: "owner" }]);
+  h.create.mockResolvedValue({ project: { id: "new", title: "New" }, chapterId: "chapter" });
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Create")!.click()
+  );
+  expect(h.create).toHaveBeenCalledWith({ workspaceId: "shared", title: "New", summary: null });
+});
+it("drops a revoked workspace selection on refresh", async () => {
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Crew")!.click()
+  );
+  h.workspaces.mockResolvedValue([
+    { id: "workspace", name: "Personal", isDefault: true, role: "owner" },
+  ]);
+  await act(async () => host.querySelector("button")!.click());
+  expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "workspace");
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Crew")).toBe(false);
 });

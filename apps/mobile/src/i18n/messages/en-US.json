@@ -750,6 +750,8 @@
   "agent.runDetails.statusValue.failed": "Failed",
   "agent.runDetails.statusValue.cancelled": "Cancelled",
   "agent.runDetails.statusValue.error": "Error",
+  "agent.workspaceLabel": "Workspace",
+  "agent.workspaceViewOnly": "You can browse projects in this workspace. Creating projects requires workspace editing access.",
   "agent.projectsTitle": "Your story projects",
   "agent.loadingProjects": "Loading projects…",
   "agent.signInToLoadProjects": "Sign in to load your story projects",

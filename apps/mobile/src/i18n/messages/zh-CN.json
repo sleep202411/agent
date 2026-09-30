@@ -750,6 +750,8 @@
   "agent.runDetails.statusValue.failed": "失败",
   "agent.runDetails.statusValue.cancelled": "已取消",
   "agent.runDetails.statusValue.error": "出错",
+  "agent.workspaceLabel": "工作区",
+  "agent.workspaceViewOnly": "你可以浏览此工作区的项目。创建项目需要工作区编辑权限。",
   "agent.projectsTitle": "我的故事项目",
   "agent.loadingProjects": "正在加载项目…",
   "agent.signInToLoadProjects": "登录后加载故事项目",

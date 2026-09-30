@@ -1,5 +1,10 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { loadAgentProjects } from "./studio-projects-api";
+import {
+  loadAgentProjects,
+  loadAgentWorkspaces,
+  createAgentProject,
+  canCreateStudioProject,
+} from "./studio-projects-api";
 const h = vi.hoisted(() => ({ generation: 1, get: vi.fn(), post: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/i18n", () => ({ getLocale: () => "en-US" }));
@@ -96,3 +101,56 @@ it.each([{ nextCursor: null }, { items: [], nextCursor: "" }, { items: [null], n
     await expect(loadAgentProjects()).rejects.toThrow();
   }
 );
+
+const workspace = {
+  id: workspaceId,
+  name: "Studio",
+  isDefault: false,
+  status: "active" as const,
+  role: "editor" as const,
+  accessScope: "workspace" as const,
+};
+it("lists active workspaces including crew-inherited access", async () => {
+  h.get.mockResolvedValue({
+    workspaces: [workspace, { ...workspace, id: project(3).id, status: "archived" }],
+  });
+  expect(await loadAgentWorkspaces()).toEqual([workspace]);
+});
+it("rejects duplicate workspace entries", async () => {
+  h.get.mockResolvedValue({ workspaces: [workspace, workspace] });
+  await expect(loadAgentWorkspaces()).rejects.toThrow("Duplicate");
+});
+it("loads a selected workspace without bootstrapping the default", async () => {
+  h.get.mockResolvedValue({ items: [project(1)], nextCursor: null });
+  await loadAgentProjects(undefined, workspaceId);
+  expect(h.post).not.toHaveBeenCalled();
+});
+it.each(["viewer", "billing"] as const)("withholds creation for %s", async (role) => {
+  h.get.mockResolvedValue({ workspace: { ...workspace, role } });
+  await expect(createAgentProject({ workspaceId, title: "New" })).rejects.toThrow("permission");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("project-only access cannot create even with editor role", () => {
+  expect(canCreateStudioProject({ ...workspace, accessScope: "project_only" })).toBe(false);
+  expect(canCreateStudioProject({ ...workspace, role: "billing", crewRole: "editor" })).toBe(true);
+});
+it("creates in the chosen workspace after a fresh permission read", async () => {
+  h.get.mockResolvedValue({ workspace });
+  h.post.mockResolvedValue({ project: project(1), chapter: { id: project(2).id } });
+  await createAgentProject({ workspaceId, title: "New" });
+  expect(h.post).toHaveBeenCalledWith(
+    "/story-projects",
+    expect.objectContaining({ data: expect.objectContaining({ workspaceId, title: "New" }) })
+  );
+  expect(h.post).toHaveBeenCalledTimes(1);
+});
+it("does not create after an account change during permission preflight", async () => {
+  h.get.mockImplementation(async () => {
+    h.generation++;
+    return { workspace };
+  });
+  await expect(createAgentProject({ workspaceId, title: "New" })).rejects.toThrow(
+    "session expired"
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});

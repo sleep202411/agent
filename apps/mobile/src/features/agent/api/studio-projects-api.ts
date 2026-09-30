@@ -13,11 +13,41 @@ import { api } from "@/lib/api-client";
 
 const AURORA = { service: "aurora" as const };
 
-export type StudioWorkspace = {
-  id: string;
-  name: string;
-  isDefault: boolean;
-};
+const workspaceSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  isDefault: z.boolean(),
+  status: z.enum(["active", "archived"]).optional(),
+  role: z.enum(["owner", "admin", "billing", "editor", "viewer"]).optional(),
+  accessScope: z.enum(["workspace", "project_only"]).optional(),
+  crewRole: z.enum(["viewer", "editor"]).optional(),
+});
+export type StudioWorkspace = z.infer<typeof workspaceSchema>;
+export function canCreateStudioProject(workspace: StudioWorkspace) {
+  return (
+    workspace.status !== "archived" &&
+    (workspace.crewRole === "editor" ||
+      (workspace.accessScope === "workspace" &&
+        ["owner", "admin", "editor"].includes(workspace.role ?? "")))
+  );
+}
+function requireCurrent(generation: number, signal?: AbortSignal) {
+  if (signal?.aborted || generation !== getAuthGeneration())
+    throw new Error("Studio session expired or request cancelled.");
+}
+export async function loadAgentWorkspaces(signal?: AbortSignal): Promise<StudioWorkspace[]> {
+  const generation = getAuthGeneration();
+  requireCurrent(generation, signal);
+  await storyProjectsApi.ensureDefaultWorkspace(signal);
+  requireCurrent(generation, signal);
+  const result = z
+    .object({ workspaces: z.array(workspaceSchema) })
+    .parse(await api.get("/workspaces", { ...AURORA, signal }));
+  requireCurrent(generation, signal);
+  if (new Set(result.workspaces.map((row) => row.id)).size !== result.workspaces.length)
+    throw new Error("Duplicate Studio workspace entries.");
+  return result.workspaces.filter((row) => row.status !== "archived");
+}
 
 /** Minimal StoryProject summary for Create / Agent OS (list + workbench). */
 export type StoryProjectCover = {
@@ -203,7 +233,10 @@ const projectPageSchema = z.object({
 });
 
 /** Ensure default workspace, list story projects (does not auto-create). */
-export async function loadAgentProjects(signal?: AbortSignal): Promise<{
+export async function loadAgentProjects(
+  signal?: AbortSignal,
+  selectedWorkspaceId?: string
+): Promise<{
   workspaceId: string;
   projects: StoryProjectSummary[];
 }> {
@@ -213,9 +246,14 @@ export async function loadAgentProjects(signal?: AbortSignal): Promise<{
       throw new Error("Project list session expired or request cancelled.");
   };
   current();
-  const { workspace } = await storyProjectsApi.ensureDefaultWorkspace(signal);
+  const workspaceId =
+    selectedWorkspaceId !== undefined
+      ? z.string().uuid().parse(selectedWorkspaceId)
+      : z
+          .string()
+          .uuid()
+          .parse((await storyProjectsApi.ensureDefaultWorkspace(signal)).workspace.id);
   current();
-  const workspaceId = z.string().uuid().parse(workspace.id);
   const projects: StoryProjectSummary[] = [];
   const ids = new Set<string>();
   const cursors = new Set<string>();
@@ -247,11 +285,27 @@ export async function loadAgentProjects(signal?: AbortSignal): Promise<{
  * `POST /aurora/story-projects` with `workspaceId` in the body.
  */
 export async function createAgentProject(opts?: {
+  workspaceId?: string;
   title?: string;
   summary?: string | null;
   signal?: AbortSignal;
 }): Promise<{ project: StoryProjectSummary; chapterId: string }> {
-  const { workspace } = await storyProjectsApi.ensureDefaultWorkspace(opts?.signal);
+  const generation = getAuthGeneration();
+  requireCurrent(generation, opts?.signal);
+  const workspaceId =
+    opts?.workspaceId !== undefined
+      ? z.string().uuid().parse(opts.workspaceId)
+      : z
+          .string()
+          .uuid()
+          .parse((await storyProjectsApi.ensureDefaultWorkspace(opts?.signal)).workspace.id);
+  requireCurrent(generation, opts?.signal);
+  const { workspace } = z
+    .object({ workspace: workspaceSchema })
+    .parse(await api.get(`/workspaces/${workspaceId}`, { ...AURORA, signal: opts?.signal }));
+  requireCurrent(generation, opts?.signal);
+  if (workspace.id !== workspaceId || !canCreateStudioProject(workspace))
+    throw new Error("Workspace project creation permission is required.");
   const workbench = await storyProjectsApi.createStoryProject(
     workspace.id,
     {
@@ -262,7 +316,9 @@ export async function createAgentProject(opts?: {
     },
     opts?.signal
   );
+  requireCurrent(generation, opts?.signal);
   const project = workbench.project;
+  if (project?.workspaceId !== workspaceId) throw new Error("Created project workspace mismatch.");
   const chapterId = workbench.chapter?.id?.trim() || workbench.chapters?.[0]?.id?.trim();
   if (!project?.id) {
     throw new Error("Story Studio did not return a project id");

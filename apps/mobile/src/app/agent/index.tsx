@@ -23,6 +23,9 @@ import {
   CreateStoryProjectForm,
   isAgentOsId,
   loadAgentProjects,
+  loadAgentWorkspaces,
+  canCreateStudioProject,
+  type StudioWorkspace,
   StoryProjectCard,
   type CreateStoryProjectValues,
   type StoryProjectSummary,
@@ -56,10 +59,15 @@ function AgentHubSession({ generation }: { generation: number }) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const loadedOnceRef = useRef(false);
+  const [workspaces, setWorkspaces] = useState<StudioWorkspace[]>([]);
+  const [workspaceId, setWorkspaceId] = useState<string>();
+  const selectedWorkspaceRef = useRef<string | undefined>(undefined);
+  const creatingRef = useRef(false);
+  const selectedWorkspace = workspaces.find((row) => row.id === workspaceId);
   const readController = useRef<AbortController | null>(null);
 
   const loadProjects = useCallback(
-    async (opts?: { blocking?: boolean }) => {
+    async (opts?: { blocking?: boolean; workspaceId?: string }) => {
       readController.current?.abort();
       const controller = new AbortController();
       readController.current = controller;
@@ -68,7 +76,22 @@ function AgentHubSession({ generation }: { generation: number }) {
       if (blocking) setLoading(true);
       setError(undefined);
       try {
-        const { projects: rows } = await loadAgentProjects(controller.signal);
+        const choices = await loadAgentWorkspaces(controller.signal);
+        if (!current()) return;
+        const requestedId = opts?.workspaceId ?? selectedWorkspaceRef.current;
+        const selected =
+          choices.find((row) => row.id === requestedId) ??
+          choices.find((row) => row.isDefault) ??
+          choices[0];
+        setWorkspaces(choices);
+        setWorkspaceId(selected?.id);
+        selectedWorkspaceRef.current = selected?.id;
+        if (!selected) {
+          setProjects([]);
+          return;
+        }
+        if (requestedId !== selected.id) setProjects([]);
+        const { projects: rows } = await loadAgentProjects(controller.signal, selected.id);
         if (!current()) return;
         setProjects(rows);
         loadedOnceRef.current = true;
@@ -76,6 +99,7 @@ function AgentHubSession({ generation }: { generation: number }) {
         if (!current()) return;
         setError(err instanceof Error ? err.message : String(err));
         setProjects([]);
+        setWorkspaces([]);
       } finally {
         if (current()) setLoading(false);
       }
@@ -112,15 +136,19 @@ function AgentHubSession({ generation }: { generation: number }) {
 
   const onCreate = useCallback(
     (values: CreateStoryProjectValues) => {
-      if (creating) return;
+      if (creatingRef.current || !selectedWorkspace || !canCreateStudioProject(selectedWorkspace))
+        return;
+      creatingRef.current = true;
       setCreating(true);
 
       void (async () => {
         try {
           const { project, chapterId } = await createAgentProject({
+            workspaceId: selectedWorkspace.id,
             title: values.title,
             summary: values.summary,
           });
+          if (generation !== getAuthGeneration()) return;
           if (!isAgentOsId(project.id)) {
             throw new Error(`Invalid story project id: ${project.id}`);
           }
@@ -132,16 +160,18 @@ function AgentHubSession({ generation }: { generation: number }) {
           if (createdTitle) q.set("title", createdTitle);
           router.push(toHref(`/agent/${project.id}?${q.toString()}`));
         } catch (err) {
+          if (generation !== getAuthGeneration()) return;
           Alert.alert(
             t("agent.createProjectFailed"),
             err instanceof Error ? err.message : String(err)
           );
         } finally {
-          setCreating(false);
+          creatingRef.current = false;
+          if (generation === getAuthGeneration()) setCreating(false);
         }
       })();
     },
-    [creating, router, t]
+    [selectedWorkspace, generation, router, t]
   );
 
   const topPad = insets.top + Spacing.seven;
@@ -179,6 +209,42 @@ function AgentHubSession({ generation }: { generation: number }) {
           {t("agent.hubSubtitle")}
         </ThemedText>
 
+        {isAuthenticated && workspaces.length > 0 && (
+          <View style={{ gap: Spacing.two }}>
+            <ThemedText type="smallBold">{t("agent.workspaceLabel")}</ThemedText>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {workspaces.map((workspace) => (
+                <Pressable
+                  key={workspace.id}
+                  accessibilityRole="radio"
+                  accessibilityState={{
+                    selected: workspace.id === workspaceId,
+                    disabled: creating || loading,
+                  }}
+                  disabled={creating || loading}
+                  onPress={() => {
+                    if (creatingRef.current || workspace.id === selectedWorkspaceRef.current)
+                      return;
+                    selectedWorkspaceRef.current = workspace.id;
+                    setWorkspaceId(workspace.id);
+                    setProjects([]);
+                    void loadProjects({ blocking: true, workspaceId: workspace.id });
+                  }}
+                  style={[
+                    styles.banner,
+                    {
+                      marginRight: Spacing.two,
+                      borderColor: workspace.id === workspaceId ? theme.brand : theme.textSecondary,
+                    },
+                  ]}
+                >
+                  <ThemedText type="small">{workspace.name}</ThemedText>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {!isAuthenticated ? (
           <Pressable
             onPress={() => requireAuth({ onAuthenticated: () => void loadProjects() })}
@@ -192,13 +258,18 @@ function AgentHubSession({ generation }: { generation: number }) {
               {t("agent.signInToLoadProjects")}
             </ThemedText>
           </Pressable>
-        ) : (
+        ) : selectedWorkspace && canCreateStudioProject(selectedWorkspace) ? (
           <CreateStoryProjectForm
-            busy={creating}
+            key={workspaceId}
+            busy={creating || loading}
             onSubmit={onCreate}
             submitLabel={t("agent.startCreating")}
           />
-        )}
+        ) : selectedWorkspace ? (
+          <ThemedText type="small" themeColor="textSecondary">
+            {t("agent.workspaceViewOnly")}
+          </ThemedText>
+        ) : null}
 
         {isAuthenticated && loading && projects.length === 0 ? (
           <View style={styles.loadingRow}>
