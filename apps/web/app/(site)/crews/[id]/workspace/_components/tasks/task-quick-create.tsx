@@ -351,7 +351,7 @@ export function TaskQuickCreate({
           </div>
         </div>
 
-        <div className="px-[18px] pt-[8.5px]">
+        <div className="min-w-0 px-[18px] pt-[8.5px]">
           <textarea
             ref={titleRef}
             value={title}
@@ -389,123 +389,130 @@ export function TaskQuickCreate({
             )}
           />
 
-          <div className="-mx-1.5 mt-1.5 flex h-6 min-w-0 items-center gap-1.5">
-            <SelectChip
-              icon={<StateRing color={activeState?.color} />}
-              value={resolvedWorkflowStateId}
-              label={activeState ? workflowStateLabel(activeState, projectT) : t("planningState")}
-              ariaLabel={t("planningState")}
-              onChange={setWorkflowStateId}
-              options={project.workflowStates
-                .filter((state) => !state.archived)
-                .map((state) => ({ value: state.id, label: workflowStateLabel(state, projectT) }))}
-            />
-            <SelectChip
-              icon={<IconCategory className="size-3.5" />}
-              value={taskKind}
-              label={taskKind ? t(CREW_TASK_KIND_MESSAGE_KEYS[taskKind]) : t("taskKindLabel")}
-              ariaLabel={t("taskKindLabel")}
-              onChange={(value) => {
-                draftRevision.current += 1;
-                const next = value as CrewTaskKind | "";
-                setTaskKind(next);
-                if (!next || title.trim()) return;
-                const template = (templates.data?.items ?? []).find((item) => item.kind === next);
-                if (template?.title) setTitle(template.title);
-              }}
-              options={[
-                { value: "", label: t("taskKindUnset") },
-                ...CREW_TASK_KINDS.map((kind) => ({
-                  value: kind,
-                  label: t(CREW_TASK_KIND_MESSAGE_KEYS[kind]),
-                })),
-              ]}
-            />
-            <SelectChip
-              icon={<IconFlag3 className="size-3.5" />}
-              value={priority}
-              label={priority === "normal" ? t("priorityLabel") : t(`priority.${priority}`)}
-              ariaLabel={t("priorityLabel")}
-              onChange={(value) => {
-                draftRevision.current += 1;
-                setPriority(value as CrewTaskPriority);
-              }}
-              options={(["urgent", "high", "normal", "low"] as const).map((value) => ({
-                value,
-                label: t(`priority.${value}`),
-              }))}
-            />
-            <SelectChip
-              icon={<IconUserCircle className="size-3.5" />}
-              value={assigneeUserId}
-              label={
-                assigneeUserId ? displayNameOf(assigneeUserId, displays) : t("chooseAssignees")
-              }
-              ariaLabel={t("chooseAssignees")}
-              onChange={(value) => {
-                draftRevision.current += 1;
-                setAssigneeUserId(value);
-              }}
-              options={[
-                { value: "", label: t("unassigned") },
-                ...members.map((member) => ({
-                  value: member.userId,
-                  label: displayNameOf(member.userId, displays),
-                })),
-              ]}
-            />
-            <span className="inline-flex h-6 max-w-[190px] shrink-0 items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac]">
-              <IconCube className="size-3.5 shrink-0 text-[#e52227]" stroke={1.8} />
-              <span className="truncate">{projectLabel}</span>
-            </span>
-            <SelectChip
-              icon={<IconMovie className="size-3.5" />}
-              value={episodeId ?? ""}
-              label={
-                episodeId
-                  ? (episodes.data?.find((episode) => episode.id === episodeId)?.title ??
-                    t("episode"))
-                  : t("noEpisode")
-              }
-              ariaLabel={t("episode")}
-              onChange={(value) => setEpisodeId(value || null)}
-              options={[
-                { value: "", label: t("noEpisode") },
-                ...(episodes.data ?? [])
-                  .filter((episode) => episode.status !== "cancelled")
-                  .map((episode) => ({
-                    value: episode.id,
-                    label: `${t("episodeNumber", { number: episode.number })} · ${episode.title}`,
+          <div className="-mx-1.5 mt-1.5 flex min-w-0 flex-col gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <SelectChip
+                icon={<StateRing color={activeState?.color} />}
+                value={resolvedWorkflowStateId}
+                label={activeState ? workflowStateLabel(activeState, projectT) : t("planningState")}
+                ariaLabel={t("planningState")}
+                onChange={setWorkflowStateId}
+                options={project.workflowStates
+                  .filter((state) => !state.archived)
+                  .map((state) => ({
+                    value: state.id,
+                    label: workflowStateLabel(state, projectT),
+                  }))}
+              />
+              <SelectChip
+                icon={<IconCategory className="size-3.5" />}
+                value={taskKind}
+                label={taskKind ? t(CREW_TASK_KIND_MESSAGE_KEYS[taskKind]) : t("taskKindLabel")}
+                ariaLabel={t("taskKindLabel")}
+                onChange={(value) => {
+                  draftRevision.current += 1;
+                  const next = value as CrewTaskKind | "";
+                  setTaskKind(next);
+                  if (!next || title.trim()) return;
+                  const template = (templates.data?.items ?? []).find((item) => item.kind === next);
+                  if (template?.title) setTitle(template.title);
+                }}
+                options={[
+                  { value: "", label: t("taskKindUnset") },
+                  ...CREW_TASK_KINDS.map((kind) => ({
+                    value: kind,
+                    label: t(CREW_TASK_KIND_MESSAGE_KEYS[kind]),
                   })),
-              ]}
-            />
-            <LabelChip
-              labels={project.labels}
-              selectedIds={labelIds}
-              onChange={setLabelIds}
-              label={
-                selectedLabels.length > 0
-                  ? selectedLabels.map((item) => item.name).join(", ")
-                  : t("labels")
-              }
-            />
-            <MoreOptions
-              project={project}
-              cycleId={resolvedCycleId}
-              dueDate={dueDate}
-              draft={draft}
-              canGenerate={Boolean(title.trim()) && !create.isPending}
-              generating={draftTask.isPending}
-              onCycleChange={(value) => {
-                draftRevision.current += 1;
-                setCycleId(value);
-              }}
-              onDueDateChange={(value) => {
-                draftRevision.current += 1;
-                setDueDate(value);
-              }}
-              onGenerate={() => void generateDraft()}
-            />
+                ]}
+              />
+              <SelectChip
+                icon={<IconFlag3 className="size-3.5" />}
+                value={priority}
+                label={priority === "normal" ? t("priorityLabel") : t(`priority.${priority}`)}
+                ariaLabel={t("priorityLabel")}
+                onChange={(value) => {
+                  draftRevision.current += 1;
+                  setPriority(value as CrewTaskPriority);
+                }}
+                options={(["urgent", "high", "normal", "low"] as const).map((value) => ({
+                  value,
+                  label: t(`priority.${value}`),
+                }))}
+              />
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <SelectChip
+                icon={<IconUserCircle className="size-3.5" />}
+                value={assigneeUserId}
+                label={
+                  assigneeUserId ? displayNameOf(assigneeUserId, displays) : t("chooseAssignees")
+                }
+                ariaLabel={t("chooseAssignees")}
+                onChange={(value) => {
+                  draftRevision.current += 1;
+                  setAssigneeUserId(value);
+                }}
+                options={[
+                  { value: "", label: t("unassigned") },
+                  ...members.map((member) => ({
+                    value: member.userId,
+                    label: displayNameOf(member.userId, displays),
+                  })),
+                ]}
+              />
+              <span className="inline-flex h-6 min-w-0 max-w-[min(190px,100%)] shrink-0 items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac]">
+                <IconCube className="size-3.5 shrink-0 text-[#e52227]" stroke={1.8} />
+                <span className="truncate">{projectLabel}</span>
+              </span>
+              <SelectChip
+                icon={<IconMovie className="size-3.5" />}
+                value={episodeId ?? ""}
+                label={
+                  episodeId
+                    ? (episodes.data?.find((episode) => episode.id === episodeId)?.title ??
+                      t("episode"))
+                    : t("noEpisode")
+                }
+                ariaLabel={t("episode")}
+                onChange={(value) => setEpisodeId(value || null)}
+                options={[
+                  { value: "", label: t("noEpisode") },
+                  ...(episodes.data ?? [])
+                    .filter((episode) => episode.status !== "cancelled")
+                    .map((episode) => ({
+                      value: episode.id,
+                      label: `${t("episodeNumber", { number: episode.number })} · ${episode.title}`,
+                    })),
+                ]}
+              />
+              <LabelChip
+                labels={project.labels}
+                selectedIds={labelIds}
+                onChange={setLabelIds}
+                label={
+                  selectedLabels.length > 0
+                    ? selectedLabels.map((item) => item.name).join(", ")
+                    : t("labels")
+                }
+              />
+              <MoreOptions
+                project={project}
+                cycleId={resolvedCycleId}
+                dueDate={dueDate}
+                draft={draft}
+                canGenerate={Boolean(title.trim()) && !create.isPending}
+                generating={draftTask.isPending}
+                onCycleChange={(value) => {
+                  draftRevision.current += 1;
+                  setCycleId(value);
+                }}
+                onDueDateChange={(value) => {
+                  draftRevision.current += 1;
+                  setDueDate(value);
+                }}
+                onGenerate={() => void generateDraft()}
+              />
+            </div>
           </div>
         </div>
 
@@ -575,7 +582,7 @@ function SelectChip({
       ariaLabel={ariaLabel}
       prefix={<span className="shrink-0">{icon}</span>}
       displayValue={<span className="truncate">{label}</span>}
-      className="h-6 w-auto max-w-[190px] shrink-0 rounded-full border-0 bg-[#252529] py-0 pr-1.5 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd] dark:bg-[#252529] dark:hover:bg-[#2d2d32]"
+      className="h-6 w-auto min-w-0 max-w-[min(190px,100%)] shrink-0 rounded-full border-0 bg-[#252529] py-0 pr-1.5 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd] dark:bg-[#252529] dark:hover:bg-[#2d2d32]"
     />
   );
 }
@@ -597,7 +604,7 @@ function LabelChip({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="inline-flex h-6 max-w-[150px] shrink-0 items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
+          className="inline-flex h-6 min-w-0 max-w-[min(150px,100%)] shrink-0 items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
           aria-label={t("labels")}
         >
           <IconTag className="size-3.5 shrink-0" stroke={1.8} />
