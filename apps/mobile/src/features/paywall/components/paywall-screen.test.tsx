@@ -98,6 +98,16 @@ vi.mock("../lib/wechat", () => ({
 vi.mock("./wechat-scan-pay", () => ({
   WechatScanPay: ({ orderId }: { orderId: string }) => <span>{orderId}</span>,
 }));
+const FIXTURE_PACK = {
+  id: "price-1",
+  category: "community_points",
+  storeProductId: "com.fizzdragon.community.credits.5000",
+  billingPriceId: "price-1",
+  displayPrice: "$50.00",
+  name: "5000 credits",
+  grantsPoints: "5000",
+  interval: "one_time",
+};
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
@@ -106,7 +116,8 @@ beforeEach(() => {
   state.generation = 1;
   state.balance.mockResolvedValue("0");
   state.buy.mockImplementation(() => new Promise(() => {}));
-  state.packs.mockImplementation(() => new Promise(() => {}));
+  // Nest catalog is the only source for community packs (no hardcoded SKUs).
+  state.packs.mockResolvedValue([FIXTURE_PACK]);
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -309,6 +320,7 @@ it("keeps the return destination when continuing to web checkout", async () => {
 });
 it("renders the WeChat package loading state before prices arrive", async () => {
   state.channel = "wechat";
+  state.packs.mockImplementation(() => new Promise(() => {}));
   await render();
   expect(host.querySelector('[role="progressbar"]')).not.toBeNull();
 });

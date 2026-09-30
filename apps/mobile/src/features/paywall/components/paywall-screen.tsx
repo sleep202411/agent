@@ -379,14 +379,14 @@ function PaywallSession() {
     let cancelled = false;
     void (async () => {
       try {
-        const prices = await listCommunityPointPackages("CNY");
+        const prices = await listCommunityPointPackages(paywallBillingCurrency());
         if (cancelled || !isCurrentSession()) return;
+        const storeIap = channel === "apple_iap" || channel === "google_play_iap";
         const next = prices
           .map(communityPackProduct)
           .filter(
             (item) =>
-              channel !== "apple_iap" ||
-              item.storeProductId.startsWith("com.fizzdragon.community.credits.")
+              !storeIap || item.storeProductId.startsWith("com.fizzdragon.community.credits.")
           );
         if (cancelled || !isCurrentSession()) return;
         setCommunityPacks(next);
@@ -400,6 +400,13 @@ function PaywallSession() {
       cancelled = true;
     };
   }, [channel, isCurrentSession]);
+
+  // Nest packs arrive after first paint — keep productId on a real row.
+  useEffect(() => {
+    if (!apiCommunity || !communityPacks?.length) return;
+    if (communityPacks.some((item) => item.id === productId)) return;
+    setProductId(communityPacks[0]!.id);
+  }, [apiCommunity, communityPacks, productId, setProductId]);
 
   useEffect(() => {
     // Keep the Nest membership catalog off until that tab is visible again.

@@ -23,20 +23,6 @@ export type PaywallProduct = {
   interval?: BillingInterval;
 };
 
-/**
- * Global IAP fallback. CN community points load `community_point_pack` rows
- * from `/billing/prices` instead of this row.
- */
-const COMMUNITY_POINTS: PaywallProduct[] = [
-  {
-    id: "community_points_500",
-    category: "community_points",
-    storeProductId: "com.fizzdragon.community.credits.500",
-    displayPrice: "¥34.80",
-    grantsPoints: "500",
-  },
-];
-
 /** Studio billing chips — shortcuts into a custom $10–$5,000 (or ¥) amount. */
 export const COMPUTE_RECHARGE_PRESETS = [10, 50, 100, 500] as const;
 export const COMPUTE_RECHARGE_MIN = 10;
@@ -95,9 +81,12 @@ const COMPUTE_MEMBERSHIP: PaywallProduct[] = [
   },
 ];
 
-/** Community membership prices load from `/billing/membership-plans` at runtime. */
+/**
+ * Community-point packs always load from Nest `/billing/prices`.
+ * StoreKit / Play product ids are derived as `com.fizzdragon.community.credits.{points}`.
+ */
 const BY_CATEGORY: Record<PaywallCategory, PaywallProduct[]> = {
-  community_points: COMMUNITY_POINTS,
+  community_points: [],
   compute_points: [],
   compute_membership: COMPUTE_MEMBERSHIP,
   community_membership: [],
@@ -128,12 +117,15 @@ export function productsForCategory(category: PaywallCategory): PaywallProduct[]
   return BY_CATEGORY[category];
 }
 
-/** CN community-point packs come from Nest. CN iOS then buys the matching product through RevenueCat. */
+/**
+ * Native checkout rails load community packs from Nest (region currency).
+ * `web` still sends the user to the site — no in-app catalog.
+ */
 export function communityPointsUseBillingApi(channel: CheckoutChannel): boolean {
-  return channel === "wechat" || (channel === "apple_iap" && appEnv.appRegion === "cn");
+  return channel === "wechat" || channel === "apple_iap" || channel === "google_play_iap";
 }
 
-/** App Store consumable id, e.g. 140 points → `com.fizzdragon.community.credits.140`. */
+/** App Store / Play consumable id, e.g. 5000 points → `com.fizzdragon.community.credits.5000`. */
 export function communityStoreProductId(grantsPoints: string | null | undefined): string | null {
   if (!grantsPoints || !/^[1-9]\d*$/.test(grantsPoints)) return null;
   return `com.fizzdragon.community.credits.${grantsPoints}`;
