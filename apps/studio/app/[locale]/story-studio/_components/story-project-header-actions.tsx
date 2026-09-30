@@ -103,20 +103,20 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const statusReady = !publicationQuery.isLoading && !publicationQuery.isError;
   const canSubmitStatus = status === null || status === "draft" || status === "offline";
   const canSubmit = canMutate && statusReady && canSubmitStatus;
-  const submitDisabledReason = publicationQuery.isLoading
-    ? t("publish.statusChecking")
-    : publicationQuery.isError
-      ? t("publish.statusUnavailable")
-      : status === "reviewing"
-        ? t("publish.reviewingLocked")
-        : status === "published"
-          ? t("publish.publishedUpdateLocked")
-          : !submission.canSubmit
-            ? t("publish.errors.permissionDenied")
-            : conflicted
-              ? t("publish.draftConflict")
-              : !ready
-                ? t("publish.projectLoading")
+  const submitDisabledReason = !ready
+    ? t("publish.projectLoading")
+    : !submission.canSubmit
+      ? t("publish.errors.permissionDenied")
+      : publicationQuery.isLoading
+        ? t("publish.statusChecking")
+        : publicationQuery.isError
+          ? t("publish.statusUnavailable")
+          : status === "reviewing"
+            ? t("publish.reviewingLocked")
+            : status === "published"
+              ? t("publish.publishedUpdateLocked")
+              : conflicted
+                ? t("publish.draftConflict")
                 : null;
   const projectTitle = workbench?.project.title.trim() ?? "";
   const submitTooltip = submission.isPending
@@ -175,31 +175,33 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   return (
     <>
       {canRelease ? (
+        <PublicationStatusBadge
+          status={status}
+          loading={publicationQuery.isLoading}
+          failed={publicationQuery.isError}
+          rejectReason={publication?.rejectReason ?? null}
+        />
+      ) : null}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {submitDisabled ? (
+            <span
+              tabIndex={0}
+              className="inline-flex rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
+              aria-label={submitTooltip}
+            >
+              {submitButton}
+            </span>
+          ) : (
+            submitButton
+          )}
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={8} className="max-w-80">
+          {submitTooltip}
+        </TooltipContent>
+      </Tooltip>
+      {canRelease ? (
         <>
-          <PublicationStatusBadge
-            status={status}
-            loading={publicationQuery.isLoading}
-            failed={publicationQuery.isError}
-            rejectReason={publication?.rejectReason ?? null}
-          />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {submitDisabled ? (
-                <span
-                  tabIndex={0}
-                  className="inline-flex rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
-                  aria-label={submitTooltip}
-                >
-                  {submitButton}
-                </span>
-              ) : (
-                submitButton
-              )}
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={8} className="max-w-80">
-              {submitTooltip}
-            </TooltipContent>
-          </Tooltip>
           {canOffline ? (
             <Button
               type="button"
