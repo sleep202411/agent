@@ -1,3 +1,10 @@
+export interface IpPublisherPublic {
+  id: string;
+  name: string;
+  logoUrl: string | null;
+  websiteUrl?: string | null;
+}
+
 /**
  * Browse-layer domain types. These double as the data contract for the future
  * server integration: the mock service in `browse-service.ts` returns exactly
@@ -64,6 +71,7 @@ export interface IpSummary extends IpEngagementSnapshot {
 }
 
 export interface IpDetail extends IpSummary {
+  publishers?: IpPublisherPublic[];
   longSynopsis: string;
   episodes: IpEpisode[];
   cast: Person[];

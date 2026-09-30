@@ -2519,5 +2519,6 @@
   "taskWorkbench.saveDraft": "保存草稿",
   "taskWorkbench.storageError": "无法保存或恢复草稿。存储恢复前暂停创建",
   "assetTaskProgress.production": "制作",
-  "assetTaskProgress.pending": "待创建 {count}"
+  "assetTaskProgress.pending": "待创建 {count}",
+  "ip.publishers": "发行方"
 }

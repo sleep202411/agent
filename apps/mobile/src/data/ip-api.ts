@@ -19,6 +19,7 @@ import type {
   IpAccess,
   IpAccessCode,
   IpDetail,
+  IpPublisherPublic,
   IpDiscovery,
   IpEngagementSnapshot,
   IpEpisode,
@@ -80,6 +81,7 @@ type IpDto = {
   trailerAsset?: AssetDto;
   contributors?: ContributorDto[];
   episodes?: EpisodeDto[];
+  publishers?: IpPublisherPublic[];
   viewCount?: number | string | null;
   likeCount?: number | string | null;
   viewerHasLiked?: boolean | null;
@@ -240,6 +242,7 @@ function mapDetail(dto: IpDto): IpDetail {
   const aiDisclosure = dto.aiDisclosure ?? {};
   return {
     ...mapSummary(dto),
+    publishers: dto.publishers,
     longSynopsis: dto.description ?? dto.summary ?? "",
     episodes,
     cast,

@@ -636,6 +636,33 @@ export default function IpDetailScreen() {
             {t("ipDetail.likeFanNotice")}
           </ThemedText>
 
+          {(() => {
+            const pubItems = (ip.publishers ?? []).filter((p) => p.logoUrl?.trim()).slice(0, 4);
+            if (!pubItems.length) return null;
+            return (
+              <View style={styles.publisherSection}>
+                <ThemedText type="code" themeColor="textSecondary" style={styles.publisherLabel}>
+                  {t("ip.publishers")}
+                </ThemedText>
+                <View style={styles.publisherRow}>
+                  {pubItems.map((pub) => (
+                    <View
+                      key={pub.id}
+                      style={[styles.publisherChip, { backgroundColor: theme.backgroundElement }]}
+                    >
+                      <Image
+                        source={{ uri: pub.logoUrl! }}
+                        style={styles.publisherLogo}
+                        contentFit="contain"
+                        accessibilityLabel={pub.name}
+                      />
+                    </View>
+                  ))}
+                </View>
+              </View>
+            );
+          })()}
+
           {ip.episodes.length ? (
             <View style={styles.section}>
               <SectionHeader
@@ -1124,6 +1151,33 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 30,
     lineHeight: 34,
+  },
+  publisherSection: {
+    gap: Spacing.one,
+  },
+  publisherLabel: {
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  publisherRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: Spacing.two,
+  },
+  publisherChip: {
+    height: 28,
+    width: 56,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  publisherLogo: {
+    width: "100%",
+    height: "100%",
   },
   metaRow: {
     flexDirection: "row",

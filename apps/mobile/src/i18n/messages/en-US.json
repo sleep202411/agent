@@ -2519,5 +2519,6 @@
   "taskWorkbench.saveDraft": "Save draft",
   "taskWorkbench.storageError": "Drafts could not be saved or restored. Creation is paused until storage is available",
   "assetTaskProgress.production": "Production",
-  "assetTaskProgress.pending": "{count} pending creation"
+  "assetTaskProgress.pending": "{count} pending creation",
+  "ip.publishers": "Distributed by"
 }
