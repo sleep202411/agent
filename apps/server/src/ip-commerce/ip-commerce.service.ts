@@ -2205,6 +2205,7 @@ export class IpCommerceService {
           productionKind: input.productionKind ?? 'series',
           studioWorkspaceId: input.studioWorkspaceId ?? null,
           region: input.region ?? null,
+          channelType: input.channelType,
         }),
       )
       .digest('hex');
@@ -2234,7 +2235,7 @@ export class IpCommerceService {
       }
       const created = await tx.ip.create({
         data: {
-          channelType: 'ip',
+          channelType: input.channelType,
           status: IpPublicationStatus.draft,
           listingVisibility: IpListingVisibility.private,
           sourceLocale,
@@ -3219,7 +3220,7 @@ export class IpCommerceService {
           },
         },
         orderBy: { submittedAt: 'asc' },
-        take: 8,
+        take: 100,
         include: {
           ip: {
             include: {
@@ -7688,6 +7689,7 @@ function ipReferenceDto(
         sourceLocale: string;
         status: IpPublicationStatus;
         listingVisibility: IpListingVisibility;
+        channelType?: 'ip' | 'community';
         localizations: IpLocalizationLike[];
       }
     | null
@@ -7702,6 +7704,7 @@ function ipReferenceDto(
     title: copy.value?.title ?? ip.id,
     status: ip.status,
     listingVisibility: ip.listingVisibility,
+    channelType: ip.channelType ?? 'community',
     localization: copy.meta,
   };
 }
@@ -8056,6 +8059,7 @@ function adminReviewDto(
       sourceLocale: string;
       status: IpPublicationStatus;
       listingVisibility: IpListingVisibility;
+      channelType?: 'ip' | 'community';
       localizations: IpLocalizationLike[];
     } | null;
     episode: {

@@ -56,7 +56,7 @@ it('validates category choices and requires an Admin version', () => {
         sourceLocale: 'en-US',
         channelType,
       }).success,
-    ).toBe(false);
+    ).toBe(true);
   }
   expect(
     CreateIpDraftSchema.safeParse({
@@ -65,6 +65,13 @@ it('validates category choices and requires an Admin version', () => {
       sourceLocale: 'en-US',
     }).success,
   ).toBe(true);
+  expect(
+    CreateIpDraftSchema.parse({
+      title: 'Test',
+      genreCodes: ['drama'],
+      sourceLocale: 'en-US',
+    }).channelType,
+  ).toBe('ip');
   expect(ListIpsQuerySchema.safeParse({ channelType: 'other' }).success).toBe(
     false,
   );

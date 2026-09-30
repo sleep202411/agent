@@ -424,7 +424,7 @@
     "ipsFundraising": "个 IP 正在融资",
     "ipsPresale": "个 IP 开放预售",
     "newThisWeek": "本周新增",
-    "createIP": "创建 AI 频道",
+    "createIP": "投稿",
     "browseIPs": "浏览 IP",
     "enterStudio": "进入工作台",
     "catAll": "发现",
@@ -1052,7 +1052,14 @@
     "flowTitle": "创作流程",
     "flowBody": "按阶段推进，但每个阶段都可以独立补齐；圆环显示当前完成度。",
     "readiness": {
-      "ready": "{done}/{total} 就绪"
+      "ready": "{done}/{total} 就绪",
+      "remaining": "还剩 {remaining}/{total} 项",
+      "remainingBadge": "还剩 {remaining} 项",
+      "next": "下一步：{step}",
+      "allReady": "可以提交审核",
+      "pending": "尚未完成",
+      "optional": "可选",
+      "optionalHint": "可选，不挡提交"
     },
     "comingSoon": "即将开放",
     "editBasics": "编辑基础信息",
@@ -1208,6 +1215,10 @@
       "orders": {
         "title": "订单",
         "status": "只读"
+      },
+      "generation": {
+        "title": "影迷共创",
+        "status": "可选"
       },
       "collaboration": {
         "title": "协作与剧组",
@@ -1639,7 +1650,7 @@
       },
       "episodes": {
         "title": "添加首批剧集",
-        "body": "先创建或上传第一集，再继续配置定价和发布。"
+        "body": "可选。创建或上传第一集，方便后续定价和上架。"
       }
     },
     "meta": {

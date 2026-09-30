@@ -478,6 +478,8 @@ export const CreateIpDraftSchema = z
     studioWorkspaceId: z.string().uuid().optional(),
     // ISO-3166 alpha-2 or 'GLOBAL'. Optional; null = unspecified.
     region: z.string().trim().toUpperCase().min(2).max(16).optional(),
+    /** Creator create: IP channel (default) or community channel submission. */
+    channelType: z.enum(['ip', 'community']).default('ip'),
   })
   .strict();
 export type CreateIpDraftInput = z.infer<typeof CreateIpDraftSchema>;

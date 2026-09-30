@@ -23,6 +23,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -227,6 +234,7 @@ function MembersManagerView({
 
   // ── Invite links ──────────────────────────────────────────────────────────
   const [linkRole, setLinkRole] = useState<AssignableShareRole>(defaultRoleForScope(scope));
+  const [linkExpiry, setLinkExpiry] = useState<"never" | "7" | "30">("never");
   const [created, setCreated] = useState<CreatedInvite | null>(null);
   const invitesKey = ["share-invites", scope.kind, scope.id, viewerId] as const;
   const invitesQuery = useQuery({
@@ -245,7 +253,8 @@ function MembersManagerView({
     isPending: pending,
     mutate: () =>
       runAction(
-        (signal) => createInvite(scope, linkRole, undefined, signal),
+        (signal) =>
+          createInvite(scope, linkRole, linkExpiry === "never" ? null : Number(linkExpiry), signal),
         async (inv, current) => {
           setCreated(inv);
           void invalidateInvites();
@@ -311,19 +320,26 @@ function MembersManagerView({
             onChange={(event) => setAccount(event.target.value)}
             className="flex-1"
           />
-          <select
+          <Select
             disabled={pending}
             value={role}
-            onChange={(event) => setRole(event.target.value as AssignableShareRole)}
-            className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
-            aria-label={t("role")}
+            onValueChange={(value) => setRole(value as AssignableShareRole)}
           >
-            {roleOptions.map((r) => (
-              <option key={r} value={r}>
-                {roleLabel(r)}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger
+              size="default"
+              className="h-9 min-w-28 bg-input/30 text-sm"
+              aria-label={t("role")}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              {roleOptions.map((r) => (
+                <SelectItem key={r} value={r}>
+                  {roleLabel(r)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button type="submit" disabled={!account.trim() || addMut.isPending}>
             <IconUserPlus className="size-4" />
             {t("add")}
@@ -388,30 +404,39 @@ function MembersManagerView({
                           tabIndex={!canChangeRoles ? 0 : undefined}
                           aria-label={!canChangeRoles ? t("contactOwnerRole") : undefined}
                         >
-                          <select
-                            aria-label={t("changeMemberRole", {
-                              name: member.nickname ?? member.userId,
-                            })}
+                          <Select
                             value={member.role}
                             disabled={!canChangeRoles || pending}
-                            onChange={(event) => {
+                            onValueChange={(value) => {
                               if (canChangeRoles)
                                 roleMut.mutate({
                                   memberId: member.memberId,
-                                  nextRole: event.target.value as AssignableShareRole,
+                                  nextRole: value as AssignableShareRole,
                                 });
                             }}
-                            className="h-8 rounded-md bg-input/30 px-2 text-xs text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {!roleOptions.includes(member.role as AssignableShareRole) && (
-                              <option value={member.role}>{roleLabel(member.role)}</option>
-                            )}
-                            {roleOptions.map((r) => (
-                              <option key={r} value={r}>
-                                {roleLabel(r)}
-                              </option>
-                            ))}
-                          </select>
+                            <SelectTrigger
+                              size="sm"
+                              className="h-8 min-w-24 bg-input/30 text-xs disabled:cursor-not-allowed"
+                              aria-label={t("changeMemberRole", {
+                                name: member.nickname ?? member.userId,
+                              })}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper" align="end">
+                              {!roleOptions.includes(member.role as AssignableShareRole) && (
+                                <SelectItem value={member.role}>
+                                  {roleLabel(member.role)}
+                                </SelectItem>
+                              )}
+                              {roleOptions.map((r) => (
+                                <SelectItem key={r} value={r}>
+                                  {roleLabel(r)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </span>
                       </TooltipTrigger>
                       {!canChangeRoles && <TooltipContent>{t("contactOwnerRole")}</TooltipContent>}
@@ -496,20 +521,45 @@ function MembersManagerView({
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <select
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
               disabled={pending}
               value={linkRole}
-              onChange={(event) => setLinkRole(event.target.value as AssignableShareRole)}
-              className="h-9 rounded-md bg-input/30 px-2 text-sm text-foreground outline-none"
-              aria-label={t("inviteLinkRole")}
+              onValueChange={(value) => setLinkRole(value as AssignableShareRole)}
             >
-              {roleOptions.map((r) => (
-                <option key={r} value={r}>
-                  {roleLabel(r)}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                size="default"
+                className="h-9 min-w-28 bg-input/30 text-sm"
+                aria-label={t("inviteLinkRole")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                {roleOptions.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {roleLabel(r)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              disabled={pending}
+              value={linkExpiry}
+              onValueChange={(value) => setLinkExpiry(value as "never" | "7" | "30")}
+            >
+              <SelectTrigger
+                size="default"
+                className="h-9 min-w-32 bg-input/30 text-sm"
+                aria-label={t("inviteLinkExpiryLabel")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="never">{t("inviteLinkExpiryNever")}</SelectItem>
+                <SelectItem value="7">{t("inviteLinkExpiryDays", { days: 7 })}</SelectItem>
+                <SelectItem value="30">{t("inviteLinkExpiryDays", { days: 30 })}</SelectItem>
+              </SelectContent>
+            </Select>
             <Button
               type="button"
               variant="secondary"
@@ -536,10 +586,12 @@ function MembersManagerView({
                       {t("roleLink", { role: roleLabel(inv.role) })}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      {(() => {
-                        const days = expiryDays(inv.expiresAt);
-                        return days <= 0 ? t("expired") : t("expiresInDays", { days });
-                      })()}
+                      {inv.expiresAt == null
+                        ? t("neverExpires")
+                        : (() => {
+                            const days = expiryDays(inv.expiresAt);
+                            return days <= 0 ? t("expired") : t("expiresInDays", { days });
+                          })()}
                     </span>
                   </div>
                   <button

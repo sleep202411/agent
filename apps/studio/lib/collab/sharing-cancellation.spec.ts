@@ -27,7 +27,7 @@ describe("sharing write cancellation forwarding", () => {
       await createInvite(scope, "viewer", undefined, signal);
       expect(transport.post.mock.calls.at(-1)?.[1]).toMatchObject({
         signal,
-        data: { role: "viewer", expiresInDays: 7 },
+        data: { role: "viewer", expiresInDays: null },
       });
       await revokeInvite(scope, "invite", signal);
       expect(transport.delete.mock.calls.at(-1)?.[1].signal).toBe(signal);

@@ -27,18 +27,33 @@ const resources = {
   }
 >;
 
-void i18n.use(initReactI18next).init({
-  resources,
-  lng: detectBrowserLocale(),
-  fallbackLng: defaultLocale,
-  interpolation: {
-    escapeValue: false,
-    prefix: "{",
-    suffix: "}",
-  },
-  returnNull: false,
-  showSupportNotice: false,
-});
+// Message JSON modules hot-reload, but i18next keeps the first init payload.
+// Re-apply bundles on every evaluation so new keys appear without a full restart.
+function syncI18nResources() {
+  (Object.keys(resources) as Locale[]).forEach((lng) => {
+    i18n.addResourceBundle(lng, "translation", resources[lng].translation, true, true);
+  });
+}
+
+if (i18n.isInitialized) {
+  syncI18nResources();
+} else {
+  void i18n
+    .use(initReactI18next)
+    .init({
+      resources,
+      lng: detectBrowserLocale(),
+      fallbackLng: defaultLocale,
+      interpolation: {
+        escapeValue: false,
+        prefix: "{",
+        suffix: "}",
+      },
+      returnNull: false,
+      showSupportNotice: false,
+    })
+    .then(syncI18nResources);
+}
 
 export default i18n;
 

@@ -14,6 +14,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { type Creator } from "@/app/(site)/creators/_hooks/use-creator";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
+import { ChannelBadge } from "@/components/channel-badge";
 import type { IpCommerceIp, IpCreatorIp } from "@/src/lib/ip-commerce/api";
 import { useAllMyIpCommerceIps, usePublicCreatorIps } from "@/src/lib/ip-commerce/hooks";
 
@@ -147,6 +148,11 @@ function NewIpCard({
             <IconBook2 className="size-8" />
           </div>
         )}
+        {ip.channelType ? (
+          <span className="absolute left-2 top-2 rounded-full border border-white/10 bg-black/40 px-1 py-0.5 backdrop-blur-sm">
+            <ChannelBadge category={ip.channelType} />
+          </span>
+        ) : null}
         {ip.genres[0] ? (
           <span className="absolute right-2 top-2 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">
             {ip.genres[0]}
@@ -203,6 +209,11 @@ function PublicIpCard({ ip, locale }: { ip: IpCommerceIp; locale: Locale }) {
             <IconBook2 className="size-8" />
           </div>
         )}
+        {ip.channelType ? (
+          <span className="absolute left-2 top-2 rounded-full border border-white/10 bg-black/40 px-1 py-0.5 backdrop-blur-sm">
+            <ChannelBadge category={ip.channelType} />
+          </span>
+        ) : null}
         {ip.genres[0] ? (
           <span className="absolute right-2 top-2 rounded-full border border-white/10 bg-black/40 px-2.5 py-1 text-[11px] font-medium text-white/80 backdrop-blur-sm">
             {ip.genres[0]}

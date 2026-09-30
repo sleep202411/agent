@@ -73,7 +73,8 @@ export interface ShareInviteDTO {
   role: string;
   status: string;
   createdAt: string;
-  expiresAt: string;
+  /** ISO timestamp, or `null` when the link never expires. */
+  expiresAt: string | null;
 }
 
 export function toWorkspaceInviteDTO(invite: WorkspaceInvite): ShareInviteDTO {
@@ -82,7 +83,7 @@ export function toWorkspaceInviteDTO(invite: WorkspaceInvite): ShareInviteDTO {
     role: invite.role,
     status: invite.status,
     createdAt: invite.createdAt.toISOString(),
-    expiresAt: invite.expiresAt.toISOString(),
+    expiresAt: invite.expiresAt?.toISOString() ?? null,
   };
 }
 
@@ -92,7 +93,7 @@ export function toProjectInviteDTO(invite: ProjectInvite): ShareInviteDTO {
     role: invite.role,
     status: invite.status,
     createdAt: invite.createdAt.toISOString(),
-    expiresAt: invite.expiresAt.toISOString(),
+    expiresAt: invite.expiresAt?.toISOString() ?? null,
   };
 }
 
@@ -124,5 +125,6 @@ export interface InvitePreviewDTO {
   targetName: string;
   role: string;
   status: 'pending' | 'accepted' | 'revoked' | 'expired';
-  expiresAt: string;
+  /** ISO timestamp, or `null` when the link never expires. */
+  expiresAt: string | null;
 }

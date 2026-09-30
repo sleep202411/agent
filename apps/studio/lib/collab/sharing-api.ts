@@ -223,7 +223,8 @@ export interface CreatedInvite {
   inviteId: string;
   token: string;
   role: string;
-  expiresAt: string;
+  /** ISO timestamp, or `null` when the link never expires. */
+  expiresAt: string | null;
 }
 
 /** A pending link as listed to an admin (no raw token). */
@@ -232,7 +233,8 @@ export interface ShareInvite {
   role: string;
   status: string;
   createdAt: string;
-  expiresAt: string;
+  /** ISO timestamp, or `null` when the link never expires. */
+  expiresAt: string | null;
 }
 
 export interface InvitePreview {
@@ -242,7 +244,8 @@ export interface InvitePreview {
   targetName: string;
   role: string;
   status: "pending" | "accepted" | "revoked" | "expired";
-  expiresAt: string;
+  /** ISO timestamp, or `null` when the link never expires. */
+  expiresAt: string | null;
 }
 
 export type AcceptedInvite =
@@ -263,7 +266,8 @@ export function listInvites(scope: ShareScope, signal?: AbortSignal): Promise<Sh
 export function createInvite(
   scope: ShareScope,
   role: AssignableShareRole,
-  expiresInDays = 7,
+  /** `null` = permanent until revoke (server default). */
+  expiresInDays: number | null = null,
   signal?: AbortSignal
 ): Promise<CreatedInvite> {
   return api.post<CreatedInvite>(scopeBase(scope), { signal, data: { role, expiresInDays } });

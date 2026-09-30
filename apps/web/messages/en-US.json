@@ -424,7 +424,7 @@
     "ipsFundraising": "IPs fundraising",
     "ipsPresale": "IPs in pre-order",
     "newThisWeek": "New this week",
-    "createIP": "Create AI Channel",
+    "createIP": "Contribute",
     "browseIPs": "Browse IPs",
     "enterStudio": "Enter Studio",
     "catAll": "Discover",
@@ -1052,7 +1052,14 @@
     "flowTitle": "Creation flow",
     "flowBody": "Move by stages, but complete each stage independently. The rings show current readiness.",
     "readiness": {
-      "ready": "{done}/{total} ready"
+      "ready": "{done}/{total} ready",
+      "remaining": "{remaining} of {total} left",
+      "remainingBadge": "{remaining} left",
+      "next": "Next: {step}",
+      "allReady": "Ready to submit",
+      "pending": "Not done yet",
+      "optional": "Optional",
+      "optionalHint": "Optional — not required to submit"
     },
     "comingSoon": "Coming soon",
     "editBasics": "Edit basics",
@@ -1208,6 +1215,10 @@
       "orders": {
         "title": "Orders",
         "status": "Read-only"
+      },
+      "generation": {
+        "title": "Fan co-creation",
+        "status": "Optional"
       },
       "collaboration": {
         "title": "Collaboration",
@@ -1639,7 +1650,7 @@
       },
       "episodes": {
         "title": "Add episodes",
-        "body": "Create or upload the first episode before pricing or publishing content."
+        "body": "Optional. Create or upload the first episode when you are ready to price or publish content."
       }
     },
     "meta": {

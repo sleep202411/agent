@@ -42,6 +42,7 @@ import {
   effectiveInviteStatus,
   isUniqueViolation,
   existingInviteAccess,
+  resolveInviteExpiresAt,
 } from './util';
 
 const ROLE_MAP: Record<AssignableRole, ProjectMemberRole> = {
@@ -49,8 +50,6 @@ const ROLE_MAP: Record<AssignableRole, ProjectMemberRole> = {
   editor: ProjectMemberRole.editor,
   viewer: ProjectMemberRole.viewer,
 };
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ProjectInvitesService {
@@ -69,7 +68,7 @@ export class ProjectInvitesService {
     );
     const role = ROLE_MAP[input.role];
     const { token, tokenHash } = generateInviteToken();
-    const expiresAt = new Date(Date.now() + input.expiresInDays * MS_PER_DAY);
+    const expiresAt = resolveInviteExpiresAt(input.expiresInDays);
     const invite = await this.prisma.$transaction(async (tx) => {
       const invite = await tx.projectInvite.create({
         data: {
@@ -89,7 +88,7 @@ export class ProjectInvitesService {
           action: 'project.invite.created',
           entityType: 'project_invite',
           entityId: invite.id,
-          after: { role, expiresAt: expiresAt.toISOString() },
+          after: { role, expiresAt: expiresAt?.toISOString() ?? null },
         },
         tx,
       );
@@ -99,7 +98,7 @@ export class ProjectInvitesService {
       inviteId: invite.id,
       token,
       role: invite.role,
-      expiresAt: invite.expiresAt.toISOString(),
+      expiresAt: invite.expiresAt?.toISOString() ?? null,
     };
   }
 
@@ -183,7 +182,7 @@ export class ProjectInvitesService {
       targetName: project?.name ?? 'a project',
       role: invite.role,
       status: effectiveInviteStatus(invite),
-      expiresAt: invite.expiresAt.toISOString(),
+      expiresAt: invite.expiresAt?.toISOString() ?? null,
     };
   }
 
@@ -321,7 +320,7 @@ export class ProjectInvitesService {
   private async assertUsable(invite: {
     id: string;
     status: ProjectInviteStatus;
-    expiresAt: Date;
+    expiresAt: Date | null;
   }): Promise<void> {
     const status = effectiveInviteStatus(invite);
     if (status === ProjectInviteStatus.revoked) {

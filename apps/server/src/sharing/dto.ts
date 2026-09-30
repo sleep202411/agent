@@ -37,8 +37,18 @@ export type UpdateMemberRoleInput = z.infer<typeof UpdateMemberRoleSchema>;
 
 export const CreateInviteSchema = z.object({
   role: AssignableRoleSchema.default('editor'),
-  /** Link validity window; clamped server-side. Default 7 days, max 30. */
-  expiresInDays: z.number().int().min(1).max(30).default(7),
+  /**
+   * Link validity window in days (1–30), or `null` for permanent until revoke.
+   * Default is permanent — matches the studio share UI.
+   */
+  expiresInDays: z
+    .number()
+    .int()
+    .min(1)
+    .max(30)
+    .nullable()
+    .optional()
+    .default(null),
 });
 export type CreateInviteInput = z.infer<typeof CreateInviteSchema>;
 
