@@ -362,7 +362,7 @@ export default function MineScreen() {
                         </ThemedText>
                       </View>
                     </Pressable>
-                    {/* Compute recharge stays closed until a real App Store product exists. */}
+                    {/* Compute recharge stays closed for this release (community points only). */}
                     <View style={[styles.pointsPill, { backgroundColor: `${theme.brand}22` }]}>
                       <SymbolView
                         name={{ ios: "bolt.fill", android: "bolt", web: "bolt" }}

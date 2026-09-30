@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { communityPackProduct, purchaseWithWechat } from "./wechat";
+import { communityPackProduct, membershipProduct, purchaseWithWechat } from "./wechat";
 import type { PaywallProduct } from "./catalog";
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -113,4 +113,27 @@ it("maps a community pack onto its App Store product id", () => {
       grantsWalletAmount: "140",
     }).storeProductId
   ).toBe("com.fizzdragon.community.credits.140");
+});
+
+it("maps a Nest membership price onto a paywall product with billingPriceId", () => {
+  expect(
+    membershipProduct(
+      {
+        id: "price-cm",
+        name: "社区会员（30天）",
+        currency: "CNY",
+        amountMinor: "6900",
+        grantsWalletAmount: null,
+        interval: "one_time",
+      },
+      "community_membership"
+    )
+  ).toMatchObject({
+    id: "price-cm",
+    billingPriceId: "price-cm",
+    category: "community_membership",
+    displayPrice: "¥69.00",
+    interval: "one_time",
+    grantsPoints: null,
+  });
 });

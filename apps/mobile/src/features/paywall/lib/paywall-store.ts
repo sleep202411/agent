@@ -13,18 +13,17 @@ export type PaywallCategory =
 /** Categories shown as paywall tabs. */
 export const PAYWALL_CATEGORIES: PaywallCategory[] = [
   "community_points",
-  // Hidden until these IAPs exist in App Store Connect (2.1(b) review).
+  // Hidden until these IAPs exist / product is ready.
   // "compute_points",
-  // "compute_membership",
   // "community_membership",
+  // "compute_membership",
 ];
 
 const ALL_PAYWALL_CATEGORIES: readonly PaywallCategory[] = [
   "community_points",
-  // Hidden until a real App Store product exists (2.1(b)).
   // "compute_points",
-  // "compute_membership",
   // "community_membership",
+  // "compute_membership",
 ];
 
 /** Any valid paywall category, including ones hidden from the tab strip. */
