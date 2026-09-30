@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
 }));
+vi.mock("@/features/agent/studio-workspace-settings", () => ({
+  StudioWorkspaceSettingsScreen: () => <span>Workspace Settings</span>,
+}));
 vi.mock("@/features/agent/studio-members", () => ({
   StudioMembers: () => <span>Studio Members</span>,
 }));
@@ -228,4 +231,13 @@ it("opens native member management from readable story projects", async () => {
       .click()
   );
   expect(host.textContent).toContain("Studio Members");
+});
+it("opens workspace creation from the hub", async () => {
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "studioWorkspace.create")!
+      .click()
+  );
+  expect(host.textContent).toContain("Workspace Settings");
 });

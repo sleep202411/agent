@@ -31,6 +31,7 @@ import {
   type CreateStoryProjectValues,
   type StoryProjectSummary,
 } from "@/features/agent";
+import { StudioWorkspaceSettingsScreen } from "@/features/agent/studio-workspace-settings";
 import { StudioMembers } from "@/features/agent/studio-members";
 import { StudioInviteAccept } from "@/features/agent/studio-invite-accept";
 import { studioInviteTargetUrl } from "@/features/agent/api/studio-invite-accept-api";
@@ -62,6 +63,7 @@ function AgentHubSession({ generation }: { generation: number }) {
   const insets = useSafeAreaInsets();
   const { requireAuth, isAuthenticated } = useAuthGate();
   const [joiningInvite, setJoiningInvite] = useState(false);
+  const [workspaceSettings, setWorkspaceSettings] = useState<{ id?: string }>();
   const [memberScope, setMemberScope] = useState<StudioInviteScope>();
   const [inviteScope, setInviteScope] = useState<StudioInviteScope>();
   const [projects, setProjects] = useState<StoryProjectSummary[]>([]);
@@ -184,6 +186,19 @@ function AgentHubSession({ generation }: { generation: number }) {
     [selectedWorkspace, generation, router, t]
   );
 
+  if (workspaceSettings)
+    return (
+      <StudioWorkspaceSettingsScreen
+        workspaceId={workspaceSettings.id}
+        generation={generation}
+        onClose={() => setWorkspaceSettings(undefined)}
+        onDone={(id) => {
+          setWorkspaceSettings(undefined);
+          setProjects([]);
+          void loadProjects({ blocking: true, workspaceId: id });
+        }}
+      />
+    );
   if (memberScope)
     return (
       <StudioMembers
@@ -292,6 +307,24 @@ function AgentHubSession({ generation }: { generation: number }) {
           </View>
         )}
 
+        {isAuthenticated && (
+          <Pressable
+            disabled={creating || loading}
+            onPress={() => setWorkspaceSettings({})}
+            style={[styles.banner, { borderColor: theme.textSecondary }]}
+          >
+            <ThemedText type="small">{t("studioWorkspace.create")}</ThemedText>
+          </Pressable>
+        )}
+        {selectedWorkspace && (
+          <Pressable
+            disabled={creating || loading}
+            onPress={() => setWorkspaceSettings({ id: selectedWorkspace.id })}
+            style={[styles.banner, { borderColor: theme.textSecondary }]}
+          >
+            <ThemedText type="small">{t("studioWorkspace.settings")}</ThemedText>
+          </Pressable>
+        )}
         {selectedWorkspace?.accessScope === "workspace" && (
           <Pressable
             disabled={creating || loading}
