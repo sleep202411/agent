@@ -14,6 +14,7 @@ import { appEnv } from "@/config/app-env";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
+import { PlatformProjectSections } from "./platform-project-sections";
 import { StudioMembers } from "./studio-members";
 import { StudioInvites } from "./studio-invites";
 import { studioInviteTargetUrl } from "./api/studio-invite-accept-api";
@@ -41,7 +42,7 @@ function Session({ workspace, generation, onClose }: Props) {
   const [revision, setRevision] = useState(0);
   const [collaboration, setCollaboration] = useState<{
     project: PlatformProject;
-    kind: "members" | "invites";
+    kind: "members" | "invites" | "sections";
   }>();
   const [loaded, setLoaded] = useState<{
     revision: number;
@@ -152,7 +153,7 @@ function Session({ workspace, generation, onClose }: Props) {
     borderRadius: 8,
     backgroundColor: theme.backgroundElement,
   };
-  if (!active) return null;
+  if (!active && !collaboration) return null;
   if (collaboration) {
     const scope = {
       kind: "project" as const,
@@ -163,6 +164,16 @@ function Session({ workspace, generation, onClose }: Props) {
       setCollaboration(undefined);
       setRevision((v) => v + 1);
     };
+    if (collaboration.kind === "sections")
+      return (
+        <PlatformProjectSections
+          projectId={scope.id}
+          workspaceId={workspace.id}
+          name={scope.name}
+          generation={generation}
+          onClose={close}
+        />
+      );
     return collaboration.kind === "members" ? (
       <StudioMembers scope={scope} generation={generation} onClose={close} />
     ) : (
@@ -272,6 +283,13 @@ function Session({ workspace, generation, onClose }: Props) {
                 label={t("studioProjects.details")}
                 disabled={locked}
                 onPress={() => edit(project)}
+              />
+              <Action
+                label={t("studioChapters.title")}
+                disabled={locked}
+                onPress={() => {
+                  if (!lock.current && current()) setCollaboration({ project, kind: "sections" });
+                }}
               />
               <Action
                 label={t("studioMembers.title")}

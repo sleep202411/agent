@@ -1,0 +1,334 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  BackHandler,
+  Linking,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
+import { getAuthGeneration } from "@/auth/auth-store";
+import { ThemedText } from "@/components/themed-text";
+import { appEnv } from "@/config/app-env";
+import { useScreenActive } from "@/hooks/use-app-active";
+import { useTheme } from "@/hooks/use-theme";
+import { useTranslations } from "@/i18n";
+import { studioInviteTargetUrl } from "./api/studio-invite-accept-api";
+import {
+  changePlatformSection,
+  fetchPlatformSections,
+  sectionTitle,
+  SectionWriteError,
+  type PlatformSections,
+  type SectionChange,
+} from "./api/platform-sections-api";
+type Props = {
+  projectId: string;
+  workspaceId: string;
+  name: string;
+  generation: number;
+  onClose: () => void;
+};
+type Review = { snapshot: PlatformSections; change: SectionChange };
+export function PlatformProjectSections(props: Props) {
+  return props.generation === getAuthGeneration() ? (
+    <Session key={`${props.projectId}:${props.workspaceId}:${props.generation}`} {...props} />
+  ) : null;
+}
+function Session({ projectId, workspaceId, name, generation, onClose }: Props) {
+  const t = useTranslations(),
+    theme = useTheme(),
+    active = useScreenActive();
+  const [revision, setRevision] = useState(0);
+  const [loaded, setLoaded] = useState<{
+    revision: number;
+    data?: PlatformSections;
+    error?: string;
+  }>();
+  const [review, setReview] = useState<Review>();
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState<string>(),
+    [uncertainAt, setUncertainAt] = useState<number>();
+  const lock = useRef(false),
+    alive = useRef(true),
+    pending = useRef<AbortController | null>(null);
+  const current = () => alive.current && generation === getAuthGeneration();
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      pending.current?.abort();
+    };
+  }, []);
+  useEffect(() => {
+    if (!active) pending.current?.abort();
+  }, [active]);
+  useEffect(() => {
+    if (!active) return;
+    const c = new AbortController();
+    void fetchPlatformSections(projectId, workspaceId, generation, c.signal).then(
+      (data) => {
+        if (!c.signal.aborted && !lock.current) setLoaded({ revision, data });
+      },
+      (e) => {
+        if (!c.signal.aborted && !lock.current)
+          setLoaded({ revision, error: e instanceof Error ? e.message : String(e) });
+      }
+    );
+    return () => c.abort();
+  }, [projectId, workspaceId, generation, revision, active]);
+  useEffect(() => {
+    if (!active) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (!lock.current) {
+        if (review) setReview(undefined);
+        else onClose();
+      }
+      return true;
+    });
+    return () => sub.remove();
+  }, [active, review, onClose]);
+  const visible = loaded?.revision === revision ? loaded : undefined;
+  const data = visible?.data;
+  const locked = busy || uncertainAt !== undefined;
+  async function submit(command: Review) {
+    if (locked || lock.current || !current() || !active) return;
+    lock.current = true;
+    setBusy(true);
+    setError(undefined);
+    const c = new AbortController();
+    pending.current = c;
+    try {
+      const result = await changePlatformSection(
+        command.snapshot,
+        command.change,
+        generation,
+        c.signal
+      );
+      if (current()) {
+        setLoaded({ revision, data: result });
+        setReview(undefined);
+      }
+    } catch (e) {
+      if (current()) {
+        setError(e instanceof Error ? e.message : String(e));
+        if (e instanceof SectionWriteError) setUncertainAt(revision);
+      }
+    } finally {
+      lock.current = false;
+      if (current()) setBusy(false);
+    }
+  }
+  function start(change: SectionChange) {
+    if (!data?.canEdit || locked || !current() || !active) return;
+    setTitle("title" in change ? change.title : "");
+    setError(undefined);
+    setReview({ snapshot: data, change });
+  }
+  function move(index: number, offset: number) {
+    if (
+      !data ||
+      locked ||
+      !data.canEdit ||
+      index + offset < 0 ||
+      index + offset >= data.sections.length
+    )
+      return;
+    const ids = data.sections.map((s) => s.id);
+    [ids[index], ids[index + offset]] = [ids[index + offset], ids[index]];
+    void submit({ snapshot: data, change: { kind: "reorder", ids } });
+  }
+  if (!active) return null;
+  return (
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={{ padding: 16, gap: 12 }}
+    >
+      <ThemedText type="smallBold">
+        {t("studioChapters.title")} · {name}
+      </ThemedText>
+      {!visible && <ActivityIndicator />}
+      {(error || visible?.error) && (
+        <ThemedText accessibilityRole="alert">{error ?? visible?.error}</ThemedText>
+      )}
+      {uncertainAt !== undefined && (
+        <>
+          <ThemedText>{t("studioProjects.uncertain")}</ThemedText>
+          {data && revision > uncertainAt && (
+            <Action
+              label={t("studioProjects.reviewed")}
+              onPress={() => {
+                setUncertainAt(undefined);
+                setError(undefined);
+              }}
+            />
+          )}
+        </>
+      )}
+      {review ? (
+        <>
+          {review.change.kind === "archive" ? (
+            <>
+              <ThemedText>{t("studioChapters.archiveHelp")}</ThemedText>
+              <ThemedText>
+                {
+                  review.snapshot.sections.find(
+                    (s) => s.id === (review.change as { id: string }).id
+                  )?.title
+                }
+              </ThemedText>
+            </>
+          ) : (
+            <TextInput
+              accessibilityLabel={t("studioChapters.name")}
+              value={title}
+              onChangeText={setTitle}
+              editable={!locked}
+              maxLength={160}
+              style={{
+                color: theme.text,
+                padding: 12,
+                borderRadius: 8,
+                backgroundColor: theme.backgroundElement,
+              }}
+            />
+          )}
+          <Action
+            label={t("studioChapters.confirm")}
+            disabled={
+              locked || (review.change.kind !== "archive" && !sectionTitle.safeParse(title).success)
+            }
+            onPress={() =>
+              void submit({
+                snapshot: review.snapshot,
+                change: "title" in review.change ? { ...review.change, title } : review.change,
+              })
+            }
+          />
+          <Action
+            label={t("studioProjects.discard")}
+            disabled={busy}
+            onPress={() => setReview(undefined)}
+          />
+        </>
+      ) : (
+        <>
+          {data?.canEdit && (
+            <Action
+              label={t("studioChapters.create")}
+              disabled={locked}
+              onPress={() => start({ kind: "create", title: "" })}
+            />
+          )}
+          {data?.sections.map((section, index) => (
+            <View
+              key={section.id}
+              style={{
+                gap: 8,
+                padding: 12,
+                borderRadius: 8,
+                backgroundColor: theme.backgroundElement,
+              }}
+            >
+              <ThemedText type="smallBold">
+                {index + 1}. {section.title}
+              </ThemedText>
+              {data.canEdit && (
+                <>
+                  <Action
+                    label={t("studioChapters.rename")}
+                    disabled={locked}
+                    onPress={() => start({ kind: "rename", id: section.id, title: section.title })}
+                  />
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <Action
+                      label={t("studioChapters.up")}
+                      disabled={locked || index === 0}
+                      onPress={() => move(index, -1)}
+                    />
+                    <Action
+                      label={t("studioChapters.down")}
+                      disabled={locked || index === data.sections.length - 1}
+                      onPress={() => move(index, 1)}
+                    />
+                  </View>
+                  <Action
+                    label={t("studioChapters.archive")}
+                    disabled={locked || data.sections.length === 1}
+                    onPress={() => start({ kind: "archive", id: section.id })}
+                  />
+                </>
+              )}
+              <Action
+                label={t("studioChapters.open")}
+                disabled={busy}
+                onPress={() => {
+                  if (!current() || lock.current) return;
+                  lock.current = true;
+                  setBusy(true);
+                  const url = new URL(
+                    studioInviteTargetUrl(
+                      { scope: "project", projectId, workspaceId, targetName: name },
+                      appEnv.appRegion
+                    )
+                  );
+                  url.pathname += "/canvas";
+                  url.searchParams.set("section", section.id);
+                  void Linking.openURL(url.toString())
+                    .catch((e) => {
+                      if (current()) setError(e instanceof Error ? e.message : String(e));
+                    })
+                    .finally(() => {
+                      lock.current = false;
+                      if (current()) setBusy(false);
+                    });
+                }}
+              />
+            </View>
+          ))}
+          {data?.sections.length === 1 && <ThemedText>{t("studioChapters.keepOne")}</ThemedText>}
+        </>
+      )}
+      <Action
+        label={t("studioProjects.reload")}
+        disabled={busy}
+        onPress={() => {
+          setReview(undefined);
+          setError(undefined);
+          setRevision((v) => v + 1);
+        }}
+      />
+      {busy && <ActivityIndicator />}
+      <Action label={t("common.back")} disabled={busy} onPress={onClose} />
+    </ScrollView>
+  );
+}
+function Action({
+  label,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !!disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        padding: 12,
+        borderRadius: 8,
+        backgroundColor: theme.backgroundElement,
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <ThemedText type="small">{label}</ThemedText>
+    </Pressable>
+  );
+}

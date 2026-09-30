@@ -13,6 +13,21 @@ const h = vi.hoisted(() => ({
   open: vi.fn(),
   close: vi.fn(),
 }));
+vi.mock("./platform-project-sections", () => ({
+  PlatformProjectSections: ({
+    projectId,
+    workspaceId,
+    onClose,
+  }: {
+    projectId: string;
+    workspaceId: string;
+    onClose: () => void;
+  }) => (
+    <button onClick={onClose}>
+      Chapters:{projectId}:{workspaceId}
+    </button>
+  ),
+}));
 vi.mock("./studio-members", () => ({
   StudioMembers: ({
     scope,
@@ -216,4 +231,14 @@ it("opens sharing under the selected project and refreshes roles on return", asy
   await act(async () => host.querySelector("button")!.click());
   expect(button("studioInvites.title")).toBeUndefined();
   expect(button("studioMembers.title")).toBeDefined();
+});
+
+it("opens the selected project's chapters and refreshes its version on return", async () => {
+  await render();
+  await click("studioChapters.title");
+  expect(host.textContent).toBe(`Chapters:${id}:${workspaceId}`);
+  const calls = h.list.mock.calls.length;
+  await act(async () => host.querySelector("button")!.click());
+  expect(h.list.mock.calls.length).toBe(calls + 1);
+  expect(button("studioChapters.title")).toBeDefined();
 });
