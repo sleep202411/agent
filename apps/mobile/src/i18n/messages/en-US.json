@@ -1898,7 +1898,7 @@
   "taskWorkbench.episodeStageHelp": "Review this episode’s tasks, then stage them in the workbench. Nothing is created until you select Create All Tasks.",
   "taskWorkbench.episodeRetry": "Select Create All Tasks to retry this same batch. Previously created tasks will be reused.",
   "canvasImport.title": "Import Canvas Tasks",
-  "canvasImport.help": "Paste a Studio canvas link from this region. Review scenes and stage them; Create All Tasks submits the import.",
+  "canvasImport.help": "Choose an existing film or create one in the linked workspace. You can also paste a canvas link to preview its scenes.",
   "canvasImport.link": "Studio Canvas Link",
   "canvasImport.preview": "Preview Tasks",
   "canvasImport.stage": "Stage Canvas Tasks",
@@ -2520,5 +2520,11 @@
   "taskWorkbench.storageError": "Drafts could not be saved or restored. Creation is paused until storage is available",
   "assetTaskProgress.production": "Production",
   "assetTaskProgress.pending": "{count} pending creation",
-  "ip.publishers": "Distributed by"
+  "ip.publishers": "Distributed by",
+  "canvasImport.chooseFilm": "Choose an interactive film",
+  "canvasImport.linkWorkspace": "Link a Studio workspace to this Crew first.",
+  "canvasImport.filmTitle": "Film title",
+  "canvasImport.createFilm": "Create interactive film",
+  "canvasImport.openFilm": "Open film",
+  "canvasImport.checkCreation": "Creation could not be confirmed. Refresh the film list and check before creating again."
 }

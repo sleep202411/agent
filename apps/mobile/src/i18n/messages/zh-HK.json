@@ -1898,7 +1898,7 @@
   "taskWorkbench.episodeStageHelp": "檢查本集任務並暫存到工作台。點擊「建立全部任務」後才會建立。",
   "taskWorkbench.episodeRetry": "點擊「建立全部任務」重試同一批次，已建立的任務會直接重用。",
   "canvasImport.title": "匯入畫布任務",
-  "canvasImport.help": "貼上目前區域的 Studio 畫布連結，檢查場景並暫存，點擊「建立全部任務」後提交匯入。",
+  "canvasImport.help": "選擇現有影遊或在綁定工作區建立影遊，也可貼上畫布連結預覽場景。",
   "canvasImport.link": "Studio 畫布連結",
   "canvasImport.preview": "預覽任務",
   "canvasImport.stage": "暫存畫布任務",
@@ -2520,5 +2520,11 @@
   "taskWorkbench.storageError": "無法儲存或恢復草稿。儲存恢復前暫停建立",
   "assetTaskProgress.production": "製作",
   "assetTaskProgress.pending": "待建立 {count}",
-  "ip.publishers": "發行方"
+  "ip.publishers": "發行方",
+  "canvasImport.chooseFilm": "選擇現有影遊",
+  "canvasImport.linkWorkspace": "請先為劇組綁定 Studio 工作區。",
+  "canvasImport.filmTitle": "影遊名稱",
+  "canvasImport.createFilm": "建立影遊",
+  "canvasImport.openFilm": "開啟影遊",
+  "canvasImport.checkCreation": "建立結果尚未確認，請重新整理影遊列表核對後再建立。"
 }

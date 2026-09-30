@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CanvasTaskImport } from "./canvas-task-import";
+vi.mock("./crew-film-picker", () => ({ CrewFilmPicker: () => null }));
 const h = vi.hoisted(() => ({ generation: 1, fetch: vi.fn(), stage: vi.fn(), close: vi.fn() }));
 vi.mock("./canvas-task-import-api", async (original) => ({
   ...(await original<typeof import("./canvas-task-import-api")>()),

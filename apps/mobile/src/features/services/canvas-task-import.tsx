@@ -1,3 +1,4 @@
+import { CrewFilmPicker } from "./crew-film-picker";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput } from "react-native";
 import { appEnv } from "@/config/app-env";
@@ -59,6 +60,20 @@ export function CanvasTaskImport({
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{t("canvasImport.title")}</ThemedText>
       <ThemedText>{t("canvasImport.help")}</ThemedText>
+      <CrewFilmPicker
+        crewId={crewId}
+        generation={generation}
+        disabled={busy}
+        onSelect={(id) => {
+          const origin =
+            appEnv.appRegion === "cn"
+              ? "https://studio.fizzspace.cn"
+              : "https://studio.fizzdragon.com";
+          setLink(`${origin}/story-studio/projects/${id}/canvas`);
+          setPreview(undefined);
+          setError(undefined);
+        }}
+      />
       <TextInput
         accessibilityLabel={t("canvasImport.link")}
         placeholder={t("canvasImport.link")}

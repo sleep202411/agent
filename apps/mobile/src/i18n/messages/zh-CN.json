@@ -1898,7 +1898,7 @@
   "taskWorkbench.episodeStageHelp": "检查本集任务并暂存到工作台。点击“创建全部任务”后才会创建。",
   "taskWorkbench.episodeRetry": "点击“创建全部任务”重试同一批次，已创建的任务会直接复用。",
   "canvasImport.title": "导入画布任务",
-  "canvasImport.help": "粘贴当前区域的 Studio 画布链接，检查场景并暂存，点击“创建全部任务”后提交导入。",
+  "canvasImport.help": "选择现有影游或在绑定工作区创建影游，也可粘贴画布链接预览场景。",
   "canvasImport.link": "Studio 画布链接",
   "canvasImport.preview": "预览任务",
   "canvasImport.stage": "暂存画布任务",
@@ -2520,5 +2520,11 @@
   "taskWorkbench.storageError": "无法保存或恢复草稿。存储恢复前暂停创建",
   "assetTaskProgress.production": "制作",
   "assetTaskProgress.pending": "待创建 {count}",
-  "ip.publishers": "发行方"
+  "ip.publishers": "发行方",
+  "canvasImport.chooseFilm": "选择现有影游",
+  "canvasImport.linkWorkspace": "请先为剧组绑定 Studio 工作区。",
+  "canvasImport.filmTitle": "影游名称",
+  "canvasImport.createFilm": "创建影游",
+  "canvasImport.openFilm": "打开影游",
+  "canvasImport.checkCreation": "创建结果尚未确认，请刷新影游列表核对后再创建。"
 }
