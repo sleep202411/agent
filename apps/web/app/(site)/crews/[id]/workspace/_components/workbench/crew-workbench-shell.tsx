@@ -82,7 +82,7 @@ export function CrewWorkbenchShell({
   const t = useTranslations("workspace");
   const tw = useTranslations("crewWorkbench");
   const tc = useTranslations("crewCommunityChat");
-  const [crewNamesExpanded, setCrewNamesExpanded] = useState(false);
+  const [crewNamesExpanded, setCrewNamesExpanded] = useState(true);
   const hasChat = tabs.some((tab) => tab.id === "chat");
   return (
     <div

@@ -53,17 +53,12 @@ function stagedCategoryKey(taskKind?: string | null): string {
 }
 
 function normalizeCategory(key: string): string {
-  if (key === "characters" || key === "scenes" || key === "props" || key === "art") return "artAssets";
+  if (key === "characters" || key === "scenes" || key === "props" || key === "art")
+    return "artAssets";
   return key;
 }
 
-const STAGED_CATEGORY_BARS = [
-  "scripts",
-  "artAssets",
-  "music",
-  "production",
-  "other",
-] as const;
+const STAGED_CATEGORY_BARS = ["scripts", "artAssets", "music", "production", "other"] as const;
 
 export type Draft = {
   id: number;
@@ -448,14 +443,13 @@ function TaskCreationSession({
                 {!storageError && (pendingCount > 0 || unresolved) ? (
                   <p className="mb-3 text-xs text-muted-foreground">{t("draftStorageHelp")}</p>
                 ) : null}
-                {!drafts.length && !batches.length ? (
-                  <p className="text-sm text-muted-foreground">{t("empty")}</p>
-                ) : null}
                 <div className="space-y-4">
                   {STAGED_CATEGORY_BARS.map((barKey) => {
-                    const label = barKey === "artAssets" ? t("artAssets") : t(`assetGroup_${barKey}`);
+                    const label =
+                      barKey === "artAssets" ? t("artAssets") : t(`assetGroup_${barKey}`);
                     const categoryDrafts = drafts.filter(
-                      (draft) => normalizeCategory(stagedCategoryKey(draft.input.taskKind)) === barKey
+                      (draft) =>
+                        normalizeCategory(stagedCategoryKey(draft.input.taskKind)) === barKey
                     );
                     const categoryBatches = batches
                       .map((batch) => ({
@@ -518,7 +512,9 @@ function TaskCreationSession({
                                 >
                                   <div className="flex items-start justify-between gap-2">
                                     <span className="rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                      {taskT(CREW_TASK_KIND_MESSAGE_KEYS[draft.input.taskKind ?? "other"])}
+                                      {taskT(
+                                        CREW_TASK_KIND_MESSAGE_KEYS[draft.input.taskKind ?? "other"]
+                                      )}
                                     </span>
                                     {draft.state === "staged" ? (
                                       <button
@@ -538,7 +534,11 @@ function TaskCreationSession({
                                   <button
                                     type="button"
                                     className="mt-3 flex cursor-pointer items-start gap-2 break-words text-left text-sm font-medium underline-offset-4 hover:underline disabled:cursor-default disabled:no-underline"
-                                    disabled={busy || draft.state === "creating" || draft.state === "uncertain"}
+                                    disabled={
+                                      busy ||
+                                      draft.state === "creating" ||
+                                      draft.state === "uncertain"
+                                    }
                                     aria-label={t("editDraft", { title: draft.input.title })}
                                     onClick={() => {
                                       if (draft.taskId) {
@@ -572,7 +572,9 @@ function TaskCreationSession({
                                       className="mt-2 text-xs text-muted-foreground underline"
                                       disabled={busy}
                                       onClick={() =>
-                                        setDrafts((current) => current.filter((item) => item.id !== draft.id))
+                                        setDrafts((current) =>
+                                          current.filter((item) => item.id !== draft.id)
+                                        )
                                       }
                                     >
                                       {t("dismissCheckedDraft")}
@@ -616,7 +618,9 @@ function TaskCreationSession({
                                 {batch.items.map((item, index) => (
                                   <li key={index} className="rounded bg-black/20 p-3">
                                     <span>{item.title}</span>
-                                    {item.role ? <span className="mt-2 block">{item.role}</span> : null}
+                                    {item.role ? (
+                                      <span className="mt-2 block">{item.role}</span>
+                                    ) : null}
                                   </li>
                                 ))}
                               </ul>
