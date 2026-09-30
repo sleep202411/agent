@@ -10,9 +10,7 @@ import {
   IconPencil,
   IconX,
   IconFolder,
-  IconStack2,
-  IconMovie,
-  IconSitemap,
+  IconFile,
   IconStar,
   IconUsers,
   IconChevronDown,
@@ -39,8 +37,6 @@ import {
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { EpisodeTemplatePreview } from "./episode-template-preview";
 import { WorkbenchCanvasImport } from "./workbench-canvas-import";
-import { WorkbenchAssetFolder } from "./workbench-asset-folder";
-import { WorkbenchAssetUpload } from "./workbench-asset-upload";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import type { WorkbenchTaskBatch } from "./workbench-task-batch";
 import { TaskQuickCreate } from "./task-quick-create";
@@ -48,14 +44,21 @@ import { CREW_TASK_KIND_MESSAGE_KEYS } from "@/app/(site)/crews/_hooks/types";
 
 import { ASSET_TASK_GROUPS, assetTaskProgress } from "./asset-task-progress";
 
-type Draft = {
+export type Draft = {
   id: number;
   input: CreateCrewTaskInput;
   state: "staged" | "creating" | "created" | "uncertain";
   taskId?: string;
 };
 
-export function TaskCreationWorkbench({
+import { useWorkbenchDrafts } from "./use-workbench-drafts";
+
+export function TaskCreationWorkbench(props: Parameters<typeof TaskCreationSession>[0]) {
+  const { user } = useCurrentUser();
+  return user ? <TaskCreationSession key={`${user.id}:${props.crewId}`} {...props} /> : null;
+}
+
+function TaskCreationSession({
   crewId,
   crewName,
   project,
@@ -64,6 +67,7 @@ export function TaskCreationWorkbench({
   canManageEpisodes,
   active,
   onSelectTask,
+  onViewTasks,
 }: {
   crewId: string;
   crewName: string;
@@ -73,6 +77,7 @@ export function TaskCreationWorkbench({
   canManageEpisodes: boolean;
   active: boolean;
   onSelectTask: (id: string) => void;
+  onViewTasks?: () => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
   const taskT = useTranslations("crewTasks");
@@ -81,10 +86,12 @@ export function TaskCreationWorkbench({
   const [assetSearch, setAssetSearch] = useState("");
   const [assetsExpanded, setAssetsExpanded] = useState(false);
   const [showEpisodes, setShowEpisodes] = useState(false);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [batches, setBatches] = useState<
-    Array<WorkbenchTaskBatch & { created?: boolean; attempted?: boolean }>
-  >([]);
+  const { drafts, setDrafts, batches, setBatches, storageError } = useWorkbenchDrafts(
+    user!.id,
+    crewId
+  );
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [productionOpen, setProductionOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   const [templateEpisodeId, setTemplateEpisodeId] = useState<string | null>(null);
@@ -95,7 +102,7 @@ export function TaskCreationWorkbench({
   const [episodeUncertain, setEpisodeUncertain] = useState(false);
   const lock = useRef(false);
   const alive = useRef(true);
-  const sequence = useRef(0);
+
   const create = useCreateCrewTask(crewId);
   const createEpisode = useCreateCrewEpisode(crewId);
   const episodes = useCrewEpisodes(crewId);
@@ -105,8 +112,8 @@ export function TaskCreationWorkbench({
     !tasks.isLoading && !tasks.isFetching && !tasks.hasNextPage && !tasks.isError;
   const assets = useCrewAssets(
     crewId,
-    { source: "all", sort: "name", query: assetSearch.trim() || undefined },
-    active
+    { source: "recent", sort: "name", query: assetSearch.trim() || undefined },
+    active && searchOpen
   );
   useEffect(() => {
     alive.current = true;
@@ -138,7 +145,9 @@ export function TaskCreationWorkbench({
             ? "music"
             : draft.input.taskKind === "art"
               ? "art"
-              : "other",
+              : ["storyboard", "edit", "voice", "qa"].includes(draft.input.taskKind ?? "")
+                ? "production"
+                : "other",
     })),
     ...pendingBatches.flatMap((batch) =>
       batch.items.map((item, index) => ({
@@ -158,6 +167,7 @@ export function TaskCreationWorkbench({
   }
   const unresolved = drafts.some((draft) => draft.state === "uncertain");
   useEffect(() => {
+    if (!busy && !storageError) return;
     if (
       !drafts.some((draft) => draft.state !== "created") &&
       !batches.some((batch) => !batch.created)
@@ -166,7 +176,7 @@ export function TaskCreationWorkbench({
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [drafts, batches]);
+  }, [drafts, batches, busy, storageError]);
   const view = {
     ...project.views[0]!,
     filters: {},
@@ -182,9 +192,17 @@ export function TaskCreationWorkbench({
     try {
       for (const draft of pending) {
         if (!alive.current) break;
-        setDrafts((current) =>
+        const recorded = setDrafts((current) =>
           current.map((item) => (item.id === draft.id ? { ...item, state: "creating" } : item))
         );
+        if (!recorded) {
+          // Never send a non-idempotent write while the durable copy still says staged.
+          setDrafts((current) =>
+            current.map((item) => (item.id === draft.id ? { ...item, state: "staged" } : item))
+          );
+          setError(t("draftStorageFailed"));
+          return;
+        }
         try {
           const result = await create.mutateAsync(draft.input);
           if (!alive.current) break;
@@ -268,116 +286,73 @@ export function TaskCreationWorkbench({
   }
   return (
     <div hidden={!active} className="min-h-0 min-w-0 flex-1 overflow-auto @container">
-      <div className="flex min-h-full flex-col bg-[#090a0c] @[760px]:flex-row">
-        <aside className="flex w-full shrink-0 flex-col border-b border-white/10 bg-[#090a0c] p-5 @[760px]:w-56 @[1000px]:w-64 @[760px]:border-b-0 @[760px]:border-r">
-          <h2 className="hidden items-center gap-2 text-sm font-semibold @[760px]:flex">
-            <IconFolder className="size-4" />
-            {t("assets")}
-          </h2>
+      <div className="flex min-h-full flex-col bg-[#090a0c] text-[13px]">
+        <aside className="shrink-0 border-b border-white/10 bg-[#090a0c] px-4 py-2">
           <button
             type="button"
-            className="flex w-full items-center gap-2 text-left text-sm font-semibold @[760px]:hidden"
+            className="flex w-full items-center gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
             aria-expanded={assetsExpanded}
             onClick={() => setAssetsExpanded((expanded) => !expanded)}
           >
-            <IconFolder className="size-4" />
-            {t("assets")}
             <IconChevronDown
-              className={`ml-auto size-4 transition-transform ${assetsExpanded ? "rotate-180" : ""}`}
+              className={`size-3.5 transition-transform ${assetsExpanded ? "rotate-180" : ""}`}
             />
+            {t("assetProgress")}
           </button>
-          <div
-            className={`${assetsExpanded ? "flex" : "hidden"} min-h-0 flex-1 flex-col @[760px]:flex`}
-          >
-            <Input
-              className="mt-6 bg-[#090a0c]"
-              aria-label={t("searchAssets")}
-              placeholder={t("searchAssets")}
-              value={assetSearch}
-              onChange={(event) => setAssetSearch(event.target.value)}
-            />
+          <div hidden={!assetsExpanded}>
             <section className="my-4" aria-label={t("assetProgress")}>
-              <h3 className="text-xs text-muted-foreground" title={t("assetProgressHelp")}>
+              <h3 className="sr-only" title={t("assetProgressHelp")}>
                 {t("assetProgress")}
               </h3>
-              <div className="mt-4 space-y-4">
-                {[["scripts"], ["characters", "scenes", "props", "art"], ["music"], ["other"]].map(
-                  (keys, index) => (
-                    <details key={index} open className="text-sm">
-                      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {index === 1 ? t("artAssets") : t(`assetGroup_${keys[0]}`)}
-                      </summary>
-                      <dl className="mt-3 space-y-3 border-l border-white/10 pl-3">
-                        {keys.map((key) => {
-                          const value = progress[key as (typeof ASSET_TASK_GROUPS)[number]];
-                          return (
-                            <div
-                              key={key}
-                              className="flex flex-wrap items-start justify-between gap-2"
+              <div className="mt-3 grid grid-cols-2 gap-4 @[650px]:grid-cols-3 @[1000px]:grid-cols-5">
+                {[
+                  ["scripts"],
+                  ["characters", "scenes", "props", "art"],
+                  ["music"],
+                  ["production"],
+                  ["other"],
+                ].map((keys, index) => (
+                  <details key={index} open className="text-xs">
+                    <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {index === 1 ? t("artAssets") : t(`assetGroup_${keys[0]}`)}
+                    </summary>
+                    <dl className="mt-2 space-y-2 border-l border-white/10 pl-3">
+                      {keys.map((key) => {
+                        const value = progress[key as (typeof ASSET_TASK_GROUPS)[number]];
+                        return (
+                          <div
+                            key={key}
+                            className="flex flex-wrap items-start justify-between gap-2"
+                          >
+                            <dt>{t(`assetGroup_${key}`)}</dt>
+                            <dd
+                              className="rounded bg-black/20 px-1.5 text-xs"
+                              title={t("assetProgress")}
                             >
-                              <dt>{t(`assetGroup_${key}`)}</dt>
-                              <dd
-                                className="rounded bg-black/20 px-1.5 text-xs"
-                                title={t("assetProgress")}
-                              >
-                                {progressReady ? `${value.approved}/${value.total}` : "—"}
-                                {stagedProgress[key as (typeof ASSET_TASK_GROUPS)[number]].total >
-                                0 ? (
-                                  <span className="mt-1 block text-muted-foreground">
-                                    {t("pendingCategory", {
-                                      count:
-                                        stagedProgress[key as (typeof ASSET_TASK_GROUPS)[number]]
-                                          .total,
-                                    })}
-                                  </span>
-                                ) : null}
-                              </dd>
-                            </div>
-                          );
-                        })}
-                      </dl>
-                    </details>
-                  )
-                )}
+                              {progressReady ? `${value.approved}/${value.total}` : "—"}
+                              {stagedProgress[key as (typeof ASSET_TASK_GROUPS)[number]].total >
+                              0 ? (
+                                <span className="mt-1 block text-muted-foreground">
+                                  {t("pendingCategory", {
+                                    count:
+                                      stagedProgress[key as (typeof ASSET_TASK_GROUPS)[number]]
+                                        .total,
+                                  })}
+                                </span>
+                              ) : null}
+                            </dd>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  </details>
+                ))}
               </div>
             </section>
-            {assets.isError ? (
-              <p role="alert" className="mt-3 text-sm text-destructive">
-                {assets.error.message}
-              </p>
-            ) : null}
-            {assets.isLoading ? <p className="mt-3 text-sm">{t("loading")}</p> : null}
-            <ul className="my-4 space-y-2 text-sm">
-              {(!assets.isError
-                ? assets.data?.items.filter((asset) => asset.kind !== "folder")
-                : []
-              )?.map((asset) => (
-                <li key={asset.id}>
-                  <WorkbenchAssetFolder crewId={crewId} asset={asset} active={active} />
-                </li>
-              ))}
-            </ul>
-            {assets.hasNextPage || assets.isError ? (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={assets.isFetching}
-                onClick={() => void (assets.isError ? assets.refetch() : assets.fetchNextPage())}
-              >
-                {assets.isError ? t("retry") : t("more")}
-              </Button>
-            ) : null}
-            <Link
-              className="my-4 text-xs text-muted-foreground underline"
-              href={`?crew=${encodeURIComponent(crewId)}&tab=assets`}
-            >
-              {t("manageAssets")}
-            </Link>
-            <WorkbenchAssetUpload crewId={crewId} active={active} />
           </div>
         </aside>
         <main className="flex min-w-0 flex-1 flex-col">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-6 py-4">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-sm font-semibold">{t("title")}</h2>
               <span className="text-xs text-muted-foreground">
@@ -386,23 +361,55 @@ export function TaskCreationWorkbench({
                   : ""}
               </span>
             </div>
-            {canManage ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {onViewTasks &&
+              (drafts.some((draft) => draft.state === "created") ||
+                batches.some((batch) => batch.created) ||
+                unresolved) ? (
+                <Button variant="ghost" color="muted" size="sm" onClick={onViewTasks}>
+                  {t("viewTasks")}
+                </Button>
+              ) : null}
+              <Button variant="ghost" color="muted" size="sm" onClick={() => setSearchOpen(true)}>
+                {t("searchAssets")}
+              </Button>
               <Button
-                disabled={busy || unresolved}
-                onClick={() => {
-                  openTask();
-                }}
-                icon={<IconPlus />}
+                variant="ghost"
+                color="muted"
+                size="sm"
+                aria-expanded={showEpisodes}
+                onClick={() => setShowEpisodes(true)}
               >
-                {t("createTask")}
+                {canManage ? t("chooseEpisode") : t("episodes")}
               </Button>
-            ) : (
-              <Button variant="outline" size="sm" onClick={() => setShowEpisodes(true)}>
-                {t("episodes")}
-              </Button>
-            )}
+              {canManage ? (
+                <>
+                  <Button
+                    variant="outline"
+                    color="muted"
+                    size="sm"
+                    onClick={() => setProductionOpen(true)}
+                  >
+                    {t("assetGroup_production")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busy || unresolved}
+                    onClick={() => openTask()}
+                    icon={<IconPlus />}
+                  >
+                    {t("createTask")}
+                  </Button>
+                </>
+              ) : null}
+            </div>
           </header>
-          <div className="flex-1 space-y-6 p-6">
+          <div className="flex-1 space-y-4 p-4">
+            {storageError ? (
+              <p role="alert" className="text-xs text-destructive">
+                {t("draftStorageFailed")}
+              </p>
+            ) : null}
             {error ? (
               <p role="alert" className="text-sm text-destructive">
                 {error}
@@ -421,13 +428,14 @@ export function TaskCreationWorkbench({
             {canManage ? (
               <section>
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                    {t("stagedTitle")}
-                  </h3>
+                  <h3 className="text-xs font-medium text-muted-foreground">{t("stagedTitle")}</h3>
                   <span className="text-xs text-muted-foreground">
                     {t("count", { count: pendingCount })}
                   </span>
                 </div>
+                {!storageError && (pendingCount > 0 || unresolved) ? (
+                  <p className="mb-3 text-xs text-muted-foreground">{t("draftStorageHelp")}</p>
+                ) : null}
                 {!drafts.length && !batches.length ? (
                   <p className="text-sm text-muted-foreground">{t("empty")}</p>
                 ) : null}
@@ -435,7 +443,7 @@ export function TaskCreationWorkbench({
                   {drafts.map((draft) => (
                     <article
                       key={draft.id}
-                      className="flex min-w-0 flex-col rounded-lg border border-white/10 bg-[#090a0c] p-4 transition-colors hover:border-white/25"
+                      className="flex min-w-0 flex-col rounded-lg border border-white/10 bg-[#151618] p-3 transition-colors hover:border-white/25"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -487,6 +495,18 @@ export function TaskCreationWorkbench({
                           {t("points", { count: draft.input.estimatePoints ?? 0 })}
                         </span>
                       </div>
+                      {draft.state === "uncertain" ? (
+                        <button
+                          type="button"
+                          className="mt-2 text-xs text-muted-foreground underline"
+                          disabled={busy}
+                          onClick={() =>
+                            setDrafts((current) => current.filter((item) => item.id !== draft.id))
+                          }
+                        >
+                          {t("dismissCheckedDraft")}
+                        </button>
+                      ) : null}
                       {draft.taskId ? (
                         <button
                           className="mt-2 text-sm underline"
@@ -535,48 +555,81 @@ export function TaskCreationWorkbench({
                 ))}
               </section>
             ) : null}
-            {canManage ? (
-              <section className="rounded-xl border border-dashed border-white/10 p-5">
-                <h3 className="mb-5 text-sm font-semibold">{t("fastActions")}</h3>
-                <div className="grid min-w-0 gap-3 @[1050px]:grid-cols-3">
-                  <article className="min-w-0 rounded-xl border border-white/10 bg-[#090a0c] p-4">
-                    <IconStack2 className="mb-4 size-6 text-muted-foreground" />
-                    <h4 className="text-sm font-semibold">{t("batchEpisodes")}</h4>
-                    <p className="my-3 text-xs text-muted-foreground">{t("batchHelp")}</p>
+            <Dialog open={productionOpen && active} onOpenChange={setProductionOpen}>
+              <DialogContent className="bg-[#090a0c] sm:max-w-lg" aria-describedby={undefined}>
+                <DialogHeader>
+                  <DialogTitle>
+                    {t("assetGroup_production")} · {t("canvasImport")}
+                  </DialogTitle>
+                </DialogHeader>
+                <DialogBody>
+                  <WorkbenchCanvasImport
+                    crewId={crewId}
+                    onStage={(batch) => {
+                      stageBatch(batch);
+                      setProductionOpen(false);
+                    }}
+                  />
+                </DialogBody>
+              </DialogContent>
+            </Dialog>
+            <Dialog open={searchOpen && active} onOpenChange={setSearchOpen}>
+              <DialogContent className="bg-[#090a0c] sm:max-w-lg" aria-describedby={undefined}>
+                <DialogHeader>
+                  <DialogTitle>{t("searchAssets")}</DialogTitle>
+                </DialogHeader>
+                <DialogBody>
+                  <Input
+                    aria-label={t("searchAssets")}
+                    placeholder={t("searchAssets")}
+                    value={assetSearch}
+                    onChange={(event) => setAssetSearch(event.target.value)}
+                  />
+                  {assets.isError ? (
+                    <p role="alert" className="mt-3 text-xs text-destructive">
+                      {assets.error.message}
+                    </p>
+                  ) : null}
+                  {assets.isFetching ? <p className="mt-3 text-xs">{t("loading")}</p> : null}
+                  {!assets.isFetching &&
+                  !assets.isError &&
+                  !assets.hasNextPage &&
+                  !assets.data?.items.length ? (
+                    <p className="mt-3 text-xs text-muted-foreground">{t("noAssetsFound")}</p>
+                  ) : null}
+                  <ul className="mt-3 space-y-1 text-xs">
+                    {(!assets.isError ? assets.data?.items : [])?.map((asset) => (
+                      <li key={asset.id}>
+                        <Link
+                          className="flex items-center gap-2 rounded px-2 py-2 hover:bg-white/5"
+                          href={`?crew=${encodeURIComponent(crewId)}&tab=assets&asset=${encodeURIComponent(asset.id)}`}
+                        >
+                          {asset.kind === "folder" ? (
+                            <IconFolder className="size-3.5 shrink-0" />
+                          ) : (
+                            <IconFile className="size-3.5 shrink-0" />
+                          )}
+                          <span className="truncate">{asset.name}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                  {assets.hasNextPage || assets.isError ? (
                     <Button
-                      variant="outline"
+                      variant="ghost"
+                      color="muted"
                       size="sm"
-                      aria-expanded={showEpisodes}
-                      onClick={() => setShowEpisodes(!showEpisodes)}
+                      disabled={assets.isFetching}
+                      onClick={() =>
+                        void (assets.isError ? assets.refetch() : assets.fetchNextPage())
+                      }
                     >
-                      {t("chooseEpisode")}
+                      {assets.isError ? t("retry") : t("more")}
                     </Button>
-                  </article>
-                  <article className="min-w-0 rounded-xl border border-red-500/20 bg-[#090a0c] p-4">
-                    <IconSitemap className="mb-4 size-6 text-red-500" />
-                    <h4 className="text-sm font-semibold">{t("canvasImport")}</h4>
-                    <div className="mt-3">
-                      <WorkbenchCanvasImport crewId={crewId} onStage={stageBatch} />
-                    </div>
-                  </article>
-                  <article className="min-w-0 rounded-xl border border-white/10 bg-[#090a0c] p-4">
-                    <IconMovie className="mb-4 size-6 text-muted-foreground" />
-                    <h4 className="text-sm font-semibold">{t("directTask")}</h4>
-                    <p className="my-3 text-xs text-muted-foreground">{t("directHelp")}</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={busy || unresolved}
-                      onClick={() => {
-                        openTask();
-                      }}
-                    >
-                      {t("addTask")}
-                    </Button>
-                  </article>
-                </div>
-              </section>
-            ) : null}
+                  ) : null}
+                </DialogBody>
+              </DialogContent>
+            </Dialog>
             <Dialog open={showEpisodes && active} onOpenChange={setShowEpisodes}>
               <DialogContent className="bg-[#090a0c] sm:max-w-2xl" aria-describedby={undefined}>
                 <DialogHeader>
@@ -630,6 +683,7 @@ export function TaskCreationWorkbench({
                               {canManage ? (
                                 <Button
                                   variant="outline"
+                                  color="muted"
                                   size="sm"
                                   disabled={
                                     busy ||
@@ -685,8 +739,8 @@ export function TaskCreationWorkbench({
               </div>
             ) : null}
           </div>
-          {canManage ? (
-            <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#090a0c] px-6 py-4">
+          {canManage && (pendingCount > 0 || busy) ? (
+            <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#090a0c] px-4 py-3">
               <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                 <span>{t("count", { count: pendingCount })}</span>
                 <span className="flex items-center gap-1">
@@ -712,6 +766,7 @@ export function TaskCreationWorkbench({
               <div className="flex gap-3">
                 <Button
                   variant="ghost"
+                  color="muted"
                   disabled={busy || unresolved || !pendingCount}
                   onClick={() => {
                     if (lock.current) return;
@@ -762,7 +817,7 @@ export function TaskCreationWorkbench({
                 )
               );
             } else {
-              const id = ++sequence.current;
+              const id = Math.max(Date.now(), ...drafts.map((draft) => draft.id + 1));
               setDrafts((current) => [...current, { id, input, state: "staged" }]);
             }
             setOpen(false);

@@ -8,6 +8,10 @@ describe('asset task categories', () => {
     [{ assetCategory: { toString: 'characters' } }, 'art', 'art'],
     [null, 'script', 'scripts'],
     [null, 'music', 'music'],
+    [null, 'storyboard', 'production'],
+    [null, 'edit', 'production'],
+    [null, 'voice', 'production'],
+    [null, 'qa', 'production'],
     [{ title: 'Characters' }, null, 'other'],
   ])('classifies stable metadata %j', (metadata, kind, expected) => {
     expect(taskAssetCategory(metadata, kind)).toBe(expected);

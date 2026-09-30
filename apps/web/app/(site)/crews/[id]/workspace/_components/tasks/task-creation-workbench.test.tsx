@@ -5,7 +5,7 @@ vi.mock("./workbench-canvas-import", () => ({
         onStage({
           key: "canvas:project",
           title: "Canvas Batch",
-          path: "/batch",
+          path: "/crews/crew/canvas-task-import/story-projects/project/apply",
           body: { sourceRevision: 3, sourceHash: "hash" },
           items: [{ title: "Scene One" }, { title: "Scene Two" }],
         })
@@ -32,6 +32,8 @@ vi.mock("@/components/ui/dialog", () => ({
   DialogBody: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 const state = vi.hoisted(() => ({
+  userId: "user",
+  assetQuery: vi.fn(),
   tasks: [] as Array<{
     id: string;
     parentId: null;
@@ -59,12 +61,15 @@ vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { post: state.post } 
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: state.invalidate }),
 }));
-vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "user" } }) }));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: state.userId } }) }));
 vi.mock("next/link", () => ({
   default: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props} />,
 }));
 vi.mock("../../_hooks/use-crew-assets", () => ({
-  useCrewAssets: () => ({ data: { items: [{ id: "folder", name: "Scripts" }] } }),
+  useCrewAssets: (_crew: string, query: unknown, enabled: boolean) => {
+    state.assetQuery(query, enabled);
+    return { data: { items: [{ id: "folder", name: "Scripts", kind: "folder" }] } };
+  },
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useCreateCrewTask: () => ({ mutateAsync: state.create }),
@@ -127,6 +132,9 @@ let root: Root;
 let host: HTMLDivElement;
 const project = { views: [{ filters: {} }] } as CrewTaskProjectDTO;
 beforeEach(() => {
+  window.localStorage.clear();
+  state.userId = "user";
+  state.assetQuery.mockClear();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
@@ -140,11 +148,11 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
 });
-async function render(canManage = true, active = true) {
+async function render(canManage = true, active = true, crewId = "crew") {
   await act(async () =>
     root.render(
       <TaskCreationWorkbench
-        crewId="crew"
+        crewId={crewId}
         crewName="Crew"
         project={project}
         members={[]}
@@ -176,7 +184,7 @@ it("stages without posting and submits once despite rapid confirmation clicks", 
   });
   expect(state.create).toHaveBeenCalledTimes(1);
   expect(host.textContent).toContain("Created");
-  expect(button("Create All Tasks").disabled).toBe(true);
+  expect(button("Create All Tasks")).toBeUndefined();
 });
 it("stops after an uncertain response and never resubmits a confirmed task", async () => {
   state.create
@@ -215,8 +223,10 @@ it("shows assets and production to viewers without creation controls", async () 
 it("removes a draft before confirmation", async () => {
   await render();
   await stage();
-  await act(async () => host.querySelector<HTMLButtonElement>("button[aria-label]")!.click());
-  expect(button("Create All Tasks").disabled).toBe(true);
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[aria-label="Remove Storyboard"]')!.click()
+  );
+  expect(button("Create All Tasks")).toBeUndefined();
   expect(state.create).not.toHaveBeenCalled();
 });
 
@@ -250,6 +260,8 @@ it.each(["taskLoading", "taskMore"] as const)(
 it("keeps existing task tables out of creation and anchors confirmation in the footer", async () => {
   await render();
   expect(host.textContent).not.toContain("Production Tasks");
+  expect(host.querySelector("footer")).toBeNull();
+  await stage();
   expect(host.querySelector("footer")?.textContent).toContain("Create All Tasks");
   expect(button("Choose Episode").getAttribute("aria-expanded")).toBe("false");
   await click("Choose Episode");
@@ -259,12 +271,13 @@ it("discards only staged drafts without sending a create request", async () => {
   await render();
   await stage();
   await click("Discard");
-  expect(button("Create All Tasks").disabled).toBe(true);
+  expect(button("Create All Tasks")).toBeUndefined();
   expect(state.create).not.toHaveBeenCalled();
 });
 
 it("stages batches without writing and retries the exact reviewed command", async () => {
   await render();
+  await click("Production");
   await click("Stage Canvas");
   expect(host.textContent).toContain("Scene One");
   expect(state.post).not.toHaveBeenCalled();
@@ -273,12 +286,13 @@ it("stages batches without writing and retries the exact reviewed command", asyn
   expect(host.textContent).toContain("Connection lost");
   await click("Create All Tasks");
   expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
-  expect(button("Create All Tasks").disabled).toBe(true);
+  expect(button("Create All Tasks")).toBeUndefined();
 });
 
 it("keeps confirmed individual tasks out of batch retries and refreshes all affected crew views", async () => {
   await render();
   await stage();
+  await click("Production");
   await click("Stage Canvas");
   state.post.mockRejectedValueOnce(new Error("Connection lost"));
   await click("Create All Tasks");
@@ -324,7 +338,7 @@ it("shows saved progress separately from two staged scripts and updates on remov
 it("starts with zero saved counts and opens episode selection immediately", async () => {
   await render();
   expect(host.querySelectorAll('section[aria-label="Approved / Created Tasks"] dd')).toHaveLength(
-    7
+    8
   );
   expect(
     [...host.querySelectorAll('section[aria-label="Approved / Created Tasks"] dd')].every(
@@ -334,4 +348,132 @@ it("starts with zero saved counts and opens episode selection immediately", asyn
   await click("Choose Episode");
   expect(host.querySelector('[role="dialog"]')?.textContent).toContain("Pilot");
   expect(button("Stage Standard Tasks")).toBeUndefined();
+});
+
+async function remount() {
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await render();
+}
+it("restores edited drafts after unmount and keeps accounts isolated", async () => {
+  await render();
+  await stage();
+  await click("Storyboard");
+  await click("Save Draft");
+  await remount();
+  expect(host.textContent).toContain("Revised Script");
+  state.userId = "another-user";
+  await render();
+  expect(host.textContent).not.toContain("Revised Script");
+  state.userId = "user";
+  await render();
+  expect(host.textContent).toContain("Revised Script");
+  await click("Discard");
+  await remount();
+  expect(host.textContent).not.toContain("Revised Script");
+});
+it("restores confirmed tasks as links without offering duplicate creation", async () => {
+  await render();
+  await stage();
+  await click("Create All Tasks");
+  await remount();
+  expect(host.textContent).toContain("Open Task");
+  expect(button("Create All Tasks")).toBeUndefined();
+  expect(state.create).toHaveBeenCalledTimes(1);
+});
+it("restores an interrupted create as uncertain instead of retrying", async () => {
+  let resolve!: (value: { id: string }) => void;
+  state.create.mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await render();
+  await stage();
+  await click("Create All Tasks");
+  await remount();
+  expect(host.textContent).toContain("Check Creation Result");
+  expect(button("Create Task").disabled).toBe(true);
+  expect(state.create).toHaveBeenCalledTimes(1);
+  await act(async () => resolve({ id: "created" }));
+});
+it("opens all accessible asset search separately from collapsed progress", async () => {
+  await render();
+  const toggle = button("Approved / Created Tasks");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  await click("Approved / Created Tasks");
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  await click("Search Assets…");
+  expect(state.assetQuery).toHaveBeenLastCalledWith(
+    { source: "recent", sort: "name", query: undefined },
+    true
+  );
+  expect(host.querySelector('[role="dialog"] a')?.getAttribute("href")).toContain("asset=folder");
+  const input = host.querySelector<HTMLInputElement>('input[aria-label="Search Assets…"]')!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "nested"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  expect(state.assetQuery).toHaveBeenLastCalledWith(
+    { source: "recent", sort: "name", query: "nested" },
+    true
+  );
+});
+it("restores a reviewed batch without altering its idempotent command", async () => {
+  await render();
+  await click("Production");
+  await click("Stage Canvas");
+  state.post.mockRejectedValueOnce(new Error("Connection lost"));
+  await click("Create All Tasks");
+  await remount();
+  expect(host.textContent).toContain("Scene One");
+  await click("Create All Tasks");
+  expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
+});
+
+it("isolates drafts by Crew and retains them when switching back", async () => {
+  await render();
+  await stage();
+  await render(true, true, "another-crew");
+  expect(host.textContent).not.toContain("Storyboard");
+  await render();
+  expect(host.textContent).toContain("Storyboard");
+});
+it("keeps the draft and does not send an unrecorded create when browser storage fails", async () => {
+  await render();
+  const storage = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+    throw new Error("Quota exceeded");
+  });
+  try {
+    await stage();
+    expect(host.textContent).toContain("Drafts could not be saved");
+    expect(host.textContent).toContain("Storyboard");
+    await click("Create All Tasks");
+    expect(state.create).not.toHaveBeenCalled();
+  } finally {
+    storage.mockRestore();
+  }
+});
+it("does not overwrite unreadable saved drafts with an empty or new session", async () => {
+  const key = "fizz:workbench:v1:user:crew";
+  window.localStorage.setItem(key, "broken JSON");
+  await render();
+  await stage();
+  expect(host.textContent).toContain("Drafts could not be saved");
+  expect(window.localStorage.getItem(key)).toBe("broken JSON");
+});
+it("lets users dismiss a checked uncertain notice without retrying or deleting a server task", async () => {
+  state.create.mockRejectedValueOnce(new Error("Connection lost"));
+  await render();
+  await stage();
+  await click("Create All Tasks");
+  await click("I checked Tasks — dismiss this notice");
+  expect(button("Create Task").disabled).toBe(false);
+  expect(state.create).toHaveBeenCalledTimes(1);
+  await remount();
+  expect(host.textContent).not.toContain("Check Creation Result");
 });

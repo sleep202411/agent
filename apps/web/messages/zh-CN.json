@@ -5204,7 +5204,13 @@
       "editDraft": "编辑{title}",
       "chooseEpisode": "选择集数",
       "previewEpisodeTasks": "预览任务",
-      "emptyEpisodes": "还没有剧集。可在下方创建一集开始。"
+      "emptyEpisodes": "还没有剧集。可在下方创建一集开始。",
+      "assetGroup_production": "制作",
+      "draftStorageHelp": "草稿保存在当前浏览器中。确认创建后可在「任务」中查看。",
+      "draftStorageFailed": "无法在当前浏览器保存草稿。请保持此页面打开，释放浏览器存储空间后再创建这些任务。",
+      "noAssetsFound": "没有匹配的文件或文件夹。",
+      "viewTasks": "查看已创建任务",
+      "dismissCheckedDraft": "我已核对任务列表，移除此提示"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",

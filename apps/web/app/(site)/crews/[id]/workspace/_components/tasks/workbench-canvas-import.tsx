@@ -93,7 +93,7 @@ function CanvasImportSession({
         body: { sourceRevision: preview.sourceRevision, sourceHash: preview.sourceHash },
         items: preview.plotTree.nodes
           .filter((node) => node.type === "scene")
-          .map((node) => ({ title: node.content.title || node.id })),
+          .map((node) => ({ title: node.content.title || node.id, assetCategory: "production" })),
       });
       setPreview(null);
       setLink("");

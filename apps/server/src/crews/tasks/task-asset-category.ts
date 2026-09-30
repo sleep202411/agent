@@ -18,5 +18,7 @@ export function taskAssetCategory(
   if (kind === 'script') return 'scripts';
   if (kind === 'music') return 'music';
   if (kind === 'art') return 'art';
+  if (['storyboard', 'edit', 'voice', 'qa'].includes(kind ?? ''))
+    return 'production';
   return 'other';
 }

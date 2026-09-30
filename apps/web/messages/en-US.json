@@ -5204,7 +5204,13 @@
       "editDraft": "Edit {title}",
       "chooseEpisode": "Choose Episode",
       "previewEpisodeTasks": "Preview Tasks",
-      "emptyEpisodes": "No episodes yet. Create an episode below to start."
+      "emptyEpisodes": "No episodes yet. Create an episode below to start.",
+      "assetGroup_production": "Production",
+      "draftStorageHelp": "Drafts are saved in this browser. Create them to add them to Tasks.",
+      "draftStorageFailed": "Drafts could not be saved in this browser. Keep this page open and free browser storage before creating these tasks.",
+      "noAssetsFound": "No matching files or folders.",
+      "viewTasks": "View Created Tasks",
+      "dismissCheckedDraft": "I checked Tasks — dismiss this notice"
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",

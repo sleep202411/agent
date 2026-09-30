@@ -318,6 +318,27 @@ describe('CrewAssetsService', () => {
     );
   });
 
+  it('searches across folders while retaining per-node permissions', async () => {
+    const t = build();
+    await t.service.list(CREW_ID, USER_ID, {
+      source: 'recent',
+      sort: 'name',
+      query: 'nested',
+    });
+    const call = t.prisma.crewAssetNode.findMany.mock.calls.at(-1)![0];
+    expect(call.where).toMatchObject({
+      crewId: CREW_ID,
+      status: 'active',
+      name: { contains: 'nested', mode: 'insensitive' },
+    });
+    expect(call.where.OR).toBeUndefined();
+    expect(t.access.resolveNodesPermissions).toHaveBeenCalledWith(
+      CREW_ID,
+      [NODE_ID],
+      USER_ID,
+    );
+  });
+
   it('returns a stable cursor without exposing an unbounded asset listing', async () => {
     const t = build();
     t.prisma.crewAssetNode.findMany.mockResolvedValueOnce([
