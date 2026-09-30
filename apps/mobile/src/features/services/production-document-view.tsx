@@ -1,13 +1,16 @@
+import { documentLinkIndex } from "./production-document-links";
 import { WebView } from "react-native-webview";
 
 export function ProductionDocumentView({
   html,
   title,
   onError,
+  onLink,
 }: {
   html: string;
   title: string;
   onError: () => void;
+  onLink: (index: number) => void;
 }) {
   return (
     <WebView
@@ -16,7 +19,11 @@ export function ProductionDocumentView({
       style={{ flex: 1, backgroundColor: "#0B0D12" }}
       // Intercept every navigation here; unmatched origins would otherwise open externally.
       originWhitelist={["*"]}
-      javaScriptEnabled={false}
+      javaScriptEnabled={true}
+      onMessage={(event) => {
+        const index = documentLinkIndex(event.nativeEvent.data);
+        if (index !== null) onLink(index);
+      }}
       domStorageEnabled={false}
       sharedCookiesEnabled={false}
       thirdPartyCookiesEnabled={false}

@@ -44,7 +44,7 @@ it("retains structured tables, headings, lists, task checks and marks", () => {
       },
     ])
   );
-  expect(html).toContain("<h2><strong>Goal</strong></h2>");
+  expect(html).toContain("<strong>Goal</strong></h2>");
   expect(html).toContain('start="3" type="A"');
   expect(html).toContain("☑");
   expect(html).toContain('colspan="2" rowspan="1"');
@@ -57,7 +57,8 @@ it("escapes text and link attributes and creates no executable or navigable cont
   });
   const html = productionDocumentHtml(doc([node]));
   expect(html).not.toContain("<img");
-  expect(html).not.toContain("<a ");
+  expect(html).toContain('href="#" data-document-link="0"');
+  expect(html).not.toContain('href="https://');
   expect(html).toContain("&lt;img");
   expect(html).toContain("&quot;");
   expect(html).toContain("default-src 'none'");

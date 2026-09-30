@@ -2305,6 +2305,8 @@
   "projectResources.confirmRemove": "確認移除",
   "projectResources.openLink": "開啟外部連結",
   "projectDocument.title": "項目概覽",
-  "projectDocument.readOnly": "唯讀文件。連結以引用形式顯示，表情以簡碼顯示。",
-  "projectDocument.loadError": "無法顯示文件，請重新整理再試。"
+  "projectDocument.readOnly": "唯讀文件。點按連結即可開啟。",
+  "projectDocument.loadError": "無法顯示文件，請重新整理再試。",
+  "projectDocument.linkUnavailable": "無法開啟此連結。",
+  "projectDocument.linkOpenError": "無法在此裝置上開啟連結。"
 }

@@ -2305,6 +2305,8 @@
   "projectResources.confirmRemove": "Confirm Removal",
   "projectResources.openLink": "Open External Link",
   "projectDocument.title": "Project Overview",
-  "projectDocument.readOnly": "Read-only document. Links are shown as references; emoji names appear as shortcodes.",
-  "projectDocument.loadError": "The document could not be displayed. Refresh to try again."
+  "projectDocument.readOnly": "Read-only document. Tap a link to open it.",
+  "projectDocument.loadError": "The document could not be displayed. Refresh to try again.",
+  "projectDocument.linkUnavailable": "This link cannot be opened.",
+  "projectDocument.linkOpenError": "The link could not be opened on this device."
 }

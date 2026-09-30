@@ -2305,6 +2305,8 @@
   "projectResources.confirmRemove": "确认移除",
   "projectResources.openLink": "打开外部链接",
   "projectDocument.title": "项目概览",
-  "projectDocument.readOnly": "只读文档。链接以引用形式显示，表情以简码显示。",
-  "projectDocument.loadError": "无法显示文档，请刷新重试。"
+  "projectDocument.readOnly": "只读文档。点击链接即可打开。",
+  "projectDocument.loadError": "无法显示文档，请刷新重试。",
+  "projectDocument.linkUnavailable": "无法打开此链接。",
+  "projectDocument.linkOpenError": "无法在此设备上打开链接。"
 }
