@@ -4,14 +4,12 @@ import { CREW_CURRENCY } from "@/src/lib/crew-money";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  IconAdjustmentsHorizontal,
   IconArrowsDiagonal,
   IconCalendar,
   IconCheck,
   IconChevronRight,
   IconCircle,
   IconCube,
-  IconDots,
   IconCategory,
   IconFlag3,
   IconMovie,
@@ -108,6 +106,9 @@ export function TaskQuickCreate({
   const [episodeId, setEpisodeId] = useState<string | null>(
     initialInput?.episodeId ?? presetEpisodeId ?? null
   );
+  const [estimatePoints, setEstimatePoints] = useState(
+    initialInput?.estimatePoints?.toString() ?? ""
+  );
   const [dueDate, setDueDate] = useState(initialInput?.dueAt?.slice(0, 10) ?? "");
   const [createMore, setCreateMore] = useState(false);
   const [draft, setDraft] = useState<CrewTaskDraftDTO | null>(null);
@@ -125,6 +126,7 @@ export function TaskQuickCreate({
     setLabelIds(initialInput?.labelIds ?? []);
     setCycleId(initialInput ? (initialInput.cycleId ?? "") : null);
     setEpisodeId(initialInput?.episodeId ?? presetEpisodeId ?? null);
+    setEstimatePoints(initialInput?.estimatePoints?.toString() ?? "");
     setDueDate(initialInput?.dueAt?.slice(0, 10) ?? "");
     setDraft(null);
   }
@@ -211,6 +213,7 @@ export function TaskQuickCreate({
     setLabelIds([]);
     setCycleId(null);
     setEpisodeId(presetEpisodeId ?? null);
+    setEstimatePoints("");
     setDueDate("");
     setDraft(null);
     draftTask.reset();
@@ -242,6 +245,7 @@ export function TaskQuickCreate({
       if (session.current !== requestedSession || draftRevision.current !== requestedRevision)
         return;
       setDraft(next);
+      setEstimatePoints(next.estimatePoints?.toString() ?? "");
       // AI 整理 rewrites content only. Scheduling/assignment are the
       // user's explicit choices — leave them untouched.
       setTitle(next.title);
@@ -263,6 +267,15 @@ export function TaskQuickCreate({
       return;
     }
     if (!resolvedWorkflowStateId) return;
+    if (
+      estimatePoints !== "" &&
+      (!Number.isInteger(Number(estimatePoints)) ||
+        Number(estimatePoints) < 0 ||
+        Number(estimatePoints) > 1000000)
+    ) {
+      toast.error(projectT("workbench.invalidPoints"));
+      return;
+    }
     operationInFlight.current = true;
     const requestedSession = session.current;
     let staged = false;
@@ -279,7 +292,7 @@ export function TaskQuickCreate({
             ? initialInput.dueAt
             : dateEndIso(dueDate || null),
         startAt: draft ? dateStartIso(draft.startDate ?? null) : (initialInput?.startAt ?? null),
-        estimatePoints: draft?.estimatePoints ?? initialInput?.estimatePoints ?? null,
+        estimatePoints: estimatePoints === "" ? null : Number(estimatePoints),
         revisionLimit: draft?.revisionLimit ?? initialInput?.revisionLimit ?? null,
         cycleId: resolvedCycleId || null,
         episodeId,
@@ -533,6 +546,22 @@ export function TaskQuickCreate({
                     : t("labels")
                 }
               />
+              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                {projectT("workbench.estimatePointsLabel")}
+                <input
+                  type="number"
+                  min={0}
+                  max={1000000}
+                  step={1}
+                  value={estimatePoints}
+                  aria-label={projectT("workbench.estimatePointsLabel")}
+                  className="h-7 w-20 rounded-md border border-white/10 bg-[#111216] px-2"
+                  onChange={(event) => {
+                    draftRevision.current += 1;
+                    setEstimatePoints(event.target.value);
+                  }}
+                />
+              </label>
               <DateChip
                 value={dueDate}
                 onChange={(value) => {
@@ -676,13 +705,7 @@ function LabelChip({
   );
 }
 
-function DateChip({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
+function DateChip({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const t = useTranslations("crewTasks");
   return (
     <label

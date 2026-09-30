@@ -197,6 +197,7 @@ export function CrewWorkbenchShell({
 
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-tl-xl border-l border-white/[0.055] bg-background">
         <CrewWorkbenchHeader
+          crewLogo={crewLogo}
           crewId={crewId}
           crewName={crewName}
           pageTitle={

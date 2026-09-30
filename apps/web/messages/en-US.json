@@ -5192,7 +5192,7 @@
       "dropAssets": "Drop Assets Here",
       "browseAssets": "Or Click to Browse Files",
       "uploadUnavailable": "Upload Is Unavailable",
-      "canvasImportHelp": "Paste the canvas link from an interactive film in Story Studio to preview its scenes.",
+      "canvasImportHelp": "Choose an existing interactive film, or create one in the linked workspace.",
       "canvasLink": "Paste Canvas Link",
       "invalidCanvasLink": "Use a canvas link from this platform’s Story Studio.",
       "previewImport": "Preview",
@@ -5210,7 +5210,17 @@
       "draftStorageFailed": "Drafts could not be saved in this browser. Keep this page open and free browser storage before creating these tasks.",
       "noAssetsFound": "No matching files or folders.",
       "viewTasks": "View Created Tasks",
-      "dismissCheckedDraft": "I checked Tasks — dismiss this notice"
+      "dismissCheckedDraft": "I checked Tasks — dismiss this notice",
+      "estimatePointsLabel": "Estimated points",
+      "invalidPoints": "Enter a whole number from 0 to 1,000,000.",
+      "noDeadline": "No deadline",
+      "pointsUnset": "Points not set",
+      "chooseFilm": "Choose an interactive film",
+      "createFilm": "Create interactive film",
+      "filmTitle": "Project title",
+      "loadMoreFilms": "Load more",
+      "linkWorkspaceFirst": "Link a Studio workspace first.",
+      "openCreatedFilm": "Open {title} in Studio"
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",

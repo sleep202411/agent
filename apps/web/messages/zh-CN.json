@@ -5192,7 +5192,7 @@
       "dropAssets": "拖放资产到这里",
       "browseAssets": "或点击选择文件",
       "uploadUnavailable": "暂时无法上传",
-      "canvasImportHelp": "粘贴 Story Studio 互动影游的画布链接，预览其中的场景。",
+      "canvasImportHelp": "选择现有影游，或在绑定的工作区中创建影游。",
       "canvasLink": "粘贴画布链接",
       "invalidCanvasLink": "请使用本平台 Story Studio 的画布链接。",
       "previewImport": "预览",
@@ -5210,7 +5210,17 @@
       "draftStorageFailed": "无法在当前浏览器保存草稿。请保持此页面打开，释放浏览器存储空间后再创建这些任务。",
       "noAssetsFound": "没有匹配的文件或文件夹。",
       "viewTasks": "查看已创建任务",
-      "dismissCheckedDraft": "我已核对任务列表，移除此提示"
+      "dismissCheckedDraft": "我已核对任务列表，移除此提示",
+      "estimatePointsLabel": "预估积分",
+      "invalidPoints": "请输入 0 至 1,000,000 的整数。",
+      "noDeadline": "未设截止日期",
+      "pointsUnset": "未设积分",
+      "chooseFilm": "选择现有影游",
+      "createFilm": "创建影游",
+      "filmTitle": "项目名称",
+      "loadMoreFilms": "加载更多",
+      "linkWorkspaceFirst": "请先绑定 Studio 工作区。",
+      "openCreatedFilm": "在 Studio 打开 {title}"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",

@@ -318,7 +318,6 @@ describe("TaskQuickCreate", () => {
     );
   });
 
-
   it("creates a minimal task from the compact issue composer", async () => {
     const onCreated = vi.fn();
     const onOpenChange = vi.fn();
@@ -368,7 +367,7 @@ describe("TaskQuickCreate", () => {
 
     const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
     act(() => fill(input, "Isaac should finish the first-act storyboard next Friday"));
-    
+
     await act(async () => {
       click(button("Organize with AI"));
       await Promise.resolve();
@@ -405,7 +404,7 @@ describe("TaskQuickCreate", () => {
         'textarea[aria-label="Task title"]'
       )!;
       act(() => fill(title, "Original prompt"));
-      
+
       await act(async () => click(button("Organize with AI")));
       const input = document.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${label}"]`)!;
       act(() => fill(input, "Newer user text"));
@@ -448,18 +447,16 @@ describe("TaskQuickCreate", () => {
         'textarea[aria-label="Task title"]'
       )!;
       act(() => fill(title, "Current title"));
-      
+
       await act(async () => click(button("Organize with AI")));
       if (field === "deadline") {
         act(() =>
           fill(document.querySelector<HTMLInputElement>('input[type="date"]')!, "2026-10-01")
         );
       } else {
-        const label =
-          field === "priority" ? "Priority" : "Assignees";
+        const label = field === "priority" ? "Priority" : "Assignees";
         await act(async () => click(document.querySelector(`button[aria-label="${label}"]`)!));
-        const text =
-          field === "priority" ? "priority.low" : "Isaac";
+        const text = field === "priority" ? "priority.low" : "Isaac";
         const option = [...document.querySelectorAll('[role="option"]')].find(
           (item) => item.textContent?.trim() === text
         );
@@ -505,7 +502,7 @@ describe("TaskQuickCreate", () => {
         "Old prompt"
       )
     );
-    
+
     await act(async () => click(button("Organize with AI")));
     renderQuickCreate(onCreated, onOpenChange, project, { open: false });
     renderQuickCreate(onCreated, onOpenChange);
@@ -628,7 +625,7 @@ describe("TaskQuickCreate", () => {
     renderQuickCreate();
     const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
     act(() => fill(input, "Prepare this task"));
-    
+
     act(() => {
       click(button("Organize with AI"));
       click(button("Organize with AI"));
@@ -772,4 +769,15 @@ it("reopens a staged task, saves edits and preserves unexposed planning fields",
     expect.objectContaining({ ...input, title: "Updated Script", description: "Updated brief" })
   );
   expect(state.create).not.toHaveBeenCalled();
+});
+
+it("lets a creator set points explicitly before staging", async () => {
+  const stage = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
+  act(() => {
+    fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Script with points");
+    fill(document.querySelector<HTMLInputElement>('input[type="number"]')!, "13");
+  });
+  await act(async () => click(exactButton("workbench.stage")));
+  expect(stage).toHaveBeenCalledWith(expect.objectContaining({ estimatePoints: 13 }));
 });

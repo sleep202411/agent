@@ -7,7 +7,6 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
 import {
   IconPlus,
-  IconPencil,
   IconX,
   IconFolder,
   IconFile,
@@ -24,6 +23,7 @@ import {
   DialogTitle,
   DialogBody,
 } from "@/components/ui/dialog";
+import { UserAvatar } from "@/components/user-avatar";
 import { Input } from "@/components/ui/input";
 import { useCrewAssets } from "../../_hooks/use-crew-assets";
 import {
@@ -67,6 +67,7 @@ export type Draft = {
   taskId?: string;
 };
 
+import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { useWorkbenchDrafts } from "./use-workbench-drafts";
 
 export function TaskCreationWorkbench(props: Parameters<typeof TaskCreationSession>[0]) {
@@ -96,6 +97,7 @@ function TaskCreationSession({
   onViewTasks?: () => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
+  const displays = useUserDisplays(members.map((member) => member.userId));
   const taskT = useTranslations("crewTasks");
   const client = useQueryClient();
   const { user } = useCurrentUser();
@@ -508,7 +510,7 @@ function TaskCreationSession({
                               {categoryDrafts.map((draft) => (
                                 <article
                                   key={draft.id}
-                                  className="flex min-w-0 flex-col rounded-lg border border-white/10 bg-[#151618] p-3 transition-colors hover:border-white/25"
+                                  className="relative flex min-w-0 flex-col rounded-lg border border-white/10 bg-[#151618] p-3 transition-colors hover:bg-[#1a1b1e]"
                                 >
                                   <div className="flex items-start justify-between gap-2">
                                     <span className="rounded bg-black/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -519,6 +521,7 @@ function TaskCreationSession({
                                     {draft.state === "staged" ? (
                                       <button
                                         disabled={busy}
+                                        className="relative z-10"
                                         aria-label={t("remove", { title: draft.input.title })}
                                         onClick={() => {
                                           if (lock.current) return;
@@ -533,7 +536,7 @@ function TaskCreationSession({
                                   </div>
                                   <button
                                     type="button"
-                                    className="mt-3 flex cursor-pointer items-start gap-2 break-words text-left text-sm font-medium underline-offset-4 hover:underline disabled:cursor-default disabled:no-underline"
+                                    className="mt-3 flex cursor-pointer items-start gap-2 break-words text-left text-sm font-medium after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-white/40 disabled:cursor-default disabled:after:hidden"
                                     disabled={
                                       busy ||
                                       draft.state === "creating" ||
@@ -552,18 +555,38 @@ function TaskCreationSession({
                                     }}
                                   >
                                     <span className="min-w-0 flex-1">{draft.input.title}</span>
-                                    {draft.state === "staged" ? (
-                                      <IconPencil className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
-                                    ) : null}
                                   </button>
                                   <p className="mb-4 mt-1 line-clamp-3 text-xs text-muted-foreground">
                                     {draft.input.description}
                                   </p>
-                                  <div className="mt-auto flex items-center justify-between gap-2 border-t border-white/10 pt-3 text-xs text-muted-foreground">
+                                  <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3 text-xs text-muted-foreground">
                                     <span>{t(draft.state)}</span>
+                                    <span>
+                                      {draft.input.dueAt
+                                        ? `${taskT("dueDate")}: ${draft.input.dueAt.slice(0, 10)}`
+                                        : t("noDeadline")}
+                                    </span>
+                                    <span className="flex -space-x-1">
+                                      {draft.input.assignees.map(({ userId }) => (
+                                        <span
+                                          key={userId}
+                                          title={displayNameOf(userId, displays)}
+                                          className="grid size-6 place-items-center overflow-hidden rounded-full bg-white/10 text-[10px]"
+                                        >
+                                          <UserAvatar
+                                            src={displays.get(userId)?.avatar}
+                                            name={displayNameOf(userId, displays)}
+                                            seed={userId}
+                                            className="size-6"
+                                          />
+                                        </span>
+                                      ))}
+                                    </span>
                                     <span className="flex items-center gap-1">
                                       <IconStar className="size-3 text-yellow-400" />
-                                      {t("points", { count: draft.input.estimatePoints ?? 0 })}
+                                      {draft.input.estimatePoints == null
+                                        ? t("pointsUnset")
+                                        : t("points", { count: draft.input.estimatePoints })}
                                     </span>
                                   </div>
                                   {draft.state === "uncertain" ? (
@@ -582,7 +605,7 @@ function TaskCreationSession({
                                   ) : null}
                                   {draft.taskId ? (
                                     <button
-                                      className="mt-2 text-sm underline"
+                                      className="relative z-10 mt-2 text-sm underline"
                                       onClick={() => onSelectTask(draft.taskId!)}
                                     >
                                       {t("openTask")}
