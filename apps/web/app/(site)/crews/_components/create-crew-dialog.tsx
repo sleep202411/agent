@@ -60,6 +60,8 @@ const CREATE_CREW_HERO_URL = encodeURI(
   "https://static.fizzspace.cn/static/pc/ChatGPT Image 2026年4月28日 20_51_09.png"
 );
 
+const DEFAULT_CREW_LOGO_URL = "https://static.fizzspace.cn/static/pc/crew_icon_default.png";
+
 /**
  * `initial` is the gate for edit mode. When present, dialog prefills
  * from it on open and routes submit through `updateCrew` instead of
@@ -301,7 +303,7 @@ function CrewFormDialog({
 
   // ─── Submit ─────────────────────────────────────────
   const handleSubmit = () => {
-    if (!alive.current || operation.current || !name.trim() || !description.trim() || !logoPath)
+    if (!alive.current || operation.current || !name.trim() || !description.trim())
       return;
     if (
       !isEdit &&
@@ -312,12 +314,16 @@ function CrewFormDialog({
     operation.current = "save";
     setCreating(true);
 
+    // Empty logo falls back to the platform crew default so the backend
+    // (which requires a non-empty string) accepts the payload.
+    const resolvedLogo = logoPath.trim() || DEFAULT_CREW_LOGO_URL;
+
     if (isEdit && initial) {
       update.mutate(
         {
           id: String(initial.id),
           name: name.trim(),
-          logo: logoPath,
+          logo: resolvedLogo,
           description: description.trim(),
         },
         {
@@ -338,7 +344,7 @@ function CrewFormDialog({
     create.mutate(
       {
         name: name.trim(),
-        logo: logoPath,
+        logo: resolvedLogo,
         description: description.trim(),
         productionTemplateLocale: locale,
         productionKind,
@@ -438,6 +444,7 @@ function CrewFormDialog({
               </button>
               <p className="max-w-xs text-center text-[11px] text-muted-foreground">
                 {t("createLogoHelp")}
+                <span className="font-semibold text-destructive"> *</span>
               </p>
               <input
                 ref={logoInputRef}
@@ -649,7 +656,6 @@ function CrewFormDialog({
             disabled={
               !name.trim() ||
               !description.trim() ||
-              !logoPath ||
               uploadingLogo ||
               creating ||
               plotTreeLoading ||
