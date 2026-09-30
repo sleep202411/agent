@@ -816,6 +816,7 @@ function AgentOsProjectSession({
       labels={{
         surface: t("transcriptLabel"),
         close: t("close"),
+        collapse: t("collapse"),
         newConversation: t("newChat"),
         newConversationDialog: {
           title: t("newConversationDialog.title"),

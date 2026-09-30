@@ -1627,6 +1627,9 @@ function CoreChoiceRenderer({
   const promptId = useId();
   const config = ExperienceCoreChoiceRendererConfigSchema.parse(renderer.config);
   if (!active || (!config.initiallyOpen && !open)) return null;
+  const promptText = config.prompt
+    ? localize(config.prompt, locale, manifest.localization.defaultLocale).trim()
+    : "";
   const choices = config.choices.filter(
     (choice) =>
       !choice.visibleWhen ||
@@ -1637,17 +1640,19 @@ function CoreChoiceRenderer({
   return (
     <div
       role="group"
-      aria-labelledby={promptId}
+      aria-labelledby={promptText ? promptId : undefined}
       className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-linear-to-t from-black/80 via-black/45 to-transparent px-5 pt-28 pb-8 sm:pb-12"
       style={{ zIndex: renderer.layer }}
     >
       <div className="pointer-events-auto w-full max-w-5xl">
-        <p
-          id={promptId}
-          className="mb-3 text-center text-[13px] leading-5 font-medium tracking-[0.04em] text-balance text-white/70"
-        >
-          {localize(config.prompt, locale, manifest.localization.defaultLocale)}
-        </p>
+        {promptText ? (
+          <p
+            id={promptId}
+            className="mb-3 text-center text-[13px] leading-5 font-medium tracking-[0.04em] text-balance text-white/70"
+          >
+            {promptText}
+          </p>
+        ) : null}
         {choices.length > 0 ? (
           <div className="flex flex-row items-stretch justify-center gap-3">
             {choices.map((choice, index) => {

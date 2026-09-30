@@ -572,6 +572,57 @@ describe('compileStoryBuild', () => {
     );
   });
 
+  it('keeps a replay loop open-ended when an ending is registered but never used', () => {
+    const content = draft();
+    const opening = content.graph.nodes[0];
+    const left = content.graph.nodes[1];
+    if (!opening || opening.kind !== 'clip' || !left || left.kind !== 'clip') {
+      throw new Error('Loop fixture clips are missing.');
+    }
+    opening.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: left.nodeId } }],
+    };
+    left.exit = {
+      kind: 'auto',
+      routes: [{ target: { kind: 'node', nodeId: opening.nodeId } }],
+    };
+    content.graph.nodes = [opening, left];
+    content.storyBible.endings = [
+      {
+        endingId: 'ending:1',
+        kind: 'neutral',
+        title: { 'en-US': 'Untitled ending' },
+      },
+    ];
+
+    const result = compileStoryBuild(
+      input({
+        draft: content,
+        timelines: [timeline(opening.nodeId), timeline(left.nodeId)],
+      }),
+    );
+    expect(
+      result.diagnostics.filter((item) => item.severity === 'error'),
+    ).toEqual([]);
+    expect(result.runtime?.completionPolicy).toBe('open-ended');
+  });
+
+  it('publishes a choice whose question is blank', () => {
+    const content = draft();
+    const opening = content.graph.nodes[0];
+    if (!opening || opening.exit.kind !== 'choice') {
+      throw new Error('Choice fixture is missing.');
+    }
+    opening.exit.prompt = { 'en-US': '\n' };
+
+    const result = compileStoryBuild(input({ draft: content }));
+    expect(
+      result.diagnostics.filter((item) => item.severity === 'error'),
+    ).toEqual([]);
+    expect(result.runtime).not.toBeNull();
+  });
+
   it('keeps disconnected canvas work out of the playable cut', () => {
     const content = draft();
     content.graph.nodes.push({

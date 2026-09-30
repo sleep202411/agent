@@ -8,7 +8,11 @@ import {
   prepareInteractiveFilmRelease,
   submitInteractiveFilmRelease,
 } from "@/lib/interactive-film-api";
-import { storyApiErrorMessage, type StoryCapability } from "@/lib/story-projects-api";
+import {
+  storyApiErrorBody,
+  storyApiErrorMessage,
+  type StoryCapability,
+} from "@/lib/story-projects-api";
 import {
   runStoryPublication,
   StoryPublicationFlowError,
@@ -26,6 +30,11 @@ export type StoryPublicationFailureCode =
   | "PERMISSION_DENIED"
   | "UNEXPECTED";
 
+export interface StoryPublicationIssue {
+  message: string;
+  nodeId: string | null;
+}
+
 export type StoryPublicationState =
   | { status: "closed" }
   | { status: "confirming" }
@@ -36,6 +45,7 @@ export type StoryPublicationState =
       phase: StoryPublicationActivePhase | "permission";
       code: StoryPublicationFailureCode;
       message: string;
+      issues?: StoryPublicationIssue[];
     };
 
 export interface UseStoryPublicationOptions {
@@ -177,15 +187,33 @@ function toPublicationFailure(
     };
   }
   const fallback = publicationErrorFallback(error.code, t);
+  const issues =
+    error.upstreamError === undefined ? [] : storyPublicationIssues(error.upstreamError);
   return {
     status: "failed",
     phase: error.phase,
     code: error.code,
     message:
-      error.upstreamError === undefined
+      issues[0]?.message ??
+      (error.upstreamError === undefined
         ? fallback
-        : storyApiErrorMessage(error.upstreamError, fallback),
+        : storyApiErrorMessage(error.upstreamError, fallback)),
+    issues,
   };
+}
+
+export function storyPublicationIssues(error: unknown): StoryPublicationIssue[] {
+  const diagnostics = storyApiErrorBody(error)?.diagnostics;
+  if (!Array.isArray(diagnostics)) return [];
+  return diagnostics.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const message = typeof record.message === "string" ? record.message.trim() : "";
+    if (!message) return [];
+    const nodeId =
+      typeof record.nodeId === "string" && record.nodeId.includes(":") ? record.nodeId : null;
+    return [{ message, nodeId }];
+  });
 }
 
 function publicationErrorFallback(

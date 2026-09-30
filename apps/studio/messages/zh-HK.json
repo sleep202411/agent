@@ -3321,6 +3321,11 @@
         "actionPending": "正在提交…",
         "actionReviewing": "審核中",
         "actionPublished": "已發佈",
+        "submitTooltip": "提交影遊「{title}」",
+        "updateTooltip": "提交影遊「{title}」的更新",
+        "resubmitTooltip": "重新提交影遊「{title}」",
+        "draftConflict": "故事有未合併的更新，請先處理衝突後再提交。",
+        "projectLoading": "專案仍在載入。",
         "statusChecking": "正在查詢發佈狀態…",
         "statusUnavailable": "暫時無法取得發佈狀態，請重新整理後再試。",
         "reviewingLocked": "目前專案已在審核中。",
@@ -3373,7 +3378,8 @@
         },
         "failure": {
           "title": "目前版本未提交",
-          "description": "請處理下方問題，然後重新提交。"
+          "description": "請處理下方問題，然後重新提交。",
+          "locate": "在情節樹中定位"
         },
         "offline": {
           "action": "下線",
@@ -3909,7 +3915,11 @@
       "share": "分享",
       "catalogPanel": {
         "choice": "選擇",
-        "end": "結局"
+        "end": "結局",
+        "unlinked": "未連結",
+        "problem": "有問題",
+        "redundant": "冗餘",
+        "unusedState": "未使用的狀態"
       },
       "mobileNav": {
         "label": "製作導航",
@@ -4197,6 +4207,7 @@
     "title": "FizzAgent",
     "subtitle": "對話式執行智能體 — 工具會真正寫入項目",
     "close": "關閉 FizzAgent",
+    "collapse": "收起 FizzAgent",
     "open": "打開 FizzAgent",
     "launcherPrompts": {
       "create": "你想創作甚麼？",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   IconArrowDown,
   IconArrowUp,
@@ -27,6 +27,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -982,7 +983,7 @@ export function StoryRouteTargetPicker({
               title: localizedText(ending.title, locale) || ending.endingId,
             }),
           })),
-          { value: "create-ending", label: t("createEndingHere") },
+          { value: "create-ending", label: t("createEndingHere"), action: true },
         ]}
       />
       {selectedEnding ? (
@@ -1186,9 +1187,34 @@ function StatsSelect({
   disabled: boolean;
   invalid?: boolean;
   onChange: (value: string) => void;
-  options: ReadonlyArray<{ value: string; label: string; disabled?: boolean }>;
+  options: ReadonlyArray<{ value: string; label: string; disabled?: boolean; action?: boolean }>;
   flush?: boolean;
 }) {
+  const rows: ReactNode[] = [];
+  let actionSeparated = false;
+  for (const option of options) {
+    if (option.action && !actionSeparated) {
+      actionSeparated = true;
+      rows.push(<SelectSeparator key={`${option.value}:separator`} />);
+    }
+    rows.push(
+      <SelectItem
+        key={option.value}
+        value={option.value}
+        disabled={option.disabled}
+        className={option.action ? "font-semibold text-[#9bc4ff] focus:text-[#9bc4ff]" : undefined}
+      >
+        {option.action ? (
+          <span>
+            <IconPlus className="size-3.5" />
+            {option.label}
+          </span>
+        ) : (
+          option.label
+        )}
+      </SelectItem>
+    );
+  }
   return (
     <Select value={value} disabled={disabled} onValueChange={onChange}>
       <SelectTrigger
@@ -1204,13 +1230,7 @@ function StatsSelect({
       >
         <SelectValue className="min-w-0 truncate" />
       </SelectTrigger>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
+      <SelectContent>{rows}</SelectContent>
     </Select>
   );
 }

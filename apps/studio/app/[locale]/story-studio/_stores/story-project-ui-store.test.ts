@@ -7,6 +7,7 @@ describe("Story project FizzAgent composer bridge", () => {
   beforeEach(() => {
     useStoryProjectUiStore.setState({
       mobileView: "work",
+      agentDockOpen: true,
       composerPrefillSequence: 0,
       composerPrefillRequest: null,
     });
@@ -17,9 +18,16 @@ describe("Story project FizzAgent composer bridge", () => {
 
     expect(useStoryProjectUiStore.getState()).toMatchObject({
       mobileView: "chat",
+      agentDockOpen: true,
       composerPrefillSequence: 1,
       composerPrefillRequest: { id: 1, text: "Prepare Asset Specs for review." },
     });
+  });
+
+  it("reopens a collapsed desktop dock when a surface asks FizzAgent to write", () => {
+    useStoryProjectUiStore.getState().setAgentDockOpen(false);
+    useStoryProjectUiStore.getState().openAgentComposer("Continue this chapter.");
+    expect(useStoryProjectUiStore.getState().agentDockOpen).toBe(true);
   });
 
   it("only consumes the matching request and keeps ids monotonic", () => {

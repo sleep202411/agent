@@ -1024,7 +1024,7 @@ function validateInteractiveStoryGameplayReadiness(
       requireRoutes(node.exit.routes, [...exitPath, 'routes']);
       return;
     }
-    requireLocalizedText(node.exit.prompt, [...exitPath, 'prompt']);
+    // The question above the options may be blank. Option labels stay required.
     if (node.exit.choices.length < minimumChoices) {
       context.addIssue({
         code: 'custom',
@@ -1103,11 +1103,12 @@ export function lintInteractiveStoryStats(
  * Turns the permissive canvas document into the exact runtime document.
  *
  * Film clips are the only production requirement. A half-authored branch is
- * canvas metadata, not a reason to block release: until its prompt
- * and at least two labelled routes are complete, playback follows the first
- * connected route (or ends on the current clip). Invalid automatic routes are
- * likewise treated as terminal. Working previews preserve unfinished choices
- * with default copy and terminal routes. The saved draft is never rewritten.
+ * canvas metadata, not a reason to block release: until at least two labelled,
+ * connected options are present, playback follows the first connected route
+ * (or ends on the current clip). A blank question does not drop the other
+ * options. Invalid automatic routes are likewise treated as terminal. Working
+ * previews preserve unfinished choices with default copy and terminal routes.
+ * The saved draft is never rewritten.
  */
 function normalizeInteractiveFilmRuntimeDraft(
   value: unknown,
@@ -1323,7 +1324,6 @@ function normalizeInteractiveFilmRuntimeDraft(
       isConnectedTarget(choice.target),
     );
     const branchIsComplete =
-      hasCopy(normalizedNode.exit.prompt) &&
       connectedChoices.length >= 2 &&
       connectedChoices.length === normalizedNode.exit.choices.length &&
       connectedChoices.every((choice) => hasCopy(choice.label));
@@ -1381,6 +1381,17 @@ function normalizeInteractiveFilmRuntimeDraft(
     usedDecisionIds.add(decisionId);
     return { ...node, exit: { ...node.exit, decisionId } };
   });
+  const referencedEndingIds = new Set<string>();
+  for (const node of runtimeNodes) {
+    const targets =
+      node.exit.kind === 'choice'
+        ? node.exit.choices.map((choice) => choice.target)
+        : node.exit.routes.map((route) => route.target);
+    for (const target of targets) {
+      const endingId = storyRouteEndingId(target);
+      if (endingId) referencedEndingIds.add(endingId);
+    }
+  }
 
   return {
     ...draft,
@@ -1398,12 +1409,14 @@ function normalizeInteractiveFilmRuntimeDraft(
         : {}),
       ...(draft.storyBible.endings
         ? {
-            endings: draft.storyBible.endings.map((ending) => ({
-              ...ending,
-              title: hasCopy(ending.title)
-                ? previewLocalizedCopy(ending.title, ending.endingId)
-                : ending.title,
-            })),
+            endings: draft.storyBible.endings
+              .filter((ending) => referencedEndingIds.has(ending.endingId))
+              .map((ending) => ({
+                ...ending,
+                title: hasCopy(ending.title)
+                  ? previewLocalizedCopy(ending.title, ending.endingId)
+                  : ending.title,
+              })),
           }
         : {}),
     },

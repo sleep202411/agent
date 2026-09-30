@@ -119,9 +119,6 @@ describe("story canvas mutations", () => {
       title: { "en-US": "True love" },
       kind: "success",
     });
-    content = setNodeOnEnterEffects(content, "clip:a", [
-      { kind: "add", key: "favorability.lin", amount: 1 },
-    ]);
     content = setAutoRoutes(content, "clip:a", [
       {
         when: {
@@ -193,6 +190,21 @@ describe("story canvas mutations", () => {
       "ending:1",
       "ending:2",
     ]);
+  });
+
+  it("drops an ending name once no line points at it", () => {
+    let content = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" }).content;
+    content = createDecisionNode(content, "en-US", {
+      nodeId: "decision:a",
+      labels: ["Stay"],
+    }).content;
+    content = createStoryEndingForAutoRoute(content, "clip:a", 0, "en-US", "Finale");
+    content = connectSceneContinuation(content, "clip:a", "decision:a");
+    expect(content.storyBible.endings).toEqual([]);
+    expect(content.graph.nodes[0]?.exit).toEqual({
+      kind: "auto",
+      routes: [{ target: { kind: "node", nodeId: "decision:a" } }],
+    });
   });
 
   it("applies a bible patch by upserting variables and stripping removed keys", () => {
