@@ -119,8 +119,9 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
                         const targetEndingId = storyRouteEndingId(choice.target);
                         const endingTitle = targetEndingId
                           ? localized(
-                              status?.endings.find((ending) => ending.endingId === targetEndingId)
-                                ?.title,
+                              content?.storyBible.endings?.find(
+                                (ending) => ending.endingId === targetEndingId
+                              )?.title,
                               locale
                             ) || targetEndingId
                           : "";
