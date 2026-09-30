@@ -13,6 +13,21 @@ const h = vi.hoisted(() => ({
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
+vi.mock("../crew-assets/organization", () => ({
+  AssetOrganization: ({ crewId, onClose }: { crewId: string; onClose: () => void }) => (
+    <button onClick={onClose}>assets for {crewId}</button>
+  ),
+}));
+vi.mock("./asset-task-progress", () => ({
+  AssetTaskProgress: ({ crewId, onClose }: { crewId: string; onClose: () => void }) => (
+    <button onClick={onClose}>progress for {crewId}</button>
+  ),
+}));
+vi.mock("./episode-management", () => ({
+  EpisodeManagement: ({ crewId, onClose }: { crewId: string; onClose: () => void }) => (
+    <button onClick={onClose}>episodes for {crewId}</button>
+  ),
+}));
 vi.mock("./task-create-api", async (original) => ({
   ...(await original<typeof import("./task-create-api")>()),
   createTask: h.create,
@@ -170,6 +185,9 @@ it("locks screen actions while a creation is pending", async () => {
   await click("taskWorkbench.createAll");
   expect(button("crewTasks.back").disabled).toBe(true);
   expect(button("taskCreate.title").disabled).toBe(true);
+  expect(button("assetOrganization.title").disabled).toBe(true);
+  expect(button("assetTaskProgress.title").disabled).toBe(true);
+  expect(button("episodeManagement.title").disabled).toBe(true);
   expect(button("taskWorkbench.remove")).toBeUndefined();
   await act(async () => resolve({ id: "created" }));
 });
@@ -198,4 +216,24 @@ it("does not expose the old account's drafts", async () => {
   h.generation++;
   await render();
   expect(host.textContent).not.toContain("Storyboard");
+});
+it.each([
+  ["assetOrganization.title", "assets for crew"],
+  ["assetTaskProgress.title", "progress for crew"],
+  ["episodeManagement.title", "episodes for crew"],
+])("preserves drafts across %s without creating tasks", async (label, destination) => {
+  await render();
+  await stage();
+  await click(label);
+  expect(host.textContent).not.toContain("Storyboard");
+  await click(destination);
+  expect(host.textContent).toContain("Storyboard");
+  expect(h.create).not.toHaveBeenCalled();
+});
+it("leaves asset and episode browsing accessible to non-managers", async () => {
+  h.access.mockResolvedValue({ canManage: false });
+  await render();
+  expect(button("taskCreate.title")).toBeUndefined();
+  await click("assetOrganization.title");
+  expect(host.textContent).toContain("assets for crew");
 });

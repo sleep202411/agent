@@ -7,6 +7,9 @@ import { useTheme } from "@/hooks/use-theme";
 import { TaskCreate } from "./task-create";
 import { fetchTaskCommentAccess } from "./task-comment-api";
 import { getTaskDraftSession } from "./task-draft-session";
+import { AssetOrganization } from "../crew-assets/organization";
+import { AssetTaskProgress } from "./asset-task-progress";
+import { EpisodeManagement } from "./episode-management";
 type Props = {
   viewId?: string;
   crewId: string;
@@ -35,6 +38,7 @@ function Session(props: Props) {
     [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>(),
     [remove, setRemove] = useState<number>();
+  const [section, setSection] = useState<"assets" | "progress" | "episodes">();
   const alive = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -54,6 +58,14 @@ function Session(props: Props) {
       c.abort();
     };
   }, [props.crewId, props.userId, props.generation]);
+  // Keep the draft session mounted while inspecting source assets or episodes.
+  // Each destination checks its own read/write permissions independently.
+  if (section) {
+    const childProps = { ...props, onClose: () => setSection(undefined) };
+    if (section === "assets") return <AssetOrganization {...childProps} />;
+    if (section === "progress") return <AssetTaskProgress {...childProps} />;
+    return <EpisodeManagement {...childProps} />;
+  }
   if (editing && allowed)
     return (
       <TaskCreate
@@ -72,6 +84,26 @@ function Session(props: Props) {
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{t("taskWorkbench.title")}</ThemedText>
       <ThemedText>{t("taskWorkbench.help")}</ThemedText>
+      <View
+        style={{ padding: 12, gap: 8, borderRadius: 8, backgroundColor: theme.backgroundElement }}
+      >
+        <ThemedText type="smallBold">{t("taskWorkbench.assetLibrary")}</ThemedText>
+        <Button
+          label={t("assetOrganization.title")}
+          disabled={snapshot.busy}
+          onPress={() => setSection("assets")}
+        />
+        <Button
+          label={t("assetTaskProgress.title")}
+          disabled={snapshot.busy}
+          onPress={() => setSection("progress")}
+        />
+        <Button
+          label={t("episodeManagement.title")}
+          disabled={snapshot.busy}
+          onPress={() => setSection("episodes")}
+        />
+      </View>
       {allowed === undefined && !error && <ActivityIndicator />}
       {(error || allowed === false) && (
         <ThemedText accessibilityRole="alert">{error ?? t("taskCreate.managerOnly")}</ThemedText>
