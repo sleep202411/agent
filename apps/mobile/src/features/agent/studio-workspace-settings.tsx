@@ -1,5 +1,19 @@
+import { Image } from "expo-image";
+import { appEnv } from "@/config/app-env";
+import {
+  workspaceIconPresets,
+  workspaceIconUrl,
+  type WorkspaceIconPreset,
+} from "./workspace-icons";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, BackHandler, Pressable, ScrollView, TextInput } from "react-native";
+import {
+  ActivityIndicator,
+  BackHandler,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -81,6 +95,10 @@ function Form({
     active = useScreenActive();
   const [name, setName] = useState(snapshot?.name ?? ""),
     [description, setDescription] = useState(snapshot?.description ?? "");
+  const [icon, setIcon] = useState<WorkspaceIconPreset | undefined>(
+    snapshot ? undefined : "aurora"
+  );
+  const avatarUrl = icon ? workspaceIconUrl(icon, appEnv.appRegion) : snapshot?.avatarUrl;
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false),
@@ -112,7 +130,7 @@ function Form({
   }, [active, onClose]);
   const editable = !snapshot || canEditWorkspace(snapshot);
   const locked = busy || uncertain || done;
-  const valid = workspaceDraftSchema.safeParse({ name, description }).success;
+  const valid = workspaceDraftSchema.safeParse({ name, description, icon }).success;
   async function submit(remove: boolean) {
     if (operation.current || locked || !active || !current() || (!remove && (!editable || !valid)))
       return;
@@ -126,9 +144,14 @@ function Form({
     try {
       if (remove) await deleteStudioWorkspace(snapshot!, confirmation, props.generation, c.signal);
       else if (snapshot)
-        await updateStudioWorkspace(snapshot, { name, description }, props.generation, c.signal);
+        await updateStudioWorkspace(
+          snapshot,
+          { name, description, icon },
+          props.generation,
+          c.signal
+        );
       else {
-        const created = await createStudioWorkspace({ name, description }, props.generation);
+        const created = await createStudioWorkspace({ name, description, icon }, props.generation);
         if (current()) {
           setDone(true);
           if (!c.signal.aborted) props.onDone(created.id);
@@ -159,6 +182,47 @@ function Form({
         {t(snapshot ? "studioWorkspace.settings" : "studioWorkspace.create")}
       </ThemedText>
       {!editable && <ThemedText>{t("studioWorkspace.readOnly")}</ThemedText>}
+      <ThemedText>{t("studioWorkspace.icon")}</ThemedText>
+      {avatarUrl && (
+        <Image
+          source={{ uri: avatarUrl }}
+          style={{ width: 56, height: 56, borderRadius: 8 }}
+          contentFit="cover"
+          accessibilityLabel={t("studioWorkspace.icon")}
+        />
+      )}
+      {editable && (
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {workspaceIconPresets.map((preset) => {
+            const url = workspaceIconUrl(preset, appEnv.appRegion);
+            const selected = avatarUrl === url;
+            return (
+              <Pressable
+                key={preset}
+                accessibilityRole="radio"
+                accessibilityLabel={t(`studioWorkspace.icon_${preset}`)}
+                accessibilityState={{ checked: selected, disabled: locked }}
+                disabled={locked}
+                onPress={() => setIcon(preset)}
+                style={{
+                  padding: 8,
+                  borderRadius: 8,
+                  borderWidth: 2,
+                  borderColor: selected ? theme.brand : theme.backgroundElement,
+                  backgroundColor: theme.backgroundElement,
+                }}
+              >
+                <Image
+                  source={{ uri: url }}
+                  style={{ width: 40, height: 40, borderRadius: 8 }}
+                  contentFit="cover"
+                />
+                <ThemedText type="small">{t(`studioWorkspace.icon_${preset}`)}</ThemedText>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
       <ThemedText>{t("studioWorkspace.name")}</ThemedText>
       <TextInput
         accessibilityLabel={t("studioWorkspace.name")}

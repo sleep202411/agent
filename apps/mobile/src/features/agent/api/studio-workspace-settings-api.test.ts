@@ -7,8 +7,10 @@ import {
   updateStudioWorkspace,
   WorkspaceSettingsWriteError,
 } from "./studio-workspace-settings-api";
+vi.mock("@/config/app-env", () => ({ appEnv: h.env }));
 const h = vi.hoisted(() => ({
   generation: 1,
+  env: { appRegion: "global" },
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
@@ -32,6 +34,7 @@ const draft = { name: "New", description: "New description" };
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.env.appRegion = "global";
   h.get.mockResolvedValue({ workspace: row });
   h.patch.mockResolvedValue({ workspace: { ...row, ...draft, version: 4 } });
   h.post.mockResolvedValue({ workspace: { ...row, ...draft, version: 0 } });
@@ -106,4 +109,34 @@ it("stops writes after account change or cancelled preflight", async () => {
   h.generation++;
   await expect(createStudioWorkspace(draft, 1)).rejects.toThrow("session expired");
   expect(h.post).not.toHaveBeenCalled();
+});
+it("saves a selected preset and verifies its receipt", async () => {
+  const avatarUrl = "https://studio.fizzdragon.com/team-icons/ocean.svg";
+  h.patch.mockResolvedValue({ workspace: { ...row, ...draft, avatarUrl, version: 4 } });
+  await updateStudioWorkspace(row, { ...draft, icon: "ocean" }, 1);
+  expect(h.patch).toHaveBeenCalledWith(`/workspaces/${id}`, {
+    service: "aurora",
+    data: { ...draft, avatarUrl, expectedVersion: 3 },
+  });
+  h.post.mockResolvedValue({ workspace: { ...row, ...draft, avatarUrl, version: 0 } });
+  await createStudioWorkspace({ ...draft, icon: "ocean" }, 1);
+  expect(h.post).toHaveBeenCalledWith("/workspaces", {
+    service: "aurora",
+    data: { ...draft, avatarUrl },
+  });
+  h.patch.mockResolvedValue({ workspace: { ...row, ...draft, version: 4 } });
+  await expect(updateStudioWorkspace(row, { ...draft, icon: "ocean" }, 1)).rejects.toBeInstanceOf(
+    WorkspaceSettingsWriteError
+  );
+});
+
+it("uses the China Studio host for China workspace icons", async () => {
+  h.env.appRegion = "cn";
+  const avatarUrl = "https://studio.fizzspace.cn/team-icons/aurora.svg";
+  h.post.mockResolvedValue({ workspace: { ...row, ...draft, avatarUrl } });
+  await createStudioWorkspace({ ...draft, icon: "aurora" }, 1);
+  expect(h.post).toHaveBeenCalledWith("/workspaces", {
+    service: "aurora",
+    data: { ...draft, avatarUrl },
+  });
 });

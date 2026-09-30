@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { StudioWorkspaceSettingsScreen } from "./studio-workspace-settings";
 import { WorkspaceSettingsWriteError } from "./api/studio-workspace-settings-api";
+vi.mock("expo-image", () => ({ Image: () => <span /> }));
+vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
 const h = vi.hoisted(() => ({
   generation: 1,
   active: true,
@@ -29,6 +31,7 @@ vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("react-native", () => ({
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   ActivityIndicator: () => <span>Loading</span>,
   BackHandler: { addEventListener: () => ({ remove: vi.fn() }) },
@@ -159,4 +162,25 @@ it("keeps unsaved input when backgrounded and hides it on account change", async
   h.generation++;
   await render();
   expect(host.textContent).toBe("");
+});
+it("stages icon selection until save and retains it after backgrounding", async () => {
+  await render();
+  await click("studioWorkspace.icon_ocean");
+  expect(h.update).not.toHaveBeenCalled();
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  await click("studioWorkspace.save");
+  expect(h.update).toHaveBeenCalledWith(
+    row,
+    { name: "Team", description: "Details", icon: "ocean" },
+    1,
+    expect.any(AbortSignal)
+  );
+});
+it("does not offer icon edits to viewers", async () => {
+  h.read.mockResolvedValue({ ...row, role: "viewer" });
+  await render();
+  expect(button("studioWorkspace.icon_ocean")).toBeUndefined();
 });
