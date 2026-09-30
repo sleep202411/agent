@@ -73,17 +73,18 @@ it.each(["purchase", "restore"])(
   }
 );
 
-it.each(["purchase", "restore"])(
-  "RevenueCat permits %s for the unchanged session",
-  async (action) => {
-    const module = await import("./iap");
-    await (action === "purchase"
-      ? module.purchaseIapProduct(product)
-      : module.restoreIapPurchases());
-    expect(state.sdk.logIn).toHaveBeenCalledWith("user-1");
-    expect(
-      action === "purchase" ? state.sdk.purchaseProduct : state.sdk.restorePurchases
-    ).toHaveBeenCalledTimes(1);
-    expect(state.sync).toHaveBeenCalledTimes(1);
-  }
-);
+it("RevenueCat purchase completes without syncing (caller owns confirming sync)", async () => {
+  const module = await import("./iap");
+  await module.purchaseIapProduct(product);
+  expect(state.sdk.logIn).toHaveBeenCalledWith("user-1");
+  expect(state.sdk.purchaseProduct).toHaveBeenCalledTimes(1);
+  expect(state.sync).not.toHaveBeenCalled();
+});
+
+it("RevenueCat restore syncs for the unchanged session", async () => {
+  const module = await import("./iap");
+  await module.restoreIapPurchases();
+  expect(state.sdk.logIn).toHaveBeenCalledWith("user-1");
+  expect(state.sdk.restorePurchases).toHaveBeenCalledTimes(1);
+  expect(state.sync).toHaveBeenCalledTimes(1);
+});
