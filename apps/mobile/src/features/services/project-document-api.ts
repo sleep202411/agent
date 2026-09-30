@@ -38,7 +38,7 @@ export async function fetchProjectDocument(
     .parse(await api.get(`/crews/${crewId}/production-overview`, { service: "aurora", signal }));
   current();
   if (page.crewId !== crewId) throw new Error("Project document scope mismatch.");
-  return page;
+  return { ...page, canManage: access.permissions.includes("production.manage") };
 }
 
 export class ProjectDocumentSaveError extends Error {

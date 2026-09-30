@@ -19,7 +19,7 @@ beforeEach(() => {
   vi.mocked(api.get).mockImplementation(async (path) => (path.endsWith("/me") ? access : { page }));
 });
 it("reads the canonical document and document version after fresh membership", async () => {
-  expect(await read()).toEqual(page);
+  expect(await read()).toEqual({ ...page, canManage: false });
   expect(api.get).toHaveBeenCalledTimes(2);
 });
 it.each([

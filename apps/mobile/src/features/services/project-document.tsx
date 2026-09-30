@@ -1,3 +1,5 @@
+import { ProjectDocumentEditor } from "./project-document-editor";
+import type { ProjectDocumentPage } from "./project-document-api";
 import { webBaseUrl } from "@/config";
 import { resolveDocumentLink } from "./production-document-links";
 import { useEffect, useRef, useState } from "react";
@@ -20,9 +22,11 @@ function Session(props: Props) {
   const [result, setResult] = useState<{
     revision: number;
     html?: string;
+    page?: ProjectDocumentPage & { canManage: boolean };
     links?: string[];
     error?: string;
   }>();
+  const [editing, setEditing] = useState(false);
   const currentRevision = useRef(revision);
   const mounted = useRef(true);
   useEffect(() => {
@@ -35,7 +39,7 @@ function Session(props: Props) {
   useEffect(() => {
     const controller = new AbortController();
     void fetchProjectDocument(props.crewId, props.userId, props.generation, controller.signal)
-      .then((page) => renderProductionDocument(page.document))
+      .then((page) => ({ ...renderProductionDocument(page.document), page }))
       .then(
         (rendered) => {
           if (!controller.signal.aborted && props.generation === getAuthGeneration())
@@ -49,6 +53,22 @@ function Session(props: Props) {
     return () => controller.abort();
   }, [props.crewId, props.userId, props.generation, revision]);
   const visible = result?.revision === revision ? result : undefined;
+  if (editing && visible?.page?.canManage)
+    return (
+      <ProjectDocumentEditor
+        key={revision}
+        crewId={props.crewId}
+        userId={props.userId}
+        generation={props.generation}
+        page={visible.page}
+        onClose={() => setEditing(false)}
+        onSaved={() => {
+          setEditing(false);
+          currentRevision.current += 1;
+          setRevision(currentRevision.current);
+        }}
+      />
+    );
   return (
     <View style={{ flex: 1, gap: 12, padding: 16 }}>
       <ThemedText type="smallBold">{t("projectDocument.title")}</ThemedText>
@@ -68,6 +88,11 @@ function Session(props: Props) {
           <ThemedText>{t("crewTasks.back")}</ThemedText>
         </Pressable>
       </View>
+      {visible?.page?.canManage && (
+        <Pressable accessibilityRole="button" onPress={() => setEditing(true)}>
+          <ThemedText>{t("documentEditor.title")}</ThemedText>
+        </Pressable>
+      )}
       {!visible && <ActivityIndicator />}
       {visible?.error && <ThemedText accessibilityRole="alert">{visible.error}</ThemedText>}
       {linkError && <ThemedText accessibilityRole="alert">{linkError}</ThemedText>}

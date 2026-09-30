@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   open: vi.fn(),
   link: undefined as undefined | ((index: number) => void),
 }));
+vi.mock("./project-document-editor", () => ({ ProjectDocumentEditor: () => <span>editor</span> }));
 vi.mock("@/config", () => ({ webBaseUrl: "https://fizzdragon.fizzspace.cn" }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("./project-document-api", () => ({ fetchProjectDocument: h.fetch }));
@@ -152,4 +153,17 @@ it("localizes device link errors without hiding the document", async () => {
   await act(async () => h.link!(0));
   expect(host.textContent).toContain("projectDocument.linkOpenError");
   expect(host.textContent).toContain("Private overview");
+});
+
+it("offers editing only to the current production manager", async () => {
+  h.fetch.mockResolvedValueOnce({ ...page, crewId: "crew", version: 7, canManage: true });
+  await render();
+  await click("documentEditor.title");
+  expect(host.textContent).toContain("editor");
+});
+it("keeps ordinary production viewers read-only", async () => {
+  await render();
+  expect(
+    [...host.querySelectorAll("button")].some((b) => b.textContent === "documentEditor.title")
+  ).toBe(false);
 });

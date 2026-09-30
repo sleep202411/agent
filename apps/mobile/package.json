@@ -86,7 +86,9 @@
     "build:release:cn": "bash ./scripts/build-release.sh cn all",
     "build:release:global": "bash ./scripts/build-release.sh global all",
     "check-types": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:document-editor": "node scripts/build-document-editor.mjs",
+    "check:document-editor": "node scripts/build-document-editor.mjs --check"
   },
   "private": true
 }
