@@ -1,10 +1,9 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-import { isChinaRegion, isProductionApp } from "@/config";
+import { isProductionApp } from "@/config";
 
 import { currentCheckoutChannel, type CheckoutChannel } from "./checkout-channel";
-import { hasStoreKitIapNative } from "./storekit-native";
 
 type ExtraPaywall = {
   revenueCatAppleApiKey?: string;
@@ -33,13 +32,9 @@ export function wechatUniversalLink(): string {
   return extraPaywall().wechatUniversalLink?.trim() ?? "";
 }
 
-/** Prefer live StoreKit/Play when a public SDK key is baked in; else mock (dev / no key). */
+/** Prefer live RevenueCat when a public SDK key is baked in; else mock (dev / no key). */
 export function mustUseMockPayments(channel: CheckoutChannel): boolean {
   if (Platform.OS === "web") return true;
-  if (channel === "apple_iap" && isChinaRegion) {
-    if (isProductionApp) return false;
-    return !hasStoreKitIapNative();
-  }
   if (channel === "apple_iap" || channel === "google_play_iap") {
     // Production never mocks IAP — missing keys fail in assertPaymentReady / purchase.
     if (isProductionApp) return false;
@@ -55,9 +50,6 @@ export function missingPaymentKeyMessage(channel: CheckoutChannel): string {
     return "[paywall] WeChat scan pay is not available on this build.";
   }
   if (channel === "apple_iap") {
-    if (isChinaRegion) {
-      return "[paywall] react-native-iap is required for Apple IAP on the CN build.";
-    }
     return "[paywall] EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY is required for Apple IAP on this build.";
   }
   if (channel === "google_play_iap") {
@@ -75,18 +67,6 @@ export function assertPaymentReady(channel: CheckoutChannel): void {
   if (mustUseMockPayments(channel)) return;
   // Native scan pay uses the Nest checkout URL. It does not invoke the WeChat OpenSDK.
   if (channel === "wechat") return;
-  if (channel === "apple_iap" && isChinaRegion) {
-    if (isProductionApp && !hasStoreKitIapNative()) {
-      throw new Error(missingPaymentKeyMessage(channel));
-    }
-    return;
-  }
-  if (channel === "apple_iap" && isChinaRegion) {
-    if (isProductionApp && !hasStoreKitIapNative()) {
-      throw new Error(missingPaymentKeyMessage(channel));
-    }
-    return;
-  }
   if ((channel === "apple_iap" || channel === "google_play_iap") && !revenueCatApiKey(channel)) {
     throw new Error(missingPaymentKeyMessage(channel));
   }

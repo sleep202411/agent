@@ -3,13 +3,12 @@ import { loadPurchases } from "./native-payment-sdks";
 import { NativeModules, Platform } from "react-native";
 
 import { getAuthSnapshot } from "@/auth";
-import { isChinaRegion } from "@/config";
 
 import { currentCheckoutChannel } from "./checkout-channel";
 import { assertPaymentReady, mustUseMockPayments, revenueCatApiKey } from "./paywall-config";
 import type { PaywallProduct } from "./catalog";
 import { PurchaseCancelledError, type PurchaseResult } from "./purchase-types";
-import { purchaseStoreKitProduct, restoreStoreKitPurchases } from "./storekit-iap";
+import { syncRevenueCatPurchases } from "./revenuecat-sync";
 
 export { PurchaseCancelledError, type PurchaseResult };
 
@@ -65,6 +64,23 @@ async function ensurePurchasesConfigured(
   return sdk;
 }
 
+/** Replace Nest list prices with the store price RevenueCat returns. */
+export async function withRevenueCatPrices(products: PaywallProduct[]): Promise<PaywallProduct[]> {
+  if (products.length === 0 || !hasPurchasesNative()) return products;
+  const apiKey = revenueCatApiKey("apple_iap");
+  if (!apiKey) return products;
+  const assertCurrentSession = capturePaymentSession();
+  const sdk = await ensurePurchasesConfigured(apiKey, assertCurrentSession);
+  assertCurrentSession();
+  const found = await sdk.default.getProducts(products.map((item) => item.storeProductId));
+  assertCurrentSession();
+  const priceById = new Map(found.map((item) => [item.identifier, item.priceString]));
+  return products.flatMap((item) => {
+    const displayPrice = priceById.get(item.storeProductId);
+    return displayPrice ? [{ ...item, displayPrice }] : [];
+  });
+}
+
 export async function purchaseIapProduct(product: PaywallProduct): Promise<PurchaseResult> {
   const channel = currentCheckoutChannel();
   assertPaymentReady(channel);
@@ -73,16 +89,16 @@ export async function purchaseIapProduct(product: PaywallProduct): Promise<Purch
     return { mocked: true, productId: product.storeProductId };
   }
 
-  if (isChinaRegion) {
-    return purchaseStoreKitProduct(product);
-  }
-
   const apiKey = revenueCatApiKey(channel);
   const assertCurrentSession = capturePaymentSession();
   const sdk = await ensurePurchasesConfigured(apiKey, assertCurrentSession);
   assertCurrentSession();
   try {
     await sdk.default.purchaseProduct(product.storeProductId);
+    assertCurrentSession();
+    // Apple already charged. Java only grants points after this sync.
+    await syncRevenueCatPurchases();
+    assertCurrentSession();
     return { mocked: false, productId: product.storeProductId };
   } catch (error) {
     if (isPurchasesCancelled(error, sdk)) {
@@ -100,15 +116,12 @@ export async function restoreIapPurchases(): Promise<{ mocked: boolean }> {
     return { mocked: true };
   }
 
-  if (isChinaRegion) {
-    await restoreStoreKitPurchases();
-    return { mocked: false };
-  }
-
   const apiKey = revenueCatApiKey(channel);
   const assertCurrentSession = capturePaymentSession();
   const sdk = await ensurePurchasesConfigured(apiKey, assertCurrentSession);
   assertCurrentSession();
   await sdk.default.restorePurchases();
+  assertCurrentSession();
+  await syncRevenueCatPurchases();
   return { mocked: false };
 }

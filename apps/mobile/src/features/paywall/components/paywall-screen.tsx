@@ -41,6 +41,7 @@ import { useLocale, useTranslations, type MessageKey } from "@/i18n";
 import {
   COMPUTE_RECHARGE_DEFAULT,
   COMPUTE_RECHARGE_PRESETS,
+  communityPointsUseBillingApi,
   computeCustomProduct,
   computeRechargeCurrencySymbol,
   isCnComputeRecharge,
@@ -347,29 +348,38 @@ function PaywallSession() {
   const computePoints = selected === "compute_points";
   const products = productsForCategory(selected);
   const savePercent = yearlySavePercent(products);
-  const wechatCommunity = channel === "wechat" && selected === "community_points";
+  const apiCommunity = communityPointsUseBillingApi(channel) && selected === "community_points";
   const catalogProduct = products.find((item) => item.id === productId) ?? products[0];
   const computeProduct = computePoints ? computeCustomProduct(computeAmount) : null;
   const wechatPack =
     communityPacks?.find((item) => item.id === productId) ?? communityPacks?.[0] ?? null;
-  const product = wechatCommunity ? wechatPack : computePoints ? computeProduct : catalogProduct;
+  const product = apiCommunity ? wechatPack : computePoints ? computeProduct : catalogProduct;
   const pointsCheckout = selected === "community_points" || selected === "compute_points";
   const stackedFooter = membership || pointsCheckout;
 
   useEffect(() => {
-    if (channel !== "wechat") return;
+    if (!communityPointsUseBillingApi(channel)) return;
     let cancelled = false;
-    void listCommunityPointPackages("CNY")
-      .then((prices) => {
+    void (async () => {
+      try {
+        const prices = await listCommunityPointPackages("CNY");
         if (cancelled || !isCurrentSession()) return;
-        const next = prices.map(communityPackProduct);
+        let next = prices.map(communityPackProduct);
+        if (channel === "apple_iap") {
+          next = next.filter((item) =>
+            item.storeProductId.startsWith("com.fizzdragon.community.credits.")
+          );
+          const { withRevenueCatPrices } = await import("../lib/iap");
+          next = await withRevenueCatPrices(next);
+        }
+        if (cancelled || !isCurrentSession()) return;
         setCommunityPacks(next);
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (cancelled || !isCurrentSession()) return;
         setCommunityPacks([]);
         setCommunityPackError(error instanceof Error ? error.message : String(error));
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -386,7 +396,7 @@ function PaywallSession() {
   }, [isCurrentSession]);
 
   useEffect(() => {
-    if (channel !== "wechat") return;
+    if (!communityPointsUseBillingApi(channel)) return;
     let cancelled = false;
     void fetchCommunityPointBalance().then((balance) => {
       if (!cancelled && isCurrentSession()) setCommunityBalance(balance);
@@ -628,7 +638,7 @@ function PaywallSession() {
         >
           <View style={styles.pointsTop}>
             {tabs}
-            {wechatCommunity ? (
+            {apiCommunity ? (
               <CommunityAccountRow
                 balance={communityBalance == null ? "…" : formatAmount(communityBalance, locale)}
                 label={t("paywall.communityBalance")}
@@ -644,7 +654,7 @@ function PaywallSession() {
               />
             ) : null}
           </View>
-          {wechatCommunity ? (
+          {apiCommunity ? (
             <ScrollView
               style={styles.packList}
               contentContainerStyle={styles.packListContent}

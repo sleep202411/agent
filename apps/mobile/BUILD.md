@@ -58,23 +58,22 @@ Output → `$FD_OUT_DIR` (default `~/Desktop/FizzDragon-builds/`), named
    from the build; for **Android**, also upload a **512×512 PNG** app icon
    (generate from `assets/images/icon.png`: `sips -z 512 512 …`).
 
-## Native pay SDKs (StoreKit / RevenueCat / WeChat)
+## Native pay SDKs (RevenueCat / WeChat)
 
-`react-native-iap`, `react-native-purchases`, and `expo-wechat` are native
+`react-native-purchases` and `expo-wechat` are native
 modules. Metro JS updates do not pick them up — rebuild the binary after
 install or plugin changes:
 
-- CN iOS StoreKit: `npx eas-cli build --profile development-cn --platform ios`
-- Global iOS / Play (RevenueCat): `npx eas-cli build --profile development-global --platform ios|android`
+- CN and global iOS (RevenueCat): `npx eas-cli build --profile development-cn --platform ios` or `development-global`
+- Google Play (RevenueCat): `npx eas-cli build --profile development-global --platform android`
 - CN Android WeChat: `npx eas-cli build --profile development-cn --platform android`
 
-CN iOS talks to StoreKit through `react-native-iap` (no RevenueCat key).
-Global iOS and Google Play still use RevenueCat. CN Android WeChat is Native
-scan pay: the app calls Nest `/billing/checkout` and renders the `weixin://`
-code as a QR. It does not use WeChat H5 or the OpenSDK `pay()` path, so
-`EXPO_PUBLIC_WECHAT_APP_ID` is not required for checkout. Bake
-`EXPO_PUBLIC_REVENUECAT_*` for global builds; never put RevenueCat secrets or
-WeChat merchant certs in the app.
+CN iOS and global iOS both purchase through RevenueCat (`react-native-purchases`).
+Google Play does too. CN Android WeChat is Native scan pay: the app calls Nest
+`/billing/checkout` and renders the `weixin://` code as a QR. It does not use
+WeChat H5 or the OpenSDK `pay()` path, so `EXPO_PUBLIC_WECHAT_APP_ID` is not
+required for checkout. Bake `EXPO_PUBLIC_REVENUECAT_*` for every store build;
+never put RevenueCat secrets or WeChat merchant certs in the app.
 
 **WeChat Universal Links (CN iOS):** Web hosts AASA + `/app/` on
 `fizzdragon.fizzspace.cn`. Mobile bakes

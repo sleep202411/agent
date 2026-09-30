@@ -1,5 +1,5 @@
-import { currentCheckoutChannel } from "./checkout-channel";
 import type { PaywallProduct } from "./catalog";
+import { currentCheckoutChannel } from "./checkout-channel";
 import {
   PurchaseCancelledError,
   purchaseIapProduct,
