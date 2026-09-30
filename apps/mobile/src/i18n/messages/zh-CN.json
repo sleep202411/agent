@@ -2287,5 +2287,21 @@
   "projectProperties.quarter": "季度",
   "projectProperties.half_year": "半年",
   "projectProperties.year": "年",
-  "projectProperties.searchLead": "搜索成员"
+  "projectProperties.searchLead": "搜索成员",
+  "projectResources.title": "项目资源",
+  "projectResources.add": "添加资源",
+  "projectResources.empty": "暂无项目资源。",
+  "projectResources.link": "外部链接",
+  "projectResources.asset": "剧组文件",
+  "projectResources.open": "打开资源",
+  "projectResources.remove": "移除引用",
+  "projectResources.name": "资源标题",
+  "projectResources.url": "网址（HTTP 或 HTTPS）",
+  "projectResources.confirmHelp": "添加前请检查此项目资源。",
+  "projectResources.confirmAdd": "确认添加",
+  "projectResources.review": "检查资源",
+  "projectResources.recheck": "操作可能已经完成。请返回刷新后再操作。",
+  "projectResources.removeHelp": "是否从项目中移除此引用？原文件将保留在资产中心。",
+  "projectResources.confirmRemove": "确认移除",
+  "projectResources.openLink": "打开外部链接"
 }

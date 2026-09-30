@@ -1,3 +1,4 @@
+import { ProjectResources } from "./project-resources";
 import { ProjectProperties } from "./project-properties";
 import { CrewMembers } from "./crew-members";
 import { AssetOrganization } from "../crew-assets/organization";
@@ -34,6 +35,7 @@ export function CrewTaskBrowser({
 }) {
   const t = useTranslations();
   const [showProjectProperties, setShowProjectProperties] = useState(false);
+  const [showResources, setShowResources] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
   const [managingEpisodes, setManagingEpisodes] = useState(false);
   const [creatingEpisode, setCreatingEpisode] = useState(false);
@@ -58,6 +60,15 @@ export function CrewTaskBrowser({
         userId={userId}
         generation={generation}
         onClose={() => setShowProjectProperties(false)}
+      />
+    );
+  if (showResources)
+    return (
+      <ProjectResources
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowResources(false)}
       />
     );
   if (showMembers)
@@ -225,6 +236,15 @@ export function CrewTaskBrowser({
         }}
       >
         <ThemedText>{t("projectProperties.title")}</ThemedText>
+      </Pressable>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowResources(true);
+        }}
+      >
+        <ThemedText>{t("projectResources.title")}</ThemedText>
       </Pressable>
       <Pressable
         accessibilityRole="button"

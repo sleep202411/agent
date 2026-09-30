@@ -2287,5 +2287,21 @@
   "projectProperties.quarter": "季度",
   "projectProperties.half_year": "半年",
   "projectProperties.year": "年",
-  "projectProperties.searchLead": "搜尋成員"
+  "projectProperties.searchLead": "搜尋成員",
+  "projectResources.title": "項目資源",
+  "projectResources.add": "新增資源",
+  "projectResources.empty": "暫無項目資源。",
+  "projectResources.link": "外部連結",
+  "projectResources.asset": "劇組檔案",
+  "projectResources.open": "開啟資源",
+  "projectResources.remove": "移除引用",
+  "projectResources.name": "資源標題",
+  "projectResources.url": "網址（HTTP 或 HTTPS）",
+  "projectResources.confirmHelp": "新增前請檢查此項目資源。",
+  "projectResources.confirmAdd": "確認新增",
+  "projectResources.review": "檢查資源",
+  "projectResources.recheck": "操作可能已經完成。請返回重新整理後再操作。",
+  "projectResources.removeHelp": "是否從項目中移除此引用？原檔案將保留在資產中心。",
+  "projectResources.confirmRemove": "確認移除",
+  "projectResources.openLink": "開啟外部連結"
 }

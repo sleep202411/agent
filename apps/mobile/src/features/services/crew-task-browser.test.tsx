@@ -8,6 +8,11 @@ const h = vi.hoisted(() => ({
   detail: vi.fn(),
   workbench: vi.fn(),
 }));
+vi.mock("./project-resources", () => ({
+  ProjectResources: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close resources</button>
+  ),
+}));
 vi.mock("./project-properties", () => ({
   ProjectProperties: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close properties</button>
@@ -290,5 +295,11 @@ it("exits the Crew workspace after ownership transfer", async () => {
 it("opens project properties and returns to tasks", async () => {
   await act(async () => button("projectProperties.title").click());
   await act(async () => button("close properties").click());
+  expect(button("pick")).toBeTruthy();
+});
+
+it("opens native project resources and returns", async () => {
+  await act(async () => button("projectResources.title").click());
+  await act(async () => button("close resources").click());
   expect(button("pick")).toBeTruthy();
 });

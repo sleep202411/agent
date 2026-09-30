@@ -2287,5 +2287,21 @@
   "projectProperties.quarter": "Quarter",
   "projectProperties.half_year": "Half-Year",
   "projectProperties.year": "Year",
-  "projectProperties.searchLead": "Search Members"
+  "projectProperties.searchLead": "Search Members",
+  "projectResources.title": "Project Resources",
+  "projectResources.add": "Add Resource",
+  "projectResources.empty": "No project resources yet.",
+  "projectResources.link": "External Link",
+  "projectResources.asset": "Crew File",
+  "projectResources.open": "Open Resource",
+  "projectResources.remove": "Remove Reference",
+  "projectResources.name": "Resource Title",
+  "projectResources.url": "URL (HTTP or HTTPS)",
+  "projectResources.confirmHelp": "Review the resource before adding it to the project.",
+  "projectResources.confirmAdd": "Confirm Add",
+  "projectResources.review": "Review Resource",
+  "projectResources.recheck": "The change may have completed. Return and refresh before another attempt.",
+  "projectResources.removeHelp": "Remove this reference from the project? The original file will remain in the Asset Center.",
+  "projectResources.confirmRemove": "Confirm Removal",
+  "projectResources.openLink": "Open External Link"
 }
