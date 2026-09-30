@@ -62,12 +62,15 @@ import {
   isOrderDead,
   isOrderFulfilled,
   listCommunityPointPackages,
+  listMembershipPrices,
+  paywallBillingCurrency,
 } from "../lib/billing-api";
 import { isPurchaseCancelled, purchaseProduct, restorePurchases } from "../lib/purchase";
-import { communityPackProduct } from "../lib/wechat";
+import { communityPackProduct, membershipProduct } from "../lib/wechat";
 import { sanitizeAppWebPath } from "../lib/web-checkout";
 import { usePaywallSelection } from "../lib/use-paywall-selection";
 import { WechatScanPay } from "./wechat-scan-pay";
+import type { PaywallProduct } from "../lib/catalog";
 
 const BRAND = Colors.dark.brand;
 const CANVAS = Colors.dark.background;
@@ -338,6 +341,8 @@ function PaywallSession() {
     ReturnType<typeof communityPackProduct>[] | null
   >(null);
   const [communityPackError, setCommunityPackError] = useState<string | null>(null);
+  const [membershipPlans, setMembershipPlans] = useState<PaywallProduct[] | null>(null);
+  const [membershipPlanError, setMembershipPlanError] = useState<string | null>(null);
   const [scan, setScan] = useState<{
     orderId: string;
     codeUrl: string;
@@ -347,14 +352,25 @@ function PaywallSession() {
   const unsupported = channel === "web";
   const membership = isMembershipCategory(selected);
   const computePoints = selected === "compute_points";
-  const products = productsForCategory(selected);
+  const apiCommunityMembership = selected === "community_membership";
+  const catalogProducts = productsForCategory(selected);
+  const membershipProducts = apiCommunityMembership ? (membershipPlans ?? []) : catalogProducts;
+  const products = apiCommunityMembership ? membershipProducts : catalogProducts;
   const savePercent = yearlySavePercent(products);
   const apiCommunity = communityPointsUseBillingApi(channel) && selected === "community_points";
   const catalogProduct = products.find((item) => item.id === productId) ?? products[0];
   const computeProduct = computePoints ? computeCustomProduct(computeAmount) : null;
   const wechatPack =
     communityPacks?.find((item) => item.id === productId) ?? communityPacks?.[0] ?? null;
-  const product = apiCommunity ? wechatPack : computePoints ? computeProduct : catalogProduct;
+  const membershipPick =
+    membershipProducts.find((item) => item.id === productId) ?? membershipProducts[0] ?? null;
+  const product = apiCommunity
+    ? wechatPack
+    : apiCommunityMembership
+      ? membershipPick
+      : computePoints
+        ? computeProduct
+        : catalogProduct;
   const pointsCheckout = selected === "community_points" || selected === "compute_points";
   const stackedFooter = membership || pointsCheckout;
 
@@ -384,6 +400,45 @@ function PaywallSession() {
       cancelled = true;
     };
   }, [channel, isCurrentSession]);
+
+  useEffect(() => {
+    // Keep the Nest membership catalog off until that tab is visible again.
+    if (selected !== "community_membership") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const prices = await listMembershipPrices({
+          productType: "community_membership_plan",
+          currency: paywallBillingCurrency(),
+        });
+        if (cancelled || !isCurrentSession()) return;
+        const next = prices
+          .filter((price) => price.isActive !== false)
+          .map((price) => membershipProduct(price, "community_membership"));
+        if (cancelled || !isCurrentSession()) return;
+        setMembershipPlans(next);
+      } catch (error: unknown) {
+        if (cancelled || !isCurrentSession()) return;
+        setMembershipPlans([]);
+        setMembershipPlanError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCurrentSession, selected]);
+
+  // Nest plans arrive after first paint — pick yearly → monthly → one_time → first.
+  useEffect(() => {
+    if (!apiCommunityMembership || !membershipPlans?.length) return;
+    if (membershipPlans.some((item) => item.id === productId)) return;
+    const preferred =
+      membershipPlans.find((item) => item.interval === "year") ??
+      membershipPlans.find((item) => item.interval === "month") ??
+      membershipPlans.find((item) => item.interval === "one_time") ??
+      membershipPlans[0];
+    if (preferred) setProductId(preferred.id);
+  }, [apiCommunityMembership, membershipPlans, productId, setProductId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -617,8 +672,9 @@ function PaywallSession() {
           accessibilityRole="button"
           disabled={actionsLocked}
           onPress={() => void restore()}
+          style={styles.restore}
         >
-          <ThemedText type="small" themeColor="textSecondary">
+          <ThemedText type="small" themeColor="textSecondary" style={styles.restoreLabel}>
             {t("paywall.restore")}
           </ThemedText>
         </Pressable>
@@ -755,45 +811,65 @@ function PaywallSession() {
               ))}
             </View>
             <View style={styles.planRow}>
-              {products.map((item) => {
-                const on = item.id === product?.id;
-                const yearly = item.interval === "year";
-                const badge =
-                  yearly && savePercent > 0
-                    ? fillTemplate(t("paywall.membership.save"), { percent: savePercent })
-                    : undefined;
-                return (
-                  <Pressable
-                    key={item.id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: on }}
-                    onPress={() => setProductId(item.id)}
-                    style={[styles.planCard, on ? styles.planOn : styles.planOff]}
-                  >
-                    {badge ? (
-                      <View style={styles.planBadge}>
-                        <ThemedText type="smallBold" style={styles.planBadgeText}>
-                          {badge}
-                        </ThemedText>
-                      </View>
-                    ) : null}
-                    {on ? (
-                      <View style={styles.check}>
-                        <IconCheck size={12} color="#FFFFFF" strokeWidth={2.4} />
-                      </View>
-                    ) : null}
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {yearly ? t("paywall.membership.yearly") : t("paywall.membership.monthly")}
-                    </ThemedText>
-                    <ThemedText type="smallBold" style={styles.planPrice}>
-                      {item.displayPrice}
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {yearly ? t("paywall.membership.perYear") : t("paywall.membership.perMonth")}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
+              {apiCommunityMembership && membershipPlans === null ? (
+                <ActivityIndicator
+                  color={BRAND}
+                  style={{ flex: 1, paddingVertical: Spacing.six }}
+                />
+              ) : apiCommunityMembership && products.length === 0 ? (
+                <ThemedText type="small" themeColor="textSecondary" style={{ flex: 1 }}>
+                  {membershipPlanError ?? t("paywall.membership.noPlan")}
+                </ThemedText>
+              ) : (
+                products.map((item) => {
+                  const on = item.id === product?.id;
+                  const yearly = item.interval === "year";
+                  const oneTime = item.interval === "one_time";
+                  const badge =
+                    yearly && savePercent > 0
+                      ? fillTemplate(t("paywall.membership.save"), { percent: savePercent })
+                      : undefined;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: on }}
+                      onPress={() => setProductId(item.id)}
+                      style={[styles.planCard, on ? styles.planOn : styles.planOff]}
+                    >
+                      {badge ? (
+                        <View style={styles.planBadge}>
+                          <ThemedText type="smallBold" style={styles.planBadgeText}>
+                            {badge}
+                          </ThemedText>
+                        </View>
+                      ) : null}
+                      {on ? (
+                        <View style={styles.check}>
+                          <IconCheck size={12} color="#FFFFFF" strokeWidth={2.4} />
+                        </View>
+                      ) : null}
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {oneTime
+                          ? t("paywall.membership.oneTime")
+                          : yearly
+                            ? t("paywall.membership.yearly")
+                            : t("paywall.membership.monthly")}
+                      </ThemedText>
+                      <ThemedText type="smallBold" style={styles.planPrice}>
+                        {item.displayPrice}
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {oneTime
+                          ? t("paywall.membership.perPass")
+                          : yearly
+                            ? t("paywall.membership.perYear")
+                            : t("paywall.membership.perMonth")}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })
+              )}
             </View>
           </ScrollView>
           {footer}
@@ -1185,8 +1261,12 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   restore: {
-    alignSelf: "flex-start",
-    paddingVertical: Spacing.one,
+    alignItems: "center",
+    alignSelf: "center",
+    paddingVertical: Spacing.two,
+  },
+  restoreLabel: {
+    textAlign: "center",
   },
   unsupported: {
     flex: 1,

@@ -95,30 +95,12 @@ const COMPUTE_MEMBERSHIP: PaywallProduct[] = [
   },
 ];
 
-const COMMUNITY_MEMBERSHIP: PaywallProduct[] = [
-  {
-    id: "community_membership_month",
-    category: "community_membership",
-    storeProductId: "community_membership_month",
-    displayPrice: "$9.99",
-    grantsPoints: null,
-    interval: "month",
-  },
-  {
-    id: "community_membership_year",
-    category: "community_membership",
-    storeProductId: "community_membership_year",
-    displayPrice: "$99.90",
-    grantsPoints: null,
-    interval: "year",
-  },
-];
-
+/** Community membership prices load from `/billing/membership-plans` at runtime. */
 const BY_CATEGORY: Record<PaywallCategory, PaywallProduct[]> = {
   community_points: COMMUNITY_POINTS,
   compute_points: [],
   compute_membership: COMPUTE_MEMBERSHIP,
-  community_membership: COMMUNITY_MEMBERSHIP,
+  community_membership: [],
 };
 
 function priceAmount(price: string): number {

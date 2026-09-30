@@ -7,14 +7,15 @@ import {
   chargedAmountMinor,
   createBillingCheckout,
   createComputeCustomRecharge,
-  formatCny,
+  formatBillingMoney,
   isOrderFulfilled,
   isWechatScanUrl,
   listMembershipPrices,
   type BillingCheckoutResult,
   type BillingPrice,
 } from "./billing-api";
-import { communityStoreProductId, type PaywallProduct } from "./catalog";
+import { communityStoreProductId, type BillingInterval, type PaywallProduct } from "./catalog";
+import type { PaywallCategory } from "./paywall-store";
 import { currentCheckoutChannel } from "./checkout-channel";
 import { assertPaymentReady, mustUseMockPayments } from "./paywall-config";
 import {
@@ -110,10 +111,32 @@ export function communityPackProduct(price: BillingPrice): PaywallProduct {
     category: "community_points",
     storeProductId: communityStoreProductId(price.grantsWalletAmount) ?? price.id,
     billingPriceId: price.id,
-    displayPrice: formatCny(chargedAmountMinor(price)),
+    displayPrice: formatBillingMoney(price.currency || "CNY", chargedAmountMinor(price)),
     name: price.name,
     grantsPoints: price.grantsWalletAmount,
     interval: "one_time",
+  };
+}
+
+function billingInterval(value: string | null | undefined): BillingInterval | undefined {
+  if (value === "month" || value === "year" || value === "one_time") return value;
+  return undefined;
+}
+
+/** Nest membership price → paywall row (month / year / one_time). */
+export function membershipProduct(
+  price: BillingPrice,
+  category: Extract<PaywallCategory, "community_membership" | "compute_membership">
+): PaywallProduct {
+  return {
+    id: price.id,
+    category,
+    storeProductId: price.id,
+    billingPriceId: price.id,
+    displayPrice: formatBillingMoney(price.currency || "CNY", chargedAmountMinor(price)),
+    name: price.name,
+    grantsPoints: null,
+    interval: billingInterval(price.interval),
   };
 }
 

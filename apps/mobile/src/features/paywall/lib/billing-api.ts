@@ -3,6 +3,7 @@
  * Paths omit `/aurora`; `api` resolves the aurora base URL.
  */
 
+import { appEnv } from "@/config";
 import { api } from "@/lib/api-client";
 
 const AURORA = { service: "aurora" as const };
@@ -52,6 +53,18 @@ export function formatCny(amountMinor: string): string {
   const minor = Number(amountMinor);
   if (!Number.isFinite(minor)) return amountMinor;
   return `¥${(minor / 100).toFixed(2)}`;
+}
+
+export function formatBillingMoney(currency: string, amountMinor: string): string {
+  if (currency === "CNY") return formatCny(amountMinor);
+  const minor = Number(amountMinor);
+  if (!Number.isFinite(minor)) return amountMinor;
+  return `$${(minor / 100).toFixed(2)}`;
+}
+
+/** Nest list currency for the active mobile region. */
+export function paywallBillingCurrency(): "CNY" | "USD" {
+  return appEnv.appRegion === "cn" ? "CNY" : "USD";
 }
 
 export async function listCommunityPointPackages(currency: string): Promise<BillingPrice[]> {

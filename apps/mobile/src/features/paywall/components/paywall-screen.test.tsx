@@ -80,6 +80,8 @@ vi.mock("../lib/paywall-store", () => ({
 }));
 vi.mock("../lib/billing-api", () => ({
   listCommunityPointPackages: state.packs,
+  listMembershipPrices: async () => [],
+  paywallBillingCurrency: () => "CNY",
   getBillingOrder: vi.fn(),
   isOrderDead: () => false,
   isOrderFulfilled: () => false,
@@ -89,7 +91,10 @@ vi.mock("../lib/purchase", () => ({
   restorePurchases: vi.fn(),
   isPurchaseCancelled: () => false,
 }));
-vi.mock("../lib/wechat", () => ({ communityPackProduct: (value: unknown) => value }));
+vi.mock("../lib/wechat", () => ({
+  communityPackProduct: (value: unknown) => value,
+  membershipProduct: (value: unknown) => value,
+}));
 vi.mock("./wechat-scan-pay", () => ({
   WechatScanPay: ({ orderId }: { orderId: string }) => <span>{orderId}</span>,
 }));
