@@ -250,3 +250,29 @@ export async function attachOrganizationFile(
     );
   return result;
 }
+
+export async function fetchOrganizationLocation(
+  crewId: string,
+  userId: string,
+  generation: number,
+  nodeId: string,
+  signal: AbortSignal
+) {
+  uuid.parse(nodeId);
+  await authorize(crewId, userId, generation, signal);
+  const result = z
+    .object({
+      node: organizationNode,
+      path: z.array(z.object({ id: uuid, name: z.string().min(1) })).max(128),
+    })
+    .parse(await api.get(`/crews/${crewId}/assets/nodes/${nodeId}`, { service: "aurora", signal }));
+  current(generation, signal);
+  if (
+    result.node.id !== nodeId ||
+    new Set(result.path.map((p) => p.id)).size !== result.path.length ||
+    result.path.some((p) => p.id === nodeId) ||
+    (result.path.at(-1)?.id ?? null) !== result.node.parentId
+  )
+    throw new Error("Asset folder path could not be verified. Refresh before continuing.");
+  return result;
+}

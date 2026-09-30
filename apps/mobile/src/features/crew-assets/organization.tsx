@@ -2,7 +2,7 @@ import { AssetFileUpload } from "./file-upload";
 import { ConversationFile } from "../services/conversation-file";
 import { AssetPermissions } from "./permissions";
 import { AssetTrash, AssetLifecycleAction } from "./lifecycle";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
@@ -16,6 +16,7 @@ import {
   createOrganizationFolder,
   eligibleMoveFolders,
   fetchOrganizationFolders,
+  fetchOrganizationLocation,
   fetchOrganizationNode,
   setOrganizationFavorite,
   updateOrganizationNode,
@@ -42,6 +43,48 @@ function Browser(props: Props) {
   const [showTrash, setShowTrash] = useState(false);
   const [path, setPath] = useState<{ id: string; name: string }[]>([]),
     [selection, setSelection] = useState<string>();
+  const navigation = useRef<AbortController | undefined>(undefined);
+  const [navigating, setNavigating] = useState(false),
+    [navigationError, setNavigationError] = useState<string>();
+  useEffect(() => () => navigation.current?.abort(), []);
+  const openFolder = (id?: string) => {
+    if (props.generation !== getAuthGeneration() || navigation.current) return;
+    setNavigationError(undefined);
+    if (!id) {
+      setPath([]);
+      setSource("all");
+      clearSearch();
+      return;
+    }
+    const controller = new AbortController();
+    navigation.current = controller;
+    setNavigating(true);
+    void fetchOrganizationLocation(
+      props.crewId,
+      props.userId,
+      props.generation,
+      id,
+      controller.signal
+    )
+      .then((result) => {
+        if (controller.signal.aborted || props.generation !== getAuthGeneration()) return;
+        if (result.node.kind !== "folder") throw new Error("This asset is no longer a folder.");
+        setPath([...result.path, { id: result.node.id, name: result.node.name }]);
+        setSource("all");
+        clearSearch();
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted && props.generation === getAuthGeneration())
+          setNavigationError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (navigation.current === controller) {
+          navigation.current = undefined;
+          if (!controller.signal.aborted && props.generation === getAuthGeneration())
+            setNavigating(false);
+        }
+      });
+  };
   const [source, setSource] = useState<"all" | "recent" | "favorites">("all");
   const listing = useCrewAssets(String(props.generation), props.crewId, {
     source,
@@ -53,6 +96,20 @@ function Browser(props: Props) {
     setSelection(undefined);
     listing.refresh();
   };
+  if (navigating)
+    return (
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+        <ActivityIndicator />
+        <Button
+          label={t("crewTasks.back")}
+          onPress={() => {
+            navigation.current?.abort();
+            navigation.current = undefined;
+            setNavigating(false);
+          }}
+        />
+      </ScrollView>
+    );
   if (showUpload)
     return (
       <AssetFileUpload
@@ -95,6 +152,7 @@ function Browser(props: Props) {
           selected={source === value}
           onPress={() => {
             setSource(value);
+            setNavigationError(undefined);
             setPath([]);
             clearSearch();
           }}
@@ -128,13 +186,7 @@ function Browser(props: Props) {
       </View>
       <ThemedText>{path.map((p) => p.name).join(" / ") || t("studioMedia.root")}</ThemedText>
       {!!path.length && (
-        <Button
-          label={t("crewAssets.back")}
-          onPress={() => {
-            setPath((p) => p.slice(0, -1));
-            clearSearch();
-          }}
-        />
+        <Button label={t("crewAssets.back")} onPress={() => openFolder(path.at(-2)?.id)} />
       )}
       {source === "all" && (
         <Button label={t("thread.uploadFile")} onPress={() => setShowUpload(true)} />
@@ -144,16 +196,7 @@ function Browser(props: Props) {
       )}
       {listing.items.map((row) => (
         <View key={row.id} style={{ gap: 6 }}>
-          {row.kind === "folder" && (
-            <Button
-              label={row.name}
-              onPress={() => {
-                setSource("all");
-                setPath((p) => [...p, { id: row.id, name: row.name }]);
-                clearSearch();
-              }}
-            />
-          )}
+          {row.kind === "folder" && <Button label={row.name} onPress={() => openFolder(row.id)} />}
           {row.kind === "file" && row.media && (
             <ConversationFile
               key={row.media.id}
@@ -173,6 +216,7 @@ function Browser(props: Props) {
         <ThemedText>{t("crewAssets.empty")}</ThemedText>
       )}
       {listing.loading && <ActivityIndicator />}
+      {navigationError && <ThemedText accessibilityRole="alert">{navigationError}</ThemedText>}
       {listing.error && <ThemedText accessibilityRole="alert">{listing.error}</ThemedText>}
       {listing.hasMore && (
         <Button

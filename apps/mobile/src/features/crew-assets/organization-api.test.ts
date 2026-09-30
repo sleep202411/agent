@@ -6,6 +6,7 @@ import {
   createOrganizationFolder,
   eligibleMoveFolders,
   fetchOrganizationNode,
+  fetchOrganizationLocation,
   organizationNode,
   setOrganizationFavorite,
   updateOrganizationNode,
@@ -212,4 +213,47 @@ it("retries attachment with the identical media ID rather than making a new uplo
   await expect(attachOrganizationFile("crew", "1", 1, input)).rejects.toThrow("Lost response");
   await attachOrganizationFile("crew", "1", 1, input);
   expect(vi.mocked(api.post).mock.calls[0]).toEqual(vi.mocked(api.post).mock.calls[1]);
+});
+
+it("loads the authoritative ancestor path", async () => {
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("members/me")
+      ? { userId: "1", permissions: ["assets.view"] }
+      : { node: { ...row(), parentId: id(2) }, path: [{ id: id(2), name: "Parent" }] }
+  );
+  const result = await fetchOrganizationLocation(
+    "crew",
+    "1",
+    1,
+    id(1),
+    new AbortController().signal
+  );
+  expect(result.path).toEqual([{ id: id(2), name: "Parent" }]);
+});
+it.each([
+  { node: { ...row(), id: id(3) }, path: [] },
+  { node: { ...row(), parentId: id(2) }, path: [] },
+  {
+    node: { ...row(), parentId: id(2) },
+    path: [
+      { id: id(2), name: "Parent" },
+      { id: id(2), name: "Parent" },
+    ],
+  },
+  { node: { ...row(), parentId: id(1) }, path: [{ id: id(1), name: "Self" }] },
+])("rejects malformed or mismatched paths %j", async (value) => {
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("members/me") ? { userId: "1", permissions: ["assets.view"] } : value
+  );
+  await expect(
+    fetchOrganizationLocation("crew", "1", 1, id(1), new AbortController().signal)
+  ).rejects.toThrow("path could not be verified");
+});
+it("rejects a cancelled folder lookup", async () => {
+  const c = new AbortController();
+  c.abort();
+  await expect(fetchOrganizationLocation("crew", "1", 1, id(1), c.signal)).rejects.toThrow(
+    "cancelled"
+  );
+  expect(api.get).not.toHaveBeenCalled();
 });

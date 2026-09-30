@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   favorite: vi.fn(),
   close: vi.fn(),
   node: vi.fn(),
+  location: vi.fn(),
   context: vi.fn(),
   refresh: vi.fn(),
   items: [] as unknown[],
@@ -44,6 +45,7 @@ vi.mock("./organization-api", async (original) => ({
   ...(await original<typeof import("./organization-api")>()),
   fetchOrganizationFolders: h.folders,
   fetchOrganizationNode: h.node,
+  fetchOrganizationLocation: h.location,
   createOrganizationFolder: h.create,
   updateOrganizationNode: h.update,
   setOrganizationFavorite: h.favorite,
@@ -126,6 +128,7 @@ beforeEach(() => {
   h.generation = 1;
   h.items = [node];
   h.node.mockResolvedValue(node);
+  h.location.mockResolvedValue({ node, path: [] });
   h.folders.mockResolvedValue([folder]);
   h.context.mockResolvedValue({ capabilities: { upload: true } });
   h.create.mockResolvedValue(node);
@@ -337,4 +340,62 @@ it("opens file upload and refreshes the list on return", async () => {
   await click("thread.uploadFile");
   await click("close upload");
   expect(h.refresh).toHaveBeenCalled();
+});
+
+it("uses the real parent path when entering a favorite folder", async () => {
+  h.location
+    .mockResolvedValueOnce({
+      node: { ...node, parentId: id(2) },
+      path: [{ id: id(2), name: "Parent" }],
+    })
+    .mockResolvedValueOnce({
+      node: { ...node, id: id(2), name: "Parent", parentId: null },
+      path: [],
+    });
+  await render();
+  await click("crewAssets.source.favorites");
+  await click("Art");
+  expect(host.textContent).toContain("Parent / Art");
+  await click("crewAssets.back");
+  expect(h.location.mock.calls[1]?.[3]).toBe(id(2));
+  expect(h.listing.mock.lastCall?.[2].parentId).toBe(id(2));
+});
+it("preserves the current view when a folder lookup fails", async () => {
+  h.location.mockRejectedValue(new Error("Access revoked"));
+  await render();
+  await click("crewAssets.source.favorites");
+  await click("Art");
+  expect(host.textContent).toContain("Access revoked");
+  expect(h.listing.mock.lastCall?.[2].source).toBe("favorites");
+});
+it("cancels folder navigation and ignores its late response", async () => {
+  let finish!: (v: unknown) => void;
+  h.location.mockImplementation(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      })
+  );
+  await render();
+  await click("Art");
+  const signal = h.location.mock.calls[0]![4];
+  await click("crewTasks.back");
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ node, path: [{ id: id(2), name: "Late" }] }));
+  expect(host.textContent).not.toContain("Late");
+  expect(h.listing.mock.lastCall?.[2].parentId).toBeUndefined();
+});
+it("does not navigate with a previous account response", async () => {
+  let finish!: (v: unknown) => void;
+  h.location.mockImplementation(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      })
+  );
+  await render();
+  await click("Art");
+  h.generation = 2;
+  await act(async () => finish({ node, path: [] }));
+  expect(h.listing.mock.lastCall?.[2].parentId).toBeUndefined();
 });
