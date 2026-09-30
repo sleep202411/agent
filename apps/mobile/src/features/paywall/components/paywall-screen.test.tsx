@@ -12,6 +12,10 @@ const state = vi.hoisted(() => ({
   returnPath: "/ip/example",
   alert: vi.fn(),
   balance: vi.fn(),
+  sync: vi.fn(),
+  getOrder: vi.fn(),
+  follow: vi.fn(),
+  orderFulfilled: false,
 }));
 vi.mock("@tabler/icons-react-native", () => ({
   IconBolt: () => null,
@@ -82,21 +86,34 @@ vi.mock("../lib/billing-api", () => ({
   listCommunityPointPackages: state.packs,
   listMembershipPrices: async () => [],
   paywallBillingCurrency: () => "CNY",
-  getBillingOrder: vi.fn(),
+  getBillingOrder: (...args: unknown[]) => state.getOrder(...args),
   isOrderDead: () => false,
-  isOrderFulfilled: () => false,
+  isOrderFulfilled: () => state.orderFulfilled,
 }));
 vi.mock("../lib/purchase", () => ({
   purchaseProduct: state.buy,
   restorePurchases: vi.fn(),
   isPurchaseCancelled: () => false,
 }));
+vi.mock("../lib/revenuecat-sync", () => ({
+  syncRevenueCatPurchases: (...args: unknown[]) => state.sync(...args),
+}));
+vi.mock("../lib/wechat-order-follow", () => ({
+  followWechatOrderUntilSettled: (...args: unknown[]) => state.follow(...args),
+}));
 vi.mock("../lib/wechat", () => ({
   communityPackProduct: (value: unknown) => value,
   membershipProduct: (value: unknown) => value,
 }));
 vi.mock("./wechat-scan-pay", () => ({
-  WechatScanPay: ({ orderId }: { orderId: string }) => <span>{orderId}</span>,
+  WechatScanPay: ({ orderId, onClose }: { orderId: string; onClose: () => void }) => (
+    <span>
+      {orderId}
+      <button type="button" onClick={onClose}>
+        close-scan
+      </button>
+    </span>
+  ),
 }));
 const FIXTURE_PACK = {
   id: "price-1",
@@ -114,8 +131,12 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.channel = "apple_iap";
   state.generation = 1;
+  state.orderFulfilled = false;
   state.balance.mockResolvedValue("0");
   state.buy.mockImplementation(() => new Promise(() => {}));
+  state.sync.mockResolvedValue({ fulfilled: [], skipped: [] });
+  state.getOrder.mockResolvedValue({ status: "pending" });
+  state.follow.mockResolvedValue("timeout");
   // Nest catalog is the only source for community packs (no hardcoded SKUs).
   state.packs.mockResolvedValue([FIXTURE_PACK]);
   host = document.createElement("div");
@@ -225,21 +246,78 @@ it("shows purchase success after confirming a live store purchase", async () => 
   expect(payButton().textContent).toContain("paywall.buyNow");
 });
 
-it("shows confirming on the pay button while the wallet refresh is in flight", async () => {
-  let finishRefresh!: (balance: string) => void;
+it("shows crediting on the pay button while IAP sync and wallet refresh run", async () => {
+  let finishSync!: () => void;
   state.buy.mockResolvedValueOnce({ mocked: false, productId: "points-sku" });
+  state.sync.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        finishSync = () => done({ fulfilled: [], skipped: [] });
+      })
+  );
   await render();
+  await act(async () => payButton().click());
+  expect(payButton().textContent).toContain("paywall.confirming");
+  expect(payButton().disabled).toBe(true);
+  expect(state.sync).toHaveBeenCalledTimes(1);
+  let finishRefresh!: (balance: string) => void;
   state.balance.mockImplementationOnce(
     () =>
       new Promise((done) => {
         finishRefresh = done;
       })
   );
-  await act(async () => payButton().click());
+  await act(async () => finishSync());
   expect(payButton().textContent).toContain("paywall.confirming");
-  expect(payButton().disabled).toBe(true);
   await act(async () => finishRefresh("12"));
   expect(payButton().textContent).toContain("paywall.buyNow");
+  expect(state.alert).toHaveBeenCalledWith("paywall.purchaseOkTitle", "paywall.purchaseOkSuccess");
+});
+
+it("confirms WeChat credit after closing the QR once the order is fulfilled", async () => {
+  state.channel = "wechat";
+  state.buy.mockResolvedValueOnce({
+    mocked: false,
+    wechatScan: { orderId: "wx-order-1", codeUrl: "weixin://pay" },
+  });
+  let finishFollow!: (result: string) => void;
+  state.follow.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        finishFollow = done;
+      })
+  );
+  state.balance.mockResolvedValue("88");
+  await render();
+  await act(async () => payButton().click());
+  expect(host.textContent).toContain("wx-order-1");
+  const close = [...host.querySelectorAll("button")].find((item) =>
+    item.textContent?.includes("close-scan")
+  )!;
+  await act(async () => close.click());
+  // Unpaid dismiss polls quietly — CTA stays buyNow until fulfill is known.
+  expect(payButton().textContent).toContain("paywall.buyNow");
+  expect(payButton().disabled).toBe(false);
+  expect(state.follow).toHaveBeenCalledWith("wx-order-1");
+  await act(async () => finishFollow("fulfilled"));
+  expect(state.alert).toHaveBeenCalledWith("paywall.purchaseOkTitle", "paywall.wechat.success");
+  expect(host.textContent).toContain("88");
+  expect(payButton().textContent).toContain("paywall.buyNow");
+});
+
+it("keeps following a WeChat order after leaving the paywall with the QR open", async () => {
+  state.channel = "wechat";
+  state.buy.mockResolvedValueOnce({
+    mocked: false,
+    wechatScan: { orderId: "wx-leave-open", codeUrl: "weixin://pay" },
+  });
+  state.follow.mockResolvedValue("fulfilled");
+  await render();
+  await act(async () => payButton().click());
+  expect(host.textContent).toContain("wx-leave-open");
+  await act(async () => root.render(null));
+  expect(state.follow).toHaveBeenCalledWith("wx-leave-open");
+  expect(state.alert).not.toHaveBeenCalled();
 });
 
 it("does not show a late purchase alert after leaving the paywall", async () => {
@@ -254,6 +332,7 @@ it("does not show a late purchase alert after leaving the paywall", async () => 
   await act(async () => payButton().click());
   await act(async () => root.render(null));
   await act(async () => resolve({ mocked: false, productId: "old-product" }));
+  expect(state.sync).toHaveBeenCalledTimes(1);
   expect(state.alert).not.toHaveBeenCalled();
 });
 

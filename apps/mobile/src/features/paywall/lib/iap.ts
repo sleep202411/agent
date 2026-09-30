@@ -80,9 +80,7 @@ export async function purchaseIapProduct(product: PaywallProduct): Promise<Purch
   try {
     await sdk.default.purchaseProduct(product.storeProductId);
     assertCurrentSession();
-    // Apple already charged. Java only grants points after this sync.
-    await syncRevenueCatPurchases();
-    assertCurrentSession();
+    // Caller runs RevenueCat → Nest sync under the "confirming" button label.
     return { mocked: false, productId: product.storeProductId };
   } catch (error) {
     if (isPurchasesCancelled(error, sdk)) {

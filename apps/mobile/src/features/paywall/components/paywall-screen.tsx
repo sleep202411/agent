@@ -58,14 +58,13 @@ import {
   type PaywallCategory,
 } from "../lib/paywall-store";
 import {
-  getBillingOrder,
-  isOrderDead,
-  isOrderFulfilled,
   listCommunityPointPackages,
   listMembershipPrices,
   paywallBillingCurrency,
 } from "../lib/billing-api";
 import { isPurchaseCancelled, purchaseProduct, restorePurchases } from "../lib/purchase";
+import { syncRevenueCatPurchases } from "../lib/revenuecat-sync";
+import { followWechatOrderUntilSettled } from "../lib/wechat-order-follow";
 import { communityPackProduct, membershipProduct } from "../lib/wechat";
 import { sanitizeAppWebPath } from "../lib/web-checkout";
 import { usePaywallSelection } from "../lib/use-paywall-selection";
@@ -473,6 +472,10 @@ function PaywallSession() {
   // React state disables the UI on the next render; serialize dispatch now.
   const paymentActionInFlight = useRef(false);
   const walletRefreshGeneration = useRef(0);
+  /** Cancels on-screen WeChat settle UI only — background follow keeps running. */
+  const wechatFollowGeneration = useRef(0);
+  const wechatPaidRef = useRef(false);
+  const scanOrderRef = useRef<string | null>(null);
 
   const refreshWallets = useCallback(async () => {
     if (!isCurrentSession()) return;
@@ -491,41 +494,68 @@ function PaywallSession() {
   }, [isCurrentSession]);
 
   // Closing the QR must not drop a payment that settles a moment later.
-  // Nest reconciles WeChat on each order read, so keep reading briefly.
-  const followWechatOrder = useCallback(
-    (orderId: string) => {
-      const generation = ++walletRefreshGeneration.current;
+  // Nest reconciles WeChat on each order read. Follow continues off-screen;
+  // Alert / CTA takeover only if this paywall session is still mounted.
+  const settleWechatAfterDismiss = useCallback(
+    (orderId: string, alreadyPaid: boolean) => {
       void (async () => {
-        for (let attempt = 0; attempt < 8; attempt += 1) {
-          if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
+        const followGen = ++wechatFollowGeneration.current;
+
+        if (alreadyPaid) {
+          if (!isCurrentSession()) return;
+          paymentActionInFlight.current = true;
+          setBusy(true);
+          setConfirming(true);
           try {
-            const order = await getBillingOrder(orderId);
-            if (isOrderFulfilled(order.status) || isOrderDead(order.status)) break;
-          } catch {
-            // Transient — try again.
+            await refreshWallets();
+          } finally {
+            if (wechatFollowGeneration.current === followGen) {
+              paymentActionInFlight.current = false;
+              if (isCurrentSession()) {
+                setConfirming(false);
+                setBusy(false);
+              }
+            }
           }
-          await new Promise((resolve) => setTimeout(resolve, 2500));
+          return;
         }
-        if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
+
+        const result = await followWechatOrderUntilSettled(orderId);
+        if (result !== "fulfilled") return;
+        if (!isCurrentSession() || wechatFollowGeneration.current !== followGen) return;
+
+        paymentActionInFlight.current = true;
+        setBusy(true);
+        setConfirming(true);
         try {
-          const [compute, community] = await Promise.all([
-            fetchComputeWalletBalance(),
-            fetchCommunityPointBalance(),
-          ]);
-          if (!isCurrentSession() || walletRefreshGeneration.current !== generation) return;
-          setComputeBalance(compute);
-          setCommunityBalance(community);
-        } catch {
-          // The row refreshes again the next time this screen opens.
+          await refreshWallets();
+          if (!isCurrentSession() || wechatFollowGeneration.current !== followGen) return;
+          Alert.alert(t("paywall.purchaseOkTitle"), t("paywall.wechat.success"));
+        } finally {
+          if (wechatFollowGeneration.current === followGen) {
+            paymentActionInFlight.current = false;
+            if (isCurrentSession()) {
+              setConfirming(false);
+              setBusy(false);
+            }
+          }
         }
       })();
     },
-    [isCurrentSession]
+    [isCurrentSession, refreshWallets, t]
   );
+
+  useEffect(() => {
+    scanOrderRef.current = scan?.orderId ?? null;
+  }, [scan]);
 
   useEffect(
     () => () => {
       walletRefreshGeneration.current += 1;
+      wechatFollowGeneration.current += 1;
+      // Leaving with the QR still open (or mid-settle): keep reconciling off-screen.
+      const orderId = scanOrderRef.current;
+      if (orderId) void followWechatOrderUntilSettled(orderId);
     },
     []
   );
@@ -536,8 +566,10 @@ function PaywallSession() {
     setBusy(true);
     try {
       const result = await purchaseProduct(product);
-      if (!isCurrentSession()) return;
       if (result.wechatScan) {
+        // QR UI only makes sense on this screen.
+        if (!isCurrentSession()) return;
+        wechatPaidRef.current = false;
         setScan({
           orderId: result.wechatScan.orderId,
           codeUrl: result.wechatScan.codeUrl,
@@ -547,10 +579,13 @@ function PaywallSession() {
       }
       const storeIap = channel === "apple_iap" || channel === "google_play_iap";
       if (storeIap) {
-        // StoreKit / Play already show a completion sheet. Mock uses the same
-        // paying → confirming button states so the spinner is visible on device.
+        // Store already charged. Sync must finish even if the user left —
+        // Java only grants points after /user/pay/rc/sync (no webhook).
+        // Spinner +「积分到账中」covers sync + wallet refresh (post-StoreKit fulfillment).
         if (isCurrentSession()) setConfirming(true);
-        if (result.mocked && process.env.VITEST !== "true") {
+        if (!result.mocked) {
+          await syncRevenueCatPurchases();
+        } else if (isCurrentSession() && process.env.VITEST !== "true") {
           await new Promise((resolve) => setTimeout(resolve, 1_400));
         }
         if (!isCurrentSession()) return;
@@ -558,6 +593,7 @@ function PaywallSession() {
         if (!isCurrentSession()) return;
         Alert.alert(t("paywall.purchaseOkTitle"), t("paywall.purchaseOkSuccess"));
       } else {
+        if (!isCurrentSession()) return;
         if (!result.mocked) {
           Alert.alert(
             t("paywall.purchaseOkTitle"),
@@ -889,10 +925,13 @@ function PaywallSession() {
           amountLabel={scan.amountLabel}
           onClose={() => {
             const orderId = scan.orderId;
+            const alreadyPaid = wechatPaidRef.current;
+            wechatPaidRef.current = false;
             setScan(null);
-            followWechatOrder(orderId);
+            settleWechatAfterDismiss(orderId, alreadyPaid);
           }}
           onPaid={() => {
+            wechatPaidRef.current = true;
             void refreshWallets();
           }}
         />
