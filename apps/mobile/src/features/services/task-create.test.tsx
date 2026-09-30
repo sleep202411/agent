@@ -12,6 +12,7 @@ const h = vi.hoisted(() => ({
   planning: vi.fn(),
   templates: vi.fn(),
   generation: 1,
+  active: true,
 }));
 vi.mock("./task-creation-defaults", () => ({ fetchTaskCreationDefaults: h.defaults }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), patch: vi.fn() } }));
@@ -31,6 +32,7 @@ vi.mock("./task-create-api", async (original) => ({
   createTask: h.update,
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
 vi.mock("@/i18n", () => ({ useTranslations: () => (s: string) => s }));
 vi.mock("@/components/themed-text", () => ({
@@ -90,6 +92,7 @@ const type = (n: number, text: string) => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
+  h.active = true;
   h.defaults.mockResolvedValue({ cycle: null, workflow: null });
   h.fields.mockResolvedValue([]);
   h.templates.mockResolvedValue([
@@ -621,4 +624,23 @@ it("lets the creator clear default cycle and choose server default workflow", as
   await act(async () => button("taskCreate.submit")!.click());
   expect(h.update.mock.calls[0]?.[1]).toMatchObject({ cycleId: null });
   expect(h.update.mock.calls[0]?.[1].workflowStateId).toBeUndefined();
+});
+
+it("preserves unfinished title and brief across backgrounding without submitting", async () => {
+  await render();
+  await act(async () => {
+    type(0, "Unstaged title");
+    type(1, "Unstaged brief");
+  });
+  h.active = false;
+  await render();
+  expect(host.textContent).toBe("");
+  h.active = true;
+  await render();
+  expect(host.querySelectorAll("input")[0]!.value).toBe("Unstaged title");
+  expect(host.querySelectorAll("input")[1]!.value).toBe("Unstaged brief");
+  expect(h.update).not.toHaveBeenCalled();
+  h.generation++;
+  await render();
+  expect(host.textContent).toBe("");
 });

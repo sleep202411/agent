@@ -23,12 +23,12 @@ type Props = {
   onCreated: (id: string) => void;
 };
 export function TaskWorkbench(props: Props) {
-  const active = useScreenActive();
-  return active && props.generation === getAuthGeneration() ? (
+  return props.generation === getAuthGeneration() ? (
     <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
 function Session(props: Props) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme();
   const [session] = useState(() =>
@@ -47,8 +47,11 @@ function Session(props: Props) {
     "assets" | "progress" | "episodes" | "template" | "canvas"
   >();
   const alive = useRef(false);
+  const foreground = useRef(0);
   useEffect(() => {
-    alive.current = true;
+    foreground.current += 1;
+    alive.current = active;
+    if (!active) return;
     const c = new AbortController();
     void fetchTaskCommentAccess(props.crewId, props.userId, c.signal).then(
       (access) => {
@@ -64,7 +67,7 @@ function Session(props: Props) {
       alive.current = false;
       c.abort();
     };
-  }, [props.crewId, props.userId, props.generation]);
+  }, [props.crewId, props.userId, props.generation, active]);
   // Keep the draft session mounted while inspecting source assets or episodes.
   // Each destination checks its own read/write permissions independently.
   if (section) {
@@ -106,6 +109,7 @@ function Session(props: Props) {
         }}
       />
     );
+  if (!active) return null;
   const staged = snapshot.drafts
     .filter((row) => row.state === "staged")
     .reduce(
@@ -287,7 +291,10 @@ function Session(props: Props) {
             primary
             label={t("taskWorkbench.createAll")}
             disabled={snapshot.busy || !staged || uncertain}
-            onPress={() => void session.createAll(() => alive.current)}
+            onPress={() => {
+              const startedIn = foreground.current;
+              void session.createAll(() => alive.current && foreground.current === startedIn);
+            }}
           />
           {snapshot.busy && <ActivityIndicator />}
         </>

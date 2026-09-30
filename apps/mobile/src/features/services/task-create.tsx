@@ -10,6 +10,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { appEnv } from "@/config";
 import { ThemedText } from "@/components/themed-text";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { fetchTaskCommentAccess } from "./task-comment-api";
@@ -37,6 +38,7 @@ type Props = {
   onClose: () => void;
 };
 export function TaskCreate(props: Props) {
+  if (props.generation !== getAuthGeneration()) return null;
   return (
     <Access
       key={`${props.crewId}:${props.userId}:${props.generation}:${props.viewId ?? ""}:${props.initialWorkflow?.id ?? ""}:${props.initialParent?.id ?? ""}`}
@@ -45,6 +47,7 @@ export function TaskCreate(props: Props) {
   );
 }
 function Access(props: Props) {
+  const active = useScreenActive();
   const t = useTranslations();
   const [defaults, setDefaults] = useState<TaskCreationDefaults>();
   const [allowed, setAllowed] = useState<boolean>(),
@@ -74,6 +77,7 @@ function Access(props: Props) {
     return () => controller.abort();
   }, [props.crewId, props.userId, props.generation, props.viewId, props.initialWorkflow?.id]);
   if (allowed && defaults) return <Editor {...props} defaults={defaults} />;
+  if (!active) return null;
   return (
     <View style={{ padding: 16, gap: 12 }}>
       {allowed === undefined && !error && <ActivityIndicator />}
@@ -97,6 +101,7 @@ function Editor({
   onStage,
   onClose,
 }: Props & { defaults: TaskCreationDefaults }) {
+  const active = useScreenActive();
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
@@ -150,6 +155,7 @@ function Editor({
   } catch {
     /* Editable validation state. */
   }
+  if (!active) return null;
   return (
     <ScrollView
       keyboardShouldPersistTaps="handled"
@@ -333,7 +339,8 @@ function Editor({
         disabled={!input || locked}
         style={{ padding: 12 }}
         onPress={() => {
-          if (!input || attemptedRef.current || generation !== getAuthGeneration()) return;
+          if (!active || !input || attemptedRef.current || generation !== getAuthGeneration())
+            return;
           const data = input;
           if (onStage) {
             attemptedRef.current = true;

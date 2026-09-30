@@ -304,3 +304,69 @@ it("stops queued writes when the screen becomes inactive and retains the complet
   expect(host.textContent).toContain("taskWorkbench.created");
   expect(button("taskWorkbench.createAll").disabled).toBe(false);
 });
+
+it("keeps the open creation form across background/foreground without staging it", async () => {
+  await render();
+  await click("taskCreate.title");
+  expect(button("stage form")).toBeDefined();
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  expect(button("stage form")).toBeDefined();
+  expect(h.create).not.toHaveBeenCalled();
+  expect(h.access).toHaveBeenCalledTimes(2);
+});
+it("closes the preserved editor when management permission was revoked in background", async () => {
+  await render();
+  await click("taskCreate.title");
+  h.active = false;
+  await render();
+  h.access.mockResolvedValue({ canManage: false });
+  h.active = true;
+  await render();
+  expect(button("stage form")).toBeUndefined();
+  expect(host.textContent).toContain("taskCreate.managerOnly");
+});
+it("stops a batch after its in-flight receipt when backgrounded", async () => {
+  let resolve!: (value: unknown) => void;
+  h.create.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  await render();
+  await stage();
+  await stage();
+  await click("taskWorkbench.createAll");
+  h.active = false;
+  await render();
+  await act(async () => resolve({ id: "created" }));
+  h.active = true;
+  await render();
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("taskWorkbench.created");
+  expect(button("taskWorkbench.createAll").disabled).toBe(false);
+});
+
+it("does not resume a paused batch just because the screen foregrounded before its receipt", async () => {
+  let resolve!: (value: unknown) => void;
+  h.create.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  await render();
+  await stage();
+  await stage();
+  await click("taskWorkbench.createAll");
+  h.active = false;
+  await render();
+  h.active = true;
+  await render();
+  await act(async () => resolve({ id: "created" }));
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(button("taskWorkbench.createAll").disabled).toBe(false);
+});
