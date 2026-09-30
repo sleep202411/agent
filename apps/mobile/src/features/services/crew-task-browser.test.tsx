@@ -8,6 +8,11 @@ const h = vi.hoisted(() => ({
   detail: vi.fn(),
   workbench: vi.fn(),
 }));
+vi.mock("./project-activity", () => ({
+  ProjectActivity: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close activity</button>
+  ),
+}));
 vi.mock("./project-document", () => ({
   ProjectDocument: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close document</button>
@@ -313,5 +318,11 @@ it("opens project overview and returns to the existing task browser", async () =
   await act(async () => button("projectDocument.title").click());
   expect(button("close document")).toBeDefined();
   await act(async () => button("close document").click());
+  expect(button("pick")).toBeDefined();
+});
+it("opens project activity and returns to the existing task browser", async () => {
+  await act(async () => button("projectActivity.title").click());
+  expect(button("close activity")).toBeDefined();
+  await act(async () => button("close activity").click());
   expect(button("pick")).toBeDefined();
 });
