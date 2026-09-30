@@ -17,7 +17,7 @@ const workspaceSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
   isDefault: z.boolean(),
-  status: z.enum(["active", "archived"]).optional(),
+  status: z.enum(["active", "suspended", "archived"]).optional(),
   role: z.enum(["owner", "admin", "billing", "editor", "viewer"]).optional(),
   accessScope: z.enum(["workspace", "project_only"]).optional(),
   crewRole: z.enum(["viewer", "editor"]).optional(),
@@ -25,7 +25,7 @@ const workspaceSchema = z.object({
 export type StudioWorkspace = z.infer<typeof workspaceSchema>;
 export function canCreateStudioProject(workspace: StudioWorkspace) {
   return (
-    workspace.status !== "archived" &&
+    (workspace.status === undefined || workspace.status === "active") &&
     (workspace.crewRole === "editor" ||
       (workspace.accessScope === "workspace" &&
         ["owner", "admin", "editor"].includes(workspace.role ?? "")))
@@ -46,7 +46,7 @@ export async function loadAgentWorkspaces(signal?: AbortSignal): Promise<StudioW
   requireCurrent(generation, signal);
   if (new Set(result.workspaces.map((row) => row.id)).size !== result.workspaces.length)
     throw new Error("Duplicate Studio workspace entries.");
-  return result.workspaces.filter((row) => row.status !== "archived");
+  return result.workspaces.filter((row) => row.status === undefined || row.status === "active");
 }
 
 /** Minimal StoryProject summary for Create / Agent OS (list + workbench). */
@@ -63,6 +63,7 @@ export type StoryProjectProductionSummary = {
 };
 
 export type StoryProjectSummary = {
+  capabilities?: StoryCapability[];
   id: string;
   workspaceId: string;
   title: string;
@@ -207,6 +208,19 @@ export async function resolveDefaultChapterId(
 const projectPageSchema = z.object({
   items: z.array(
     z.object({
+      capabilities: z
+        .array(
+          z.enum([
+            "story.read",
+            "story.edit",
+            "story.generate",
+            "story.review",
+            "story.build",
+            "story.release",
+            "story.admin",
+          ])
+        )
+        .optional(),
       id: z.string().uuid(),
       workspaceId: z.string().uuid(),
       title: z.string(),

@@ -30,6 +30,8 @@ import {
   type CreateStoryProjectValues,
   type StoryProjectSummary,
 } from "@/features/agent";
+import { StudioInvites } from "@/features/agent/studio-invites";
+import type { StudioInviteScope } from "@/features/agent/api/studio-invites-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
@@ -54,6 +56,7 @@ function AgentHubSession({ generation }: { generation: number }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { requireAuth, isAuthenticated } = useAuthGate();
+  const [inviteScope, setInviteScope] = useState<StudioInviteScope>();
   const [projects, setProjects] = useState<StoryProjectSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -174,6 +177,15 @@ function AgentHubSession({ generation }: { generation: number }) {
     [selectedWorkspace, generation, router, t]
   );
 
+  if (inviteScope)
+    return (
+      <StudioInvites
+        scope={inviteScope}
+        generation={generation}
+        onClose={() => setInviteScope(undefined)}
+      />
+    );
+
   const topPad = insets.top + Spacing.seven;
   const sidePad = {
     paddingLeft: Math.max(insets.left, Spacing.four),
@@ -245,6 +257,22 @@ function AgentHubSession({ generation }: { generation: number }) {
           </View>
         )}
 
+        {selectedWorkspace?.accessScope === "workspace" &&
+          ["owner", "admin"].includes(selectedWorkspace.role ?? "") && (
+            <Pressable
+              disabled={creating || loading}
+              onPress={() =>
+                setInviteScope({
+                  kind: "workspace",
+                  id: selectedWorkspace.id,
+                  name: selectedWorkspace.name,
+                })
+              }
+              style={[styles.banner, { borderColor: theme.textSecondary }]}
+            >
+              <ThemedText type="small">{t("studioInvites.title")}</ThemedText>
+            </Pressable>
+          )}
         {!isAuthenticated ? (
           <Pressable
             onPress={() => requireAuth({ onAuthenticated: () => void loadProjects() })}
@@ -315,6 +343,20 @@ function AgentHubSession({ generation }: { generation: number }) {
                           project={project}
                           onPress={() => openThread(project.id, project.title)}
                         />
+                        {project.capabilities?.includes("story.admin") && (
+                          <Pressable
+                            onPress={() =>
+                              setInviteScope({
+                                kind: "story-project",
+                                id: project.id,
+                                name: project.title,
+                              })
+                            }
+                            style={{ padding: Spacing.two }}
+                          >
+                            <ThemedText type="small">{t("studioInvites.title")}</ThemedText>
+                          </Pressable>
+                        )}
                       </View>
                     );
                   })}

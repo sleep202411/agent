@@ -154,3 +154,19 @@ it("does not create after an account change during permission preflight", async 
   );
   expect(h.post).not.toHaveBeenCalled();
 });
+it("filters suspended workspaces without failing the rest of the list", async () => {
+  h.get.mockResolvedValue({
+    workspaces: [workspace, { ...workspace, id: project(9).id, status: "suspended" }],
+  });
+  expect(await loadAgentWorkspaces()).toEqual([workspace]);
+  expect(canCreateStudioProject({ ...workspace, status: "suspended" })).toBe(false);
+});
+it("retains story administration capability for the invitation entry", async () => {
+  h.get.mockResolvedValue({
+    items: [{ ...project(1), capabilities: ["story.read", "story.admin"] }],
+    nextCursor: null,
+  });
+  expect((await loadAgentProjects(undefined, workspaceId)).projects[0].capabilities).toContain(
+    "story.admin"
+  );
+});

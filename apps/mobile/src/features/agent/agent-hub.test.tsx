@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
 }));
+vi.mock("@/features/agent/studio-invites", () => ({
+  StudioInvites: () => <span>Invite Manager</span>,
+}));
 vi.mock("expo-router", () => ({
   useRouter: () => ({ push: h.push }),
   useFocusEffect: (fn: () => void | (() => void)) => {
@@ -191,4 +194,17 @@ it("drops a revoked workspace selection on refresh", async () => {
   await act(async () => host.querySelector("button")!.click());
   expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "workspace");
   expect([...host.querySelectorAll("button")].some((b) => b.textContent === "Crew")).toBe(false);
+});
+it("opens invitation management from an authorized project", async () => {
+  h.list.mockResolvedValue({
+    workspaceId: "workspace",
+    projects: [{ id: "project", title: "Story", capabilities: ["story.admin"] }],
+  });
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "studioInvites.title")!
+      .click()
+  );
+  expect(host.textContent).toContain("Invite Manager");
 });
