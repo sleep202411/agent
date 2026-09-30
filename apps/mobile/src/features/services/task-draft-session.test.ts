@@ -4,7 +4,17 @@ import {
   getTaskDraftSession,
   type TaskDraftInput,
 } from "./task-draft-session";
-const h = vi.hoisted(() => ({ generation: 1, access: vi.fn(), create: vi.fn(), apply: vi.fn() }));
+const h = vi.hoisted(() => ({
+  generation: 1,
+  access: vi.fn(),
+  create: vi.fn(),
+  apply: vi.fn(),
+  canvasApply: vi.fn(),
+}));
+vi.mock("./canvas-task-import-api", async (original) => ({
+  ...(await original<typeof import("./canvas-task-import-api")>()),
+  applyCanvasTaskImport: h.canvasApply,
+}));
 vi.mock("./episode-task-template-api", async (original) => ({
   ...(await original<typeof import("./episode-task-template-api")>()),
   applyEpisodeTaskPlan: h.apply,
@@ -244,4 +254,36 @@ it("does not post a staged episode after the account changes during authorizatio
   s.stageEpisode(episodeId, "Episode 1", plan);
   await s.createAll(() => true);
   expect(h.apply).not.toHaveBeenCalled();
+});
+
+const canvasPreview = {
+  crewId: "crew",
+  projectId: episodeId,
+  title: "Canvas",
+  sourceRevision: 3,
+  sourceHash: "a".repeat(64),
+  plotTree: { nodes: [{ id: "opening", type: "scene", content: { title: "Opening" } }] },
+};
+it("stages one immutable canvas command and replays it after an uncertain reply", async () => {
+  h.canvasApply
+    .mockRejectedValueOnce(new Error("Response lost"))
+    .mockResolvedValue({ taskIds: ["task-a"], replayed: true });
+  const s = session();
+  const data = structuredClone(canvasPreview);
+  expect(s.stageCanvas(data)).toBe(true);
+  data.sourceRevision = 99;
+  expect(s.stageCanvas(canvasPreview)).toBe(false);
+  expect(h.canvasApply).not.toHaveBeenCalled();
+  s.stage(input, review);
+  await s.createAll(() => true);
+  expect(h.create).not.toHaveBeenCalled();
+  await s.createAll(() => true);
+  expect(h.canvasApply.mock.calls[0]).toEqual(["crew", canvasPreview, h.generation]);
+  expect(h.canvasApply.mock.calls[1]).toEqual(h.canvasApply.mock.calls[0]);
+  await s.createAll(() => true);
+  expect(h.canvasApply).toHaveBeenCalledTimes(2);
+  expect(s.getSnapshot().drafts[0]).toMatchObject({ state: "created", taskIds: ["task-a"] });
+});
+it("does not stage another crew's canvas", () => {
+  expect(() => session().stageCanvas({ ...canvasPreview, crewId: "other" })).toThrow("scope");
 });

@@ -11,6 +11,8 @@ import { getTaskDraftSession } from "./task-draft-session";
 import { AssetOrganization } from "../crew-assets/organization";
 import { AssetTaskProgress } from "./asset-task-progress";
 import { EpisodeTaskTemplate } from "./episode-task-template";
+import { CanvasTaskImport } from "./canvas-task-import";
+import { canvasScenes } from "./canvas-task-import-api";
 import { EpisodeManagement } from "./episode-management";
 type Props = {
   viewId?: string;
@@ -41,7 +43,9 @@ function Session(props: Props) {
     [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>(),
     [remove, setRemove] = useState<number>();
-  const [section, setSection] = useState<"assets" | "progress" | "episodes" | "template">();
+  const [section, setSection] = useState<
+    "assets" | "progress" | "episodes" | "template" | "canvas"
+  >();
   const alive = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -67,6 +71,16 @@ function Session(props: Props) {
     const childProps = { ...props, onClose: () => setSection(undefined) };
     if (section === "assets") return <AssetOrganization {...childProps} />;
     if (section === "progress") return <AssetTaskProgress {...childProps} />;
+    if (section === "canvas")
+      return (
+        <CanvasTaskImport
+          {...childProps}
+          onStage={(preview) => {
+            if (!session.stageCanvas(preview)) throw new Error(t("canvasImport.queued"));
+            setSection(undefined);
+          }}
+        />
+      );
     if (section === "template")
       return (
         <EpisodeTaskTemplate
@@ -94,7 +108,16 @@ function Session(props: Props) {
     );
   const staged = snapshot.drafts
     .filter((row) => row.state === "staged")
-    .reduce((count, row) => count + (row.kind === "episode" ? row.plan.items.length : 1), 0);
+    .reduce(
+      (count, row) =>
+        count +
+        (row.kind === "episode"
+          ? row.plan.items.length
+          : row.kind === "canvas"
+            ? canvasScenes(row.preview).length
+            : 1),
+      0
+    );
   const uncertain = snapshot.drafts.some((row) => row.state === "uncertain");
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -135,6 +158,11 @@ function Session(props: Props) {
             label={t("episodeTaskTemplate.title")}
             disabled={snapshot.busy}
             onPress={() => setSection("template")}
+          />
+          <Button
+            label={t("canvasImport.title")}
+            disabled={snapshot.busy}
+            onPress={() => setSection("canvas")}
           />
           <ThemedText>{t("taskWorkbench.count").replace("{count}", String(staged))}</ThemedText>
           {snapshot.drafts.map((row) => (
@@ -190,6 +218,13 @@ function Session(props: Props) {
                     <ThemedText key={`field:${i}`}>{value}</ThemedText>
                   ))}
                 </>
+              ) : row.kind === "canvas" ? (
+                <>
+                  <ThemedText type="smallBold">{row.preview.title}</ThemedText>
+                  {canvasScenes(row.preview).map((scene) => (
+                    <ThemedText key={scene.id}>{scene.content.title || scene.id}</ThemedText>
+                  ))}
+                </>
               ) : (
                 <>
                   <ThemedText type="smallBold">{row.title}</ThemedText>
@@ -209,7 +244,7 @@ function Session(props: Props) {
                 />
               ))}
               {row.error && <ThemedText accessibilityRole="alert">{row.error}</ThemedText>}
-              {row.kind === "episode" && row.error && (
+              {row.kind !== "task" && row.error && (
                 <ThemedText>{t("taskWorkbench.episodeRetry")}</ThemedText>
               )}
               {row.taskId && (

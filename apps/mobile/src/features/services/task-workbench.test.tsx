@@ -11,6 +11,7 @@ const h = vi.hoisted(() => ({
   close: vi.fn(),
   open: vi.fn(),
 }));
+vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));

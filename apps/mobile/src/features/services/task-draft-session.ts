@@ -7,6 +7,12 @@ import {
   type EpisodeTaskPlan,
 } from "./episode-task-template-api";
 import { z } from "zod";
+import {
+  applyCanvasTaskImport,
+  canvasTaskPreview,
+  canvasScenes,
+  type CanvasTaskPreview,
+} from "./canvas-task-import-api";
 export type TaskDraftInput = ReturnType<typeof taskCreateInput.parse>;
 export type TaskDraftReview = { context: string[]; assignees: string[]; customFields: string[] };
 type DraftState = {
@@ -20,6 +26,7 @@ export type TaskDraft = DraftState &
   (
     | { kind: "task"; input: TaskDraftInput; review: TaskDraftReview }
     | { kind: "episode"; episodeId: string; title: string; plan: EpisodeTaskPlan }
+    | { kind: "canvas"; preview: CanvasTaskPreview }
   );
 type Snapshot = { drafts: TaskDraft[]; busy: boolean; error?: string };
 /** Memory-only working drafts. Account generations never share a queue. */
@@ -90,6 +97,28 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
       });
       return true;
     },
+    stageCanvas(preview: CanvasTaskPreview) {
+      if (!current() || snapshot.busy) return false;
+      const parsed = canvasTaskPreview.parse(preview);
+      if (parsed.crewId !== crewId) throw new Error("Canvas import scope mismatch");
+      const count = canvasScenes(parsed).length;
+      if (!count || count > 200) throw new Error("Import requires between 1 and 200 scenes.");
+      if (
+        snapshot.drafts.some(
+          (row) => row.kind === "canvas" && row.preview.projectId === parsed.projectId
+        )
+      )
+        return false;
+      update({
+        ...snapshot,
+        error: undefined,
+        drafts: [
+          ...snapshot.drafts,
+          { id: ++sequence, kind: "canvas", preview: parsed, state: "staged" },
+        ],
+      });
+      return true;
+    },
     remove(id: number) {
       if (!current() || snapshot.busy) return;
       update({ ...snapshot, drafts: snapshot.drafts.filter((row) => row.id !== id) });
@@ -113,6 +142,12 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           if (!access.canManage) throw new Error("Task management permission is required.");
           change(row.id, { state: "creating" });
           try {
+            if (row.kind === "canvas") {
+              const result = await applyCanvasTaskImport(crewId, row.preview, generation);
+              if (!current()) break;
+              change(row.id, { state: "created", taskIds: result.taskIds, error: undefined });
+              continue;
+            }
             if (row.kind === "episode") {
               const result = await applyEpisodeTaskPlan(
                 crewId,
@@ -131,7 +166,7 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           } catch (cause) {
             if (current())
               change(row.id, {
-                state: row.kind === "episode" ? "staged" : "uncertain",
+                state: row.kind !== "task" ? "staged" : "uncertain",
                 error: cause instanceof Error ? cause.message : String(cause),
               });
             break; // Episode commands are replayable; single-task writes are not.
