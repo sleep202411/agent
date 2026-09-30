@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewMembers } from "./crew-members";
+vi.mock("./crew-ownership-transfer", () => ({
+  CrewOwnershipTransfer: ({ onSuccess }: { onSuccess: () => void }) => (
+    <button onClick={onSuccess}>complete transfer</button>
+  ),
+}));
 vi.mock("./crew-member-access", () => ({
   CrewMemberAccess: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close access</button>
@@ -83,7 +88,15 @@ const button = (text: string) =>
 const click = (text: string) => act(async () => button(text)!.click());
 const render = () =>
   act(async () =>
-    root.render(<CrewMembers crewId="crew" userId="1" generation={1} onClose={h.close} />)
+    root.render(
+      <CrewMembers
+        crewId="crew"
+        userId="1"
+        generation={1}
+        onClose={h.close}
+        onTransferComplete={h.close}
+      />
+    )
   );
 beforeEach(() => {
   vi.resetAllMocks();
@@ -224,4 +237,27 @@ it("does not offer access editing with only member management", async () => {
   await render();
   expect(button("memberAccess.title")).toBeUndefined();
   expect(button("memberPositions.title")).toBeDefined();
+});
+
+it("routes confirmed transfer out of the workspace", async () => {
+  h.read.mockResolvedValue({
+    items: [{ ...member, userId: "other", isOwner: false }],
+    nextCursor: null,
+    total: 1,
+    canTransferOwnership: true,
+  });
+  await render();
+  await click("crewTransfer.title");
+  await click("complete transfer");
+  expect(h.close).toHaveBeenCalledTimes(1);
+});
+it("hides ownership transfer from ordinary managers", async () => {
+  h.read.mockResolvedValue({
+    items: [{ ...member, userId: "other", isOwner: false }],
+    nextCursor: null,
+    total: 1,
+    canManageMembers: true,
+  });
+  await render();
+  expect(button("crewTransfer.title")).toBeUndefined();
 });

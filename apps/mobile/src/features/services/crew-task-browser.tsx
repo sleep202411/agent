@@ -56,6 +56,7 @@ export function CrewTaskBrowser({
         userId={userId}
         generation={generation}
         onClose={() => setShowMembers(false)}
+        onTransferComplete={onClose}
       />
     );
   if (managingEpisodes)

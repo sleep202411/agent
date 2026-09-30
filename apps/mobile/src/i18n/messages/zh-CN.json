@@ -2251,5 +2251,12 @@
   "memberAccess.review": "检查权限变更",
   "memberAccess.edit": "更改选择",
   "memberAccess.recheck": "请返回成员列表刷新后再操作。",
-  "memberAccess.ownerProtected": "剧组负责人已拥有全部权限。"
+  "memberAccess.ownerProtected": "剧组负责人已拥有全部权限。",
+  "crewTransfer.title": "转移剧组所有权",
+  "crewTransfer.help": "所选活跃成员将成为剧组负责人。你将失去负责人专属权限；若继续留在剧组，已有成员权限仍然生效。",
+  "crewTransfer.leave": "转移后退出剧组",
+  "crewTransfer.leaveHelp": "退出将移除你的剧组成员资格及相关协作和聊天权限，并释放已占用的招募职位。",
+  "crewTransfer.protected": "请选择另一位活跃成员作为新负责人。",
+  "crewTransfer.confirm": "确认转移所有权",
+  "crewTransfer.recheck": "转移可能已经完成。请返回并刷新后再操作。"
 }

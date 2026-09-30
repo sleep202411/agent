@@ -1,3 +1,4 @@
+import { CrewOwnershipTransfer } from "./crew-ownership-transfer";
 import { CrewMemberAccess } from "./crew-member-access";
 import { CrewMemberPositions } from "./crew-member-positions";
 import { CrewMemberRemoval } from "./crew-member-removal";
@@ -11,7 +12,13 @@ import { useTheme } from "@/hooks/use-theme";
 import { crewPositionLabel } from "@/lib/crew-position-label";
 import { useUserDisplays } from "./user-displays";
 import { fetchCrewMemberPage, type CrewMember } from "./crew-members-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+  onTransferComplete: () => void;
+};
 export function CrewMembers(props: Props) {
   const active = useScreenActive();
   return active && props.generation === getAuthGeneration() ? (
@@ -33,6 +40,8 @@ function Session(props: Props) {
 function Directory(props: Props & { refresh: () => void; title: string }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [transferring, setTransferring] = useState<CrewMember>();
+  const [canTransfer, setCanTransfer] = useState(false);
   const [editingAccess, setEditingAccess] = useState<CrewMember>();
   const [canManagePermissions, setCanManagePermissions] = useState(false);
   const [editingPositions, setEditingPositions] = useState<CrewMember>();
@@ -88,6 +97,7 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
         setTotal(page.total);
         setCanManage(page.canManageMembers);
         setCanManagePermissions(page.canManagePermissions);
+        setCanTransfer(page.canTransferOwnership);
         setMore(state.more);
       } catch (e) {
         if (!state.controller.signal.aborted && props.generation === getAuthGeneration())
@@ -129,6 +139,7 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
       setTotal(page.total);
       setCanManage(page.canManageMembers);
       setCanManagePermissions(page.canManagePermissions);
+      setCanTransfer(page.canTransferOwnership);
       setMore(state.more);
     } catch (e) {
       if (!state.controller.signal.aborted && props.generation === getAuthGeneration()) {
@@ -151,6 +162,16 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
     String(props.generation),
     items.map((m) => m.userId)
   );
+  if (transferring)
+    return (
+      <CrewOwnershipTransfer
+        {...props}
+        member={transferring}
+        name={displays?.get(transferring.userId)?.nickname || transferring.userId}
+        onClose={props.refresh}
+        onSuccess={props.onTransferComplete}
+      />
+    );
   if (editingAccess)
     return (
       <CrewMemberAccess
@@ -212,6 +233,15 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
               disabled={busy}
               onPress={() => {
                 if (props.generation === getAuthGeneration()) setEditingPositions(member);
+              }}
+            />
+          )}
+          {canTransfer && !member.isOwner && member.userId !== props.userId && (
+            <Button
+              label={t("crewTransfer.title")}
+              disabled={busy}
+              onPress={() => {
+                if (props.generation === getAuthGeneration()) setTransferring(member);
               }}
             />
           )}

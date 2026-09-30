@@ -23,8 +23,17 @@ vi.mock("@/components/authed-web-view", () => ({
   AuthedWebView: ({ path }: { path: string }) => <span>{path}</span>,
 }));
 vi.mock("./crew-members", () => ({
-  CrewMembers: ({ onClose }: { onClose: () => void }) => (
-    <button onClick={onClose}>close members</button>
+  CrewMembers: ({
+    onClose,
+    onTransferComplete,
+  }: {
+    onClose: () => void;
+    onTransferComplete: () => void;
+  }) => (
+    <>
+      <button onClick={onClose}>close members</button>
+      <button onClick={onTransferComplete}>transfer complete</button>
+    </>
   ),
 }));
 vi.mock("./episode-management", () => ({
@@ -265,4 +274,10 @@ it("opens native member directory and returns to tasks", async () => {
   expect(button("close members")).toBeTruthy();
   await act(async () => button("close members").click());
   expect(button("pick")).toBeTruthy();
+});
+
+it("exits the Crew workspace after ownership transfer", async () => {
+  await act(async () => button("crewMembers.title").click());
+  await act(async () => button("transfer complete").click());
+  expect(h.close).toHaveBeenCalledTimes(1);
 });

@@ -2251,5 +2251,12 @@
   "memberAccess.review": "Review Access Change",
   "memberAccess.edit": "Change Selection",
   "memberAccess.recheck": "Return to the directory and refresh before another attempt.",
-  "memberAccess.ownerProtected": "The Crew owner already has every permission."
+  "memberAccess.ownerProtected": "The Crew owner already has every permission.",
+  "crewTransfer.title": "Transfer Crew Ownership",
+  "crewTransfer.help": "The selected active member will become the Crew owner. You will lose owner-only access; your existing member policies still apply if you stay.",
+  "crewTransfer.leave": "Leave the Crew After Transfer",
+  "crewTransfer.leaveHelp": "Leaving removes your Crew membership and associated collaboration/chat access, and releases recruited positions.",
+  "crewTransfer.protected": "Choose another active member as the new owner.",
+  "crewTransfer.confirm": "Confirm Ownership Transfer",
+  "crewTransfer.recheck": "The transfer may have completed. Return and refresh before another attempt."
 }

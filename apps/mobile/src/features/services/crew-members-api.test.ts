@@ -26,7 +26,12 @@ beforeEach(() => {
   );
 });
 it("loads member-scoped pages", async () => {
-  expect(await read()).toEqual({ ...page, canManageMembers: false, canManagePermissions: false });
+  expect(await read()).toEqual({
+    ...page,
+    canManageMembers: false,
+    canManagePermissions: false,
+    canTransferOwnership: false,
+  });
   expect(api.get).toHaveBeenLastCalledWith(
     "/crews/crew/members",
     expect.objectContaining({ params: { limit: 50 } })
@@ -154,3 +159,10 @@ it.each(["members.manage", "members.permissions.manage"])(
     expect(result.canManagePermissions).toBe(permission === "members.permissions.manage");
   }
 );
+
+it("exposes transfer only for ownership.transfer", async () => {
+  vi.mocked(api.get)
+    .mockResolvedValueOnce({ userId: "1", permissions: ["members.view", "ownership.transfer"] })
+    .mockResolvedValueOnce(page);
+  expect((await read()).canTransferOwnership).toBe(true);
+});

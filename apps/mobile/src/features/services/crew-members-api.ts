@@ -67,6 +67,7 @@ export async function fetchCrewMemberPage(
   return {
     ...page,
     canManageMembers: access.permissions.includes("members.manage"),
+    canTransferOwnership: access.permissions.includes("ownership.transfer"),
     canManagePermissions: access.permissions.includes("members.permissions.manage"),
   };
 }
