@@ -11,6 +11,9 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
 }));
+vi.mock("@/features/agent/studio-members", () => ({
+  StudioMembers: () => <span>Studio Members</span>,
+}));
 vi.mock("@/features/agent/studio-invite-accept", () => ({
   StudioInviteAccept: () => <span>Accept Invite</span>,
 }));
@@ -212,4 +215,17 @@ it("opens invitation management from an authorized project", async () => {
       .click()
   );
   expect(host.textContent).toContain("Invite Manager");
+});
+it("opens native member management from readable story projects", async () => {
+  h.list.mockResolvedValue({
+    workspaceId: "workspace",
+    projects: [{ id: "story", title: "Story", capabilities: ["story.read"] }],
+  });
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "studioMembers.title")!
+      .click()
+  );
+  expect(host.textContent).toContain("Studio Members");
 });
