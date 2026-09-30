@@ -31,10 +31,10 @@ export const appTabItems = [
     name: "crews",
   },
   {
-    href: "/courses" as Href,
+    href: "/news" as Href,
     icon: "news",
-    labelKey: "tabs.courses",
-    name: "courses",
+    labelKey: "tabs.news",
+    name: "news",
   },
   {
     href: "/mine" as Href,

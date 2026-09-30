@@ -9,9 +9,12 @@ import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 
 import { getBillingOrder, isOrderDead, isOrderFulfilled } from "../lib/billing-api";
+import { MOCK_WECHAT_ORDER_PREFIX } from "../lib/purchase-types";
 
 type ScanStatus = "pending" | "paid" | "expired";
 const POLL_MS = 2500;
+/** How long the mock QR stays up before the paid state (screenshot-scan demo). */
+const MOCK_PAID_MS = 2_800;
 const QR_SIZE = 224;
 
 /**
@@ -42,6 +45,19 @@ export function WechatScanPay({
     if (status !== "pending") return;
     let alive = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+
+    if (orderId.startsWith(MOCK_WECHAT_ORDER_PREFIX)) {
+      timer = setTimeout(() => {
+        if (!alive) return;
+        setStatus("paid");
+        onPaidRef.current();
+      }, MOCK_PAID_MS);
+      return () => {
+        alive = false;
+        clearTimeout(timer);
+      };
+    }
+
     const tick = async () => {
       try {
         const order = await getBillingOrder(orderId);

@@ -36,7 +36,6 @@ interface Tile {
   subtitle?: string;
   badge?: string;
   href?: string;
-  editHref?: string;
   /** Tap feedback for tiles with no destination (e.g. unpublished IPs). */
   alert?: { title: string; message: string };
   /** Invisible spacer that pads a partial last row to keep the grid aligned. */
@@ -146,7 +145,6 @@ export default function MineScreen() {
         id: work.id,
         title: work.title,
         href: `/work/${encodeURIComponent(work.id)}`,
-        editHref: `/publish-work?workId=${encodeURIComponent(work.id)}`,
         coverUrl: work.coverUrl,
         badge:
           work.reviewStatus === 0
@@ -411,36 +409,6 @@ export default function MineScreen() {
               </View>
             </Pressable>
 
-            {tab === "works" && (
-              <Pressable
-                accessibilityRole="button"
-                style={{ padding: 16 }}
-                onPress={() => router.push(toHref("/publish-work"))}
-              >
-                <ThemedText type="smallBold">{t("publishWork.title")}</ThemedText>
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/orders"))}
-            >
-              <ThemedText type="smallBold">{t("orders.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/inbox"))}
-            >
-              <ThemedText type="smallBold">{t("inbox.title")}</ThemedText>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
-              onPress={() => router.push(toHref("/my-services"))}
-            >
-              <ThemedText type="smallBold">{t("myServices.title")}</ThemedText>
-            </Pressable>
             {/* Tab bar */}
             <View style={[styles.tabBar, { borderBottomColor: theme.border }]}>
               {TABS.map((item) => {
@@ -493,15 +461,6 @@ export default function MineScreen() {
               accessibilityRole={onPress ? "button" : undefined}
               disabled={!onPress}
               onPress={onPress}
-              onLongPress={item.editHref ? () => router.push(toHref(item.editHref!)) : undefined}
-              accessibilityHint={item.editHref ? t("publishWork.editHint") : undefined}
-              accessibilityActions={
-                item.editHref ? [{ name: "edit", label: t("publishWork.edit") }] : undefined
-              }
-              onAccessibilityAction={(event) => {
-                if (event.nativeEvent.actionName === "edit" && item.editHref)
-                  router.push(toHref(item.editHref));
-              }}
               style={styles.cell}
             >
               <View style={styles.tile}>

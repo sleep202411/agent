@@ -113,20 +113,26 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 const render = () => act(async () => root.render(<PaywallScreen />));
+const PAY_LABELS = new Set(["paywall.buyNow", "paywall.confirming"]);
+const payButton = () =>
+  [...host.querySelectorAll("button")].find((item) =>
+    PAY_LABELS.has(item.textContent?.replace(/\s+/g, "") ?? "")
+  ) ??
+  [...host.querySelectorAll("button")].find((item) =>
+    [...PAY_LABELS].some((label) => item.textContent?.includes(label))
+  )!;
 it("connects the buy button to checkout and disables it while a purchase is pending", async () => {
   await render();
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "paywall.buyNow"
-  )!;
+  const button = payButton();
+  expect(button.textContent).toContain("paywall.buyNow");
   await act(async () => button.click());
   expect(state.buy).toHaveBeenCalledTimes(1);
-  expect(button.disabled).toBe(true);
+  expect(payButton().disabled).toBe(true);
+  expect(payButton().textContent).toContain("paywall.buyNow");
 });
 it("dispatches only one purchase for two presses before React renders", async () => {
   await render();
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "paywall.buyNow"
-  )!;
+  const button = payButton();
   await act(async () => {
     button.click();
     button.click();
@@ -137,12 +143,10 @@ it("dispatches only one purchase for two presses before React renders", async ()
 it("allows a new purchase after the previous attempt fails", async () => {
   state.buy.mockRejectedValueOnce(new Error("Checkout unavailable"));
   await render();
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "paywall.buyNow"
-  )!;
+  const button = payButton();
   await act(async () => button.click());
   expect(state.alert).toHaveBeenCalledWith("paywall.purchaseFailed", "Checkout unavailable");
-  expect(button.disabled).toBe(false);
+  expect(payButton().disabled).toBe(false);
   await act(async () => {
     button.click();
     button.click();
@@ -164,9 +168,7 @@ it.each([false, true])(
         })
     );
     await render();
-    const button = [...host.querySelectorAll("button")].find(
-      (item) => item.textContent === "paywall.buyNow"
-    )!;
+    const button = payButton();
     await act(async () => button.click());
     state.generation += 1;
     // A response can arrive before React renders the replacement session.
@@ -180,13 +182,48 @@ it.each([false, true])(
 
 it("resets the busy purchase state for a replacement session", async () => {
   await render();
-  const buyButton = () =>
-    [...host.querySelectorAll("button")].find((item) => item.textContent === "paywall.buyNow")!;
-  await act(async () => buyButton().click());
-  expect(buyButton().disabled).toBe(true);
+  await act(async () => payButton().click());
+  expect(payButton().disabled).toBe(true);
+  expect(payButton().textContent).toContain("paywall.buyNow");
   state.generation += 1;
   await render();
-  expect(buyButton().disabled).toBe(false);
+  expect(payButton().disabled).toBe(false);
+  expect(payButton().textContent).toContain("paywall.buyNow");
+});
+
+it("shows purchase success after confirming a simulated store purchase", async () => {
+  state.buy.mockResolvedValueOnce({ mocked: true, productId: "points-sku" });
+  await render();
+  await act(async () => payButton().click());
+  expect(state.alert).toHaveBeenCalledWith("paywall.purchaseOkTitle", "paywall.purchaseOkSuccess");
+  expect(state.alert).not.toHaveBeenCalledWith("paywall.purchaseOkTitle", "paywall.purchaseOkMock");
+  expect(payButton().textContent).toContain("paywall.buyNow");
+});
+
+it("shows purchase success after confirming a live store purchase", async () => {
+  state.buy.mockResolvedValueOnce({ mocked: false, productId: "points-sku" });
+  await render();
+  await act(async () => payButton().click());
+  expect(state.alert).toHaveBeenCalledWith("paywall.purchaseOkTitle", "paywall.purchaseOkSuccess");
+  expect(payButton().disabled).toBe(false);
+  expect(payButton().textContent).toContain("paywall.buyNow");
+});
+
+it("shows confirming on the pay button while the wallet refresh is in flight", async () => {
+  let finishRefresh!: (balance: string) => void;
+  state.buy.mockResolvedValueOnce({ mocked: false, productId: "points-sku" });
+  await render();
+  state.balance.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        finishRefresh = done;
+      })
+  );
+  await act(async () => payButton().click());
+  expect(payButton().textContent).toContain("paywall.confirming");
+  expect(payButton().disabled).toBe(true);
+  await act(async () => finishRefresh("12"));
+  expect(payButton().textContent).toContain("paywall.buyNow");
 });
 
 it("does not show a late purchase alert after leaving the paywall", async () => {
@@ -198,10 +235,7 @@ it("does not show a late purchase alert after leaving the paywall", async () => 
       })
   );
   await render();
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "paywall.buyNow"
-  )!;
-  await act(async () => button.click());
+  await act(async () => payButton().click());
   await act(async () => root.render(null));
   await act(async () => resolve({ mocked: false, productId: "old-product" }));
   expect(state.alert).not.toHaveBeenCalled();
@@ -216,10 +250,7 @@ it("does not open a QR code from a purchase completed in an old session", async 
       })
   );
   await render();
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "paywall.buyNow"
-  )!;
-  await act(async () => button.click());
+  await act(async () => payButton().click());
   state.generation += 1;
   await act(async () =>
     resolve({ mocked: false, wechatScan: { orderId: "old-qr-order", codeUrl: "weixin://old" } })
@@ -233,10 +264,7 @@ it("removes the previous session's open QR code", async () => {
     wechatScan: { orderId: "old-qr-order", codeUrl: "weixin://old" },
   });
   await render();
-  const button = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent === "paywall.buyNow"
-  )!;
-  await act(async () => button.click());
+  await act(async () => payButton().click());
   expect(host.textContent).toContain("old-qr-order");
   state.generation += 1;
   await render();

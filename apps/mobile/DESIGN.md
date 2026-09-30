@@ -25,17 +25,16 @@ desktop page composition.
 ## App Structure
 
 - The mobile app is guest-first for discovery. Anonymous users can browse public
-  IP, creator, creator-service, crew, and course surfaces without hitting an
+  IP, creator, creator-service, crew, and news surfaces without hitting an
   authentication wall.
 - The tab shell has five primary destinations: **Home**, **Creators**,
-  **Crews**, **Courses**, and **Mine**. The labels are localized as 首页 / 创作者 /
-  剧组 / 课程 / 我的 for Simplified Chinese.
+  **Crews**, **News**, and **Mine**. The labels are localized as 首页 / 创作者 /
+  剧组 / 动态 / 我的 for Simplified Chinese.
 - The first tab is **Home**. It is an IP-first discovery surface: featured IP,
   recommendations, and a limited public IP preview. Do not re-expand Home into a
   mixed creator marketplace unless the product direction changes again.
 - Creator supply belongs under **Creators**. Crew recruitment belongs under
-  **Crews**. Courses provides published course browsing and native lesson playback. The standalone
-  News route remains available for existing links. Mine remains the personal/account
+  **Crews**. News stays a content feed. Mine remains the personal/account
   workspace.
 - Authenticated users enter a bottom-tab app shell. Tab pages should be compact
   app screens with native-style headers, lists, quick actions, and feed rows.

@@ -88,6 +88,26 @@ it.each(["canceled", "refunded"])("stops polling a %s backend order", async (sta
   expect(mocks.paid).not.toHaveBeenCalled();
 });
 
+it("auto-completes a mock WeChat scan order without Nest polling", async () => {
+  await act(async () =>
+    root.render(
+      <WechatScanPay
+        orderId="mock-wechat-demo"
+        codeUrl="weixin://wxpay/bizpayurl?pr=mock"
+        amountLabel="¥0.99"
+        onClose={() => {}}
+        onPaid={mocks.paid}
+      />
+    )
+  );
+  expect(host.textContent).toContain("QR");
+  expect(mocks.paid).not.toHaveBeenCalled();
+  await act(async () => vi.advanceTimersByTimeAsync(2800));
+  expect(mocks.paid).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("paywall.wechat.success");
+  expect(mocks.get).not.toHaveBeenCalled();
+});
+
 vi.mock("@tabler/icons-react-native/IconCircleCheck", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconRefresh", () => ({ default: () => null }));
 vi.mock("@tabler/icons-react-native/IconX", () => ({ default: () => null }));

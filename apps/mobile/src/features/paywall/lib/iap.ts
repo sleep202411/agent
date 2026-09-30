@@ -64,28 +64,12 @@ async function ensurePurchasesConfigured(
   return sdk;
 }
 
-/** Replace Nest list prices with the store price RevenueCat returns. */
-export async function withRevenueCatPrices(products: PaywallProduct[]): Promise<PaywallProduct[]> {
-  if (products.length === 0 || !hasPurchasesNative()) return products;
-  const apiKey = revenueCatApiKey("apple_iap");
-  if (!apiKey) return products;
-  const assertCurrentSession = capturePaymentSession();
-  const sdk = await ensurePurchasesConfigured(apiKey, assertCurrentSession);
-  assertCurrentSession();
-  const found = await sdk.default.getProducts(products.map((item) => item.storeProductId));
-  assertCurrentSession();
-  const priceById = new Map(found.map((item) => [item.identifier, item.priceString]));
-  return products.flatMap((item) => {
-    const displayPrice = priceById.get(item.storeProductId);
-    return displayPrice ? [{ ...item, displayPrice }] : [];
-  });
-}
-
 export async function purchaseIapProduct(product: PaywallProduct): Promise<PurchaseResult> {
   const channel = currentCheckoutChannel();
   assertPaymentReady(channel);
   if (mustUseMockPayments(channel) || Platform.OS === "web") {
-    await sleep(700);
+    // Long enough to see the pay-button spinner the same way StoreKit holds it.
+    await sleep(1_600);
     return { mocked: true, productId: product.storeProductId };
   }
 
