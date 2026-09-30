@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   invalid: false,
   active: true,
   access: vi.fn(),
+  authors: vi.fn(),
   page: vi.fn(),
   post: vi.fn(),
   close: vi.fn(),
@@ -17,6 +18,10 @@ vi.mock("./project-activity-api", async (original) => ({
   fetchProjectActivityAccess: h.access,
   fetchProjectActivityPage: h.page,
   postProjectActivity: h.post,
+}));
+vi.mock("./project-activity-display", async (original) => ({
+  ...(await original<typeof import("./project-activity-display")>()),
+  fetchActivityAuthors: h.authors,
 }));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
 vi.mock("@/config", () => ({ webBaseUrl: "https://fizzdragon.com" }));
@@ -112,6 +117,7 @@ beforeEach(() => {
   h.generation = 1;
   h.invalid = false;
   h.active = true;
+  h.authors.mockResolvedValue({});
   h.access.mockResolvedValue({ view: true, manage: false });
   h.page.mockResolvedValue({ items: [row], nextCursor: null });
   h.post.mockResolvedValue({
@@ -243,4 +249,28 @@ it("keeps the rich editor mounted while backgrounded to preserve unsaved typing"
   expect(button("save draft")).toBe(before);
   await click("save draft");
   expect(host.textContent).toContain("New comment");
+});
+
+it("shows resolved author names and audit details", async () => {
+  h.authors.mockResolvedValue({ "123": "Sara" });
+  h.page.mockResolvedValue({
+    items: [
+      {
+        ...row,
+        createdByUserId: "123",
+        kind: "resource_added",
+        payload: { resource: { title: "Script.pdf" } },
+      },
+    ],
+    nextCursor: null,
+  });
+  await render();
+  expect(host.textContent).toContain("Sara");
+  expect(host.textContent).toContain("Script.pdf");
+});
+it("keeps the activity readable when author lookup fails", async () => {
+  h.authors.mockRejectedValue(new Error("User lookup unavailable"));
+  await render();
+  expect(host.textContent).toContain("Existing comment");
+  expect(host.textContent).toContain("user");
 });

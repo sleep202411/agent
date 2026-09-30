@@ -1,3 +1,4 @@
+import { activityDetails, fetchActivityAuthors } from "./project-activity-display";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -61,6 +62,7 @@ function Session(props: Props) {
     write = useRef(false),
     read = useRef<AbortController | undefined>(undefined);
   const writeController = useRef<AbortController | undefined>(undefined);
+  const [authors, setAuthors] = useState<Record<string, string>>({});
   const seen = useRef(new Set<string>());
   const current = () => alive.current && props.generation === getAuthGeneration();
   useEffect(() => {
@@ -83,6 +85,7 @@ function Session(props: Props) {
     setError(undefined);
     if (!next) {
       setRows([]);
+      setAuthors({});
       setAccess(undefined);
       setCursor(null);
       seen.current.clear();
@@ -112,6 +115,17 @@ function Session(props: Props) {
       setRows(next ? [...rows, ...page.items] : page.items);
       setCursor(page.nextCursor);
       setAccess(permission);
+      try {
+        const names = await fetchActivityAuthors(
+          page.items.map((row) => row.createdByUserId),
+          props.generation,
+          controller.signal
+        );
+        if (current() && !controller.signal.aborted)
+          setAuthors((previous) => ({ ...previous, ...names }));
+      } catch {
+        // Identity lookup is supplementary; keep the authoritative user ID when unavailable.
+      }
     } catch (cause) {
       if (current() && !controller.signal.aborted)
         setError(cause instanceof Error ? cause.message : String(cause));
@@ -325,7 +339,8 @@ function Session(props: Props) {
         >
           <ThemedText type="smallBold">{t(`projectActivity.${row.kind}`)}</ThemedText>
           <ThemedText>
-            {row.createdByUserId} · {new Date(row.createdAt).toLocaleString()}
+            {authors[row.createdByUserId] ?? row.createdByUserId} ·{" "}
+            {new Date(row.createdAt).toLocaleString()}
           </ThemedText>
           {row.health && (
             <ThemedText>
@@ -334,6 +349,11 @@ function Session(props: Props) {
             </ThemedText>
           )}
           <ThemedText>{row.plainText}</ThemedText>
+          {activityDetails(row).map((detail, index) => (
+            <ThemedText key={index}>
+              {t(`projectActivity.${detail.key}`)}: {detail.value}
+            </ThemedText>
+          ))}
           {row.content && (
             <Action
               label={t("projectActivity.read")}
