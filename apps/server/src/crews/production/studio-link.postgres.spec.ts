@@ -195,6 +195,8 @@ suite('Studio linking authorization on PostgreSQL', () => {
           {} as never,
           { broadcastCrewTaskProjectChange: broadcast } as never,
           new WorkspacePermissionService(db as PrismaService),
+
+          { revoke: jest.fn().mockResolvedValue(undefined) } as never,
         );
         let ready!: (pid: number) => void;
         const entered = new Promise<number>((resolve) => {

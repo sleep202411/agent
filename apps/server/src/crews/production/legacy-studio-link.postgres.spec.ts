@@ -37,7 +37,9 @@ const url =
     db = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
     const prisma = db as PrismaService;
     const auth = new CrewAuthorizationService(prisma);
-    links = new CrewStudioWorkspaceService(prisma, auth);
+    links = new CrewStudioWorkspaceService(prisma, auth, {
+      revoke: jest.fn().mockResolvedValue(undefined),
+    } as never);
     assets = new CrewAssetsService(
       prisma,
       new WorkspacePermissionService(prisma),

@@ -45,6 +45,8 @@ integration('Crew settings permission after waits (owned PostgreSQL)', () => {
       new CrewAuthorizationService(db as PrismaService),
       {} as ConstructorParameters<typeof CrewsService>[3],
       {} as ConstructorParameters<typeof CrewsService>[4],
+
+      { revoke: jest.fn().mockResolvedValue(undefined) } as never,
     );
   });
   beforeEach(async () => {
@@ -253,6 +255,8 @@ integration('Crew settings permission after waits (owned PostgreSQL)', () => {
       new CrewAuthorizationService(db as PrismaService),
       {} as never,
       {} as never,
+
+      { revoke: jest.fn().mockResolvedValue(undefined) } as never,
     );
     await expect(
       targetService.transferOwnership(crewId, userId, {

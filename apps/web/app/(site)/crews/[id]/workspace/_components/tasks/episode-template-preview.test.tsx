@@ -43,11 +43,18 @@ afterEach(() => {
   client.clear();
   host.remove();
 });
-async function render() {
+async function render(
+  onStage?: (batch: import("./workbench-task-batch").WorkbenchTaskBatch) => void
+) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <EpisodeTemplatePreview crewId="crew" episodeId="episode" onClose={() => undefined} />
+        <EpisodeTemplatePreview
+          crewId="crew"
+          episodeId="episode"
+          onClose={() => undefined}
+          onStage={onStage}
+        />
       </QueryClientProvider>
     );
   });
@@ -119,4 +126,18 @@ it("does not fetch or submit while signed out", async () => {
   await render();
   expect(state.get).not.toHaveBeenCalled();
   expect(button("confirm").disabled).toBe(true);
+});
+
+it("stages episode tasks and role requirements without a write", async () => {
+  const onStage = vi.fn();
+  await render(onStage);
+  await act(async () => button("stageTemplate").click());
+  expect(state.post).not.toHaveBeenCalled();
+  expect(onStage).toHaveBeenCalledWith({
+    key: "episode:episode",
+    title: "Standard",
+    path: "/crews/crew/episodes/episode/task-template",
+    body: snapshot,
+    items: [{ title: "Script", role: "Writer" }],
+  });
 });

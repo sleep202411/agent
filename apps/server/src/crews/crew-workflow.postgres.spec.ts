@@ -133,6 +133,8 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         conversations,
         collaboration,
         authorization,
+
+        { revoke: jest.fn().mockResolvedValue(undefined) } as never,
       );
       crews = new CrewsService(
         db as never,
@@ -140,6 +142,8 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         authorization,
         collaboration,
         { ensureDefaultAccounts: jest.fn().mockResolvedValue([]) } as never,
+
+        { revoke: jest.fn().mockResolvedValue(undefined) } as never,
       );
       applications = new ApplicationsService(
         db as never,
@@ -3690,6 +3694,8 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       const service = new CrewStudioWorkspaceService(
         db as never,
         authorization,
+
+        { revoke: jest.fn().mockResolvedValue(undefined) } as never,
       );
       const results = await Promise.all([
         service.initialize(crewId, owner),
@@ -3750,6 +3756,8 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         const service = new CrewStudioWorkspaceService(
           db as never,
           authorization,
+
+          { revoke: jest.fn().mockResolvedValue(undefined) } as never,
         );
         await expect(service.initialize(crewId, worker)).rejects.toThrow();
         expect(

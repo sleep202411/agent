@@ -18,6 +18,8 @@ export interface WorkspaceRef {
   accessScope?: "workspace" | "project_only";
   /** The current user's role in this workspace. */
   role?: WorkspaceRole;
+  /** Additive access inherited from a linked production crew. */
+  crewRole?: "viewer" | "editor";
   /** Team icon URL (preset or uploaded); null falls back to a letter avatar. */
   avatarUrl?: string | null;
   defaultProjectId: string | null;

@@ -1,7 +1,6 @@
 "use client";
 
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
-import { TrustAppealLink } from "./trust-appeal-link";
 import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
@@ -348,7 +347,6 @@ function LinearTaskSession({
             label={t("activity")}
             onClick={() => openSection("activity")}
           />
-          <TrustAppealLink crewId={crewId} />
           {project.views.slice(1).map((view) => (
             <ProjectTab
               key={view.id}

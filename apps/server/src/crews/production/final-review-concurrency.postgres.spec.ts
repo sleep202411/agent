@@ -25,6 +25,8 @@ integration('Crew final review serializes with task changes', () => {
       assetAccess as never,
       { broadcastCrewTaskProjectChange: broadcast } as never,
       {} as never,
+
+      { revoke: jest.fn().mockResolvedValue(undefined) } as never,
     );
   beforeAll(async () => {
     const url = postgresFixtureUrl(databaseUrl!);

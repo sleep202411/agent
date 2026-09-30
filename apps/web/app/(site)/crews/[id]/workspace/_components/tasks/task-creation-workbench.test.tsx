@@ -1,3 +1,21 @@
+vi.mock("./workbench-canvas-import", () => ({
+  WorkbenchCanvasImport: ({ onStage }: { onStage: (batch: unknown) => void }) => (
+    <button
+      onClick={() =>
+        onStage({
+          key: "canvas:project",
+          title: "Canvas Batch",
+          path: "/batch",
+          body: { sourceRevision: 3, sourceHash: "hash" },
+          items: [{ title: "Scene One" }, { title: "Scene Two" }],
+        })
+      }
+    >
+      Stage Canvas
+    </button>
+  ),
+}));
+vi.mock("./workbench-asset-upload", () => ({ WorkbenchAssetUpload: () => <div data-upload /> }));
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -9,6 +27,8 @@ const state = vi.hoisted(() => ({
   taskLoading: false,
   taskMore: false,
   create: vi.fn(),
+  post: vi.fn(),
+  invalidate: vi.fn(),
   episode: vi.fn(),
   refresh: vi.fn(),
   episodeId: null as string | null,
@@ -19,6 +39,11 @@ vi.mock("@/src/i18n/i18n", () => ({
       ? ((en.crewTaskProject.workbench as Record<string, string>)[key] ?? key)
       : key,
 }));
+vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { post: state.post } }));
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({ invalidateQueries: state.invalidate }),
+}));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "user" } }) }));
 vi.mock("next/link", () => ({
   default: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a {...props} />,
 }));
@@ -29,6 +54,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useCreateCrewTask: () => ({ mutateAsync: state.create }),
   useCreateCrewEpisode: () => ({ mutateAsync: state.episode }),
   useCrewEpisodes: () => ({
+    refetch: state.refresh,
     data: [
       {
         id: "ep",
@@ -85,6 +111,8 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  state.invalidate.mockReset().mockResolvedValue(undefined);
+  state.post.mockReset().mockResolvedValue({ taskIds: ["one", "two"] });
   state.create.mockReset().mockResolvedValue({ id: "created" });
   state.refresh.mockReset();
 });
@@ -146,6 +174,7 @@ it("stops after an uncertain response and never resubmits a confirmed task", asy
 });
 it("passes the chosen episode to the draft and retains it across view switches", async () => {
   await render();
+  await click("Production Episodes");
   await click("Add Episode Task");
   await click("Stage Draft");
   expect(state.episodeId).toBe("ep");
@@ -172,6 +201,7 @@ it("removes a draft before confirmation", async () => {
 
 it("opens the selected episode template without creating tasks", async () => {
   await render();
+  await click("Production Episodes");
   await click("Stage Standard Tasks");
   expect(host.querySelector('[data-testid="episode-preview"]')?.textContent).toBe("ep");
   expect(state.create).not.toHaveBeenCalled();
@@ -195,3 +225,51 @@ it.each(["taskLoading", "taskMore"] as const)(
     }
   }
 );
+
+it("keeps existing task tables out of creation and anchors confirmation in the footer", async () => {
+  await render();
+  expect(host.textContent).not.toContain("Production Tasks");
+  expect(host.querySelector("footer")?.textContent).toContain("Create All Tasks");
+  expect(button("Production Episodes").getAttribute("aria-expanded")).toBe("false");
+  await click("Production Episodes");
+  expect(button("Production Episodes").getAttribute("aria-expanded")).toBe("true");
+});
+it("discards only staged drafts without sending a create request", async () => {
+  await render();
+  await stage();
+  await click("Discard");
+  expect(button("Create All Tasks").disabled).toBe(true);
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("stages batches without writing and retries the exact reviewed command", async () => {
+  await render();
+  await click("Stage Canvas");
+  expect(host.textContent).toContain("Scene One");
+  expect(state.post).not.toHaveBeenCalled();
+  state.post.mockRejectedValueOnce(new Error("Connection lost"));
+  await click("Create All Tasks");
+  expect(host.textContent).toContain("Connection lost");
+  await click("Create All Tasks");
+  expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
+  expect(button("Create All Tasks").disabled).toBe(true);
+});
+
+it("keeps confirmed individual tasks out of batch retries and refreshes all affected crew views", async () => {
+  await render();
+  await stage();
+  await click("Stage Canvas");
+  state.post.mockRejectedValueOnce(new Error("Connection lost"));
+  await click("Create All Tasks");
+  expect(state.create).toHaveBeenCalledTimes(1);
+  await click("Create All Tasks");
+  expect(state.create).toHaveBeenCalledTimes(1);
+  expect(state.post).toHaveBeenCalledTimes(2);
+  expect(state.invalidate.mock.calls.map(([filter]) => filter.queryKey)).toEqual([
+    ["crew", "tasks", "crew"],
+    ["crew", "production", "crew", "overview"],
+    ["crew", "production", "crew", "activity"],
+    ["crew", "production", "crew", "episodes"],
+    ["crew", "task-center"],
+  ]);
+});

@@ -13,6 +13,7 @@ const PROJECT = {
 
 function serviceWithWorkspaceRole(role: WorkspaceMemberRole) {
   const prisma = {
+    crew: { findFirst: jest.fn().mockResolvedValue(null) },
     platformProject: { findFirst: jest.fn().mockResolvedValue(PROJECT) },
     projectMember: { findFirst: jest.fn().mockResolvedValue(null) },
     workspaceMember: {

@@ -298,3 +298,12 @@ it("blocks cached workspace choices after a failed source refresh and recovers a
   await act(async () => state.actions.at(-1)!());
   expect(state.patch).toHaveBeenCalledTimes(1);
 });
+
+it("opens the linked Studio workspace in a separate tab for a crew member", async () => {
+  await render("crew", true, { id: "workspace", name: "Workspace" });
+  const link = container.querySelector("a")!;
+  expect(link.getAttribute("href")).toBe("/studio/projects?ws=workspace");
+  expect(link.target).toBe("_blank");
+  expect(link.rel).toBe("noopener noreferrer");
+  expect(state.patch).not.toHaveBeenCalled();
+});

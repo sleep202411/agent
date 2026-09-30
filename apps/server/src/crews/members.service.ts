@@ -1,3 +1,4 @@
+import { CrewStudioRevocationService } from './production/crew-studio-revocation.service';
 import {
   BadRequestException,
   ConflictException,
@@ -33,6 +34,7 @@ export class MembersService {
     private readonly conversations: ConversationsService,
     private readonly collaboration: CrewCollaborationService,
     private readonly authorization: CrewAuthorizationService,
+    private readonly studioRevocation: CrewStudioRevocationService,
   ) {}
 
   async list(
@@ -106,6 +108,8 @@ export class MembersService {
     memberId: string,
     actorUserId: string,
   ): Promise<void> {
+    let revokedWorkspaceId: string | null = null;
+    let revokedUserId: string | null = null;
     const pendingMessages: PrismaMessage[] = [];
     await this.prisma.$transaction(async (tx) => {
       // Serialize with ownership transfer and member edits before checking the owner.
@@ -169,6 +173,8 @@ export class MembersService {
           after: { status: CrewMembershipStatus.removed },
         },
       });
+      revokedWorkspaceId = crew.studioWorkspaceId;
+      revokedUserId = member.userId;
       await this.collaboration.removeCrewMemberAccess(
         crewId,
         member.userId,
@@ -205,6 +211,12 @@ export class MembersService {
         tx,
       );
     });
+    if (revokedWorkspaceId && revokedUserId)
+      await this.studioRevocation.revoke(
+        crewId,
+        revokedWorkspaceId,
+        revokedUserId,
+      );
     for (const message of pendingMessages) {
       await this.conversations.broadcastMessage(message);
     }
@@ -216,6 +228,7 @@ export class MembersService {
     actorUserId: string,
     input: UpdateMemberInput,
   ) {
+    let revokeTarget: { workspaceId: string; userId: string } | null = null;
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${crewId}`})::bigint)
@@ -367,6 +380,15 @@ export class MembersService {
         },
       });
       if (changesAuthorization) {
+        const linked = await tx.crew.findFirst({
+          where: { id: crewId },
+          select: { studioWorkspaceId: true },
+        });
+        if (linked?.studioWorkspaceId)
+          revokeTarget = {
+            workspaceId: linked.studioWorkspaceId,
+            userId: before.userId,
+          };
         await this.collaboration.addCrewMemberAccess(
           crewId,
           before.userId,
@@ -376,6 +398,14 @@ export class MembersService {
       }
     });
 
+    if (revokeTarget) {
+      const target = revokeTarget as { workspaceId: string; userId: string };
+      await this.studioRevocation.revoke(
+        crewId,
+        target.workspaceId,
+        target.userId,
+      );
+    }
     const updated = await this.prisma.crewMember.findUnique({
       where: { id: memberId },
       include: MEMBER_VIEW_INCLUDE,
@@ -390,7 +420,7 @@ export class MembersService {
   ) {
     const crew = await db.crew.findFirst({
       where: { id: crewId, deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, studioWorkspaceId: true },
     });
     if (!crew) throw new NotFoundException('Crew not found');
     return crew;

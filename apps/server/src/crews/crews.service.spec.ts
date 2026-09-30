@@ -223,6 +223,8 @@ function build(
       authorization as never,
       collaboration as never,
       { ensureDefaultAccounts: jest.fn().mockResolvedValue([]) } as never,
+
+      { revoke: jest.fn().mockResolvedValue(undefined) } as never,
     ),
   };
 }

@@ -1,3 +1,7 @@
+import {
+  CREW_STUDIO_MEMBER_SELECT,
+  crewStudioRoleForMember,
+} from '../workspaces/crew-studio-access';
 import { ForbiddenException } from '@nestjs/common';
 import {
   ProjectMemberRole,
@@ -89,7 +93,26 @@ export async function creatorSeatUserIds(
         AND spm.role IN ('owner', 'producer', 'editor')
     ) creator
   `;
-  return new Set(rows.map((row) => row.user_id));
+  const users = new Set(rows.map((row) => row.user_id));
+  const crew = await tx.crew.findFirst({
+    where: {
+      studioWorkspaceId: workspaceId,
+      deletedAt: null,
+      studioWorkspace: { status: 'active', deletedAt: null },
+    },
+    select: {
+      id: true,
+      members: {
+        where: { status: 'active' },
+        select: { ...CREW_STUDIO_MEMBER_SELECT, userId: true },
+      },
+    },
+  });
+  for (const member of crew?.members ?? []) {
+    if (crewStudioRoleForMember(crew!.id, member.userId, member) === 'editor')
+      users.add(member.userId);
+  }
+  return users;
 }
 
 /** Assert only when the requested role is creator-capable. */

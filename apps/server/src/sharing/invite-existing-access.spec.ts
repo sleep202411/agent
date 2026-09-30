@@ -20,6 +20,7 @@ const invite = {
 } as never;
 function projectService(direct: boolean, workspace: boolean, exists = true) {
   const prisma = {
+    crew: { findFirst: jest.fn().mockResolvedValue(null) },
     platformProject: {
       findFirst: jest.fn().mockResolvedValue(exists ? project : null),
     },

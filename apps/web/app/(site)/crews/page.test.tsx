@@ -170,3 +170,19 @@ it("shows the server's actionable Crew-list error instead of replacing it with a
     "Crew access has been suspended"
   );
 });
+
+it("persists the initially displayed crew without losing task deep links", () => {
+  session.user = { id: "member" };
+  navigation.search = "tab=tasks&task=task-1";
+  mine.data = { founded: [], joined: [{ id: "crew-1", name: "Crew", createdAt: "2026-01-01" }] };
+  root = createRoot(document.createElement("div"));
+  act(() => root.render(<CrewsPage />));
+  expect(navigation.replace).toHaveBeenCalledWith(
+    "/en-US/crews?tab=tasks&task=task-1&view=mine&crew=crew-1",
+    { scroll: false }
+  );
+  navigation.replace.mockClear();
+  navigation.search = "view=mine&crew=crew-1";
+  act(() => root.render(<CrewsPage />));
+  expect(navigation.replace).not.toHaveBeenCalled();
+});

@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import type { WorkbenchTaskBatch } from "./workbench-task-batch";
 type Plan = {
   templateId: string;
   templateVersion: number;
@@ -32,10 +33,12 @@ export function EpisodeTemplatePreview({
   crewId,
   episodeId,
   onClose,
+  onStage,
 }: {
   crewId: string;
   episodeId: string;
   onClose: () => void;
+  onStage?: (batch: WorkbenchTaskBatch) => void;
 }) {
   const { user } = useCurrentUser();
   return (
@@ -45,6 +48,7 @@ export function EpisodeTemplatePreview({
       episodeId={episodeId}
       userId={user?.id ?? null}
       onClose={onClose}
+      onStage={onStage}
     />
   );
 }
@@ -53,13 +57,16 @@ function EpisodeTemplateSession({
   episodeId,
   userId,
   onClose,
+  onStage,
 }: {
   crewId: string;
   episodeId: string;
   userId: string | null;
   onClose: () => void;
+  onStage?: (batch: WorkbenchTaskBatch) => void;
 }) {
   const t = useTranslations("crewTaskProject.episodeTemplate");
+  const workbenchT = useTranslations("crewTaskProject.workbench");
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ taskIds: string[]; replayed: boolean } | null>(null);
@@ -84,6 +91,20 @@ function EpisodeTemplateSession({
     if (!userId || !preview.data || preview.isError || preview.isFetching || lock.current || result)
       return;
     const { templateId, templateVersion, episodeVersion } = preview.data;
+    if (onStage) {
+      onStage({
+        key: `episode:${episodeId}`,
+        title: preview.data.name,
+        path,
+        body: { templateId, templateVersion, episodeVersion },
+        items: preview.data.items.map((item) => ({
+          title: item.title,
+          role: item.roleRequirement,
+        })),
+      });
+      onClose();
+      return;
+    }
     lock.current = true;
     setBusy(true);
     setError(null);
@@ -184,7 +205,7 @@ function EpisodeTemplateSession({
               disabled={!userId || !preview.data || preview.isError || preview.isFetching || busy}
               onClick={() => void confirm()}
             >
-              {t(busy ? "creating" : "confirm")}
+              {onStage ? workbenchT("stageTemplate") : t(busy ? "creating" : "confirm")}
             </Button>
           ) : null}
         </DialogFooter>

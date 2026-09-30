@@ -11,6 +11,11 @@ import {
   type Prisma,
   type StoryProject,
 } from '@prisma/client';
+import {
+  CREW_STUDIO_MEMBER_SELECT,
+  crewStudioRoleForMember,
+  resolveCrewStudioAccess,
+} from '../workspaces/crew-studio-access';
 import { PrismaService } from '../infra/db/db.module';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
@@ -95,9 +100,10 @@ export class StoryPermissionService {
   effectiveAccess(
     directRole: StoryProjectMemberRole | undefined,
     workspaceRole: WorkspaceMemberRole | undefined,
+    crewRole?: 'viewer' | 'editor',
   ): { role: StoryProjectMemberRole; capabilities: StoryCapability[] } | null {
     const inherited = this.workspaceRole(workspaceRole);
-    const roles = [directRole, inherited].filter(
+    const roles = [directRole, inherited, this.workspaceRole(crewRole)].filter(
       (role): role is StoryProjectMemberRole => Boolean(role),
     );
     if (!roles.length) return null;
@@ -130,6 +136,14 @@ export class StoryPermissionService {
         ...(options.allowArchived ? {} : { status: StoryProjectStatus.active }),
         workspace: { status: 'active', deletedAt: null },
         OR: [
+          {
+            workspace: {
+              studioCrew: {
+                deletedAt: null,
+                members: { some: { userId, status: 'active' } },
+              },
+            },
+          },
           { members: { some: { userId, status: 'active', removedAt: null } } },
           {
             workspace: {
@@ -148,6 +162,17 @@ export class StoryPermissionService {
       include: {
         workspace: {
           select: {
+            studioCrew: {
+              select: {
+                id: true,
+                deletedAt: true,
+                members: {
+                  where: { userId, status: 'active' },
+                  select: CREW_STUDIO_MEMBER_SELECT,
+                  take: 1,
+                },
+              },
+            },
             members: {
               where: {
                 userId,
@@ -181,6 +206,15 @@ export class StoryPermissionService {
     const access = this.effectiveAccess(
       members[0]?.role,
       workspace.members[0]?.role,
+      workspace.studioCrew &&
+        !workspace.studioCrew.deletedAt &&
+        workspace.studioCrew.members[0]
+        ? crewStudioRoleForMember(
+            workspace.studioCrew.id,
+            userId,
+            workspace.studioCrew.members[0],
+          )
+        : undefined,
     );
     if (!access) {
       throw new NotFoundException({
@@ -255,7 +289,26 @@ export class StoryPermissionService {
         AND status = 'active' AND removed_at IS NULL AND access_scope = 'workspace'
       FOR SHARE
     `;
-    const access = this.effectiveAccess(direct[0]?.role, members[0]?.role);
+    // Lock the grant sources on the same transaction as the Story write.
+    // Membership edits update the member version; unlink/deletion update crew.
+    await tx.$queryRaw`
+      SELECT crew.id FROM crews AS crew
+      JOIN crew_members AS member ON member.crew_id = crew.id
+      WHERE crew.studio_workspace_id = ${project.workspaceId}::uuid
+        AND crew.deleted_at IS NULL AND member.user_id = ${userId}
+        AND member.status = 'active'
+      FOR SHARE OF crew, member
+    `;
+    const inheritedCrew = await resolveCrewStudioAccess(
+      tx,
+      project.workspaceId,
+      userId,
+    );
+    const access = this.effectiveAccess(
+      direct[0]?.role,
+      members[0]?.role,
+      inheritedCrew?.role,
+    );
     if (!access) {
       throw new NotFoundException({
         code: 'STORY_PROJECT_NOT_FOUND',

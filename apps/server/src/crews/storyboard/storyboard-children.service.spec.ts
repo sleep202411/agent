@@ -22,7 +22,8 @@ type Where = {
   id?: string;
   crewId?: string;
   parentId?: string;
-  metadata?: { equals: string };
+  metadata?: { path?: string[]; equals: string };
+  AND?: Array<{ metadata: { path: string[]; equals: string } }>;
   OR?: unknown;
 };
 const tree = {
@@ -47,7 +48,15 @@ function client(sql: SqlClient) {
     }
     if (where.metadata) {
       params.push(where.metadata.equals);
-      filters.push(`metadata->>'plotTreeNodeId' = $${params.length}`);
+      const key =
+        where.metadata.path?.[0] === 'canvasTaskImport'
+          ? 'canvasTaskImport'
+          : 'plotTreeNodeId';
+      filters.push(`metadata->>'${key}' = $${params.length}`);
+    }
+    for (const condition of where.AND ?? []) {
+      params.push(condition.metadata.path[0], condition.metadata.equals);
+      filters.push(`metadata->>$${params.length - 1} = $${params.length}`);
     }
     if (where.OR) filters.push("metadata->>'templateKey' = 'storyboard'");
     return (
@@ -58,7 +67,7 @@ function client(sql: SqlClient) {
     ).rows.map((row) => ({
       ...row,
       rank: new Prisma.Decimal(row.rank),
-      workflowState: { semantic: 'open' },
+      workflowState: { semantic: row.workflowStateId },
     }));
   };
   return {
@@ -237,6 +246,49 @@ describe('Storyboard task writes', () => {
       metadata: { preserved: true, plotTreeNodeId: 'node' },
       version: 1,
     });
+  });
+
+  it('shows canvas imports with live status only in their source project', async () => {
+    await db.query(
+      'INSERT INTO tasks (id,"crewId",number,rank,title,metadata,"workflowStateId") VALUES ($1,$2,2,2048,$3,$4,$5)',
+      [
+        'import-task',
+        'crew',
+        'Canvas Scene',
+        JSON.stringify({
+          canvasTaskImport: 'project',
+          sourceNodeId: 'scene-1',
+        }),
+        'open',
+      ],
+    );
+    expect(await service.list('project', 'user')).toEqual([
+      {
+        nodeId: 'scene-1',
+        nodeType: 'scene',
+        title: 'Canvas Scene',
+        taskId: 'import-task',
+        status: 'open',
+      },
+    ]);
+    await db.exec(
+      `UPDATE tasks SET "workflowStateId"='completed' WHERE id='import-task'`,
+    );
+    expect(await service.list('project', 'user')).toEqual([
+      expect.objectContaining({ taskId: 'import-task', status: 'completed' }),
+    ]);
+    expect(await service.list('other-project', 'user')).toEqual([
+      expect.objectContaining({ nodeId: 'node', taskId: null }),
+    ]);
+    await expect(
+      service.create('project', 'scene-1', 'user', {}),
+    ).resolves.toEqual({ taskId: 'import-task' });
+    await expect(
+      service.link('project', 'scene-1', 'user', { taskId: 'parent' }),
+    ).resolves.toEqual({ taskId: 'import-task' });
+    await expect(
+      service.link('other-project', 'node', 'user', { taskId: 'import-task' }),
+    ).rejects.toThrow('already linked to an imported canvas node');
   });
 
   it('uses the imported crew graph instead of the current global template', async () => {

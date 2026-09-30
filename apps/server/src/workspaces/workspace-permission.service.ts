@@ -16,10 +16,16 @@ import {
   type WorkspaceMember,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { resolveCrewStudioAccess } from './crew-studio-access';
+
+export type WorkspaceAccess = Pick<
+  WorkspaceMember,
+  'workspaceId' | 'userId' | 'role' | 'accessScope'
+> & { crewRole?: 'viewer' | 'editor' };
 
 type PermissionDb = Pick<
   Prisma.TransactionClient,
-  'platformProject' | 'projectMember' | 'workspaceMember'
+  'platformProject' | 'projectMember' | 'workspaceMember' | 'crew'
 >;
 
 const WORKSPACE_ROLE_RANK: Record<WorkspaceMemberRole, number> = {
@@ -63,7 +69,7 @@ export class WorkspacePermissionService {
     workspaceId: string,
     minimumRole: WorkspaceMemberRole,
     db: PermissionDb = this.prisma,
-  ): Promise<WorkspaceMember> {
+  ): Promise<WorkspaceAccess> {
     const membership = await db.workspaceMember.findFirst({
       where: {
         workspaceId,
@@ -77,23 +83,25 @@ export class WorkspacePermissionService {
         },
       },
     });
-    if (!membership) {
-      throw new ForbiddenException({
-        code: 'WORKSPACE_ACCESS_DENIED',
-        msg: 'You do not have access to this workspace.',
-      });
-    }
-    if (
-      WORKSPACE_ROLE_RANK[membership.role] < WORKSPACE_ROLE_RANK[minimumRole] ||
-      (minimumRole === WorkspaceMemberRole.editor &&
-        membership.role === WorkspaceMemberRole.billing)
-    ) {
-      throw new ForbiddenException({
-        code: 'WORKSPACE_PERMISSION_DENIED',
-        msg: 'You do not have permission to perform this workspace action.',
-      });
-    }
-    return membership;
+    const allows = (role: WorkspaceMemberRole) =>
+      WORKSPACE_ROLE_RANK[role] >= WORKSPACE_ROLE_RANK[minimumRole] &&
+      !(
+        minimumRole === WorkspaceMemberRole.editor &&
+        role === WorkspaceMemberRole.billing
+      );
+    if (membership && allows(membership.role)) return membership;
+    const inherited = await resolveCrewStudioAccess(db, workspaceId, userId);
+    if (inherited && allows(inherited.role)) return inherited;
+    throw new ForbiddenException({
+      code:
+        membership || inherited
+          ? 'WORKSPACE_PERMISSION_DENIED'
+          : 'WORKSPACE_ACCESS_DENIED',
+      msg:
+        membership || inherited
+          ? 'You do not have permission to perform this workspace action.'
+          : 'You do not have access to this workspace.',
+    });
   }
 
   /**
@@ -103,7 +111,7 @@ export class WorkspacePermissionService {
   async requireWorkspacePresence(
     userId: string,
     workspaceId: string,
-  ): Promise<WorkspaceMember> {
+  ): Promise<WorkspaceAccess> {
     const membership = await this.prisma.workspaceMember.findFirst({
       where: {
         workspaceId,
@@ -116,13 +124,30 @@ export class WorkspacePermissionService {
         },
       },
     });
-    if (!membership) {
-      throw new ForbiddenException({
-        code: 'WORKSPACE_ACCESS_DENIED',
-        msg: 'You do not have access to this workspace.',
-      });
+    if (
+      membership?.accessScope === 'workspace' &&
+      ['owner', 'admin', 'editor'].includes(membership.role)
+    )
+      return membership;
+    const inherited = await resolveCrewStudioAccess(
+      this.prisma,
+      workspaceId,
+      userId,
+    );
+    if (inherited) {
+      if (
+        membership?.accessScope === 'workspace' &&
+        membership.role === 'billing'
+      ) {
+        return { ...membership, crewRole: inherited.role };
+      }
+      return inherited;
     }
-    return membership;
+    if (membership) return membership;
+    throw new ForbiddenException({
+      code: 'WORKSPACE_ACCESS_DENIED',
+      msg: 'You do not have access to this workspace.',
+    });
   }
 
   async requireProjectRole(
@@ -169,6 +194,16 @@ export class WorkspacePermissionService {
     );
     const effectiveRole = WORKSPACE_TO_PROJECT_ROLE[workspaceMember.role];
     if (PROJECT_ROLE_RANK[effectiveRole] < PROJECT_ROLE_RANK[minimumRole]) {
+      const inherited = await resolveCrewStudioAccess(
+        db,
+        project.workspaceId,
+        userId,
+      );
+      if (
+        inherited &&
+        PROJECT_ROLE_RANK[inherited.role] >= PROJECT_ROLE_RANK[minimumRole]
+      )
+        return project;
       throw new ForbiddenException({
         code: 'PROJECT_PERMISSION_DENIED',
         msg: 'You do not have permission to perform this project action.',
@@ -217,13 +252,29 @@ export class WorkspacePermissionService {
       },
     });
     const direct = projectMember?.role ?? null;
-    const inherited = workspaceMember
+    const workspaceRole = workspaceMember
       ? WORKSPACE_TO_PROJECT_ROLE[workspaceMember.role]
       : null;
-    if (!direct) return inherited;
-    if (!inherited) return direct;
-    return PROJECT_ROLE_RANK[direct] >= PROJECT_ROLE_RANK[inherited]
-      ? direct
-      : inherited;
+    const roles = [direct, workspaceRole].filter(
+      (role): role is ProjectMemberRole => role !== null,
+    );
+    // Crew grants never add admin or owner; avoid a redundant query for those roles.
+    if (
+      !roles.some((role) => PROJECT_ROLE_RANK[role] >= PROJECT_ROLE_RANK.editor)
+    ) {
+      const crew = await resolveCrewStudioAccess(
+        this.prisma,
+        current.workspaceId,
+        userId,
+      );
+      if (crew) roles.push(crew.role);
+    }
+    return roles.reduce<ProjectMemberRole | null>(
+      (best, role) =>
+        !best || PROJECT_ROLE_RANK[role] > PROJECT_ROLE_RANK[best]
+          ? role
+          : best,
+      null,
+    );
   }
 }

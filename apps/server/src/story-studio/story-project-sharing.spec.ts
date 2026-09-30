@@ -35,6 +35,7 @@ function tx(overrides: {
       workspaceMemberCount,
     },
     client: {
+      crew: { findFirst: jest.fn().mockResolvedValue(null) },
       $executeRaw: jest.fn().mockResolvedValue(0),
       $queryRaw: jest
         .fn()

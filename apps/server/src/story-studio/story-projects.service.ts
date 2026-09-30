@@ -1,3 +1,7 @@
+import {
+  CREW_STUDIO_MEMBER_SELECT,
+  crewStudioRoleForMember,
+} from '../workspaces/crew-studio-access';
 import { MediaAccessService } from '../media/media-access.service';
 import {
   BadRequestException,
@@ -126,6 +130,16 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
   },
   workspace: {
     select: {
+      studioCrew: {
+        select: {
+          id: true,
+          deletedAt: true,
+          members: {
+            where: { status: 'active' },
+            select: { ...CREW_STUDIO_MEMBER_SELECT, userId: true },
+          },
+        },
+      },
       members: {
         where: { status: 'active', accessScope: 'workspace', removedAt: null },
         select: { userId: true, role: true },
@@ -2060,9 +2074,14 @@ export class StoryProjectsService {
     userId: string,
   ): StoryProjectSummaryDto {
     const membership = row.members.find((member) => member.userId === userId);
+    const crew = row.workspace.studioCrew;
+    const crewMember = crew?.members.find((member) => member.userId === userId);
     const access = this.permissions.effectiveAccess(
       membership?.role,
       row.workspace.members.find((member) => member.userId === userId)?.role,
+      crew && !crew.deletedAt && crewMember
+        ? crewStudioRoleForMember(crew.id, userId, crewMember)
+        : undefined,
     );
     const capabilities = access?.capabilities ?? [];
     const parsedDraft = row.draft

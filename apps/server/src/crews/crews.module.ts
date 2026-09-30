@@ -1,3 +1,10 @@
+import { DocumentsModule } from '../documents/documents.module';
+import { RealtimeRevokeModule } from '../infra/realtime/realtime-revoke.module';
+import { CrewStudioRevocationService } from './production/crew-studio-revocation.service';
+import {
+  CrewCanvasTaskImportController,
+  CrewCanvasTaskImportService,
+} from './production/canvas-task-import';
 import {
   EpisodeTaskTemplateController,
   EpisodeTaskTemplateService,
@@ -142,6 +149,8 @@ import { CrewProductionService } from './production/production.service';
  */
 @Module({
   imports: [
+    DocumentsModule,
+    RealtimeRevokeModule,
     StoryAccessModule,
     AuthModule,
     NotificationModule,
@@ -189,6 +198,7 @@ import { CrewProductionService } from './production/production.service';
     CrewInvitationsController,
     CrewTasksController,
     CrewProductionController,
+    CrewCanvasTaskImportController,
     CrewAgreementsController,
     CrewEarningsController,
     CrewComputeRequestsController,
@@ -200,6 +210,7 @@ import { CrewProductionService } from './production/production.service';
     StoryStoryboardChildrenController,
   ],
   providers: [
+    CrewStudioRevocationService,
     EpisodeTaskTemplateService,
     StoryboardChildrenService,
     CrewApplicationAmendmentsService,
@@ -231,6 +242,7 @@ import { CrewProductionService } from './production/production.service';
     CrewTasksService,
     CrewTaskDraftService,
     CrewProductionService,
+    CrewCanvasTaskImportService,
     CrewAgreementsService,
     CrewAgreementSendWorker,
     CrewAgreementArchiveWorker,

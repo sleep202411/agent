@@ -32,6 +32,8 @@ describe('exclusive Crew workspace links', () => {
     const service = new CrewStudioWorkspaceService(
       { $transaction: (fn: (db: typeof tx) => unknown) => fn(tx) } as never,
       auth as never,
+
+      { revoke: jest.fn().mockResolvedValue(undefined) } as never,
     );
     await expect(
       service.link('crew', 'owner', 'workspace'),

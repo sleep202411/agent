@@ -64,7 +64,8 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
   const workspaceId = activeWorkspace?.id;
   const canCreate =
     activeWorkspace?.accessScope !== "project_only" &&
-    ["owner", "admin", "editor"].includes(activeWorkspace?.role ?? "");
+    (["owner", "admin", "editor"].includes(activeWorkspace?.role ?? "") ||
+      activeWorkspace?.crewRole === "editor");
   const router = useRouter();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);

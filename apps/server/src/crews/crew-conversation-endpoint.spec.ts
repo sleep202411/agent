@@ -168,6 +168,8 @@ function build(over: Partial<World> = {}) {
       transferCrewOwnershipAccess: jest.fn().mockResolvedValue(undefined),
     } as never,
     { ensureDefaultAccounts: jest.fn().mockResolvedValue([]) } as never,
+
+    { revoke: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { world, prisma, delegates, conversations, joined, service };
 }

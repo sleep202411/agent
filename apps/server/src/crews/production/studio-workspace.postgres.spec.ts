@@ -41,7 +41,9 @@ const url = workspaceTestDatabase(process.env);
       const prisma = db as PrismaService;
       const authorization = new CrewAuthorizationService(prisma);
       access = new CrewAssetAccessService(prisma, authorization);
-      links = new CrewStudioWorkspaceService(prisma, authorization);
+      links = new CrewStudioWorkspaceService(prisma, authorization, {
+        revoke: jest.fn().mockResolvedValue(undefined),
+      } as never);
       assets = new CrewAssetsService(
         prisma,
         new WorkspacePermissionService(prisma),
@@ -564,6 +566,8 @@ const url = workspaceTestDatabase(process.env);
           broadcastCrewTaskProjectChange: () => Promise.resolve(undefined),
         } as never,
         new WorkspacePermissionService(prisma),
+
+        { revoke: jest.fn().mockResolvedValue(undefined) } as never,
       );
       await production.linkStudioProject(crewId, owner, { projectId });
       const select = { studioProjectId: true, studioWorkspaceId: true };

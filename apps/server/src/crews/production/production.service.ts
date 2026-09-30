@@ -1,3 +1,4 @@
+import { CrewStudioRevocationService } from './crew-studio-revocation.service';
 import {
   BadRequestException,
   ConflictException,
@@ -77,6 +78,7 @@ export class CrewProductionService {
     private readonly assetAccess: CrewAssetAccessService,
     private readonly conversations: ConversationsService,
     private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly studioRevocation: CrewStudioRevocationService,
   ) {}
 
   async overview(crewId: string, userId: string) {
@@ -223,6 +225,7 @@ export class CrewProductionService {
       );
     }
 
+    let revokedWorkspaceId: string | null = null;
     let linked: {
       id: string;
       name: string;
@@ -319,6 +322,7 @@ export class CrewProductionService {
             },
           });
         }
+        revokedWorkspaceId = crew.studioWorkspaceId;
         await recheckAuthority();
         return project;
       });
@@ -335,6 +339,8 @@ export class CrewProductionService {
       throw error;
     }
 
+    if (revokedWorkspaceId)
+      await this.studioRevocation.revoke(crewId, revokedWorkspaceId);
     await this.conversations.broadcastCrewTaskProjectChange(
       crewId,
       'production_project',

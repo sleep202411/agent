@@ -1,3 +1,4 @@
+import { CrewStudioRevocationService } from './production/crew-studio-revocation.service';
 import { joinCrewFanTx } from './fan-community';
 /**
  * Crew CRUD — create / list / detail / update / soft delete.
@@ -78,6 +79,7 @@ export class CrewsService {
     private readonly authorization: CrewAuthorizationService,
     private readonly collaboration: CrewCollaborationService,
     private readonly wallets: WalletLedgerService,
+    private readonly studioRevocation: CrewStudioRevocationService,
   ) {}
 
   creationEligibility(user: AuthUser) {
@@ -629,6 +631,7 @@ export class CrewsService {
       });
     }
 
+    let revokedWorkspaceId: string | null = null;
     const pendingMessages: PrismaMessage[] = [];
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
@@ -636,9 +639,10 @@ export class CrewsService {
       `;
       const currentCrew = await tx.crew.findFirst({
         where: { id: crewId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, studioWorkspaceId: true },
       });
       if (!currentCrew) throw new NotFoundException('Crew not found');
+      revokedWorkspaceId = currentCrew.studioWorkspaceId;
       const lockedOwner = await tx.crewOwnership.findUnique({
         where: { crewId },
         include: {
@@ -811,6 +815,12 @@ export class CrewsService {
         tx,
       );
     });
+    if (revokedWorkspaceId)
+      await this.studioRevocation.revoke(
+        crewId,
+        revokedWorkspaceId,
+        currentOwner.userId,
+      );
     // WS fan-out only after the transfer has actually committed.
     for (const m of pendingMessages) {
       await this.conversations.broadcastMessage(m);
@@ -826,10 +836,12 @@ export class CrewsService {
 
   async softDelete(id: string, ownerId: string): Promise<void> {
     await this.authorization.require(id, ownerId, 'crew.delete');
-    await this.prisma.crew.update({
+    const crew = await this.prisma.crew.update({
       where: { id },
       data: { deletedAt: new Date(), version: { increment: 1 } },
     });
+    if (crew.studioWorkspaceId)
+      await this.studioRevocation.revoke(id, crew.studioWorkspaceId);
   }
 
   /** Production memberships and separate fan subscriptions for the current user. */

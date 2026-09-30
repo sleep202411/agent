@@ -40,6 +40,8 @@ function fixture() {
       $transaction: (fn: (db: typeof tx) => unknown) => Promise.resolve(fn(tx)),
     } as never,
     auth as never,
+
+    { revoke: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { crew, tx, auth, service };
 }

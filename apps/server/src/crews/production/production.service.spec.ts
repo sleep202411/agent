@@ -142,6 +142,8 @@ function build() {
       assetAccess as never,
       conversations as never,
       workspacePermissions as never,
+
+      { revoke: jest.fn().mockResolvedValue(undefined) } as never,
     ),
   };
 }

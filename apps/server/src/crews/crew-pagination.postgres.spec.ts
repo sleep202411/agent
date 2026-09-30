@@ -48,6 +48,8 @@ integration(
         {} as never,
         {} as never,
         {} as never,
+
+        { revoke: jest.fn().mockResolvedValue(undefined) } as never,
       );
       for (let i = 0; i < 8; i++) {
         const id = randomUUID();

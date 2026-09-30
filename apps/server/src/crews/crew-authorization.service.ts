@@ -72,46 +72,7 @@ export class CrewAuthorizationService {
     });
     if (!member) return null;
 
-    const isOwner = member.ownership?.crewId === crewId;
-    const policyKeys = member.policies
-      .map((row) => row.policyKey)
-      .filter(isCrewPolicyKey);
-    const permissions = new Set<CrewPermissionKey>();
-
-    if (isOwner) {
-      for (const permission of CREW_PERMISSION_KEYS) {
-        permissions.add(permission);
-      }
-    } else {
-      for (const permission of CREW_MEMBER_PERMISSIONS) {
-        permissions.add(permission);
-      }
-      for (const policyKey of policyKeys) {
-        for (const permission of CREW_POLICY_PERMISSIONS[policyKey]) {
-          permissions.add(permission);
-        }
-      }
-      for (const override of member.permissionOverrides) {
-        if (!isCrewPermissionKey(override.permissionKey)) continue;
-        if (OWNER_ONLY.has(override.permissionKey)) continue;
-        if (override.effect === 'allow') {
-          permissions.add(override.permissionKey);
-        } else {
-          permissions.delete(override.permissionKey);
-        }
-      }
-    }
-
-    return {
-      crewId,
-      memberId: member.id,
-      userId,
-      isOwner,
-      policyKeys,
-      permissions: CREW_PERMISSION_KEYS.filter((permission) =>
-        permissions.has(permission),
-      ),
-    };
+    return crewAuthorizationFromMember(crewId, userId, member);
   }
 
   async requireMembership(
@@ -175,4 +136,57 @@ export class CrewAuthorizationService {
       userId: ownership.member.userId,
     };
   }
+}
+
+/** Evaluate the same policy/override rules for projected Studio access. */
+export function crewAuthorizationFromMember(
+  crewId: string,
+  userId: string,
+  member: {
+    id: string;
+    ownership: { crewId: string } | null;
+    policies: Array<{ policyKey: string }>;
+    permissionOverrides: Array<{ permissionKey: string; effect: string }>;
+  },
+): CrewAuthorizationContext {
+  const isOwner = member.ownership?.crewId === crewId;
+  const policyKeys = member.policies
+    .map((row) => row.policyKey)
+    .filter(isCrewPolicyKey);
+  const permissions = new Set<CrewPermissionKey>();
+
+  if (isOwner) {
+    for (const permission of CREW_PERMISSION_KEYS) {
+      permissions.add(permission);
+    }
+  } else {
+    for (const permission of CREW_MEMBER_PERMISSIONS) {
+      permissions.add(permission);
+    }
+    for (const policyKey of policyKeys) {
+      for (const permission of CREW_POLICY_PERMISSIONS[policyKey]) {
+        permissions.add(permission);
+      }
+    }
+    for (const override of member.permissionOverrides) {
+      if (!isCrewPermissionKey(override.permissionKey)) continue;
+      if (OWNER_ONLY.has(override.permissionKey)) continue;
+      if (override.effect === 'allow') {
+        permissions.add(override.permissionKey);
+      } else {
+        permissions.delete(override.permissionKey);
+      }
+    }
+  }
+
+  return {
+    crewId,
+    memberId: member.id,
+    userId,
+    isOwner,
+    policyKeys,
+    permissions: CREW_PERMISSION_KEYS.filter((permission) =>
+      permissions.has(permission),
+    ),
+  };
 }

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -23,7 +24,6 @@ import {
   WorkspaceMemberStatus,
   type PlatformProject,
   type Workspace,
-  type WorkspaceMember,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -37,7 +37,10 @@ import type {
   UpdateWorkspaceInput,
 } from './dto';
 import { WalletLedgerService } from './wallet-ledger.service';
-import { WorkspacePermissionService } from './workspace-permission.service';
+import {
+  WorkspacePermissionService,
+  type WorkspaceAccess,
+} from './workspace-permission.service';
 import { enqueueProjectChanged } from './project-realtime';
 import { RealtimeRevokeService } from '../infra/realtime/realtime-revoke.service';
 import { createProjectSectionWithCanvas } from '../project-sections/project-section.persistence';
@@ -69,11 +72,38 @@ export class WorkspacesService {
       orderBy: [{ joinedAt: 'asc' }],
     });
 
-    return {
-      workspaces: memberships.map((membership) =>
-        this.workspaceDto(membership.workspace, user.userId, membership),
-      ),
-    };
+    const linked = await this.prisma.crew.findMany({
+      where: {
+        deletedAt: null,
+        studioWorkspace: { status: 'active', deletedAt: null },
+        members: { some: { userId: user.userId, status: 'active' } },
+      },
+      select: { studioWorkspace: true },
+    });
+    const rows = new Map(
+      memberships.map((member) => [
+        member.workspaceId,
+        this.workspaceDto(member.workspace, user.userId, member),
+      ]),
+    );
+    for (const crew of linked) {
+      if (!crew.studioWorkspace) continue;
+      try {
+        const access = await this.permissions.requireWorkspacePresence(
+          user.userId,
+          crew.studioWorkspace.id,
+        );
+        rows.set(
+          crew.studioWorkspace.id,
+          this.workspaceDto(crew.studioWorkspace, user.userId, access),
+        );
+      } catch (error) {
+        // A grant may be denied explicitly or removed between the two reads.
+        // It must not hide the user's independently accessible workspaces.
+        if (!(error instanceof ForbiddenException)) throw error;
+      }
+    }
+    return { workspaces: [...rows.values()] };
   }
 
   async ensureAndReturnDefaultWorkspace(user: AuthUser) {
@@ -813,7 +843,7 @@ export class WorkspacesService {
   private workspaceDto(
     workspace: Workspace,
     userId: string,
-    membership?: WorkspaceMember,
+    membership?: WorkspaceAccess,
   ) {
     return {
       id: workspace.id,
@@ -827,6 +857,7 @@ export class WorkspacesService {
       defaultProjectId: workspace.defaultProjectId,
       role: membership?.role,
       accessScope: membership?.accessScope,
+      crewRole: membership?.crewRole,
       version: workspace.version,
       createdAt: workspace.createdAt.toISOString(),
       updatedAt: workspace.updatedAt.toISOString(),

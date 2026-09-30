@@ -1,3 +1,4 @@
+import { CrewStudioRevocationService } from './crew-studio-revocation.service';
 import { createCrewStudioWorkspaceTx } from './create-studio-workspace';
 import {
   ConflictException,
@@ -51,6 +52,7 @@ export class CrewStudioWorkspaceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorization: CrewAuthorizationService,
+    private readonly studioRevocation: CrewStudioRevocationService,
   ) {}
 
   private async requireAdmin(
@@ -146,8 +148,9 @@ export class CrewStudioWorkspaceService {
 
   async link(crewId: string, userId: string, workspaceId: string | null) {
     await this.requireAdmin(crewId, userId);
+    let revokedWorkspaceId: string | null = null;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-workspace:${crewId}`})::bigint)`;
         await this.requireAdmin(crewId, userId, tx);
         // Serialize ownership transfer and competing links before checking ownership.
@@ -173,6 +176,8 @@ export class CrewStudioWorkspaceService {
           where: { id: crewId },
           data: { studioWorkspaceId: workspaceId, studioProjectId: null },
         });
+        if (crew.studioWorkspaceId !== workspaceId)
+          revokedWorkspaceId = crew.studioWorkspaceId;
         if (crew.studioWorkspaceId !== workspaceId || crew.studioProjectId) {
           await tx.crewProductionActivity.create({
             data: {
@@ -207,6 +212,9 @@ export class CrewStudioWorkspaceService {
             : null,
         };
       });
+      if (revokedWorkspaceId)
+        await this.studioRevocation.revoke(crewId, revokedWorkspaceId);
+      return result;
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&

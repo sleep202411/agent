@@ -1,10 +1,8 @@
 "use client";
 
-import { IconCube, IconLink } from "@tabler/icons-react";
-import { toast } from "sonner";
+import { IconCube } from "@tabler/icons-react";
 
 import { useCrewProductionOverview } from "@/app/(site)/crews/_hooks/use-production";
-import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
 import { CrewStudioWorkspacePicker } from "./crew-studio-workspace-picker";
 
@@ -19,18 +17,8 @@ export function CrewWorkbenchHeader({
   pageTitle: string;
   showProductionActions: boolean;
 }) {
-  const t = useTranslations("crewTaskProject");
   const tw = useTranslations("crewWorkbench");
   const overview = useCrewProductionOverview(crewId, showProductionActions);
-
-  const copyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      toast.success(t("projectLinkCopied"));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("projectLinkCopyFailed"));
-    }
-  };
 
   return (
     <header
@@ -59,15 +47,6 @@ export function CrewWorkbenchHeader({
             disabled={overview.isError || !overview.data?.capabilities.linkWorkspace}
           />
         ) : null}
-        <Button
-          color="muted"
-          variant="ghost"
-          onClick={() => void copyLink()}
-          className="rounded-md text-xs"
-          icon={<IconLink className="size-3.5" />}
-        >
-          {t("copyProjectLink")}
-        </Button>
       </div>
     </header>
   );

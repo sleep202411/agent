@@ -14,7 +14,7 @@
 import { isCrewCursorError } from "./_hooks/api";
 import { CrewSectionNavigation } from "./_components/crew-section-navigation";
 import { CrewWorkspace } from "./_components/crew-workspace";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { IconBriefcase, IconEye, IconLoader2, IconPlus } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -68,6 +68,34 @@ export default function CrewsPage() {
     const qs = params.toString();
     router.replace(qs ? `?${qs}` : "?", { scroll: false });
   };
+
+  // Persist the initially displayed crew so refreshes and shared URLs keep
+  // the same selection, just like explicit switches in the crew rail.
+  useEffect(() => {
+    if (
+      view !== "mine" ||
+      !user ||
+      !selectedCrew ||
+      requestedCrew ||
+      myCrews.isPending ||
+      myCrews.isError
+    )
+      return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("view", "mine");
+    params.set("crew", selectedCrew.id);
+    router.replace(localizePath(`/crews?${params.toString()}`, locale), { scroll: false });
+  }, [
+    view,
+    user,
+    selectedCrew,
+    requestedCrew,
+    myCrews.isPending,
+    myCrews.isError,
+    searchParams,
+    router,
+    locale,
+  ]);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [kycGateOpen, setKycGateOpen] = useState(false);

@@ -19,8 +19,8 @@ describe("duplicateStoryNodes", () => {
 
     const clones = copied.content.graph.nodes.slice(2);
     expect(clones).toHaveLength(2);
-    expect(storyAutoFallbackNodeId(clones[0]!.exit)).toBe(clones[1]!.nodeId);
-    expect(storyAutoFallbackNodeId(copied.content.graph.nodes[0]!.exit)).toBe(right);
+    expect(autoTarget(clones[0]!.exit)).toBe(clones[1]!.nodeId);
+    expect(autoTarget(copied.content.graph.nodes[0]!.exit)).toBe(right);
     expect(copied.content.graph.entryNodeId).toBe(left);
   });
 
@@ -30,8 +30,8 @@ describe("duplicateStoryNodes", () => {
 
     const clone = copied.content.graph.nodes.at(-1)!;
     expect(clone.nodeId).not.toBe(left);
-    expect(storyAutoFallbackNodeId(clone.exit)).toBeNull();
-    expect(storyAutoFallbackNodeId(copied.content.graph.nodes[0]!.exit)).toBe(right);
+    expect(autoTarget(clone.exit)).toBeNull();
+    expect(autoTarget(copied.content.graph.nodes[0]!.exit)).toBe(right);
   });
 
   it("does not invent a link across a gap in the selection", () => {
@@ -44,9 +44,9 @@ describe("duplicateStoryNodes", () => {
     ]);
 
     const clones = copied.content.graph.nodes.slice(3);
-    expect(clones.map((node) => storyAutoFallbackNodeId(node.exit))).toEqual([null, null]);
-    expect(storyAutoFallbackNodeId(copied.content.graph.nodes[0]!.exit)).toBe("clip:b");
-    expect(storyAutoFallbackNodeId(copied.content.graph.nodes[1]!.exit)).toBe("clip:c");
+    expect(clones.map((node) => autoTarget(node.exit))).toEqual([null, null]);
+    expect(autoTarget(copied.content.graph.nodes[0]!.exit)).toBe("clip:b");
+    expect(autoTarget(copied.content.graph.nodes[1]!.exit)).toBe("clip:c");
   });
 
   it("retargets only the choice options whose destinations were copied", () => {
@@ -95,4 +95,9 @@ function emptyDraft(): InteractiveStoryDraftContent {
     graph: { entryNodeId: null, nodes: [] },
     productionNotes: [],
   };
+}
+
+function autoTarget(exit: InteractiveStoryDraftContent["graph"]["nodes"][number]["exit"]) {
+  if (exit.kind !== "auto") throw new Error("Expected an automatic continuation");
+  return storyAutoFallbackNodeId(exit);
 }

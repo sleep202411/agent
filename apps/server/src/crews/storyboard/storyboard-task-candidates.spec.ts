@@ -16,6 +16,15 @@ describe('Storyboard task picker', () => {
           number: 4,
           metadata: { plotTreeNodeId: 'other' },
         },
+        {
+          id: 'imported',
+          title: 'Imported shot',
+          number: 5,
+          metadata: {
+            canvasTaskImport: 'another-project',
+            sourceNodeId: 'scene',
+          },
+        },
       ]),
     };
     const project = {

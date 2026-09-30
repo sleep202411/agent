@@ -6,6 +6,7 @@ import {
 import { EntitlementService } from '../entitlements/entitlement.service';
 import {
   assertCreatorSeatAvailable,
+  creatorSeatUserIds,
   projectRoleConsumesCreatorSeat,
   storyRoleConsumesCreatorSeat,
   workspaceRoleConsumesCreatorSeat,
@@ -26,6 +27,7 @@ function txFor(input: {
   createdAt?: Date;
 }) {
   return {
+    crew: { findFirst: jest.fn().mockResolvedValue(null) },
     $queryRaw: jest
       .fn()
       .mockResolvedValue(input.creatorUserIds.map((user_id) => ({ user_id }))),
@@ -173,4 +175,39 @@ describe('creator seat enforcement', () => {
       false,
     );
   });
+});
+
+it('counts linked crew editors once and excludes viewers and explicit edit denials', async () => {
+  const member = (userId: string, edit: boolean) => ({
+    id: userId,
+    userId,
+    ownership: null,
+    policies: [],
+    permissionOverrides: edit
+      ? [{ permissionKey: 'studio.edit', effect: 'allow' }]
+      : [],
+  });
+  const db = {
+    $queryRaw: jest.fn().mockResolvedValue([{ user_id: 'editor' }]),
+    crew: {
+      findFirst: jest.fn().mockResolvedValue({
+        id: 'crew',
+        members: [
+          member('editor', true),
+          member('second', true),
+          member('viewer', false),
+          {
+            ...member('denied', false),
+            policies: [{ policyKey: 'admin' }],
+            permissionOverrides: [
+              { permissionKey: 'studio.edit', effect: 'deny' },
+            ],
+          },
+        ],
+      }),
+    },
+  };
+  expect(await creatorSeatUserIds(db as never, WORKSPACE_ID)).toEqual(
+    new Set(['editor', 'second']),
+  );
 });

@@ -2,7 +2,9 @@ vi.mock("./task-creation-workbench", () => ({
   TaskCreationWorkbench: ({ active }: { active: boolean }) =>
     active ? <div data-workbench /> : null,
 }));
-vi.mock("./trust-appeal-link", () => ({ TrustAppealLink: () => null }));
+vi.mock("./trust-appeal-link", () => ({
+  TrustAppealLink: () => <span data-trust-appeals>Trust appeals</span>,
+}));
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -212,6 +214,7 @@ describe("Crew task navigation", () => {
         m.activity,
       ]);
       expect(document.querySelector("[data-workbench]")).not.toBeNull();
+      expect(document.querySelector("[data-trust-appeals]")).toBeNull();
       expect(document.querySelector("[data-layout]")).toBeNull();
       await act(async () => (tabs[2] as HTMLElement).click());
       expect(document.querySelector("[data-overview]")).not.toBeNull();

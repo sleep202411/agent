@@ -23,11 +23,14 @@ export class RealtimeRevokeService {
 
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
-  async revokeStoryProjectAccess(projectId: string): Promise<void> {
+  async revokeStoryProjectAccess(
+    projectId: string,
+    userId?: string,
+  ): Promise<void> {
     try {
       await this.redis.publish(
         REALTIME_REVOKE_CHANNEL,
-        JSON.stringify({ channels: [storyProjectChannel(projectId)] }),
+        JSON.stringify({ channels: [storyProjectChannel(projectId)], userId }),
       );
     } catch (error) {
       this.logger.warn(`Story project revocation failed: ${String(error)}`);

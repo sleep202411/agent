@@ -26,6 +26,8 @@ integration(
         assetAccess as never,
         { broadcastCrewTaskProjectChange: broadcast } as never,
         {} as never,
+
+        { revoke: jest.fn().mockResolvedValue(undefined) } as never,
       );
     beforeAll(async () => {
       const url = postgresFixtureUrl(databaseUrl!);

@@ -78,6 +78,7 @@ describe('StoryPermissionService project scope', () => {
       .mockResolvedValueOnce([{ role: StoryProjectMemberRole.owner }])
       .mockResolvedValueOnce([]);
     const tx = {
+      crew: { findFirst: jest.fn().mockResolvedValue(null) },
       $queryRaw: query,
       storyProject: {
         findUnique: jest.fn().mockResolvedValue({
@@ -175,6 +176,7 @@ describe('combined project and workspace permissions', () => {
   it('unions permissions on the locked mutation snapshot too', async () => {
     const { service } = fixture();
     const tx = {
+      crew: { findFirst: jest.fn().mockResolvedValue(null) },
       $queryRaw: jest
         .fn()
         .mockResolvedValueOnce([{ id: PROJECT_ID }])
@@ -194,5 +196,75 @@ describe('combined project and workspace permissions', () => {
         'story.edit',
       ),
     ).resolves.toMatchObject({ role: 'editor' });
+  });
+});
+
+describe('linked crew Studio access', () => {
+  it.each(['viewer', 'editor'] as const)(
+    'uses current crew %s access without a direct workspace grant',
+    async (role) => {
+      const { service, prisma } = fixture();
+      const project = (await prisma.storyProject.findFirst()) as Record<
+        string,
+        unknown
+      >;
+      prisma.storyProject.findFirst.mockResolvedValue({
+        ...project,
+        members: [],
+        workspace: {
+          members: [],
+          studioCrew: {
+            id: 'crew',
+            deletedAt: null,
+            members: [
+              {
+                id: 'member',
+                ownership: null,
+                policies: [],
+                permissionOverrides:
+                  role === 'editor'
+                    ? [{ permissionKey: 'studio.edit', effect: 'allow' }]
+                    : [],
+              },
+            ],
+          },
+        },
+      } as never);
+      await expect(
+        service.requireProject(USER_ID, PROJECT_ID, 'story.read'),
+      ).resolves.toMatchObject({ role });
+      if (role === 'editor') {
+        await expect(
+          service.requireProject(USER_ID, PROJECT_ID, 'story.edit'),
+        ).resolves.toMatchObject({ role });
+      } else {
+        await expect(
+          service.requireProject(USER_ID, PROJECT_ID, 'story.edit'),
+        ).rejects.toMatchObject({
+          response: { code: 'STORY_PERMISSION_DENIED' },
+        });
+      }
+      await expect(
+        service.requireProject(USER_ID, PROJECT_ID, 'story.admin'),
+      ).rejects.toMatchObject({
+        response: { code: 'STORY_PERMISSION_DENIED' },
+      });
+    },
+  );
+  it('keeps independent review capability alongside crew editing', () => {
+    const { service } = fixture();
+    expect(
+      service.effectiveAccess('reviewer', 'billing', 'editor')?.capabilities,
+    ).toEqual(
+      expect.arrayContaining([
+        'story.read',
+        'story.review',
+        'story.edit',
+        'story.generate',
+      ]),
+    );
+    expect(
+      service.effectiveAccess('reviewer', 'billing', 'editor')?.capabilities,
+    ).not.toContain('story.admin');
   });
 });

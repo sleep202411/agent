@@ -48,6 +48,7 @@ function build(
     ...opts.member,
   };
 
+  const studioRevocation = { revoke: jest.fn().mockResolvedValue(undefined) };
   const tx = {
     crew: {
       findFirst: jest.fn().mockResolvedValue({ id: CREW_ID, name: CREW_NAME }),
@@ -144,12 +145,15 @@ function build(
     systemCalls,
     broadcast,
     authorization,
+    studioRevocation,
     service: new MembersService(
       prisma as never,
       notifications as never,
       conversations as never,
       collaboration as never,
       authorization as never,
+
+      studioRevocation as never,
     ),
   };
 }
@@ -310,4 +314,23 @@ describe('MembersService.remove — a removed member leaves the chat', () => {
     expect(t.syncCalls).toEqual([]);
     expect(t.systemCalls).toEqual([]);
   });
+});
+
+it('revokes linked Studio sessions only after membership removal commits', async () => {
+  const t = build();
+  t.prisma.crewMember.findFirst.mockResolvedValue(t.memberRow);
+  t.tx.crew.findFirst.mockResolvedValue({
+    id: CREW_ID,
+    name: CREW_NAME,
+    studioWorkspaceId: 'studio-workspace',
+  });
+  await t.service.remove(CREW_ID, MEMBER_ROW_ID, OWNER);
+  expect(t.studioRevocation.revoke).toHaveBeenCalledWith(
+    CREW_ID,
+    'studio-workspace',
+    NEWCOMER,
+  );
+  expect(t.tx.crewMember.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+    t.studioRevocation.revoke.mock.invocationCallOrder[0],
+  );
 });

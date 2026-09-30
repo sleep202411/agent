@@ -181,6 +181,26 @@ export class StoryboardChildrenService {
     });
   }
 
+  private importedTask(
+    tx: Prisma.TransactionClient,
+    crewId: string,
+    projectId: string,
+    nodeId: string,
+  ) {
+    return tx.crewTask.findFirst({
+      where: {
+        crewId,
+        deletedAt: null,
+        taskKind: CrewTaskKind.storyboard,
+        AND: [
+          { metadata: { path: ['canvasTaskImport'], equals: projectId } },
+          { metadata: { path: ['sourceNodeId'], equals: nodeId } },
+        ],
+      },
+      select: { id: true },
+    });
+  }
+
   async candidates(
     projectId: string,
     userId: string,
@@ -227,7 +247,8 @@ export class StoryboardChildrenService {
             !metadata ||
             typeof metadata !== 'object' ||
             Array.isArray(metadata) ||
-            typeof metadata.plotTreeNodeId !== 'string'
+            (typeof metadata.plotTreeNodeId !== 'string' &&
+              typeof metadata.canvasTaskImport !== 'string')
           );
         })
         .map(({ id, title, number }) => ({ id, title, number })),
@@ -241,6 +262,45 @@ export class StoryboardChildrenService {
   ): Promise<StoryboardChildItem[]> {
     const crewId = await this.resolveCrew(projectId, userId);
     await this.authorization.require(crewId, userId, 'tasks.view');
+    // Canvas imports belong to a specific Story project, even when several
+    // projects share a Crew workspace. Their tasks are top-level deliverables,
+    // so they must not depend on the legacy template's storyboard parent.
+    const imported = await this.prisma.crewTask.findMany({
+      where: {
+        crewId,
+        taskKind: CrewTaskKind.storyboard,
+        deletedAt: null,
+        metadata: { path: ['canvasTaskImport'], equals: projectId },
+      },
+      orderBy: { number: 'asc' },
+      select: {
+        id: true,
+        title: true,
+        metadata: true,
+        workflowState: { select: { semantic: true } },
+      },
+    });
+    if (imported.length) {
+      return imported.flatMap((task) => {
+        const metadata = task.metadata;
+        if (
+          !metadata ||
+          typeof metadata !== 'object' ||
+          Array.isArray(metadata) ||
+          typeof metadata.sourceNodeId !== 'string'
+        )
+          return [];
+        return [
+          {
+            nodeId: metadata.sourceNodeId,
+            nodeType: 'scene',
+            title: task.title,
+            taskId: task.id,
+            status: task.workflowState.semantic,
+          },
+        ];
+      });
+    }
     const plotTree = await this.resolvePlotTree(crewId);
     if (!plotTree || !Array.isArray(plotTree.nodes)) {
       return [];
@@ -306,6 +366,8 @@ export class StoryboardChildrenService {
   ): Promise<{ taskId: string }> {
     const crewId = await this.resolveCrew(projectId, userId);
     return this.withTaskWrite(crewId, userId, async (tx) => {
+      const imported = await this.importedTask(tx, crewId, projectId, nodeId);
+      if (imported) return { taskId: imported.id };
       const plotTree = await this.resolvePlotTree(crewId, tx);
       if (!plotTree || !Array.isArray(plotTree.nodes)) {
         throw new BadRequestException({
@@ -388,6 +450,11 @@ export class StoryboardChildrenService {
         string,
         unknown
       >;
+      if (typeof existingMeta.canvasTaskImport === 'string') {
+        throw new ConflictException({
+          message: 'This task is already linked to an imported canvas node.',
+        });
+      }
       if (
         typeof existingMeta.plotTreeNodeId === 'string' &&
         existingMeta.plotTreeNodeId !== nodeId
@@ -423,6 +490,8 @@ export class StoryboardChildrenService {
   ): Promise<{ taskId: string }> {
     const crewId = await this.resolveCrew(projectId, userId);
     return this.withTaskWrite(crewId, userId, async (tx) => {
+      const imported = await this.importedTask(tx, crewId, projectId, nodeId);
+      if (imported) return { taskId: imported.id };
       const plotTree = await this.resolvePlotTree(crewId, tx);
       if (!plotTree || !Array.isArray(plotTree.nodes)) {
         throw new BadRequestException({

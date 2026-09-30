@@ -149,7 +149,7 @@ function WorkspacePickerSession({
             disabled={disabled}
             loading={saving}
             icon={<IconLink className="size-3.5" />}
-            className="max-w-48 text-xs"
+            className="max-w-48 rounded-md border border-white/15 bg-white/5 text-xs hover:bg-white/10"
           >
             <span className="truncate">
               {linkedWorkspace?.name ??
@@ -224,6 +224,7 @@ function WorkspacePickerSession({
                   variant="outline"
                   color="muted"
                   disabled={saving || !sourceReady}
+                  className="h-8 px-3 text-xs"
                   onClick={() => setConfirmCreate(true)}
                 >
                   {t("create")}
@@ -237,6 +238,8 @@ function WorkspacePickerSession({
         <a
           className="rounded-md px-2 py-2 text-xs text-muted-foreground hover:text-white"
           href={`${getStudioHref(locale)}/projects?ws=${encodeURIComponent(linkedWorkspace.id)}`}
+          target="_blank"
+          rel="noopener noreferrer"
         >
           {t("open")}
         </a>
