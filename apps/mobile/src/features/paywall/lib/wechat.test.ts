@@ -11,9 +11,10 @@ vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
 vi.mock("@/config", () => ({ webBaseUrl: "https://fixture.invalid" }));
 vi.mock("@/lib/api-client", () => ({ api: mocks }));
 vi.mock("./checkout-channel", () => ({ currentCheckoutChannel: () => "wechat" }));
+const paywallConfig = vi.hoisted(() => ({ mock: false }));
 vi.mock("./paywall-config", () => ({
   assertPaymentReady: () => {},
-  mustUseMockPayments: () => false,
+  mustUseMockPayments: () => paywallConfig.mock,
 }));
 const product: PaywallProduct = {
   id: "community_membership_year",
@@ -34,11 +35,26 @@ const price = (id: string, interval = "year", currency = "CNY", isActive = true)
 });
 beforeEach(() => {
   vi.resetAllMocks();
+  paywallConfig.mock = false;
   mocks.generation = 1;
   mocks.post.mockResolvedValue({
     order: { id: "order", status: "pending" },
     paymentIntent: { checkoutUrl: "weixin://pay" },
   });
+});
+
+it("returns a mock scan QR in development without creating a Nest order", async () => {
+  paywallConfig.mock = true;
+  await expect(
+    purchaseWithWechat({ ...product, billingPriceId: "price-1" })
+  ).resolves.toMatchObject({
+    mocked: true,
+    wechatScan: {
+      orderId: expect.stringMatching(/^mock-wechat-/),
+      codeUrl: expect.stringContaining("weixin://"),
+    },
+  });
+  expect(mocks.post).not.toHaveBeenCalled();
 });
 it.each([
   [price("monthly", "month")],

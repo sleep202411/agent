@@ -1,7 +1,7 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
-import { isProductionApp } from "@/config";
+import { appEnv, isProductionApp } from "@/config";
 
 import { currentCheckoutChannel, type CheckoutChannel } from "./checkout-channel";
 
@@ -40,8 +40,8 @@ export function mustUseMockPayments(channel: CheckoutChannel): boolean {
     if (isProductionApp) return false;
     return revenueCatApiKey(channel).length === 0;
   }
-  // CN Android WeChat is Native scan pay against Nest. No SDK key to mock around.
-  if (channel === "wechat") return false;
+  // CN Android WeChat hits Nest for Native scan. Local development mocks QR → paid.
+  if (channel === "wechat") return appEnv.appVariant === "development";
   return !isProductionApp;
 }
 

@@ -10,6 +10,9 @@ export type WechatScanCheckout = {
   codeUrl: string;
 };
 
+/** Prefixed Nest-less order id — `WechatScanPay` auto-marks these paid. */
+export const MOCK_WECHAT_ORDER_PREFIX = "mock-wechat-";
+
 export type PurchaseResult = {
   mocked: boolean;
   productId: string;

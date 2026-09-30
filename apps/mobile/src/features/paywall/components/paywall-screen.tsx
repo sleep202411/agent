@@ -332,6 +332,7 @@ function PaywallSession() {
   const [computeBalance, setComputeBalance] = useState<string | null>(null);
   const [communityBalance, setCommunityBalance] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [communityPacks, setCommunityPacks] = useState<
     ReturnType<typeof communityPackProduct>[] | null
@@ -364,14 +365,13 @@ function PaywallSession() {
       try {
         const prices = await listCommunityPointPackages("CNY");
         if (cancelled || !isCurrentSession()) return;
-        let next = prices.map(communityPackProduct);
-        if (channel === "apple_iap") {
-          next = next.filter((item) =>
-            item.storeProductId.startsWith("com.fizzdragon.community.credits.")
+        const next = prices
+          .map(communityPackProduct)
+          .filter(
+            (item) =>
+              channel !== "apple_iap" ||
+              item.storeProductId.startsWith("com.fizzdragon.community.credits.")
           );
-          const { withRevenueCatPrices } = await import("../lib/iap");
-          next = await withRevenueCatPrices(next);
-        }
         if (cancelled || !isCurrentSession()) return;
         setCommunityPacks(next);
       } catch (error: unknown) {
@@ -483,21 +483,36 @@ function PaywallSession() {
         });
         return;
       }
-      Alert.alert(
-        t("paywall.purchaseOkTitle"),
-        result.mocked
-          ? t("paywall.purchaseOkMock")
-          : channel === "wechat"
-            ? t("paywall.wechat.success")
-            : t("paywall.purchaseOkLive")
-      );
-      await refreshWallets();
+      const storeIap = channel === "apple_iap" || channel === "google_play_iap";
+      if (storeIap) {
+        // StoreKit / Play already show a completion sheet. Mock uses the same
+        // paying → confirming button states so the spinner is visible on device.
+        if (isCurrentSession()) setConfirming(true);
+        if (result.mocked && process.env.VITEST !== "true") {
+          await new Promise((resolve) => setTimeout(resolve, 1_400));
+        }
+        if (!isCurrentSession()) return;
+        await refreshWallets();
+        if (!isCurrentSession()) return;
+        Alert.alert(t("paywall.purchaseOkTitle"), t("paywall.purchaseOkSuccess"));
+      } else {
+        if (!result.mocked) {
+          Alert.alert(
+            t("paywall.purchaseOkTitle"),
+            channel === "wechat" ? t("paywall.wechat.success") : t("paywall.purchaseOkLive")
+          );
+        }
+        await refreshWallets();
+      }
     } catch (error: unknown) {
       if (!isCurrentSession() || isPurchaseCancelled(error)) return;
       Alert.alert(t("paywall.purchaseFailed"), errorMessage(error));
     } finally {
       paymentActionInFlight.current = false;
-      if (isCurrentSession()) setBusy(false);
+      if (isCurrentSession()) {
+        setConfirming(false);
+        setBusy(false);
+      }
     }
   };
 
@@ -584,13 +599,18 @@ function PaywallSession() {
           (!product || actionsLocked) && styles.payButtonDisabled,
         ]}
       >
-        <ThemedText type="smallBold" style={styles.payLabel}>
-          {pointsCheckout
-            ? t("paywall.buyNow")
-            : membership
-              ? `${t("paywall.membership.subscribe")} · ${product?.displayPrice ?? ""}`
-              : `${t("paywall.payNow")} ${product?.displayPrice ?? ""}`}
-        </ThemedText>
+        <View style={styles.payLabelRow}>
+          {actionsLocked ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
+          <ThemedText type="smallBold" style={styles.payLabel}>
+            {confirming
+              ? t("paywall.confirming")
+              : pointsCheckout
+                ? t("paywall.buyNow")
+                : membership
+                  ? `${t("paywall.membership.subscribe")} · ${product?.displayPrice ?? ""}`
+                  : `${t("paywall.payNow")} ${product?.displayPrice ?? ""}`}
+          </ThemedText>
+        </View>
       </Pressable>
       {membership && canRestore ? (
         <Pressable

@@ -17,7 +17,13 @@ import {
 import { communityStoreProductId, type PaywallProduct } from "./catalog";
 import { currentCheckoutChannel } from "./checkout-channel";
 import { assertPaymentReady, mustUseMockPayments } from "./paywall-config";
-import type { PurchaseResult, WechatScanCheckout } from "./purchase-types";
+import {
+  MOCK_WECHAT_ORDER_PREFIX,
+  type PurchaseResult,
+  type WechatScanCheckout,
+} from "./purchase-types";
+
+export { MOCK_WECHAT_ORDER_PREFIX };
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -111,6 +117,14 @@ export function communityPackProduct(price: BillingPrice): PaywallProduct {
   };
 }
 
+function mockWechatScan(product: PaywallProduct): WechatScanCheckout {
+  return {
+    orderId: `${MOCK_WECHAT_ORDER_PREFIX}${Date.now().toString(36)}`,
+    // Any stable string encodes as a QR; screenshot-scan UX only needs a frame.
+    codeUrl: `weixin://wxpay/bizpayurl?pr=mock&sku=${encodeURIComponent(product.storeProductId)}`,
+  };
+}
+
 /**
  * CN Android WeChat Pay: Nest Native 扫码 (same checkout as web). The caller
  * renders `wechatScan.codeUrl` as a QR and polls the order. CN iOS community
@@ -120,8 +134,13 @@ export async function purchaseWithWechat(product: PaywallProduct): Promise<Purch
   const channel = currentCheckoutChannel();
   assertPaymentReady(channel);
   if (Platform.OS === "web" || mustUseMockPayments(channel)) {
-    await sleep(700);
-    return { mocked: true, productId: product.storeProductId };
+    // Show QR → auto “paid” like a real Native scan, without Nest/merchant.
+    await sleep(600);
+    return {
+      mocked: true,
+      productId: product.billingPriceId ?? product.storeProductId,
+      wechatScan: mockWechatScan(product),
+    };
   }
 
   if (Platform.OS !== "android") {
