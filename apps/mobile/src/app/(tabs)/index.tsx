@@ -276,6 +276,13 @@ export default function IpDiscoveryScreen() {
   const header = (
     <View style={styles.headerStack}>
       <ScreenHeader title={t("home.title")} action={agentAction} />
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push(toHref("/discovery"))}
+        style={{ paddingVertical: 12 }}
+      >
+        <ThemedText>{t("discovery.entry")}</ThemedText>
+      </Pressable>
 
       {featured.length ? (
         <View>
