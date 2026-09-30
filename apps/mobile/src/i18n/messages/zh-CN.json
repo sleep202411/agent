@@ -2215,5 +2215,15 @@
   "assetUpload.attach": "加入资产库",
   "assetUpload.discard": "丢弃已上传文件",
   "assetUpload.retryHelp": "重试将使用同一份上传文件。如果目标文件夹已变更，请返回刷新后的资产列表检查结果。",
-  "assetUpload.leaveHelp": "加入文件前离开会放弃此草稿。未关联的上传文件由服务器清理。"
+  "assetUpload.leaveHelp": "加入文件前离开会放弃此草稿。未关联的上传文件由服务器清理。",
+  "crewMembers.title": "剧组成员",
+  "crewMembers.loaded": "已加载 {count} / {total} 位成员",
+  "crewMembers.owner": "剧组负责人",
+  "crewMembers.admin": "管理员",
+  "crewMembers.finance": "财务权限",
+  "crewMembers.joined": "加入时间",
+  "crewMembers.noPosition": "暂无岗位",
+  "crewMembers.primary": "主要岗位",
+  "crewMembers.empty": "未找到有效成员。",
+  "crewMembers.userId": "用户 ID"
 }

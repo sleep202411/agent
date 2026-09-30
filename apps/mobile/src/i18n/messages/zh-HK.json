@@ -2215,5 +2215,15 @@
   "assetUpload.attach": "加入資產庫",
   "assetUpload.discard": "捨棄已上傳檔案",
   "assetUpload.retryHelp": "重試將使用同一份上傳檔案。如果目標資料夾已變更，請返回重新整理後的資產清單檢查結果。",
-  "assetUpload.leaveHelp": "加入檔案前離開會放棄此草稿。未關聯的上傳檔案由伺服器清理。"
+  "assetUpload.leaveHelp": "加入檔案前離開會放棄此草稿。未關聯的上傳檔案由伺服器清理。",
+  "crewMembers.title": "劇組成員",
+  "crewMembers.loaded": "已載入 {count} / {total} 位成員",
+  "crewMembers.owner": "劇組負責人",
+  "crewMembers.admin": "管理員",
+  "crewMembers.finance": "財務權限",
+  "crewMembers.joined": "加入時間",
+  "crewMembers.noPosition": "暫無崗位",
+  "crewMembers.primary": "主要崗位",
+  "crewMembers.empty": "未找到有效成員。",
+  "crewMembers.userId": "用戶 ID"
 }

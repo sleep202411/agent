@@ -2215,5 +2215,15 @@
   "assetUpload.attach": "Add to Asset Library",
   "assetUpload.discard": "Discard Uploaded File",
   "assetUpload.retryHelp": "Retry uses the same uploaded file. If the destination changed, return to the refreshed asset list to check the result.",
-  "assetUpload.leaveHelp": "Leaving before adding the file abandons this draft. Unattached uploads are cleaned up by the server."
+  "assetUpload.leaveHelp": "Leaving before adding the file abandons this draft. Unattached uploads are cleaned up by the server.",
+  "crewMembers.title": "Crew Members",
+  "crewMembers.loaded": "{count} of {total} members loaded",
+  "crewMembers.owner": "Crew Owner",
+  "crewMembers.admin": "Administrator",
+  "crewMembers.finance": "Finance Access",
+  "crewMembers.joined": "Joined",
+  "crewMembers.noPosition": "No Assigned Position",
+  "crewMembers.primary": "Primary Position",
+  "crewMembers.empty": "No active members found.",
+  "crewMembers.userId": "User ID"
 }

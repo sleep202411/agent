@@ -22,6 +22,11 @@ vi.mock("@/components/themed-text", () => ({
 vi.mock("@/components/authed-web-view", () => ({
   AuthedWebView: ({ path }: { path: string }) => <span>{path}</span>,
 }));
+vi.mock("./crew-members", () => ({
+  CrewMembers: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close members</button>
+  ),
+}));
 vi.mock("./episode-management", () => ({
   EpisodeManagement: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close episodes</button>
@@ -254,4 +259,10 @@ it("opens asset organization and returns to tasks", async () => {
   expect(button("close asset organization")).toBeTruthy();
   await act(async () => button("close asset organization").click());
   expect(button("assetOrganization.title")).toBeTruthy();
+});
+it("opens native member directory and returns to tasks", async () => {
+  await act(async () => button("crewMembers.title").click());
+  expect(button("close members")).toBeTruthy();
+  await act(async () => button("close members").click());
+  expect(button("pick")).toBeTruthy();
 });

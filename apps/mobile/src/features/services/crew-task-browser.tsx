@@ -1,3 +1,4 @@
+import { CrewMembers } from "./crew-members";
 import { AssetOrganization } from "../crew-assets/organization";
 import { StudioMedia } from "../crew-assets/studio-media";
 import { CrewStudioWorkspace } from "./crew-studio-workspace";
@@ -31,6 +32,7 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [showMembers, setShowMembers] = useState(false);
   const [managingEpisodes, setManagingEpisodes] = useState(false);
   const [creatingEpisode, setCreatingEpisode] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
@@ -47,6 +49,15 @@ export function CrewTaskBrowser({
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (showMembers)
+    return (
+      <CrewMembers
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowMembers(false)}
+      />
+    );
   if (managingEpisodes)
     return (
       <EpisodeManagement
@@ -194,6 +205,15 @@ export function CrewTaskBrowser({
     );
   return (
     <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowMembers(true);
+        }}
+      >
+        <ThemedText>{t("crewMembers.title")}</ThemedText>
+      </Pressable>
       <Pressable
         accessibilityRole="button"
         style={{ padding: 12 }}
