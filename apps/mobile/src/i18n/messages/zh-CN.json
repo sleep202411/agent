@@ -2303,5 +2303,8 @@
   "projectResources.recheck": "操作可能已经完成。请返回刷新后再操作。",
   "projectResources.removeHelp": "是否从项目中移除此引用？原文件将保留在资产中心。",
   "projectResources.confirmRemove": "确认移除",
-  "projectResources.openLink": "打开外部链接"
+  "projectResources.openLink": "打开外部链接",
+  "projectDocument.title": "项目概览",
+  "projectDocument.readOnly": "只读文档。链接以引用形式显示，表情以简码显示。",
+  "projectDocument.loadError": "无法显示文档，请刷新重试。"
 }

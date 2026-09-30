@@ -2303,5 +2303,8 @@
   "projectResources.recheck": "操作可能已經完成。請返回重新整理後再操作。",
   "projectResources.removeHelp": "是否從項目中移除此引用？原檔案將保留在資產中心。",
   "projectResources.confirmRemove": "確認移除",
-  "projectResources.openLink": "開啟外部連結"
+  "projectResources.openLink": "開啟外部連結",
+  "projectDocument.title": "項目概覽",
+  "projectDocument.readOnly": "唯讀文件。連結以引用形式顯示，表情以簡碼顯示。",
+  "projectDocument.loadError": "無法顯示文件，請重新整理再試。"
 }

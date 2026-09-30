@@ -2303,5 +2303,8 @@
   "projectResources.recheck": "The change may have completed. Return and refresh before another attempt.",
   "projectResources.removeHelp": "Remove this reference from the project? The original file will remain in the Asset Center.",
   "projectResources.confirmRemove": "Confirm Removal",
-  "projectResources.openLink": "Open External Link"
+  "projectResources.openLink": "Open External Link",
+  "projectDocument.title": "Project Overview",
+  "projectDocument.readOnly": "Read-only document. Links are shown as references; emoji names appear as shortcodes.",
+  "projectDocument.loadError": "The document could not be displayed. Refresh to try again."
 }
