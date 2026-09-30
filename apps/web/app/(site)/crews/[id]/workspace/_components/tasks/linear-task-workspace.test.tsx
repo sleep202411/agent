@@ -1,3 +1,7 @@
+vi.mock("./task-creation-workbench", () => ({
+  TaskCreationWorkbench: ({ active }: { active: boolean }) =>
+    active ? <div data-workbench /> : null,
+}));
 vi.mock("./trust-appeal-link", () => ({ TrustAppealLink: () => null }));
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -10,6 +14,7 @@ import { LinearTaskWorkspace } from "./linear-task-workspace";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   locale: "en-US",
+  owner: false,
   layout: "board",
   account: "alice",
   projectFailed: false,
@@ -132,10 +137,26 @@ vi.mock("./task-issue-detail", () => ({
   },
 }));
 vi.mock("./task-project-settings", () => ({ ProjectSettingsDialog: () => null }));
-vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
+vi.mock("./task-quick-create", () => ({
+  TaskQuickCreate: ({
+    open,
+    crewId,
+    presetWorkflowStateId,
+  }: {
+    open: boolean;
+    crewId: string;
+    presetWorkflowStateId: string | null;
+  }) =>
+    open ? (
+      <div data-create-task={crewId} data-preset={String(presetWorkflowStateId)}>
+        Task creation dialog
+      </div>
+    ) : null,
+}));
 vi.mock("./task-dialogs", () => ({ SubmitTaskDialog: () => null }));
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
+  state.owner = false;
   state.projectFailed = false;
   state.projectMissing = false;
   state.projectFetching = false;
@@ -148,7 +169,7 @@ afterEach(() => {
   state.missing = false;
   state.retry.mockClear();
 });
-async function render(deeplinkTaskId?: string | null, reuse = false) {
+async function render(deeplinkTaskId?: string | null, reuse = false, production = false) {
   if (!reuse) {
     const el = document.createElement("div");
     document.body.append(el);
@@ -165,13 +186,15 @@ async function render(deeplinkTaskId?: string | null, reuse = false) {
         crewVersion={1}
         canEditCrewInfo={false}
         members={[]}
-        isOwner={false}
+        isOwner={state.owner}
         canReview={false}
         canSubmitAssigned={false}
         canComment={false}
       />
     )
   );
+  if (!production)
+    await act(async () => (document.querySelectorAll("nav button")[1] as HTMLElement)?.click());
 }
 describe("Crew task navigation", () => {
   it.each(["en-US", "zh-CN", "zh-HK"])(
@@ -179,21 +202,23 @@ describe("Crew task navigation", () => {
     async (locale) => {
       state.locale = locale;
       state.layout = "board";
-      await render();
+      await render(undefined, false, true);
       const m = (locale === "zh-CN" ? cn : locale === "zh-HK" ? hk : en).crewTaskProject;
       const tabs = [...document.querySelectorAll("nav button")];
-      expect(tabs.slice(0, 3).map((el) => el.textContent)).toEqual([
+      expect(tabs.slice(0, 4).map((el) => el.textContent)).toEqual([
+        m.workbench.title,
         m.issues,
         m.overview,
         m.activity,
       ]);
-      expect(document.querySelector('[data-layout="board"]')).not.toBeNull();
-      await act(async () => (tabs[1] as HTMLElement).click());
-      expect(document.querySelector("[data-overview]")).not.toBeNull();
+      expect(document.querySelector("[data-workbench]")).not.toBeNull();
+      expect(document.querySelector("[data-layout]")).toBeNull();
       await act(async () => (tabs[2] as HTMLElement).click());
+      expect(document.querySelector("[data-overview]")).not.toBeNull();
+      await act(async () => (tabs[3] as HTMLElement).click());
       expect(document.querySelector("[data-overview]")).toBeNull();
       expect(document.querySelector("[data-layout]")).toBeNull();
-      await act(async () => (tabs[0] as HTMLElement).click());
+      await act(async () => (tabs[1] as HTMLElement).click());
       expect(document.querySelector('[data-layout="board"]')).not.toBeNull();
     }
   );
@@ -358,4 +383,42 @@ it("offers retry when the initial project configuration load fails", async () =>
   expect(retry).toBeDefined();
   await act(async () => retry!.click());
   expect(state.retry).toHaveBeenCalledOnce();
+});
+
+it.each(["board", "list"])(
+  "opens task initiation from the primary action in %s layout",
+  async (layout) => {
+    state.owner = true;
+    state.locale = "en-US";
+    state.layout = layout;
+    await render();
+    const button = [...document.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Create Task"
+    );
+    expect(button).toBeDefined();
+    await act(async () => button!.click());
+    expect(document.querySelector('[data-create-task="crew"]')).not.toBeNull();
+    expect(document.querySelector("[data-create-task]")?.getAttribute("data-preset")).toBe("null");
+  }
+);
+it.each([
+  ["en-US", "Create Task"],
+  ["zh-CN", "发起任务"],
+  ["zh-HK", "發起任務"],
+])("localizes task initiation in %s", async (locale, label) => {
+  state.owner = true;
+  state.locale = locale;
+  await render();
+  expect(
+    [...document.querySelectorAll("button")].some((b) => b.textContent?.trim() === label)
+  ).toBe(true);
+});
+it("does not grant ordinary members task creation", async () => {
+  state.owner = false;
+  state.locale = "en-US";
+  await render();
+  expect(
+    [...document.querySelectorAll("button")].some((b) => b.textContent?.trim() === "Create Task")
+  ).toBe(false);
+  expect(document.querySelector("[data-create-task]")).toBeNull();
 });

@@ -309,6 +309,7 @@ export class StoryWorkingPreviewService {
     const prepared = clipNodes.map((node) =>
       prepareWorkingPreviewTimeline(
         node.nodeId,
+        node.kind === 'clip' ? node.name?.trim() || node.clipKey : node.nodeId,
         sequenceByNodeId.get(node.nodeId) ?? null,
         this.assetUrls,
       ),
@@ -405,6 +406,7 @@ export class StoryWorkingPreviewService {
 
 function prepareWorkingPreviewTimeline(
   graphNodeId: string,
+  sceneTitle: string,
   sequence: WorkingPreviewSequence | null,
   assetUrls: MediaAssetUrlResolverService,
 ): PreparedWorkingPreviewTimeline {
@@ -416,7 +418,7 @@ function prepareWorkingPreviewTimeline(
     };
   }
   const segments = sequence.clips.map((clip) =>
-    prepareWorkingPreviewSegment(graphNodeId, clip, assetUrls),
+    prepareWorkingPreviewSegment(graphNodeId, sceneTitle, clip, assetUrls),
   );
   return {
     timeline: {
@@ -433,6 +435,7 @@ const choosePreviewClipVariant = chooseStoryboardClipVariant;
 
 function prepareWorkingPreviewSegment(
   graphNodeId: string,
+  sceneTitle: string,
   clip: WorkingPreviewClip,
   assetUrls: MediaAssetUrlResolverService,
 ): {
@@ -447,30 +450,27 @@ function prepareWorkingPreviewSegment(
       ? clip.selectedMediaVersion
       : null;
   const variant = media ? choosePreviewClipVariant(media) : null;
-  const label = `Storyboard clip ${clip.stableKey}`;
+  const shot = readableShotTitle(clip);
+  const label = `"${shot}" in "${sceneTitle}"`;
+  const shotDetails: StoryBuildDiagnosticDto['details'] = {
+    kind: 'shot',
+    sceneTitle,
+    shotTitle: shot,
+  };
   const snapshotEntry = previewClipSnapshotEntry(clip);
 
-  if (!media) {
-    diagnostics.push(
-      previewDiagnostic(
-        'warning',
-        'STORY_WORKING_PREVIEW_CLIP_MEDIA_MISSING',
-        `${label} has no selected media yet; Preview is using an empty shot placeholder.`,
-        'clip',
-        graphNodeId,
-      ),
-    );
-  } else if (!variant) {
+  if (media && !variant) {
     diagnostics.push(
       previewDiagnostic(
         'warning',
         'STORY_WORKING_PREVIEW_OUTPUT_MISSING',
-        `${label} does not resolve to a playable media variant; Preview is using an empty shot placeholder.`,
+        `${label} does not resolve to a playable media variant, so playtest skips that shot.`,
         'asset',
         media.mediaAssetId,
+        shotDetails,
       ),
     );
-  } else {
+  } else if (media && variant) {
     const source = media.mediaAsset;
     const expectedKind =
       clip.kind === 'video' ? MediaAssetKind.video : MediaAssetKind.image;
@@ -492,9 +492,10 @@ function prepareWorkingPreviewSegment(
         previewDiagnostic(
           'warning',
           'STORY_WORKING_PREVIEW_OUTPUT_INELIGIBLE',
-          `${label} selected media ${ineligible}; Preview is using an empty shot placeholder.`,
+          `${label} selected media ${ineligible}, so playtest skips that shot.`,
           'asset',
           source.id,
+          shotDetails,
         ),
       );
     } else if (!variant.contentType.toLowerCase().startsWith(expectedPrefix)) {
@@ -502,9 +503,10 @@ function prepareWorkingPreviewSegment(
         previewDiagnostic(
           'warning',
           'STORY_WORKING_PREVIEW_OUTPUT_CONTENT_TYPE_INVALID',
-          `${label} does not resolve to a ${clip.kind} media type; Preview is using an empty shot placeholder.`,
+          `${label} does not resolve to a ${clip.kind} media type, so playtest skips that shot.`,
           'asset',
           source.id,
+          shotDetails,
         ),
       );
     } else {
@@ -520,9 +522,10 @@ function prepareWorkingPreviewSegment(
           previewDiagnostic(
             'warning',
             'STORY_WORKING_PREVIEW_OUTPUT_METADATA_INCOMPLETE',
-            `${label} has incomplete technical metadata; browser playback remains available.`,
+            `${label} is missing some technical metadata. Playback still uses the original video.`,
             'asset',
             source.id,
+            shotDetails,
           ),
         );
       }
@@ -538,9 +541,10 @@ function prepareWorkingPreviewSegment(
           previewDiagnostic(
             'warning',
             'STORY_WORKING_PREVIEW_OUTPUT_URL_UNAVAILABLE',
-            `${label} has no resolvable playback URL; Preview is using an empty shot placeholder.`,
+            `${label} has no playback URL, so playtest skips that shot.`,
             'asset',
             source.id,
+            shotDetails,
           ),
         );
       } else {
@@ -549,9 +553,10 @@ function prepareWorkingPreviewSegment(
             previewDiagnostic(
               'warning',
               'STORY_WORKING_PREVIEW_MODERATION_PENDING',
-              `${label} selected media has not completed moderation review.`,
+              `${label} is still in moderation review. Playback uses it anyway.`,
               'asset',
               source.id,
+              shotDetails,
             ),
           );
         }
@@ -575,6 +580,7 @@ function prepareWorkingPreviewSegment(
     segment: {
       clipId: clip.id,
       clipKey: clip.stableKey,
+      title: shot,
       kind: clip.kind as 'image' | 'video',
       durationMs: clip.durationMs,
       clipVersion: clip.version,
@@ -688,8 +694,19 @@ function previewDiagnostic(
   message: string,
   entityType: StoryBuildDiagnosticDto['entityType'],
   entityId: string | null,
+  details?: StoryBuildDiagnosticDto['details'],
 ): StoryBuildDiagnosticDto {
-  return { severity, code, message, entityType, entityId };
+  return details
+    ? { severity, code, message, entityType, entityId, details }
+    : { severity, code, message, entityType, entityId };
+}
+
+function readableShotTitle(clip: {
+  title?: string | null;
+  stableKey: string;
+}): string {
+  const title = clip.title?.trim();
+  return title || clip.stableKey;
 }
 
 function localizedDraftText(

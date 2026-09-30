@@ -1,5 +1,6 @@
+import { z } from "zod";
 import { appEnv, resolveAssetUrl } from "@/config";
-import { api } from "@/lib/api-client";
+import { api, ApiRequestError } from "@/lib/api-client";
 
 import type { CreatorServiceDetail, CreatorServicePackage, CreatorServiceSummary } from "./types";
 
@@ -38,6 +39,7 @@ type CreatorServiceQuestionDto = {
 };
 
 type CreatorServiceDetailDto = CreatorServiceCardDto & {
+  version?: number;
   packages?: CreatorServicePackageDto[] | null;
   requirementQuestions?: CreatorServiceQuestionDto[] | null;
   status?: string | null;
@@ -80,14 +82,26 @@ function mapService(dto: CreatorServiceCardDto): CreatorServiceSummary | undefin
 function mapPackage(dto: CreatorServicePackageDto): CreatorServicePackage | undefined {
   const id = nonEmpty(dto.id);
   const title = nonEmpty(dto.title);
-  if (!id || !title) return undefined;
+  const tier = nonEmpty(dto.tier);
+  const currency = nonEmpty(dto.currency);
+  if (
+    !id ||
+    !title ||
+    !tier ||
+    !["basic", "standard", "premium"].includes(tier) ||
+    !currency ||
+    typeof dto.price !== "number" ||
+    !Number.isFinite(dto.price) ||
+    dto.price < 0
+  )
+    return undefined;
   return {
     id,
-    tier: nonEmpty(dto.tier) ?? "basic",
+    tier,
     title,
     description: nonEmpty(dto.description) ?? "",
-    price: typeof dto.price === "number" ? dto.price : 0,
-    currency: nonEmpty(dto.currency) ?? "USD",
+    price: dto.price,
+    currency,
     deliveryDays: typeof dto.deliveryDays === "number" ? dto.deliveryDays : 0,
     revisions: typeof dto.revisions === "number" ? dto.revisions : 0,
     scope: (dto.scope ?? []).filter((item): item is string => typeof item === "string" && !!item),
@@ -100,6 +114,12 @@ function mapDetail(dto: CreatorServiceDetailDto): CreatorServiceDetail | undefin
   const packages = (dto.packages ?? [])
     .map(mapPackage)
     .filter((pkg): pkg is CreatorServicePackage => !!pkg);
+  if (
+    packages.length !== (dto.packages ?? []).length ||
+    new Set(packages.map((p) => p.tier)).size !== packages.length
+  ) {
+    throw new Error("Invalid service packages; reload before editing");
+  }
   const cheapest = packages.reduce<CreatorServicePackage | undefined>(
     (current, pkg) => (!current || pkg.price < current.price ? pkg : current),
     undefined
@@ -107,19 +127,32 @@ function mapDetail(dto: CreatorServiceDetailDto): CreatorServiceDetail | undefin
 
   return {
     ...summary,
+    version:
+      Number.isSafeInteger(dto.version) && Number(dto.version) >= 0 ? dto.version : undefined,
     packages,
     startingPrice: cheapest?.price ?? summary.startingPrice,
     currency: cheapest?.currency ?? summary.currency,
     startingDeliveryDays: cheapest?.deliveryDays ?? summary.startingDeliveryDays,
     packageCount: packages.length || summary.packageCount,
-    requirementQuestions: (dto.requirementQuestions ?? [])
-      .map((question) => ({
-        id: nonEmpty(question.id) ?? nonEmpty(question.prompt) ?? "",
-        prompt: nonEmpty(question.prompt) ?? "",
-        helpText: nonEmpty(question.helpText),
-        required: question.required === true,
-      }))
-      .filter((question) => question.id && question.prompt),
+    requirementQuestions: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(64),
+          prompt: z.string().trim().min(1).max(240),
+          helpText: z
+            .string()
+            .max(240)
+            .nullish()
+            .transform((value) => value ?? ""),
+          required: z.boolean(),
+        })
+      )
+      .max(20)
+      .refine(
+        (items) => new Set(items.map((item) => item.id)).size === items.length,
+        "Duplicate question IDs"
+      )
+      .parse(dto.requirementQuestions ?? []),
     status: nonEmpty(dto.status) ?? "listed",
     updatedAt: nonEmpty(dto.updatedAt) ?? "",
   };
@@ -146,14 +179,20 @@ export async function fetchCreatorServices(
 }
 
 export async function fetchCreatorServiceById(
-  id: string
+  id: string,
+  signal?: AbortSignal
 ): Promise<CreatorServiceDetail | undefined> {
   try {
-    const res = await api.get<CreatorServiceDetailDto>(`/creator-services/${id}`, {
-      service: "aurora",
-    });
+    const res = await api.get<CreatorServiceDetailDto>(
+      `/creator-services/${encodeURIComponent(id)}`,
+      {
+        service: "aurora",
+        signal,
+      }
+    );
     return mapDetail(res);
-  } catch {
-    return undefined;
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.status === 404) return undefined;
+    throw error;
   }
 }

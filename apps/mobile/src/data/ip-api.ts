@@ -258,11 +258,12 @@ function mapDetail(dto: IpDto): IpDetail {
 
 type TaxonomyResponse = { items?: { code?: string; label?: string }[] };
 
-async function fetchTaxonomy(type: "genre" | "tag"): Promise<TaxonomyTerm[]> {
+async function fetchTaxonomy(type: "genre" | "tag", signal?: AbortSignal): Promise<TaxonomyTerm[]> {
   try {
     const res = await api.get<TaxonomyResponse>("/ip-commerce/taxonomy", {
       ...AURORA,
       params: { type, locale: locale() },
+      signal,
     });
     return (res.items ?? [])
       .filter((term): term is { code: string; label: string } => !!term.code && !!term.label)
@@ -273,13 +274,13 @@ async function fetchTaxonomy(type: "genre" | "tag"): Promise<TaxonomyTerm[]> {
 }
 
 /** Genre list from Nest ip-commerce taxonomy (`/aurora/ip-commerce/taxonomy?type=genre`). */
-async function fetchGenres(): Promise<Genre[]> {
-  return fetchTaxonomy("genre");
+async function fetchGenres(signal?: AbortSignal): Promise<Genre[]> {
+  return fetchTaxonomy("genre", signal);
 }
 
 /** Content-type label list from Nest ip-commerce taxonomy (`/aurora/ip-commerce/taxonomy?type=tag`). */
-async function fetchTypeTags(): Promise<TaxonomyTerm[]> {
-  return fetchTaxonomy("tag");
+async function fetchTypeTags(signal?: AbortSignal): Promise<TaxonomyTerm[]> {
+  return fetchTaxonomy("tag", signal);
 }
 
 function regionsFromIps(ips: IpSummary[]): Region[] {
@@ -334,12 +335,14 @@ export async function fetchIpDiscovery(): Promise<IpDiscovery> {
 
 export async function fetchIpCatalogPage({
   cursor,
+  signal,
   genreCode,
   limit = 50,
   regionCode,
   typeCode,
 }: {
   cursor?: string | null;
+  signal?: AbortSignal;
   genreCode?: string;
   limit?: number;
   regionCode?: string;
@@ -348,6 +351,7 @@ export async function fetchIpCatalogPage({
   const [list, genres, typeTags] = await Promise.all([
     api.get<ListResponse>("/ip-commerce/ips", {
       ...AURORA,
+      signal,
       params: {
         cursor: cursor ?? undefined,
         genreCodes: genreCode,
@@ -357,8 +361,8 @@ export async function fetchIpCatalogPage({
         tagCodes: typeCode,
       },
     }),
-    fetchGenres(),
-    fetchTypeTags(),
+    fetchGenres(signal),
+    fetchTypeTags(signal),
   ]);
 
   const items = (list.items ?? []).map((dto) => mapSummary(dto));
@@ -577,16 +581,26 @@ type WalletDto = {
 /** The signed-in user's spendable community-points balance (whole points, as a
  *  string). `GET /aurora/ip-commerce/wallet` (auth). Filters to the
  *  community_point/consumable account (NOT the withdrawable earnings pool).
- *  Returns "0" on any failure so callers can render unconditionally. */
-export async function fetchCommunityPointBalance(): Promise<string> {
+ *  Returns null when the wallet cannot be read; a valid empty wallet is zero. */
+export async function fetchCommunityPointBalance(): Promise<string | null> {
   try {
     const res = await api.get<WalletDto>("/ip-commerce/wallet", AURORA);
-    const account = (res.accounts ?? []).find(
-      (a) => a.currency === "community_point" && a.balanceKind === "consumable"
+    if (
+      !Array.isArray(res.accounts) ||
+      res.accounts.some(
+        (account) => !account || typeof account !== "object" || Array.isArray(account)
+      )
+    )
+      return null;
+    const account = res.accounts.find(
+      (a) => a?.currency === "community_point" && a.balanceKind === "consumable"
     );
-    return account?.availableBalance ?? "0";
+    if (!account) return "0";
+    return typeof account.availableBalance === "string" && /^\d+$/.test(account.availableBalance)
+      ? account.availableBalance
+      : null;
   } catch {
-    return "0";
+    return null;
   }
 }
 

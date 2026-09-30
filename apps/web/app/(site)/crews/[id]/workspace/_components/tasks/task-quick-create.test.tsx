@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  CreateCrewTaskInput,
   CrewMemberDTO,
   CrewTaskDTO,
   CrewTaskProjectDTO,
@@ -118,7 +119,14 @@ function renderQuickCreate(
   onCreated = vi.fn(),
   onOpenChange = vi.fn(),
   taskProject = project,
-  context: { open?: boolean; crewId?: string; parentId?: string; activeView?: CrewTaskViewDTO } = {}
+  context: {
+    open?: boolean;
+    crewId?: string;
+    parentId?: string;
+    activeView?: CrewTaskViewDTO;
+    presetEpisodeId?: string;
+    onStage?: (input: CreateCrewTaskInput) => void;
+  } = {}
 ) {
   if (!root) {
     container = document.createElement("div");
@@ -747,4 +755,19 @@ it("submits a manually selected assignee and preserves it after server rejection
   expect(state.create.mock.calls[1]![0].assignees).toEqual(
     state.create.mock.calls[0]![0].assignees
   );
+});
+
+it("stages once without posting and preserves the preset episode", async () => {
+  const stage = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, { presetEpisodeId: "episode-one", onStage: stage });
+  act(() => fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Review storyboard"));
+  await act(async () => {
+    click(exactButton("workbench.stage"));
+    click(exactButton("workbench.stage"));
+  });
+  expect(stage).toHaveBeenCalledTimes(1);
+  expect(stage).toHaveBeenCalledWith(
+    expect.objectContaining({ title: "Review storyboard", episodeId: "episode-one" })
+  );
+  expect(state.create).not.toHaveBeenCalled();
 });

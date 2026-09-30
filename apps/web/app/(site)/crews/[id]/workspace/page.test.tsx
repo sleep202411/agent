@@ -400,19 +400,19 @@ describe("crew workspace tabs", () => {
     }
   });
 
-  it("opens a bare workspace URL on the group chat, rewriting nothing", () => {
+  it("opens a bare workspace URL on Tasks, rewriting nothing", () => {
     render();
-    expect(pane()).toBe("chat");
+    expect(pane()).toBe("tasks");
     expect(nav.replaced).toEqual([]);
-    // Doc §4 order, with the member-only asset center in the primary rail.
+    // Pax: asset-based Tasks, Positions and Finance precede chat.
     expect(navLabels()).toEqual([
+      "Tasks",
+      "Positions",
+      "Finance",
       "Team chat",
       "Community chat",
-      "Tasks",
-      "Finance",
       "Asset Center",
       "Members",
-      "Positions",
       "Basic Info",
     ]);
   });
@@ -587,14 +587,7 @@ describe("crew workspace entry states", () => {
   });
 });
 
-/**
- * Chat is the default landing tab, and the endpoint behind it can fail:
- * a crew whose conversation row was never opened, a 5xx, a member the
- * server no longer recognises. "Default" must therefore mean "chat when
- * chat works", not "chat and an error card otherwise" — a member who
- * merely opened the workspace has asked for nothing and is owed a
- * usable page.
- */
+/** Chat outages and recovery must not change the task workbench landing. */
 describe("crew workspace with an unresolvable chat thread", () => {
   beforeEach(() => {
     state.chatThread = { isError: true };
@@ -604,17 +597,17 @@ describe("crew workspace with an unresolvable chat thread", () => {
     render();
 
     expect(pane()).not.toBe("chat");
-    expect(activeTabLabel()).toBe("Basic Info");
+    expect(activeTabLabel()).toBe("Tasks");
     // The whole workspace is still there: the tab is not removed, the
     // member is still entitled to it, and every other surface works.
     expect(navLabels()).toEqual([
+      "Tasks",
+      "Positions",
+      "Finance",
       "Team chat",
       "Community chat",
-      "Tasks",
-      "Finance",
       "Asset Center",
       "Members",
-      "Positions",
       "Basic Info",
     ]);
     click(tabButton("Tasks"));
@@ -622,17 +615,15 @@ describe("crew workspace with an unresolvable chat thread", () => {
     expect(pane()).toBe("tasks");
   });
 
-  it("stamps the demotion into the URL so a late success cannot yank the reader away", () => {
+  it("keeps Tasks stable when chat recovers without rewriting the URL", () => {
     render();
 
-    // The bare URL still means "chat if you can", so leaving it there
-    // would flip the page to chat the moment a background refetch
-    // succeeded — mid-read, without being asked.
-    expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=overview");
+    // Recovery cannot change an implicit Tasks landing or rewrite its URL.
+    expect(nav.replaced).toEqual([]);
     state.chatThread = { isError: false };
     reload();
     expect(pane()).not.toBe("chat");
-    expect(activeTabLabel()).toBe("Basic Info");
+    expect(activeTabLabel()).toBe("Tasks");
   });
 
   it("still opens the chat pane when the member asks for it by name", () => {
@@ -651,7 +642,7 @@ describe("crew workspace with an unresolvable chat thread", () => {
     // bounce every cold load off the chat before it could open.
     state.chatThread = { isError: false };
     render();
-    expect(pane()).toBe("chat");
+    expect(pane()).toBe("tasks");
     expect(nav.replaced).toEqual([]);
   });
 });

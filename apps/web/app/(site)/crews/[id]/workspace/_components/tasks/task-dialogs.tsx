@@ -1,5 +1,6 @@
 "use client";
 
+import { TaskDeliveryProgress } from "./task-delivery-progress";
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { useTaskDeliveryTemplate, TaskDeliveryFields } from "./task-delivery-template";
 
@@ -164,11 +165,12 @@ export function SubmitTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t("submitTitle")}</DialogTitle>
           <DialogDescription>{t("submitDescription")}</DialogDescription>
         </DialogHeader>
+        {task ? <TaskDeliveryProgress status={task.status} /> : null}
         <DialogBody className="space-y-4">
           <label className="block space-y-2 text-sm">
             {t("deliveryFolder")}
@@ -215,6 +217,7 @@ export function SubmitTaskDialog({
             </div>
           ) : null}
           <Textarea
+            aria-label={t("submitNotePlaceholder")}
             disabled={saving}
             value={note}
             onChange={(event) => setNote(event.target.value)}

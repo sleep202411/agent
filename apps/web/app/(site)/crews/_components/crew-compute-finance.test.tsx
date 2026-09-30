@@ -4,6 +4,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CrewComputeFinance } from "./crew-compute-finance";
 const h = vi.hoisted(() => ({
   owner: false,
+  consumed: "123",
+  badData: undefined as unknown,
+  failed: false,
+  pending: false,
+  refetch: vi.fn(),
   tasks: [] as { id: string; title: string; number: number }[],
   mutate: vi.fn(),
 }));
@@ -18,13 +23,15 @@ vi.mock("../_hooks/use-users", () => ({
 vi.mock("../_hooks/use-compute-requests", () => ({
   useComputeRequestAction: () => ({ mutate: h.mutate, isPending: false }),
   useComputeRequests: () => ({
-    isPending: false,
-    isError: false,
-    data: {
+    isPending: h.pending,
+    isError: h.failed,
+    error: new Error("Finance service unavailable"),
+    refetch: h.refetch,
+    data: h.badData ?? {
       isOwner: h.owner,
       tasks: h.tasks,
       totals: { pending: 50, approved: 100 },
-      consumedPoints: "123",
+      consumedPoints: h.consumed,
       nextCursor: null,
       items: [
         {
@@ -53,6 +60,11 @@ let root: Root, host: HTMLDivElement;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   h.owner = false;
+  h.consumed = "123";
+  h.badData = undefined;
+  h.failed = false;
+  h.pending = false;
+  h.refetch.mockReset();
   h.tasks = [];
   h.mutate.mockReset();
   host = document.createElement("div");
@@ -120,4 +132,46 @@ it("keeps the submit key stable across retries until details change", async () =
     points: 50,
     reason: "Render shot",
   });
+});
+
+it("can open Finance when randomUUID is unavailable in the browser", async () => {
+  const original = Object.getOwnPropertyDescriptor(crypto, "randomUUID");
+  Object.defineProperty(crypto, "randomUUID", { configurable: true, value: undefined });
+  try {
+    await render();
+    expect(host.textContent).toContain("noTasks");
+  } finally {
+    if (original) Object.defineProperty(crypto, "randomUUID", original);
+    else delete (crypto as Partial<Crypto>).randomUUID;
+  }
+});
+it("does not crash or show a false zero for malformed consumption", async () => {
+  h.consumed = "not-an-integer";
+  await render();
+  expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  expect(host.textContent).not.toContain("USD 0.00");
+});
+
+it.each([{}, { items: null }, { items: [null] }, { consumedPoints: "0", items: [], tasks: null }])(
+  "shows retry for malformed Finance payloads: %j",
+  async (badData) => {
+    h.badData = badData;
+    await render();
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("loadFailed");
+    expect(host.querySelector("form")).toBeNull();
+    await act(async () => host.querySelector("button")!.click());
+    expect(h.refetch).toHaveBeenCalledOnce();
+  }
+);
+it("shows server errors without displaying cached balances or request forms", async () => {
+  h.failed = true;
+  await render();
+  expect(host.textContent).toContain("Finance service unavailable");
+  expect(host.textContent).not.toContain("USD");
+});
+it("can render a loading state before Finance data is available", async () => {
+  h.pending = true;
+  h.badData = {};
+  await render();
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("loading");
 });

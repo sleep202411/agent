@@ -42,6 +42,23 @@ export function canConnectStoryChoice(
   );
 }
 
+export type StoryExistingTargetAvailability = "open" | "replace" | "blocked";
+
+/** A free input is offered first. An occupied input stays available, but choosing it replaces that link. */
+export function storyExistingTargetAvailability(
+  sourceId: string,
+  targetId: string,
+  nodes: readonly StoryCanvasNode[],
+  incomingCount: number
+): StoryExistingTargetAvailability {
+  const linkable = isValidStoryFlowConnection(
+    { source: sourceId, target: targetId, sourceHandle: "completion", targetHandle: "in" },
+    nodes
+  );
+  if (!linkable) return "blocked";
+  return incomingCount > 0 ? "replace" : "open";
+}
+
 export function choiceIdFromHandle(handleId: string | null | undefined): string | null {
   const match = handleId?.match(/^choice:(.+)$/u);
   return match?.[1] ?? null;

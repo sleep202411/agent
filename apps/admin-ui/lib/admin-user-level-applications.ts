@@ -128,20 +128,11 @@ function toApplication(raw: unknown): AdminUserLevelApplication | null {
   const userId = asNumber(row.userId);
   const levelId = asNumber(row.levelId);
   const status = asStatus(row.status);
-  const crewName = asString(row.crewName);
-  const crewLink = asString(row.crewLink);
-  const ipName = asString(row.ipName);
-  const ipLink = asString(row.ipLink);
-  if (
-    id === null ||
-    userId === null ||
-    levelId === null ||
-    status === null ||
-    !crewName ||
-    !crewLink ||
-    !ipName ||
-    !ipLink
-  ) {
+  const crewName = asString(row.crewName) ?? "";
+  const crewLink = asString(row.crewLink) ?? "";
+  const ipName = asString(row.ipName) ?? "";
+  const ipLink = asString(row.ipLink) ?? "";
+  if (id === null || userId === null || levelId === null || status === null) {
     return null;
   }
   return {

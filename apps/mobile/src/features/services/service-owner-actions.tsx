@@ -1,0 +1,79 @@
+import { useState } from "react";
+import { Pressable, View } from "react-native";
+import { useAuth } from "@/auth";
+import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
+import { useScreenActive } from "@/hooks/use-app-active";
+import { ThemedText } from "@/components/themed-text";
+import { useTranslations } from "@/i18n";
+import { changeServiceStatus, serviceActions, type ServiceAction } from "./owner-service-api";
+
+export function ServiceOwnerActions(props: {
+  id: string;
+  creatorId: string;
+  status: string;
+  refresh: () => void;
+}) {
+  const auth = useAuth();
+  if (
+    auth.status !== "authenticated" ||
+    String(auth.user?.userId ?? auth.user?.id ?? "") !== props.creatorId
+  )
+    return null;
+  return <Actions key={JSON.stringify([props.id, auth.generation, props.status])} {...props} />;
+}
+function Actions({ id, status, refresh }: { id: string; status: string; refresh: () => void }) {
+  const t = useTranslations();
+  const op = useAuthFormOperation(id, useScreenActive());
+  const [action, setAction] = useState<ServiceAction>();
+  const [error, setError] = useState<string>();
+  const actions = serviceActions(status);
+  if (!actions.length) return null;
+  return (
+    <View style={{ gap: 12 }}>
+      {actions.map((value) => (
+        <Pressable
+          key={value}
+          accessibilityRole="button"
+          disabled={op.busy}
+          onPress={() => {
+            setAction(value);
+            setError(undefined);
+          }}
+        >
+          <ThemedText>{t(`myServices.action.${value}`)}</ThemedText>
+        </Pressable>
+      ))}
+      {action && (
+        <View style={{ gap: 8 }}>
+          <ThemedText>
+            {t(action === "archive" ? "myServices.archiveHint" : "myServices.confirmHint")}
+          </ThemedText>
+          <Pressable
+            accessibilityRole="button"
+            disabled={op.busy}
+            onPress={() => {
+              void op.run(
+                () => changeServiceStatus(id, action),
+                () => {
+                  setAction(undefined);
+                  refresh();
+                },
+                (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+              );
+            }}
+          >
+            <ThemedText>{t("myServices.confirm")}</ThemedText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={op.busy}
+            onPress={() => setAction(undefined)}
+          >
+            <ThemedText>{t("myServices.cancel")}</ThemedText>
+          </Pressable>
+        </View>
+      )}
+      {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
+    </View>
+  );
+}

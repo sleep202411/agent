@@ -1,7 +1,9 @@
 "use client";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { COMPUTE_POINTS_PER_USD_CENT } from "@repo/shared";
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { v4 as uuidv4 } from "uuid";
+import { computeRequestsPageSchema } from "../_hooks/compute-requests-data";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,12 +18,14 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
   const [cursor, setCursor] = useState<string>();
   const query = useComputeRequests(crewId, cursor);
   const action = useComputeRequestAction(crewId);
+  const parsed = useMemo(() => computeRequestsPageSchema.safeParse(query.data), [query.data]);
+  const data = parsed.success ? parsed.data : undefined;
   const [taskId, setTaskId] = useState("");
   const [points, setPoints] = useState("");
   const [reason, setReason] = useState("");
-  const [requestKey, setRequestKey] = useState(() => crypto.randomUUID());
+  const requestKey = useRef<string | undefined>(undefined);
   const displays = useUserDisplays(
-    query.data?.items.flatMap((row) => [
+    data?.items.flatMap((row) => [
       row.userId,
       ...(row.decidedByUserId ? [row.decidedByUserId] : []),
     ]) ?? []
@@ -29,14 +33,16 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
   const number = Number(points);
   const canRequest =
     taskId &&
-    query.data?.tasks.some((task) => task.id === taskId) &&
+    data?.tasks.some((task) => task.id === taskId) &&
     Number.isInteger(number) &&
     number > 0 &&
     number <= 2_000_000_000 &&
     reason.trim();
   const error = (err: unknown) => toast.error(err instanceof Error ? err.message : String(err));
-  const edit = () => setRequestKey(crypto.randomUUID());
-  const consumed = BigInt(query.data?.consumedPoints ?? "0");
+  const edit = () => {
+    requestKey.current = undefined;
+  };
+  const consumed = BigInt(data?.consumedPoints ?? "0");
   const cents = consumed / BigInt(COMPUTE_POINTS_PER_USD_CENT);
   const usd = `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
   return (
@@ -49,9 +55,9 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
       </div>
       {query.isPending ? (
         <p role="status">{t("loading")}</p>
-      ) : query.isError ? (
+      ) : query.isError || !data ? (
         <div role="alert">
-          {query.error.message}
+          {query.isError ? query.error.message : t("loadFailed")}
           <Button variant="ghost" onClick={() => void query.refetch()}>
             {t("retry")}
           </Button>
@@ -59,16 +65,16 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
       ) : (
         <>
           <p className="text-sm text-muted-foreground">
-            {query.data.isOwner ? t("crewScope") : t("myScope")}
+            {data.isOwner ? t("crewScope") : t("myScope")}
           </p>
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
               <p className="text-sm text-muted-foreground">{t("pending")}</p>
-              <strong>{(query.data.totals.pending ?? 0).toLocaleString(locale)}</strong>
+              <strong>{(data.totals.pending ?? 0).toLocaleString(locale)}</strong>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">{t("approvedTotal")}</p>
-              <strong>{(query.data.totals.approved ?? 0).toLocaleString(locale)}</strong>
+              <strong>{(data.totals.approved ?? 0).toLocaleString(locale)}</strong>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">{t("consumed")}</p>
@@ -78,14 +84,21 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
               <p className="text-xs text-muted-foreground">{t("equivalent")}</p>
             </div>
           </div>
-          {query.data.tasks.length ? (
+          {data.tasks.length ? (
             <form
               className="grid gap-3 sm:grid-cols-2"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!canRequest || action.isPending) return;
+                let key: string;
+                try {
+                  key = requestKey.current ??= uuidv4();
+                } catch (cause) {
+                  error(cause);
+                  return;
+                }
                 action.mutate(
-                  { taskId, points: number, reason: reason.trim(), requestKey },
+                  { taskId, points: number, reason: reason.trim(), requestKey: key },
                   {
                     onSuccess: () => {
                       setReason("");
@@ -111,7 +124,7 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
                   }}
                 >
                   <NativeSelectOption value="">{t("selectTask")}</NativeSelectOption>
-                  {query.data.tasks.map((task) => (
+                  {data.tasks.map((task) => (
                     <NativeSelectOption key={task.id} value={task.id}>
                       TASK-{task.number} · {task.title}
                     </NativeSelectOption>
@@ -166,7 +179,7 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
                 </tr>
               </thead>
               <tbody>
-                {query.data.items.map((row) => (
+                {data.items.map((row) => (
                   <tr key={row.id} className="border-b border-white/[0.07]">
                     <td className="p-2">
                       {row.taskTitle}
@@ -191,17 +204,15 @@ export function CrewComputeFinance({ crewId, crewName }: { crewId: string; crewN
               </tbody>
             </table>
           </div>
-          {!query.data.items.length && (
-            <p className="text-sm text-muted-foreground">{t("empty")}</p>
-          )}
+          {!data.items.length && <p className="text-sm text-muted-foreground">{t("empty")}</p>}
           <div className="flex gap-2">
             {cursor && (
               <Button variant="ghost" onClick={() => setCursor(undefined)}>
                 {t("latest")}
               </Button>
             )}
-            {query.data.nextCursor && (
-              <Button variant="ghost" onClick={() => setCursor(query.data.nextCursor!)}>
+            {data.nextCursor && (
+              <Button variant="ghost" onClick={() => setCursor(data.nextCursor!)}>
                 {t("older")}
               </Button>
             )}

@@ -72,8 +72,6 @@ import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
-import { useCanvasTidy } from "@/components/canvas/use-canvas-tidy";
-import type { CanvasTidyLayoutOptions } from "@/components/canvas/canvas-tidy-layout";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useCanvasHistoryShortcuts } from "@/components/canvas/canvas-history";
 import { CanvasNativePointerOwner } from "@/components/canvas/canvas-native-pointer-owner";
@@ -122,7 +120,7 @@ import {
 } from "@/lib/story-projects-api";
 import {
   buildStoryCanvasModel,
-  estimateStoryNodeHeight,
+  reuseStoryCanvasNodes,
   storyDecisionCanvasNodeId,
   type StoryCanvasEdge,
   type StoryCanvasNode,
@@ -168,7 +166,9 @@ import {
   applyStoryBiblePatch,
   connectSceneContinuation,
   createDecisionNode,
+  duplicateStoryNodes,
   materializeStoryDecisionNodes,
+  type StoryDuplicateSource,
   connectChoiceTarget,
   createStoryEndingForAutoRoute,
   createStoryEndingForChoice,
@@ -177,6 +177,7 @@ import {
   putStoryEnding,
   removeChoiceOption,
   removeStoryEnding,
+  replaceIncomingStoryLinks,
   replaceStoryNodeInteractions,
   setAutoRoutes,
   setEntryNode,
@@ -194,10 +195,11 @@ import {
 } from "./story-stats-editors";
 
 import {
+  canConnectStoryChoice,
   canConnectStoryCompletion,
   choiceIdFromHandle,
-  canConnectStoryChoice,
   isValidStoryFlowConnection,
+  storyExistingTargetAvailability,
 } from "./story-project-canvas-connections";
 import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
@@ -205,6 +207,7 @@ import { cacheStoryWorkbenchDraft } from "./story-workbench-cache";
 import {
   StoryConnectionCreator,
   type StoryConnectionCreationKind,
+  type StoryConnectionExistingTarget,
 } from "./story-connection-creator";
 import { StoryNodeCreator, StoryNodeDock, type StoryNodeCreationKind } from "./story-node-creator";
 import {
@@ -346,9 +349,6 @@ const STORY_PORT_COLORS = {
   choice: "#5b9dff",
   ending: "#E52227",
 } as const;
-const STORY_CANVAS_TIDY_LAYOUT = {
-  lanes: [],
-} satisfies CanvasTidyLayoutOptions<StoryCanvasNode>;
 const MAX_PLAYER_CHOICES = 6;
 const NO_STORY_VARIABLES: StoryCanvasChoiceContextValue["stateVariables"] = [];
 const NO_STORY_ENDINGS: StoryBibleEnding[] = [];
@@ -503,6 +503,7 @@ function StoryProjectCanvasInner({
   const pendingFitRef = useRef(false);
   const appliedFocusRef = useRef<string | null>(null);
   const pendingCanvasSelectionRef = useRef<string | null>(null);
+  const pendingCopiedNodeIdsRef = useRef<string[] | null>(null);
   const requestedCanvasFocusRef = useRef<string | null>(null);
   const marqueeSelectionActiveRef = useRef(false);
   const latestCanvasSelectionRef = useRef<string[]>([]);
@@ -1467,6 +1468,15 @@ function StoryProjectCanvasInner({
       pendingSelection,
       !hydrating
     );
+    const pendingCopies = pendingCopiedNodeIdsRef.current;
+    if (
+      pendingCopies &&
+      pendingCopies.every((nodeId) => model.nodes.some((node) => node.id === nodeId))
+    ) {
+      selectedNodeIds.clear();
+      pendingCopies.forEach((nodeId) => selectedNodeIds.add(nodeId));
+      pendingCopiedNodeIdsRef.current = null;
+    }
     if (pendingSelection && selectedNodeIds.has(pendingSelection)) {
       pendingCanvasSelectionRef.current = null;
     }
@@ -1505,7 +1515,7 @@ function StoryProjectCanvasInner({
       setHistoryVersion((current) => current + 1);
     }
     const placedNodeIds: string[] = [];
-    const nextNodes = model.nodes.map((node) => {
+    const projectedNodes = model.nodes.map((node) => {
       const pendingPosition = pendingNodePositionsRef.current.get(node.id);
       if (pendingPosition) placedNodeIds.push(node.id);
       return {
@@ -1519,10 +1529,13 @@ function StoryProjectCanvasInner({
           node.position,
       };
     });
+    const nextNodes = reuseStoryCanvasNodes(canvasNodesRef.current, projectedNodes);
     placedNodeIds.forEach((nodeId) => pendingNodePositionsRef.current.delete(nodeId));
-    canvasNodesRef.current = nextNodes;
-    setCanvasNodes(nextNodes);
-    reconcileFocusAfterModel(nextNodes);
+    if (nextNodes !== canvasNodesRef.current) {
+      canvasNodesRef.current = [...nextNodes];
+      setCanvasNodes([...nextNodes]);
+    }
+    reconcileFocusAfterModel(canvasNodesRef.current);
     if (shouldAdoptAuthoritativeLayout) {
       const adoptedLayout = canvasLayoutPayload(nextNodes);
       latestDesiredLayoutRef.current = adoptedLayout;
@@ -1958,9 +1971,8 @@ function StoryProjectCanvasInner({
   );
 
   /**
-   * The single persistence path for every layout move — dragging and tidying
-   * alike — so the edit barrier, the undo snapshot and the no-op signature check
-   * can never drift apart between them.
+   * The single persistence path for a layout move, so the edit barrier, the
+   * undo snapshot and the no-op signature check stay on one path.
    */
   const commitCanvasLayout = useCallback(
     (nextNodes: StoryCanvasNode[], beforeMove: StoryCanvasHistorySnapshot | null) => {
@@ -1979,20 +1991,6 @@ function StoryProjectCanvasInner({
     },
     [history, mutationBarrier, refreshHistoryState]
   );
-
-  // Tidy reaches the store through the same commit path as a drag: positions land
-  // in the projection via `onCanvasNodesChange` (which the barrier already
-  // filters) and are persisted here, so a tidy survives a reload.
-  const tidyStoryCanvas = useCanvasTidy<StoryCanvasNode, StoryCanvasEdge>({
-    estimateHeight: (node) => estimateStoryNodeHeight((node as StoryCanvasNode).data),
-    edges: canvasEdges,
-    layoutOptions: STORY_CANVAS_TIDY_LAYOUT,
-    onNodesChange: onCanvasNodesChange,
-    onTidied: useCallback(
-      (nextNodes: StoryCanvasNode[]) => commitCanvasLayout(nextNodes, readHistorySnapshot()),
-      [commitCanvasLayout, readHistorySnapshot]
-    ),
-  });
 
   const restoreHistorySnapshot = useCallback(
     (snapshot: StoryCanvasHistorySnapshot) => {
@@ -2060,6 +2058,87 @@ function StoryProjectCanvasInner({
     undo: undoStoryCanvas,
     redo: redoStoryCanvas,
   });
+
+  const storyClipboardRef = useRef<{
+    sources: StoryDuplicateSource[];
+    positions: Map<string, StoryCanvasPosition>;
+    pastes: number;
+  } | null>(null);
+  const pasteStorySelectionRef = useRef<() => void>(() => {});
+  useLayoutEffect(() => {
+    pasteStorySelectionRef.current = () => {
+      const clipboard = storyClipboardRef.current;
+      const current = latestContentRef.current;
+      if (!clipboard || clipboard.sources.length === 0 || !current) return;
+      if (!mutationBarrier.permits("content")) return;
+      const offset = 48 * (clipboard.pastes + 1);
+      try {
+        const duplicated = duplicateStoryNodes(current, clipboard.sources);
+        if (duplicated.created.length === 0) return;
+        for (const created of duplicated.created) {
+          const position = clipboard.positions.get(created.canvasId);
+          if (!position) continue;
+          pendingNodePositionsRef.current.set(created.nodeId, {
+            x: position.x + offset,
+            y: position.y + offset,
+          });
+        }
+        pendingCopiedNodeIdsRef.current = duplicated.created.map((created) => created.nodeId);
+        if (!commitContent(duplicated.content)) {
+          pendingCopiedNodeIdsRef.current = null;
+          for (const created of duplicated.created) {
+            pendingNodePositionsRef.current.delete(created.nodeId);
+          }
+          return;
+        }
+        clipboard.pastes += 1;
+        persistLayoutWithPendingPositions(duplicated.content);
+        setGraphError(null);
+      } catch {
+        setGraphError(t("graphError.generic"));
+      }
+    };
+  });
+
+  useEffect(() => {
+    if (!canMutateCanvasLayout) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest(
+          'input, textarea, select, [contenteditable="true"], [role="textbox"], .nokey'
+        )
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"]')) return;
+      if (!event.metaKey && !event.ctrlKey) return;
+      const key = event.key.toLowerCase();
+      if (key !== "c" && key !== "v") return;
+      if (event.shiftKey || event.altKey) return;
+      if (key === "c") {
+        const sources = storyDuplicateSources(canvasNodesRef.current);
+        if (sources.length === 0) return;
+        event.preventDefault();
+        storyClipboardRef.current = {
+          sources,
+          positions: new Map(
+            canvasNodesRef.current
+              .filter((node) => sources.some((source) => source.canvasId === node.id))
+              .map((node) => [node.id, { ...node.position }])
+          ),
+          pastes: 0,
+        };
+        return;
+      }
+      if (!storyClipboardRef.current) return;
+      event.preventDefault();
+      pasteStorySelectionRef.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [canMutateCanvasLayout]);
 
   const commitContent = (
     next: InteractiveStoryDraftContent,
@@ -2434,6 +2513,32 @@ function StoryProjectCanvasInner({
         commitContent(created.content);
       }
       setGraphError(null);
+    } catch {
+      setGraphError(t("graphError.generic"));
+    } finally {
+      setPendingCompletionDrop(null);
+    }
+  };
+
+  const connectExistingCompletion = (targetNodeId: string) => {
+    const pending = pendingCompletionDrop;
+    if (!mutationBarrier.permits("content") || !pending || !content || !model) {
+      setPendingCompletionDrop(null);
+      return;
+    }
+    const source = model.nodes.find((node) => node.id === pending.sourceCanvasNodeId);
+    if (!source || source.data.kind !== "clip" || !canConnectStoryCompletion(source.data)) {
+      setPendingCompletionDrop(null);
+      return;
+    }
+    try {
+      const next = connectSceneContinuation(
+        replaceIncomingStoryLinks(content, targetNodeId),
+        source.data.nodeId,
+        targetNodeId
+      );
+      setGraphError(null);
+      commitContent(next);
     } catch {
       setGraphError(t("graphError.generic"));
     } finally {
@@ -2879,7 +2984,6 @@ function StoryProjectCanvasInner({
                         ) : null}
                         <CanvasControls
                           position="bottom-left"
-                          onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
                           className={cn(
                             "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
                             // Clear the full-width canvas's left inspector overlay.
@@ -2927,7 +3031,13 @@ function StoryProjectCanvasInner({
             {canMutateCanvasLayout && pendingCompletionDrop ? (
               <StoryConnectionCreator
                 position={pendingCompletionDrop.clientPosition}
+                targets={storyConnectionExistingTargets(
+                  model?.nodes ?? [],
+                  model?.edges ?? [],
+                  pendingCompletionDrop.sourceCanvasNodeId
+                )}
                 onCreate={createCompletionStep}
+                onConnectExisting={connectExistingCompletion}
                 onCancel={() => setPendingCompletionDrop(null)}
               />
             ) : null}
@@ -3886,6 +3996,89 @@ function nodePositions(nodes: StoryCanvasNode[]): Record<string, StoryCanvasPosi
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((node) => [node.id, { x: node.position.x, y: node.position.y }])
   );
+}
+
+function storyDuplicateSources(nodes: readonly StoryCanvasNode[]): StoryDuplicateSource[] {
+  const selected = nodes.filter((node) => node.selected);
+  const selectedIds = new Set(selected.map((node) => node.id));
+  return selected.flatMap((node): StoryDuplicateSource[] => {
+    const sourceNodeId = node.data.sourceNodeId;
+    // A derived choice card is the clip's exit, not its own graph node.
+    // Copying the clip already copies that exit.
+    if (node.data.kind === "decision" && sourceNodeId && sourceNodeId !== node.id) {
+      if (selectedIds.has(sourceNodeId)) return [];
+      return [{ canvasId: node.id, nodeId: sourceNodeId, role: "choice-exit" }];
+    }
+    return [{ canvasId: node.id, nodeId: node.data.nodeId, role: "node" }];
+  });
+}
+
+function storyConnectionExistingTargets(
+  nodes: readonly StoryCanvasNode[],
+  edges: readonly StoryCanvasEdge[],
+  sourceCanvasNodeId: string
+): StoryConnectionExistingTarget[] {
+  const sourceIndex = nodes.findIndex((node) => node.id === sourceCanvasNodeId);
+  const availabilityRank = { open: 0, replace: 1 } as const;
+  return nodes
+    .map((node, index) => ({ node, index }))
+    .filter(({ node }) => {
+      if (node.id === sourceCanvasNodeId) return false;
+      // Derived choice cards are not graph nodes. A scene connects to the
+      // real decision, which already appears in this list.
+      return !(
+        node.data.kind === "decision" &&
+        node.data.sourceNodeId &&
+        node.data.sourceNodeId !== node.id
+      );
+    })
+    .flatMap(({ node, index }) => {
+      const incoming = edges.filter(
+        (edge) =>
+          edge.target === node.id &&
+          (edge.data.kind === "continuation" || edge.data.kind === "choice")
+      ).length;
+      const availability = storyExistingTargetAvailability(
+        sourceCanvasNodeId,
+        node.id,
+        nodes,
+        incoming
+      );
+      if (availability === "blocked") return [];
+      const distance =
+        index > sourceIndex ? index - sourceIndex : nodes.length + index - Math.max(sourceIndex, 0);
+      return [
+        {
+          nodeId: node.data.nodeId,
+          kind: node.data.kind,
+          title: node.data.eyebrow || node.data.title,
+          detail:
+            node.data.kind === "clip"
+              ? firstTextLine(node.data.description)
+              : (node.data.choices ?? [])
+                  .map((choice) => choice.label.trim())
+                  .filter(Boolean)
+                  .slice(0, 3)
+                  .join(" / "),
+          availability,
+          distance,
+        },
+      ];
+    })
+    .sort(
+      (left, right) =>
+        availabilityRank[left.availability] - availabilityRank[right.availability] ||
+        left.distance - right.distance
+    )
+    .map(({ distance: _distance, ...target }) => target);
+}
+
+function firstTextLine(text: string | undefined): string {
+  const line = (text ?? "")
+    .split("\n")
+    .map((part) => part.trim())
+    .find(Boolean);
+  return line ? line.slice(0, 80) : "";
 }
 
 function canvasLayoutPayload(nodes: readonly StoryCanvasNode[]): StoryCanvasLayoutPayload {

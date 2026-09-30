@@ -4,6 +4,7 @@ import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import {
   canConnectStoryCompletion,
   isValidStoryFlowConnection,
+  storyExistingTargetAvailability,
 } from "./story-project-canvas-connections";
 import { buildStoryCanvasModel, storyDecisionCanvasNodeId } from "./story-project-canvas-model";
 import {
@@ -12,6 +13,7 @@ import {
   createDecisionNode,
   connectChoiceTarget,
   disconnectSceneContinuation,
+  replaceIncomingStoryLinks,
 } from "./story-project-canvas-mutations";
 
 describe("story port connections", () => {
@@ -82,6 +84,20 @@ describe("story port connections", () => {
     );
   });
 
+  it("offers a free input before an occupied one and blocks an occupied output", () => {
+    let content = connect(createNodes(), "A", "C");
+    const { nodes, edges } = buildStoryCanvasModel(content, "en-US");
+    const incoming = (targetId: string) =>
+      edges.filter(
+        (edge) =>
+          edge.target === targetId &&
+          (edge.data.kind === "continuation" || edge.data.kind === "choice")
+      ).length;
+    expect(storyExistingTargetAvailability("B", "C", nodes, incoming("C"))).toBe("replace");
+    expect(storyExistingTargetAvailability("B", "A", nodes, incoming("A"))).toBe("open");
+    expect(storyExistingTargetAvailability("A", "B", nodes, incoming("B"))).toBe("blocked");
+  });
+
   it("rejects missing nodes, invalid handles, and connections to the same node", () => {
     const { nodes } = buildStoryCanvasModel(createNodes(), "en-US");
     for (const connection of [
@@ -93,6 +109,16 @@ describe("story port connections", () => {
     ]) {
       expect(isValidStoryFlowConnection(connection, nodes)).toBe(false);
     }
+  });
+
+  it("replaces every story link that already arrives at the chosen node", () => {
+    let content = connect(createNodes(), "A", "C");
+    content = connect(content, "B", "C");
+    content = replaceIncomingStoryLinks(content, "C");
+    const cleared = buildStoryCanvasModel(content, "en-US");
+    expect(cleared.edges).toEqual([]);
+    content = connect(content, "B", "C");
+    expect(buildStoryCanvasModel(content, "en-US").edges.map((edge) => edge.source)).toEqual(["B"]);
   });
 });
 

@@ -3398,10 +3398,19 @@
         "retry": "重试",
         "refresh": "刷新试玩",
         "editStory": "编辑故事",
-        "locateNode": "在画布中定位此节点",
+        "locateNode": "在画布中打开这一场",
         "booleanEffectError": "“{node}”的选项“{choice}”第 {effect} 条效果：变量“{variable}”是布尔值，不能使用“增加”。若要记录是否发生，请改用“设为”并选择“是”或“否”；若要累计次数，请将变量改为数字类型。",
+        "shotInScene": "「{scene}」的「{shot}」",
+        "shotPairJoiner": "和",
+        "shotListJoiner": "、",
+        "duplicatePlayback": "{shots}用了同一个播放编号，这一版因此播不了。",
+        "missingShot": "「{scene}」的镜头「{shot}」还没有选择成片，试玩会跳过这一镜。",
+        "missingSequence": "「{scene}」还没有分镜，试玩会跳过这一场。",
+        "shotMetadata": "「{scene}」的「{shot}」缺少部分技术信息，播放仍使用原片。",
+        "shotUnplayable": "「{scene}」的「{shot}」播不了，试玩会跳过这一镜。",
+        "shotModeration": "「{scene}」的「{shot}」还在审核，播放仍会使用它。",
         "unavailableTitle": "当前故事还不能试玩",
-        "unavailableDescription": "{errors} 个阻塞错误 · {warnings} 个警告。点击带有定位入口的错误，可在画布中找到对应节点并修正设置。",
+        "unavailableDescription": "{errors} 个问题挡住了试玩 · {warnings} 条提醒。点下面能跳转的条目，可以直接打开那一场。",
         "stateHud": {
           "title": "本局数值",
           "yes": "是",
@@ -3492,6 +3501,13 @@
         "clipDescription": "直接继续到另一个生成的视频片段。",
         "choice": "玩家选择",
         "choiceDescription": "暂停播放，让玩家选择后续分支。",
+        "existing": "连接到已有的节点",
+        "existingDescription": "把这个场景接到画布上已有的镜头或玩家选择。",
+        "existingTitle": "连接到已有的节点",
+        "existingHint": "按镜头号或正文第一句搜索。",
+        "existingSearch": "搜索节点",
+        "existingEmpty": "没有匹配的节点",
+        "existingReplace": "已有连线，选择后将替换",
         "cancel": "取消"
       },
       "projection": {
@@ -3885,9 +3901,6 @@
       "error": {
         "title": "无法打开故事画布",
         "retry": "重试"
-      },
-      "tidy": {
-        "action": "整理画布"
       },
       "share": "分享",
       "catalogPanel": {

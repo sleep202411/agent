@@ -65,13 +65,32 @@ describe("story text composition", () => {
           new CompositionEvent("compositionend", { bubbles: true, data: "你好，选择道路" })
         );
       });
-      expect(onValueChange).toHaveBeenCalledTimes(1);
-      expect(onValueChange).toHaveBeenLastCalledWith("你好，选择道路");
+      expect(onValueChange).not.toHaveBeenCalled();
       expect(element.value).toBe("你好，选择道路");
       await act(async () => element.blur());
       expect(onValueChange).toHaveBeenCalledTimes(1);
+      expect(onValueChange).toHaveBeenLastCalledWith("你好，选择道路");
       await act(async () => render("外部更新"));
       expect(element.value).toBe("外部更新");
     }
   );
+
+  it("keeps keystrokes local until the field blurs", async () => {
+    const onValueChange = vi.fn();
+    await act(async () => {
+      root.render(<StoryCanvasTextInput value="" onValueChange={onValueChange} />);
+    });
+    const element = container.querySelector("input") as HTMLInputElement;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      element.focus();
+      setValue.call(element, "失败节点");
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, data: "失败节点" }));
+    });
+    expect(onValueChange).not.toHaveBeenCalled();
+    expect(element.value).toBe("失败节点");
+    await act(async () => element.blur());
+    expect(onValueChange).toHaveBeenCalledTimes(1);
+    expect(onValueChange).toHaveBeenLastCalledWith("失败节点");
+  });
 });

@@ -124,7 +124,10 @@ vi.mock("./task-review-form", () => ({
   TaskReviewForm: () => <div data-testid="task-review-form" />,
 }));
 vi.mock("sonner", () => ({ toast: { success: state.success, error: state.error } }));
-vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/src/i18n/i18n", () => ({
+  useTranslations: () => (key: string) => key,
+  useLocale: () => "en-US",
+}));
 state.discard.mockResolvedValue(undefined);
 const container = document.createElement("div");
 document.body.appendChild(container);
@@ -144,6 +147,7 @@ async function render(id = "task", account = "alice") {
             description: "",
             createdAt: new Date().toISOString(),
             assignees: [],
+            submissions: [],
             children: [],
             blockedBy: [],
             labels: [],

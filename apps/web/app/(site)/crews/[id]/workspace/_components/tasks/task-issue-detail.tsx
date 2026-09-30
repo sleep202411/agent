@@ -18,6 +18,8 @@ import {
   formatCrewMoneyInput,
   type CrewLedgerCurrency,
 } from "@/src/lib/crew-money";
+import { TaskDeliveryProgress } from "./task-delivery-progress";
+import { TaskDeliverySummary } from "./task-delivery-summary";
 import { TaskReviewForm } from "./task-review-form";
 import { DeleteTaskButton } from "./delete-task-button";
 
@@ -283,6 +285,7 @@ export function TaskIssueDetail({
           ) : null}
         </div>
       </header>
+      <TaskDeliveryProgress status={task.status} />
 
       <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_340px]">
         <main className="min-h-0 overflow-y-auto bg-[#101012]">
@@ -361,10 +364,10 @@ export function TaskIssueDetail({
               </p>
             </section>
 
+            <TaskDeliverySummary task={task} />
             <TaskCommitments task={task} canManage={isOwner} />
             <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
             <TaskExtensionPanel task={task} canManage={isOwner} />
-            <TaskFeedbackPanel task={task} />
             <TaskDisputeControl task={task} />
 
             <div className="mb-5 flex items-center gap-2 border-t border-white/[0.055] pt-7">
@@ -438,10 +441,6 @@ export function TaskIssueDetail({
               </div>
             ) : null}
 
-            {canReview && task.status === "submitted" ? (
-              <TaskReviewForm task={task} onReviewed={onReviewed} />
-            ) : null}
-
             {canComment && (
               <CommentComposer
                 key={task.id}
@@ -455,6 +454,12 @@ export function TaskIssueDetail({
         </main>
 
         <aside className="min-h-0 overflow-y-auto bg-[#161618] px-7 py-8">
+          {canReview && task.status === "submitted" ? (
+            <TaskReviewForm task={task} onReviewed={onReviewed} />
+          ) : null}
+          <div className="mb-6">
+            <TaskFeedbackPanel task={task} />
+          </div>
           <RailSection title={projectT("properties")}>
             <RailRow icon={<IconCircle className="size-4" />}>
               {isOwner && !["submitted", "approved", "cancelled"].includes(task.status) ? (
@@ -1645,7 +1650,9 @@ function AssigneesEditor({
 }) {
   const t = useTranslations("crewTasks");
 
-  const suggestedPriceMin = (task as any).metadata?.priceRange?.min;
+  const suggestedPriceMin = (
+    task as CrewTaskDTO & { metadata?: { priceRange?: { min?: unknown } } }
+  ).metadata?.priceRange?.min;
 
   const [draft, setDraft] = useState(() =>
     task.assignees.map((assignee) => ({

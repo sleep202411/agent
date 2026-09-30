@@ -136,6 +136,7 @@ function AttachmentLink({ url }: { url: string | null }) {
 }
 
 function EntityLink({ href, label }: { href: string; label: string }) {
+  if (!href) return <span className="text-slate-500">{label || "—"}</span>;
   return (
     <a
       href={href}

@@ -287,9 +287,6 @@ function PlaytestUnavailable({
               key={`${diagnostic.code}:${diagnostic.entityId ?? "project"}:${index}`}
               style={styles.diagnostic}
             >
-              <ThemedText type="code" style={styles.diagnosticCode}>
-                {diagnostic.code}
-              </ThemedText>
               <ThemedText type="small" style={styles.diagnosticMessage}>
                 {diagnostic.message}
               </ThemedText>
@@ -410,14 +407,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  diagnosticCode: {
-    color: "rgba(255,255,255,0.42)",
-    fontSize: 10,
-    fontWeight: "600",
-  },
   diagnosticMessage: {
     color: "rgba(255,255,255,0.68)",
-    marginTop: 4,
   },
   retryChrome: {
     alignItems: "center",

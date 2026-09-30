@@ -4,7 +4,7 @@ import { useState } from "react";
 import { IconLoader2, IconPhoto, IconTrash, IconX } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import {
   storyApiErrorMessage,
   type InteractiveStoryDraftContent,
@@ -331,14 +331,15 @@ function FoundationField({
   return (
     <label className="mt-4 block">
       <span className="text-[10px] font-semibold text-white/68">{label}</span>
-      <Textarea
+      <StoryCanvasTextInput
+        multiline
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onValueChange={onChange}
         placeholder={placeholder}
         rows={rows}
         maxLength={maxLength}
         disabled={disabled}
-        className="mt-2 resize-none bg-white/[0.055] text-xs leading-5"
+        className="mt-2 w-full resize-none rounded-lg bg-white/[0.055] px-3 py-2 text-xs leading-5 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
       />
     </label>
   );

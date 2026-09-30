@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   failure: null as Error | null,
   failed: false,
   summary: undefined as unknown,
+  expenseSummary: undefined as unknown,
   pageFailed: false,
   fetching: false,
   refetch: vi.fn(),
@@ -103,7 +104,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-expenses", () => ({
   useCrewExpensesSummary: () => ({
-    data: {
+    data: state.expenseSummary ?? {
       taskRewardsByCurrency: { CNY: "0", USD: "0" },
       reimbursementsByCurrency: { CNY: "0", USD: "0" },
       totalByCurrency: { CNY: "0", USD: "0" },
@@ -211,6 +212,7 @@ afterEach(async () => {
   state.account = "alice";
   state.failed = false;
   state.summary = undefined;
+  state.expenseSummary = undefined;
   state.failure = null;
   state.pageFailed = false;
   state.fetching = false;
@@ -444,7 +446,9 @@ it.each(["earnings", "payouts"])(
   async (view) => {
     await render();
     if (view === "payouts") await act(async () => button("views.payouts").click());
-    expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+    expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(
+      view === "earnings" ? 4 : 3
+    );
   }
 );
 it.each(["earnings", "payouts"])(
@@ -471,7 +475,7 @@ it.each([null, "", "1.5", "oops", 100])(
   async (value) => {
     state.summary = summary(value);
     await render();
-    expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+    expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(4);
     await act(async () => button("views.payouts").click());
     expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
   }
@@ -479,7 +483,7 @@ it.each([null, "", "1.5", "oops", 100])(
 it("handles incomplete earning summary groups", async () => {
   state.summary = { byStatus: {} };
   await render();
-  expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(3);
+  expect(container.textContent?.match(/metrics.unavailable/g)).toHaveLength(4);
 });
 it("preserves exact large and negative payout totals", async () => {
   state.summary = {
@@ -492,4 +496,18 @@ it("preserves exact large and negative payout totals", async () => {
   expect(metric("metrics.availableAmount")).toContain("-1.23");
   expect(metric("metrics.reservedAmount")).toContain("0.00");
   expect(metric("metrics.paidAmount")).toContain("90,071,992,547,409,931.23");
+});
+
+it.each([
+  {},
+  {
+    taskRewardsByCurrency: { CNY: "bad", USD: "0" },
+    reimbursementsByCurrency: { CNY: "0", USD: "0" },
+    totalByCurrency: { CNY: "0", USD: "0" },
+  },
+])("keeps Finance open when the project-spend snapshot is malformed", async (expenseSummary) => {
+  state.expenseSummary = expenseSummary;
+  await render("crew", false);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("metrics.unavailable");
+  expect(container.querySelector('[data-testid="compute-finance"]')).not.toBeNull();
 });

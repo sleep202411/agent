@@ -1,0 +1,241 @@
+import { beforeEach, expect, it, vi } from "vitest";
+import { api } from "@/lib/api-client";
+import { createTask } from "./task-create-api";
+vi.mock("@/lib/api-client", () => ({ api: { post: vi.fn() } }));
+
+const id = "11111111-1111-4111-8111-111111111111";
+const detail = {
+  id,
+  crewId: "crew",
+  number: 1,
+  title: "Shot",
+  description: "Render",
+  submissions: [],
+  version: 1,
+  revisionLimit: null,
+  revisionRoundsUsed: 0,
+  priority: "normal" as const,
+  parent: null,
+  children: [],
+  blockedBy: [],
+  blocking: [],
+  status: "submitted",
+  workflowState: { name: "Review" },
+  startAt: null,
+  dueAt: "2026-10-01T00:00:00Z",
+  labels: [],
+  assignees: [],
+};
+const input = {
+  parentId: null,
+  blockedByTaskIds: [],
+  title: " Shot ",
+  description: " Render ",
+  priority: "normal" as const,
+  startAt: null,
+  dueAt: detail.dueAt,
+  assignees: [],
+};
+beforeEach(() => vi.resetAllMocks());
+it("creates a task using the existing server defaults without granting rewards", async () => {
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await createTask("crew", input);
+  expect(api.post).toHaveBeenCalledExactlyOnceWith("/crews/crew/tasks", {
+    service: "aurora",
+    data: { ...input, title: "Shot", description: "Render" },
+  });
+});
+it("rejects blank/oversized fields, duplicate assignees and date inversion before writes", async () => {
+  for (const change of [
+    { title: " " },
+    { title: "x".repeat(181) },
+    { description: "x".repeat(10001) },
+    { startAt: "2027-01-01T00:00:00Z" },
+    {
+      assignees: [
+        { userId: "1", currency: "USD" as const },
+        { userId: "1", currency: "USD" as const },
+      ],
+    },
+  ])
+    await expect(createTask("crew", { ...input, ...change })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("requires returned Crew, content, dates and assignments to match", async () => {
+  for (const change of [
+    { crewId: "other" },
+    { title: "Wrong" },
+    { description: "Wrong" },
+    { priority: "urgent" },
+    { dueAt: null },
+    { assignees: [{ id, userId: "other" }] },
+  ]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, ...change });
+    await expect(createTask("crew", input)).rejects.toThrow("acknowledgement");
+  }
+});
+it("does not retry failed creation automatically", async () => {
+  vi.mocked(api.post).mockRejectedValue(new Error("Offline"));
+  await expect(createTask("crew", input)).rejects.toThrow("Offline");
+  expect(api.post).toHaveBeenCalledOnce();
+});
+
+it("validates relationship identifiers, limits and acknowledgement", async () => {
+  const related = "22222222-2222-4222-8222-222222222222";
+  for (const fields of [
+    { parentId: "invalid" },
+    { blockedByTaskIds: [related, related] },
+    { blockedByTaskIds: Array(51).fill(related) },
+  ]) {
+    await expect(createTask("crew", { ...input, ...fields })).rejects.toThrow();
+  }
+  expect(api.post).not.toHaveBeenCalled();
+  const ref = {
+    id: related,
+    number: 2,
+    title: "Parent",
+    status: "open",
+    workflowState: { name: "Open" },
+    parentId: null,
+  };
+  const data = { ...input, parentId: related, blockedByTaskIds: [related] };
+  vi.mocked(api.post).mockResolvedValue({
+    ...detail,
+    parent: ref,
+    blockedBy: [{ ...ref, resolved: false }],
+  });
+  await expect(createTask("crew", data)).resolves.toMatchObject({ parent: ref });
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await expect(createTask("crew", data)).rejects.toThrow("acknowledgement");
+});
+
+it("validates an explicit workflow and requires its exact acknowledgement", async () => {
+  await expect(createTask("crew", { ...input, workflowStateId: "bad" })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+  const selected = { ...input, workflowStateId: id };
+  vi.mocked(api.post).mockResolvedValue({ ...detail, workflowStateId: id });
+  await expect(createTask("crew", selected)).resolves.toMatchObject({ workflowStateId: id });
+  for (const workflowStateId of [undefined, "22222222-2222-4222-8222-222222222222"]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, workflowStateId });
+    await expect(createTask("crew", selected)).rejects.toThrow("acknowledgement");
+  }
+});
+
+it("validates planning references and exact creation acknowledgement", async () => {
+  for (const fields of [
+    { cycleId: "bad" },
+    { episodeId: "bad" },
+    { labelIds: [id, id] },
+    { labelIds: Array(21).fill(id) },
+  ]) {
+    await expect(createTask("crew", { ...input, ...fields })).rejects.toThrow();
+  }
+  expect(api.post).not.toHaveBeenCalled();
+  const data = { ...input, cycleId: id, episodeId: id, labelIds: [id] };
+  const response = { ...detail, cycleId: id, episodeId: id, labels: [{ id, name: "Art" }] };
+  vi.mocked(api.post).mockResolvedValue(response);
+  await expect(createTask("crew", data)).resolves.toMatchObject({ cycleId: id, episodeId: id });
+  for (const fields of [
+    { cycleId: null },
+    { episodeId: null },
+    { labels: [] },
+    { labels: [{ id: "22222222-2222-4222-8222-222222222222", name: "Wrong" }] },
+  ]) {
+    vi.mocked(api.post).mockResolvedValue({ ...response, ...fields });
+    await expect(createTask("crew", data)).rejects.toThrow("acknowledgement");
+  }
+  vi.mocked(api.post).mockResolvedValue({ ...detail, cycleId: null, episodeId: null });
+  await expect(
+    createTask("crew", { ...input, cycleId: null, episodeId: null, labelIds: [] })
+  ).resolves.toBeDefined();
+});
+
+it("validates task kind and requires matching creation acknowledgement", async () => {
+  vi.mocked(api.post).mockResolvedValue({ ...detail, taskKind: "storyboard" });
+  await expect(createTask("crew", { ...input, taskKind: "storyboard" })).resolves.toMatchObject({
+    taskKind: "storyboard",
+  });
+  for (const taskKind of [undefined, null, "art"]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, taskKind });
+    await expect(createTask("crew", { ...input, taskKind: "storyboard" })).rejects.toThrow(
+      "acknowledgement"
+    );
+  }
+  vi.mocked(api.post).mockResolvedValue({ ...detail, taskKind: null });
+  await expect(createTask("crew", { ...input, taskKind: null })).resolves.toMatchObject({
+    taskKind: null,
+  });
+});
+
+it("preserves explicit zero and nullable planning limits and rejects mismatched acknowledgements", async () => {
+  for (const value of [0, null, 5]) {
+    const limits = { estimatePoints: value, revisionLimit: value };
+    vi.mocked(api.post).mockResolvedValue({ ...detail, ...limits });
+    await createTask("crew", { ...input, ...limits });
+    expect(api.post).toHaveBeenLastCalledWith("/crews/crew/tasks", {
+      service: "aurora",
+      data: expect.objectContaining(limits),
+    });
+  }
+  for (const result of [
+    { estimatePoints: null, revisionLimit: 0 },
+    { estimatePoints: 0, revisionLimit: null },
+  ]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, ...result });
+    await expect(
+      createTask("crew", { ...input, estimatePoints: 0, revisionLimit: 0 })
+    ).rejects.toThrow("acknowledgement");
+  }
+});
+it("rejects out-of-range and fractional creation limits before writing", async () => {
+  for (const change of [
+    { estimatePoints: -1 },
+    { estimatePoints: 1000001 },
+    { estimatePoints: 1.5 },
+    { revisionLimit: -1 },
+    { revisionLimit: 101 },
+    { revisionLimit: 1.5 },
+  ])
+    await expect(createTask("crew", { ...input, ...change })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});
+
+it("verifies sparse custom-field creation values including false and zero", async () => {
+  for (const value of [false, 0, "Brief", ["a", "b"]]) {
+    const rows = [{ fieldId: id, value }];
+    vi.mocked(api.post).mockResolvedValue({ ...detail, customFieldValues: rows });
+    await createTask("crew", { ...input, customFieldValues: rows });
+    expect(api.post).toHaveBeenLastCalledWith("/crews/crew/tasks", {
+      service: "aurora",
+      data: expect.objectContaining({ customFieldValues: rows }),
+    });
+  }
+  vi.mocked(api.post).mockResolvedValue({ ...detail, customFieldValues: [] });
+  await createTask("crew", { ...input, customFieldValues: [{ fieldId: id, value: null }] });
+  for (const rows of [
+    undefined,
+    [],
+    [{ fieldId: id, value: true }],
+    [
+      { fieldId: id, value: false },
+      { fieldId: id, value: false },
+    ],
+  ]) {
+    vi.mocked(api.post).mockResolvedValue({ ...detail, customFieldValues: rows });
+    await expect(
+      createTask("crew", { ...input, customFieldValues: [{ fieldId: id, value: false }] })
+    ).rejects.toThrow("acknowledgement");
+  }
+});
+it("rejects duplicate or oversized custom values before creation", async () => {
+  for (const customFieldValues of [
+    [{ fieldId: id, value: "x".repeat(4001) }],
+    [
+      { fieldId: id, value: 0 },
+      { fieldId: id, value: 1 },
+    ],
+    Array.from({ length: 51 }, () => ({ fieldId: id, value: false })),
+  ])
+    await expect(createTask("crew", { ...input, customFieldValues })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});

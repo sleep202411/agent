@@ -1,14 +1,20 @@
+import { ServicePackagesEditor } from "@/features/services/service-packages-editor";
+import { ServiceQuestionsEditor } from "@/features/services/service-questions-editor";
+import { ServiceDetailsEditor } from "@/features/services/service-details-editor";
+import { ServiceOwnerActions } from "@/features/services/service-owner-actions";
+import { ServiceOrder } from "@/features/services/service-order";
+import { ServiceContact } from "@/features/services/service-contact";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
+import { useAuth } from "@/auth";
+import { useServiceDetail } from "@/features/services/use-service-detail";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { Spacing } from "@/constants/theme";
-import { getCreatorServiceById } from "@/data/browse-service";
-import type { CreatorServiceDetail, CreatorServicePackage } from "@/data/types";
+import type { CreatorServicePackage } from "@/data/types";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { formatServicePrice, serviceCategoryLabel } from "@/lib/creator-service-format";
@@ -19,23 +25,18 @@ export default function CreatorServiceDetailScreen() {
   const theme = useTheme();
   const locale = useLocale();
   const t = useTranslations();
-  const [service, setService] = useState<CreatorServiceDetail>();
-  const [loading, setLoading] = useState(true);
+  const auth = useAuth();
+  const { service, loading, error, retry } = useServiceDetail(id, auth.generation);
 
-  useEffect(() => {
-    let alive = true;
-    async function load() {
-      setLoading(true);
-      const data = await getCreatorServiceById(id);
-      if (!alive) return;
-      setService(data);
-      setLoading(false);
-    }
-    void load();
-    return () => {
-      alive = false;
-    };
-  }, [id]);
+  if (error)
+    return (
+      <ThemedView style={[styles.fullCenter, { padding: Spacing.four }]}>
+        <ThemedText>{error}</ThemedText>
+        <Pressable accessibilityRole="button" onPress={retry}>
+          <ThemedText>{t("common.retry")}</ThemedText>
+        </Pressable>
+      </ThemedView>
+    );
 
   if (loading) {
     return (
@@ -111,6 +112,21 @@ export default function CreatorServiceDetailScreen() {
         )}
 
         <View style={styles.body}>
+          <ServiceDetailsEditor service={service} refresh={retry} />
+          <ServiceQuestionsEditor service={service} refresh={retry} />
+          <ServicePackagesEditor service={service} refresh={retry} />
+          <ServiceOwnerActions
+            id={service.id}
+            creatorId={service.creatorId}
+            status={service.status}
+            refresh={retry}
+          />
+          <ServiceContact
+            key={service.id}
+            serviceId={service.id}
+            creatorId={service.creatorId}
+            status={service.status}
+          />
           <View style={styles.section}>
             <SectionHeader title={t("serviceDetail.overviewTitle")} />
             <ThemedText type="small" themeColor="textSecondary" style={styles.paragraph}>
@@ -125,6 +141,7 @@ export default function CreatorServiceDetailScreen() {
             ) : null}
           </View>
 
+          <ServiceOrder key={`${service.id}-${service.version}`} service={service} />
           <View style={styles.section}>
             <SectionHeader title={t("serviceDetail.packagesTitle")} />
             <View style={styles.packageList}>

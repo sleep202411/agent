@@ -388,6 +388,30 @@ function build() {
 }
 
 describe('CrewTasksService', () => {
+  it('exposes stable asset categories without exposing raw metadata', async () => {
+    const t = build();
+    t.prisma.crewTask.findUnique.mockResolvedValue(
+      task({ metadata: { templateKey: 'character_art', internal: 'private' } }),
+    );
+    const result = await t.service.get(TASK_ID, OWNER_ID);
+    expect(result.assetCategory).toBe('characters');
+    expect(result).not.toHaveProperty('metadata');
+  });
+
+  it.each([null, { clipId: 'clip-1' }, { clipId: 123 }])(
+    'exposes only the linked storyboard clip identifier (%s)',
+    async (metadata) => {
+      const t = build();
+      t.prisma.crewTask.findUnique.mockResolvedValue(
+        task({ canvasProjectId: null, metadata }),
+      );
+      const result = await t.service.get(TASK_ID, OWNER_ID);
+      expect(result.storyboardClipId).toBe(
+        typeof metadata?.clipId === 'string' ? metadata.clipId : null,
+      );
+      expect(result).not.toHaveProperty('metadata');
+    },
+  );
   it.each([
     [null, 'USD', 1000, 'USD'],
     [1000n, 'CNY', 1000, 'USD'],
@@ -755,6 +779,30 @@ describe('CrewTasksService', () => {
         limit: 101,
       }).success,
     ).toBe(false);
+  });
+
+  it('uses an unfiltered, bounded production view without consulting personal saved views', async () => {
+    const t = build();
+    t.prisma.crewTask.findMany.mockResolvedValue([]);
+    t.prisma.crewTask.count.mockResolvedValue(0);
+    t.prisma.crewTask.groupBy.mockResolvedValue([]);
+    await t.service.list(
+      CREW_ID,
+      OWNER_ID,
+      ListCrewTasksQuerySchema.parse({ viewId: 'production' }),
+    );
+    expect(t.roles.require).toHaveBeenCalledWith(
+      CREW_ID,
+      OWNER_ID,
+      'tasks.view',
+    );
+    expect(t.prisma.crewTaskView.findFirst).not.toHaveBeenCalled();
+    expect(t.prisma.crewTask.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { crewId: CREW_ID, AND: [{ deletedAt: null }] },
+        take: 51,
+      }),
+    );
   });
 
   it('evaluates persisted task views on the server and cursor-paginates a bounded page', async () => {

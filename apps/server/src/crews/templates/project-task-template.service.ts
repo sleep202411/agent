@@ -23,6 +23,7 @@ export interface InstantiateTasksOptions {
   userId?: string;
   workflowStateId?: string;
   episodeId?: string;
+  episodeScoped?: boolean;
 }
 
 @Injectable()
@@ -71,6 +72,11 @@ export class ProjectTaskTemplateService {
     template: ProjectTaskTemplate,
     options: InstantiateTasksOptions = {},
   ): Promise<CrewTask[]> {
+    if (options.episodeScoped && !options.episodeId) {
+      throw new BadRequestException(
+        'An episode is required for an episode template.',
+      );
+    }
     // Guard: tx or tx.crewTask may be a partial mock in unit tests
     if (!tx || !tx.crewTask) {
       this.logger.warn(
@@ -84,6 +90,7 @@ export class ProjectTaskTemplateService {
       const existing = await tx.crewTask.findMany({
         where: {
           crewId,
+          ...(options.episodeScoped ? { episodeId: options.episodeId } : {}),
           metadata: {
             path: ['templateId'],
             equals: template.id,
@@ -224,20 +231,14 @@ export class ProjectTaskTemplateService {
           for (const depKey of item.defaultDependencies) {
             const blockingTaskId = keyToTaskId.get(depKey);
             if (blockingTaskId) {
-              try {
-                await tx.crewTaskDependency.create({
-                  data: {
-                    crewId,
-                    blockingTaskId,
-                    blockedTaskId,
-                    createdByUserId: options.userId ?? 'system',
-                  },
-                });
-              } catch (err) {
-                this.logger.warn(
-                  `Failed to link dependency ${blockingTaskId} -> ${blockedTaskId}: ${err}`,
-                );
-              }
+              await tx.crewTaskDependency.create({
+                data: {
+                  crewId,
+                  blockingTaskId,
+                  blockedTaskId,
+                  createdByUserId: options.userId ?? 'system',
+                },
+              });
             }
           }
         }

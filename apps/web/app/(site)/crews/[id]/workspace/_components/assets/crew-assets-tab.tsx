@@ -209,9 +209,11 @@ export function CrewAssetsTab({
     if (!initialAsset.data) return;
     const timeout = window.setTimeout(() => {
       setActiveSource("all");
-      setFolderPath(initialAsset.data.path);
-      setSelectedAssetId(initialAsset.data.node.id);
-      setInspectorOpen(true);
+      const { node, path } = initialAsset.data;
+      const folder = node.kind === "folder";
+      setFolderPath(folder ? [...path, { id: node.id, name: node.name }] : path);
+      setSelectedAssetId(folder ? "" : node.id);
+      setInspectorOpen(!folder);
       setCheckedIds(new Set());
       setQuery("");
     }, 0);

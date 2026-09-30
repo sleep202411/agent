@@ -1,5 +1,6 @@
 "use client";
 
+import { EarningTrend, postedProfitShare } from "@/app/(site)/crews/_components/earning-trend";
 import { CrewComputeFinance } from "@/app/(site)/crews/_components/crew-compute-finance";
 import { useCrewExpensesSummary } from "@/app/(site)/crews/_hooks/use-expenses";
 import { AmendmentFinancePanel } from "@/app/(site)/crews/_components/amendment-finance-panel";
@@ -216,13 +217,6 @@ function IncomeSession({
 
   return (
     <div className="mx-auto w-full max-w-[1180px] pb-10">
-      <CrewComputeFinance crewId={crewId} crewName={crewName} />
-      <Link
-        className="mb-3 inline-block text-sm"
-        href={`/crews/${encodeURIComponent(crewId)}/expenses`}
-      >
-        {expenses("title")}
-      </Link>
       <header className="border-b border-white/[0.07] px-1 pb-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -268,10 +262,6 @@ function IncomeSession({
         </nav>
       </header>
 
-      <ProjectSpendSummary crewId={crewId} canView={canViewCrewLedger} locale={locale} />
-
-      {canApproveEarning && <AmendmentFinancePanel crewId={crewId} />}
-
       {view === "earnings" ? (
         <EarningsLedger
           crewId={crewId}
@@ -299,6 +289,19 @@ function IncomeSession({
           onAction={(kind, payout) => setPayoutAction({ kind, payout })}
         />
       )}
+
+      <section className="mt-8 space-y-4 border-t border-white/10 pt-6">
+        <CrewComputeFinance crewId={crewId} crewName={crewName} />
+        <Link
+          className="mb-3 inline-block text-sm"
+          href={`/crews/${encodeURIComponent(crewId)}/expenses`}
+        >
+          {expenses("title")}
+        </Link>
+        <ProjectSpendSummary crewId={crewId} canView={canViewCrewLedger} locale={locale} />
+
+        {canApproveEarning && <AmendmentFinancePanel crewId={crewId} />}
+      </section>
 
       {createEarningOpen && canCreateEarning ? (
         <CreateEarningDialog
@@ -377,6 +380,7 @@ function EarningsLedger({
   onDecision: (kind: "reject" | "reverse", earning: CrewEarningEntryDTO) => void;
 }) {
   const t = useTranslations("crewIncome");
+  const dashboardT = useTranslations("crewFinanceDashboard");
   const action = useIncomeAction();
   const { active } = action;
   const approve = useApproveCrewEarning(crewId);
@@ -397,7 +401,7 @@ function EarningsLedger({
   };
   return (
     <section className="pt-5">
-      <div className="grid border-y border-white/[0.065] sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Metric
           label={t("metrics.confirmedAmount")}
           value={
@@ -419,16 +423,31 @@ function EarningsLedger({
           }
         />
         <Metric
-          label={t("metrics.monthAmount")}
+          label={dashboardT("profitShare")}
           value={
             <SummaryMoney
-              value={summary?.postedThisMonthAmountMinor}
+              value={postedProfitShare(summary?.postedBySource)}
               failed={query.isError}
               locale={locale}
             />
           }
         />
       </div>
+      <EarningTrend
+        value={summary?.postedDaily}
+        failed={query.isError}
+        loading={query.isPending}
+        locale={locale}
+        currency={CREW_CURRENCY}
+      />
+      <p className="mb-4 text-xs text-muted-foreground">
+        {t("metrics.monthAmount")}:{" "}
+        <SummaryMoney
+          value={summary?.postedThisMonthAmountMinor}
+          failed={query.isError}
+          locale={locale}
+        />
+      </p>
       <LedgerHeader
         title={t("earnings.history")}
         description={t("earnings.historyDescription")}
@@ -441,13 +460,28 @@ function EarningsLedger({
         emptyTitle={t("earnings.emptyTitle")}
         emptyDescription={t("earnings.emptyDescription")}
       >
-        <div className="divide-y divide-white/[0.055] border-t border-white/[0.055]">
+        <div
+          role="table"
+          aria-label={t("earnings.history")}
+          className="divide-y divide-white/[0.055] border-t border-white/[0.055]"
+        >
+          <div
+            role="row"
+            className="sr-only gap-3 px-2 py-3 text-xs text-muted-foreground md:not-sr-only md:grid md:grid-cols-[minmax(0,1fr)_110px_120px_130px]"
+          >
+            {["record", "status", "date", "amount"].map((key) => (
+              <span role="columnheader" key={key}>
+                {dashboardT(key)}
+              </span>
+            ))}
+          </div>
           {query.data.map((earning) => (
             <div
               key={earning.id}
+              role="row"
               className="grid gap-3 px-2 py-3.5 transition-colors hover:bg-white/[0.02] md:grid-cols-[minmax(0,1fr)_110px_120px_130px] md:items-center"
             >
-              <div className="flex min-w-0 items-center gap-3">
+              <div role="cell" className="flex min-w-0 items-center gap-3">
                 {scope === "crew" ? (
                   <UserAvatar
                     src={displays.get(earning.userId)?.avatar}
@@ -476,11 +510,15 @@ function EarningsLedger({
                   </p>
                 </div>
               </div>
-              <StatusBadge status={earning.status} />
-              <time className="text-[10px] text-[#727883]">
-                {formatDate(earning.createdAt, locale)}
-              </time>
-              <div className="flex items-center justify-between gap-2 md:justify-end">
+              <div role="cell">
+                <StatusBadge status={earning.status} />
+              </div>
+              <div role="cell">
+                <time className="text-[10px] text-[#727883]" dateTime={earning.createdAt}>
+                  {formatDate(earning.createdAt, locale)}
+                </time>
+              </div>
+              <div role="cell" className="flex items-center justify-between gap-2 md:justify-end">
                 <MoneyAmount
                   currency={earning.currency}
                   value={earning.amountMinor}
@@ -559,7 +597,7 @@ function PayoutLedger({
   const t = useTranslations("crewIncome");
   return (
     <section className="pt-5">
-      <div className="grid border-y border-white/[0.065] sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-3">
         <Metric
           label={t("metrics.availableAmount")}
           value={
@@ -1476,9 +1514,9 @@ function ResultState({
 
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="border-b border-white/[0.055] px-2 py-4 last:border-b-0 sm:border-r sm:border-b-0 sm:last:border-r-0">
-      <p className="text-[9px] text-[#686e78]">{label}</p>
-      <p className="mt-1 font-mono text-[16px] font-semibold text-[#e9eaed]">{value}</p>
+    <div className="rounded-xl bg-white/[0.035] p-5">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-3 font-mono text-2xl font-semibold text-[#e9eaed]">{value}</p>
     </div>
   );
 }
@@ -1721,6 +1759,24 @@ function ProjectSpendSummary({
   }
 
   if (!data) return null;
+
+  const validTotals = [
+    data.taskRewardsByCurrency,
+    data.reimbursementsByCurrency,
+    data.totalByCurrency,
+  ].every(
+    (group) =>
+      group &&
+      ["CNY", "USD"].every(
+        (currency) => typeof group[currency] === "string" && /^-?\d+$/.test(group[currency])
+      )
+  );
+  if (!validTotals)
+    return (
+      <div role="alert" className="mt-4 text-sm text-muted-foreground">
+        {t("metrics.unavailable")}
+      </div>
+    );
 
   const currencies = (["CNY", "USD"] as const).filter((c) => {
     const rewards = BigInt(data.taskRewardsByCurrency[c] ?? "0");

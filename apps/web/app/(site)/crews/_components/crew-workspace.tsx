@@ -32,7 +32,7 @@ import { CrewVisitReadMarker } from "./crew-visit-read-marker";
  * the viewer's effective crew permissions.
  */
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { IconChevronRight, IconAlertTriangle, IconLock, IconRefresh } from "@tabler/icons-react";
@@ -64,12 +64,9 @@ import { CrewTransfersProvider } from "@/app/(site)/crews/[id]/workspace/_compon
 import { CrewWorkbenchShell } from "@/app/(site)/crews/[id]/workspace/_components/workbench/crew-workbench-shell";
 import { CrewLogo } from "@/app/(site)/messages/_components/crew-logo";
 import { useAnchorDeeplink } from "@/app/(site)/crews/[id]/workspace/_hooks/use-anchor-deeplink";
-import { useCrewConversation } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
 import { workspaceDeeplinkAnchors } from "@/app/(site)/crews/[id]/workspace/_lib/deeplink-anchors";
 import {
-  FALLBACK_WORKSPACE_TAB,
   applyWorkspaceTab,
-  isWorkspaceTabId,
   resolveWorkspaceTab,
   workspaceTabsFor,
   type WorkspaceTab,
@@ -192,32 +189,13 @@ export function CrewWorkspace({
   // for.
   const canAccessChat = viewer.isMember;
 
-  // Resolved here, not only inside CrewChatTab, because the landing tab
-  // depends on it: chat is the default the doc asks for, but only while
-  // the crew's conversation actually opens. Same React Query key as the
-  // pane's, so this warms its cache rather than duplicating its fetch.
-  const chatThread = useCrewConversation(id, canAccessChat);
-
   // Tab is URL state so notification deeplinks can select one and so a
   // pasted workspace link reopens where the sender was.
   const tabParam = searchParams.get("tab");
   const activeTab = resolveWorkspaceTab(tabParam, {
     entitled: canAccessChat,
-    reachable: !chatThread.isError,
   });
   const tabs = workspaceTabsFor(canAccessChat);
-
-  // The demotion above is a render-time decision, so a member whose
-  // chat will not open never sees the error card they did not ask for.
-  // Stamp it into the URL too: without that, the bare URL still means
-  // "chat if you can", and a background refetch that later succeeds
-  // would yank the reader off the overview mid-read. Asking for chat by
-  // name still opens the pane — see `resolveWorkspaceTab`.
-  const demotedFromChat = !isWorkspaceTabId(tabParam) && canAccessChat && chatThread.isError;
-  useEffect(() => {
-    if (!demotedFromChat) return;
-    replaceParams((next) => applyWorkspaceTab(next, FALLBACK_WORKSPACE_TAB));
-  }, [demotedFromChat, replaceParams]);
 
   // Task notifications select the real task detail with ?tab=tasks&task=<id>.
   const deeplinkTaskId = searchParams.get("task");

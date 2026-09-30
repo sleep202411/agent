@@ -66,13 +66,18 @@ export function TaskDeliveryFields({
 }) {
   const t = useTranslations("crewDeliveryTemplate");
   return (
-    <section className="space-y-3">
-      <h3 className="text-sm font-medium">
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <h3 className="text-sm font-medium sm:col-span-2">
         {template.definition.name} · {t("revision")} {template.version}
       </h3>
-      <DeliveryReferencePrices definition={template.definition} />
+      <div className="sm:col-span-2">
+        <DeliveryReferencePrices definition={template.definition} />
+      </div>
       {template.definition.fields.map((field) => (
-        <div key={field.key} className="space-y-1 text-sm">
+        <div
+          key={field.key}
+          className={`space-y-2 rounded-lg bg-white/[0.035] p-4 text-sm ${field.type === "text" ? "sm:col-span-2" : ""}`}
+        >
           <p>
             {field.label}
             {field.required ? ` (${t("required")})` : ""}

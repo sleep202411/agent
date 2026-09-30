@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { InteractiveStoryDraftContent, StoryClipGraphNode } from "@/lib/story-projects-api";
-import { buildStoryCanvasModel, storyDecisionCanvasNodeId } from "./story-project-canvas-model";
+import {
+  buildStoryCanvasModel,
+  reuseStoryCanvasNodes,
+  storyDecisionCanvasNodeId,
+  type StoryCanvasNode,
+} from "./story-project-canvas-model";
 
 describe("film-only story canvas projection", () => {
   it("projects one decision card whose option rows retain independent anchors", () => {
@@ -177,5 +182,32 @@ function hotspot(
     startMs: 0,
     endMs: 1_000,
     outcomes: { success: action },
+  };
+}
+
+describe("reuseStoryCanvasNodes", () => {
+  it("keeps untouched cards when one node's text changes", () => {
+    const unchanged = card("a", "镜头 1");
+    const edited = card("b", "旧名字");
+    const previous = [unchanged, edited];
+    const next = [card("a", "镜头 1"), card("b", "失败节点")];
+    const reused = reuseStoryCanvasNodes(previous, next);
+    expect(reused[0]).toBe(unchanged);
+    expect(reused[1]).not.toBe(edited);
+    expect(reused[1]?.data.title).toBe("失败节点");
+  });
+});
+
+function card(id: string, title: string): StoryCanvasNode {
+  return {
+    id,
+    type: "storyCanvas",
+    position: { x: 0, y: 0 },
+    data: {
+      kind: "clip",
+      title,
+      eyebrow: title,
+      nodeId: id,
+    },
   };
 }

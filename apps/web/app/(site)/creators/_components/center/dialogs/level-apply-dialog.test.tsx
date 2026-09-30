@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   submit: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
+  ips: [] as { id: string; title: string; roomNumber: string }[],
   crews: [] as { id: string; name: string }[],
 }));
 vi.mock("sonner", () => ({ toast: { success: h.success, error: h.error } }));
@@ -25,7 +26,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useMyCrews: () => ({ data: { founded: [], joined: h.crews }, isLoading: false }),
 }));
 vi.mock("@/src/lib/ip-commerce/hooks", () => ({
-  useAllMyIpCommerceIps: () => ({ data: { items: [] }, isLoading: false }),
+  useAllMyIpCommerceIps: () => ({ data: { items: h.ips }, isLoading: false }),
 }));
 vi.mock("@/src/services/user-level-apply", async (importOriginal) => ({
   ...(await importOriginal<object>()),
@@ -49,6 +50,7 @@ afterAll(() => {
 });
 beforeEach(() => {
   h.crews = [];
+  h.ips = [];
   h.submit.mockResolvedValue({});
 });
 afterEach(() => vi.clearAllMocks());
@@ -104,43 +106,45 @@ it.each(["resolve", "reject", "current"] as const)(
   }
 );
 
-it.each(["AI Producer", "FD"])(
-  "%s requires a crew and submits its name/link while leaving IP optional",
-  async (entry) => {
-    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-    h.crews = [{ id: "crew-123", name: "Selected crew" }];
-    const container = document.createElement("div");
-    document.body.append(container);
-    const root = createRoot(container);
-    try {
+it.each([
+  ["AI Producer", true],
+  ["FD", true],
+  ["AI Producer", false],
+  ["FD", false],
+] as const)("%s accepts optional associations (select Crew: %s)", async (entry, selectCrew) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  h.crews = selectCrew ? [{ id: "crew-123", name: "Selected crew" }] : [];
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () =>
+      root.render(
+        <LevelApplyDialog
+          open
+          onOpenChange={() => {}}
+          lockedLevelId={entry === "AI Producer" ? 13 : undefined}
+        />
+      )
+    );
+    if (entry === "FD") {
+      const level = document.querySelector('[role="combobox"]')!;
       await act(async () =>
-        root.render(
-          <LevelApplyDialog
-            open
-            onOpenChange={() => {}}
-            lockedLevelId={entry === "AI Producer" ? 13 : undefined}
-          />
-        )
+        level.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
       );
-      if (entry === "FD") {
-        const level = document.querySelector('[role="combobox"]')!;
-        await act(async () =>
-          level.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
-        );
-        const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
-          (item) => item.textContent === "AI Producer"
-        )!;
-        await act(async () => option.click());
-      }
-      const submit = () =>
-        [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-          (button) => button.textContent === "levels.apply.submit"
-        )!;
-      expect(submit().disabled).toBe(true);
-      await act(async () => submit().click());
-      expect(h.submit).not.toHaveBeenCalled();
-      const crew = document.querySelector('[aria-label="levels.apply.crewLabel"]')!;
-      expect(crew.getAttribute("aria-required")).toBe("true");
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (item) => item.textContent === "AI Producer"
+      )!;
+      await act(async () => option.click());
+    }
+    const submit = () =>
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "levels.apply.submit"
+      )!;
+    expect(submit().disabled).toBe(false);
+    const crew = document.querySelector('[aria-label="levels.apply.crewLabel"]')!;
+    expect(crew.getAttribute("aria-required")).not.toBe("true");
+    if (selectCrew) {
       await act(async () =>
         crew.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
       );
@@ -148,30 +152,77 @@ it.each(["AI Producer", "FD"])(
         (item) => item.textContent === "Selected crew"
       )!;
       await act(async () => option.click());
-      expect(submit().disabled).toBe(false);
-      let reject!: (error: Error) => void;
-      h.submit.mockImplementationOnce(
-        () =>
-          new Promise((_, no) => {
-            reject = no;
-          })
+    }
+    let reject!: (error: Error) => void;
+    h.submit.mockImplementationOnce(
+      () =>
+        new Promise((_, no) => {
+          reject = no;
+        })
+    );
+    await act(async () => {
+      submit().click();
+      submit().click();
+    });
+    expect(h.submit).toHaveBeenCalledTimes(1);
+    await act(async () => reject(new Error("Temporary failure")));
+    expect(submit().disabled).toBe(false);
+    await act(async () => submit().click());
+    expect(h.submit).toHaveBeenCalledTimes(2);
+    expect(h.submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        levelId: 13,
+        crewName: selectCrew ? "Selected crew" : "",
+        crewLink: selectCrew ? `${window.location.origin}/en-US/crews/crew-123` : "",
+        ipName: "",
+        ipLink: "",
+      })
+    );
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+  }
+});
+
+it.each([true, false])(
+  "supports selected and cleared Crew/IP associations (clear: %s)",
+  async (clear) => {
+    h.crews = [{ id: "crew-123", name: "Selected crew" }];
+    h.ips = [{ id: "ip-123", title: "Selected IP", roomNumber: "123456" }];
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const choose = async (index: number, label: string) => {
+      const trigger = document.querySelectorAll('[role="combobox"]')[index]!;
+      await act(async () =>
+        trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
       );
-      await act(async () => {
-        submit().click();
-        submit().click();
-      });
-      expect(h.submit).toHaveBeenCalledTimes(1);
-      await act(async () => reject(new Error("Temporary failure")));
-      expect(submit().disabled).toBe(false);
-      await act(async () => submit().click());
-      expect(h.submit).toHaveBeenCalledTimes(2);
+      const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+        (item) => item.textContent === label
+      )!;
+      await act(async () => option.click());
+    };
+    try {
+      await act(async () =>
+        root.render(<LevelApplyDialog open onOpenChange={() => {}} lockedLevelId={13} />)
+      );
+      await choose(1, "Selected crew");
+      await choose(2, "Selected IP");
+      if (clear) {
+        await choose(1, "levels.apply.optionalSkip");
+        await choose(2, "levels.apply.optionalSkip");
+      }
+      const submit = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (b) => b.textContent === "levels.apply.submit"
+      )!;
+      expect(submit.disabled).toBe(false);
+      await act(async () => submit.click());
       expect(h.submit).toHaveBeenCalledWith(
         expect.objectContaining({
-          levelId: 13,
-          crewName: "Selected crew",
-          crewLink: `${window.location.origin}/en-US/crews/crew-123`,
-          ipName: "",
-          ipLink: "",
+          crewName: clear ? "" : "Selected crew",
+          crewLink: clear ? "" : `${window.location.origin}/en-US/crews/crew-123`,
+          ipName: clear ? "" : "Selected IP",
+          ipLink: clear ? "" : `${window.location.origin}/en-US/ip/123456`,
         })
       );
     } finally {
@@ -180,24 +231,3 @@ it.each(["AI Producer", "FD"])(
     }
   }
 );
-
-it("explains the requirement and blocks application when no crews are available", async () => {
-  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  const container = document.createElement("div");
-  document.body.append(container);
-  const root = createRoot(container);
-  try {
-    await act(async () =>
-      root.render(<LevelApplyDialog open onOpenChange={() => {}} lockedLevelId={13} />)
-    );
-    expect(document.body.textContent).toContain("levels.apply.crewEmpty");
-    const submit = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent === "levels.apply.submit"
-    )!;
-    expect(submit.disabled).toBe(true);
-    expect(h.submit).not.toHaveBeenCalled();
-  } finally {
-    await act(async () => root.unmount());
-    container.remove();
-  }
-});

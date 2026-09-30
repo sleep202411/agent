@@ -145,6 +145,44 @@ function input(
 }
 
 describe('compileStoryBuild', () => {
+  it.each(['preview', 'production'] as const)(
+    'allows repeated scene-local clip keys without mixing media in %s builds',
+    (channel) => {
+      const timelines = ['opening', 'left', 'right'].map((nodeId) =>
+        timeline(nodeId, [{ ...videoSegment(nodeId), clipKey: 'a1' }]),
+      );
+      const result = compileStoryBuild(input({ channel, timelines }));
+      expect(
+        result.diagnostics.filter((item) => item.severity === 'error'),
+      ).toEqual([]);
+      expect(result.runtime).not.toBeNull();
+      for (const nodeId of ['opening', 'left', 'right']) {
+        const scene = result.runtime?.graph.nodes.find(
+          (node) => 'sceneId' in node && node.sceneId === nodeId,
+        ) as {
+          renderers: Array<{
+            config: { sequence: Array<{ assetId: string }> };
+          }>;
+        };
+        expect(scene.renderers[0].config.sequence[0].assetId).toBe(
+          `video:clip-${nodeId}-a`,
+        );
+        expect(
+          result.runtime?.assets.find(
+            (asset) => asset.assetId === `video:clip-${nodeId}-a`,
+          ),
+        ).toMatchObject({
+          variants: [
+            expect.objectContaining({
+              sourceAssetId: `asset-${nodeId}-a`,
+              uri: `https://cdn.example/${nodeId}-a.mp4`,
+            }),
+          ],
+        });
+      }
+    },
+  );
+
   it('saves disconnected choices and compiles an independent decision without a video placeholder', () => {
     const content = draft();
     const opening = content.graph.nodes[0];
@@ -269,6 +307,105 @@ describe('compileStoryBuild', () => {
       (node) => 'sceneId' in node && node.sceneId === 'right',
     );
     expect(kept).toBe(true);
+  });
+
+  it.each(['preview', 'production'] as const)(
+    'plays a connected story in %s when two scenes reuse one clip row',
+    (channel) => {
+      const shared = videoSegment('opening');
+      const result = compileStoryBuild(
+        input({
+          channel,
+          timelines: [
+            timeline('opening', [shared]),
+            timeline('left', [
+              { ...videoSegment('left'), clipId: shared.clipId },
+            ]),
+            timeline('right'),
+          ],
+        }),
+      );
+
+      expect(
+        result.diagnostics.filter((item) => item.severity === 'error'),
+      ).toEqual([]);
+      expect(result.runtime).not.toBeNull();
+      const assetIds =
+        result.runtime?.assets.map((asset) => asset.assetId) ?? [];
+      expect(new Set(assetIds).size).toBe(assetIds.length);
+      expect(assetIds).toEqual(
+        expect.arrayContaining([
+          `video:${shared.clipId}`,
+          `video:${shared.clipId}:2`,
+        ]),
+      );
+    },
+  );
+
+  it('keeps a connected preview playable when a shot URL cannot enter the runtime', () => {
+    const bad = videoSegment('opening');
+    bad.asset = { ...bad.asset, url: 'http://cdn.example/opening-a.mp4' };
+    const result = compileStoryBuild(
+      input({
+        channel: 'preview',
+        timelines: [
+          timeline('opening', [bad]),
+          timeline('left'),
+          timeline('right'),
+        ],
+      }),
+    );
+
+    expect(
+      result.diagnostics.filter((item) => item.severity === 'error'),
+    ).toEqual([]);
+    expect(result.runtime).not.toBeNull();
+    const opening = result.runtime?.graph.nodes.find(
+      (node) => 'sceneId' in node && node.sceneId === 'opening',
+    ) as { renderers: Array<{ config: { sequence?: unknown[] } }> };
+    expect(opening.renderers[0].config.sequence ?? []).toEqual([]);
+    const left = result.runtime?.graph.nodes.find(
+      (node) => 'sceneId' in node && node.sceneId === 'left',
+    ) as { renderers: Array<{ config: { sequence?: unknown[] } }> };
+    expect(left.renderers[0].config.sequence?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it('names the scene and shot when a clip has no selected video', () => {
+    const content = draft();
+    const right = content.graph.nodes[2];
+    if (right?.kind !== 'clip') throw new Error('Fixture scene missing.');
+    right.name = 'Right road';
+    const result = compileStoryBuild(
+      input({
+        draft: content,
+        timelines: [
+          timeline('opening'),
+          timeline('left'),
+          timeline('right', [
+            { ...videoSegment('right'), asset: null, title: 'The turn' },
+          ]),
+        ],
+      }),
+    );
+
+    expect(result.runtime).not.toBeNull();
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_CLIP_MEDIA_REQUIRED',
+          severity: 'warning',
+          entityType: 'node',
+          entityId: 'right',
+          message:
+            '"The turn" in "Right road" has no selected video, so playtest skips that shot.',
+          details: {
+            kind: 'shot',
+            sceneTitle: 'Right road',
+            shotTitle: 'The turn',
+          },
+        }),
+      ]),
+    );
   });
 
   it('reports, but still releases, a storyboard clip with no selected media', () => {

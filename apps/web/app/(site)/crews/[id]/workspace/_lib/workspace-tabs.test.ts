@@ -34,9 +34,9 @@ describe("resolveWorkspaceTab", () => {
     }
   );
 
-  it("defaults to the group chat", () => {
-    // Doc §4: 群聊 默认进入 — the crew's day-to-day is the conversation.
-    expect(DEFAULT_WORKSPACE_TAB).toBe("chat");
+  it("defaults to asset-based tasks", () => {
+    // Pax: asset-based Tasks are the first Crew management surface.
+    expect(DEFAULT_WORKSPACE_TAB).toBe("tasks");
   });
 });
 
@@ -64,31 +64,25 @@ describe("chat is members-only", () => {
   });
 
   it("hides the chat entry from the nav for an outsider", () => {
-    expect(workspaceTabsFor(false).map((t) => t.id)).toEqual(["members", "roles", "overview"]);
+    expect(workspaceTabsFor(false).map((t) => t.id)).toEqual(["roles", "members", "overview"]);
     expect(workspaceTabsFor(true).map((t) => t.id)).toEqual([
-      "chat",
       "tasks",
+      "roles",
       "income",
+      "chat",
       "assets",
       "members",
-      "roles",
       "overview",
     ]);
   });
 });
 
-/**
- * Being in the crew is not the same as the crew's chat being openable.
- * A conversation row that was never created, or a 5xx from the resolve,
- * leaves an entitled member with a pane that can only render an error —
- * fine when they asked for it, wrong as the first thing the workspace
- * shows them.
- */
+/** Chat availability must not change the default task workbench. */
 describe("chat that will not open", () => {
   const BROKEN = { entitled: true, reachable: false };
 
-  it("lands on the overview instead of an error card", () => {
-    expect(resolveWorkspaceTab(null, BROKEN)).toBe(FALLBACK_WORKSPACE_TAB);
+  it("keeps Tasks as the landing during a chat outage", () => {
+    expect(resolveWorkspaceTab(null, BROKEN)).toBe("tasks");
   });
 
   it("still opens the chat pane when the member asks for it by name", () => {
@@ -107,7 +101,7 @@ describe("chat that will not open", () => {
   it("does not treat a resolve still in flight as a failure", () => {
     // `reachable` flips only once the query has actually errored;
     // pessimism here would bounce every cold load off the chat.
-    expect(resolveWorkspaceTab(null, { entitled: true, reachable: true })).toBe("chat");
+    expect(resolveWorkspaceTab(null, { entitled: true, reachable: true })).toBe("tasks");
   });
 });
 
@@ -156,12 +150,12 @@ describe("isWorkspaceTabId", () => {
   it("accepts only the seven rendered tabs, in product order", () => {
     // 群聊 / 任务 / 收入 / 资产中心 / 成员 / 招募 / 概览.
     expect(WORKSPACE_TABS.map((tab) => tab.id)).toEqual([
-      "chat",
       "tasks",
+      "roles",
       "income",
+      "chat",
       "assets",
       "members",
-      "roles",
       "overview",
     ]);
     expect(isWorkspaceTabId("chat")).toBe(true);

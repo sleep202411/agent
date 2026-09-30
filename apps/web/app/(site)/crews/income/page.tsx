@@ -1,5 +1,6 @@
 "use client";
 
+import { EarningTrend } from "../_components/earning-trend";
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -129,6 +130,13 @@ function PersonalIncomeSession() {
                 ))}
               </dl>
             )}
+            <EarningTrend
+              value={summary?.postedDaily}
+              failed={feed.isError}
+              loading={feed.isPending}
+              locale={locale}
+              currency={currency}
+            />
             <p className="text-sm text-muted-foreground">{t("settlementNote")}</p>
             {pages && !items.length && <p>{t("empty")}</p>}
             {items.length > 0 && (
