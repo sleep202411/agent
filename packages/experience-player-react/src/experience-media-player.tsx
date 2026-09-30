@@ -15,6 +15,7 @@ import { EXPERIENCE_VIDEO_LOADERS, normalizeVideoSource } from "./experience-vid
 
 export interface ExperienceMediaPlaybackHandle {
   readonly playbackIdentity: string;
+  activate(): void;
   play(): Promise<void>;
   pause(): void;
   seek(seconds: number): void;
@@ -262,6 +263,15 @@ export function ExperienceMediaPlayer({
     let playVersion = 0;
     onPlaybackHandle({
       playbackIdentity: rendered.identity,
+      activate: () => {
+        const media = providerMedia(playerRef.current);
+        if (!media) return;
+        try {
+          void media.play().catch(() => undefined);
+        } catch {
+          // The awaited play() reports a live element.
+        }
+      },
       play: () => {
         const version = ++playVersion;
         const assertActive = () => {
@@ -344,18 +354,18 @@ export function ExperienceMediaPlayer({
       // first — what this did before — threw away the `name` the verdict is
       // made on and left only localized browser prose, which can never decide
       // anything. Without the filter an `AbortError` raised by the `src` swap
-      // between two clips reaches the host as a runtime-error dialog: the same
-      // bug the handle-rejection path already fixes, arriving by the element's
-      // own callback instead. Genuine decode/source failures are untouched —
-      // they are not `AbortError`, and `onError` above reports them anyway.
+      // between two clips, or the `NotAllowedError` the mute fallback is
+      // already retrying, reaches the host as a runtime-error dialog. Genuine
+      // decode/source failures are untouched — they are neither of those, and
+      // `onError` above reports them anyway.
       onPlayFail={(detail) => {
-        if (isRoutinePlaybackInterruption(detail)) return;
+        if (!isSurfacedPlaybackEvent(detail)) return;
         onPlaybackError(detail.message);
       }}
       // Same taxonomy, one level down: this detail wraps the rejection in
       // `{ muted, error }`, so the classifier has to be handed `detail.error`.
       onAutoPlayFail={(detail) => {
-        if (isRoutinePlaybackInterruption(detail.error)) return;
+        if (!isSurfacedPlaybackEvent(detail.error)) return;
         onPlaybackError(detail.error.message);
       }}
       className="group/experience-video relative flex size-full overflow-hidden bg-black outline-none data-[fullscreen]:fixed data-[fullscreen]:inset-0 data-[fullscreen]:z-[9999] data-[fullscreen]:h-screen data-[fullscreen]:w-screen"
@@ -561,18 +571,21 @@ function isAutoplayPolicyRefusal(error: unknown): boolean {
  * host must not answer it with a runtime-error dialog. Genuine media failures
  * (`NotSupportedError`, decode errors) are NOT routine and still reach the host.
  *
- * A rejected `play()` can arrive by two independent routes and BOTH are gated on
- * this verdict, or the dialog simply comes back on the ungated one: the promise
- * the host awaits through `ExperienceMediaPlaybackHandle.play`, and the
- * element's own `play-fail` / `auto-play-fail` callbacks above. The element's
- * `error` event is a third route and is deliberately NOT gated — it reports
- * decode/source failures, which are never routine.
+ * The promise the host awaits is gated on this verdict. `play-fail` and
+ * `auto-play-fail` go through `isSurfacedPlaybackEvent`, which also drops
+ * `NotAllowedError`: that event is the same rejection the mute fallback is
+ * about to retry, delivered first. The element's `error` event is neither —
+ * it reports decode and source failures.
  *
  * Lives next to `isAutoplayPolicyRefusal` because this module owns the
  * DOM-exception taxonomy; the host consumes the verdict, never the `name`.
  */
 export function isRoutinePlaybackInterruption(error: unknown): boolean {
   return domExceptionName(error) === "AbortError";
+}
+
+export function isSurfacedPlaybackEvent(error: unknown): boolean {
+  return !isRoutinePlaybackInterruption(error) && !isAutoplayPolicyRefusal(error);
 }
 
 /**
@@ -668,7 +681,8 @@ function emitValidTimeUpdate(onTimeUpdate: (seconds: number) => void, seconds: n
   if (Number.isFinite(seconds) && seconds >= 0) onTimeUpdate(seconds);
 }
 
-function providerMedia(player: MediaPlayerInstance): HTMLMediaElement | null {
+function providerMedia(player: MediaPlayerInstance | null): HTMLMediaElement | null {
+  if (!player) return null;
   const provider = player.provider;
   if (
     provider?.type === "video" ||

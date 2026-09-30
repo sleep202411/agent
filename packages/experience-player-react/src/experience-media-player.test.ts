@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   isRoutinePlaybackInterruption,
+  isSurfacedPlaybackEvent,
   playWithSoundFallback,
   type ExperienceSoundFallbackTarget,
 } from "./experience-media-player";
@@ -160,6 +161,23 @@ describe("isRoutinePlaybackInterruption", () => {
     ["EncodingError", "The media could not be decoded."],
   ])("keeps a %s fatal", (name, message) => {
     expect(isRoutinePlaybackInterruption(domException(name, message))).toBe(false);
+  });
+
+  it("does not surface an autoplay-policy refusal from the play-fail event", () => {
+    const refusal = domException(
+      "NotAllowedError",
+      "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission."
+    );
+    expect(isSurfacedPlaybackEvent(refusal)).toBe(false);
+    expect(isRoutinePlaybackInterruption(refusal)).toBe(false);
+  });
+
+  it("still surfaces a decode failure from the play-fail event", () => {
+    expect(
+      isSurfacedPlaybackEvent(
+        domException("NotSupportedError", "The element has no supported sources.")
+      )
+    ).toBe(true);
   });
 
   it.each([
