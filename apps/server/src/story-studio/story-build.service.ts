@@ -186,7 +186,7 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 7;
+export const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 7;
 
 interface BuildCursor {
   number: number;

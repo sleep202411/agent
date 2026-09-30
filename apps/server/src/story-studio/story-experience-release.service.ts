@@ -31,16 +31,19 @@ import {
   type StoryChapterReleaseCandidate,
 } from './story-chapter-release-plan';
 import { StoryChapterManifestStorageService } from './story-chapter-manifest-storage.service';
-import { StoryBuildService } from './story-build.service';
+import {
+  STORY_BUILD_COMPILER_SEMANTIC_VERSION,
+  StoryBuildService,
+} from './story-build.service';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectsService } from './story-projects.service';
 
 const RELEASE_BUILD_CONCURRENCY = 8;
 const CHAPTER_MANIFEST_UPLOAD_CONCURRENCY = 16;
-// A release Build may be replayed indefinitely by its idempotency key. Bump
-// this only when candidate materialization changes, so an older immutable
-// receipt cannot be mistaken for the new request shape.
-const RELEASE_BUILD_KEY_VERSION = 2;
+// A release Build is replayed by this key, including a failed one. Bump when
+// publishability rules change, otherwise the next submit returns the old
+// failure and never runs the new compiler.
+const RELEASE_BUILD_KEY_VERSION = 3;
 
 interface PreparedChapter {
   chapterId: string;
@@ -522,6 +525,7 @@ function releaseBuildKey(
   chapter: Pick<StoryChapterDto, 'id'>,
 ): string {
   return `story-review:v${RELEASE_BUILD_KEY_VERSION}:${canonicalJsonHash({
+    compiler: STORY_BUILD_COMPILER_SEMANTIC_VERSION,
     projectId: workbench.project.id,
     projectVersion: workbench.project.projectVersion,
     draftRevision: input.expectedDraftRevision,
