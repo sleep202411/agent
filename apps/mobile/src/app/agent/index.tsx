@@ -11,7 +11,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useAuthGate } from "@/auth";
+import { useAuth, useAuthGate } from "@/auth";
+import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { ScreenHeader } from "@/components/ui";
@@ -40,6 +41,11 @@ function chunkPairs<T>(items: T[]): [T, T | undefined][] {
 
 /** Create hub — name a new story project or continue an existing one. */
 export default function AgentHubScreen() {
+  const { generation } = useAuth();
+  return <AgentHubSession key={generation} generation={generation} />;
+}
+
+function AgentHubSession({ generation }: { generation: number }) {
   const t = useTranslations();
   const theme = useTheme();
   const router = useRouter();
@@ -50,22 +56,32 @@ export default function AgentHubScreen() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const loadedOnceRef = useRef(false);
+  const readController = useRef<AbortController | null>(null);
 
-  const loadProjects = useCallback(async (opts?: { blocking?: boolean }) => {
-    const blocking = opts?.blocking ?? !loadedOnceRef.current;
-    if (blocking) setLoading(true);
-    setError(undefined);
-    try {
-      const { projects: rows } = await loadAgentProjects();
-      setProjects(rows);
-      loadedOnceRef.current = true;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setProjects([]);
-    } finally {
-      if (blocking) setLoading(false);
-    }
-  }, []);
+  const loadProjects = useCallback(
+    async (opts?: { blocking?: boolean }) => {
+      readController.current?.abort();
+      const controller = new AbortController();
+      readController.current = controller;
+      const current = () => !controller.signal.aborted && generation === getAuthGeneration();
+      const blocking = opts?.blocking ?? !loadedOnceRef.current;
+      if (blocking) setLoading(true);
+      setError(undefined);
+      try {
+        const { projects: rows } = await loadAgentProjects(controller.signal);
+        if (!current()) return;
+        setProjects(rows);
+        loadedOnceRef.current = true;
+      } catch (err) {
+        if (!current()) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setProjects([]);
+      } finally {
+        if (current()) setLoading(false);
+      }
+    },
+    [generation]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -75,6 +91,7 @@ export default function AgentHubScreen() {
         return;
       }
       void loadProjects();
+      return () => readController.current?.abort();
     }, [isAuthenticated, loadProjects])
   );
 

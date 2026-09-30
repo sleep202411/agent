@@ -6,6 +6,8 @@
  * StoryProject ids are sovereign (not PlatformProject / section ids).
  */
 
+import { z } from "zod";
+import { getAuthGeneration } from "@/auth/auth-store";
 import { getLocale } from "@/i18n";
 import { api } from "@/lib/api-client";
 
@@ -172,14 +174,72 @@ export async function resolveDefaultChapterId(
   return chapterId;
 }
 
+const projectPageSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      title: z.string(),
+      summary: z.string().nullable().optional(),
+      updatedAt: z.string().datetime({ offset: true }).optional(),
+      cover: z
+        .object({
+          kind: z.string().optional(),
+          status: z.string().optional(),
+          moderationStatus: z.string().nullable().optional(),
+          previewUrl: z.string().nullable().optional(),
+        })
+        .nullable()
+        .optional(),
+      production: z
+        .object({
+          clipCount: z.number().int().nonnegative(),
+          currentVideoCount: z.number().int().nonnegative(),
+        })
+        .optional(),
+    })
+  ),
+  nextCursor: z.string().min(1).nullable(),
+});
+
 /** Ensure default workspace, list story projects (does not auto-create). */
 export async function loadAgentProjects(signal?: AbortSignal): Promise<{
   workspaceId: string;
   projects: StoryProjectSummary[];
 }> {
+  const generation = getAuthGeneration();
+  const current = () => {
+    if (signal?.aborted || generation !== getAuthGeneration())
+      throw new Error("Project list session expired or request cancelled.");
+  };
+  current();
   const { workspace } = await storyProjectsApi.ensureDefaultWorkspace(signal);
-  const page = await storyProjectsApi.listStoryProjects(workspace.id, { limit: 100 }, signal);
-  return { workspaceId: workspace.id, projects: page.items ?? [] };
+  current();
+  const workspaceId = z.string().uuid().parse(workspace.id);
+  const projects: StoryProjectSummary[] = [];
+  const ids = new Set<string>();
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    current();
+    const page = projectPageSchema.parse(
+      await storyProjectsApi.listStoryProjects(workspaceId, { limit: 100, cursor }, signal)
+    );
+    current();
+    for (const project of page.items) {
+      if (project.workspaceId !== workspaceId) throw new Error("Project list workspace mismatch.");
+      // A project's updatedAt can change between pages. Retain its newest (first) row.
+      if (!ids.has(project.id)) {
+        ids.add(project.id);
+        projects.push(project);
+      }
+    }
+    if (page.nextCursor && (!page.items.length || cursors.has(page.nextCursor)))
+      throw new Error("Project list pagination did not advance. Refresh to try again.");
+    cursor = page.nextCursor ?? undefined;
+    if (cursor) cursors.add(cursor);
+  } while (cursor);
+  return { workspaceId, projects };
 }
 
 /**
