@@ -8,6 +8,7 @@ import { CrewApiError, crewApi } from "@/app/(site)/crews/_hooks/api";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { WorkbenchFilmPicker } from "./workbench-film-picker";
 import { canvasImportProjectId } from "./canvas-import-link";
 import type { WorkbenchTaskBatch } from "./workbench-task-batch";
 type Preview = {
@@ -131,6 +132,15 @@ function CanvasImportSession({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">{t("canvasImportHelp")}</p>
+      <WorkbenchFilmPicker
+        crewId={crewId}
+        disabled={busy || uncertain || done}
+        onSelect={(url) => {
+          setLink(url);
+          setPreview(null);
+          setError(null);
+        }}
+      />
       <form
         className="flex flex-wrap gap-2"
         onSubmit={(event) => {

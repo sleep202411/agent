@@ -59,6 +59,9 @@ export function TaskSelect({
         <SelectValue placeholder={placeholder}>{displayValue}</SelectValue>
       </SelectTrigger>
       <SelectContent
+        position="popper"
+        align="start"
+        sideOffset={6}
         className={cn(
           "border border-white/[0.1] bg-[#17181c] text-[#d9dce1] shadow-[0_18px_50px_rgba(0,0,0,.55)] ring-0",
           contentClassName

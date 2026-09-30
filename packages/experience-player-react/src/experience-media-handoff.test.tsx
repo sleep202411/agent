@@ -263,6 +263,15 @@ describe("ExperienceMediaPlayer cut cover", () => {
     expect(stillFrame().hidden).toBe(true);
   });
 
+  it("spends the user gesture on the element before the source can play", async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const pause = vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    await showClip("a", { frameReady: false });
+    registeredHandles().at(-1)!.activate();
+    expect(play).toHaveBeenCalledOnce();
+    expect(pause).not.toHaveBeenCalled();
+  });
+
   it("does not start a waiting play after the host pauses it", async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});

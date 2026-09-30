@@ -1,3 +1,12 @@
+vi.mock("@/components/user-avatar", () => ({
+  UserAvatar: ({ src, name }: { src: string; name: string }) => (
+    <span role="img" data-src={src} aria-label={name} />
+  ),
+}));
+vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
+  useUserDisplays: () => new Map([["assigned-user", { avatar: "https://example.com/avatar.png" }]]),
+  displayNameOf: (id: string) => id,
+}));
 vi.mock("./workbench-canvas-import", () => ({
   WorkbenchCanvasImport: ({ onStage }: { onStage: (batch: unknown) => void }) => (
     <button
@@ -476,4 +485,41 @@ it("lets users dismiss a checked uncertain notice without retrying or deleting a
   expect(state.create).toHaveBeenCalledTimes(1);
   await remount();
   expect(host.textContent).not.toContain("Check Creation Result");
+});
+
+it("shows deadline, assignee avatar and unset points without an extra edit icon", async () => {
+  window.localStorage.setItem(
+    "fizz:workbench:v1:user:crew",
+    JSON.stringify({
+      version: 1,
+      batches: [],
+      drafts: [
+        {
+          id: 1,
+          state: "staged",
+          input: {
+            title: "Detailed Script",
+            description: "Brief",
+            priority: "normal",
+            taskKind: "script",
+            dueAt: "2026-10-03T15:59:59Z",
+            assignees: [{ userId: "assigned-user", currency: "USD" }],
+          },
+        },
+      ],
+    })
+  );
+  await render();
+  expect(host.textContent).toContain("2026-10-03");
+  expect(host.textContent).toContain("Points not set");
+  expect(
+    host.querySelector('[role="img"][aria-label="assigned-user"]')?.getAttribute("data-src")
+  ).toBe("https://example.com/avatar.png");
+  const edit = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "Detailed Script"
+  )!;
+  expect(edit.className).not.toContain("hover:underline");
+  expect(edit.querySelector("svg")).toBeNull();
+  await act(async () => edit.click());
+  expect(button("Save Draft")).toBeDefined();
 });

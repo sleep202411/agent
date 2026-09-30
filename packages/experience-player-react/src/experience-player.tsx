@@ -685,8 +685,14 @@ function ActiveExperienceRuntimePlayer({
 
   const begin = async () => {
     if (started || starting || !theme) return;
-    setStarting(true);
     const playbackHandles = [...playbackHandlesRef.current.values()];
+    // WebKit grants later play() calls to the element that was played inside
+    // this click. The awaited play() below sits after `await run()`, and a
+    // play() that starts there is the NotAllowedError dialog. Do not pause
+    // here: that pause is delivered as its own task and lands after the real
+    // play() has started.
+    for (const handle of playbackHandles) handle.activate();
+    setStarting(true);
     try {
       const playbacks: Promise<void>[] = [];
       const audioUnlock = unlockAudio();
@@ -1556,6 +1562,7 @@ function ExperienceStillSegment({
       (runningSinceRef.current === null ? 0 : performance.now() - runningSinceRef.current);
     const handle: ExperienceMediaPlaybackHandle = {
       playbackIdentity,
+      activate: () => undefined,
       play: async () => {
         if (runningSinceRef.current === null) {
           runningSinceRef.current = performance.now();

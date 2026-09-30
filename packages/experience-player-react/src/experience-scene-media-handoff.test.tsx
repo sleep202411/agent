@@ -23,6 +23,7 @@ vi.mock("./experience-media-player", async () => {
     onPlaybackHandle?: (
       handle: {
         playbackIdentity: string;
+        activate: () => void;
         play: () => Promise<void>;
         pause: () => void;
         seek: () => void;
@@ -33,6 +34,7 @@ vi.mock("./experience-media-player", async () => {
     useEffect(() => {
       onPlaybackHandle?.({
         playbackIdentity,
+        activate: () => undefined,
         play: async () => undefined,
         pause: () => undefined,
         seek: () => undefined,

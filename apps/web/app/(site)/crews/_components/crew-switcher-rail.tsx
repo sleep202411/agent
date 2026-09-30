@@ -40,7 +40,7 @@ export function CrewSwitcherRail({
   embedded = false,
   currentCrew,
   currentCrewHref,
-  showNames = false,
+  showNames = true,
 }: CrewSwitcherRailProps) {
   const myCrews = useMyCrews();
   const crews = useMemo(
@@ -90,7 +90,7 @@ export function CrewSwitcherRailView({
   currentCrewHref,
   allCrewsActive = false,
   rootLabel,
-  showNames = false,
+  showNames = true,
   isPending = false,
   error,
   onRetry,
@@ -195,7 +195,7 @@ export function CrewSwitcherRailView({
                   />
                   <CrewUnreadMarker crewId={crew.id} />
                   {showNames ? (
-                    <span className="hidden min-w-0 truncate text-[12px] font-medium text-[#d8dae0] md:block">
+                    <span className="min-w-0 truncate text-[12px] font-medium text-[#d8dae0]">
                       {crew.name}
                     </span>
                   ) : null}

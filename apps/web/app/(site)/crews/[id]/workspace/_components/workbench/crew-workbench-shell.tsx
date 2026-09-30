@@ -82,7 +82,7 @@ export function CrewWorkbenchShell({
   const t = useTranslations("workspace");
   const tw = useTranslations("crewWorkbench");
   const tc = useTranslations("crewCommunityChat");
-  const [crewNamesExpanded, setCrewNamesExpanded] = useState(false);
+  const [crewNamesExpanded, setCrewNamesExpanded] = useState(true);
   const hasChat = tabs.some((tab) => tab.id === "chat");
   return (
     <div
@@ -197,6 +197,7 @@ export function CrewWorkbenchShell({
 
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-tl-xl border-l border-white/[0.055] bg-background">
         <CrewWorkbenchHeader
+          crewLogo={crewLogo}
           crewId={crewId}
           crewName={crewName}
           pageTitle={

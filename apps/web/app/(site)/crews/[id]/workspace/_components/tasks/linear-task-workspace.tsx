@@ -318,6 +318,11 @@ function LinearTaskSession({
     return <LoadingState label={t("loading")} />;
   }
 
+  // Only hide the project tabs once the summary has positively reported
+  // zero tasks. While the summary is loading (or a field is absent),
+  // keep the tabs visible so they don't flicker on first paint.
+  const hasTasks = summaryQuery.data?.total === undefined || summaryQuery.data.total > 0;
+
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#090a0c] text-[#e8e9ec]">
       {projectError}
@@ -331,43 +336,47 @@ function LinearTaskSession({
             label={t("workbench.title")}
             onClick={() => openSection("production")}
           />
-          <ProjectTab
-            active={section === "issues" && activeView.id === project.views[0]?.id}
-            label={t("issues")}
-            onClick={() => openSection("issues", project.views[0]?.id)}
-          />
-          <ProjectTab
-            active={section === "overview"}
-            icon={<IconLayoutDashboard />}
-            label={t("overview")}
-            onClick={() => openSection("overview")}
-          />
-          <ProjectTab
-            active={section === "activity"}
-            label={t("activity")}
-            onClick={() => openSection("activity")}
-          />
-          {project.views.slice(1).map((view) => (
-            <ProjectTab
-              key={view.id}
-              active={section === "issues" && activeView.id === view.id}
-              icon={view.layout === "board" ? <IconLayoutKanban /> : <IconList />}
-              label={view.name}
-              onClick={() => openSection("issues", view.id)}
-            />
-          ))}
-          {isOwner ? (
-            <button
-              type="button"
-              onClick={() => {
-                setCreateViewMode(true);
-                setNewViewLayout(activeView.layout);
-              }}
-              className="grid size-8 shrink-0 place-items-center rounded-full text-[#656c77] transition-colors hover:bg-white/[0.05] hover:text-white"
-              aria-label={t("newView")}
-            >
-              <IconPlus className="size-4" />
-            </button>
+          {hasTasks ? (
+            <>
+              <ProjectTab
+                active={section === "issues" && activeView.id === project.views[0]?.id}
+                label={t("issues")}
+                onClick={() => openSection("issues", project.views[0]?.id)}
+              />
+              <ProjectTab
+                active={section === "overview"}
+                icon={<IconLayoutDashboard />}
+                label={t("overview")}
+                onClick={() => openSection("overview")}
+              />
+              <ProjectTab
+                active={section === "activity"}
+                label={t("activity")}
+                onClick={() => openSection("activity")}
+              />
+              {project.views.slice(1).map((view) => (
+                <ProjectTab
+                  key={view.id}
+                  active={section === "issues" && activeView.id === view.id}
+                  icon={view.layout === "board" ? <IconLayoutKanban /> : <IconList />}
+                  label={view.name}
+                  onClick={() => openSection("issues", view.id)}
+                />
+              ))}
+              {isOwner ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateViewMode(true);
+                    setNewViewLayout(activeView.layout);
+                  }}
+                  className="grid size-8 shrink-0 place-items-center rounded-full text-[#656c77] transition-colors hover:bg-white/[0.05] hover:text-white"
+                  aria-label={t("newView")}
+                >
+                  <IconPlus className="size-4" />
+                </button>
+              ) : null}
+            </>
           ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <button

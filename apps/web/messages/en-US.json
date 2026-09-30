@@ -4915,7 +4915,7 @@
     },
     "status": {
       "backlog": "Backlog",
-      "open": "To do",
+      "open": "Pending delivery",
       "in_progress": "In progress",
       "submitted": "In review",
       "revision_requested": "Revision",
@@ -5192,7 +5192,7 @@
       "dropAssets": "Drop Assets Here",
       "browseAssets": "Or Click to Browse Files",
       "uploadUnavailable": "Upload Is Unavailable",
-      "canvasImportHelp": "Paste the canvas link from an interactive film in Story Studio to preview its scenes.",
+      "canvasImportHelp": "Choose an existing interactive film, or create one in the linked workspace.",
       "canvasLink": "Paste Canvas Link",
       "invalidCanvasLink": "Use a canvas link from this platform’s Story Studio.",
       "previewImport": "Preview",
@@ -5210,7 +5210,17 @@
       "draftStorageFailed": "Drafts could not be saved in this browser. Keep this page open and free browser storage before creating these tasks.",
       "noAssetsFound": "No matching files or folders.",
       "viewTasks": "View Created Tasks",
-      "dismissCheckedDraft": "I checked Tasks — dismiss this notice"
+      "dismissCheckedDraft": "I checked Tasks — dismiss this notice",
+      "estimatePointsLabel": "Estimated points",
+      "invalidPoints": "Enter a whole number from 0 to 1,000,000.",
+      "noDeadline": "No deadline",
+      "pointsUnset": "Points not set",
+      "chooseFilm": "Choose an interactive film",
+      "createFilm": "Create interactive film",
+      "filmTitle": "Project title",
+      "loadMoreFilms": "Load more",
+      "linkWorkspaceFirst": "Link a Studio workspace first.",
+      "openCreatedFilm": "Open {title} in Studio"
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -5551,7 +5561,7 @@
     },
     "status": {
       "backlog": "Backlog",
-      "open": "Open",
+      "open": "Pending delivery",
       "in_progress": "In progress",
       "submitted": "In review",
       "revision_requested": "Revision",
@@ -7035,7 +7045,7 @@
     },
     "cast": {
       "eyebrow": "Inside the crew",
-      "titleLine1": "90+ agents.",
+      "titleLine1": "130+ agents.",
       "titleLine2": "One coherent project.",
       "subtitle": "Under the hood of every project, a supervisor agent routes your direction to specialists who share a single project bible — characters, scenes, and props stay consistent without you wrangling them.",
       "footnote": "…plus Brief Analyzer, Script Splitter, Evaluator, and Story Editor working behind the scenes.",
