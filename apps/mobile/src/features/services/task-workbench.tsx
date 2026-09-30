@@ -9,6 +9,7 @@ import { TaskCreate } from "./task-create";
 import { fetchTaskCommentAccess } from "./task-comment-api";
 import { getTaskDraftSession } from "./task-draft-session";
 import { AssetOrganization } from "../crew-assets/organization";
+import { pendingAssetTasks } from "./asset-task-progress-api";
 import { AssetTaskProgress } from "./asset-task-progress";
 import { EpisodeTaskTemplate } from "./episode-task-template";
 import { CanvasTaskImport } from "./canvas-task-import";
@@ -39,7 +40,7 @@ function Session(props: Props) {
     session.getSnapshot,
     session.getSnapshot
   );
-  const [editing, setEditing] = useState(false),
+  const [editing, setEditing] = useState<boolean | number>(false),
     [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>(),
     [remove, setRemove] = useState<number>();
@@ -73,7 +74,8 @@ function Session(props: Props) {
   if (section) {
     const childProps = { ...props, onClose: () => setSection(undefined) };
     if (section === "assets") return <AssetOrganization {...childProps} />;
-    if (section === "progress") return <AssetTaskProgress {...childProps} />;
+    if (section === "progress")
+      return <AssetTaskProgress {...childProps} pending={pendingAssetTasks(snapshot.drafts)} />;
     if (section === "canvas")
       return (
         <CanvasTaskImport
@@ -97,14 +99,20 @@ function Session(props: Props) {
       );
     return <EpisodeManagement {...childProps} />;
   }
+  const editingDraft =
+    typeof editing === "number"
+      ? snapshot.drafts.find((row) => row.id === editing && row.kind === "task")
+      : undefined;
   if (editing && allowed)
     return (
       <TaskCreate
         {...props}
+        initialDraft={editingDraft?.kind === "task" ? editingDraft : undefined}
         closeLabel={t("taskWorkbench.title")}
         onClose={() => setEditing(false)}
         onStage={(input, review) => {
-          session.stage(input, review);
+          if (typeof editing === "number") session.edit(editing, input, review);
+          else session.stage(input, review);
           setEditing(false);
         }}
       />
@@ -127,23 +135,37 @@ function Session(props: Props) {
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{t("taskWorkbench.title")}</ThemedText>
       <ThemedText>{t("taskWorkbench.help")}</ThemedText>
+      {snapshot.storageError && (
+        <View style={{ gap: 8 }}>
+          <ThemedText accessibilityRole="alert">
+            {t("taskWorkbench.storageError")}: {snapshot.storageError}
+          </ThemedText>
+          <Button
+            label={t("inbox.retry")}
+            disabled={snapshot.busy}
+            onPress={() => {
+              session.save();
+            }}
+          />
+        </View>
+      )}
       <View
         style={{ padding: 12, gap: 8, borderRadius: 8, backgroundColor: theme.backgroundElement }}
       >
         <ThemedText type="smallBold">{t("taskWorkbench.assetLibrary")}</ThemedText>
         <Button
           label={t("assetOrganization.title")}
-          disabled={snapshot.busy}
+          disabled={snapshot.busy || !!snapshot.storageError}
           onPress={() => setSection("assets")}
         />
         <Button
           label={t("assetTaskProgress.title")}
-          disabled={snapshot.busy}
+          disabled={snapshot.busy || !!snapshot.storageError}
           onPress={() => setSection("progress")}
         />
         <Button
           label={t("episodeManagement.title")}
-          disabled={snapshot.busy}
+          disabled={snapshot.busy || !!snapshot.storageError}
           onPress={() => setSection("episodes")}
         />
       </View>
@@ -155,17 +177,17 @@ function Session(props: Props) {
         <>
           <Button
             label={t("taskCreate.title")}
-            disabled={snapshot.busy}
+            disabled={snapshot.busy || !!snapshot.storageError}
             onPress={() => setEditing(true)}
           />
           <Button
             label={t("episodeTaskTemplate.title")}
-            disabled={snapshot.busy}
+            disabled={snapshot.busy || !!snapshot.storageError}
             onPress={() => setSection("template")}
           />
           <Button
-            label={t("canvasImport.title")}
-            disabled={snapshot.busy}
+            label={`${t("assetTaskProgress.production")} · ${t("canvasImport.title")}`}
+            disabled={snapshot.busy || !!snapshot.storageError}
             onPress={() => setSection("canvas")}
           />
           <ThemedText>{t("taskWorkbench.count").replace("{count}", String(staged))}</ThemedText>
@@ -234,7 +256,12 @@ function Session(props: Props) {
                   <ThemedText type="smallBold">{row.title}</ThemedText>
                   <ThemedText>{row.plan.name}</ThemedText>
                   {row.plan.items.map((item) => (
-                    <ThemedText key={item.templateKey}>{item.title}</ThemedText>
+                    <View key={item.templateKey} style={{ gap: 4 }}>
+                      <ThemedText>{item.title}</ThemedText>
+                      {row.plan.fieldReview?.[item.templateKey]?.map((value, index) => (
+                        <ThemedText key={index}>{value}</ThemedText>
+                      ))}
+                    </View>
                   ))}
                 </>
               )}
@@ -243,7 +270,7 @@ function Session(props: Props) {
                 <Button
                   key={id}
                   label={`${t("taskWorkbench.open")} ${index + 1}`}
-                  disabled={snapshot.busy}
+                  disabled={snapshot.busy || !!snapshot.storageError}
                   onPress={() => props.onCreated(id)}
                 />
               ))}
@@ -258,10 +285,17 @@ function Session(props: Props) {
                   onPress={() => props.onCreated(row.taskId!)}
                 />
               )}
+              {row.state === "staged" && row.kind === "task" && (
+                <Button
+                  label={t("taskWorkbench.editDraft")}
+                  disabled={snapshot.busy || !!snapshot.storageError}
+                  onPress={() => setEditing(row.id)}
+                />
+              )}
               {row.state === "staged" && (
                 <Button
                   label={t("taskWorkbench.remove")}
-                  disabled={snapshot.busy}
+                  disabled={snapshot.busy || !!snapshot.storageError}
                   onPress={() => session.remove(row.id)}
                 />
               )}
@@ -273,7 +307,7 @@ function Session(props: Props) {
                     label={t(
                       remove === row.id ? "taskWorkbench.confirmForget" : "taskWorkbench.forget"
                     )}
-                    disabled={snapshot.busy}
+                    disabled={snapshot.busy || !!snapshot.storageError}
                     onPress={() => {
                       if (remove !== row.id) setRemove(row.id);
                       else {
@@ -287,15 +321,17 @@ function Session(props: Props) {
             </View>
           ))}
           {snapshot.error && <ThemedText accessibilityRole="alert">{snapshot.error}</ThemedText>}
-          <Button
-            primary
-            label={t("taskWorkbench.createAll")}
-            disabled={snapshot.busy || !staged || uncertain}
-            onPress={() => {
-              const startedIn = foreground.current;
-              void session.createAll(() => alive.current && foreground.current === startedIn);
-            }}
-          />
+          {snapshot.drafts.some((row) => row.state !== "created") && (
+            <Button
+              primary
+              label={t("taskWorkbench.createAll")}
+              disabled={snapshot.busy || !staged || uncertain || !!snapshot.storageError}
+              onPress={() => {
+                const startedIn = foreground.current;
+                void session.createAll(() => alive.current && foreground.current === startedIn);
+              }}
+            />
+          )}
           {snapshot.busy && <ActivityIndicator />}
         </>
       )}

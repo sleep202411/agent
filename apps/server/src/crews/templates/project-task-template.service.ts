@@ -24,6 +24,10 @@ export interface InstantiateTasksOptions {
   workflowStateId?: string;
   episodeId?: string;
   episodeScoped?: boolean;
+  taskFields?: Record<
+    string,
+    Array<{ fieldId: string; value: Prisma.InputJsonValue }>
+  >;
 }
 
 @Injectable()
@@ -212,6 +216,18 @@ export class ProjectTaskTemplateService {
             rank: currentRank,
             createdByUserId: options.userId ?? 'system',
             metadata,
+            ...(options.taskFields?.[item.templateKey]?.length
+              ? {
+                  customFieldValues: {
+                    create: options.taskFields[item.templateKey].map(
+                      (field) => ({
+                        ...field,
+                        updatedByUserId: options.userId ?? 'system',
+                      }),
+                    ),
+                  },
+                }
+              : {}),
           },
         });
         createdTasks.push(task);

@@ -6,11 +6,17 @@ import {
   type CustomValue,
 } from "./task-custom-fields-api";
 import { normalizeCustomValue } from "./task-custom-field-edit-api";
-export function useTaskCreationCustomFields(crewId: string, generation: number) {
+export function useTaskCreationCustomFields(
+  crewId: string,
+  generation: number,
+  initial: { fieldId: string; value: CustomValue }[] = []
+) {
   const [fields, setFields] = useState<CustomField[]>(),
     [error, setError] = useState<string>(),
     [attempt, setAttempt] = useState(0);
-  const [drafts, setDrafts] = useState<Record<string, CustomValue>>({});
+  const [drafts, setDrafts] = useState<Record<string, CustomValue>>(() =>
+    Object.fromEntries(initial.map((row) => [row.fieldId, row.value]))
+  );
   useEffect(() => {
     const controller = new AbortController();
     void fetchTaskFieldDefinitions(crewId, controller.signal).then(

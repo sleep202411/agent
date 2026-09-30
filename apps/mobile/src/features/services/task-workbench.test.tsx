@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskWorkbench } from "./task-workbench";
 import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
+vi.mock("./task-draft-storage", () => ({
+  taskDraftStorage: () => ({ read: () => null, write: () => {} }),
+}));
 const h = vi.hoisted(() => ({
   generation: 10,
   active: true,
@@ -166,7 +169,7 @@ it("requires management access before showing drafts or creation", async () => {
 });
 it("reviews staged task details without writing until Create All", async () => {
   await render();
-  expect(button("taskWorkbench.createAll").disabled).toBe(true);
+  expect(button("taskWorkbench.createAll")).toBeUndefined();
   await stage();
   expect(host.textContent).toContain("Storyboard");
   expect(host.textContent).toContain("Episode 1");
@@ -369,4 +372,16 @@ it("does not resume a paused batch just because the screen foregrounded before i
   await act(async () => resolve({ id: "created" }));
   expect(h.create).toHaveBeenCalledTimes(1);
   expect(button("taskWorkbench.createAll").disabled).toBe(false);
+});
+
+it("reopens and saves a staged card in place without adding a second task", async () => {
+  await render();
+  await stage();
+  await click("taskWorkbench.editDraft");
+  await click("stage form");
+  expect(
+    [...host.querySelectorAll("button")].filter((b) => b.textContent === "taskWorkbench.editDraft")
+  ).toHaveLength(1);
+  await click("taskWorkbench.createAll");
+  expect(h.create).toHaveBeenCalledOnce();
 });

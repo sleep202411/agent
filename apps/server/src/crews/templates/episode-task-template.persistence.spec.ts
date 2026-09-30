@@ -7,6 +7,8 @@ const { PGlite } = process.getBuiltinModule('module').createRequire(__filename)(
 type Sql = Pick<import('@electric-sql/pglite').PGlite, 'query'>;
 const episode1 = '01990000-0000-7000-8000-000000000011';
 const episode2 = '01990000-0000-7000-8000-000000000012';
+const fieldId = '01990000-0000-7000-8000-000000000013';
+let requiredFields = false;
 // Isolated SQL persistence adapter. No application DATABASE_URL or remote database.
 function adapter(sql: Sql) {
   const raw = (parts: TemplateStringsArray, ...values: unknown[]) =>
@@ -30,7 +32,22 @@ function adapter(sql: Sql) {
         ).rows[0] ?? null,
     },
     projectTaskTemplate: { findFirst: () => Promise.resolve(null) },
-    crewTaskFieldDefinition: { count: () => Promise.resolve(0) },
+    crewTaskFieldDefinition: {
+      findMany: () =>
+        Promise.resolve(
+          requiredFields
+            ? [
+                {
+                  id: fieldId,
+                  name: 'Brief',
+                  type: 'text',
+                  required: true,
+                  options: [],
+                },
+              ]
+            : [],
+        ),
+    },
     crewTaskWorkflowState: { findFirst: () => Promise.resolve({ id: 'open' }) },
     crewTask: {
       findMany: async ({
@@ -66,6 +83,13 @@ function adapter(sql: Sql) {
           number: number;
           rank: Prisma.Decimal;
           metadata: unknown;
+          customFieldValues?: {
+            create: Array<{
+              fieldId: string;
+              value: unknown;
+              updatedByUserId: string;
+            }>;
+          };
         };
       }) => {
         await sql.query('INSERT INTO tasks VALUES ($1,$2,$3,$4,$5,$6)', [
@@ -76,6 +100,14 @@ function adapter(sql: Sql) {
           data.rank.toString(),
           JSON.stringify(data.metadata),
         ]);
+        for (const field of data.customFieldValues?.create ?? []) {
+          await sql.query('INSERT INTO field_values VALUES ($1,$2,$3,$4)', [
+            data.id,
+            field.fieldId,
+            JSON.stringify(field.value),
+            field.updatedByUserId,
+          ]);
+        }
         return data;
       },
     },
@@ -118,7 +150,8 @@ describe('Episode template SQL persistence', () => {
     await db.exec(`CREATE TABLE crew_episodes(id uuid PRIMARY KEY,crew_id text,version integer,status text);
   CREATE TABLE tasks(id uuid PRIMARY KEY,crew_id text,episode_id uuid,number integer UNIQUE,rank numeric,metadata jsonb);
   CREATE TABLE dependencies(blocking_id uuid REFERENCES tasks(id),blocked_id uuid REFERENCES tasks(id),PRIMARY KEY(blocking_id,blocked_id));
-  CREATE TABLE receipts(crew_id text,payload jsonb);`);
+  CREATE TABLE receipts(crew_id text,payload jsonb);
+  CREATE TABLE field_values(task_id uuid REFERENCES tasks(id) ON DELETE CASCADE,field_id uuid,value jsonb NOT NULL,updated_by text NOT NULL,PRIMARY KEY(task_id,field_id));`);
     const prisma = {
       $transaction: (
         run: (tx: ReturnType<typeof adapter>) => Promise<unknown>,
@@ -135,6 +168,7 @@ describe('Episode template SQL persistence', () => {
     );
   }, 30000);
   beforeEach(async () => {
+    requiredFields = false;
     await db.exec(
       'DELETE FROM dependencies;DELETE FROM tasks;DELETE FROM receipts;DELETE FROM crew_episodes;',
     );
@@ -227,5 +261,53 @@ describe('Episode template SQL persistence', () => {
         )
       ).rows[0].count,
     ).toBe(0);
+  });
+  it('persists each reviewed custom field and actor atomically with the episode receipt', async () => {
+    requiredFields = true;
+    const plan = await service.preview('crew', episode1, 'user');
+    const taskFields = plan.items.map((item) => ({
+      templateKey: item.templateKey,
+      values: [{ fieldId, value: `Brief ${item.templateKey}` }],
+    }));
+    const command = { ...plan, taskFields };
+    await service.apply('crew', episode1, 'reviewer', command);
+    const rows = (
+      await db.query<{ value: string; updated_by: string }>(
+        'SELECT value,updated_by FROM field_values',
+      )
+    ).rows;
+    expect(rows).toHaveLength(plan.items.length);
+    expect(rows.every((row) => row.updated_by === 'reviewer')).toBe(true);
+    expect(rows.map((row) => row.value).sort()).toEqual(
+      taskFields.map((row) => row.values[0].value).sort(),
+    );
+    expect(
+      (await service.apply('crew', episode1, 'reviewer', command)).replayed,
+    ).toBe(true);
+    expect((await db.query('SELECT * FROM field_values')).rows).toHaveLength(
+      plan.items.length,
+    );
+  });
+  it('rolls back tasks, custom fields and receipts together on field persistence failure', async () => {
+    requiredFields = true;
+    const plan = await service.preview('crew', episode1, 'user');
+    await db.exec(
+      'ALTER TABLE field_values ADD CONSTRAINT fail_field CHECK(false) NOT VALID',
+    );
+    try {
+      await expect(
+        service.apply('crew', episode1, 'reviewer', {
+          ...plan,
+          taskFields: plan.items.map((item) => ({
+            templateKey: item.templateKey,
+            values: [{ fieldId, value: 'Brief' }],
+          })),
+        }),
+      ).rejects.toThrow();
+      for (const table of ['tasks', 'field_values', 'receipts'])
+        expect((await db.query(`SELECT * FROM ${table}`)).rows).toHaveLength(0);
+    } finally {
+      await db.exec('ALTER TABLE field_values DROP CONSTRAINT fail_field');
+    }
   });
 });

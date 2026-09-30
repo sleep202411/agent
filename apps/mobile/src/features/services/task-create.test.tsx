@@ -644,3 +644,47 @@ it("preserves unfinished title and brief across backgrounding without submitting
   await render();
   expect(host.textContent).toBe("");
 });
+
+it("reopens a staged draft, preserves unchanged metadata and saves through staging only", async () => {
+  const onStage = vi.fn();
+  const initial = {
+    title: "Reviewed draft",
+    description: "Keep this",
+    priority: "high" as const,
+    startAt: "2026-09-30T01:02:03.456Z",
+    dueAt: null,
+    parentId: null,
+    blockedByTaskIds: [],
+    assignees: [],
+    estimatePoints: 8,
+    revisionLimit: 2,
+    taskKind: "script" as const,
+  };
+  await act(async () =>
+    root.render(
+      <TaskCreate
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialDraft={{
+          id: 7,
+          kind: "task",
+          state: "staged",
+          input: initial,
+          review: { context: [], assignees: [], customFields: [] },
+        }}
+        onStage={onStage}
+        onCreated={h.refresh}
+        onClose={h.refresh}
+      />
+    )
+  );
+  expect(host.querySelectorAll("input")[0]?.value).toBe("Reviewed draft");
+  await act(async () => {
+    type(0, "Edited draft");
+  });
+  await act(async () => button("taskWorkbench.saveDraft")!.click());
+  expect(onStage).toHaveBeenCalledOnce();
+  expect(onStage.mock.calls[0][0]).toMatchObject({ ...initial, title: "Edited draft" });
+  expect(h.update).not.toHaveBeenCalled();
+});

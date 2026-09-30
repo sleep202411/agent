@@ -20,6 +20,7 @@ vi.mock("@/auth/use-auth", () => ({
     session: { region: "com", token: { tokenName: "satoken", tokenValue: api.token } },
   }),
 }));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("@/lib/api-client", () => ({ api: {}, ApiRequestError: class extends Error {} }));
 vi.mock("@/i18n", () => ({ getLocale: () => "en-US", t: (key: string) => key }));

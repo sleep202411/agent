@@ -12,6 +12,11 @@ const state = vi.hoisted(() => ({
   } | null,
   props: null as any,
 }));
+vi.mock("@/features/services/crew-applications", () => ({
+  CrewApplications: ({ onWeb }: { onWeb: () => void }) => (
+    <button onClick={onWeb}>advanced-web</button>
+  ),
+}));
 vi.mock("expo-router", () => ({ Stack: { Screen: () => null } }));
 vi.mock("react-native", () => ({
   View: ({ children }: any) => <div>{children}</div>,
@@ -28,7 +33,12 @@ vi.mock("react-native-webview", () => ({
   },
 }));
 vi.mock("@/auth", () => ({
-  useAuth: () => ({ session: state.token ? { token: state.token } : null }),
+  useAuth: () => ({
+    status: state.token ? "authenticated" : "anonymous",
+    generation: state.token ? 1 : 0,
+    user: state.token ? { id: "user" } : undefined,
+    session: state.token ? { token: state.token } : null,
+  }),
   useAuthGate: () => ({ openLogin: vi.fn() }),
 }));
 vi.mock("@/components/themed-text", () => ({
@@ -70,6 +80,7 @@ it("keeps first-request authentication on the configured app URL", async () => {
 
 it("opens the existing Crew application workflow inside the authenticated native shell", async () => {
   await act(async () => root.render(<CrewApplicationsScreen />));
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
   expect(state.props.source).toEqual({
     uri: "https://app.example/en-US/crews/applications",
     headers: { Cookie: "satoken=fixture-token" },
@@ -81,10 +92,12 @@ it("gates a direct application link and resumes that workflow after login", asyn
   state.token = null;
   await act(async () => root.render(<CrewApplicationsScreen />));
   expect(state.props).toBeNull();
-  expect(host.textContent).toContain("authedWeb.sessionNeeded");
+  expect(host.textContent).toContain("crewTerms.signIn");
   state.token = { tokenName: "satoken", tokenValue: "fresh-session" };
   await act(async () => root.render(<CrewApplicationsScreen />));
-  expect(host.textContent).not.toContain("authedWeb.sessionNeeded");
+  expect(host.textContent).not.toContain("crewTerms.signIn");
+  expect(host.textContent).toContain("advanced-web");
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
   expect(state.props.source).toEqual({
     uri: "https://app.example/en-US/crews/applications",
     headers: { Cookie: "satoken=fresh-session" },

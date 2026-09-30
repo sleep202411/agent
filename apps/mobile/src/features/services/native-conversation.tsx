@@ -307,6 +307,7 @@ export function NativeConversation({
             {item.payload?.kind === "attachments" &&
               item.payload.attachments.map((file) => (
                 <ConversationFile
+                  inlinePreview
                   key={file.assetNodeId}
                   mediaAssetId={file.mediaAssetId}
                   mediaKind={file.mediaKind}

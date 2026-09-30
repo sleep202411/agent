@@ -2511,5 +2511,10 @@
   "documentEditor.background": "Block Background",
   "documentEditor.top": "Align Top",
   "documentEditor.middle": "Align Middle",
-  "documentEditor.bottom": "Align Bottom"
+  "documentEditor.bottom": "Align Bottom",
+  "taskWorkbench.editDraft": "Edit draft",
+  "taskWorkbench.saveDraft": "Save draft",
+  "taskWorkbench.storageError": "Drafts could not be saved or restored. Creation is paused until storage is available",
+  "assetTaskProgress.production": "Production",
+  "assetTaskProgress.pending": "{count} pending creation"
 }

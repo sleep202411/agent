@@ -511,7 +511,7 @@ const TaskAssigneeSchema = z.object({
     .optional(),
 });
 
-const TaskCustomFieldValueSchema = z
+export const TaskCustomFieldValueSchema = z
   .object({
     fieldId: z.string().uuid(),
     /// `null` removes the sparse value row. Runtime validation against the

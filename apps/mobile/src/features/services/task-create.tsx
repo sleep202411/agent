@@ -1,5 +1,5 @@
 import { fetchTaskCreationDefaults, type TaskCreationDefaults } from "./task-creation-defaults";
-import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
+import type { TaskDraftInput, TaskDraftReview, TaskDraft } from "./task-draft-session";
 import { TaskCustomFieldControl } from "./task-custom-field-control";
 import { useTaskCreationCustomFields } from "./task-creation-custom-fields";
 import { parsePlanningNumber } from "./task-planning-number";
@@ -15,7 +15,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { fetchTaskCommentAccess } from "./task-comment-api";
 import { createTask, taskCreateInput } from "./task-create-api";
-import { parseScheduleDate } from "./task-schedule-api";
+import { parseScheduleDate, scheduleDateText } from "./task-schedule-api";
 import { TaskMentionPicker } from "./task-mention-picker";
 import { TaskPlanningFields, type TaskPlanningDraft } from "./task-planning-fields";
 import { TaskKindField } from "./task-kind-field";
@@ -30,6 +30,7 @@ type Props = {
   userId: string;
   generation: number;
   viewId?: string;
+  initialDraft?: Extract<TaskDraft, { kind: "task" }>;
   initialParent?: TaskOption;
   initialWorkflow?: TaskWorkflow;
   closeLabel?: string;
@@ -41,7 +42,7 @@ export function TaskCreate(props: Props) {
   if (props.generation !== getAuthGeneration()) return null;
   return (
     <Access
-      key={`${props.crewId}:${props.userId}:${props.generation}:${props.viewId ?? ""}:${props.initialWorkflow?.id ?? ""}:${props.initialParent?.id ?? ""}`}
+      key={`${props.crewId}:${props.userId}:${props.generation}:${props.initialDraft?.id ?? "new"}:${props.viewId ?? ""}:${props.initialWorkflow?.id ?? ""}:${props.initialParent?.id ?? ""}`}
       {...props}
     />
   );
@@ -64,7 +65,7 @@ function Access(props: Props) {
       const context = await fetchTaskCreationDefaults(
         props.crewId,
         props.viewId,
-        props.initialWorkflow?.id,
+        props.initialDraft?.input.workflowStateId ?? props.initialWorkflow?.id,
         controller.signal
       );
       if (controller.signal.aborted || props.generation !== getAuthGeneration()) return;
@@ -75,7 +76,14 @@ function Access(props: Props) {
         setError(cause instanceof Error ? cause.message : String(cause));
     });
     return () => controller.abort();
-  }, [props.crewId, props.userId, props.generation, props.viewId, props.initialWorkflow?.id]);
+  }, [
+    props.crewId,
+    props.userId,
+    props.generation,
+    props.viewId,
+    props.initialWorkflow?.id,
+    props.initialDraft?.input.workflowStateId,
+  ]);
   if (allowed && defaults) return <Editor {...props} defaults={defaults} />;
   if (!active) return null;
   return (
@@ -95,6 +103,7 @@ function Editor({
   userId,
   generation,
   initialParent,
+  initialDraft,
   defaults,
   closeLabel,
   onCreated,
@@ -105,24 +114,43 @@ function Editor({
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(crewId, true);
-  const custom = useTaskCreationCustomFields(crewId, generation);
-  const [taskKind, setTaskKind] = useState<TaskKind | null>(null);
-  const [planning, setPlanning] = useState<TaskPlanningDraft>({
-    labels: [],
-    cycle: defaults.cycle,
-    episode: null,
-  });
-  const [workflow, setWorkflow] = useState<TaskWorkflow | null>(defaults.workflow);
-  const [parent, setParent] = useState<TaskOption | null>(initialParent ?? null);
-  const [blockers, setBlockers] = useState<TaskOption[]>([]);
-  const [title, setTitle] = useState(""),
-    [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">("normal");
-  const [estimate, setEstimate] = useState("");
-  const [revisionLimit, setRevisionLimit] = useState("");
-  const [start, setStart] = useState(""),
-    [due, setDue] = useState("");
-  const [assignees, setAssignees] = useState<TaskMention[]>([]),
+  const initial = initialDraft?.input,
+    editor = initialDraft?.review.editor;
+  const custom = useTaskCreationCustomFields(crewId, generation, initial?.customFieldValues);
+  const [taskKind, setTaskKind] = useState<TaskKind | null>(initial?.taskKind ?? null);
+  const [planning, setPlanning] = useState<TaskPlanningDraft>(
+    editor?.planning ?? {
+      labels: [],
+      cycle: defaults.cycle,
+      episode: null,
+    }
+  );
+  const [workflow, setWorkflow] = useState<TaskWorkflow | null>(
+    editor?.workflow ?? defaults.workflow
+  );
+  const [parent, setParent] = useState<TaskOption | null>(editor?.parent ?? initialParent ?? null);
+  const [blockers, setBlockers] = useState<TaskOption[]>(editor?.blockers ?? []);
+  const [title, setTitle] = useState(initial?.title ?? ""),
+    [description, setDescription] = useState(initial?.description ?? "");
+  const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">(
+    initial?.priority ?? "normal"
+  );
+  const [estimate, setEstimate] = useState(
+    initial?.estimatePoints == null ? "" : String(initial.estimatePoints)
+  );
+  const [revisionLimit, setRevisionLimit] = useState(
+    initial?.revisionLimit == null ? "" : String(initial.revisionLimit)
+  );
+  const [start, setStart] = useState(scheduleDateText(initial?.startAt ?? null)),
+    [due, setDue] = useState(scheduleDateText(initial?.dueAt ?? null));
+  const [assignees, setAssignees] = useState<TaskMention[]>(
+      editor?.assignees ??
+        initial?.assignees.map((row, index) => ({
+          userId: row.userId,
+          label: initialDraft?.review.assignees[index] ?? row.userId,
+        })) ??
+        []
+    ),
     [picker, setPicker] = useState(false);
   const [error, setError] = useState<string>(),
     [attempted, setAttempted] = useState(false);
@@ -145,11 +173,13 @@ function Editor({
       labelIds: planning.labels.map((item) => item.id),
       parentId: parent?.id ?? null,
       blockedByTaskIds: blockers.map((task) => task.id),
-      startAt: parseScheduleDate(start, null),
-      dueAt: parseScheduleDate(due, null),
+      startAt: parseScheduleDate(start, initial?.startAt ?? null),
+      dueAt: parseScheduleDate(due, initial?.dueAt ?? null),
       assignees: assignees.map((member) => ({
         userId: member.userId,
-        currency: appEnv.siteRegion === "cn" ? "CNY" : "USD",
+        currency:
+          initial?.assignees.find((row) => row.userId === member.userId)?.currency ??
+          (appEnv.siteRegion === "cn" ? "CNY" : "USD"),
       })),
     });
   } catch {
@@ -346,6 +376,7 @@ function Editor({
             attemptedRef.current = true;
             setAttempted(true);
             onStage(data, {
+              editor: { planning, workflow, parent, blockers, assignees },
               context: [
                 planning.episode && `${t("taskPlanning.episode")}: ${planning.episode.name}`,
                 planning.cycle && `${t("taskPlanning.cycle")}: ${planning.cycle.name}`,
@@ -377,7 +408,15 @@ function Editor({
           );
         }}
       >
-        <ThemedText>{t(onStage ? "taskWorkbench.stage" : "taskCreate.submit")}</ThemedText>
+        <ThemedText>
+          {t(
+            onStage
+              ? initialDraft
+                ? "taskWorkbench.saveDraft"
+                : "taskWorkbench.stage"
+              : "taskCreate.submit"
+          )}
+        </ThemedText>
       </Pressable>
       {op.busy && <ActivityIndicator />}
       <Pressable

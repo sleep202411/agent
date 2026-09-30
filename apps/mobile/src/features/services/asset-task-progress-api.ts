@@ -1,3 +1,5 @@
+import type { TaskDraft } from "./task-draft-session";
+import { canvasScenes } from "./canvas-task-import-api";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -8,6 +10,7 @@ export const assetGroups = [
   "props",
   "art",
   "music",
+  "production",
   "other",
 ] as const;
 const row = z.object({
@@ -92,4 +95,30 @@ export async function fetchAssetTaskProgress(
   } while (cursor);
   if (tasks.size !== total) throw new Error("Incomplete task progress. Refresh to try again.");
   return summarizeAssetTasks([...tasks.values()]);
+}
+
+/** Pending work is informational and never part of the created-task denominator. */
+export function pendingAssetTasks(drafts: TaskDraft[]) {
+  const result = Object.fromEntries(assetGroups.map((key) => [key, 0])) as Record<
+    (typeof assetGroups)[number],
+    number
+  >;
+  const category = (kind?: string | null, templateKey?: string) => {
+    if (templateKey === "character_art") return "characters";
+    if (templateKey === "scene_art") return "scenes";
+    if (kind === "script") return "scripts";
+    if (kind === "music") return "music";
+    if (kind === "art") return "art";
+    if (["storyboard", "edit", "voice", "qa"].includes(kind ?? "")) return "production";
+    return "other";
+  };
+  for (const draft of drafts) {
+    if (draft.state !== "staged") continue;
+    if (draft.kind === "task") result[category(draft.input.taskKind)]++;
+    else if (draft.kind === "canvas") result.production += canvasScenes(draft.preview).length;
+    else
+      for (const item of draft.plan.items)
+        result[item.assetCategory ?? category(item.taskKind, item.templateKey)]++;
+  }
+  return result;
 }

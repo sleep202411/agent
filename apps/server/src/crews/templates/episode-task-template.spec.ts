@@ -31,7 +31,7 @@ function setup() {
         .mockResolvedValue({ id: 'episode', status: 'planned', version: 1 }),
     },
     crewTask: { findMany: jest.fn().mockResolvedValue([]) },
-    crewTaskFieldDefinition: { count: jest.fn().mockResolvedValue(0) },
+    crewTaskFieldDefinition: { findMany: jest.fn().mockResolvedValue([]) },
     crewTaskWorkflowState: {
       findFirst: jest.fn().mockResolvedValue({ id: 'open' }),
     },
@@ -178,10 +178,18 @@ describe('Episode task templates', () => {
   });
   it('does not bypass required custom fields', async () => {
     const { service, tx, templates } = setup();
-    tx.crewTaskFieldDefinition.count.mockResolvedValue(1);
+    tx.crewTaskFieldDefinition.findMany.mockResolvedValue([
+      {
+        id: 'field',
+        name: 'Required',
+        type: 'text',
+        required: true,
+        options: [],
+      },
+    ]);
     await expect(
       service.apply('crew', 'episode', 'user', input),
-    ).rejects.toThrow('required custom fields');
+    ).rejects.toThrow('required custom field');
     expect(templates.instantiateTasks).not.toHaveBeenCalled();
   });
   it('does not use an archived/missing open workflow', async () => {
@@ -271,5 +279,126 @@ describe('Episode task templates', () => {
       )[0][0].where.episodeId,
     ).toBe('second');
     expect(tx.crewTask.create).toHaveBeenCalledTimes(12);
+  });
+});
+
+describe('Episode template task custom fields', () => {
+  const fieldId = '01990000-0000-7000-8000-000000000099';
+  const allFields = DEFAULT_SERIES_TASK_TEMPLATE.items.map((item) => ({
+    templateKey: item.templateKey,
+    values: [{ fieldId, value: item.title }],
+  }));
+  it('validates every task before instantiation and records the reviewed values', async () => {
+    const { service, tx, templates } = setup();
+    tx.crewTaskFieldDefinition.findMany.mockResolvedValue([
+      { id: fieldId, name: 'Brief', type: 'text', required: true, options: [] },
+    ]);
+    await service.apply('crew', 'episode', 'user', {
+      ...input,
+      taskFields: allFields,
+    });
+    const calls = templates.instantiateTasks.mock.calls as unknown as Array<
+      [unknown, string, unknown, { taskFields: Record<string, unknown> }]
+    >;
+    expect(calls[0][3].taskFields.script).toEqual([{ fieldId, value: '剧本' }]);
+    const receipts = tx.crewProductionActivity.create.mock
+      .calls as unknown as Array<
+      [{ data: { payload: { taskFields: unknown[] } } }]
+    >;
+    expect(receipts[0][0].data.payload.taskFields).toEqual(
+      expect.arrayContaining(allFields),
+    );
+  });
+  it('rejects a missing required value in any item before creating any task', async () => {
+    const { service, tx, templates } = setup();
+    tx.crewTaskFieldDefinition.findMany.mockResolvedValue([
+      { id: fieldId, name: 'Brief', type: 'text', required: true, options: [] },
+    ]);
+    await expect(
+      service.apply('crew', 'episode', 'user', {
+        ...input,
+        taskFields: allFields.slice(1),
+      }),
+    ).rejects.toThrow('required');
+    expect(templates.instantiateTasks).not.toHaveBeenCalled();
+  });
+  it.each([
+    [{ templateKey: 'foreign', values: [] }],
+    [
+      { templateKey: 'script', values: [] },
+      { templateKey: 'script', values: [] },
+    ],
+    [{ templateKey: 'script', values: [{ fieldId, value: 'x' }] }],
+  ])(
+    'rejects foreign tasks, repeated tasks and foreign crew fields',
+    async (taskFields) => {
+      const { service, templates } = setup();
+      await expect(
+        service.apply('crew', 'episode', 'user', { ...input, taskFields }),
+      ).rejects.toThrow();
+      expect(templates.instantiateTasks).not.toHaveBeenCalled();
+    },
+  );
+  it('replays an identical field command but refuses changed values', async () => {
+    const { service, tx, templates } = setup();
+    tx.crewProductionActivity.findFirst.mockResolvedValue({
+      payload: { ...input, taskIds: ['task'], taskFields: allFields },
+    });
+    await expect(
+      service.apply('crew', 'episode', 'user', {
+        ...input,
+        taskFields: [...allFields].reverse(),
+      }),
+    ).resolves.toEqual({ taskIds: ['task'], replayed: true });
+    await expect(
+      service.apply('crew', 'episode', 'user', {
+        ...input,
+        taskFields: allFields.map((row) => ({
+          ...row,
+          values: [{ fieldId, value: 'changed' }],
+        })),
+      }),
+    ).rejects.toThrow('will not be replaced');
+    expect(templates.instantiateTasks).not.toHaveBeenCalled();
+  });
+  it('persists per-task fields in the same task creation statement', async () => {
+    const { template } = setup();
+    const tx = {
+      crewTask: {
+        findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn(({ data }: { data: unknown }) => Promise.resolve(data)),
+      },
+      crewTaskDependency: { create: jest.fn().mockResolvedValue({}) },
+    };
+    await new ProjectTaskTemplateService({} as never).instantiateTasks(
+      tx as never,
+      'crew',
+      template as never,
+      {
+        workflowStateId: 'open',
+        episodeScoped: true,
+        episodeId: 'episode',
+        userId: 'reviewer',
+        taskFields: { script: [{ fieldId, value: 'Script only' }] },
+      },
+    );
+    const rows = tx.crewTask.create.mock.calls.map(
+      ([call]) => call.data,
+    ) as Array<{
+      metadata: { templateKey: string };
+      customFieldValues?: unknown;
+    }>;
+    expect(
+      rows.find((row) => row.metadata.templateKey === 'script')
+        ?.customFieldValues,
+    ).toEqual({
+      create: [{ fieldId, value: 'Script only', updatedByUserId: 'reviewer' }],
+    });
+    expect(
+      rows
+        .filter((row) => row.metadata.templateKey !== 'script')
+        .every((row) => row.customFieldValues === undefined),
+    ).toBe(true);
   });
 });

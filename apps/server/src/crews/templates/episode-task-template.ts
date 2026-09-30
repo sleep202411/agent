@@ -1,3 +1,6 @@
+import { isDeepStrictEqual } from 'node:util';
+import { TaskCustomFieldValueSchema } from '../dto';
+import { validateTaskCustomFieldValues } from '../tasks/task-custom-field-values';
 import {
   Body,
   ConflictException,
@@ -24,8 +27,29 @@ export const ApplyEpisodeTemplateSchema = z
     templateId: z.string().uuid(),
     templateVersion: z.number().int().positive(),
     episodeVersion: z.number().int().positive(),
+    taskFields: z
+      .array(
+        z
+          .object({
+            templateKey: z.string().min(1).max(128),
+            values: z.array(TaskCustomFieldValueSchema).max(50),
+          })
+          .strict(),
+      )
+      .max(200)
+      .optional(),
   })
   .strict();
+const normalizedTaskFields = (rows: ApplyInput['taskFields']) =>
+  (rows ?? [])
+    .filter((row) => row.values.length)
+    .map((row) => ({
+      templateKey: row.templateKey,
+      values: [...row.values].sort((a, b) =>
+        a.fieldId.localeCompare(b.fieldId),
+      ),
+    }))
+    .sort((a, b) => a.templateKey.localeCompare(b.templateKey));
 type ApplyInput = z.infer<typeof ApplyEpisodeTemplateSchema>;
 
 @Injectable()
@@ -114,6 +138,13 @@ export class EpisodeTaskTemplateService {
           episodeId,
           userId,
         );
+        if (
+          new Set((input.taskFields ?? []).map((row) => row.templateKey))
+            .size !== (input.taskFields ?? []).length
+        )
+          throw new ConflictException(
+            'Each template task can have only one custom-field entry.',
+          );
         // Keep a durable receipt independent of later task deletion/reassignment.
         const receipt = await tx.crewProductionActivity.findFirst({
           where: {
@@ -129,11 +160,16 @@ export class EpisodeTaskTemplateService {
               templateId: z.string(),
               templateVersion: z.number(),
               taskIds: z.array(z.string()),
+              taskFields: ApplyEpisodeTemplateSchema.shape.taskFields,
             })
             .parse(receipt.payload);
           if (
             saved.templateId !== input.templateId ||
-            saved.templateVersion !== input.templateVersion
+            saved.templateVersion !== input.templateVersion ||
+            !isDeepStrictEqual(
+              normalizedTaskFields(saved.taskFields),
+              normalizedTaskFields(input.taskFields),
+            )
           )
             throw new ConflictException(
               'This episode already has template tasks. Existing work will not be replaced.',
@@ -151,6 +187,10 @@ export class EpisodeTaskTemplateService {
           orderBy: { number: 'asc' },
         });
         if (existing.length) {
+          if (normalizedTaskFields(input.taskFields).length)
+            throw new ConflictException(
+              'This episode already has template tasks. Custom fields cannot be changed by replaying creation.',
+            );
           if (
             !existing.every((task) => {
               const meta = task.metadata as Record<string, unknown> | null;
@@ -167,7 +207,7 @@ export class EpisodeTaskTemplateService {
           return { taskIds: existing.map((task) => task.id), replayed: true };
         }
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:project-task-template:${crew.productionKind}`}, 0))`;
-        const { template } = await this.plan(tx, crew.productionKind);
+        const { template, items } = await this.plan(tx, crew.productionKind);
         if (
           template.id !== input.templateId ||
           template.version !== input.templateVersion ||
@@ -176,14 +216,33 @@ export class EpisodeTaskTemplateService {
           throw new ConflictException(
             'The template or episode changed. Refresh the preview before creating tasks.',
           );
+        const fieldInputs = new Map(
+          (input.taskFields ?? []).map((row) => [row.templateKey, row.values]),
+        );
         if (
-          await tx.crewTaskFieldDefinition.count({
-            where: { crewId, required: true },
-          })
+          [...fieldInputs.keys()].some(
+            (key) => !items.some((item) => item.templateKey === key),
+          )
         )
           throw new ConflictException(
-            'This Crew has required custom fields. Create tasks with those fields before using template batches.',
+            'Custom fields must reference tasks in the reviewed template.',
           );
+        const taskFields: Record<
+          string,
+          Array<{ fieldId: string; value: Prisma.InputJsonValue }>
+        > = Object.create(null) as Record<
+          string,
+          Array<{ fieldId: string; value: Prisma.InputJsonValue }>
+        >;
+        for (const item of items) {
+          const checked = await validateTaskCustomFieldValues(
+            tx,
+            crewId,
+            null,
+            fieldInputs.get(item.templateKey) ?? [],
+          );
+          taskFields[item.templateKey] = checked.upserts;
+        }
         const workflow = await tx.crewTaskWorkflowState.findFirst({
           where: {
             crewId,
@@ -204,6 +263,7 @@ export class EpisodeTaskTemplateService {
           {
             episodeId,
             episodeScoped: true,
+            taskFields,
             workflowStateId: workflow.id,
             userId,
             idempotencyKey: `episode:${episodeId}:${template.id}`,
@@ -216,6 +276,7 @@ export class EpisodeTaskTemplateService {
             kind: 'properties_changed',
             payload: {
               templateApplication: episodeId,
+              taskFields: normalizedTaskFields(input.taskFields),
               episodeId,
               templateId: template.id,
               templateVersion: template.version,
