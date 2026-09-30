@@ -14,7 +14,7 @@ import {
   type BillingCheckoutResult,
   type BillingPrice,
 } from "./billing-api";
-import type { PaywallProduct } from "./catalog";
+import { communityStoreProductId, type PaywallProduct } from "./catalog";
 import { currentCheckoutChannel } from "./checkout-channel";
 import { assertPaymentReady, mustUseMockPayments } from "./paywall-config";
 import type { PurchaseResult, WechatScanCheckout } from "./purchase-types";
@@ -102,7 +102,7 @@ export function communityPackProduct(price: BillingPrice): PaywallProduct {
   return {
     id: price.id,
     category: "community_points",
-    storeProductId: price.id,
+    storeProductId: communityStoreProductId(price.grantsWalletAmount) ?? price.id,
     billingPriceId: price.id,
     displayPrice: formatCny(chargedAmountMinor(price)),
     name: price.name,
@@ -113,7 +113,8 @@ export function communityPackProduct(price: BillingPrice): PaywallProduct {
 
 /**
  * CN Android WeChat Pay: Nest Native 扫码 (same checkout as web). The caller
- * renders `wechatScan.codeUrl` as a QR and polls the order. APP支付 / H5 is not used.
+ * renders `wechatScan.codeUrl` as a QR and polls the order. CN iOS community
+ * points use StoreKit instead. APP支付 / H5 is not used.
  */
 export async function purchaseWithWechat(product: PaywallProduct): Promise<PurchaseResult> {
   const channel = currentCheckoutChannel();

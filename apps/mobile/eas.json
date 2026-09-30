@@ -9,7 +9,9 @@
       "distribution": "internal",
       "env": {
         "APP_VARIANT": "development",
-        "FD_APP_REGION": "global"
+        "FD_APP_REGION": "global",
+        "EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY": "appl_XJtiSDMZhvSOznunwpZGZyfqZuD",
+        "EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY": "goog_itgwtBnsXUTWTzFAyaXBWVYcUsX"
       }
     },
     "development-cn": {
@@ -17,7 +19,9 @@
       "distribution": "internal",
       "env": {
         "APP_VARIANT": "development",
-        "FD_APP_REGION": "cn"
+        "FD_APP_REGION": "cn",
+        "EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY": "appl_gtEKXFSecCyJcbOMjIocTLrmkvW",
+        "EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY": "goog_itgwtBnsXUTWTzFAyaXBWVYcUsX"
       }
     },
     "development-global-simulator": {
@@ -36,14 +40,18 @@
       "distribution": "internal",
       "env": {
         "APP_VARIANT": "preview",
-        "FD_APP_REGION": "global"
+        "FD_APP_REGION": "global",
+        "EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY": "appl_XJtiSDMZhvSOznunwpZGZyfqZuD",
+        "EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY": "goog_itgwtBnsXUTWTzFAyaXBWVYcUsX"
       }
     },
     "preview-cn": {
       "distribution": "internal",
       "env": {
         "APP_VARIANT": "preview",
-        "FD_APP_REGION": "cn"
+        "FD_APP_REGION": "cn",
+        "EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY": "appl_gtEKXFSecCyJcbOMjIocTLrmkvW",
+        "EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY": "goog_itgwtBnsXUTWTzFAyaXBWVYcUsX"
       }
     },
     "production-global": {
@@ -52,7 +60,9 @@
         "APP_VARIANT": "production",
         "FD_APP_REGION": "global",
         "FD_GLOBAL_IOS_BUNDLE_IDENTIFIER": "com.fizzdragon.app",
-        "FD_GLOBAL_ANDROID_PACKAGE": "com.fizzdragon"
+        "FD_GLOBAL_ANDROID_PACKAGE": "com.fizzdragon",
+        "EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY": "appl_XJtiSDMZhvSOznunwpZGZyfqZuD",
+        "EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY": "goog_itgwtBnsXUTWTzFAyaXBWVYcUsX"
       }
     },
     "production-global-apk": {
@@ -70,7 +80,9 @@
         "APP_VARIANT": "production",
         "FD_APP_REGION": "cn",
         "FD_CN_IOS_BUNDLE_IDENTIFIER": "cn.fizzspaceapp",
-        "FD_CN_ANDROID_PACKAGE": "cn.feiteng.fizzspace"
+        "FD_CN_ANDROID_PACKAGE": "cn.feiteng.fizzspace",
+        "EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY": "appl_gtEKXFSecCyJcbOMjIocTLrmkvW",
+        "EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY": "goog_itgwtBnsXUTWTzFAyaXBWVYcUsX"
       }
     }
   },

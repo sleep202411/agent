@@ -1,7 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { purchaseWithWechat } from "./wechat";
+import { communityPackProduct, purchaseWithWechat } from "./wechat";
 import type { PaywallProduct } from "./catalog";
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), generation: 1 }));
+const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  generation: 1,
+}));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => mocks.generation }));
 vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
 vi.mock("@/config", () => ({ webBaseUrl: "https://fixture.invalid" }));
@@ -81,4 +85,16 @@ it("does not create an order after account replacement during price lookup", asy
   finish({ plans: [{ prices: [price("annual")] }] });
   await assertion;
   expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it("maps a community pack onto its App Store product id", () => {
+  expect(
+    communityPackProduct({
+      id: "price-140",
+      name: "140社区积分",
+      currency: "CNY",
+      amountMinor: "980",
+      grantsWalletAmount: "140",
+    }).storeProductId
+  ).toBe("com.fizzdragon.community.credits.140");
 });

@@ -1,5 +1,6 @@
 import { appEnv } from "@/config";
 
+import type { CheckoutChannel } from "./checkout-channel";
 import type { PaywallCategory } from "./paywall-store";
 
 export type BillingInterval = "month" | "year" | "one_time";
@@ -22,6 +23,10 @@ export type PaywallProduct = {
   interval?: BillingInterval;
 };
 
+/**
+ * Global IAP fallback. CN community points load `community_point_pack` rows
+ * from `/billing/prices` instead of this row.
+ */
 const COMMUNITY_POINTS: PaywallProduct[] = [
   {
     id: "community_points_500",
@@ -139,4 +144,15 @@ export function isMembershipCategory(category: PaywallCategory): boolean {
 /** Products shown on the paywall. Hidden IAP categories stay in BY_CATEGORY. */
 export function productsForCategory(category: PaywallCategory): PaywallProduct[] {
   return BY_CATEGORY[category];
+}
+
+/** CN community-point packs come from Nest. CN iOS then buys the matching product through RevenueCat. */
+export function communityPointsUseBillingApi(channel: CheckoutChannel): boolean {
+  return channel === "wechat" || (channel === "apple_iap" && appEnv.appRegion === "cn");
+}
+
+/** App Store consumable id, e.g. 140 points → `com.fizzdragon.community.credits.140`. */
+export function communityStoreProductId(grantsPoints: string | null | undefined): string | null {
+  if (!grantsPoints || !/^[1-9]\d*$/.test(grantsPoints)) return null;
+  return `com.fizzdragon.community.credits.${grantsPoints}`;
 }

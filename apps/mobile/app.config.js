@@ -73,6 +73,15 @@ function readOptionalEnv(name) {
   return value || undefined;
 }
 
+function readRevenueCatAppleKey(appRegion) {
+  const specific =
+    appRegion === "cn"
+      ? readOptionalEnv("EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY_CN")
+      : readOptionalEnv("EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY_GLOBAL");
+
+  return specific || readOptionalEnv("EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY") || "";
+}
+
 function trimTrailingSlashes(value) {
   return value.replace(/\/+$/, "");
 }
@@ -370,8 +379,6 @@ module.exports = ({ config }) => {
           enablePay: appRegion === "cn",
         },
       ],
-      // CN iOS StoreKit: react-native-iap autolinks via Nitro (no app.plugin.js in v16).
-      // Global IAP stays on RevenueCat.
       // Re-applies the Android RELEASE signingConfig on every prebuild (the Expo
       // template otherwise signs release with the debug key → store rejection).
       "./plugins/withAndroidReleaseSigning",
@@ -391,7 +398,7 @@ module.exports = ({ config }) => {
       ...config.extra,
       appEnv,
       paywall: {
-        revenueCatAppleApiKey: readOptionalEnv("EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY") || "",
+        revenueCatAppleApiKey: readRevenueCatAppleKey(appRegion),
         revenueCatGoogleApiKey: readOptionalEnv("EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY") || "",
         wechatAppId: readOptionalEnv("EXPO_PUBLIC_WECHAT_APP_ID") || "",
         wechatUniversalLink: readOptionalEnv("EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK") || "",
