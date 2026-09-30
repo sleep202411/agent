@@ -4,6 +4,7 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import {
   CrewProductionActivityContentSchema,
   CrewProductionDocumentSchema,
+  productionDocumentPlainText,
 } from "./production-document-schema";
 export const projectHealth = ["on_track", "at_risk", "off_track"] as const;
 export const projectActivity = z.object({
@@ -127,6 +128,8 @@ export async function postProjectActivity(
       result.crewId !== crewId ||
       result.createdByUserId !== userId ||
       result.kind !== input.kind ||
+      result.plainText !== productionDocumentPlainText(input.content).trim() ||
+      (input.kind === "comment" && (result.health !== null || result.progress !== null)) ||
       (input.kind === "update" &&
         (result.health !== input.health || result.progress !== (input.progress ?? null)))
     )

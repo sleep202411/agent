@@ -152,3 +152,30 @@ it("rejects stale or aborted reads and foreign membership", async () => {
     "expired"
   );
 });
+it("stops before POST when the screen leaves during the permission check", async () => {
+  const controller = new AbortController();
+  h.get.mockImplementation(async () => {
+    controller.abort();
+    return { userId: "user", permissions: ["production.view"] };
+  });
+  await expect(
+    postProjectActivity(
+      "crew",
+      "user",
+      1,
+      { kind: "comment", content: document },
+      controller.signal
+    )
+  ).rejects.toThrow("expired");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it.each([{ plainText: "Different post" }, { health: "at_risk" }, { progress: 50 }])(
+  "treats a mismatched comment receipt as uncertain: %o",
+  async (patch) => {
+    h.post.mockResolvedValue({ ...row, ...patch });
+    await expect(
+      postProjectActivity("crew", "user", 1, { kind: "comment", content: document }, signal())
+    ).rejects.toMatchObject({ uncertain: true });
+    expect(h.post).toHaveBeenCalledTimes(1);
+  }
+);

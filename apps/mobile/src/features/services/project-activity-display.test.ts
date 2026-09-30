@@ -75,3 +75,25 @@ it("renders label and resource names without exposing raw payloads", () => {
   ).toEqual([{ key: "resource", value: "Script" }]);
   expect(activityDetails({ kind: "properties_changed", payload: null })).toEqual([]);
 });
+it("localizes known property values while preserving dates and identifiers", () => {
+  expect(
+    activityDetails(
+      {
+        kind: "properties_changed",
+        payload: {
+          changes: [
+            { field: "status", from: "planned", to: "completed" },
+            { field: "start_date", from: null, to: "2026-09-30" },
+          ],
+        },
+      },
+      (key) => `translated:${key}`
+    )
+  ).toEqual([
+    {
+      key: "field.status",
+      value: "translated:projectProperties.planned → translated:projectProperties.completed",
+    },
+    { key: "field.start_date", value: "— → 2026-09-30" },
+  ]);
+});

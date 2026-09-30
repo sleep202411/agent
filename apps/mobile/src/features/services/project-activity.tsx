@@ -349,7 +349,7 @@ function Session(props: Props) {
             </ThemedText>
           )}
           <ThemedText>{row.plainText}</ThemedText>
-          {activityDetails(row).map((detail, index) => (
+          {activityDetails(row, t).map((detail, index) => (
             <ThemedText key={index}>
               {t(`projectActivity.${detail.key}`)}: {detail.value}
             </ThemedText>

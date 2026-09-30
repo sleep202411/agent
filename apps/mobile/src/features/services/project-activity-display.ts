@@ -1,3 +1,4 @@
+import type { MessageKey } from "@/i18n";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -55,7 +56,10 @@ export type ActivityDetail = {
   value: string;
 };
 /** Only render known audit fields; never expose arbitrary event metadata. */
-export function activityDetails(row: Pick<ProjectActivity, "kind" | "payload">): ActivityDetail[] {
+export function activityDetails(
+  row: Pick<ProjectActivity, "kind" | "payload">,
+  translate?: (key: MessageKey) => string
+): ActivityDetail[] {
   const parsed = z.record(z.unknown()).safeParse(row.payload);
   if (!parsed.success) return [];
   const payload = parsed.data;
@@ -66,7 +70,12 @@ export function activityDetails(row: Pick<ProjectActivity, "kind" | "payload">):
       const entry = result.data;
       const field = activityFields.find((field) => field === entry.field);
       if (!field) return [];
-      return [{ key: `field.${field}`, value: `${entry.from ?? "—"} → ${entry.to ?? "—"}` }];
+      return [
+        {
+          key: `field.${field}`,
+          value: `${activityPropertyValue(field, entry.from, translate)} → ${activityPropertyValue(field, entry.to, translate)}`,
+        },
+      ];
     });
   if (row.kind === "labels_changed")
     return (["added", "removed"] as const).flatMap((key) => {
@@ -82,4 +91,23 @@ export function activityDetails(row: Pick<ProjectActivity, "kind" | "payload">):
     return result.success ? [{ key: "resource", value: result.data.title }] : [];
   }
   return [];
+}
+
+function activityPropertyValue(
+  field: string,
+  value: string | null,
+  translate?: (key: MessageKey) => string
+) {
+  if (value === null) return "—";
+  if (!translate) return value;
+  const values =
+    field === "status"
+      ? (["backlog", "planned", "in_progress", "completed", "cancelled"] as const)
+      : field === "priority"
+        ? (["low", "normal", "high", "urgent"] as const)
+        : field === "start_date_granularity" || field === "target_date_granularity"
+          ? (["day", "month", "quarter", "half_year", "year"] as const)
+          : [];
+  const known = values.find((candidate) => candidate === value);
+  return known ? translate(`projectProperties.${known}`) : value;
 }
