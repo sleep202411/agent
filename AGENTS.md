@@ -58,6 +58,7 @@ or transliterate the brand name.
 - **Web UI design system** → `@apps/web/DESIGN.md`
 - **Admin UI design system** → `@apps/admin-ui/DESIGN.md`
 - **Web frontend (Next.js)** → `@apps/web/AGENTS.md`
+- **Mobile development + release branches** → `@apps/mobile/AGENTS.md`
 - **Agent OS (target Agent product)** → `@apps/agent-os/AGENTS.md` and
   `@docs/agent-os/README.md`. Nest control plane:
   `apps/server/src/agent-os-gateway` (`AGENT_OS_ENABLED=true`). Design authority:
@@ -108,6 +109,10 @@ Branches:
 - `feat/*` — optional, for risky multi-file refactors or AI-driven
   large changes; otherwise commit on develop directly
 
+**Mobile exception:** develop features on branches created from latest `main`.
+Current shared work belongs on `feat/mobile-2.4.0-scrolling-screen`; keep
+unfinished features out of `main` and `develop`. Follow `apps/mobile/AGENTS.md`.
+
 ## Commands at the repo root
 
 ```bash
@@ -135,7 +140,8 @@ through i18n. Translations land in the same PR.
 - **No auto-commit.** Don't `git commit` unprompted — wait for explicit
   ask.
 - **No auto-merge to main.** Commit + push to `develop` is the default;
-  merge develop → main only when the user says so.
+  merge develop → main only when the user says so. Mobile follows the
+  feature-branch exception above.
 - Commit message style: `<type>(<scope>): <short>` body free-form. See
   `git log --oneline` for examples.
 
