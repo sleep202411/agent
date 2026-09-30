@@ -2231,5 +2231,15 @@
   "crewMembers.ownerProtected": "Transfer ownership before removing the Crew owner.",
   "crewMembers.confirmId": "Type the Member’s User ID to Confirm",
   "crewMembers.confirmRemove": "Confirm Removal",
-  "crewMembers.removeRecheck": "Return to the refreshed member directory to check the result before taking another action."
+  "crewMembers.removeRecheck": "Return to the refreshed member directory to check the result before taking another action.",
+  "memberPositions.title": "Edit Member Positions",
+  "memberPositions.help": "Assign up to 12 positions. The first is primary. Positions do not grant management or finance access.",
+  "memberPositions.custom": "Custom Position",
+  "memberPositions.choose": "Choose Position",
+  "memberPositions.customTitle": "Custom Title",
+  "memberPositions.makePrimary": "Make Primary",
+  "memberPositions.remove": "Remove Position",
+  "memberPositions.add": "Add Position",
+  "memberPositions.invalid": "Choose a standard position or enter a custom title for every row.",
+  "memberPositions.confirmHelp": "Confirm these position changes? Removing a recruited position may release its vacancy. Clearing all positions keeps the person as a Crew member."
 }

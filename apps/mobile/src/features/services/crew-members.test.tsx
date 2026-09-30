@@ -5,6 +5,11 @@ import { CrewMembers } from "./crew-members";
 const h = vi.hoisted(() => ({ generation: 1, read: vi.fn(), close: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("./crew-member-positions", () => ({
+  CrewMemberPositions: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close positions</button>
+  ),
+}));
 vi.mock("./crew-member-removal", () => ({
   CrewMemberRemoval: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close removal</button>
@@ -169,4 +174,12 @@ it("protects owners even when the viewer can manage members", async () => {
   h.read.mockResolvedValue({ items: [member], nextCursor: null, total: 1, canManageMembers: true });
   await render();
   expect(button("crewMembers.remove")).toBeUndefined();
+});
+
+it("edits positions including the owner and refreshes on return", async () => {
+  h.read.mockResolvedValue({ items: [member], nextCursor: null, total: 1, canManageMembers: true });
+  await render();
+  await click("memberPositions.title");
+  await click("close positions");
+  expect(h.read).toHaveBeenCalledTimes(2);
 });

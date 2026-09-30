@@ -1,3 +1,4 @@
+import { CrewMemberPositions } from "./crew-member-positions";
 import { CrewMemberRemoval } from "./crew-member-removal";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -31,6 +32,7 @@ function Session(props: Props) {
 function Directory(props: Props & { refresh: () => void; title: string }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [editingPositions, setEditingPositions] = useState<CrewMember>();
   const [removing, setRemoving] = useState<CrewMember>();
   const [canManage, setCanManage] = useState(false);
   const [items, setItems] = useState<CrewMember[]>([]),
@@ -144,6 +146,15 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
     String(props.generation),
     items.map((m) => m.userId)
   );
+  if (editingPositions)
+    return (
+      <CrewMemberPositions
+        {...props}
+        member={editingPositions}
+        name={displays?.get(editingPositions.userId)?.nickname || editingPositions.userId}
+        onClose={props.refresh}
+      />
+    );
   if (removing)
     return (
       <CrewMemberRemoval
@@ -181,6 +192,15 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
           <ThemedText>
             {t("crewMembers.joined")}: {new Date(member.joinedAt).toLocaleDateString()}
           </ThemedText>
+          {canManage && (
+            <Button
+              label={t("memberPositions.title")}
+              disabled={busy}
+              onPress={() => {
+                if (props.generation === getAuthGeneration()) setEditingPositions(member);
+              }}
+            />
+          )}
           {canManage && !member.isOwner && (
             <Button
               label={t("crewMembers.remove")}

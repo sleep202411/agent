@@ -2231,5 +2231,15 @@
   "crewMembers.ownerProtected": "請先轉移所有權，再移除劇組負責人。",
   "crewMembers.confirmId": "輸入成員用戶 ID 以確認",
   "crewMembers.confirmRemove": "確認移除",
-  "crewMembers.removeRecheck": "請返回重新整理後的成員名冊檢查結果，再進行其他操作。"
+  "crewMembers.removeRecheck": "請返回重新整理後的成員名冊檢查結果，再進行其他操作。",
+  "memberPositions.title": "編輯成員崗位",
+  "memberPositions.help": "最多設定 12 個崗位，第一個為主崗位。崗位不會授予管理或財務權限。",
+  "memberPositions.custom": "自訂崗位",
+  "memberPositions.choose": "選擇崗位",
+  "memberPositions.customTitle": "自訂名稱",
+  "memberPositions.makePrimary": "設為主崗位",
+  "memberPositions.remove": "移除崗位",
+  "memberPositions.add": "新增崗位",
+  "memberPositions.invalid": "請為每一項選擇標準崗位或填寫自訂名稱。",
+  "memberPositions.confirmHelp": "確認修改崗位？移除招聘崗位可能釋放名額。清空崗位不會移除劇組成員。"
 }

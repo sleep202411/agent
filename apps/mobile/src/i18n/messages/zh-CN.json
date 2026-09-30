@@ -2231,5 +2231,15 @@
   "crewMembers.ownerProtected": "请先转移所有权，再移除剧组负责人。",
   "crewMembers.confirmId": "输入成员用户 ID 以确认",
   "crewMembers.confirmRemove": "确认移除",
-  "crewMembers.removeRecheck": "请返回刷新后的成员名册检查结果，再进行其他操作。"
+  "crewMembers.removeRecheck": "请返回刷新后的成员名册检查结果，再进行其他操作。",
+  "memberPositions.title": "编辑成员岗位",
+  "memberPositions.help": "最多设置 12 个岗位，第一个为主岗位。岗位不会授予管理或财务权限。",
+  "memberPositions.custom": "自定义岗位",
+  "memberPositions.choose": "选择岗位",
+  "memberPositions.customTitle": "自定义名称",
+  "memberPositions.makePrimary": "设为主岗位",
+  "memberPositions.remove": "移除岗位",
+  "memberPositions.add": "添加岗位",
+  "memberPositions.invalid": "请为每一项选择标准岗位或填写自定义名称。",
+  "memberPositions.confirmHelp": "确认修改岗位？移除招聘岗位可能释放名额。清空岗位不会移除剧组成员。"
 }
