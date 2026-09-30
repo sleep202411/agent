@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { WechatScanPay } from "./wechat-scan-pay";
 
 const mocks = vi.hoisted(() => ({ get: vi.fn(), paid: vi.fn() }));
+vi.mock("@/config", () => ({ appEnv: { appRegion: "cn" } }));
 vi.mock("@/lib/api-client", () => ({ api: { get: mocks.get } }));
 vi.mock("@tabler/icons-react-native", () => ({
   IconCircleCheck: () => null,
