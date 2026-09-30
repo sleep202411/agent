@@ -1,3 +1,4 @@
+import { CrewMemberRemoval } from "./crew-member-removal";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -30,6 +31,8 @@ function Session(props: Props) {
 function Directory(props: Props & { refresh: () => void; title: string }) {
   const t = useTranslations(),
     theme = useTheme();
+  const [removing, setRemoving] = useState<CrewMember>();
+  const [canManage, setCanManage] = useState(false);
   const [items, setItems] = useState<CrewMember[]>([]),
     [total, setTotal] = useState<number>(),
     [more, setMore] = useState(false),
@@ -78,6 +81,7 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
         if (page.nextCursor) state.seen.add(page.nextCursor);
         setItems(page.items);
         setTotal(page.total);
+        setCanManage(page.canManageMembers);
         setMore(state.more);
       } catch (e) {
         if (!state.controller.signal.aborted && props.generation === getAuthGeneration())
@@ -117,6 +121,7 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
       state.items = [...state.items, ...page.items];
       setItems(state.items);
       setTotal(page.total);
+      setCanManage(page.canManageMembers);
       setMore(state.more);
     } catch (e) {
       if (!state.controller.signal.aborted && props.generation === getAuthGeneration()) {
@@ -139,6 +144,15 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
     String(props.generation),
     items.map((m) => m.userId)
   );
+  if (removing)
+    return (
+      <CrewMemberRemoval
+        {...props}
+        member={removing}
+        name={displays?.get(removing.userId)?.nickname || removing.userId}
+        onClose={props.refresh}
+      />
+    );
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText type="smallBold">{props.title}</ThemedText>
@@ -167,6 +181,15 @@ function Directory(props: Props & { refresh: () => void; title: string }) {
           <ThemedText>
             {t("crewMembers.joined")}: {new Date(member.joinedAt).toLocaleDateString()}
           </ThemedText>
+          {canManage && !member.isOwner && (
+            <Button
+              label={t("crewMembers.remove")}
+              disabled={busy}
+              onPress={() => {
+                if (props.generation === getAuthGeneration()) setRemoving(member);
+              }}
+            />
+          )}
           {member.positions.length === 0 && <ThemedText>{t("crewMembers.noPosition")}</ThemedText>}
           {member.positions.map((position) => (
             <ThemedText key={position.id}>

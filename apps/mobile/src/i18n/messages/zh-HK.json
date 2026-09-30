@@ -2225,5 +2225,11 @@
   "crewMembers.noPosition": "暫無崗位",
   "crewMembers.primary": "主要崗位",
   "crewMembers.empty": "未找到有效成員。",
-  "crewMembers.userId": "用戶 ID"
+  "crewMembers.userId": "用戶 ID",
+  "crewMembers.remove": "移除成員",
+  "crewMembers.removeHelp": "此操作將撤銷成員的劇組協作和聊天存取權限，並釋放其招聘崗位名額。確認前請核對所選成員。",
+  "crewMembers.ownerProtected": "請先轉移所有權，再移除劇組負責人。",
+  "crewMembers.confirmId": "輸入成員用戶 ID 以確認",
+  "crewMembers.confirmRemove": "確認移除",
+  "crewMembers.removeRecheck": "請返回重新整理後的成員名冊檢查結果，再進行其他操作。"
 }

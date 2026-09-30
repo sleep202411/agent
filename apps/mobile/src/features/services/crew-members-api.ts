@@ -64,5 +64,37 @@ export async function fetchCrewMemberPage(
     (cursor !== null && page.nextCursor === cursor)
   )
     throw new Error("Crew member page could not be verified. Refresh the directory.");
-  return page;
+  return { ...page, canManageMembers: access.permissions.includes("members.manage") };
+}
+
+/** Removal has no version parameter. Revalidate the captured member; server locking remains authoritative. */
+export async function removeCrewMember(
+  crewId: string,
+  userId: string,
+  generation: number,
+  snapshot: CrewMember
+) {
+  const target = crewMember.parse(snapshot);
+  if (target.crewId !== crewId) throw new Error("Crew member scope mismatch.");
+  if (target.isOwner) throw new Error("Transfer ownership before removing the Crew owner.");
+  const signal = new AbortController().signal;
+  let cursor: string | null = null;
+  const seen = new Set<string>();
+  do {
+    const page = await fetchCrewMemberPage(crewId, userId, generation, cursor, signal);
+    if (!page.canManageMembers) throw new Error("Crew member management permission is required.");
+    const fresh = page.items.find((m) => m.id === target.id);
+    if (fresh) {
+      if (fresh.userId !== target.userId || fresh.version !== target.version || fresh.isOwner)
+        throw new Error("Crew member changed. Refresh before removing them.");
+      current(generation, signal);
+      await api.delete(`/crews/${crewId}/members/${target.id}`, { service: "aurora" });
+      current(generation, signal);
+      return;
+    }
+    cursor = page.nextCursor;
+    if (cursor && seen.has(cursor)) throw new Error("Crew member pagination did not advance.");
+    if (cursor) seen.add(cursor);
+  } while (cursor);
+  throw new Error("Member is no longer active. Refresh the directory.");
 }

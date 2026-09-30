@@ -1,14 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
-import { fetchCrewMemberPage } from "./crew-members-api";
+import { fetchCrewMemberPage, removeCrewMember } from "./crew-members-api";
 const h = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
+vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), delete: vi.fn() } }));
 const member = {
   id: "member",
   crewId: "crew",
   userId: "1",
-  status: "active",
+  status: "active" as const,
   isOwner: true,
   version: 1,
   joinedAt: "2026-09-30T00:00:00Z",
@@ -26,7 +26,7 @@ beforeEach(() => {
   );
 });
 it("loads member-scoped pages", async () => {
-  expect(await read()).toEqual(page);
+  expect(await read()).toEqual({ ...page, canManageMembers: false });
   expect(api.get).toHaveBeenLastCalledWith(
     "/crews/crew/members",
     expect.objectContaining({ params: { limit: 50 } })
@@ -77,4 +77,68 @@ it("rejects cancelled reads before network access", async () => {
   c.abort();
   await expect(fetchCrewMemberPage("crew", "1", 1, null, c.signal)).rejects.toThrow("cancelled");
   expect(api.get).not.toHaveBeenCalled();
+});
+
+const target = { ...member, isOwner: false };
+const remove = () => removeCrewMember("crew", "1", 1, target);
+it("removes a freshly verified non-owner by membership ID", async () => {
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("/me")
+      ? { userId: "1", permissions: ["members.view", "members.manage"] }
+      : { ...page, items: [target] }
+  );
+  await remove();
+  expect(api.delete).toHaveBeenCalledWith("/crews/crew/members/member", { service: "aurora" });
+});
+it("finds a removal target beyond the first page", async () => {
+  let n = 0;
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("/me")
+      ? { userId: "1", permissions: ["members.view", "members.manage"] }
+      : n++
+        ? { ...page, items: [target] }
+        : { items: [], nextCursor: "next", total: 1 }
+  );
+  await remove();
+  expect(api.delete).toHaveBeenCalledTimes(1);
+});
+it.each([
+  { ...target, version: 2 },
+  { ...target, userId: "other" },
+  { ...target, isOwner: true },
+])("blocks removal after member changes %j", async (fresh) => {
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("/me")
+      ? { userId: "1", permissions: ["members.view", "members.manage"] }
+      : { ...page, items: [fresh] }
+  );
+  await expect(remove()).rejects.toThrow("changed");
+  expect(api.delete).not.toHaveBeenCalled();
+});
+it("blocks owner removal before making requests", async () => {
+  await expect(removeCrewMember("crew", "1", 1, member)).rejects.toThrow("Transfer ownership");
+  expect(api.get).not.toHaveBeenCalled();
+});
+it("blocks removal without management permission", async () => {
+  await expect(remove()).rejects.toThrow("management permission");
+  expect(api.delete).not.toHaveBeenCalled();
+});
+it("does not treat a missing member as successful removal", async () => {
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("/me")
+      ? { userId: "1", permissions: ["members.view", "members.manage"] }
+      : { items: [], nextCursor: null, total: 0 }
+  );
+  await expect(remove()).rejects.toThrow("no longer active");
+  expect(api.delete).not.toHaveBeenCalled();
+});
+it("does not retry a failed removal", async () => {
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.endsWith("/me")
+      ? { userId: "1", permissions: ["members.view", "members.manage"] }
+      : { ...page, items: [target] }
+  );
+  vi.mocked(api.delete).mockRejectedValue(new Error("Already removed"));
+  await expect(remove()).rejects.toThrow("Already removed");
+  expect(api.delete).toHaveBeenCalledTimes(1);
 });

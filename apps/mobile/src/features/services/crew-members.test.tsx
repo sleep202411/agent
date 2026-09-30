@@ -5,6 +5,11 @@ import { CrewMembers } from "./crew-members";
 const h = vi.hoisted(() => ({ generation: 1, read: vi.fn(), close: vi.fn() }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => true }));
+vi.mock("./crew-member-removal", () => ({
+  CrewMemberRemoval: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close removal</button>
+  ),
+}));
 vi.mock("./crew-members-api", () => ({ fetchCrewMemberPage: h.read }));
 vi.mock("./user-displays", () => ({
   useUserDisplays: () => new Map([["1", { nickname: "Artist" }]]),
@@ -146,4 +151,22 @@ it("aborts the pending request on unmount", async () => {
   const signal = h.read.mock.calls[0]![4];
   await act(async () => root.render(null));
   expect(signal.aborted).toBe(true);
+});
+
+it("opens removal only for manageable non-owners and refreshes on return", async () => {
+  h.read.mockResolvedValue({
+    items: [{ ...member, isOwner: false }],
+    nextCursor: null,
+    total: 1,
+    canManageMembers: true,
+  });
+  await render();
+  await click("crewMembers.remove");
+  await click("close removal");
+  expect(h.read).toHaveBeenCalledTimes(2);
+});
+it("protects owners even when the viewer can manage members", async () => {
+  h.read.mockResolvedValue({ items: [member], nextCursor: null, total: 1, canManageMembers: true });
+  await render();
+  expect(button("crewMembers.remove")).toBeUndefined();
 });

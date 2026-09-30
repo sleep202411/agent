@@ -2225,5 +2225,11 @@
   "crewMembers.noPosition": "No Assigned Position",
   "crewMembers.primary": "Primary Position",
   "crewMembers.empty": "No active members found.",
-  "crewMembers.userId": "User ID"
+  "crewMembers.userId": "User ID",
+  "crewMembers.remove": "Remove Member",
+  "crewMembers.removeHelp": "This revokes the member’s Crew collaboration and chat access and releases their recruited positions. Review the selected person before confirming.",
+  "crewMembers.ownerProtected": "Transfer ownership before removing the Crew owner.",
+  "crewMembers.confirmId": "Type the Member’s User ID to Confirm",
+  "crewMembers.confirmRemove": "Confirm Removal",
+  "crewMembers.removeRecheck": "Return to the refreshed member directory to check the result before taking another action."
 }
