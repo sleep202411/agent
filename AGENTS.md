@@ -109,9 +109,13 @@ Branches:
 - `feat/*` — optional, for risky multi-file refactors or AI-driven
   large changes; otherwise commit on develop directly
 
-**Mobile exception:** develop features on branches created from latest `main`.
-Current shared work belongs on `feat/mobile-2.4.0-scrolling-screen`; keep
-unfinished features out of `main` and `develop`. Follow `apps/mobile/AGENTS.md`.
+**Mobile exception (current user direction):** all of Ric's (ch0002ic-cell) subsequent Mobile development
+belongs exclusively on `feat/mobile-2.4.0-scrolling-screen`. Do not commit, push,
+merge or cherry-pick Mobile development into `main` or `develop`, even when
+finished. Updates from official `main` and the assigned developer's
+`feat/mobile-2.3.1-pay` branch may be merged into 2.4.0; do not modify or push
+2.3.1. This supersedes the older
+instruction to start each Mobile feature from `main`. Follow `apps/mobile/AGENTS.md`.
 
 ## Commands at the repo root
 
