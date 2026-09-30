@@ -983,7 +983,7 @@ model WorkspaceInvite {
   invitedById   String                @map("invited_by_id") @db.VarChar(64)
   acceptedAt    DateTime?             @map("accepted_at") @db.Timestamptz(6)
   revokedAt     DateTime?             @map("revoked_at") @db.Timestamptz(6)
-  expiresAt     DateTime              @map("expires_at") @db.Timestamptz(6)
+  expiresAt     DateTime?             @map("expires_at") @db.Timestamptz(6)
   createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -1736,7 +1736,7 @@ model ProjectInvite {
   invitedById   String              @map("invited_by_id") @db.VarChar(64)
   acceptedAt    DateTime?           @map("accepted_at") @db.Timestamptz(6)
   revokedAt     DateTime?           @map("revoked_at") @db.Timestamptz(6)
-  expiresAt     DateTime            @map("expires_at") @db.Timestamptz(6)
+  expiresAt     DateTime?           @map("expires_at") @db.Timestamptz(6)
   createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
 
   project PlatformProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -8988,7 +8988,7 @@ model StoryProjectInvite {
   invitedByUserId String                   @map("invited_by_user_id") @db.VarChar(64)
   acceptedAt      DateTime?                @map("accepted_at") @db.Timestamptz(6)
   revokedAt       DateTime?                @map("revoked_at") @db.Timestamptz(6)
-  expiresAt       DateTime                 @map("expires_at") @db.Timestamptz(6)
+  expiresAt       DateTime?                @map("expires_at") @db.Timestamptz(6)
   createdAt       DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
 
   project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)

@@ -310,7 +310,7 @@ describe("MembersManager project access", () => {
       ]);
       await render(role === "admin", "workspace");
       const controls = [
-        ...container.querySelectorAll<HTMLSelectElement>('select[aria-label="changeMemberRole"]'),
+        ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="changeMemberRole"]'),
       ];
       expect(controls).toHaveLength(2);
       expect(controls.every((control) => control.disabled)).toBe(true);
@@ -331,7 +331,7 @@ describe("MembersManager project access", () => {
     ]);
     await render(true, "workspace");
     expect(
-      container.querySelector<HTMLSelectElement>('select[aria-label="changeMemberRole"]')?.disabled
+      container.querySelector<HTMLButtonElement>('button[aria-label="changeMemberRole"]')?.disabled
     ).toBe(false);
   });
 });

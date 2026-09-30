@@ -52,18 +52,21 @@ type AnalyzeStatus = "idle" | "analyzing" | "success" | "error";
 
 interface NewIpCreateFormProps {
   onClose?: () => void;
+  /** Fires after a draft is created, before navigation to the workbench. */
+  onCreated?: (ipId: string) => void;
 }
 
 interface NewIpCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onCreated?: (ipId: string) => void;
 }
 
-export function NewIpCreateDialog({ open, onOpenChange }: NewIpCreateDialogProps) {
+export function NewIpCreateDialog({ open, onOpenChange, onCreated }: NewIpCreateDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto p-0 sm:max-w-lg">
-        <NewIpCreateForm onClose={() => onOpenChange(false)} />
+        <NewIpCreateForm onClose={() => onOpenChange(false)} onCreated={onCreated} />
       </DialogContent>
     </Dialog>
   );
@@ -83,13 +86,15 @@ export function NewIpCreateDialog({ open, onOpenChange }: NewIpCreateDialogProps
  *
  * State machine: `analyzeStatus` ∈ idle | analyzing | success | error.
  */
-export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
+export function NewIpCreateForm({ onClose, onCreated }: NewIpCreateFormProps = {}) {
   const t = useTranslations("newIpCreate");
+  const channelT = useTranslations("channels");
   const commonT = useTranslations("common");
   const router = useRouter();
   const pathname = usePathname() ?? "/";
   const defaultSourceLocale = localeFromPathname(pathname);
 
+  const [channelType, setChannelType] = useState<"ip" | "community">("ip");
   const [name, setNameState] = useState("");
   const [genreCodes, setGenreCodes] = useState<string[]>([]);
   const [region, setRegion] = useState("");
@@ -122,6 +127,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
   const resetForm = () => {
     setName("");
+    setChannelType("ip");
     setGenreCodes([]);
     setRegion("");
     setDescription("");
@@ -211,6 +217,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
     setAnalyzeStatus("idle");
     setAnalyzedFileName("");
     // Only clear fields that were AI-filled and haven't been edited by the user.
+    // Channel type is a manual choice — do not reset it here.
     if (aiFilledFields.has("name")) setName("");
     if (aiFilledFields.has("description")) setDescription("");
     setAiFilledFields(new Set());
@@ -226,19 +233,24 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
         sourceLocale: defaultSourceLocale,
         summary: description.trim() || undefined,
         region: region || undefined,
+        channelType,
       },
       {
         onSuccess: ({ ip }) => {
           posthog.capture("ip_created", {
             ip_id: ip.id,
+            channel_type: channelType,
             genre_codes: genreCodes,
             source_locale: defaultSourceLocale,
             used_spark_analysis: analyzeStatus === "success",
           });
           resetForm();
           toast.success(t("createSuccess"));
-          onClose?.();
+          onCreated?.(ip.id);
+          // Navigate to the workbench first so parent close handlers
+          // (e.g. /ips/create → replace /ips) cannot win the race.
           router.push(localizePath(`/ip-studio/${ip.id}`, defaultSourceLocale));
+          onClose?.();
         },
         onError: (err) => {
           const msg = err instanceof Error ? err.message : "";
@@ -293,6 +305,19 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
         <FieldGroup>
           <Field>
+            <FieldLabel required>{channelT("category")}</FieldLabel>
+            <NativeSelect
+              aria-label={channelT("category")}
+              value={channelType}
+              disabled={creating}
+              onChange={(v) => setChannelType(v as "ip" | "community")}
+              className="w-full"
+            >
+              <option value="ip">{channelT("ip")}</option>
+              <option value="community">{channelT("community")}</option>
+            </NativeSelect>
+          </Field>
+          <Field>
             <FieldLabel required>
               {t("fieldName")}
               {aiFilledFields.has("name") && <AiSuggestedChip label={t("aiSuggested")} />}
@@ -340,11 +365,7 @@ export function NewIpCreateForm({ onClose }: NewIpCreateFormProps = {}) {
 
           <Field>
             <FieldLabel>{regionUi("field", defaultSourceLocale)}</FieldLabel>
-            <NativeSelect
-              value={region}
-              onChange={setRegion}
-              className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
+            <NativeSelect value={region} onChange={setRegion} className="w-full">
               <option value="">{regionUi("placeholder", defaultSourceLocale)}</option>
               {REGIONS.map((r) => (
                 <option key={r.code} value={r.code}>

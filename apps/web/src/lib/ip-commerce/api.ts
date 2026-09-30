@@ -206,6 +206,7 @@ export interface IpCreatorIp {
   createdById?: string;
   id: string;
   roomNumber: string;
+  channelType?: IpChannelType;
   title: string;
   summary: string;
   description: string | null;
@@ -565,6 +566,8 @@ export interface CreateIpDraftInput {
   sourceLocale: string;
   /** ISO-3166 alpha-2 or 'GLOBAL'. Optional. */
   region?: string;
+  /** Defaults to `ip` on the server when omitted. */
+  channelType?: IpChannelType;
 }
 
 export interface UpdateIpProfileInput {

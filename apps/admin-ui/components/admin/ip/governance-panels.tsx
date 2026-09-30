@@ -138,6 +138,14 @@ function GovernanceTable({
   kind: "review" | "report";
   rows: ReviewQueueRow[] | ReportRow[];
 }) {
+  const [channelFilter, setChannelFilter] = useState<"all" | "ip" | "community">("all");
+
+  const filteredReviewRows = useMemo(() => {
+    const list = rows as ReviewQueueRow[];
+    if (kind !== "review" || channelFilter === "all") return list;
+    return list.filter((row) => (row.ip?.channelType ?? "community") === channelFilter);
+  }, [channelFilter, kind, rows]);
+
   const reviewColumns = useMemo<ColumnDef<ReviewQueueRow, unknown>[]>(
     () => [
       {
@@ -156,6 +164,15 @@ function GovernanceTable({
               </p>
             </>
           );
+        },
+      },
+      {
+        id: "channelType",
+        header: "频道",
+        cell: ({ row }) => {
+          const channelType = row.original.ip?.channelType;
+          if (!channelType) return row.original.targetType;
+          return channelType === "ip" ? "IP 频道" : "社区频道";
         },
       },
       {
@@ -298,20 +315,39 @@ function GovernanceTable({
               {kind === "review" ? "审核项" : "举报项"}
             </h3>
           </div>
-          <Link
-            href="/ip/titles"
-            className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-600 hover:text-slate-950"
-          >
-            去作品库处理
-            <IconExternalLink className="size-3.5" />
-          </Link>
+          <div className="flex items-center gap-3">
+            {kind === "review" ? (
+              <label className="flex items-center gap-2 text-[12px] text-slate-600">
+                <span>频道</span>
+                <select
+                  value={channelFilter}
+                  onChange={(event) =>
+                    setChannelFilter(event.target.value as "all" | "ip" | "community")
+                  }
+                  className="h-8 rounded-md border border-slate-200 bg-white px-2 text-[12px] text-slate-800 outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                  aria-label="按频道筛选"
+                >
+                  <option value="all">全部</option>
+                  <option value="ip">IP 频道</option>
+                  <option value="community">社区频道</option>
+                </select>
+              </label>
+            ) : null}
+            <Link
+              href="/ip/titles"
+              className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-600 hover:text-slate-950"
+            >
+              去作品库处理
+              <IconExternalLink className="size-3.5" />
+            </Link>
+          </div>
         </div>
         {kind === "review" ? (
           <DataTable
             columns={reviewColumns}
-            data={rows as ReviewQueueRow[]}
+            data={filteredReviewRows}
             loading={loading}
-            minWidth={980}
+            minWidth={1080}
             pageSize={20}
             emptyLabel="暂无待审核内容"
             className="rounded-none border-0"

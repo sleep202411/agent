@@ -57,8 +57,18 @@ export type UpdateStoryMemberRoleInput = z.infer<
 
 export const CreateStoryInviteSchema = z.object({
   role: AssignableStoryRoleSchema.default('viewer'),
-  /** Link validity window. Default 7 days, max 30. */
-  expiresInDays: z.number().int().min(1).max(30).default(7),
+  /**
+   * Link validity window in days (1–30), or `null` for permanent until revoke.
+   * Default is permanent — matches the studio share UI.
+   */
+  expiresInDays: z
+    .number()
+    .int()
+    .min(1)
+    .max(30)
+    .nullable()
+    .optional()
+    .default(null),
 });
 export type CreateStoryInviteInput = z.infer<typeof CreateStoryInviteSchema>;
 
@@ -82,5 +92,6 @@ export interface StoryProjectInviteDto {
   role: StoryProjectMemberRole;
   status: string;
   createdAt: string;
-  expiresAt: string;
+  /** ISO timestamp, or `null` when the link never expires. */
+  expiresAt: string | null;
 }

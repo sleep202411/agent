@@ -29,6 +29,7 @@ import {
   effectiveInviteStatus,
   isUniqueViolation,
   existingInviteAccess,
+  resolveInviteExpiresAt,
 } from '../sharing/util';
 import {
   acquireSeatLock,
@@ -42,8 +43,6 @@ import {
   type StoryProjectInviteDto,
 } from './story-project-sharing.dto';
 import { StoryPermissionService } from './story-permission.service';
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class StoryProjectInvitesService {
@@ -67,7 +66,7 @@ export class StoryProjectInvitesService {
     );
     const role = STORY_ROLE_MAP[input.role];
     const { token, tokenHash } = generateInviteToken();
-    const expiresAt = new Date(Date.now() + input.expiresInDays * MS_PER_DAY);
+    const expiresAt = resolveInviteExpiresAt(input.expiresInDays);
     const invite = await this.prisma.storyProjectInvite.create({
       data: {
         storyProjectId,
@@ -84,13 +83,17 @@ export class StoryProjectInvitesService {
       action: 'story_project.invite.created',
       entityType: 'story_project_invite',
       entityId: invite.id,
-      after: { storyProjectId, role, expiresAt: expiresAt.toISOString() },
+      after: {
+        storyProjectId,
+        role,
+        expiresAt: expiresAt?.toISOString() ?? null,
+      },
     });
     return {
       inviteId: invite.id,
       token,
       role: invite.role,
-      expiresAt: invite.expiresAt.toISOString(),
+      expiresAt: invite.expiresAt?.toISOString() ?? null,
     };
   }
 
@@ -112,7 +115,7 @@ export class StoryProjectInvitesService {
       role: i.role,
       status: effectiveInviteStatus(i),
       createdAt: i.createdAt.toISOString(),
-      expiresAt: i.expiresAt.toISOString(),
+      expiresAt: i.expiresAt?.toISOString() ?? null,
     }));
   }
 
@@ -186,7 +189,7 @@ export class StoryProjectInvitesService {
       targetName: project?.title ?? 'a story',
       role: invite.role,
       status: effectiveInviteStatus(invite),
-      expiresAt: invite.expiresAt.toISOString(),
+      expiresAt: invite.expiresAt?.toISOString() ?? null,
     };
   }
 
@@ -338,7 +341,7 @@ export class StoryProjectInvitesService {
   private async assertUsable(invite: {
     id: string;
     status: StoryProjectInviteStatus;
-    expiresAt: Date;
+    expiresAt: Date | null;
   }): Promise<void> {
     const status = effectiveInviteStatus(invite);
     if (status === StoryProjectInviteStatus.revoked) {

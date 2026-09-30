@@ -35,6 +35,12 @@ describe('effectiveInviteStatus (lazy expiry)', () => {
     ).toBe('expired');
   });
 
+  it('treats null expiry as permanent (never expires)', () => {
+    expect(
+      effectiveInviteStatus({ status: 'pending', expiresAt: null }, now),
+    ).toBe('pending');
+  });
+
   it('passes terminal statuses through unchanged, even past expiry', () => {
     expect(
       effectiveInviteStatus({ status: 'revoked', expiresAt: past }, now),

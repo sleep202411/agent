@@ -47,6 +47,7 @@ import {
   effectiveInviteStatus,
   isUniqueViolation,
   existingInviteAccess,
+  resolveInviteExpiresAt,
 } from './util';
 
 const ROLE_MAP: Record<AssignableRole, WorkspaceMemberRole> = {
@@ -54,8 +55,6 @@ const ROLE_MAP: Record<AssignableRole, WorkspaceMemberRole> = {
   editor: WorkspaceMemberRole.editor,
   viewer: WorkspaceMemberRole.viewer,
 };
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class WorkspaceInvitesService {
@@ -78,7 +77,7 @@ export class WorkspaceInvitesService {
 
     const role = ROLE_MAP[input.role];
     const { token, tokenHash } = generateInviteToken();
-    const expiresAt = new Date(Date.now() + input.expiresInDays * MS_PER_DAY);
+    const expiresAt = resolveInviteExpiresAt(input.expiresInDays);
     const invite = await this.prisma.$transaction(async (tx) => {
       const invite = await tx.workspaceInvite.create({
         data: {
@@ -97,7 +96,7 @@ export class WorkspaceInvitesService {
           action: 'workspace.invite.created',
           entityType: 'workspace_invite',
           entityId: invite.id,
-          after: { role, expiresAt: expiresAt.toISOString() },
+          after: { role, expiresAt: expiresAt?.toISOString() ?? null },
         },
         tx,
       );
@@ -107,7 +106,7 @@ export class WorkspaceInvitesService {
       inviteId: invite.id,
       token,
       role: invite.role,
-      expiresAt: invite.expiresAt.toISOString(),
+      expiresAt: invite.expiresAt?.toISOString() ?? null,
     };
   }
 
@@ -200,7 +199,7 @@ export class WorkspaceInvitesService {
       targetName: workspace?.name ?? 'a team',
       role: invite.role,
       status: effectiveInviteStatus(invite),
-      expiresAt: invite.expiresAt.toISOString(),
+      expiresAt: invite.expiresAt?.toISOString() ?? null,
     };
   }
 
@@ -366,7 +365,7 @@ export class WorkspaceInvitesService {
   private async assertUsable(invite: {
     id: string;
     status: WorkspaceInviteStatus;
-    expiresAt: Date;
+    expiresAt: Date | null;
   }): Promise<void> {
     const status = effectiveInviteStatus(invite);
     if (status === WorkspaceInviteStatus.revoked) {

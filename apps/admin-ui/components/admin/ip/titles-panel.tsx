@@ -78,6 +78,7 @@ export function IpTitlesPanel({
   const [status, setStatus] = useState("");
   const [visibility, setVisibility] = useState("");
   const [genreCode, setGenreCode] = useState("");
+  const [channelType, setChannelType] = useState<"" | "ip" | "community">("");
   const [locale, setLocale] = useState("");
   const [query, setQuery] = useState("");
   const { busy: loading, begin: beginList } = useAdminOperation();
@@ -97,6 +98,7 @@ export function IpTitlesPanel({
     if (status) params.set("status", status);
     if (visibility) params.set("listingVisibility", visibility);
     if (genreCode) params.set("genreCodes", genreCode);
+    if (channelType) params.set("channelType", channelType);
     if (locale) params.set("locale", locale);
     if (query.trim()) params.set("q", query.trim());
     if (extra) {
@@ -270,9 +272,6 @@ export function IpTitlesPanel({
               <p className="max-w-[260px] truncate text-sm font-medium text-slate-950">
                 {ip.title}
               </p>
-              <p className="text-xs text-slate-500">
-                {ip.channelType === "ip" ? "IP Channel" : "Community Channel"}
-              </p>
               <p className="mt-0.5 max-w-[260px] truncate text-[12px] text-slate-500">
                 {ip.slug ?? ip.id}
               </p>
@@ -280,6 +279,16 @@ export function IpTitlesPanel({
           </div>
         );
       },
+    },
+    {
+      id: "channelType",
+      header: "频道",
+      enableSorting: false,
+      cell: ({ row }) => (
+        <span className="text-sm text-slate-700">
+          {row.original.channelType === "ip" ? "IP 频道" : "社区频道"}
+        </span>
+      ),
     },
     {
       accessorKey: "roomNumber",
@@ -426,7 +435,7 @@ export function IpTitlesPanel({
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-200 p-4">
-          <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_120px_140px_140px_140px_auto]">
+          <div className="grid gap-2 lg:grid-cols-[minmax(200px,1fr)_110px_120px_120px_120px_120px_auto]">
             <label className="relative block">
               <IconSearch className="pointer-events-none absolute left-3 top-1/2 z-10 size-4 -translate-y-1/2 text-slate-400" />
               <Input
@@ -448,6 +457,21 @@ export function IpTitlesPanel({
                 <SelectItem value="zh-CN">简体中文</SelectItem>
                 <SelectItem value="en-US">English</SelectItem>
                 <SelectItem value="zh-HK">繁體中文</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={channelType || ALL_VALUE}
+              onValueChange={(value) =>
+                setChannelType(value === ALL_VALUE ? "" : (value as "ip" | "community"))
+              }
+            >
+              <SelectTrigger className="h-9 w-full" aria-label="频道类型">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_VALUE}>全部频道</SelectItem>
+                <SelectItem value="ip">IP 频道</SelectItem>
+                <SelectItem value="community">社区频道</SelectItem>
               </SelectContent>
             </Select>
             <Select
@@ -732,7 +756,7 @@ function IpDetailDrawer({
               <section className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-2">
                 <DetailCell
                   label="Channel"
-                  value={ip.channelType === "ip" ? "IP Channel" : "Community Channel"}
+                  value={ip.channelType === "ip" ? "IP 频道" : "社区频道"}
                 />
                 <DetailCell label="状态" value={statusLabel(ip.status)} />
                 <DetailCell label="可见性" value={visibilityLabel(ip.listingVisibility)} />

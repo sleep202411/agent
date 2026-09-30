@@ -424,7 +424,7 @@
     "ipsFundraising": "個 IP 正在融資",
     "ipsPresale": "個 IP 開放預售",
     "newThisWeek": "本週新增",
-    "createIP": "建立 AI 頻道",
+    "createIP": "投稿",
     "browseIPs": "瀏覽 IP",
     "enterStudio": "進入工作台",
     "catAll": "發現",
@@ -1052,7 +1052,14 @@
     "flowTitle": "創作流程",
     "flowBody": "按階段推進，但每個階段都可以獨立補齊；圓環顯示目前完成度。",
     "readiness": {
-      "ready": "{done}/{total} 就緒"
+      "ready": "{done}/{total} 就緒",
+      "remaining": "還剩 {remaining}/{total} 項",
+      "remainingBadge": "還剩 {remaining} 項",
+      "next": "下一步：{step}",
+      "allReady": "可以提交審核",
+      "pending": "尚未完成",
+      "optional": "可選",
+      "optionalHint": "可選，不擋提交"
     },
     "comingSoon": "即將開放",
     "editBasics": "編輯基礎資訊",
@@ -1208,6 +1215,10 @@
       "orders": {
         "title": "訂單",
         "status": "唯讀"
+      },
+      "generation": {
+        "title": "影迷共創",
+        "status": "可選"
       },
       "collaboration": {
         "title": "協作與劇組",
@@ -1639,7 +1650,7 @@
       },
       "episodes": {
         "title": "添加首批劇集",
-        "body": "先建立或上傳第一集，再繼續配置定價和發佈。"
+        "body": "可選。建立或上傳第一集，方便後續定價和上架。"
       }
     },
     "meta": {

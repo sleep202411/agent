@@ -5,7 +5,7 @@ import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
 import { AudienceGenerationTemplatesEditor } from "./audience-generation-templates-editor";
 import { IpGameAssociations } from "@/app/(site)/ips/_components/ip-game-associations";
 import { IpStageApplications } from "@/app/(site)/ips/_components/ip-stage-applications";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EPISODE_SOURCE_MAX_BYTES } from "@repo/shared";
 import {
   cancelEpisodeUpload,
@@ -13,6 +13,7 @@ import {
   type EpisodeUploadStage,
 } from "../../_lib/episode-upload";
 import type { DragEvent, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -106,6 +107,7 @@ import {
 import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
+import { ChannelBadge } from "@/components/channel-badge";
 
 interface IpStudioWorkbenchProps {
   ipId: string;
@@ -313,7 +315,7 @@ function EditStyleHero({
   // contradicts the 已发布 status pill), so show them only while submittable.
   const submittable = canSubmitForReview(ip.status);
   return (
-    <div className="relative overflow-hidden border-b border-border bg-card">
+    <div className="relative border-b border-border bg-card">
       <div className="relative mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8 sm:py-10 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0 flex-1 space-y-3">
           <BackToProfile locale={locale} label={t("backToProfile")} />
@@ -327,6 +329,7 @@ function EditStyleHero({
             {ip.summary || t("emptySummary")}
           </p>
           <div className="flex flex-wrap items-center gap-2">
+            <ChannelBadge category={ip.channelType} tone="surface" />
             {ip.genres.slice(0, 2).map((genre) => (
               <StatusPill key={genre}>{genre}</StatusPill>
             ))}
@@ -341,37 +344,38 @@ function EditStyleHero({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-row flex-wrap items-center gap-2">
-          {submittable ? <ReadinessRing ip={ip} t={t} /> : null}
-          <Button
-            asChild
-            size="sm"
-            variant="outline"
-            color="muted"
-            className="min-w-[7.5rem] justify-center"
-          >
-            <Link href={localizePath(`/ips/${ip.id}`, locale)}>
-              <IconEye className="size-3.5" />
-              {t("preview")}
-            </Link>
-          </Button>
-          {submittable ? (
-            <>
+        <div className="flex w-full shrink-0 flex-col items-stretch gap-2 sm:w-auto sm:max-w-md sm:items-end">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            {submittable ? <ReadinessRing ip={ip} t={t} /> : null}
+            <Button
+              asChild
+              size="sm"
+              variant="outline"
+              color="muted"
+              className="min-w-[7.5rem] justify-center"
+            >
+              <Link href={localizePath(`/ips/${ip.id}`, locale)}>
+                <IconEye className="size-3.5" />
+                {t("preview")}
+              </Link>
+            </Button>
+            {submittable ? (
               <Button
                 size="sm"
                 disabled={!canSubmitReview}
                 onClick={onSubmitReview}
-                className="min-w-[7.5rem] justify-center"
+                className="min-w-[7.5rem] justify-center disabled:border disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100"
               >
                 <IconRocket className="size-3.5" />
                 {submitPending ? t("reviewSubmit.submitting") : t("publish")}
               </Button>
-              {reviewMissing.length > 0 ? (
-                <p className="basis-full text-right text-xs leading-5 text-muted-foreground">
-                  {t("reviewSubmit.requirements", { items: reviewMissing.join("、") })}
-                </p>
-              ) : null}
-            </>
+            ) : null}
+          </div>
+          {submittable && reviewMissing.length > 0 ? (
+            <p className="inline-flex items-start gap-1.5 rounded-lg border border-primary/25 bg-primary/10 px-2.5 py-2 text-left text-xs font-medium leading-5 text-primary sm:max-w-sm">
+              <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>{t("reviewSubmit.requirements", { items: reviewMissing.join("、") })}</span>
+            </p>
           ) : null}
         </div>
       </div>
@@ -462,8 +466,9 @@ function OverviewPanel({ ip, t, onEdit }: { ip: IpCreatorIp; t: Translate; onEdi
                   {ip.description}
                 </p>
               ) : null}
-              {taxonomy.length > 0 ? (
-                <div className="mt-4 flex flex-wrap gap-2">
+              {taxonomy.length > 0 || ip.channelType ? (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <ChannelBadge category={ip.channelType} tone="surface" />
                   {taxonomy.map((item) => (
                     <span
                       key={item}
@@ -1314,6 +1319,7 @@ function FormTextField({
   type = "text",
   multiline,
   maxLength,
+  required,
 }: {
   label: string;
   value: string;
@@ -1322,6 +1328,7 @@ function FormTextField({
   type?: string;
   multiline?: boolean;
   maxLength?: number;
+  required?: boolean;
 }) {
   const control = multiline ? (
     <Textarea
@@ -1345,7 +1352,7 @@ function FormTextField({
 
   return (
     <div className="space-y-2">
-      <FieldLabel>{label}</FieldLabel>
+      <FieldLabel required={required}>{label}</FieldLabel>
       {control}
     </div>
   );
@@ -3218,6 +3225,7 @@ export function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translat
           onChange={setOwner}
           maxLength={160}
           placeholder={t("assetsPanel.rightsForm.ownerPlaceholder")}
+          required
         />
         <div className="space-y-2">
           <FieldLabel>{t("assetsPanel.rightsForm.aiUsage")}</FieldLabel>
@@ -3249,6 +3257,7 @@ export function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translat
           maxLength={1000}
           placeholder={t("assetsPanel.rightsForm.rightsPlaceholder")}
           multiline
+          required
         />
         <FormTextField
           label={t("assetsPanel.rightsForm.aiStatement")}
@@ -3257,6 +3266,7 @@ export function RightsGovernanceEditor({ ip, t }: { ip: IpCreatorIp; t: Translat
           maxLength={1000}
           placeholder={t("assetsPanel.rightsForm.aiPlaceholder")}
           multiline
+          required={generatedVisuals || generatedCopy}
         />
       </div>
       <div className="mt-4 flex justify-end">
@@ -3718,43 +3728,231 @@ function MetaCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-// The five publish-readiness phases, derived from the IP. Drives the header
-// completion ring; the verbose per-phase cards were retired from the overview.
-function ipReadinessSteps(ip: IpCreatorIp): { key: string; done: boolean }[] {
+// Publish-readiness phases for the header ring. Episodes are recommended but
+// not required to submit. Once profile/assets/rights are done the ring shows
+// "ready to submit" — the ring only renders while the IP is still submittable.
+function ipReadinessSteps(ip: IpCreatorIp): {
+  key: string;
+  done: boolean;
+  optional?: boolean;
+}[] {
   return [
     {
       key: "profile",
       done: Boolean(ip.title.trim() && ip.summary.trim() && ip.genreCodes.length),
     },
-    { key: "episodes", done: ip.counts.episodes > 0 },
     { key: "assets", done: hasPublicationAsset(ip) },
     { key: "rights", done: hasRightsDeclaration(ip) && hasRequiredAiDisclosure(ip) },
-    { key: "publish", done: ip.status === "published" },
+    { key: "episodes", done: ip.counts.episodes > 0, optional: true },
   ];
 }
 
-// Compact completion ring in the header; hover/focus reveals the phase checklist.
+// Compact completion ring in the header. Incomplete next step stays visible;
+// click/hover opens the full phase checklist via a portal so parent overflow
+// cannot clip the list.
 function ReadinessRing({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number } | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const steps = ipReadinessSteps(ip);
-  const total = steps.length;
-  const done = steps.filter((s) => s.done).length;
+  const requiredSteps = steps.filter((s) => !s.optional);
+  const total = requiredSteps.length;
+  const done = requiredSteps.filter((s) => s.done).length;
+  const remaining = total - done;
   const pct = Math.round((done / total) * 100);
-  // First not-yet-done phase is the "current" one.
-  const currentIndex = steps.findIndex((s) => !s.done);
+  // Prefer the first incomplete required phase; optional steps never block "next".
+  const currentIndex = steps.findIndex((s) => !s.done && !s.optional);
+  const currentStep = currentIndex >= 0 ? steps[currentIndex] : null;
+  const complete = remaining === 0;
+  const panelVisible = open || hovered;
 
   const r = 15;
   const circ = 2 * Math.PI * r;
   const filled = (pct / 100) * circ;
 
+  const clearHoverClose = () => {
+    if (hoverCloseTimer.current) {
+      clearTimeout(hoverCloseTimer.current);
+      hoverCloseTimer.current = null;
+    }
+  };
+
+  const openFromHover = () => {
+    clearHoverClose();
+    setHovered(true);
+    updatePanelPos();
+  };
+
+  const scheduleHoverClose = () => {
+    clearHoverClose();
+    // Delay so the pointer can cross the gap into the portaled panel.
+    hoverCloseTimer.current = setTimeout(() => setHovered(false), 120);
+  };
+
+  const updatePanelPos = () => {
+    const button = buttonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const panelWidth = 288; // w-72
+    const left = Math.min(Math.max(8, rect.right - panelWidth), window.innerWidth - panelWidth - 8);
+    setPanelPos({ top: rect.bottom + 8, left });
+  };
+
+  useEffect(() => () => clearHoverClose(), []);
+
+  useLayoutEffect(() => {
+    if (!panelVisible) return;
+    updatePanelPos();
+    const onScrollOrResize = () => updatePanelPos();
+    window.addEventListener("resize", onScrollOrResize);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    return () => {
+      window.removeEventListener("resize", onScrollOrResize);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+    };
+  }, [panelVisible]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const panel =
+    panelVisible && panelPos
+      ? createPortal(
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-label={t("overview.next.eyebrow")}
+            onMouseEnter={openFromHover}
+            onMouseLeave={scheduleHoverClose}
+            style={{ top: panelPos.top, left: panelPos.left }}
+            className="fixed z-[80] w-72 rounded-xl border border-border bg-popover p-3 shadow-lg"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("overview.next.eyebrow")}
+              </p>
+              {!complete ? (
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
+                  {t("readiness.remainingBadge", { remaining })}
+                </span>
+              ) : null}
+            </div>
+            <ul className="mt-2.5 max-h-[min(24rem,70vh)] space-y-1 overflow-y-auto">
+              {steps.map((step, index) => {
+                const isCurrent = index === currentIndex;
+                const requiredIndex = requiredSteps.findIndex((s) => s.key === step.key);
+                const badge = step.done ? "✓" : step.optional ? "·" : String(requiredIndex + 1);
+                return (
+                  <li
+                    key={step.key}
+                    className={[
+                      "rounded-lg px-2 py-1.5",
+                      isCurrent ? "bg-primary/10 ring-1 ring-primary/30" : "",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span
+                        className={[
+                          "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold leading-none",
+                          step.done
+                            ? "border-muted-foreground/40 bg-muted text-muted-foreground"
+                            : isCurrent
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : step.optional
+                                ? "border-dashed border-muted-foreground/50 text-muted-foreground"
+                                : "border-foreground/35 text-foreground",
+                        ].join(" ")}
+                      >
+                        {badge}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
+                          <span
+                            className={[
+                              "block text-sm leading-5",
+                              step.done
+                                ? "text-muted-foreground line-through decoration-muted-foreground/50"
+                                : isCurrent
+                                  ? "font-semibold text-foreground"
+                                  : step.optional
+                                    ? "font-medium text-muted-foreground"
+                                    : "font-medium text-foreground",
+                            ].join(" ")}
+                          >
+                            {t(`progress.${step.key}.title`)}
+                          </span>
+                          {step.optional && !step.done ? (
+                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {t("readiness.optional")}
+                            </span>
+                          ) : null}
+                        </span>
+                        {isCurrent ? (
+                          <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                            {t(`progress.${step.key}.body`)}
+                          </span>
+                        ) : null}
+                        {!step.done && !isCurrent ? (
+                          <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                            {step.optional ? t("readiness.optionalHint") : t("readiness.pending")}
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
-    <div className="group relative">
+    <div
+      ref={rootRef}
+      className="relative"
+      onMouseEnter={openFromHover}
+      onMouseLeave={scheduleHoverClose}
+    >
       <button
+        ref={buttonRef}
         type="button"
+        aria-expanded={panelVisible}
+        aria-haspopup="dialog"
         aria-label={t("overview.next.eyebrow")}
-        className="flex items-center gap-2 rounded-lg px-1.5 py-1 outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => {
+          setOpen((value) => !value);
+          updatePanelPos();
+        }}
+        className={[
+          "flex max-w-[16rem] items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none transition-colors",
+          "hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring",
+          !complete ? "border border-primary/35 bg-primary/5" : "border border-transparent",
+          open ? "bg-muted/60" : "",
+        ].join(" ")}
       >
-        <span className="relative inline-flex size-9 items-center justify-center">
-          <svg viewBox="0 0 36 36" className="size-9 -rotate-90">
+        <span className="relative inline-flex size-9 shrink-0 items-center justify-center">
+          <svg viewBox="0 0 36 36" className="size-9 -rotate-90" aria-hidden>
             <circle
               cx="18"
               cy="18"
@@ -3780,51 +3978,26 @@ function ReadinessRing({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
             {pct}%
           </span>
         </span>
-        <span className="text-xs text-muted-foreground">
-          {t("readiness.ready", { done, total })}
+        <span className="min-w-0 flex flex-col gap-0.5">
+          <span className="text-[11px] tabular-nums text-muted-foreground">
+            {complete
+              ? t("readiness.ready", { done, total })
+              : t("readiness.remaining", { remaining, total })}
+          </span>
+          {currentStep ? (
+            <span className="truncate text-xs font-semibold text-primary">
+              {t("readiness.next", {
+                step: t(`progress.${currentStep.key}.title`),
+              })}
+            </span>
+          ) : (
+            <span className="truncate text-xs font-medium text-foreground">
+              {t("readiness.allReady")}
+            </span>
+          )}
         </span>
       </button>
-
-      <div
-        role="status"
-        className="invisible absolute right-0 top-full z-30 mt-2 w-64 rounded-xl border border-border bg-popover p-3 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
-      >
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {t("overview.next.eyebrow")}
-        </p>
-        <ul className="mt-2 space-y-1.5">
-          {steps.map((step, index) => {
-            const isCurrent = index === currentIndex;
-            return (
-              <li key={step.key} className="flex items-center gap-2 text-sm">
-                <span
-                  className={[
-                    "flex size-4 shrink-0 items-center justify-center rounded-full border text-[10px] leading-none",
-                    step.done
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : isCurrent
-                        ? "border-primary text-primary"
-                        : "border-border text-muted-foreground",
-                  ].join(" ")}
-                >
-                  {step.done ? "✓" : ""}
-                </span>
-                <span
-                  className={
-                    isCurrent
-                      ? "font-medium text-foreground"
-                      : step.done
-                        ? "text-muted-foreground"
-                        : "text-muted-foreground"
-                  }
-                >
-                  {t(`progress.${step.key}.title`)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+      {panel}
     </div>
   );
 }

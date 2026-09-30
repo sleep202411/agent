@@ -160,6 +160,7 @@ export type ReviewQueueRow = {
     title: string;
     status: string;
     listingVisibility: string;
+    channelType?: "ip" | "community";
     localization?: LocalizationMeta;
   } | null;
   episode: {
