@@ -148,3 +148,21 @@ it("aborts preview reads on leaving without writing tasks", async () => {
   expect(signal.aborted).toBe(true);
   expect(h.apply).not.toHaveBeenCalled();
 });
+it("stages the reviewed plan without calling the creation endpoint", async () => {
+  const onStage = vi.fn();
+  await act(async () =>
+    root.render(
+      <EpisodeTaskTemplate
+        crewId="crew"
+        userId="user"
+        generation={1}
+        onClose={h.close}
+        onStage={onStage}
+      />
+    )
+  );
+  await act(async () => button("Episode 1").click());
+  await act(async () => button("taskWorkbench.stageEpisode").click());
+  expect(onStage).toHaveBeenCalledWith(expect.objectContaining({ name: "Episode 1" }), plan);
+  expect(h.apply).not.toHaveBeenCalled();
+});

@@ -11,13 +11,19 @@ import {
   fetchEpisodeTaskPlan,
   type EpisodeTaskPlan,
 } from "./episode-task-template-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+  onStage?: (episode: PlanningOption, plan: EpisodeTaskPlan) => void;
+};
 export function EpisodeTaskTemplate(props: Props) {
   const active = useScreenActive();
   if (!active || props.generation !== getAuthGeneration()) return null;
   return <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />;
 }
-function Session({ crewId, userId, generation, onClose }: Props) {
+function Session({ crewId, userId, generation, onClose, onStage }: Props) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0),
     [selected, setSelected] = useState<PlanningOption>();
@@ -54,6 +60,7 @@ function Session({ crewId, userId, generation, onClose }: Props) {
         crewId={crewId}
         episode={selected}
         generation={generation}
+        onStage={onStage}
         onClose={() => setSelected(undefined)}
       />
     );
@@ -99,11 +106,13 @@ function Preview({
   episode,
   generation,
   onClose,
+  onStage,
 }: {
   crewId: string;
   episode: PlanningOption;
   generation: number;
   onClose: () => void;
+  onStage?: Props["onStage"];
 }) {
   const t = useTranslations();
   const [revision, setRevision] = useState(0);
@@ -152,6 +161,11 @@ function Preview({
     setBusy(true);
     setError(undefined);
     try {
+      if (onStage) {
+        onStage(episode, visible.plan);
+        completed.current = true;
+        return;
+      }
       const receipt = await applyEpisodeTaskPlan(crewId, episode.id, visible.plan, generation);
       completed.current = true;
       if (alive.current && generation === getAuthGeneration()) setResult(receipt);
@@ -166,7 +180,9 @@ function Preview({
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
       <ThemedText>{episode.name}</ThemedText>
-      <ThemedText>{t("episodeTaskTemplate.help")}</ThemedText>
+      <ThemedText>
+        {t(onStage ? "taskWorkbench.episodeStageHelp" : "episodeTaskTemplate.help")}
+      </ThemedText>
       {!visible && <ActivityIndicator />}
       {(visible?.error || error) && (
         <ThemedText accessibilityRole="alert">{error ?? visible?.error}</ThemedText>
@@ -205,7 +221,13 @@ function Preview({
             style={{ padding: 12 }}
           >
             <ThemedText>
-              {t(busy ? "episodeTaskTemplate.creating" : "episodeTaskTemplate.confirm")}
+              {t(
+                busy
+                  ? "episodeTaskTemplate.creating"
+                  : onStage
+                    ? "taskWorkbench.stageEpisode"
+                    : "episodeTaskTemplate.confirm"
+              )}
             </ThemedText>
           </Pressable>
           <Pressable

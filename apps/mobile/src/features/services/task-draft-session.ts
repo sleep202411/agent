@@ -1,16 +1,26 @@
 import { getAuthGeneration } from "@/auth/auth-store";
 import { createTask, taskCreateInput } from "./task-create-api";
 import { fetchTaskCommentAccess } from "./task-comment-api";
+import {
+  applyEpisodeTaskPlan,
+  episodeTaskPlan,
+  type EpisodeTaskPlan,
+} from "./episode-task-template-api";
+import { z } from "zod";
 export type TaskDraftInput = ReturnType<typeof taskCreateInput.parse>;
 export type TaskDraftReview = { context: string[]; assignees: string[]; customFields: string[] };
-export type TaskDraft = {
+type DraftState = {
   id: number;
-  input: TaskDraftInput;
-  review: TaskDraftReview;
   state: "staged" | "creating" | "created" | "uncertain";
   taskId?: string;
+  taskIds?: string[];
   error?: string;
 };
+export type TaskDraft = DraftState &
+  (
+    | { kind: "task"; input: TaskDraftInput; review: TaskDraftReview }
+    | { kind: "episode"; episodeId: string; title: string; plan: EpisodeTaskPlan }
+  );
 type Snapshot = { drafts: TaskDraft[]; busy: boolean; error?: string };
 /** Memory-only working drafts. Account generations never share a queue. */
 export function createTaskDraftSession(crewId: string, userId: string, generation: number) {
@@ -22,7 +32,7 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
     snapshot = next;
     listeners.forEach((fn) => fn());
   };
-  const change = (id: number, patch: Partial<TaskDraft>) =>
+  const change = (id: number, patch: Partial<DraftState>) =>
     update({
       ...snapshot,
       drafts: snapshot.drafts.map((row) => (row.id === id ? { ...row, ...patch } : row)),
@@ -44,6 +54,7 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           ...snapshot.drafts,
           {
             id: ++sequence,
+            kind: "task",
             input: taskCreateInput.parse(input),
             review: {
               context: [...review.context],
@@ -54,6 +65,30 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           },
         ],
       });
+    },
+    stageEpisode(episodeId: string, title: string, plan: EpisodeTaskPlan) {
+      if (!current() || snapshot.busy) return false;
+      z.string().uuid().parse(episodeId);
+      const parsed = episodeTaskPlan.parse(plan);
+      // A retry must retain the original versioned command. Never replace a queued batch.
+      if (snapshot.drafts.some((row) => row.kind === "episode" && row.episodeId === episodeId))
+        return false;
+      update({
+        ...snapshot,
+        error: undefined,
+        drafts: [
+          ...snapshot.drafts,
+          {
+            id: ++sequence,
+            kind: "episode",
+            episodeId,
+            title,
+            plan: parsed,
+            state: "staged",
+          },
+        ],
+      });
+      return true;
     },
     remove(id: number) {
       if (!current() || snapshot.busy) return;
@@ -78,6 +113,17 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           if (!access.canManage) throw new Error("Task management permission is required.");
           change(row.id, { state: "creating" });
           try {
+            if (row.kind === "episode") {
+              const result = await applyEpisodeTaskPlan(
+                crewId,
+                row.episodeId,
+                row.plan,
+                generation
+              );
+              if (!current()) break;
+              change(row.id, { state: "created", taskIds: result.taskIds, error: undefined });
+              continue;
+            }
             const result = await createTask(crewId, row.input);
             if (!current()) break;
             // Keep the receipt if the screen backgrounded while this write was in flight.
@@ -85,10 +131,10 @@ export function createTaskDraftSession(crewId: string, userId: string, generatio
           } catch (cause) {
             if (current())
               change(row.id, {
-                state: "uncertain",
+                state: row.kind === "episode" ? "staged" : "uncertain",
                 error: cause instanceof Error ? cause.message : String(cause),
               });
-            break; // No idempotency contract: never retry an uncertain creation.
+            break; // Episode commands are replayable; single-task writes are not.
           }
         }
       } catch (cause) {

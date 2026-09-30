@@ -5,14 +5,46 @@ import { TaskWorkbench } from "./task-workbench";
 import type { TaskDraftInput, TaskDraftReview } from "./task-draft-session";
 const h = vi.hoisted(() => ({
   generation: 10,
+  active: true,
   access: vi.fn(),
   create: vi.fn(),
   close: vi.fn(),
   open: vi.fn(),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
+vi.mock("./episode-task-template", () => ({
+  EpisodeTaskTemplate: ({
+    onStage,
+  }: {
+    onStage: (episode: { id: string; name: string }, plan: unknown) => void;
+  }) => (
+    <button
+      onClick={() =>
+        onStage(
+          { id: "11111111-1111-4111-8111-111111111111", name: "Episode 1" },
+          {
+            templateId: "22222222-2222-4222-8222-222222222222",
+            templateVersion: 1,
+            episodeVersion: 1,
+            name: "Series",
+            items: ["Script", "Music"].map((title) => ({
+              templateKey: title,
+              title,
+              roleRequirement: "",
+              defaultDependencies: [],
+              deliveryFields: [],
+            })),
+          }
+        )
+      }
+    >
+      stage episode
+    </button>
+  ),
+}));
 vi.mock("../crew-assets/organization", () => ({
   AssetOrganization: ({ crewId, onClose }: { crewId: string; onClose: () => void }) => (
     <button onClick={onClose}>assets for {crewId}</button>
@@ -114,6 +146,7 @@ const stage = async () => {
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation++;
+  h.active = true;
   h.access.mockResolvedValue({ canManage: true });
   h.create.mockResolvedValue({ id: "created" });
   host = document.createElement("div");
@@ -236,4 +269,37 @@ it("leaves asset and episode browsing accessible to non-managers", async () => {
   expect(button("taskCreate.title")).toBeUndefined();
   await click("assetOrganization.title");
   expect(host.textContent).toContain("assets for crew");
+});
+it("returns the episode preview to the shared workbench without writing tasks", async () => {
+  await render();
+  await stage();
+  await click("episodeTaskTemplate.title");
+  await click("stage episode");
+  expect(host.textContent).toContain("Storyboard");
+  expect(host.textContent).toContain("Script");
+  expect(host.textContent).toContain("Music");
+  expect(h.create).not.toHaveBeenCalled();
+  expect(button("taskWorkbench.createAll").disabled).toBe(false);
+});
+it("stops queued writes when the screen becomes inactive and retains the completed receipt", async () => {
+  let resolve!: (value: unknown) => void;
+  h.create.mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  await render();
+  await stage();
+  await stage();
+  await click("taskWorkbench.createAll");
+  h.active = false;
+  await render();
+  expect(host.textContent).toBe("");
+  await act(async () => resolve({ id: "created" }));
+  h.active = true;
+  await render();
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("taskWorkbench.created");
+  expect(button("taskWorkbench.createAll").disabled).toBe(false);
 });

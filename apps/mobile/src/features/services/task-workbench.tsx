@@ -4,11 +4,13 @@ import { getAuthGeneration } from "@/auth/auth-store";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
+import { useScreenActive } from "@/hooks/use-app-active";
 import { TaskCreate } from "./task-create";
 import { fetchTaskCommentAccess } from "./task-comment-api";
 import { getTaskDraftSession } from "./task-draft-session";
 import { AssetOrganization } from "../crew-assets/organization";
 import { AssetTaskProgress } from "./asset-task-progress";
+import { EpisodeTaskTemplate } from "./episode-task-template";
 import { EpisodeManagement } from "./episode-management";
 type Props = {
   viewId?: string;
@@ -19,7 +21,8 @@ type Props = {
   onCreated: (id: string) => void;
 };
 export function TaskWorkbench(props: Props) {
-  return props.generation === getAuthGeneration() ? (
+  const active = useScreenActive();
+  return active && props.generation === getAuthGeneration() ? (
     <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
@@ -38,7 +41,7 @@ function Session(props: Props) {
     [allowed, setAllowed] = useState<boolean>(),
     [error, setError] = useState<string>(),
     [remove, setRemove] = useState<number>();
-  const [section, setSection] = useState<"assets" | "progress" | "episodes">();
+  const [section, setSection] = useState<"assets" | "progress" | "episodes" | "template">();
   const alive = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -64,6 +67,17 @@ function Session(props: Props) {
     const childProps = { ...props, onClose: () => setSection(undefined) };
     if (section === "assets") return <AssetOrganization {...childProps} />;
     if (section === "progress") return <AssetTaskProgress {...childProps} />;
+    if (section === "template")
+      return (
+        <EpisodeTaskTemplate
+          {...childProps}
+          onStage={(episode, plan) => {
+            if (!session.stageEpisode(episode.id, episode.name, plan))
+              throw new Error(t("taskWorkbench.episodeQueued"));
+            setSection(undefined);
+          }}
+        />
+      );
     return <EpisodeManagement {...childProps} />;
   }
   if (editing && allowed)
@@ -78,7 +92,9 @@ function Session(props: Props) {
         }}
       />
     );
-  const staged = snapshot.drafts.filter((row) => row.state === "staged").length;
+  const staged = snapshot.drafts
+    .filter((row) => row.state === "staged")
+    .reduce((count, row) => count + (row.kind === "episode" ? row.plan.items.length : 1), 0);
   const uncertain = snapshot.drafts.some((row) => row.state === "uncertain");
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
@@ -115,6 +131,11 @@ function Session(props: Props) {
             disabled={snapshot.busy}
             onPress={() => setEditing(true)}
           />
+          <Button
+            label={t("episodeTaskTemplate.title")}
+            disabled={snapshot.busy}
+            onPress={() => setSection("template")}
+          />
           <ThemedText>{t("taskWorkbench.count").replace("{count}", String(staged))}</ThemedText>
           {snapshot.drafts.map((row) => (
             <View
@@ -127,47 +148,70 @@ function Session(props: Props) {
                 borderColor: theme.border,
               }}
             >
-              <ThemedText type="smallBold">{row.input.title}</ThemedText>
-              <ThemedText>{row.input.description}</ThemedText>
-              <ThemedText>
-                {t("taskKind.label")}:{" "}
-                {t(row.input.taskKind ? `taskKind.${row.input.taskKind}` : "taskKind.unset")}
-              </ThemedText>
+              {row.kind === "task" ? (
+                <>
+                  <ThemedText type="smallBold">{row.input.title}</ThemedText>
+                  <ThemedText>{row.input.description}</ThemedText>
+                  <ThemedText>
+                    {t("taskKind.label")}:{" "}
+                    {t(row.input.taskKind ? `taskKind.${row.input.taskKind}` : "taskKind.unset")}
+                  </ThemedText>
+                  <ThemedText>
+                    {t("taskSchedule.priority")}: {t(`taskSchedule.${row.input.priority}`)}
+                  </ThemedText>
+                  {row.input.startAt && (
+                    <ThemedText>
+                      {t("thread.taskStart")}: {row.input.startAt}
+                    </ThemedText>
+                  )}
+                  {row.input.dueAt && (
+                    <ThemedText>
+                      {t("thread.taskDue")}: {row.input.dueAt}
+                    </ThemedText>
+                  )}
+                  {row.input.estimatePoints != null && (
+                    <ThemedText>
+                      {t("taskPlanning.estimate")}: {row.input.estimatePoints}
+                    </ThemedText>
+                  )}
+                  {row.input.revisionLimit != null && (
+                    <ThemedText>
+                      {t("taskPlanning.revisionLimit")}: {row.input.revisionLimit}
+                    </ThemedText>
+                  )}
+                  {row.review.context.map((value, i) => (
+                    <ThemedText key={`context:${i}`}>{value}</ThemedText>
+                  ))}
+                  <ThemedText>
+                    {t("taskCreate.assignees")}:{" "}
+                    {row.review.assignees.join(", ") || t("thread.taskUnset")}
+                  </ThemedText>
+                  {row.review.customFields.map((value, i) => (
+                    <ThemedText key={`field:${i}`}>{value}</ThemedText>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <ThemedText type="smallBold">{row.title}</ThemedText>
+                  <ThemedText>{row.plan.name}</ThemedText>
+                  {row.plan.items.map((item) => (
+                    <ThemedText key={item.templateKey}>{item.title}</ThemedText>
+                  ))}
+                </>
+              )}
               <ThemedText>{t(`taskWorkbench.${row.state}`)}</ThemedText>
-              <ThemedText>
-                {t("taskSchedule.priority")}: {t(`taskSchedule.${row.input.priority}`)}
-              </ThemedText>
-              {row.input.startAt && (
-                <ThemedText>
-                  {t("thread.taskStart")}: {row.input.startAt}
-                </ThemedText>
-              )}
-              {row.input.dueAt && (
-                <ThemedText>
-                  {t("thread.taskDue")}: {row.input.dueAt}
-                </ThemedText>
-              )}
-              {row.input.estimatePoints != null && (
-                <ThemedText>
-                  {t("taskPlanning.estimate")}: {row.input.estimatePoints}
-                </ThemedText>
-              )}
-              {row.input.revisionLimit != null && (
-                <ThemedText>
-                  {t("taskPlanning.revisionLimit")}: {row.input.revisionLimit}
-                </ThemedText>
-              )}
-              {row.review.context.map((value, i) => (
-                <ThemedText key={`context:${i}`}>{value}</ThemedText>
-              ))}
-              <ThemedText>
-                {t("taskCreate.assignees")}:{" "}
-                {row.review.assignees.join(", ") || t("thread.taskUnset")}
-              </ThemedText>
-              {row.review.customFields.map((value, i) => (
-                <ThemedText key={`field:${i}`}>{value}</ThemedText>
+              {row.taskIds?.map((id, index) => (
+                <Button
+                  key={id}
+                  label={`${t("taskWorkbench.open")} ${index + 1}`}
+                  disabled={snapshot.busy}
+                  onPress={() => props.onCreated(id)}
+                />
               ))}
               {row.error && <ThemedText accessibilityRole="alert">{row.error}</ThemedText>}
+              {row.kind === "episode" && row.error && (
+                <ThemedText>{t("taskWorkbench.episodeRetry")}</ThemedText>
+              )}
               {row.taskId && (
                 <Button
                   label={t("taskWorkbench.open")}

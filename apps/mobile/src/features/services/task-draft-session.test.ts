@@ -4,7 +4,11 @@ import {
   getTaskDraftSession,
   type TaskDraftInput,
 } from "./task-draft-session";
-const h = vi.hoisted(() => ({ generation: 1, access: vi.fn(), create: vi.fn() }));
+const h = vi.hoisted(() => ({ generation: 1, access: vi.fn(), create: vi.fn(), apply: vi.fn() }));
+vi.mock("./episode-task-template-api", async (original) => ({
+  ...(await original<typeof import("./episode-task-template-api")>()),
+  applyEpisodeTaskPlan: h.apply,
+}));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("./task-comment-api", () => ({ fetchTaskCommentAccess: h.access }));
@@ -35,7 +39,8 @@ it("stages immutable validated drafts without server writes", () => {
   const data = { ...input };
   s.stage(data, review);
   data.title = "changed";
-  expect(s.getSnapshot().drafts[0]?.input.title).toBe("Storyboard");
+  const row = s.getSnapshot().drafts[0];
+  expect(row?.kind === "task" && row.input.title).toBe("Storyboard");
   expect(h.create).not.toHaveBeenCalled();
 });
 it("creates in order and does not recreate completed drafts", async () => {
@@ -152,4 +157,91 @@ it("notifies subscribers and unsubscribes cleanly", () => {
   off();
   s.remove(1);
   expect(fn).toHaveBeenCalledTimes(1);
+});
+const episodeId = "11111111-1111-4111-8111-111111111111";
+const plan = {
+  templateId: "22222222-2222-4222-8222-222222222222",
+  templateVersion: 2,
+  episodeVersion: 3,
+  name: "Series",
+  items: [
+    {
+      templateKey: "script",
+      title: "Script",
+      roleRequirement: "Writer",
+      defaultDependencies: [],
+      deliveryFields: [],
+    },
+  ],
+};
+it("stages an immutable episode command, prevents duplicates, and writes only on confirmation", async () => {
+  h.apply.mockResolvedValue({ taskIds: ["task-a"], replayed: false });
+  const s = session();
+  const data = structuredClone(plan);
+  expect(s.stageEpisode(episodeId, "Episode 1", data)).toBe(true);
+  data.templateVersion = 99;
+  expect(s.stageEpisode(episodeId, "Episode 1", plan)).toBe(false);
+  expect(h.apply).not.toHaveBeenCalled();
+  await s.createAll(() => true);
+  await s.createAll(() => true);
+  expect(h.apply).toHaveBeenCalledExactlyOnceWith("crew", episodeId, plan, h.generation);
+  expect(s.getSnapshot().drafts[0]).toMatchObject({ state: "created", taskIds: ["task-a"] });
+  expect(h.create).not.toHaveBeenCalled();
+});
+it("retries the exact episode command after a lost reply and pauses later tasks", async () => {
+  h.apply
+    .mockRejectedValueOnce(new Error("Response lost"))
+    .mockResolvedValue({ taskIds: ["task-a"], replayed: true });
+  const s = session();
+  s.stageEpisode(episodeId, "Episode 1", plan);
+  s.stage(input, review);
+  await s.createAll(() => true);
+  expect(h.create).not.toHaveBeenCalled();
+  expect(s.getSnapshot().drafts[0]).toMatchObject({ state: "staged", error: "Response lost" });
+  await s.createAll(() => true);
+  expect(h.apply.mock.calls[0]).toEqual(h.apply.mock.calls[1]);
+  expect(h.create).toHaveBeenCalledTimes(1);
+  expect(s.getSnapshot().drafts.every((r) => r.state === "created")).toBe(true);
+});
+it("does not start episode creation with revoked permission", async () => {
+  h.access.mockResolvedValue({ canManage: false });
+  const s = session();
+  s.stageEpisode(episodeId, "Episode 1", plan);
+  await s.createAll(() => true);
+  expect(h.apply).not.toHaveBeenCalled();
+  expect(s.getSnapshot().drafts[0]?.state).toBe("staged");
+});
+it("locks episode batches during a pending write and stops after backgrounding", async () => {
+  let resolve!: (value: unknown) => void;
+  let active = true;
+  h.apply.mockImplementation(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      })
+  );
+  const s = session();
+  s.stageEpisode(episodeId, "Episode 1", plan);
+  s.stage(input, review);
+  const request = s.createAll(() => active);
+  await Promise.resolve();
+  await s.createAll(() => active);
+  s.remove(1);
+  expect(s.getSnapshot().drafts).toHaveLength(2);
+  expect(h.apply).toHaveBeenCalledTimes(1);
+  active = false;
+  resolve({ taskIds: ["task-a"], replayed: false });
+  await request;
+  expect(s.getSnapshot().drafts[0]).toMatchObject({ state: "created", taskIds: ["task-a"] });
+  expect(h.create).not.toHaveBeenCalled();
+});
+it("does not post a staged episode after the account changes during authorization", async () => {
+  h.access.mockImplementation(async () => {
+    h.generation++;
+    return { canManage: true };
+  });
+  const s = session();
+  s.stageEpisode(episodeId, "Episode 1", plan);
+  await s.createAll(() => true);
+  expect(h.apply).not.toHaveBeenCalled();
 });
