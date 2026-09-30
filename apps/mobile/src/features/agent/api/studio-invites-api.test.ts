@@ -105,3 +105,27 @@ it("cancels preflight before writing", async () => {
   await expect(createStudioInvite(scope, 1, "editor", null, c.signal)).rejects.toThrow("cancelled");
   expect(h.post).not.toHaveBeenCalled();
 });
+it("lists, creates and revokes platform-project invitations without workspace scope", async () => {
+  const projectScope = { ...scope, kind: "project" as const };
+  await createStudioInvite(projectScope, 1, "editor", null);
+  expect(h.get).toHaveBeenCalledWith(
+    `/projects/${id}/invites`,
+    expect.objectContaining({ service: "aurora" })
+  );
+  expect(h.post).toHaveBeenCalledWith(`/projects/${id}/invites`, {
+    service: "aurora",
+    data: { role: "editor", expiresInDays: null },
+  });
+  await revokeStudioInvite(projectScope, 1, id);
+  expect(h.delete).toHaveBeenCalledWith(`/projects/${id}/invites/${id}`, {
+    service: "aurora",
+    data: {},
+  });
+});
+it("rejects story-only roles in platform project invites", async () => {
+  const projectScope = { ...scope, kind: "project" as const };
+  await expect(createStudioInvite(projectScope, 1, "reviewer", null)).rejects.toThrow("role");
+  expect(h.post).not.toHaveBeenCalled();
+  h.get.mockResolvedValue([{ ...row, role: "producer" }]);
+  await expect(listStudioInvites(projectScope, 1)).rejects.toThrow("Invalid");
+});

@@ -22,9 +22,9 @@ export type StudioMembersState = {
 };
 function path(scope: StudioMemberScope) {
   z.string().uuid().parse(scope.id);
-  if (scope.kind !== "workspace" && scope.kind !== "story-project")
+  if (scope.kind !== "workspace" && scope.kind !== "project" && scope.kind !== "story-project")
     throw new Error("Invalid member scope.");
-  return `/${scope.kind === "workspace" ? "workspaces" : "story-projects"}/${scope.id}`;
+  return `/${scope.kind === "workspace" ? "workspaces" : scope.kind === "project" ? "projects" : "story-projects"}/${scope.id}`;
 }
 function current(generation: number, signal?: AbortSignal) {
   if (signal?.aborted || generation !== getAuthGeneration())
@@ -58,6 +58,19 @@ export async function fetchStudioMembers(
       workspace.accessScope === "workspace" &&
       ["owner", "admin"].includes(workspace.role ?? "");
     canEdit = canAdd && workspace.role === "owner";
+  } else if (scope.kind === "project") {
+    const { project } = z
+      .object({
+        project: z.object({
+          id: z.string().uuid(),
+          status: z.enum(["active", "archived"]),
+          role: z.enum(["owner", "admin", "editor", "viewer"]).optional(),
+        }),
+      })
+      .parse(detail);
+    if (project.id !== scope.id) throw new Error("Project scope mismatch.");
+    canAdd = project.status === "active" && ["owner", "admin"].includes(project.role ?? "");
+    canEdit = canAdd;
   } else {
     const project = z
       .object({

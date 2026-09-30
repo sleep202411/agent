@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import type { StudioInviteScope } from "./api/studio-invites-api";
 import { StudioInvites } from "./studio-invites";
 import { StudioInviteWriteError } from "./api/studio-invites-api";
 const h = vi.hoisted(() => ({
@@ -67,8 +68,10 @@ const row = {
 };
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
-const render = () =>
-  act(async () => root.render(<StudioInvites scope={scope} generation={1} onClose={h.close} />));
+const render = (selectedScope: StudioInviteScope = scope) =>
+  act(async () =>
+    root.render(<StudioInvites scope={selectedScope} generation={1} onClose={h.close} />)
+  );
 const button = (s: string) => [...host.querySelectorAll("button")].find((b) => b.textContent === s);
 const click = (s: string) => act(async () => button(s)!.click());
 beforeEach(() => {
@@ -139,4 +142,14 @@ it("hides the session after an account change", async () => {
   h.generation++;
   await render();
   expect(host.textContent).toBe("");
+});
+
+it("offers project roles and submits the selected project's invite", async () => {
+  const projectScope = { ...scope, kind: "project" as const };
+  await render(projectScope);
+  expect(button("studioInvites.producer")).toBeUndefined();
+  expect(button("studioInvites.reviewer")).toBeUndefined();
+  await click("studioInvites.admin");
+  await click("studioInvites.create");
+  expect(h.create).toHaveBeenCalledWith(projectScope, 1, "admin", null, expect.any(AbortSignal));
 });

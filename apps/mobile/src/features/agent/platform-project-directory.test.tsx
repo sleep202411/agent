@@ -13,6 +13,32 @@ const h = vi.hoisted(() => ({
   open: vi.fn(),
   close: vi.fn(),
 }));
+vi.mock("./studio-members", () => ({
+  StudioMembers: ({
+    scope,
+    onClose,
+  }: {
+    scope: { kind: string; id: string; name: string };
+    onClose: () => void;
+  }) => (
+    <button onClick={onClose}>
+      Members:{scope.kind}:{scope.id}:{scope.name}
+    </button>
+  ),
+}));
+vi.mock("./studio-invites", () => ({
+  StudioInvites: ({
+    scope,
+    onClose,
+  }: {
+    scope: { kind: string; id: string; name: string };
+    onClose: () => void;
+  }) => (
+    <button onClick={onClose}>
+      Invites:{scope.kind}:{scope.id}:{scope.name}
+    </button>
+  ),
+}));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/config/app-env", () => ({ appEnv: { appRegion: "global" } }));
 vi.mock("@/lib/api-client", () => ({ api: {} }));
@@ -177,4 +203,17 @@ it("opens the specific canvas in regional Studio", async () => {
   expect(h.open).toHaveBeenCalledWith(
     `https://studio.fizzdragon.com/project/${id}?ws=${workspaceId}`
   );
+});
+
+it("opens sharing under the selected project and refreshes roles on return", async () => {
+  await render();
+  await click("studioMembers.title");
+  expect(host.textContent).toBe(`Members:project:${id}:Film`);
+  await act(async () => host.querySelector("button")!.click());
+  await click("studioInvites.title");
+  expect(host.textContent).toBe(`Invites:project:${id}:Film`);
+  h.list.mockResolvedValue([{ ...row, role: "viewer" }]);
+  await act(async () => host.querySelector("button")!.click());
+  expect(button("studioInvites.title")).toBeUndefined();
+  expect(button("studioMembers.title")).toBeDefined();
 });

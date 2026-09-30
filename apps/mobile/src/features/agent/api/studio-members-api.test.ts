@@ -131,3 +131,55 @@ it("rejects stale account reads and duplicate members", async () => {
   );
   await expect(fetchStudioMembers(scope, 1)).rejects.toThrow("Invalid");
 });
+it("allows project admins to manage direct project roles with project-scoped endpoints", async () => {
+  const projectScope = { ...scope, kind: "project" as const };
+  h.get.mockImplementation(async (path: string) =>
+    path.endsWith("/members") ? [member] : { project: { id, status: "active", role: "admin" } }
+  );
+  expect(await fetchStudioMembers(projectScope, 1)).toMatchObject({
+    canAdd: true,
+    canEdit: true,
+    canRemove: true,
+  });
+  await changeStudioMember(projectScope, 1, { kind: "add", account: "a@b.com", role: "viewer" });
+  expect(h.post).toHaveBeenCalledWith(`/projects/${id}/members`, {
+    service: "aurora",
+    data: { account: "a@b.com", role: "viewer" },
+  });
+  await changeStudioMember(projectScope, 1, { kind: "role", member, role: "editor" });
+  expect(h.patch).toHaveBeenCalledWith(`/projects/${id}/members/${id}`, {
+    service: "aurora",
+    data: { role: "editor" },
+  });
+  await changeStudioMember(projectScope, 1, { kind: "remove", member });
+  expect(h.delete).toHaveBeenCalledWith(`/projects/${id}/members/${id}`, {
+    service: "aurora",
+    data: {},
+  });
+});
+it.each(["editor", "viewer"])("allows project %s to read but not manage members", async (role) => {
+  const projectScope = { ...scope, kind: "project" as const };
+  h.get.mockImplementation(async (path: string) =>
+    path.endsWith("/members") ? [member] : { project: { id, status: "active", role } }
+  );
+  expect(await fetchStudioMembers(projectScope, 1)).toMatchObject({
+    canAdd: false,
+    canEdit: false,
+    canRemove: false,
+  });
+  await expect(changeStudioMember(projectScope, 1, { kind: "remove", member })).rejects.toThrow(
+    "permission"
+  );
+  expect(h.delete).not.toHaveBeenCalled();
+});
+it("rejects foreign project scope and story-only roles in platform projects", async () => {
+  const projectScope = { ...scope, kind: "project" as const };
+  await expect(
+    changeStudioMember(projectScope, 1, { kind: "add", account: "a@b.com", role: "producer" })
+  ).rejects.toThrow("role");
+  expect(h.get).not.toHaveBeenCalled();
+  h.get.mockResolvedValue({
+    project: { id: "22222222-2222-4222-8222-222222222222", status: "active", role: "admin" },
+  });
+  await expect(fetchStudioMembers(projectScope, 1)).rejects.toThrow("scope mismatch");
+});
