@@ -31,6 +31,7 @@ import {
   type CreateStoryProjectValues,
   type StoryProjectSummary,
 } from "@/features/agent";
+import { PlatformProjectDirectory } from "@/features/agent/platform-project-directory";
 import { StudioWorkspaceSettingsScreen } from "@/features/agent/studio-workspace-settings";
 import { StudioMembers } from "@/features/agent/studio-members";
 import { StudioInviteAccept } from "@/features/agent/studio-invite-accept";
@@ -77,6 +78,7 @@ function AgentHubSession({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { requireAuth, isAuthenticated } = useAuthGate();
+  const [platformWorkspace, setPlatformWorkspace] = useState<StudioWorkspace>();
   const [joiningInvite, setJoiningInvite] = useState(false);
   const [workspaceSettings, setWorkspaceSettings] = useState<{ id?: string }>();
   const [memberScope, setMemberScope] = useState<StudioInviteScope>();
@@ -214,6 +216,14 @@ function AgentHubSession({
         }}
       />
     );
+  if (platformWorkspace)
+    return (
+      <PlatformProjectDirectory
+        workspace={platformWorkspace}
+        generation={generation}
+        onClose={() => setPlatformWorkspace(undefined)}
+      />
+    );
   if (memberScope)
     return (
       <StudioMembers
@@ -338,6 +348,15 @@ function AgentHubSession({
             style={[styles.banner, { borderColor: theme.textSecondary }]}
           >
             <ThemedText type="small">{t("studioWorkspace.settings")}</ThemedText>
+          </Pressable>
+        )}
+        {selectedWorkspace && (
+          <Pressable
+            disabled={creating || loading}
+            onPress={() => setPlatformWorkspace(selectedWorkspace)}
+            style={[styles.banner, { borderColor: theme.textSecondary }]}
+          >
+            <ThemedText type="small">{t("studioProjects.title")}</ThemedText>
           </Pressable>
         )}
         {selectedWorkspace?.accessScope === "workspace" && (
