@@ -5220,7 +5220,17 @@
       "filmTitle": "Project title",
       "loadMoreFilms": "Load more",
       "linkWorkspaceFirst": "Link a Studio workspace first.",
-      "openCreatedFilm": "Open {title} in Studio"
+      "openCreatedFilm": "Open {title} in Studio",
+      "noFilms": "No interactive film studio found, please create one.",
+      "rewardUsd": "Reward (USD)",
+      "profitShare": "Profit share (%)",
+      "invalidCompensation": "Enter a non-negative amount with at most two decimal places and a profit share between 0 and 100%.",
+      "rewardUnset": "Reward not set",
+      "rewardValue": "{amount} USD",
+      "profitShareValue": "{percent}% profit share",
+      "hoursRemaining": "{count}h remaining",
+      "hoursOverdue": "{count}h overdue",
+      "profitShareUnset": "Profit share not set"
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
@@ -5765,7 +5775,8 @@
     "clipPrimaryAssetHint": "Which delivered video becomes the clip’s active media",
     "rewardSuggestedHint": "Suggested from task template",
     "editStagedTask": "Edit Staged Task",
-    "saveStagedTask": "Save Changes"
+    "saveStagedTask": "Save Changes",
+    "clear": "Clear"
   },
   "crewInvitations": {
     "signIn": "Sign in",
@@ -10812,5 +10823,30 @@
     "profitShare": "Confirmed Profit Share",
     "record": "Record / Source",
     "status": "Status"
+  },
+  "crewChatMembers": {
+    "title": "Members",
+    "search": "Search members",
+    "add": "Add",
+    "name": "Group name",
+    "manage": "Manage members",
+    "close": "Close members"
+  },
+  "crewAssetFolders": {
+    "script": "Script",
+    "art": "Art",
+    "art_characters": "Characters",
+    "art_scenes": "Scenes",
+    "art_props": "Props",
+    "music": "Music",
+    "music_bgm": "Background music",
+    "music_voices": "Character voices",
+    "video": "Video",
+    "video_rough": "Rough cut",
+    "video_fine": "Fine cut",
+    "video_subtitled": "Subtitled",
+    "plot_tree": "Plot tree",
+    "playtest": "Playtest",
+    "video_final": "Final"
   }
 }

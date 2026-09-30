@@ -295,3 +295,16 @@ it('broadcasts committed tasks without reporting notification failures as failed
     'user',
   );
 });
+
+it('allows a linked canvas for a short-drama crew while rechecking permissions', async () => {
+  const { service, db, auth } = fixture();
+  db.crew.findFirst.mockResolvedValue({
+    id: 'crew',
+    studioWorkspaceId: 'workspace',
+    productionKind: 'short_drama',
+  });
+  await expect(
+    service.preview('crew', 'project', 'user'),
+  ).resolves.toMatchObject({ projectId: 'project' });
+  expect(auth.require).toHaveBeenCalledTimes(2);
+});

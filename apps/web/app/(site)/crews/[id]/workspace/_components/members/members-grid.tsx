@@ -156,7 +156,6 @@ function MembersGridSession({
 
   return (
     <div className="min-w-0 space-y-5">
-      <ProjectAccountability crewId={crewId} members={members} />
       {/* This is a toolbar, not a second page title: the workspace header
           already establishes "Member management" above the scroll pane. */}
       <section className="flex flex-col gap-4 rounded-xl bg-white/[0.025] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -358,6 +357,8 @@ function MembersGridSession({
           </div>
         </section>
       )}
+
+      <ProjectAccountability crewId={crewId} members={members} />
 
       <CrewAgreementsDialog
         crewId={crewId}

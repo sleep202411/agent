@@ -112,12 +112,14 @@ vi.mock("./task-quick-create", () => ({
     open,
     onStage,
     presetEpisodeId,
+    presetTaskKind,
     initialInput,
   }: {
     open: boolean;
     initialInput?: { title: string };
     onStage: (input: unknown) => void;
     presetEpisodeId: string | null;
+    presetTaskKind?: string;
   }) =>
     open ? (
       <button
@@ -125,7 +127,7 @@ vi.mock("./task-quick-create", () => ({
           state.episodeId = presetEpisodeId;
           onStage({
             title: initialInput ? "Revised Script" : "Storyboard",
-            taskKind: "script",
+            taskKind: presetTaskKind ?? "script",
             description: "Brief",
             priority: "normal",
             assignees: [],
@@ -487,7 +489,7 @@ it("lets users dismiss a checked uncertain notice without retrying or deleting a
   expect(host.textContent).not.toContain("Check Creation Result");
 });
 
-it("shows deadline, assignee avatar and unset points without an extra edit icon", async () => {
+it("shows deadline, assignee avatar and unset reward without an extra edit icon", async () => {
   window.localStorage.setItem(
     "fizz:workbench:v1:user:crew",
     JSON.stringify({
@@ -511,7 +513,7 @@ it("shows deadline, assignee avatar and unset points without an extra edit icon"
   );
   await render();
   expect(host.textContent).toContain("2026-10-03");
-  expect(host.textContent).toContain("Points not set");
+  expect(host.textContent).toContain("Reward not set");
   expect(
     host.querySelector('[role="img"][aria-label="assigned-user"]')?.getAttribute("data-src")
   ).toBe("https://example.com/avatar.png");
@@ -522,4 +524,32 @@ it("shows deadline, assignee avatar and unset points without an extra edit icon"
   expect(edit.querySelector("svg")).toBeNull();
   await act(async () => edit.click());
   expect(button("Save Draft")).toBeDefined();
+});
+
+it("opens a category-specific task without writing to the server", async () => {
+  await act(async () =>
+    root.render(
+      <TaskCreationWorkbench
+        crewId="crew"
+        crewName="Crew"
+        project={project}
+        members={[]}
+        canManage
+        canManageEpisodes
+        active
+        onSelectTask={() => {}}
+      />
+    )
+  );
+  const add = host.querySelector<HTMLButtonElement>('button[aria-label="Create Task · Music"]');
+  expect(add).not.toBeNull();
+  await act(async () => add!.click());
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Stage Draft")!.click()
+  );
+  expect(state.create).not.toHaveBeenCalled();
+  const music = [...host.querySelectorAll("details")]
+    .filter((d) => d.querySelector("summary")?.textContent?.includes("Music"))
+    .at(-1);
+  expect(music?.textContent).toContain("Storyboard");
 });

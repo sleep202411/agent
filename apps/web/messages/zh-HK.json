@@ -5220,7 +5220,17 @@
       "filmTitle": "專案名稱",
       "loadMoreFilms": "載入更多",
       "linkWorkspaceFirst": "請先綁定 Studio 工作區。",
-      "openCreatedFilm": "在 Studio 開啟 {title}"
+      "openCreatedFilm": "在 Studio 開啟 {title}",
+      "noFilms": "未找到互動影遊工作室，請先建立一個。",
+      "rewardUsd": "報酬（USD）",
+      "profitShare": "利潤分成（%）",
+      "invalidCompensation": "請輸入最多兩位小數的非負金額，分成比例須在 0–100% 之間。",
+      "rewardUnset": "未設定報酬",
+      "rewardValue": "{amount} USD",
+      "profitShareValue": "{percent}% 利潤分成",
+      "hoursRemaining": "剩餘 {count} 小時",
+      "hoursOverdue": "已逾期 {count} 小時",
+      "profitShareUnset": "未設定利潤分成"
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
@@ -5765,7 +5775,8 @@
     "clipPrimaryAssetHint": "哪個交付影片作為該分鏡的主素材",
     "rewardSuggestedHint": "來自任務模板的建議值",
     "editStagedTask": "編輯待建立任務",
-    "saveStagedTask": "儲存修改"
+    "saveStagedTask": "儲存修改",
+    "clear": "清除"
   },
   "crewInvitations": {
     "signIn": "登入",
@@ -10812,5 +10823,30 @@
     "profitShare": "已確認分潤",
     "record": "記錄 / 來源",
     "status": "狀態"
+  },
+  "crewChatMembers": {
+    "title": "群組成員",
+    "search": "搜尋群組成員",
+    "add": "新增",
+    "name": "群組名稱",
+    "manage": "管理成員",
+    "close": "關閉成員面板"
+  },
+  "crewAssetFolders": {
+    "script": "劇本",
+    "art": "美術資源",
+    "art_characters": "角色",
+    "art_scenes": "場景",
+    "art_props": "道具",
+    "music": "音樂",
+    "music_bgm": "背景音樂",
+    "music_voices": "人物音色",
+    "video": "影片",
+    "video_rough": "粗剪影片",
+    "video_fine": "精剪影片",
+    "video_subtitled": "有字幕影片",
+    "plot_tree": "情節樹參考",
+    "playtest": "試玩包",
+    "video_final": "成片"
   }
 }

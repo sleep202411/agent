@@ -541,6 +541,14 @@ export const CreateCrewTaskSchema = z
       .max(1_000_000)
       .nullable()
       .optional(),
+    rewardUsdMinor: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000_000)
+      .nullable()
+      .optional(),
+    profitShareBps: z.number().int().min(0).max(10_000).nullable().optional(),
     computeBudgetPoints: z
       .number()
       .int()
@@ -652,6 +660,14 @@ export const UpdateCrewTaskSchema = z
       .max(1_000_000)
       .nullable()
       .optional(),
+    rewardUsdMinor: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000_000)
+      .nullable()
+      .optional(),
+    profitShareBps: z.number().int().min(0).max(10_000).nullable().optional(),
     computeBudgetPoints: z
       .number()
       .int()

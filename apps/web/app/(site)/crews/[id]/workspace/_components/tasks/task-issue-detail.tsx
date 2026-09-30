@@ -669,6 +669,26 @@ export function TaskIssueDetail({
           ) : null}
 
           <RailSection title={t("taskInfo")}>
+            {task.rewardUsdMinor != null || task.profitShareBps != null ? (
+              <RailRow icon={<IconAt className="size-4" />} align="start">
+                <div className="space-y-1 text-[11px] text-[#c9cacf]">
+                  <p>
+                    {task.rewardUsdMinor == null
+                      ? projectT("workbench.rewardUnset")
+                      : projectT("workbench.rewardValue", {
+                          amount: (task.rewardUsdMinor / 100).toFixed(2),
+                        })}
+                  </p>
+                  <p>
+                    {task.profitShareBps == null
+                      ? projectT("workbench.profitShareUnset")
+                      : projectT("workbench.profitShareValue", {
+                          percent: task.profitShareBps / 100,
+                        })}
+                  </p>
+                </div>
+              </RailRow>
+            ) : null}
             <RailRow icon={<IconClipboardCheck className="size-4" />} align="start">
               <TaskLimitsEditor
                 task={task}

@@ -91,6 +91,10 @@ locally; Isaac is following up on the six missing variables. Report exactly
 which checks ran: type checks and unit tests do not imply a browser smoke
 test passed. Missing R2 configuration does not by itself require blocking
 the handoff, and does not excuse unrelated failing local checks.
+Isaac confirmed (2026-09-30): run local development and browser checks for
+features that do not depend on R2 or Ably even when those services are absent.
+Report service-dependent checks separately; do not treat missing integrations
+as a blanket blocker for local validation.
 
 Two production deployments running off the same monorepo:
 

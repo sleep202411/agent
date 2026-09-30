@@ -76,7 +76,6 @@ export class CrewCanvasTaskImportService {
           !project ||
           project.status !== 'active' ||
           !crew ||
-          crew.productionKind !== 'interactive_film' ||
           !crew.studioWorkspaceId ||
           project.workspaceId !== crew.studioWorkspaceId
         )
@@ -237,10 +236,6 @@ export class CrewCanvasTaskImportService {
       crew.studioWorkspaceId !== project.workspaceId
     )
       throw new NotFoundException('This canvas is not in the crew workspace.');
-    if (crew.productionKind !== 'interactive_film')
-      throw new BadRequestException(
-        'Canvas task import requires an interactive-film crew.',
-      );
     const draft = await this.prisma.storyDraft.findUnique({
       where: { storyProjectId: projectId },
     });
@@ -269,7 +264,6 @@ export class CrewCanvasTaskImportService {
         id: crewId,
         deletedAt: null,
         studioWorkspaceId: project.workspaceId,
-        productionKind: 'interactive_film',
       },
       select: { id: true },
     });

@@ -57,6 +57,7 @@ import { PositionCard } from "@/app/(site)/crews/[id]/workspace/_components/posi
 import { PositionDetailSheet } from "@/app/(site)/crews/[id]/workspace/_components/positions/position-detail-sheet";
 import { PositionsGrid } from "@/app/(site)/crews/[id]/workspace/_components/positions/positions-grid";
 import { CrewTasksTab } from "@/app/(site)/crews/[id]/workspace/_components/tasks/crew-tasks-tab";
+import { CrewChatMembers } from "@/app/(site)/crews/[id]/workspace/_components/chat/crew-chat-members";
 import { CrewChatTab } from "@/app/(site)/crews/[id]/workspace/_components/chat/crew-chat-tab";
 import { CrewAssetsTab } from "@/app/(site)/crews/[id]/workspace/_components/assets/crew-assets-tab";
 import { CrewIncomeTab } from "@/app/(site)/crews/[id]/workspace/_components/income/crew-income-tab";
@@ -337,6 +338,7 @@ export function CrewWorkspace({
         crewName={crewDetail.name}
         isOwner={viewer.can("crew.settings.manage")}
         onEditCrew={() => setEditOpen(true)}
+        onInviteTeam={viewer.can("members.invite") ? () => setAddMemberOpen(true) : undefined}
         onInviteCommunity={
           viewer.can("members.invite") ? () => setCommunityInviteOpen(true) : undefined
         }
@@ -380,7 +382,25 @@ export function CrewWorkspace({
         ) : (
           <StandardWorkspaceSurface isChat={isChat} isTaskWorkspace={activeTab === "tasks"}>
             {activeTab === "chat" ? (
-              <CrewChatTab crewId={id} channel={requestedCommunityChannel ? "community" : "team"} />
+              <div className="flex h-full min-h-0 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <CrewChatTab
+                    crewId={id}
+                    channel={requestedCommunityChannel ? "community" : "team"}
+                  />
+                </div>
+                {!requestedCommunityChannel ? (
+                  <CrewChatMembers
+                    key={id}
+                    members={members}
+                    crewName={crewDetail.name}
+                    onInvite={
+                      viewer.can("members.invite") ? () => setAddMemberOpen(true) : undefined
+                    }
+                    onManage={() => selectTab("members")}
+                  />
+                ) : null}
+              </div>
             ) : null}
 
             {activeTab === "overview" ? (

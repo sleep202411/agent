@@ -54,6 +54,7 @@ interface CrewWorkbenchShellProps {
   isOwner: boolean;
   onEditCrew?: () => void;
   onInviteCommunity?: () => void;
+  onInviteTeam?: () => void;
   onSelectChatChannel: (channel: "team" | "community") => void;
   onSelectTab: (tab: WorkspaceTabId) => void;
   showTeamChat: boolean;
@@ -73,6 +74,7 @@ export function CrewWorkbenchShell({
   isOwner,
   onEditCrew,
   onInviteCommunity,
+  onInviteTeam,
   onSelectChatChannel,
   onSelectTab,
   showTeamChat,
@@ -158,6 +160,8 @@ export function CrewWorkbenchShell({
                 <RailButton
                   icon={IconHash}
                   label={tc("teamChannel")}
+                  actionLabel={onInviteTeam ? t("inviteMember") : undefined}
+                  onAction={onInviteTeam}
                   active={activeTab === "chat" && activeChatChannel === "team"}
                   onClick={() => onSelectChatChannel("team")}
                 />

@@ -5220,7 +5220,17 @@
       "filmTitle": "项目名称",
       "loadMoreFilms": "加载更多",
       "linkWorkspaceFirst": "请先绑定 Studio 工作区。",
-      "openCreatedFilm": "在 Studio 打开 {title}"
+      "openCreatedFilm": "在 Studio 打开 {title}",
+      "noFilms": "未找到互动影游工作室，请先创建一个。",
+      "rewardUsd": "报酬（USD）",
+      "profitShare": "利润分成（%）",
+      "invalidCompensation": "请输入最多两位小数的非负金额，分成比例须在 0–100% 之间。",
+      "rewardUnset": "未设置报酬",
+      "rewardValue": "{amount} USD",
+      "profitShareValue": "{percent}% 利润分成",
+      "hoursRemaining": "剩余 {count} 小时",
+      "hoursOverdue": "已逾期 {count} 小时",
+      "profitShareUnset": "未设置利润分成"
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",
@@ -5765,7 +5775,8 @@
     "clipPrimaryAssetHint": "哪个交付视频作为该分镜的主素材",
     "rewardSuggestedHint": "来自任务模板的建议值",
     "editStagedTask": "编辑待创建任务",
-    "saveStagedTask": "保存修改"
+    "saveStagedTask": "保存修改",
+    "clear": "清除"
   },
   "crewInvitations": {
     "signIn": "登录",
@@ -10812,5 +10823,30 @@
     "profitShare": "已确认分润",
     "record": "记录 / 来源",
     "status": "状态"
+  },
+  "crewChatMembers": {
+    "title": "群成员",
+    "search": "搜索群成员",
+    "add": "添加",
+    "name": "群聊名称",
+    "manage": "管理成员",
+    "close": "关闭成员面板"
+  },
+  "crewAssetFolders": {
+    "script": "剧本",
+    "art": "美术资源",
+    "art_characters": "角色",
+    "art_scenes": "场景",
+    "art_props": "道具",
+    "music": "音乐",
+    "music_bgm": "背景音乐",
+    "music_voices": "人物音色",
+    "video": "视频",
+    "video_rough": "粗剪视频",
+    "video_fine": "精剪视频",
+    "video_subtitled": "有字幕视频",
+    "plot_tree": "情节树参考",
+    "playtest": "试玩包",
+    "video_final": "成片"
   }
 }

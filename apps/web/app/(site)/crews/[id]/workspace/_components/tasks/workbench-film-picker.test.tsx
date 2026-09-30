@@ -89,3 +89,13 @@ it("surfaces an application error instead of treating it as an empty list", asyn
   await click("chooseFilm");
   expect(host.textContent).toContain("No project access");
 });
+
+it("explains an empty workspace without reporting a request failure", async () => {
+  state.get
+    .mockResolvedValueOnce({ studioWorkspace: { id: "workspace" } })
+    .mockResolvedValueOnce({ code: 200, data: { items: [], nextCursor: null } });
+  await click("chooseFilm");
+  expect(host.querySelector('[role="status"]')?.textContent).toBe("noFilms");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.querySelector("input")).not.toBeNull();
+});

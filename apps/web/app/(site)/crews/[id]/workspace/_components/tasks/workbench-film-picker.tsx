@@ -111,7 +111,17 @@ export function WorkbenchFilmPicker({
       </Button>
       {opened && (
         <div className="space-y-2">
-          <div className="max-h-48 overflow-auto">
+          <div className="max-h-48 overflow-auto rounded-lg border border-white/20 bg-[#111216] p-1">
+            {busy && films.length === 0 ? (
+              <p role="status" className="p-3 text-xs text-muted-foreground">
+                {t("loading")}
+              </p>
+            ) : null}
+            {!busy && !error && workspaceId && films.length === 0 ? (
+              <p role="status" className="p-3 text-xs text-muted-foreground">
+                {t("noFilms")}
+              </p>
+            ) : null}
             {films.map((film) => (
               <button
                 key={film.id}

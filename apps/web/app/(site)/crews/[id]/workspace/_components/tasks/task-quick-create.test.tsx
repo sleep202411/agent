@@ -22,6 +22,22 @@ const state = vi.hoisted(() => ({
   resetCreate: vi.fn(),
 }));
 
+vi.mock("@/components/ui/calendar", () => ({
+  Calendar: ({ selected, onSelect }: { selected?: Date; onSelect: (date?: Date) => void }) => (
+    <input
+      type="date"
+      aria-label="Calendar selection"
+      value={
+        selected
+          ? `${selected.getFullYear()}-${String(selected.getMonth() + 1).padStart(2, "0")}-${String(selected.getDate()).padStart(2, "0")}`
+          : ""
+      }
+      onChange={(event) =>
+        onSelect(event.target.value ? new Date(`${event.target.value}T12:00:00`) : undefined)
+      }
+    />
+  ),
+}));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/src/i18n/i18n", async () => {
   const catalog = (await import("@/messages/en-US.json")).default as unknown as Record<
@@ -450,6 +466,7 @@ describe("TaskQuickCreate", () => {
 
       await act(async () => click(button("Organize with AI")));
       if (field === "deadline") {
+        await act(async () => click(document.querySelector('button[aria-label="Due date"]')!));
         act(() =>
           fill(document.querySelector<HTMLInputElement>('input[type="date"]')!, "2026-10-01")
         );
@@ -658,6 +675,7 @@ describe("TaskQuickCreate", () => {
     const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
     act(() => fill(input, "Prepare storyboard"));
     await act(async () => click(button("Organize with AI")));
+    await act(async () => click(document.querySelector('button[aria-label="Due date"]')!));
     const dateInput = document.querySelector<HTMLInputElement>('input[type="date"]')!;
     act(() => fill(dateInput, date));
     await act(async () => click(exactButton("Create")));
@@ -749,6 +767,8 @@ it("reopens a staged task, saves edits and preserves unexposed planning fields",
     labelIds: [],
     assignees: [{ userId: "member-1", currency: "USD", rewardAmountMinor: 500 }],
     estimatePoints: 8,
+    rewardUsdMinor: 3025,
+    profitShareBps: 250,
     revisionLimit: 2,
     startAt: "2026-10-01T02:00:00.000Z",
     dueAt: "2026-10-03T15:59:59.000Z",
@@ -771,13 +791,40 @@ it("reopens a staged task, saves edits and preserves unexposed planning fields",
   expect(state.create).not.toHaveBeenCalled();
 });
 
-it("lets a creator set points explicitly before staging", async () => {
+it("saves separate USD reward and profit share terms before staging", async () => {
   const stage = vi.fn();
   renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
   act(() => {
-    fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Script with points");
-    fill(document.querySelector<HTMLInputElement>('input[type="number"]')!, "13");
+    fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Paid script");
+    fill(
+      document.querySelector<HTMLInputElement>('input[aria-label="workbench.rewardUsd"]')!,
+      "30.25"
+    );
+    fill(
+      document.querySelector<HTMLInputElement>('input[aria-label="workbench.profitShare"]')!,
+      "2.5"
+    );
   });
   await act(async () => click(exactButton("workbench.stage")));
-  expect(stage).toHaveBeenCalledWith(expect.objectContaining({ estimatePoints: 13 }));
+  expect(stage).toHaveBeenCalledWith(
+    expect.objectContaining({ rewardUsdMinor: 3025, profitShareBps: 250 })
+  );
 });
+
+it.each(["-1", "100.01", "0.001"])(
+  "rejects invalid profit share %s before staging",
+  async (value) => {
+    const stage = vi.fn();
+    renderQuickCreate(vi.fn(), vi.fn(), project, { onStage: stage });
+    act(() => {
+      fill(document.querySelector<HTMLTextAreaElement>("textarea")!, "Paid script");
+      fill(
+        document.querySelector<HTMLInputElement>('input[aria-label="workbench.profitShare"]')!,
+        value
+      );
+    });
+    await act(async () => click(exactButton("workbench.stage")));
+    expect(stage).not.toHaveBeenCalled();
+    expect(state.create).not.toHaveBeenCalled();
+  }
+);

@@ -10,7 +10,6 @@ import {
   IconX,
   IconFolder,
   IconFile,
-  IconStar,
   IconUsers,
   IconChevronDown,
 } from "@tabler/icons-react";
@@ -36,6 +35,7 @@ import {
   type CrewTaskProjectDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { EpisodeTemplatePreview } from "./episode-template-preview";
+import { assetFolderLabel } from "./workbench-asset-folder";
 import { WorkbenchCanvasImport } from "./workbench-canvas-import";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import type { WorkbenchTaskBatch } from "./workbench-task-batch";
@@ -97,6 +97,8 @@ function TaskCreationSession({
   onViewTasks?: () => void;
 }) {
   const t = useTranslations("crewTaskProject.workbench");
+  const folderT = useTranslations("crewAssetFolders");
+  const [presetTaskKind, setPresetTaskKind] = useState<CreateCrewTaskInput["taskKind"]>();
   const displays = useUserDisplays(members.map((member) => member.userId));
   const taskT = useTranslations("crewTasks");
   const client = useQueryClient();
@@ -172,6 +174,7 @@ function TaskCreationSession({
     if (lock.current || unresolved) return;
     setEditingId(null);
     setEpisodeId(episode);
+    setPresetTaskKind(undefined);
     setOpen(true);
   }
   const unresolved = drafts.some((draft) => draft.state === "uncertain");
@@ -482,6 +485,33 @@ function TaskCreationSession({
                             <IconChevronDown className="size-3.5 transition-transform group-open:rotate-180" />
                             <span>{label}</span>
                           </span>
+                          {canManage ? (
+                            <button
+                              type="button"
+                              aria-label={`${t("createTask")} · ${label}`}
+                              disabled={busy || unresolved}
+                              className="ml-auto rounded px-2 text-lg text-[#e52227] hover:bg-white/5"
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                setEditingId(null);
+                                setPresetTaskKind(
+                                  (
+                                    {
+                                      scripts: "script",
+                                      artAssets: "art",
+                                      music: "music",
+                                      production: "edit",
+                                      other: "other",
+                                    } as const
+                                  )[barKey]
+                                );
+                                setOpen(true);
+                              }}
+                            >
+                              +
+                            </button>
+                          ) : null}
                           <span
                             className="rounded bg-black/20 px-2 py-0.5 text-xs font-normal normal-case text-muted-foreground"
                             title={t("assetProgress")}
@@ -582,12 +612,22 @@ function TaskCreationSession({
                                         </span>
                                       ))}
                                     </span>
-                                    <span className="flex items-center gap-1">
-                                      <IconStar className="size-3 text-yellow-400" />
-                                      {draft.input.estimatePoints == null
-                                        ? t("pointsUnset")
-                                        : t("points", { count: draft.input.estimatePoints })}
+                                    <span>
+                                      {draft.input.rewardUsdMinor == null
+                                        ? t("rewardUnset")
+                                        : t("rewardValue", {
+                                            amount: (draft.input.rewardUsdMinor / 100).toFixed(2),
+                                          })}{" "}
+                                      ·{" "}
+                                      {draft.input.profitShareBps == null
+                                        ? t("profitShareUnset")
+                                        : t("profitShareValue", {
+                                            percent: draft.input.profitShareBps / 100,
+                                          })}
                                     </span>
+                                    {draft.input.dueAt ? (
+                                      <TaskCountdown dueAt={draft.input.dueAt} />
+                                    ) : null}
                                   </div>
                                   {draft.state === "uncertain" ? (
                                     <button
@@ -713,7 +753,7 @@ function TaskCreationSession({
                           ) : (
                             <IconFile className="size-3.5 shrink-0" />
                           )}
-                          <span className="truncate">{asset.name}</span>
+                          <span className="truncate">{assetFolderLabel(asset, folderT)}</span>
                         </Link>
                       </li>
                     ))}
@@ -847,13 +887,14 @@ function TaskCreationSession({
             <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#090a0c] px-4 py-3">
               <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                 <span>{t("count", { count: pendingCount })}</span>
-                <span className="flex items-center gap-1">
-                  <IconStar className="size-4 text-yellow-400" />
-                  {t("points", {
-                    count: pending.reduce(
-                      (total, draft) => total + (draft.input.estimatePoints ?? 0),
-                      0
-                    ),
+                <span>
+                  {t("rewardValue", {
+                    amount: (
+                      pending.reduce(
+                        (total, draft) => total + (draft.input.rewardUsdMinor ?? 0),
+                        0
+                      ) / 100
+                    ).toFixed(2),
                   })}
                 </span>
                 <span className="flex items-center gap-1">
@@ -912,6 +953,7 @@ function TaskCreationSession({
           activeView={view}
           members={members}
           presetEpisodeId={episodeId}
+          presetTaskKind={presetTaskKind}
           onStage={(input) => {
             if (lock.current) return;
             if (editingId !== null) {
@@ -930,5 +972,23 @@ function TaskCreationSession({
         />
       ) : null}
     </div>
+  );
+}
+
+function TaskCountdown({ dueAt }: { dueAt: string }) {
+  const t = useTranslations("crewTaskProject.workbench");
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const remaining = new Date(dueAt).getTime() - now;
+  if (!Number.isFinite(remaining)) return null;
+  return (
+    <span className={remaining < 0 ? "text-red-400" : ""}>
+      {t(remaining < 0 ? "hoursOverdue" : "hoursRemaining", {
+        count: Math.ceil(Math.abs(remaining) / 3_600_000),
+      })}
+    </span>
   );
 }

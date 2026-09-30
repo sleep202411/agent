@@ -2097,6 +2097,12 @@ export class CrewTasksService {
           startAt: input.startAt ? new Date(input.startAt) : null,
           dueAt: input.dueAt ? new Date(input.dueAt) : null,
           estimatePoints: input.estimatePoints,
+          metadata: {
+            compensation: {
+              rewardUsdMinor: input.rewardUsdMinor ?? null,
+              profitShareBps: input.profitShareBps ?? null,
+            },
+          },
           computeBudgetPoints: input.computeBudgetPoints,
           revisionLimit: input.revisionLimit,
           cycleId: input.cycleId,
@@ -2665,6 +2671,19 @@ export class CrewTasksService {
           });
         }
 
+        const priorMetadata = (locked.metadata ?? {}) as Prisma.JsonObject;
+        const priorCompensation = (priorMetadata.compensation ??
+          {}) as Prisma.JsonObject;
+        recordChange(
+          'rewardUsdMinor',
+          priorCompensation.rewardUsdMinor ?? null,
+          input.rewardUsdMinor,
+        );
+        recordChange(
+          'profitShareBps',
+          priorCompensation.profitShareBps ?? null,
+          input.profitShareBps,
+        );
         const updated = await tx.crewTask.update({
           where: { deletedAt: null, id: taskId },
           data: {
@@ -2684,6 +2703,22 @@ export class CrewTasksService {
                   ? new Date(input.dueAt)
                   : null,
             estimatePoints: input.estimatePoints,
+            metadata:
+              input.rewardUsdMinor !== undefined ||
+              input.profitShareBps !== undefined
+                ? {
+                    ...priorMetadata,
+                    compensation: {
+                      ...priorCompensation,
+                      ...(input.rewardUsdMinor !== undefined
+                        ? { rewardUsdMinor: input.rewardUsdMinor }
+                        : {}),
+                      ...(input.profitShareBps !== undefined
+                        ? { profitShareBps: input.profitShareBps }
+                        : {}),
+                    },
+                  }
+                : undefined,
             computeBudgetPoints: input.computeBudgetPoints,
             revisionLimit: input.revisionLimit,
             cycleId: input.cycleId,
@@ -5063,6 +5098,22 @@ function taskViewOrderBy(
   return orderBy;
 }
 
+function taskCompensation(metadata: Prisma.JsonValue | null) {
+  const compensation = (metadata as Prisma.JsonObject | null)?.compensation as
+    | Prisma.JsonObject
+    | undefined;
+  return {
+    rewardUsdMinor:
+      typeof compensation?.rewardUsdMinor === 'number'
+        ? compensation.rewardUsdMinor
+        : null,
+    profitShareBps:
+      typeof compensation?.profitShareBps === 'number'
+        ? compensation.profitShareBps
+        : null,
+  };
+}
+
 function taskDto(task: TaskRow, computeUsedPoints: number) {
   return {
     ...taskCardDto(task, computeUsedPoints),
@@ -5114,6 +5165,7 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
     startAt: task.startAt?.toISOString() ?? null,
     dueAt: task.dueAt?.toISOString() ?? null,
     deadlineRisk: taskDeadlineRisk(task.workflowState.semantic, task.dueAt),
+    ...taskCompensation(task.metadata),
     estimatePoints: task.estimatePoints,
     computeBudgetPoints: task.computeBudgetPoints,
     computeUsedPoints,
