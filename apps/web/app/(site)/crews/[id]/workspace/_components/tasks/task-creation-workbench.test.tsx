@@ -23,7 +23,21 @@ import en from "@/messages/en-US.json";
 import { TaskCreationWorkbench } from "./task-creation-workbench";
 import type { CrewTaskProjectDTO } from "@/app/(site)/crews/_hooks/types";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock("@/components/ui/dialog", () => ({
+  Dialog: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
+    open ? <div role="dialog">{children}</div> : null,
+  DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DialogHeader: ({ children }: { children: React.ReactNode }) => <header>{children}</header>,
+  DialogTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+  DialogBody: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+}));
 const state = vi.hoisted(() => ({
+  tasks: [] as Array<{
+    id: string;
+    parentId: null;
+    status: "approved" | "open";
+    assetCategory: string;
+  }>,
   taskLoading: false,
   taskMore: false,
   create: vi.fn(),
@@ -34,10 +48,12 @@ const state = vi.hoisted(() => ({
   episodeId: null as string | null,
 }));
 vi.mock("@/src/i18n/i18n", () => ({
-  useTranslations: (ns: string) => (key: string) =>
-    ns.endsWith("workbench")
+  useTranslations: (ns: string) => (key: string, values?: Record<string, unknown>) => {
+    const text = ns.endsWith("workbench")
       ? ((en.crewTaskProject.workbench as Record<string, string>)[key] ?? key)
-      : key,
+      : key;
+    return text.replace(/{(\w+)}/g, (_, name) => String(values?.[name] ?? name));
+  },
 }));
 vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { post: state.post } }));
 vi.mock("@tanstack/react-query", () => ({
@@ -66,7 +82,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     ],
   }),
   useCrewTaskView: () => ({
-    data: [],
+    data: state.tasks,
     refetch: state.refresh,
     isLoading: state.taskLoading,
     hasNextPage: state.taskMore,
@@ -82,8 +98,10 @@ vi.mock("./task-quick-create", () => ({
     open,
     onStage,
     presetEpisodeId,
+    initialInput,
   }: {
     open: boolean;
+    initialInput?: { title: string };
     onStage: (input: unknown) => void;
     presetEpisodeId: string | null;
   }) =>
@@ -92,7 +110,8 @@ vi.mock("./task-quick-create", () => ({
         onClick={() => {
           state.episodeId = presetEpisodeId;
           onStage({
-            title: "Storyboard",
+            title: initialInput ? "Revised Script" : "Storyboard",
+            taskKind: "script",
             description: "Brief",
             priority: "normal",
             assignees: [],
@@ -100,7 +119,7 @@ vi.mock("./task-quick-create", () => ({
           });
         }}
       >
-        Stage Draft
+        {initialInput ? "Save Draft" : "Stage Draft"}
       </button>
     ) : null,
 }));
@@ -115,6 +134,7 @@ beforeEach(() => {
   state.post.mockReset().mockResolvedValue({ taskIds: ["one", "two"] });
   state.create.mockReset().mockResolvedValue({ id: "created" });
   state.refresh.mockReset();
+  state.tasks = [];
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -172,23 +192,24 @@ it("stops after an uncertain response and never resubmits a confirmed task", asy
   expect(host.textContent).toContain("Check Creation Result");
   expect(button("Create All Tasks").disabled).toBe(true);
 });
-it("passes the chosen episode to the draft and retains it across view switches", async () => {
+it("retains staged tasks across view switches", async () => {
   await render();
-  await click("Production Episodes");
-  await click("Add Episode Task");
-  await click("Stage Draft");
-  expect(state.episodeId).toBe("ep");
+  await stage();
   await render(true, false);
   await render();
   expect(host.textContent).toContain("Storyboard");
   await click("Create All Tasks");
-  expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ episodeId: "ep" }));
+  expect(state.create).toHaveBeenCalledTimes(1);
 });
 it("shows assets and production to viewers without creation controls", async () => {
   await render(false);
   expect(button("Create Task")).toBeUndefined();
   expect(host.textContent).toContain("Scripts");
-  expect(host.textContent).toContain("Pilot");
+  expect(host.querySelector("[role=dialog]")).toBeNull();
+  await click("Production Episodes");
+  expect(host.querySelector("[role=dialog]")?.textContent).toContain("Pilot");
+  expect(button("Preview Tasks")).toBeUndefined();
+  expect(button("Create Episode")).toBeUndefined();
   expect(state.create).not.toHaveBeenCalled();
 });
 it("removes a draft before confirmation", async () => {
@@ -201,14 +222,14 @@ it("removes a draft before confirmation", async () => {
 
 it("opens the selected episode template without creating tasks", async () => {
   await render();
-  await click("Production Episodes");
-  await click("Stage Standard Tasks");
+  await click("Choose Episode");
+  await click("Preview Tasks");
   expect(host.querySelector('[data-testid="episode-preview"]')?.textContent).toBe("ep");
   expect(state.create).not.toHaveBeenCalled();
 });
 it("hides template creation from members without task management permission", async () => {
   await render(false);
-  expect(button("Stage Standard Tasks")).toBeUndefined();
+  expect(button("Preview Tasks")).toBeUndefined();
 });
 
 it.each(["taskLoading", "taskMore"] as const)(
@@ -217,7 +238,7 @@ it.each(["taskLoading", "taskMore"] as const)(
     state[key] = true;
     try {
       await render();
-      const progress = host.querySelector('section[aria-label="Approved / Total Tasks"]');
+      const progress = host.querySelector('section[aria-label="Approved / Created Tasks"]');
       expect(progress?.textContent).toContain("—");
       expect(progress?.textContent).not.toContain("0/0");
     } finally {
@@ -230,9 +251,9 @@ it("keeps existing task tables out of creation and anchors confirmation in the f
   await render();
   expect(host.textContent).not.toContain("Production Tasks");
   expect(host.querySelector("footer")?.textContent).toContain("Create All Tasks");
-  expect(button("Production Episodes").getAttribute("aria-expanded")).toBe("false");
-  await click("Production Episodes");
-  expect(button("Production Episodes").getAttribute("aria-expanded")).toBe("true");
+  expect(button("Choose Episode").getAttribute("aria-expanded")).toBe("false");
+  await click("Choose Episode");
+  expect(button("Choose Episode").getAttribute("aria-expanded")).toBe("true");
 });
 it("discards only staged drafts without sending a create request", async () => {
   await render();
@@ -272,4 +293,45 @@ it("keeps confirmed individual tasks out of batch retries and refreshes all affe
     ["crew", "production", "crew", "episodes"],
     ["crew", "task-center"],
   ]);
+});
+
+it("edits a staged card in place without creating or duplicating a task", async () => {
+  await render();
+  await stage();
+  await click("Storyboard");
+  await click("Save Draft");
+  expect(host.textContent).toContain("Revised Script");
+  expect(host.textContent).not.toContain("Storyboard");
+  expect(state.create).not.toHaveBeenCalled();
+  await click("Create All Tasks");
+  expect(state.create).toHaveBeenCalledTimes(1);
+  expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ title: "Revised Script" }));
+});
+it("shows saved progress separately from two staged scripts and updates on removal", async () => {
+  state.tasks = [{ id: "old", parentId: null, status: "approved", assetCategory: "scripts" }];
+  await render();
+  await stage();
+  await stage();
+  const progress = () => host.querySelector('section[aria-label="Approved / Created Tasks"]')!;
+  expect(progress().textContent).toContain("1/1");
+  expect(progress().textContent).toContain("2 To Create");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[aria-label="Remove Storyboard"]')!.click()
+  );
+  expect(progress().textContent).toContain("1/1");
+  expect(progress().textContent).toContain("1 To Create");
+});
+it("starts with zero saved counts and opens episode selection immediately", async () => {
+  await render();
+  expect(host.querySelectorAll('section[aria-label="Approved / Created Tasks"] dd')).toHaveLength(
+    7
+  );
+  expect(
+    [...host.querySelectorAll('section[aria-label="Approved / Created Tasks"] dd')].every(
+      (node) => node.textContent === "0/0"
+    )
+  ).toBe(true);
+  await click("Choose Episode");
+  expect(host.querySelector('[role="dialog"]')?.textContent).toContain("Pilot");
+  expect(button("Stage Standard Tasks")).toBeUndefined();
 });

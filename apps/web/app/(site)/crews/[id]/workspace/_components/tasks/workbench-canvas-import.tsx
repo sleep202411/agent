@@ -139,7 +139,7 @@ function CanvasImportSession({
         }}
       >
         <Input
-          className="min-w-0 flex-1"
+          className="w-full min-w-0 bg-[#090a0c]"
           aria-label={t("canvasLink")}
           placeholder={t("canvasLink")}
           value={link}
@@ -162,7 +162,7 @@ function CanvasImportSession({
       ) : null}
       {preview ? (
         <div className="space-y-2">
-          <p className="text-sm font-medium">{preview.title}</p>
+          <p className="break-words text-sm font-medium">{preview.title}</p>
           <ul className="max-h-48 overflow-auto text-xs text-muted-foreground">
             {scenes.map((node) => (
               <li key={node.id} className="py-1">

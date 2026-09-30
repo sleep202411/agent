@@ -1,7 +1,6 @@
 import { bindTaskDeliveryCategoryKey } from './production/production-bootstrap';
 import { CrewTaskKind } from '@prisma/client';
 import { availableCrewAssetName } from './assets/asset-name';
-import { ProjectTaskTemplateService } from './templates/project-task-template.service';
 import { createCrewStudioWorkspaceTx } from './production/create-studio-workspace';
 import { randomUUID } from 'node:crypto';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
@@ -154,21 +153,13 @@ export async function createCrewTx(
       kind: productionKind,
       locale: input.productionTemplateLocale,
     });
-    if (productionKind === CrewProductionKind.series) {
-      const templateService = new ProjectTaskTemplateService(tx as any);
-      const template = await templateService.resolveActiveTemplate(
-        productionKind,
-        tx,
-      );
-      if (template) {
-        await templateService.instantiateTasks(tx, c.id, template, {
-          idempotencyKey: c.id,
-          userId: creatorUserId,
-          episodeId,
-          workflowStateId: openWorkflowStateId,
-        });
-      }
-    } else {
+    // An explicitly supplied canvas is a requested import. An empty crew must
+    // remain empty until the creator reviews and confirms tasks in the workbench.
+    if (
+      productionKind === CrewProductionKind.interactive_film &&
+      (input.plotTree ||
+        Object.keys(input.storyboardClipsByNode ?? {}).length > 0)
+    ) {
       await seedCrewProductionTasks(tx, {
         crewId: c.id,
         userId: creatorUserId,

@@ -4,5 +4,5 @@ export type WorkbenchTaskBatch = {
   title: string;
   path: string;
   body: Record<string, string | number>;
-  items: Array<{ title: string; role?: string }>;
+  items: Array<{ title: string; role?: string; assetCategory?: string }>;
 };

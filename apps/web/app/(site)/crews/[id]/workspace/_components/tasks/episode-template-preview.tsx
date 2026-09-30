@@ -23,6 +23,7 @@ type Plan = {
   name: string;
   items: Array<{
     templateKey: string;
+    taskKind?: string;
     title: string;
     roleRequirement: string;
     defaultDependencies: string[];
@@ -100,6 +101,18 @@ function EpisodeTemplateSession({
         items: preview.data.items.map((item) => ({
           title: item.title,
           role: item.roleRequirement,
+          assetCategory:
+            item.templateKey === "character_art"
+              ? "characters"
+              : item.templateKey === "scene_art"
+                ? "scenes"
+                : item.taskKind === "script"
+                  ? "scripts"
+                  : item.taskKind === "music"
+                    ? "music"
+                    : item.taskKind === "art"
+                      ? "art"
+                      : "other",
         })),
       });
       onClose();

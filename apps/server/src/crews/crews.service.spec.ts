@@ -11,6 +11,7 @@
  *      actually enter or leave `crew_members` move the chat.
  */
 import { CrewsService } from './crews.service';
+import * as productionBootstrap from './production/production-bootstrap';
 
 const CREW_ID = 'crew-1';
 const CONVERSATION_ID = 'conv-crew-1';
@@ -230,7 +231,7 @@ function build(
 }
 
 describe('CrewsService.create — the crew chat is born with the crew', () => {
-  it('creates the localized production foundation and seeds the task pipeline', async () => {
+  it('creates the localized production foundation without silently creating tasks', async () => {
     const t = build();
 
     await t.service.create(FOUNDER_USER, {
@@ -273,8 +274,53 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
     });
 
     expect(t.tx.crewAssetNode.create).toHaveBeenCalled();
-    expect(t.tx.crewTask.create).toHaveBeenCalled();
+    expect(t.tx.crewTask.create).not.toHaveBeenCalled();
     expect(t.tx.crewTaskKindTemplate.createMany).toHaveBeenCalled();
+  });
+
+  it('starts an interactive-film crew without implicit production tasks', async () => {
+    const t = build();
+    await t.service.create(FOUNDER_USER, {
+      ...CREATE_INPUT,
+      productionKind: 'interactive_film',
+    } as never);
+    expect(t.tx.crewTask.create).not.toHaveBeenCalled();
+    expect(t.tx.crewTask.createMany).not.toHaveBeenCalled();
+    expect(t.tx.crewAssetNode.create).toHaveBeenCalled();
+    expect(t.tx.crewTaskKindTemplate.createMany).toHaveBeenCalled();
+  });
+
+  it('still imports a canvas explicitly supplied while creating a crew', async () => {
+    const seed = jest
+      .spyOn(productionBootstrap, 'seedCrewProductionTasks')
+      .mockResolvedValueOnce(undefined);
+    try {
+      const t = build();
+      const plotTree = {
+        title: 'Imported',
+        description: '',
+        startNodeId: 'end',
+        nodes: [
+          {
+            id: 'end',
+            type: 'ending',
+            content: { title: 'End' },
+            transitions: [],
+          },
+        ],
+      };
+      await t.service.create(FOUNDER_USER, {
+        ...CREATE_INPUT,
+        productionKind: 'interactive_film',
+        plotTree,
+      } as never);
+      expect(seed).toHaveBeenCalledWith(
+        t.tx,
+        expect.objectContaining({ plotTree, kind: 'interactive_film' }),
+      );
+    } finally {
+      seed.mockRestore();
+    }
   });
 
   it('opens the crew conversation and joins the founder inside the create tx', async () => {

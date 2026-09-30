@@ -121,6 +121,7 @@ function renderQuickCreate(
   taskProject = project,
   context: {
     open?: boolean;
+    initialInput?: CreateCrewTaskInput;
     crewId?: string;
     parentId?: string;
     activeView?: CrewTaskViewDTO;
@@ -768,6 +769,41 @@ it("stages once without posting and preserves the preset episode", async () => {
   expect(stage).toHaveBeenCalledTimes(1);
   expect(stage).toHaveBeenCalledWith(
     expect.objectContaining({ title: "Review storyboard", episodeId: "episode-one" })
+  );
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("reopens a staged task, saves edits and preserves unexposed planning fields", async () => {
+  const stage = vi.fn();
+  const input: CreateCrewTaskInput = {
+    title: "Script",
+    description: "Original brief",
+    priority: "high",
+    taskKind: "script",
+    workflowStateId: "workflow-open",
+    episodeId: "episode-one",
+    cycleId: null,
+    labelIds: [],
+    assignees: [{ userId: "member-1", currency: "USD", rewardAmountMinor: 500 }],
+    estimatePoints: 8,
+    revisionLimit: 2,
+    startAt: "2026-10-01T02:00:00.000Z",
+    dueAt: "2026-10-03T15:59:59.000Z",
+    blockedByTaskIds: ["previous"],
+    customFieldValues: [{ fieldId: "brief", value: "Keep me" }],
+  };
+  renderQuickCreate(vi.fn(), vi.fn(), project, { initialInput: input, onStage: stage });
+  const areas = document.querySelectorAll("textarea");
+  expect(areas[0]?.value).toBe("Script");
+  expect(areas[1]?.value).toBe("Original brief");
+  await act(async () => {
+    fill(areas[0]!, "Updated Script");
+    fill(areas[1]!, "Updated brief");
+  });
+  await act(async () => click(exactButton("Save Changes")));
+  expect(stage).toHaveBeenCalledTimes(1);
+  expect(stage).toHaveBeenCalledWith(
+    expect.objectContaining({ ...input, title: "Updated Script", description: "Updated brief" })
   );
   expect(state.create).not.toHaveBeenCalled();
 });

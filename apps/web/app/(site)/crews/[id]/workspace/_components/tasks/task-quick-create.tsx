@@ -60,6 +60,7 @@ interface TaskQuickCreateProps {
   onCreated?: (task: CrewTaskDTO) => void;
   onStage?: (input: CreateCrewTaskInput) => void;
   keyboardShortcut?: boolean;
+  initialInput?: CreateCrewTaskInput;
 }
 
 export function TaskQuickCreate({
@@ -76,6 +77,7 @@ export function TaskQuickCreate({
   onCreated,
   onStage,
   keyboardShortcut = true,
+  initialInput,
 }: TaskQuickCreateProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
@@ -91,16 +93,22 @@ export function TaskQuickCreate({
   // Keyboard events can arrive before mutation pending state has rendered.
   const operationInFlight = useRef(false);
   const draftRevision = useRef(0);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<CrewTaskPriority>("normal");
-  const [taskKind, setTaskKind] = useState<CrewTaskKind | "">("");
-  const [workflowStateId, setWorkflowStateId] = useState<string | null>(null);
-  const [assigneeUserId, setAssigneeUserId] = useState("");
-  const [labelIds, setLabelIds] = useState<string[]>([]);
-  const [cycleId, setCycleId] = useState<string | null>(null);
-  const [episodeId, setEpisodeId] = useState<string | null>(presetEpisodeId ?? null);
-  const [dueDate, setDueDate] = useState("");
+  const [title, setTitle] = useState(initialInput?.title ?? "");
+  const [description, setDescription] = useState(initialInput?.description ?? "");
+  const [priority, setPriority] = useState<CrewTaskPriority>(initialInput?.priority ?? "normal");
+  const [taskKind, setTaskKind] = useState<CrewTaskKind | "">(initialInput?.taskKind ?? "");
+  const [workflowStateId, setWorkflowStateId] = useState<string | null>(
+    initialInput?.workflowStateId ?? null
+  );
+  const [assigneeUserId, setAssigneeUserId] = useState(initialInput?.assignees[0]?.userId ?? "");
+  const [labelIds, setLabelIds] = useState<string[]>(initialInput?.labelIds ?? []);
+  const [cycleId, setCycleId] = useState<string | null>(
+    initialInput ? (initialInput.cycleId ?? "") : null
+  );
+  const [episodeId, setEpisodeId] = useState<string | null>(
+    initialInput?.episodeId ?? presetEpisodeId ?? null
+  );
+  const [dueDate, setDueDate] = useState(initialInput?.dueAt?.slice(0, 10) ?? "");
   const [createMore, setCreateMore] = useState(false);
   const [draft, setDraft] = useState<CrewTaskDraftDTO | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -108,16 +116,16 @@ export function TaskQuickCreate({
   const [context, setContext] = useState({ open, crewId, parentId });
   if (context.open !== open || context.crewId !== crewId || context.parentId !== parentId) {
     setContext({ open, crewId, parentId });
-    setTitle("");
-    setDescription("");
-    setPriority("normal");
-    setTaskKind("");
-    setWorkflowStateId(null);
-    setAssigneeUserId("");
-    setLabelIds([]);
-    setCycleId(null);
-    setEpisodeId(presetEpisodeId ?? null);
-    setDueDate("");
+    setTitle(initialInput?.title ?? "");
+    setDescription(initialInput?.description ?? "");
+    setPriority(initialInput?.priority ?? "normal");
+    setTaskKind(initialInput?.taskKind ?? "");
+    setWorkflowStateId(initialInput?.workflowStateId ?? null);
+    setAssigneeUserId(initialInput?.assignees[0]?.userId ?? "");
+    setLabelIds(initialInput?.labelIds ?? []);
+    setCycleId(initialInput ? (initialInput.cycleId ?? "") : null);
+    setEpisodeId(initialInput?.episodeId ?? presetEpisodeId ?? null);
+    setDueDate(initialInput?.dueAt?.slice(0, 10) ?? "");
     setDraft(null);
   }
   const session = useRef(0);
@@ -262,21 +270,29 @@ export function TaskQuickCreate({
     let staged = false;
     try {
       const input: CreateCrewTaskInput = {
+        ...initialInput,
         title: nextTitle,
         description: description.trim(),
         workflowStateId: resolvedWorkflowStateId,
         priority,
-        ...(taskKind ? { taskKind } : {}),
-        dueAt: dateEndIso(dueDate || null),
-        startAt: dateStartIso(draft?.startDate ?? null),
-        estimatePoints: draft?.estimatePoints ?? null,
-        revisionLimit: draft?.revisionLimit ?? null,
+        ...(taskKind ? { taskKind } : initialInput ? { taskKind: null } : {}),
+        dueAt:
+          initialInput && dueDate === (initialInput.dueAt?.slice(0, 10) ?? "")
+            ? initialInput.dueAt
+            : dateEndIso(dueDate || null),
+        startAt: draft ? dateStartIso(draft.startDate ?? null) : (initialInput?.startAt ?? null),
+        estimatePoints: draft?.estimatePoints ?? initialInput?.estimatePoints ?? null,
+        revisionLimit: draft?.revisionLimit ?? initialInput?.revisionLimit ?? null,
         cycleId: resolvedCycleId || null,
         episodeId,
-        parentId: parentId ?? draft?.parentId ?? null,
-        blockedByTaskIds: draft?.blockedByTaskIds ?? [],
+        parentId: parentId ?? draft?.parentId ?? initialInput?.parentId ?? null,
+        blockedByTaskIds: draft?.blockedByTaskIds ?? initialInput?.blockedByTaskIds ?? [],
         labelIds,
-        assignees: assigneeUserId ? [{ userId: assigneeUserId, currency: CREW_CURRENCY }] : [],
+        assignees: assigneeUserId
+          ? initialInput?.assignees[0]?.userId === assigneeUserId
+            ? initialInput.assignees
+            : [{ userId: assigneeUserId, currency: CREW_CURRENCY }]
+          : [],
       };
       if (onStage) {
         staged = true;
@@ -321,7 +337,9 @@ export function TaskQuickCreate({
           titleRef.current?.focus();
         }}
       >
-        <DialogTitle className="sr-only">{t("newIssue")}</DialogTitle>
+        <DialogTitle className="sr-only">
+          {t(initialInput ? "editStagedTask" : "newIssue")}
+        </DialogTitle>
         <DialogDescription className="sr-only">{t("newIssueDescription")}</DialogDescription>
 
         <div className="flex h-[48.5px] items-start px-3 pt-3 text-[13px] font-[450] text-[#e5e6e9]">
@@ -330,7 +348,7 @@ export function TaskQuickCreate({
             <span className="truncate">{projectLabel}</span>
           </span>
           <IconChevronRight className="mx-1 size-3.5 text-[#66666e]" stroke={1.7} />
-          <span>{t("newIssue")}</span>
+          <span>{t(initialInput ? "editStagedTask" : "newIssue")}</span>
           <div className="ml-auto flex items-center gap-1.5">
             <button
               type="button"
@@ -550,7 +568,9 @@ export function TaskQuickCreate({
             {create.isPending
               ? t("creating")
               : onStage
-                ? projectT("workbench.stage")
+                ? initialInput
+                  ? t("saveStagedTask")
+                  : projectT("workbench.stage")
                 : t("createTask")}
           </button>
         </footer>

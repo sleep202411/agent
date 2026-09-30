@@ -17,6 +17,7 @@ const plan = {
   items: [
     {
       templateKey: "script",
+      taskKind: "script",
       title: "Script",
       roleRequirement: "Writer",
       defaultDependencies: [],
@@ -138,6 +139,6 @@ it("stages episode tasks and role requirements without a write", async () => {
     title: "Standard",
     path: "/crews/crew/episodes/episode/task-template",
     body: snapshot,
-    items: [{ title: "Script", role: "Writer" }],
+    items: [{ title: "Script", role: "Writer", assetCategory: "scripts" }],
   });
 });

@@ -145,7 +145,9 @@ export default function CrewsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className={view === "mine" && selectedCrew ? "bg-background" : "min-h-screen bg-background"}
+    >
       <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
       <KycGateDialog
         open={kycGateOpen}
@@ -153,7 +155,9 @@ export default function CrewsPage() {
         description={tCrew("createKycRequiredDesc")}
       />
 
-      <div className="mx-auto max-w-[1800px] px-4 pb-24 pt-8 sm:px-6">
+      <div
+        className={`mx-auto max-w-[1800px] px-4 pt-8 sm:px-6 ${view === "mine" && selectedCrew ? "pb-4" : "pb-24"}`}
+      >
         <div className="min-w-0">
           <CrewSectionNavigation active={view} onViewChange={setView}>
             <div className="ml-auto shrink-0 pb-2">
