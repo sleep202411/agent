@@ -109,7 +109,7 @@ it("stages the versioned scene batch without submitting it", async () => {
     expect.objectContaining({
       key: `canvas:${id}`,
       body: { sourceRevision: 3, sourceHash: "a".repeat(64) },
-      items: [{ title: "Scene One" }],
+      items: [{ title: "Scene One", assetCategory: "production" }],
     })
   );
 });

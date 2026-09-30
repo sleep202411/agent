@@ -1,7 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
+  IconLayoutSidebarLeftCollapse,
   IconBriefcase,
   IconFolder,
   IconHash,
@@ -81,16 +82,20 @@ export function CrewWorkbenchShell({
   const t = useTranslations("workspace");
   const tw = useTranslations("crewWorkbench");
   const tc = useTranslations("crewCommunityChat");
+  const [crewNamesExpanded, setCrewNamesExpanded] = useState(false);
   const hasChat = tabs.some((tab) => tab.id === "chat");
   return (
     <div
       className={cn(
-        "grid min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-background text-[#f5f5f6] md:grid-cols-[180px_180px_minmax(0,1fr)] xl:grid-cols-[220px_220px_minmax(0,1fr)]",
+        "grid min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-background text-[#f5f5f6] ",
+        crewNamesExpanded
+          ? "md:grid-cols-[168px_168px_minmax(0,1fr)] xl:grid-cols-[180px_180px_minmax(0,1fr)]"
+          : "md:grid-cols-[56px_168px_minmax(0,1fr)] xl:grid-cols-[56px_180px_minmax(0,1fr)]",
         embedded ? "h-full" : "h-dvh"
       )}
     >
       <CrewSwitcherRail
-        showNames
+        showNames={crewNamesExpanded}
         embedded={embedded}
         currentCrew={{ id: crewId, logo: crewLogo ?? "", name: crewName }}
         currentCrewHref={currentCrewHref}
@@ -104,6 +109,16 @@ export function CrewWorkbenchShell({
           <span className="hidden min-w-0 truncate text-[13px] font-semibold text-[#eceef2] md:block">
             {crewName}
           </span>
+          <button
+            type="button"
+            className="ml-auto hidden shrink-0 rounded p-1 text-muted-foreground hover:bg-white/5 md:block"
+            title={tw("crewSwitcherNavigation")}
+            aria-label={tw("crewSwitcherNavigation")}
+            aria-expanded={crewNamesExpanded}
+            onClick={() => setCrewNamesExpanded((expanded) => !expanded)}
+          >
+            <IconLayoutSidebarLeftCollapse className="size-4" />
+          </button>
         </div>
 
         <Link

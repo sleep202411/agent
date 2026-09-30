@@ -4,18 +4,27 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
 
 ## Mobile release branches (2026-09-30)
 
-- Start each new Mobile feature from the latest official `main` on a separate
-  feature branch. Finish and validate the whole feature, then coordinate release
-  scope before merging to `main`; do not continuously merge partial batches.
-- Continue joint Mobile development with the Mobile developer on
-  `feat/mobile-2.4.0-scrolling-screen`. Fetch and integrate each other's commits
-  before pushing; never force-push, reset or discard a colleague's work.
-- `feat/mobile-2.4.0-scrolling-screen` owns deferred discovery,
-  personal-video publishing, service orders, inbox/conversations and service
-  management. Keep these out of the current payment release until approved.
-- Keep unfinished work on this shared feature branch, including its routes,
-  entry points, supporting modules and tests. Do not sync partial work into
-  `main` or `develop`. Merge to `main` only after the entire feature is complete,
-  validated and explicitly approved for release.
-- `feat/mobile-2.3.1-pay` is owned by the Mobile release developer. Do not modify
-  or push it without a new explicit instruction overriding this restriction.
+- All of Ric's (ch0002ic-cell) subsequent Mobile development belongs exclusively on
+  `feat/mobile-2.4.0-scrolling-screen`. This supersedes the older instruction to
+  start each Mobile feature on a new branch from `main`.
+- Do not commit, push, merge or cherry-pick Mobile development into `develop`
+  or `main`, including completed features. A later explicit change to this
+  branch policy is required before releasing Mobile work through those branches.
+- Updates from official `main` should also flow into
+  `feat/mobile-2.4.0-scrolling-screen`. This is an inbound update path
+  (`main` → 2.4.0), not authorization to merge Mobile development back to `main`
+  or `develop`.
+- `feat/mobile-2.3.1-pay` is owned by the assigned Mobile release developer.
+  Updates from that official branch may be merged into
+  `feat/mobile-2.4.0-scrolling-screen`. The integration direction is 2.3.1 → 2.4.0;
+  do not modify or push 2.3.1 or merge 2.4.0 work back into it.
+- Fetch and inspect the latest source and destination before integrating updates.
+  Preserve the assigned developer's changes, resolve conflicts on 2.4.0, and
+  validate the affected features before pushing. Never force-push, reset or
+  discard a colleague's work.
+- Keep Mobile routes, entry points, supporting modules and tests on 2.4.0.
+  Deferred discovery, personal-video publishing, service orders,
+  inbox/conversations and service management remain outside the 2.3.1 payment release.
+- Branch permission is not permission to expand the assigned scope. Work only
+  on tasks assigned to Ric; new Mobile work or Web-to-Mobile adaptation must
+  first be coordinated with Isaac. Respect the assigned developers' task order.

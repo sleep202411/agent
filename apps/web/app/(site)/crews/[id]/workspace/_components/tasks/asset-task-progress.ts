@@ -7,6 +7,7 @@ export const ASSET_TASK_GROUPS = [
   "props",
   "art",
   "music",
+  "production",
   "other",
 ] as const;
 type ProgressTask = Pick<CrewTaskDTO, "id" | "parentId" | "status" | "assetCategory">;

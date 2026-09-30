@@ -537,6 +537,11 @@ function LinearTaskSession({
         canManageEpisodes={productionOverviewQuery.data?.capabilities.manage === true}
         active={section === "production"}
         onSelectTask={selectTask}
+        onViewTasks={() => {
+          setQuery("");
+          setPriority("all");
+          setSection("issues");
+        }}
       />
 
       {section === "issues" ? (

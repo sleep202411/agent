@@ -112,7 +112,9 @@ function EpisodeTemplateSession({
                     ? "music"
                     : item.taskKind === "art"
                       ? "art"
-                      : "other",
+                      : ["storyboard", "edit", "voice", "qa"].includes(item.taskKind ?? "")
+                        ? "production"
+                        : "other",
         })),
       });
       onClose();

@@ -708,12 +708,20 @@ export function TaskIssueDetail({
             ) : null}
             <RailRow icon={<IconFolder className="size-4" />}>
               <div className="flex w-full min-w-0 items-center justify-between gap-2">
-                <span
-                  className="truncate text-[#8b8d94]"
-                  title={task.deliveryFolder?.name ?? t("linkFolderAuto")}
-                >
-                  {task.deliveryFolder?.name ?? t("linkFolderAuto")}
-                </span>
+                {task.deliveryFolder ? (
+                  <Link
+                    href={localizePath(
+                      `/crews/${encodeURIComponent(task.crewId)}/workspace?tab=assets&asset=${encodeURIComponent(task.deliveryFolder.id)}`,
+                      getCurrentLocale()
+                    )}
+                    className="min-w-0 truncate text-[#c5c6cb] underline-offset-4 hover:underline"
+                    title={task.deliveryFolder.name}
+                  >
+                    {task.deliveryFolder.name}
+                  </Link>
+                ) : (
+                  <span className="truncate text-[#8b8d94]">{t("linkFolderAuto")}</span>
+                )}
                 {isOwner || (canSubmitAssigned && canWork) ? (
                   <Popover>
                     <PopoverTrigger asChild>
