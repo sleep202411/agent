@@ -6,6 +6,7 @@ import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { useTheme } from "@/hooks/use-theme";
 import { ThemedText } from "@/components/themed-text";
 import { useTranslations } from "@/i18n";
+import { AssetFileUpload } from "@/features/crew-assets/file-upload";
 import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
 import type { CrewAsset } from "@/features/crew-assets/api";
 import type { TaskDetail } from "./task-detail-api";
@@ -53,9 +54,10 @@ function SubmissionForm({
   const [error, setError] = useState<string>();
   const [note, setNote] = useState(""),
     [answers, setAnswers] = useState<DeliveryAnswers>({});
-  const [assets, setAssets] = useState<CrewAsset[]>([]);
+  const [assets, setAssets] = useState<Pick<CrewAsset, "id" | "name">[]>([]);
   const [folder, setFolder] = useState<DeliveryFolder>();
   const [picker, setPicker] = useState<"files" | "folders">();
+  const [uploadField, setUploadField] = useState<string>();
   const [attempted, setAttempted] = useState(false);
   const attemptedRef = useRef(false);
   useEffect(() => {
@@ -81,7 +83,7 @@ function SubmissionForm({
     return () => controller.abort();
   }, [task, userId, generation]);
   if (context?.allowed === false) return null;
-  const locked = attempted || op.busy;
+  const locked = attempted || op.busy || uploadField !== undefined;
   const blocked = task.blockedBy.some((dependency) => !dependency.resolved);
   const input: TaskSubmitInput = {
     note,
@@ -199,6 +201,18 @@ function SubmissionForm({
                 />
               ) : (
                 <>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${t("thread.uploadFile")}: ${field.label}`}
+                    disabled={locked || assets.length >= 100}
+                    onPress={() => {
+                      if (!attemptedRef.current && generation === getAuthGeneration())
+                        setUploadField(field.key);
+                    }}
+                    style={{ padding: 12 }}
+                  >
+                    <ThemedText>{t("thread.uploadFile")}</ThemedText>
+                  </Pressable>
                   {!assets.length && <ThemedText>{t("taskSubmit.selectFilesFirst")}</ThemedText>}
                   {assets.map((asset) => {
                     const value = answers[field.key],
@@ -264,6 +278,39 @@ function SubmissionForm({
           {op.busy && <ActivityIndicator />}
         </>
       )}
+      <Modal
+        visible={uploadField !== undefined}
+        animationType="slide"
+        onRequestClose={() => setUploadField(undefined)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+          {uploadField !== undefined && (
+            <AssetFileUpload
+              crewId={task.crewId}
+              userId={userId}
+              generation={generation}
+              parentId={folder?.id ?? null}
+              destination={folder?.name ?? t("studioMedia.root")}
+              onClose={() => setUploadField(undefined)}
+              onAttached={(asset) => {
+                if (attemptedRef.current || generation !== getAuthGeneration()) return;
+                setAssets((current) =>
+                  current.some((item) => item.id === asset.id) ? current : [...current, asset]
+                );
+                setAnswers((current) => {
+                  const previous = current[uploadField];
+                  return {
+                    ...current,
+                    [uploadField]: [
+                      ...new Set([...(Array.isArray(previous) ? previous : []), asset.id]),
+                    ],
+                  };
+                });
+              }}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
       <Modal visible={!!picker} animationType="slide" onRequestClose={() => setPicker(undefined)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
           {picker === "files" && (

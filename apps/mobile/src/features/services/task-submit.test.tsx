@@ -10,6 +10,7 @@ const h = vi.hoisted(() => ({
   folders: vi.fn(),
   refresh: vi.fn(),
   generation: 1,
+  uploadProps: vi.fn(),
 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("./task-submit-api", async (original) => ({
@@ -68,6 +69,24 @@ vi.mock("@/features/crew-assets/asset-picker", () => ({
       pick file
     </button>
   ),
+}));
+vi.mock("@/features/crew-assets/file-upload", () => ({
+  AssetFileUpload: (props: {
+    onAttached: (asset: { id: string; name: string }) => void;
+    onClose: () => void;
+  }) => {
+    h.uploadProps(props);
+    return (
+      <button
+        onClick={() => {
+          props.onAttached({ id: "22222222-2222-4222-8222-222222222222", name: "Uploaded.mp4" });
+          props.onClose();
+        }}
+      >
+        finish upload
+      </button>
+    );
+  },
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -246,4 +265,67 @@ it("shows unresolved blockers and prevents submission until refreshed dependenci
     blockedBy: [{ ...dependency, status: "approved", resolved: true }],
   });
   expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+});
+
+it("uploads into the selected folder and assigns only the originating delivery field", async () => {
+  h.template.mockResolvedValue({
+    categoryId: id,
+    version: 2,
+    definition: {
+      name: "Delivery",
+      description: "",
+      prices: [],
+      fields: [
+        { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+        { key: "source", label: "Source", type: "attachment", required: false, instructions: "" },
+      ],
+    },
+  });
+  h.folders.mockResolvedValue([
+    { id, parentId: null, name: "Deliveries", effectivePermission: "upload" },
+  ]);
+  await render();
+  await act(async () =>
+    button("taskSubmit.deliveryFolder: taskSubmit.automaticDeliveryFolder")!.click()
+  );
+  await act(async () => button("Deliveries")!.click());
+  await act(async () => button("thread.uploadFile")!.click());
+  expect(h.uploadProps.mock.lastCall?.[0]).toMatchObject({
+    crewId: "crew",
+    userId: "1",
+    generation: 1,
+    parentId: id,
+  });
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(true);
+  await act(async () => button("finish upload")!.click());
+  expect(button("taskSubmit.submitAction")!.disabled).toBe(false);
+  expect(button("● Uploaded.mp4")).toBeDefined();
+  expect(button("○ Uploaded.mp4")).toBeDefined();
+  await act(async () => button("taskSubmit.submitAction")!.click());
+  expect(h.submit.mock.calls[0]?.[2]).toMatchObject({
+    assetNodeIds: ["22222222-2222-4222-8222-222222222222"],
+    deliveryFolderId: id,
+    professionalDelivery: { answers: { video: ["22222222-2222-4222-8222-222222222222"] } },
+  });
+  expect(h.submit.mock.calls[0]?.[2].professionalDelivery.answers.source).toBeUndefined();
+});
+it("ignores a delivery upload callback after the account changes", async () => {
+  h.template.mockResolvedValue({
+    categoryId: id,
+    version: 2,
+    definition: {
+      name: "Delivery",
+      description: "",
+      prices: [],
+      fields: [
+        { key: "video", label: "Video", type: "attachment", required: true, instructions: "" },
+      ],
+    },
+  });
+  await render();
+  await act(async () => button("thread.uploadFile")!.click());
+  h.generation = 2;
+  await act(async () => button("finish upload")!.click());
+  expect(host.textContent).not.toContain("Uploaded.mp4");
+  expect(h.submit).not.toHaveBeenCalled();
 });

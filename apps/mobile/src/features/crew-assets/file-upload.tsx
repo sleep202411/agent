@@ -8,7 +8,11 @@ import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { pickAndUploadCrewFile, discardCrewUpload, type CrewUpload } from "./upload";
-import { attachOrganizationFile, validateAssetDestination } from "./organization-api";
+import {
+  attachOrganizationFile,
+  validateAssetDestination,
+  type OrganizationNode,
+} from "./organization-api";
 type Props = {
   crewId: string;
   userId: string;
@@ -16,6 +20,7 @@ type Props = {
   parentId: string | null;
   destination: string;
   onClose: () => void;
+  onAttached?: (asset: OrganizationNode) => void;
 };
 export function AssetFileUpload(props: Props) {
   return props.generation === getAuthGeneration() ? (
@@ -143,7 +148,8 @@ function Form(props: Props) {
           parentId: props.parentId,
         });
       },
-      () => {
+      (asset) => {
+        props.onAttached?.(asset);
         receipt.clear(file.mediaAssetId);
         props.onClose();
       },

@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   attach: vi.fn(),
   destination: vi.fn(),
   close: vi.fn(),
+  attached: vi.fn(),
   listeners: new Set<() => void>(),
 }));
 vi.mock("./upload-confirmation", () => ({
@@ -90,6 +91,7 @@ const render = () =>
         parentId={null}
         destination="Root"
         onClose={h.close}
+        onAttached={h.attached}
       />
     )
   );
@@ -124,6 +126,7 @@ it("checks destination before picking then requires confirmation to attach", asy
     mediaAssetId: "media",
     parentId: null,
   });
+  expect(h.attached).toHaveBeenCalledExactlyOnceWith({});
   expect(h.close).toHaveBeenCalledTimes(1);
 });
 it("does not pick for a revoked destination", async () => {
