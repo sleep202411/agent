@@ -184,11 +184,14 @@ const job = {
   updatedAt: "today",
   sourceSurface: "ai-lab",
 };
-const mount = (workspace?: import("@/features/agent/api/studio-projects-api").StudioWorkspace) =>
+const mount = (
+  workspace?: import("@/features/agent/api/studio-projects-api").StudioWorkspace,
+  project?: import("./projects-api").GenerationProject
+) =>
   act(async () =>
     root.render(
       <StrictMode>
-        <GenerationPanel userId="alice" generation={1} workspace={workspace} />
+        <GenerationPanel userId="alice" generation={1} workspace={workspace} project={project} />
       </StrictMode>
     )
   );
@@ -762,3 +765,78 @@ it("restores audio confirmation and exact duration, then submits audio reference
     },
   });
 });
+
+it.each(["platform", "story"] as const)(
+  "isolates %s project drafts and pending paid requests and rechecks permission",
+  async (kind) => {
+    const workspace = {
+      id: "33333333-3333-4333-8333-333333333333",
+      name: "Team",
+      isDefault: false,
+      accessScope: "project_only" as const,
+      role: "viewer" as const,
+    };
+    const id = "44444444-4444-4444-8444-444444444444",
+      other = "55555555-5555-4555-8555-555555555555";
+    const project = {
+      id,
+      kind,
+      title: "Project",
+      workspaceId: workspace.id,
+      canGenerate: true,
+      ...(kind === "platform" ? { projectId: id } : { storyProjectId: id }),
+    };
+    let editable = true;
+    const base = h.get.getMockImplementation()!;
+    h.get.mockImplementation(async (path, options) =>
+      path === `/${kind === "platform" ? "projects" : "story-projects"}/${id}`
+        ? kind === "platform"
+          ? {
+              project: {
+                id,
+                workspaceId: workspace.id,
+                name: "Project",
+                status: "active",
+                role: editable ? "editor" : "viewer",
+              },
+            }
+          : {
+              id,
+              workspaceId: workspace.id,
+              title: "Project",
+              status: "active",
+              capabilities: editable ? ["story.read", "story.generate"] : ["story.read"],
+            }
+        : base(path, options)
+    );
+    await mount(workspace, project);
+    await click("Image preset");
+    await change("Prompt", "Project A draft");
+    editable = false;
+    await click("aiLab.generate");
+    await click("aiLab.confirm");
+    expect(h.post).not.toHaveBeenCalled();
+    expect(host.textContent).toContain("aiLab.projectReadOnly");
+    editable = true;
+    h.post.mockRejectedValueOnce(Error("response lost"));
+    await click("aiLab.generate");
+    await click("aiLab.confirm");
+    expect(h.post.mock.calls.at(-1)![1].data).toMatchObject({
+      workspaceId: workspace.id,
+      [kind === "platform" ? "projectId" : "storyProjectId"]: id,
+    });
+    expect(host.textContent).toContain("aiLab.recover");
+    await mount(workspace, {
+      ...project,
+      id: other,
+      ...(kind === "platform" ? { projectId: other } : { storyProjectId: other }),
+    });
+    expect(host.textContent).not.toContain("aiLab.recover");
+    await click("Image preset");
+    await change("Prompt", "Project B draft");
+    await mount(workspace, project);
+    expect(input("Prompt").value).toBe("Project A draft");
+    expect(host.textContent).toContain("aiLab.recover");
+    expect(h.post).toHaveBeenCalledTimes(1);
+  }
+);

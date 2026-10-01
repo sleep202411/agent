@@ -250,3 +250,42 @@ it("rejects history and detail from another workspace and checks scope before re
   expect(h.post).not.toHaveBeenCalled();
   expect(generationRetryOutbox("alice", 1, workspaceA).read()).toBeNull();
 });
+
+it("pins project billing/history/recovery and rejects cross-project receipts", async () => {
+  const workspaceId = "33333333-3333-4333-8333-333333333333",
+    projectId = "44444444-4444-4444-8444-444444444444";
+  const scope = { workspaceId, projectId },
+    intent = { ...command(), ...scope };
+  const good = { ...job(), ...scope };
+  h.get.mockResolvedValue({ jobs: [good], nextCursor: null });
+  await listGenerationJobs("image", 1, signal(), scope);
+  expect(h.get.mock.calls.at(-1)![1].params).toMatchObject(scope);
+  await submitPendingGeneration(intent, "alice", 1, signal(), scope);
+  expect(h.post).not.toHaveBeenCalled();
+  expect(generationOutbox("alice", 1, scope).read()).toBeNull();
+  h.get.mockResolvedValue({ jobs: [{ ...good, projectId: jobId }], nextCursor: null });
+  await expect(recoverGeneration(intent, 1, signal())).rejects.toThrow("match");
+  h.get.mockResolvedValue({ ...good, projectId: jobId });
+  await expect(cancelGeneration(jobId, 1, signal(), scope)).rejects.toThrow("match");
+  await expect(
+    retryGenerationOnce({ clientKey: key, jobId, ...scope }, "alice", 1, signal(), scope)
+  ).rejects.toThrow("match");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("isolates Story and Creative projects, preserves legacy records and refuses scope-conflicting writes", async () => {
+  const workspaceId = "33333333-3333-4333-8333-333333333333",
+    projectId = "44444444-4444-4444-8444-444444444444";
+  const creative = { workspaceId, projectId },
+    story = { workspaceId, storyProjectId: projectId };
+  const intent = { ...command(), ...creative };
+  generationOutbox("alice", 1, creative).save(intent);
+  expect(generationOutbox("alice", 1, story).read()).toBeNull();
+  expect(generationOutbox("alice", 1, workspaceId).read()).toBeNull();
+  expect(generationOutbox("alice", 1).read()).toBeNull();
+  expect(generationCommand.safeParse({ ...intent, storyProjectId: projectId }).success).toBe(false);
+  expect(generationCommand.safeParse({ ...command(), projectId }).success).toBe(false);
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), story)).rejects.toThrow(
+    "match"
+  );
+  expect(h.post).not.toHaveBeenCalled();
+});

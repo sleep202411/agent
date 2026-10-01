@@ -1,3 +1,5 @@
+import { getGenerationProject, type GenerationProject } from "./projects-api";
+import { matchesGenerationScope } from "./generation-scope";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Image } from "expo-image";
@@ -92,23 +94,37 @@ type PanelProps = {
   userId: string;
   generation: number;
   workspace?: StudioWorkspace;
+  project?: GenerationProject;
   onBusyChange?: (busy: boolean) => void;
 };
 export function GenerationPanel(props: PanelProps) {
   return useScreenActive() && props.generation === getAuthGeneration() ? (
     <Session
-      key={`${props.userId}:${props.generation}:${props.workspace?.id ?? "personal"}:${props.workspace?.role}:${props.workspace?.crewRole}`}
+      key={`${props.userId}:${props.generation}:${props.workspace?.id ?? "personal"}:${props.workspace?.role}:${props.workspace?.crewRole}:${props.project?.kind}:${props.project?.id}:${props.project?.canGenerate}`}
       {...props}
     />
   ) : null;
 }
-function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
+function Session({ userId, generation, workspace, project, onBusyChange }: PanelProps) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation("ai-lab", true);
   const workspaceId = workspace?.id,
-    storageScope = workspace?.isDefault ? undefined : workspaceId;
-  const canGenerate = !workspace || canCreateStudioProject(workspace);
+    storageScope = project ?? (workspace?.isDefault ? undefined : workspaceId);
+  const jobScope = project ?? workspaceId;
+  const canGenerate = project
+    ? project.canGenerate
+    : !workspace || canCreateStudioProject(workspace);
+  async function assertProjectWrite() {
+    if (!project) return;
+    const fresh = await getGenerationProject(
+      project.workspaceId,
+      project,
+      generation,
+      controller.current!.signal
+    );
+    if (!fresh.canGenerate) throw new Error(t("aiLab.projectReadOnly"));
+  }
   useEffect(() => {
     onBusyChange?.(op.busy);
     return () => onBusyChange?.(false);
@@ -150,16 +166,19 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
     setDraft(value);
     setError("");
   }
-  const fail = useCallback((e: unknown) => {
-    if (e instanceof ApiRequestError && [401, 403].includes(e.status ?? 0)) {
-      denied.current = true;
-      setPrivateDenied(true);
-      setJobs([]);
-      setSelected(undefined);
-      setData(undefined);
-    }
-    setError(e instanceof Error ? e.message : String(e));
-  }, []);
+  const fail = useCallback(
+    (e: unknown) => {
+      if (e instanceof ApiRequestError && [401, 403].includes(e.status ?? 0)) {
+        denied.current = true;
+        setPrivateDenied(true);
+        setJobs([]);
+        setSelected(undefined);
+        setData(undefined);
+      }
+      setError(e instanceof Error ? e.message : String(e));
+    },
+    [setPrivateDenied, setJobs, setSelected, setData, setError]
+  );
   useEffect(() => {
     const c = new AbortController();
     controller.current = c;
@@ -192,14 +211,14 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
     selection.current = null;
     async function read() {
       try {
-        const value = await listGenerationJobs(mode, generation, c.signal, workspaceId);
+        const value = await listGenerationJobs(mode, generation, c.signal, jobScope);
         if (c.signal.aborted || denied.current) return;
         setJobs(value.jobs);
         setHistoryError("");
         const requested = selection.current;
         if (requested) {
           try {
-            const detail = await getGenerationJob(requested, generation, c.signal, workspaceId);
+            const detail = await getGenerationJob(requested, generation, c.signal, jobScope);
             if (!c.signal.aborted && selection.current === requested) setSelected(detail);
           } catch (e) {
             if (!c.signal.aborted && selection.current === requested) {
@@ -223,7 +242,7 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
       c.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [mode, generation, epoch, fail, workspaceId]);
+  }, [mode, generation, epoch, fail, jobScope]);
   const preset = data?.catalog.presets.find((p) => p.id === draft?.presetId),
     model = data?.catalog.models.find((m) => m.id === draft?.modelId),
     schemaChanged = !!model && draft?.schemaVersion !== model.schemaVersion,
@@ -280,6 +299,7 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
     const original = store.read();
     if (!original || original.upload?.storageKey !== value.storageKey)
       throw new Error(t("aiLab.uploadChanged"));
+    await assertProjectWrite();
     const receipt = await confirmReferenceUpload(value, generation, controller.current!.signal);
     const latest = store.read();
     if (
@@ -366,6 +386,7 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
   ) {
     if (!draft || draft.upload || !canGenerate || !model) return;
     run(async () => {
+      await assertProjectWrite();
       const persist = (value: ReferenceCheckpoint) => {
         const latest = store.read();
         if (
@@ -468,6 +489,8 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
     return generationCommand.parse({
       clientKey: uuid.v4(),
       workspaceId,
+      projectId: project?.projectId,
+      storyProjectId: project?.storyProjectId,
       modelId: model.id,
       presetId: preset.id,
       campaignId: preset.campaignId,
@@ -501,12 +524,13 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
   function submit() {
     try {
       if (!canGenerate) throw new Error(t("aiLab.workspaceReadOnly"));
-      if (workspaceId && pending?.workspaceId && pending.workspaceId !== workspaceId)
+      if (pending && !matchesGenerationScope(pending, jobScope))
         throw new Error(t("aiLab.workspaceRequestMismatch"));
       const command = pending ?? prepare();
       setConfirm(null);
       run(
         async () => {
+          await assertProjectWrite();
           await submitPendingGeneration(
             command,
             userId,
@@ -946,7 +970,7 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
                       job.id,
                       generation,
                       controller.current!.signal,
-                      workspaceId
+                      jobScope
                     );
                     selection.current = full.id;
                     setSelected(full);
@@ -1035,10 +1059,17 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
             onPress={() => {
               if (confirm === "generate") submit();
               else if (confirm === "retry" && selected) {
-                const command = { clientKey: uuid.v4(), jobId: selected.id, workspaceId };
+                const command = {
+                  clientKey: uuid.v4(),
+                  jobId: selected.id,
+                  workspaceId,
+                  projectId: project?.projectId,
+                  storyProjectId: project?.storyProjectId,
+                };
                 setConfirm(null);
                 run(
                   async () => {
+                    await assertProjectWrite();
                     await retryGenerationOnce(
                       command,
                       userId,
@@ -1065,11 +1096,12 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
                 setConfirm(null);
                 run(
                   async () => {
+                    await assertProjectWrite();
                     const v = await cancelGeneration(
                       id,
                       generation,
                       controller.current!.signal,
-                      workspaceId
+                      jobScope
                     );
                     setSelected(v);
                   },

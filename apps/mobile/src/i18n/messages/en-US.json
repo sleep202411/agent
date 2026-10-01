@@ -3586,5 +3586,14 @@
   "aiLab.uploadAudio": "Upload reference audio",
   "aiLab.audioFacts": "{seconds}s",
   "aiLab.previewAudioReference": "Preview reference audio",
-  "aiLab.audioHelp": "MP3/WAV, up to 15 MiB. Upload to inspect duration. The selected model’s limits apply; audio may require an image or video reference."
+  "aiLab.audioHelp": "MP3/WAV, up to 15 MiB. Upload to inspect duration. The selected model’s limits apply; audio may require an image or video reference.",
+  "aiLab.project": "Project",
+  "aiLab.chooseProject": "Choose an available project",
+  "aiLab.noProject": "No project",
+  "aiLab.refreshProjects": "Refresh projects",
+  "aiLab.creativeProject": "Creative Studio",
+  "aiLab.storyProject": "Story Studio",
+  "aiLab.noProjects": "No available projects.",
+  "aiLab.projectBilling": "Generation uses this project’s configured payer. Drafts and history stay separate for each project.",
+  "aiLab.projectReadOnly": "Read-only project. Generation permission is required to upload, generate, retry or cancel."
 }

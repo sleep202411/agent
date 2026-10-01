@@ -7,14 +7,15 @@ import { useTranslations } from "@/i18n";
 import { durableRecord } from "@/lib/durable-record";
 import {
   loadAgentWorkspaces,
-  canCreateStudioProject,
   type StudioWorkspace,
 } from "@/features/agent/api/studio-projects-api";
-import { GenerationPanel } from "./panel";
+import { ProjectGenerationPanel } from "./project-panel";
 export function canReadGenerationWorkspace(workspace: StudioWorkspace) {
   return (
     (workspace.status === undefined || workspace.status === "active") &&
-    ((workspace.accessScope === "workspace" && !!workspace.role) || !!workspace.crewRole)
+    ((workspace.accessScope === "workspace" && !!workspace.role) ||
+      workspace.accessScope === "project_only" ||
+      !!workspace.crewRole)
   );
 }
 export function WorkspaceGenerationPanel(props: { userId: string; generation: number }) {
@@ -81,13 +82,6 @@ function WorkspaceSession({ userId, generation }: { userId: string; generation: 
             <ThemedText type="small">{t("aiLab.refreshWorkspaces")}</ThemedText>
           </Pressable>
         </View>
-        {workspace ? (
-          <ThemedText type="small">
-            {canCreateStudioProject(workspace)
-              ? t("aiLab.workspaceBilling").replace("{name}", workspace.name)
-              : t("aiLab.workspaceReadOnly")}
-          </ThemedText>
-        ) : null}
         {loading ? (
           <ActivityIndicator />
         ) : error ? (
@@ -125,7 +119,7 @@ function WorkspaceSession({ userId, generation }: { userId: string; generation: 
         ) : null}
       </View>
       {!loading && workspace && !error ? (
-        <GenerationPanel
+        <ProjectGenerationPanel
           key={workspace.id}
           userId={userId}
           generation={generation}

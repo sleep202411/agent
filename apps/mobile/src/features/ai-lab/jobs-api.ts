@@ -1,3 +1,9 @@
+import {
+  generationStorageKey,
+  scopeFields,
+  matchesGenerationScope,
+  type GenerationStorageScope,
+} from "./generation-scope";
 import { z } from "zod";
 import { referenceBinding, promptDocument, uniqueReferences } from "./reference-contract";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -29,6 +35,8 @@ export const generationCommand = z
   .object({
     clientKey: id,
     workspaceId: id.optional(),
+    projectId: id.optional(),
+    storyProjectId: id.optional(),
     modelId: z.string().min(1).optional(),
     presetId: z.string().min(1).optional(),
     campaignId: z.string().min(1).optional(),
@@ -37,6 +45,11 @@ export const generationCommand = z
     referenceBindings: z.array(referenceBinding).optional(),
     promptDocument: promptDocument.optional(),
   })
+  .refine((v) => !(v.projectId && v.storyProjectId), "Choose one project context.")
+  .refine(
+    (v) => !(v.projectId || v.storyProjectId) || !!v.workspaceId,
+    "Project generation requires its workspace."
+  )
   .refine((v) => Boolean(v.modelId || v.presetId), "Choose a model or preset.")
   .refine((v) => {
     const refs = v.referenceBindings ?? [];
@@ -70,6 +83,8 @@ export const generationJob = z
     stage: z.string(),
     sourceSurface: z.string().nullish(),
     workspaceId: id.nullish(),
+    projectId: id.nullish(),
+    storyProjectId: id.nullish(),
     prompt: z.string(),
     input: z.record(z.string(), z.unknown()).nullish(),
     outputs: z.array(output),
@@ -89,22 +104,22 @@ export function generationSession(generation: number, signal?: AbortSignal) {
   if (signal?.aborted || generation !== getAuthGeneration())
     throw new Error("Generation session expired.");
 }
-export function generationOutbox(userId: string, generation: number, storageScope?: string) {
+export function generationOutbox(
+  userId: string,
+  generation: number,
+  storageScope?: GenerationStorageScope
+) {
   return pendingRequest(
     generationCommand,
     generation,
-    durableRecord(
-      "ai-lab-submit",
-      userId,
-      storageScope ? `workspace:${id.parse(storageScope)}` : "pending"
-    )
+    durableRecord("ai-lab-submit", userId, generationStorageKey(storageScope, "pending"))
   );
 }
 export async function listGenerationJobs(
   type: "image" | "video",
   generation: number,
   signal: AbortSignal,
-  workspaceId?: string
+  workspaceId?: GenerationStorageScope
 ) {
   generationSession(generation, signal);
   // Official Web history is the most recent 80 jobs. Server currently returns
@@ -114,11 +129,11 @@ export async function listGenerationJobs(
       service: "aurora",
       signal,
       retry: false,
-      params: { type, limit: 80, ...(workspaceId ? { workspaceId: id.parse(workspaceId) } : {}) },
+      params: { type, limit: 80, ...scopeFields(workspaceId) },
     })
   );
   generationSession(generation, signal);
-  if (workspaceId && value.jobs.some((job) => job.workspaceId !== workspaceId))
+  if (workspaceId && value.jobs.some((job) => !matchesGenerationScope(job, workspaceId)))
     throw new Error("Generation history does not match the selected workspace.");
   return value;
 }
@@ -126,7 +141,7 @@ export async function getGenerationJob(
   jobId: string,
   generation: number,
   signal: AbortSignal,
-  workspaceId?: string
+  workspaceId?: GenerationStorageScope
 ) {
   generationSession(generation, signal);
   const value = generationJob.parse(
@@ -137,7 +152,7 @@ export async function getGenerationJob(
     })
   );
   generationSession(generation, signal);
-  if (value.id !== jobId || (workspaceId && value.workspaceId !== workspaceId))
+  if (value.id !== jobId || (workspaceId && !matchesGenerationScope(value, workspaceId)))
     throw new Error("The generation receipt does not match this job or workspace.");
   return value;
 }
@@ -157,7 +172,13 @@ export async function recoverGeneration(
         idempotencyKey: intent.clientKey,
         sourceSurface: "ai-lab",
         limit: 80,
-        ...(intent.workspaceId ? { workspaceId: intent.workspaceId } : {}),
+        ...(intent.workspaceId
+          ? scopeFields({
+              workspaceId: intent.workspaceId,
+              projectId: intent.projectId,
+              storyProjectId: intent.storyProjectId,
+            })
+          : {}),
       },
     })
   );
@@ -166,7 +187,7 @@ export async function recoverGeneration(
     (job) =>
       job.idempotencyKey === intent.clientKey &&
       job.sourceSurface === "ai-lab" &&
-      (!intent.workspaceId || job.workspaceId === intent.workspaceId) &&
+      (!intent.workspaceId || matchesGenerationScope(job, intent as { workspaceId: string })) &&
       (!intent.modelId || job.modelId === intent.modelId)
   );
   if (matches.length !== value.jobs.length)
@@ -199,10 +220,10 @@ export async function submitPendingGeneration(
   userId: string,
   generation: number,
   signal: AbortSignal,
-  storageScope?: string
+  storageScope?: GenerationStorageScope
 ) {
   generationSession(generation, signal);
-  if (storageScope && command.workspaceId !== storageScope)
+  if (storageScope && !matchesGenerationScope(command, storageScope))
     throw new Error("Submission does not match this workspace.");
   const outbox = generationOutbox(userId, generation, storageScope);
   outbox.save(command);
@@ -221,7 +242,7 @@ export async function cancelGeneration(
   jobId: string,
   generation: number,
   signal: AbortSignal,
-  workspaceId?: string
+  workspaceId?: GenerationStorageScope
 ) {
   generationSession(generation, signal);
   if (workspaceId) await getGenerationJob(jobId, generation, signal, workspaceId);
@@ -233,24 +254,37 @@ export async function cancelGeneration(
     })
   );
   generationSession(generation, signal);
-  if (value.id !== jobId) throw new Error("The cancellation receipt does not match this job.");
+  if (value.id !== jobId || !matchesGenerationScope(value, workspaceId))
+    throw new Error("The cancellation receipt does not match this job or project.");
   return value;
 }
 // POST /jobs/:id/retry mints a new key on every request. It must not be wrapped
 // in automatic retry/replay. Its UI needs a separate durable uncertain-result
 // state, unlike submitPendingGeneration's client-owned idempotent command.
 
-const retryCommand = z.object({ clientKey: id, jobId: id, workspaceId: id.optional() });
+const retryCommand = z
+  .object({
+    clientKey: id,
+    jobId: id,
+    workspaceId: id.optional(),
+    projectId: id.optional(),
+    storyProjectId: id.optional(),
+  })
+  .refine((v) => !(v.projectId && v.storyProjectId), "Choose one project context.")
+  .refine(
+    (v) => !(v.projectId || v.storyProjectId) || !!v.workspaceId,
+    "Project generation requires its workspace."
+  );
 export type GenerationRetry = z.infer<typeof retryCommand>;
-export function generationRetryOutbox(userId: string, generation: number, storageScope?: string) {
+export function generationRetryOutbox(
+  userId: string,
+  generation: number,
+  storageScope?: GenerationStorageScope
+) {
   return pendingRequest(
     retryCommand,
     generation,
-    durableRecord(
-      "ai-lab-retry",
-      userId,
-      storageScope ? `workspace:${id.parse(storageScope)}` : "pending"
-    )
+    durableRecord("ai-lab-retry", userId, generationStorageKey(storageScope, "pending"))
   );
 }
 /** The server creates a new key on each retry call: never replay an uncertain retry. */
@@ -259,16 +293,21 @@ export async function retryGenerationOnce(
   userId: string,
   generation: number,
   signal: AbortSignal,
-  storageScope?: string
+  storageScope?: GenerationStorageScope
 ) {
   generationSession(generation, signal);
-  if (storageScope && command.workspaceId !== storageScope)
+  if (storageScope && !matchesGenerationScope(command, storageScope))
     throw new Error("Retry does not match this workspace.");
   const box = generationRetryOutbox(userId, generation, storageScope);
   if (box.read()) throw new Error("A previous generation retry needs review in job history.");
   const intent = retryCommand.parse(command);
   if (intent.workspaceId)
-    await getGenerationJob(intent.jobId, generation, signal, intent.workspaceId);
+    await getGenerationJob(
+      intent.jobId,
+      generation,
+      signal,
+      scopeFields(intent as { workspaceId: string }) as { workspaceId: string }
+    );
   box.save(intent);
   const value = receipt.parse(
     await api.post(`/ai/jobs/${intent.jobId}/retry`, {

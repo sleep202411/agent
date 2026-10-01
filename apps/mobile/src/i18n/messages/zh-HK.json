@@ -3586,5 +3586,14 @@
   "aiLab.uploadAudio": "上傳參考音訊",
   "aiLab.audioFacts": "{seconds} 秒",
   "aiLab.previewAudioReference": "預覽參考音訊",
-  "aiLab.audioHelp": "MP3/WAV，最大 15 MiB。上傳後讀取時長；遵循所選模型的限制，音訊可能需要同時附加圖片或影片參考。"
+  "aiLab.audioHelp": "MP3/WAV，最大 15 MiB。上傳後讀取時長；遵循所選模型的限制，音訊可能需要同時附加圖片或影片參考。",
+  "aiLab.project": "專案",
+  "aiLab.chooseProject": "請選擇可存取的專案",
+  "aiLab.noProject": "不關聯專案",
+  "aiLab.refreshProjects": "重新整理專案",
+  "aiLab.creativeProject": "創意工作室",
+  "aiLab.storyProject": "故事工作室",
+  "aiLab.noProjects": "暫無可用專案。",
+  "aiLab.projectBilling": "生成使用此專案設定的付款帳戶。草稿和歷史按專案分開儲存。",
+  "aiLab.projectReadOnly": "專案為唯讀。上傳、生成、重試或取消需要生成權限。"
 }

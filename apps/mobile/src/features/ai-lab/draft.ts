@@ -1,3 +1,4 @@
+import { generationStorageKey, type GenerationStorageScope } from "./generation-scope";
 import { z } from "zod";
 import { durableRecord } from "@/lib/durable-record";
 import { referenceCheckpoint } from "./reference-image";
@@ -26,11 +27,15 @@ const draftSchema = z.object({
     .optional(),
 });
 export type GenerationDraft = z.infer<typeof draftSchema>;
-export function generationDraft(userId: string, generation: number, storageScope?: string) {
+export function generationDraft(
+  userId: string,
+  generation: number,
+  storageScope?: GenerationStorageScope
+) {
   const store = durableRecord(
     "ai-lab-draft",
     userId,
-    storageScope ? `workspace:${z.string().uuid().parse(storageScope)}` : "composer"
+    generationStorageKey(storageScope, "composer")
   );
   return {
     read() {

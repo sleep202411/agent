@@ -21,8 +21,8 @@ vi.mock("@/features/agent/api/studio-projects-api", () => ({
   loadAgentWorkspaces: h.load,
   canCreateStudioProject: (w: { role: string }) => w.role === "owner" || w.role === "editor",
 }));
-vi.mock("./panel", () => ({
-  GenerationPanel: ({
+vi.mock("./project-panel", () => ({
+  ProjectGenerationPanel: ({
     workspace,
     onBusyChange,
   }: {
@@ -129,9 +129,9 @@ it("fails closed on roster errors and after account or foreground changes", asyn
   await mount();
   expect(host.textContent).toBe("");
 });
-it("excludes project-only access unless a Crew grants workspace-wide access", () => {
+it("allows project-only workspaces to reach the project selector without implying workspace-wide access", () => {
   expect(canReadGenerationWorkspace({ ...team, role: "viewer" })).toBe(true);
-  expect(canReadGenerationWorkspace({ ...team, accessScope: "project_only" })).toBe(false);
+  expect(canReadGenerationWorkspace({ ...team, accessScope: "project_only" })).toBe(true);
   expect(
     canReadGenerationWorkspace({ ...team, accessScope: "project_only", crewRole: "viewer" })
   ).toBe(true);
