@@ -61,12 +61,18 @@ export default function RootLayout() {
                 <Stack.Screen name="settings" />
                 <Stack.Screen name="profile-edit" />
                 <Stack.Screen name="profile-experience" />
+                <Stack.Screen name="publish-work" />
                 <Stack.Screen name="work/[id]" options={detailHeader} />
                 <Stack.Screen name="about" />
                 <Stack.Screen name="account-security" />
                 <Stack.Screen name="bind-invite" />
                 <Stack.Screen name="referrals" />
                 <Stack.Screen name="crew-applications" />
+                <Stack.Screen name="conversation/[id]" />
+                <Stack.Screen name="order/[id]" />
+                <Stack.Screen name="orders" />
+                <Stack.Screen name="my-services" />
+                <Stack.Screen name="inbox" />
                 <Stack.Screen
                   name="pay/index"
                   options={{ contentStyle: { backgroundColor: Colors.dark.background } }}

@@ -1,3 +1,9 @@
+import { ServicePackagesEditor } from "@/features/services/service-packages-editor";
+import { ServiceQuestionsEditor } from "@/features/services/service-questions-editor";
+import { ServiceDetailsEditor } from "@/features/services/service-details-editor";
+import { ServiceOwnerActions } from "@/features/services/service-owner-actions";
+import { ServiceOrder } from "@/features/services/service-order";
+import { ServiceContact } from "@/features/services/service-contact";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/auth";
 import { useServiceDetail } from "@/features/services/use-service-detail";
@@ -106,6 +112,21 @@ export default function CreatorServiceDetailScreen() {
         )}
 
         <View style={styles.body}>
+          <ServiceDetailsEditor service={service} refresh={retry} />
+          <ServiceQuestionsEditor service={service} refresh={retry} />
+          <ServicePackagesEditor service={service} refresh={retry} />
+          <ServiceOwnerActions
+            id={service.id}
+            creatorId={service.creatorId}
+            status={service.status}
+            refresh={retry}
+          />
+          <ServiceContact
+            key={service.id}
+            serviceId={service.id}
+            creatorId={service.creatorId}
+            status={service.status}
+          />
           <View style={styles.section}>
             <SectionHeader title={t("serviceDetail.overviewTitle")} />
             <ThemedText type="small" themeColor="textSecondary" style={styles.paragraph}>
@@ -120,6 +141,7 @@ export default function CreatorServiceDetailScreen() {
             ) : null}
           </View>
 
+          <ServiceOrder key={`${service.id}-${service.version}`} service={service} />
           <View style={styles.section}>
             <SectionHeader title={t("serviceDetail.packagesTitle")} />
             <View style={styles.packageList}>
