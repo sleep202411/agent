@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
@@ -6,6 +6,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 import { WorkspaceGenerationPanel } from "@/features/ai-lab/workspace-panel";
 export default function GenerationScreen() {
+  const router = useRouter();
   const auth = useAuth(),
     gate = useAuthGate(),
     theme = useTheme(),
@@ -21,6 +22,13 @@ export default function GenerationScreen() {
           headerStyle: { backgroundColor: theme.background },
         }}
       />
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => router.push("/casting-invite")}
+        style={{ paddingHorizontal: 16, paddingVertical: 8 }}
+      >
+        <ThemedText type="small">{t("castingAccept.title")}</ThemedText>
+      </Pressable>
       {auth.status === "hydrating" ? (
         <ActivityIndicator />
       ) : auth.status !== "authenticated" ? (
