@@ -99,21 +99,29 @@ function Creation({ workspaceId, generation, userId, onOpen }: Props & { userId:
           setHasSource(true);
         }
       } else if (kind === "refund") {
-        await workflow.refund(controller.signal);
+        if (!job) return;
+        await workflow.refund(controller.signal, job.id);
         if (current()) {
           source.current = null;
           setHasSource(false);
         }
       } else {
+        if (!job) return;
         const deadline = Date.now() + 30 * 60_000;
         while (current()) {
-          const next = await workflow.run(controller.signal, source.current?.source, (percent) => {
-            if (current()) setProgress(percent);
-          });
+          const next = await workflow.run(
+            controller.signal,
+            job.id,
+            source.current?.source,
+            (percent) => {
+              if (current()) setProgress(percent);
+            }
+          );
           if (!current()) return;
           setJob(next);
           if (next.phase !== "reviewing") {
             source.current = null;
+            setHasSource(false);
             break;
           }
           if (Date.now() >= deadline) {
@@ -138,7 +146,12 @@ function Creation({ workspaceId, generation, userId, onOpen }: Props & { userId:
       if (mounted.current && generation === getAuthGeneration()) {
         // Reload persisted intent even after a stopped request: its receipt may be unknown.
         try {
-          setJob(workflow.read());
+          const latest = workflow.read();
+          setJob(latest);
+          if (kind !== "select" && latest?.id !== job?.id) {
+            source.current = null;
+            setHasSource(false);
+          }
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : String(cause));
         }

@@ -133,6 +133,7 @@ export function contentReviewWorkflow(userId: string, workspaceId: string, gener
   }
   async function run(
     signal: AbortSignal,
+    expectedReviewId: string,
     source?: ReviewVideoSource,
     onProgress?: (percent: number) => void
   ) {
@@ -140,6 +141,8 @@ export function contentReviewWorkflow(userId: string, workspaceId: string, gener
       current(signal);
       let job = read();
       if (!job) throw new Error("No pending review");
+      if (job.id !== uuid.parse(expectedReviewId))
+        throw new Error("Review changed. Reload and confirm the current review before continuing");
       if (terminal(job)) return job;
       if (job.phase === "submitting")
         throw new Error(
@@ -243,11 +246,13 @@ export function contentReviewWorkflow(userId: string, workspaceId: string, gener
     });
   }
   /** Caller explicitly requests cancellation/refund. Never refunds a running or unknown Java job. */
-  async function refund(signal: AbortSignal) {
+  async function refund(signal: AbortSignal, expectedReviewId: string) {
     return withReviewWorkflowLock(scope, async () => {
       current(signal);
       let job = read();
       if (!job) throw new Error("No pending review");
+      if (job.id !== uuid.parse(expectedReviewId))
+        throw new Error("Review changed. Reload and confirm the current review before continuing");
       if (job.phase === "refunded") return job;
       if (!["ready", "charging", "charged", "uploaded", "failed", "refunding"].includes(job.phase))
         throw new Error("Resolve the running review before requesting a refund");

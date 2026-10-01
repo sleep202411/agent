@@ -83,7 +83,7 @@ it("persists each non-idempotent intent before its request and saves the complet
     expect(api().read()?.phase).toBe("submitting");
     return "job";
   });
-  const saved = await api().run(signal(), source);
+  const saved = await api().run(signal(), chargeId, source);
   expect(saved.phase).toBe("saved");
   expect(saved.recordId).toBe(uploadId);
   expect(saved.asset).toBeUndefined();
@@ -99,8 +99,8 @@ it("persists each non-idempotent intent before its request and saves the complet
 it("resumes the same polled job without charging, uploading or submitting again", async () => {
   await begin();
   h.query.mockResolvedValueOnce({ status: "processing" });
-  expect((await api().run(signal(), source)).phase).toBe("reviewing");
-  expect((await api().run(signal())).phase).toBe("saved");
+  expect((await api().run(signal(), chargeId, source)).phase).toBe("reviewing");
+  expect((await api().run(signal(), chargeId)).phase).toBe("saved");
   expect(h.charge).toHaveBeenCalledOnce();
   expect(h.upload).toHaveBeenCalledOnce();
   expect(h.submit).toHaveBeenCalledOnce();
@@ -109,9 +109,9 @@ it("resumes the same polled job without charging, uploading or submitting again"
 it("preserves the original charge ID after response loss and confirms it before proceeding", async () => {
   await begin();
   h.charge.mockRejectedValueOnce(new Error("Lost receipt"));
-  await expect(api().run(signal(), source)).rejects.toThrow("Lost receipt");
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow("Lost receipt");
   expect(api().read()?.phase).toBe("charging");
-  await api().run(signal(), source);
+  await api().run(signal(), chargeId, source);
   expect(h.charge).toHaveBeenCalledOnce();
   expect(h.reconcile).toHaveBeenCalledWith(
     workspaceId,
@@ -124,7 +124,7 @@ it("preserves the original charge ID after response loss and confirms it before 
 it("replays the same charge only on the explicit not-found contract", async () => {
   await begin();
   h.charge.mockRejectedValueOnce(new Error("Offline"));
-  await expect(api().run(signal(), source)).rejects.toThrow();
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow();
   h.reconcile.mockRejectedValueOnce(
     Object.assign(new Error("Not found"), {
       status: 404,
@@ -132,41 +132,41 @@ it("replays the same charge only on the explicit not-found contract", async () =
       responseBody: JSON.stringify({ code: "CONTENT_REVIEW_CHARGE_NOT_FOUND" }),
     })
   );
-  await api().run(signal(), source);
+  await api().run(signal(), chargeId, source);
   expect(h.charge.mock.calls.map((call) => call[2].id)).toEqual([chargeId, chargeId]);
 });
 it("does not re-debit when reconciliation fails for another reason", async () => {
   await begin();
   h.charge.mockRejectedValueOnce(new Error("Offline"));
-  await expect(api().run(signal(), source)).rejects.toThrow();
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow();
   h.reconcile.mockRejectedValue(new Error("Access lost"));
-  await expect(api().run(signal(), source)).rejects.toThrow("Access lost");
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow("Access lost");
   expect(h.charge).toHaveBeenCalledOnce();
 });
 it("blocks a second submission and refund when its original response is unknown", async () => {
   await begin();
   h.submit.mockRejectedValueOnce(new Error("Response lost"));
-  await expect(api().run(signal(), source)).rejects.toThrow("Response lost");
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow("Response lost");
   expect(api().read()?.phase).toBe("submitting");
-  await expect(api().run(signal())).rejects.toThrow("unknown");
-  await expect(api().refund(signal())).rejects.toThrow("Resolve");
+  await expect(api().run(signal(), chargeId)).rejects.toThrow("unknown");
+  await expect(api().refund(signal(), chargeId)).rejects.toThrow("Resolve");
   expect(h.submit).toHaveBeenCalledOnce();
   await expect(begin()).rejects.toThrow("existing review");
 });
 it("requires the original source before making any new debit", async () => {
   await begin();
-  await expect(api().run(signal())).rejects.toThrow("original video");
+  await expect(api().run(signal(), chargeId)).rejects.toThrow("original video");
   expect(h.charge).not.toHaveBeenCalled();
 });
 it("keeps completed findings through settlement and save failures", async () => {
   await begin();
   h.reconcile.mockRejectedValueOnce(new Error("Settle offline"));
-  await expect(api().run(signal(), source)).rejects.toThrow();
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow();
   expect(api().read()?.phase).toBe("reviewed");
   h.save.mockRejectedValueOnce(new Error("Save response lost"));
-  await expect(api().run(signal())).rejects.toThrow();
+  await expect(api().run(signal(), chargeId)).rejects.toThrow();
   expect(api().read()?.phase).toBe("settled");
-  await api().run(signal());
+  await api().run(signal(), chargeId);
   expect(h.submit).toHaveBeenCalledOnce();
   expect(h.save).toHaveBeenCalledTimes(2);
   expect(h.save.mock.calls[0][2]).toEqual(h.save.mock.calls[1][2]);
@@ -174,17 +174,17 @@ it("keeps completed findings through settlement and save failures", async () => 
 it("records provider failure and refunds only on an explicit request", async () => {
   await begin();
   h.query.mockResolvedValue({ status: "failed", message: "Provider failed" });
-  const failed = await api().run(signal(), source);
+  const failed = await api().run(signal(), chargeId, source);
   expect(failed.phase).toBe("failed");
   expect(h.reconcile).not.toHaveBeenCalled();
-  const refunded = await api().refund(signal());
+  const refunded = await api().refund(signal(), chargeId);
   expect(refunded.phase).toBe("refunded");
   expect(h.reconcile.mock.calls[0][3]).toBe("release");
 });
 it("does not mistake a zero refund of an uncertain debit for cancellation", async () => {
   await begin();
   h.charge.mockRejectedValueOnce(new Error("Lost receipt"));
-  await expect(api().run(signal(), source)).rejects.toThrow();
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow();
   h.reconcile.mockRejectedValueOnce(
     Object.assign(new Error("Not found"), {
       status: 404,
@@ -192,18 +192,18 @@ it("does not mistake a zero refund of an uncertain debit for cancellation", asyn
       responseBody: JSON.stringify({ code: "CONTENT_REVIEW_CHARGE_NOT_FOUND" }),
     })
   );
-  await expect(api().refund(signal())).rejects.toThrow("Not found");
+  await expect(api().refund(signal(), chargeId)).rejects.toThrow("Not found");
   expect(api().read()?.phase).toBe("charging");
   expect(h.reconcile.mock.calls[0][3]).toBe("settle");
 });
 it("retries a lost refund receipt using the same charge", async () => {
   await begin();
   h.upload.mockRejectedValue(new Error("Upload failed"));
-  await expect(api().run(signal(), source)).rejects.toThrow();
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow();
   h.reconcile.mockRejectedValueOnce(new Error("Refund response lost"));
-  await expect(api().refund(signal())).rejects.toThrow();
+  await expect(api().refund(signal(), chargeId)).rejects.toThrow();
   expect(api().read()?.phase).toBe("refunding");
-  await api().refund(signal());
+  await api().refund(signal(), chargeId);
   expect(h.reconcile.mock.calls.map((call) => call[2].id)).toEqual([chargeId, chargeId]);
 });
 it("blocks concurrent resume and aborts stale account writes", async () => {
@@ -215,9 +215,9 @@ it("blocks concurrent resume and aborts stale account writes", async () => {
         finish = () => resolve({ id: chargeId, credits: 20 });
       })
   );
-  const first = api().run(signal(), source);
+  const first = api().run(signal(), chargeId, source);
   await Promise.resolve();
-  await expect(api().run(signal(), source)).rejects.toThrow("already running");
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow("already running");
   h.generation = 2;
   finish();
   await expect(first).rejects.toThrow("session");
@@ -229,14 +229,14 @@ it("does not send a charge when persistence fails", async () => {
   h.write.mockImplementation(() => {
     throw new Error("Disk full");
   });
-  await expect(api().run(signal(), source)).rejects.toThrow("Disk full");
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow("Disk full");
   expect(h.charge).not.toHaveBeenCalled();
 });
 
 it("never replays a debit on a generic route 404", async () => {
   await begin();
   h.charge.mockRejectedValueOnce(new Error("Response lost"));
-  await expect(api().run(signal(), source)).rejects.toThrow();
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow();
   h.reconcile.mockRejectedValueOnce(
     Object.assign(new Error("Cannot POST route"), {
       status: 404,
@@ -244,6 +244,22 @@ it("never replays a debit on a generic route 404", async () => {
       responseBody: JSON.stringify({ message: "Cannot POST route" }),
     })
   );
-  await expect(api().run(signal(), source)).rejects.toThrow("Cannot POST");
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow("Cannot POST");
   expect(h.charge).toHaveBeenCalledOnce();
+});
+it("rejects stale confirmation and cancellation after another tab replaces the review", async () => {
+  await begin();
+  await api().refund(signal(), chargeId);
+  const replacementId = "44444444-4444-4444-8444-444444444444";
+  await api().begin({ chargeId: replacementId, uploadId }, source, 61);
+  h.write.mockClear();
+  await expect(api().run(signal(), chargeId, source)).rejects.toThrow("Review changed");
+  await expect(api().refund(signal(), chargeId)).rejects.toThrow("Review changed");
+  expect(h.charge).not.toHaveBeenCalled();
+  expect(h.reconcile).not.toHaveBeenCalled();
+  expect(h.upload).not.toHaveBeenCalled();
+  expect(h.write).not.toHaveBeenCalled();
+  expect(api().read()?.id).toBe(replacementId);
+  expect(api().read()?.phase).toBe("ready");
+  expect((await api().run(signal(), replacementId, source)).phase).toBe("saved");
 });

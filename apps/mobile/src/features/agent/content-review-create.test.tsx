@@ -197,3 +197,32 @@ it("refunds only following the explicit cancellation action", async () => {
   expect(h.refund).toHaveBeenCalledOnce();
   expect(host.textContent).toContain("phase.refunded");
 });
+it("binds confirmation to the visible review and clears its file if another tab replaced it", async () => {
+  await render();
+  await click("select");
+  h.job = { ...pending(), id: "replacement" };
+  h.run.mockRejectedValue(new Error("Review changed"));
+  await click("confirm");
+  expect(h.run.mock.calls[0][1]).toBe("charge");
+  expect(host.textContent).toContain("Review changed");
+  const confirm = Array.from(host.querySelectorAll("button")).find((b) =>
+    b.textContent?.endsWith(".confirm")
+  );
+  expect(confirm?.disabled).toBe(true);
+  await click("reselect");
+  h.run.mockImplementation(async () => {
+    h.job = { ...h.job, phase: "saved", recordId: "report" };
+    return h.job;
+  });
+  await click("confirm");
+  expect(h.run.mock.calls[1][1]).toBe("replacement");
+});
+it("binds cancellation to the visible review instead of a newer stored review", async () => {
+  h.job = pending();
+  await render();
+  h.job = { ...pending(), id: "replacement" };
+  h.refund.mockRejectedValue(new Error("Review changed"));
+  await click("discard");
+  expect(h.refund).toHaveBeenCalledWith(expect.any(AbortSignal), "charge");
+  expect(host.textContent).toContain("Review changed");
+});
