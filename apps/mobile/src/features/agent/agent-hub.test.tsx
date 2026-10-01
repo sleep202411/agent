@@ -12,6 +12,9 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
 }));
+vi.mock("@/features/agent/workspace-analytics", () => ({
+  WorkspaceAnalyticsScreen: () => <span>Workspace Analytics</span>,
+}));
 vi.mock("@/features/agent/platform-project-directory", () => ({
   PlatformProjectDirectory: () => <span>Platform Projects</span>,
 }));

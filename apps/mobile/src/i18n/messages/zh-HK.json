@@ -2680,5 +2680,20 @@
   "crewPersonalPayouts.grossPaid": "已記錄付款總額",
   "crewPersonalPayouts.available": "可用現金",
   "crewPersonalPayouts.balanceUnavailable": "現金餘額暫不可用，請重新整理付款記錄重試。",
-  "crewPersonalPayouts.showCrew": "查看此劇組"
+  "crewPersonalPayouts.showCrew": "查看此劇組",
+  "workspaceAnalytics.title": "工作區用量分析",
+  "workspaceAnalytics.historyLimit": "最近100條帳本記錄及100次生成。總計僅對應這些近期記錄，不代表累計用量。",
+  "workspaceAnalytics.refresh": "重新整理",
+  "workspaceAnalytics.incoming": "流入積分",
+  "workspaceAnalytics.outgoing": "流出積分",
+  "workspaceAnalytics.jobs": "生成記錄",
+  "workspaceAnalytics.daily": "每日用量",
+  "workspaceAnalytics.ledger": "帳本",
+  "workspaceAnalytics.members": "成員用量",
+  "workspaceAnalytics.project": "項目",
+  "workspaceAnalytics.allProjects": "全部項目",
+  "workspaceAnalytics.dailyWindow": "最近30天 · UTC · 算力積分",
+  "workspaceAnalytics.empty": "暫無記錄",
+  "workspaceAnalytics.days": "天",
+  "workspaceAnalytics.unassigned": "未分配項目"
 }

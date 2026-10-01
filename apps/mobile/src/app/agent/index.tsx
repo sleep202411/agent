@@ -1,3 +1,4 @@
+import { WorkspaceAnalyticsScreen } from "@/features/agent/workspace-analytics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -80,6 +81,7 @@ function AgentHubSession({
   const { requireAuth, isAuthenticated } = useAuthGate();
   const [platformWorkspace, setPlatformWorkspace] = useState<StudioWorkspace>();
   const [joiningInvite, setJoiningInvite] = useState(false);
+  const [analyticsWorkspace, setAnalyticsWorkspace] = useState<string>();
   const [workspaceSettings, setWorkspaceSettings] = useState<{ id?: string }>();
   const [memberScope, setMemberScope] = useState<StudioInviteScope>();
   const [inviteScope, setInviteScope] = useState<StudioInviteScope>();
@@ -202,6 +204,15 @@ function AgentHubSession({
     },
     [selectedWorkspace, generation, router, t]
   );
+
+  if (analyticsWorkspace)
+    return (
+      <WorkspaceAnalyticsScreen
+        workspaceId={analyticsWorkspace}
+        generation={generation}
+        onClose={() => setAnalyticsWorkspace(undefined)}
+      />
+    );
 
   if (workspaceSettings)
     return (
@@ -339,6 +350,16 @@ function AgentHubSession({
             style={[styles.banner, { borderColor: theme.textSecondary }]}
           >
             <ThemedText type="small">{t("studioWorkspace.create")}</ThemedText>
+          </Pressable>
+        )}
+        {selectedWorkspace?.accessScope === "workspace" && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={creating || loading}
+            onPress={() => setAnalyticsWorkspace(selectedWorkspace.id)}
+            style={[styles.banner, { borderColor: theme.textSecondary }]}
+          >
+            <ThemedText type="small">{t("workspaceAnalytics.title")}</ThemedText>
           </Pressable>
         )}
         {selectedWorkspace && (

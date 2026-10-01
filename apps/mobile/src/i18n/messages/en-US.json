@@ -2680,5 +2680,20 @@
   "crewPersonalPayouts.grossPaid": "Recorded paid (gross)",
   "crewPersonalPayouts.available": "Available cash",
   "crewPersonalPayouts.balanceUnavailable": "Cash balances are unavailable. Refresh payouts to try again.",
-  "crewPersonalPayouts.showCrew": "Show this Crew"
+  "crewPersonalPayouts.showCrew": "Show this Crew",
+  "workspaceAnalytics.title": "Workspace analytics",
+  "workspaceAnalytics.historyLimit": "Latest 100 ledger entries and 100 generations. Totals describe this recent history, not lifetime usage.",
+  "workspaceAnalytics.refresh": "Refresh",
+  "workspaceAnalytics.incoming": "Credits in",
+  "workspaceAnalytics.outgoing": "Credits out",
+  "workspaceAnalytics.jobs": "Generations",
+  "workspaceAnalytics.daily": "Daily usage",
+  "workspaceAnalytics.ledger": "Ledger",
+  "workspaceAnalytics.members": "Member usage",
+  "workspaceAnalytics.project": "Project",
+  "workspaceAnalytics.allProjects": "All projects",
+  "workspaceAnalytics.dailyWindow": "Last 30 days · UTC · compute credits",
+  "workspaceAnalytics.empty": "No records",
+  "workspaceAnalytics.days": "days",
+  "workspaceAnalytics.unassigned": "Unassigned project"
 }
