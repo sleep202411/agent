@@ -1,3 +1,11 @@
+import {
+  loadProjectSkills,
+  skillRows,
+  skillSnapshot,
+  toggleSkill,
+  unavailableSkillIds,
+  type ProjectSkills,
+} from "./project-skills";
 import { getGenerationProject, type GenerationProject } from "./projects-api";
 import { matchesGenerationScope } from "./generation-scope";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -143,6 +151,8 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     [pending, setPending] = useState<GenerationCommand | null>(initial.pending ?? null),
     [retryPending, setRetryPending] = useState<GenerationRetry | null>(initial.retry ?? null),
     [data, setData] = useState<Awaited<ReturnType<typeof loadGenerationCatalog>>>(),
+    [skills, setSkills] = useState<ProjectSkills>(),
+    [skillsOpen, setSkillsOpen] = useState(false),
     [jobs, setJobs] = useState<GenerationJob[]>([]),
     [selected, setSelected] = useState<GenerationJob>(),
     [referencePreview, setReferencePreview] = useState<string>(),
@@ -174,10 +184,11 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
         setJobs([]);
         setSelected(undefined);
         setData(undefined);
+        setSkills(undefined);
       }
       setError(e instanceof Error ? e.message : String(e));
     },
-    [setPrivateDenied, setJobs, setSelected, setData, setError]
+    [setPrivateDenied, setJobs, setSelected, setData, setSkills, setError]
   );
   useEffect(() => {
     const c = new AbortController();
@@ -186,10 +197,15 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     // This effect begins a fresh catalog read after explicit refresh.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    void loadGenerationCatalog(generation, c.signal, workspaceId)
-      .then((v) => {
+    setSkills(undefined);
+    void Promise.all([
+      loadGenerationCatalog(generation, c.signal, workspaceId),
+      project ? loadProjectSkills(project, generation, c.signal) : Promise.resolve(undefined),
+    ])
+      .then(([v, projectSkills]) => {
         if (c.signal.aborted || denied.current) return;
         setData(v);
+        setSkills(projectSkills);
         setPrivateDenied(false);
       })
       .catch((e) => {
@@ -199,7 +215,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
         if (!c.signal.aborted) setLoading(false);
       });
     return () => c.abort();
-  }, [generation, epoch, fail, workspaceId]);
+  }, [generation, epoch, fail, workspaceId, project]);
   useEffect(() => {
     const c = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -433,6 +449,9 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
     });
   }
   function prepare() {
+    if (project && (!skills || loading)) throw new Error(t("aiLab.skillsNotReady"));
+    if (skills && unavailableSkillIds(skills, mode, draft?.skillSelection).length)
+      throw new Error(t("aiLab.skillsUnavailable"));
     if (!model || !draft || draft.upload || !data || !preset || !usable)
       throw new Error(t("aiLab.unavailable"));
     const values = prepareFormValues(
@@ -491,6 +510,7 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       workspaceId,
       projectId: project?.projectId,
       storyProjectId: project?.storyProjectId,
+      skillSelection: draft.skillSelection,
       modelId: model.id,
       presetId: preset.id,
       campaignId: preset.campaignId,
@@ -531,6 +551,14 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
       run(
         async () => {
           await assertProjectWrite();
+          if (project && !pending) {
+            const fresh = await loadProjectSkills(project, generation, controller.current!.signal);
+            if (!skills || skillSnapshot(fresh) !== skillSnapshot(skills)) {
+              setSkills(fresh);
+              setSkillsOpen(true);
+              throw new Error(t("aiLab.skillsChanged"));
+            }
+          }
           await submitPendingGeneration(
             command,
             userId,
@@ -652,6 +680,61 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
                 onPress={() => requestChoose(preset!.id, m.id)}
               />
             ))}
+          {project ? (
+            <View style={{ gap: 6 }}>
+              <Button
+                label={`${t("aiLab.skills")} (${skills ? skillRows(skills, mode, draft?.skillSelection).filter((row) => row.selected).length : "…"})`}
+                disabled={op.busy}
+                onPress={() => setSkillsOpen((value) => !value)}
+              />
+              {skillsOpen ? (
+                <>
+                  <ThemedText type="small">{t("aiLab.skillsHint")}</ThemedText>
+                  {!skills ? <ThemedText>{t("aiLab.skillsNotReady")}</ThemedText> : null}
+                  {skills && !skillRows(skills, mode).length ? (
+                    <ThemedText>{t("aiLab.noSkills")}</ThemedText>
+                  ) : null}
+                  {skills
+                    ? skillRows(skills, mode, draft?.skillSelection).map((row) => (
+                        <Button
+                          key={row.id}
+                          label={`${row.selected ? "✓ " : ""}${row.name ?? row.slug ?? row.id} · ${row.version.version}${row.defaultEnabled ? ` · ${t("aiLab.skillDefault")}` : ""}`}
+                          disabled={
+                            op.busy || !draft || !canGenerate || !!pending || !!retryPending
+                          }
+                          onPress={() => {
+                            if (draft) {
+                              try {
+                                save({
+                                  ...draft,
+                                  skillSelection: toggleSkill(
+                                    draft.skillSelection,
+                                    row.id,
+                                    !row.selected
+                                  ),
+                                });
+                              } catch (e) {
+                                fail(e);
+                              }
+                            }
+                          }}
+                        />
+                      ))
+                    : null}
+                  {skills && unavailableSkillIds(skills, mode, draft?.skillSelection).length ? (
+                    <ThemedText>{t("aiLab.skillsUnavailable")}</ThemedText>
+                  ) : null}
+                  {draft?.skillSelection ? (
+                    <Button
+                      label={t("aiLab.skillsReset")}
+                      disabled={op.busy || !!pending || !!retryPending || !canGenerate}
+                      onPress={() => save({ ...draft, skillSelection: undefined })}
+                    />
+                  ) : null}
+                </>
+              ) : null}
+            </View>
+          ) : null}
           {schemaChanged ? <ThemedText>{t("aiLab.schemaChanged")}</ThemedText> : null}
           {draft && data && (!model || !preset) ? (
             <ThemedText>{t("aiLab.unavailable")}</ThemedText>
@@ -922,7 +1005,14 @@ function Session({ userId, generation, workspace, project, onBusyChange }: Panel
           ) : null}
           <Button
             label={t("aiLab.generate")}
-            disabled={op.busy || !!pending || !!retryPending || !!draft?.upload || !usable}
+            disabled={
+              op.busy ||
+              !!pending ||
+              !!retryPending ||
+              !!draft?.upload ||
+              !usable ||
+              (project !== undefined && (!skills || loading))
+            }
             onPress={() => {
               try {
                 prepare();

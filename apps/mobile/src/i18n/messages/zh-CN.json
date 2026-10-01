@@ -3595,5 +3595,13 @@
   "aiLab.storyProject": "故事工作室",
   "aiLab.noProjects": "暂无可用项目。",
   "aiLab.projectBilling": "生成使用此项目配置的付款账户。草稿和历史按项目隔离保存。",
-  "aiLab.projectReadOnly": "项目为只读。上传、生成、重试或取消需要生成权限。"
+  "aiLab.projectReadOnly": "项目为只读。上传、生成、重试或取消需要生成权限。",
+  "aiLab.skills": "项目技能",
+  "aiLab.skillsHint": "仅用于本次生成，不改变项目默认设置。",
+  "aiLab.noSkills": "此生成类型没有兼容的已安装技能。",
+  "aiLab.skillDefault": "项目默认",
+  "aiLab.skillsNotReady": "请刷新加载项目技能后再生成。",
+  "aiLab.skillsUnavailable": "所选技能已不适用于本次生成。请恢复项目默认并重新检查选择。",
+  "aiLab.skillsChanged": "项目技能已更改。请检查更新后的选择并再次确认生成。",
+  "aiLab.skillsReset": "恢复项目默认"
 }

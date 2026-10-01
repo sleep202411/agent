@@ -3595,5 +3595,13 @@
   "aiLab.storyProject": "Story Studio",
   "aiLab.noProjects": "No available projects.",
   "aiLab.projectBilling": "Generation uses this project’s configured payer. Drafts and history stay separate for each project.",
-  "aiLab.projectReadOnly": "Read-only project. Generation permission is required to upload, generate, retry or cancel."
+  "aiLab.projectReadOnly": "Read-only project. Generation permission is required to upload, generate, retry or cancel.",
+  "aiLab.skills": "Project Skills",
+  "aiLab.skillsHint": "Applies to this generation only. Project-wide defaults remain unchanged.",
+  "aiLab.noSkills": "No compatible Skills are installed for this generation.",
+  "aiLab.skillDefault": "Project default",
+  "aiLab.skillsNotReady": "Refresh to load this project’s Skills before generating.",
+  "aiLab.skillsUnavailable": "A selected Skill is no longer available for this generation. Reset to project defaults and review your choices.",
+  "aiLab.skillsChanged": "Project Skills changed. Review the updated selection and confirm generation again.",
+  "aiLab.skillsReset": "Reset to project defaults"
 }

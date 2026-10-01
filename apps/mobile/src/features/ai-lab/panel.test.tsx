@@ -220,13 +220,20 @@ beforeEach(() => {
   host = document.createElement("div");
   root = createRoot(host);
   h.get.mockImplementation(async (path) =>
-    path === "/ai/models"
-      ? catalog
-      : path.includes("entitlement")
-        ? { entitlement: { rank: 0 } }
-        : path === "/ai/jobs"
-          ? { jobs, nextCursor: null }
-          : job
+    path.startsWith("/project-skills/")
+      ? {
+          ownerKind: path.split("/")[2],
+          projectId: path.split("/")[3],
+          projectRevision: 1,
+          installations: [],
+        }
+      : path === "/ai/models"
+        ? catalog
+        : path.includes("entitlement")
+          ? { entitlement: { rank: 0 } }
+          : path === "/ai/jobs"
+            ? { jobs, nextCursor: null }
+            : job
   );
   h.post.mockResolvedValue({ request_id: job.id, status: "in_queue" });
 });
@@ -840,3 +847,98 @@ it.each(["platform", "story"] as const)(
     expect(h.post).toHaveBeenCalledTimes(1);
   }
 );
+
+it("reviews changed Skills before charging, persists overrides and recovers the original selection", async () => {
+  const workspace = {
+    id: "33333333-3333-4333-8333-333333333333",
+    name: "Team",
+    isDefault: false,
+    accessScope: "workspace" as const,
+    role: "editor" as const,
+  };
+  const id = "44444444-4444-4444-8444-444444444444",
+    skill = "55555555-5555-4555-8555-555555555555";
+  const project = {
+    id,
+    projectId: id,
+    kind: "platform" as const,
+    workspaceId: workspace.id,
+    title: "Creative",
+    canGenerate: true,
+  };
+  let revision = 1;
+  const base = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, options) => {
+    if (path === `/projects/${id}`)
+      return {
+        project: {
+          id,
+          workspaceId: workspace.id,
+          name: "Creative",
+          status: "active",
+          role: "editor",
+        },
+      };
+    if (path === `/project-skills/platform/${id}/installations`)
+      return {
+        ownerKind: "platform",
+        projectId: id,
+        projectRevision: revision,
+        installations: [
+          {
+            id: skill,
+            name: "Lighting",
+            pinnedVersionId: skill,
+            revision,
+            status: "active",
+            version: {
+              version: "1.0",
+              checksum: "sha",
+              capabilities: ["image_generation"],
+              projectKinds: [],
+              workbenchModes: [],
+            },
+            defaults: [{ scope: "image_generation", sourceSurface: null, workbenchMode: null }],
+          },
+        ],
+      };
+    return base(path, options);
+  });
+  await mount(workspace, project);
+  await click("Image preset");
+  await change("Prompt", "Lake");
+  await click("aiLab.skills (1)");
+  await click("✓ Lighting · 1.0 · aiLab.skillDefault");
+  expect(host.textContent).toContain("aiLab.skills (0)");
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await mount(workspace, project);
+  expect(host.textContent).toContain("aiLab.skills (0)");
+  await click("aiLab.generate");
+  revision++;
+  await click("aiLab.confirm");
+  expect(h.post).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("aiLab.skillsChanged");
+  expect(host.textContent).toContain("Lighting");
+  h.post.mockRejectedValueOnce(Error("lost response"));
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  const sent = h.post.mock.calls[0]![1].data;
+  expect(sent.skillSelection).toEqual({
+    includeInstallationIds: [],
+    excludeInstallationIds: [skill],
+  });
+  expect(sent.input.prompt).toBe("Lake");
+  expect(button("Lighting · 1.0 · aiLab.skillDefault").disabled).toBe(true);
+  jobs = [
+    { ...job, idempotencyKey: sent.idempotencyKey, workspaceId: workspace.id, projectId: id },
+  ];
+  revision++;
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  await mount(workspace, project);
+  await click("aiLab.recover");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(host.textContent).not.toContain("aiLab.recover");
+});

@@ -1,3 +1,4 @@
+import { skillSelection } from "./project-skills";
 import { generationStorageKey, type GenerationStorageScope } from "./generation-scope";
 import { z } from "zod";
 import { durableRecord } from "@/lib/durable-record";
@@ -10,6 +11,7 @@ const draftSchema = z.object({
   schemaVersion: z.string(),
   values: z.record(z.string(), z.unknown()),
   upload: referenceCheckpoint.optional(),
+  skillSelection: skillSelection.optional(),
   uploadedReferences: z
     .array(
       z.object({

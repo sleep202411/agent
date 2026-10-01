@@ -1,3 +1,4 @@
+import { skillSelection } from "./project-skills";
 import {
   generationStorageKey,
   scopeFields,
@@ -35,6 +36,7 @@ export const generationCommand = z
   .object({
     clientKey: id,
     workspaceId: id.optional(),
+    skillSelection: skillSelection.optional(),
     projectId: id.optional(),
     storyProjectId: id.optional(),
     modelId: z.string().min(1).optional(),
@@ -49,6 +51,10 @@ export const generationCommand = z
   .refine(
     (v) => !(v.projectId || v.storyProjectId) || !!v.workspaceId,
     "Project generation requires its workspace."
+  )
+  .refine(
+    (v) => !v.skillSelection || !!(v.projectId || v.storyProjectId),
+    "Skills require a project."
   )
   .refine((v) => Boolean(v.modelId || v.presetId), "Choose a model or preset.")
   .refine((v) => {
