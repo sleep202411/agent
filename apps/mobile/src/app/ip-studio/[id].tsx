@@ -47,6 +47,17 @@ export default function IpStudioScreen() {
           headerStyle: { backgroundColor: theme.background },
         }}
       />
+      {auth.status === "authenticated" &&
+        typeof id === "string" &&
+        z.string().uuid().safeParse(id).success && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push(`/ip-studio/${id}/contributors` as never)}
+            style={{ paddingHorizontal: 16, paddingVertical: 12 }}
+          >
+            <ThemedText type="small">{t("ipContributors.heading")}</ThemedText>
+          </Pressable>
+        )}
       {auth.status === "hydrating" ? (
         <ActivityIndicator />
       ) : auth.status !== "authenticated" ? (
