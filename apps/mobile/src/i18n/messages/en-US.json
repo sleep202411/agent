@@ -2789,5 +2789,7 @@
   "crewTaskCenter.pendingReviews": "Awaiting review",
   "crewTaskCenter.filters": "Filters",
   "crewDeadline.warningWindow": "Highlight deadlines within",
-  "crewDeadline.hours": "{count} hours"
+  "crewDeadline.hours": "{count} hours",
+  "contentReviewHistory.export": "Export Excel report",
+  "contentReviewHistory.exporting": "Exporting…"
 }

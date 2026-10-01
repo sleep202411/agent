@@ -2789,5 +2789,7 @@
   "crewTaskCenter.pendingReviews": "待审核",
   "crewTaskCenter.filters": "筛选",
   "crewDeadline.warningWindow": "标记此时间内到期的任务",
-  "crewDeadline.hours": "{count} 小时"
+  "crewDeadline.hours": "{count} 小时",
+  "contentReviewHistory.export": "导出 Excel 报告",
+  "contentReviewHistory.exporting": "正在导出…"
 }

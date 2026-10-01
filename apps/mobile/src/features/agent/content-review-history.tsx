@@ -1,3 +1,4 @@
+import { ContentReviewExport } from "./content-review-export";
 import { ContentReviewPlayback } from "./content-review-playback";
 import { ContentReviewComment } from "./content-review-comment";
 import { useEffect, useState } from "react";
@@ -111,6 +112,13 @@ function History({ workspaceId, generation, onClose }: Props) {
       {record && (
         <>
           <ThemedText type="smallBold">{record.fileName}</ThemedText>
+          <ContentReviewExport
+            key={key}
+            workspaceId={workspaceId}
+            generation={generation}
+            recordId={record.id}
+            onAccessLost={(error) => setSnapshot({ key, error })}
+          />
           <ContentReviewPlayback
             key={`${key}:${record.mediaAssetId}`}
             workspaceId={workspaceId}

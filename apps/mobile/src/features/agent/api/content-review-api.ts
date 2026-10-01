@@ -1,7 +1,7 @@
 import { fetchCrewAssetAccess } from "@/features/crew-assets/api";
 import { CONTENT_REVIEW_MAX_DURATION_SECONDS } from "@repo/shared";
 import { z } from "zod";
-import { api } from "@/lib/api-client";
+import { api, type ApiBinaryResponse } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { fetchWorkspaceSettings } from "./studio-workspace-settings-api";
 const summary = z.object({
@@ -20,6 +20,11 @@ const text = z.string().nullable().optional();
 const detail = summary.extend({
   exportFileName: z.string(),
   overview: z.object({
+    userId: z.number().nullable().optional(),
+    url: text,
+    taskId: text,
+    dataId: text,
+    requestId: text,
     riskLevel: text,
     aiSuggestion: text,
     frameRiskLevel: text,
@@ -135,4 +140,64 @@ export async function getContentReviewPlayback(
   const access = await fetchCrewAssetAccess(record.mediaAssetId, signal);
   current(generation, signal);
   return access;
+}
+
+export async function exportContentReview(
+  workspaceId: string,
+  generation: number,
+  recordId: string,
+  signal: AbortSignal
+) {
+  const record = await getContentReview(workspaceId, generation, recordId, signal);
+  const result = await api.post<ApiBinaryResponse>("/api/user/video/moderation/ai/exportExcel", {
+    service: "studio",
+    responseType: "binary",
+    retry: false,
+    timeout: 60_000,
+    signal,
+    data: {
+      overview: record.overview,
+      details: record.details,
+      fileName: record.exportFileName || record.fileName,
+    },
+  });
+  current(generation, signal);
+  // XLSX is a ZIP container. Reject JSON/HTML/error pages masquerading as downloads.
+  const bytes = new Uint8Array(result.bytes);
+  if (
+    !/^(application\/(vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|octet-stream|zip))(;|$)/i.test(
+      result.contentType
+    ) ||
+    bytes.length < 4 ||
+    bytes[0] !== 0x50 ||
+    bytes[1] !== 0x4b ||
+    bytes[2] !== 3 ||
+    bytes[3] !== 4
+  )
+    throw new Error("Invalid Excel report response");
+  const filename = reportFilename(result.disposition, record.exportFileName || record.fileName);
+  return { bytes, filename };
+}
+export function reportFilename(disposition: string | null, fallback: string) {
+  const encoded = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  let name =
+    disposition
+      ?.match(/filename="([^"\r\n]+)"|filename=([^;\r\n]+)/i)
+      ?.slice(1)
+      .find(Boolean) || fallback;
+  if (encoded) {
+    try {
+      name = decodeURIComponent(encoded);
+    } catch {
+      /* Use plain filename. */
+    }
+  }
+  name = name
+    .split(/[\\/]/)
+    .pop()!
+    .replace(/[\x00-\x1f\x7f<>:"|?*]/g, "_")
+    .replace(/^\.+/, "")
+    .trim()
+    .slice(0, 140);
+  return (name.replace(/\.(xlsx|mp4|mov|webm)$/i, "") || "video-moderation") + ".xlsx";
 }

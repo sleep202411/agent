@@ -2789,5 +2789,7 @@
   "crewTaskCenter.pendingReviews": "待審核",
   "crewTaskCenter.filters": "篩選",
   "crewDeadline.warningWindow": "標記此時間內到期的任務",
-  "crewDeadline.hours": "{count} 小時"
+  "crewDeadline.hours": "{count} 小時",
+  "contentReviewHistory.export": "匯出 Excel 報告",
+  "contentReviewHistory.exporting": "正在匯出…"
 }

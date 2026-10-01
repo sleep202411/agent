@@ -21,6 +21,7 @@ beforeEach(() => {
   setUnauthorizedHandler(undefined);
 });
 afterEach(() => {
+  vi.runOnlyPendingTimers();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -260,4 +261,62 @@ it("retains unauthorized handling when success conflicts with code 401", async (
   } finally {
     setUnauthorizedHandler(undefined);
   }
+});
+
+it("downloads binary responses with the named session header and no JSON decoding", async () => {
+  setApiTokenProvider(() => ({ name: "satoken", value: "session" }));
+  fetchMock.mockResolvedValue(
+    new Response(new Uint8Array([80, 75, 3, 4]), {
+      headers: {
+        "content-type": "application/octet-stream",
+        "content-disposition": 'attachment; filename="report.xlsx"',
+      },
+    })
+  );
+  const result = await api.post<import("./api-client").ApiBinaryResponse>("/api/report", {
+    responseType: "binary",
+    data: { id: 1 },
+  });
+  expect([...new Uint8Array(result.bytes)]).toEqual([80, 75, 3, 4]);
+  expect(result.disposition).toContain("report.xlsx");
+  expect(fetchMock.mock.calls[0][1].headers.satoken).toBe("session");
+  expect(fetchMock.mock.calls[0][1]).not.toHaveProperty("responseType");
+});
+it("preserves Java authentication errors on binary endpoints", async () => {
+  const handler = vi.fn();
+  setUnauthorizedHandler(handler);
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ code: 401, msg: "Session expired" }), {
+      headers: { "content-type": "application/json" },
+    })
+  );
+  await expect(api.post("/api/report", { responseType: "binary" })).rejects.toMatchObject({
+    status: 401,
+    message: "Session expired",
+  });
+  expect(handler).toHaveBeenCalledOnce();
+});
+it("rejects success JSON instead of returning it as a file", async () => {
+  fetchMock.mockResolvedValue(
+    new Response(JSON.stringify({ code: 200, data: {} }), {
+      headers: { "content-type": "application/json" },
+    })
+  );
+  await expect(api.post("/api/report", { responseType: "binary" })).rejects.toMatchObject({
+    code: "INVALID_DOWNLOAD",
+  });
+});
+it("keeps binary body reads inside the cancellation window", async () => {
+  const controller = new AbortController();
+  fetchMock.mockResolvedValue({
+    ok: true,
+    headers: new Headers(),
+    arrayBuffer: () => new Promise(() => {}),
+  });
+  const request = api.post("/api/report", { responseType: "binary", signal: controller.signal });
+  const checked = expect(request).rejects.toMatchObject({ name: "AbortError" });
+  await Promise.resolve();
+  controller.abort();
+  await checked;
+  expect(fetchMock).toHaveBeenCalledOnce();
 });

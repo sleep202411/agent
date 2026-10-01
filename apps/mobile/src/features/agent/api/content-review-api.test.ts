@@ -155,3 +155,63 @@ it("resolves playback only through the authorized report asset", async () => {
     expect.objectContaining({ params: { variantKey: "original" }, signal })
   );
 });
+
+it("exports freshly authorized complete report fields using the official binary contract", async () => {
+  const { exportContentReview } = await import("./content-review-api");
+  const overview = {
+    userId: 9,
+    taskId: "moderation-id",
+    requestId: "request",
+    url: "https://files.test/video",
+    riskLevel: "low",
+  };
+  vi.mocked(api.get).mockResolvedValue({
+    ...row,
+    exportFileName: "report.xlsx",
+    overview,
+    details: [],
+    comments: [],
+  });
+  vi.mocked(api.post).mockResolvedValue({
+    bytes: new Uint8Array([80, 75, 3, 4]).buffer,
+    contentType: "application/octet-stream",
+    disposition: "attachment; filename*=UTF-8''report%20one.xlsx",
+  });
+  const result = await exportContentReview("workspace", 1, id, signal);
+  expect(result.filename).toBe("report one.xlsx");
+  expect(api.post).toHaveBeenCalledWith(
+    "/api/user/video/moderation/ai/exportExcel",
+    expect.objectContaining({
+      service: "studio",
+      responseType: "binary",
+      retry: false,
+      signal,
+      timeout: 60000,
+      data: { overview, details: [], fileName: "report.xlsx" },
+    })
+  );
+});
+it("refuses non-Excel downloads and sanitizes filenames", async () => {
+  const { exportContentReview, reportFilename } = await import("./content-review-api");
+  vi.mocked(api.get).mockResolvedValue({
+    ...row,
+    exportFileName: "report.xlsx",
+    overview: {},
+    details: [],
+    comments: [],
+  });
+  vi.mocked(api.post).mockResolvedValue({
+    bytes: new Uint8Array([80, 75, 3, 4]).buffer,
+    contentType: "text/html",
+    disposition: null,
+  });
+  await expect(exportContentReview("workspace", 1, id, signal)).rejects.toThrow("Invalid Excel");
+  vi.mocked(api.post).mockResolvedValue({
+    bytes: new Uint8Array([123, 34, 0, 0]).buffer,
+    contentType: "application/octet-stream",
+    disposition: null,
+  });
+  await expect(exportContentReview("workspace", 1, id, signal)).rejects.toThrow("Invalid Excel");
+  expect(reportFilename('attachment; filename="../../evil.xlsx"', "fallback")).toBe("evil.xlsx");
+  expect(reportFilename("attachment; filename*=UTF-8''%ZZ", "clip.mp4")).toBe("clip.xlsx");
+});

@@ -23,11 +23,18 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body" | "headers"> 
   headers?: Record<string, string | undefined>;
   params?: Record<string, string | number | boolean | undefined>;
   raw?: boolean;
+  responseType?: "json" | "binary";
   service?: ApiService;
   timeout?: number;
   /** Disable automatic GET retries for endpoints that perform an action. */
   retry?: boolean;
 }
+
+export type ApiBinaryResponse = {
+  bytes: ArrayBuffer;
+  contentType: string;
+  disposition: string | null;
+};
 
 export class ApiRequestError extends Error {
   code: number | string;
@@ -205,6 +212,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     headers: customHeaders,
     params,
     raw,
+    responseType = "json",
     service,
     timeout = 30_000,
     retry = true,
@@ -276,8 +284,25 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
         fetch(url, { ...init, signal: controller.signal }),
         controller.signal
       );
+      if (
+        responseType === "binary" &&
+        response.ok &&
+        !/json/i.test(response.headers.get("content-type") ?? "")
+      ) {
+        const bytes = await withCancellation(response.arrayBuffer(), controller.signal);
+        return {
+          response,
+          body: {
+            bytes,
+            contentType: response.headers.get("content-type") ?? "",
+            disposition: response.headers.get("content-disposition"),
+          },
+          rawBody: "",
+          binary: true,
+        };
+      }
       const parsed = await withCancellation(parseResponseBody(response), controller.signal);
-      return { response, ...parsed };
+      return { response, ...parsed, binary: false };
     } finally {
       clearTimeout(timer);
       callerSignal?.removeEventListener("abort", abort);
@@ -333,7 +358,10 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     );
   }
 
+  if (result.binary) return body as T;
   if (!body || typeof body !== "object" || Array.isArray(body)) {
+    if (responseType === "binary")
+      throw new ApiRequestError("INVALID_DOWNLOAD", "Expected a file response", response.status);
     return body as T;
   }
 
@@ -352,6 +380,13 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     );
   }
 
+  if (responseType === "binary")
+    throw new ApiRequestError(
+      "INVALID_DOWNLOAD",
+      messageFromBody(envelope, "Expected a file response"),
+      response.status,
+      rawBody
+    );
   if (raw) return envelope as T;
   // An explicit null is a valid empty lookup, not permission to use another field.
   for (const key of ["data", "info", "path"] as const) {
