@@ -3321,6 +3321,11 @@
         "actionPending": "正在提交…",
         "actionReviewing": "审核中",
         "actionPublished": "已发布",
+        "submitTooltip": "提交影游「{title}」",
+        "updateTooltip": "提交影游「{title}」的更新",
+        "resubmitTooltip": "重新提交影游「{title}」",
+        "draftConflict": "故事有未合并的更新，请先处理冲突后再提交。",
+        "projectLoading": "项目还在加载。",
         "statusChecking": "正在查询发布状态…",
         "statusUnavailable": "暂时无法获取发布状态，请刷新后重试。",
         "reviewingLocked": "当前项目已在审核中。",
@@ -3373,7 +3378,8 @@
         },
         "failure": {
           "title": "当前版本未提交",
-          "description": "请处理下方问题，然后重新提交。"
+          "description": "请处理下方问题，然后重新提交。",
+          "locate": "在情节树中定位"
         },
         "offline": {
           "action": "下线",
@@ -3909,7 +3915,11 @@
       "share": "分享",
       "catalogPanel": {
         "choice": "选择",
-        "end": "结局"
+        "end": "结局",
+        "unlinked": "未链接",
+        "problem": "有问题",
+        "redundant": "冗余",
+        "unusedState": "未使用的状态"
       },
       "mobileNav": {
         "label": "制作导航",
@@ -4197,6 +4207,7 @@
     "title": "FizzAgent",
     "subtitle": "对话式执行智能体 — 工具会真正写入项目",
     "close": "关闭 FizzAgent",
+    "collapse": "收起 FizzAgent",
     "open": "打开 FizzAgent",
     "launcherPrompts": {
       "create": "你想创作什么？",

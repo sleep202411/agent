@@ -9,6 +9,7 @@ import {
   IconDots,
   IconFilter,
   IconFlag3,
+  IconClock,
   IconLayoutKanban,
   IconLayoutDashboard,
   IconLayoutSidebarRight,
@@ -75,6 +76,8 @@ interface LinearTaskWorkspaceProps {
   canEditCrewInfo: boolean;
   members: CrewMemberDTO[];
   isOwner: boolean;
+  canCreate?: boolean;
+  onPublishTask?: (taskId: string) => void;
   canReview: boolean;
   canSubmitAssigned: boolean;
   canComment: boolean;
@@ -98,6 +101,8 @@ function LinearTaskSession({
   canEditCrewInfo,
   members,
   isOwner,
+  canCreate = false,
+  onPublishTask,
   canReview,
   canSubmitAssigned,
   canComment,
@@ -318,11 +323,6 @@ function LinearTaskSession({
     return <LoadingState label={t("loading")} />;
   }
 
-  // Only hide the project tabs once the summary has positively reported
-  // zero tasks. While the summary is loading (or a field is absent),
-  // keep the tabs visible so they don't flicker on first paint.
-  const hasTasks = summaryQuery.data?.total === undefined || summaryQuery.data.total > 0;
-
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#090a0c] text-[#e8e9ec]">
       {projectError}
@@ -333,51 +333,52 @@ function LinearTaskSession({
         >
           <ProjectTab
             active={section === "production"}
+            icon={<IconLayoutKanban />}
             label={t("workbench.title")}
             onClick={() => openSection("production")}
           />
-          {hasTasks ? (
-            <>
+          <>
+            <ProjectTab
+              active={section === "issues" && activeView.id === project.views[0]?.id}
+              icon={<IconList />}
+              label={t("issues")}
+              onClick={() => openSection("issues", project.views[0]?.id)}
+            />
+            <ProjectTab
+              active={section === "overview"}
+              icon={<IconLayoutDashboard />}
+              label={t("overview")}
+              onClick={() => openSection("overview")}
+            />
+            <ProjectTab
+              active={section === "activity"}
+              icon={<IconClock />}
+              label={t("activity")}
+              onClick={() => openSection("activity")}
+            />
+            {project.views.slice(1).map((view) => (
               <ProjectTab
-                active={section === "issues" && activeView.id === project.views[0]?.id}
-                label={t("issues")}
-                onClick={() => openSection("issues", project.views[0]?.id)}
+                key={view.id}
+                active={section === "issues" && activeView.id === view.id}
+                icon={view.layout === "board" ? <IconLayoutKanban /> : <IconList />}
+                label={view.name}
+                onClick={() => openSection("issues", view.id)}
               />
-              <ProjectTab
-                active={section === "overview"}
-                icon={<IconLayoutDashboard />}
-                label={t("overview")}
-                onClick={() => openSection("overview")}
-              />
-              <ProjectTab
-                active={section === "activity"}
-                label={t("activity")}
-                onClick={() => openSection("activity")}
-              />
-              {project.views.slice(1).map((view) => (
-                <ProjectTab
-                  key={view.id}
-                  active={section === "issues" && activeView.id === view.id}
-                  icon={view.layout === "board" ? <IconLayoutKanban /> : <IconList />}
-                  label={view.name}
-                  onClick={() => openSection("issues", view.id)}
-                />
-              ))}
-              {isOwner ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCreateViewMode(true);
-                    setNewViewLayout(activeView.layout);
-                  }}
-                  className="grid size-8 shrink-0 place-items-center rounded-full text-[#656c77] transition-colors hover:bg-white/[0.05] hover:text-white"
-                  aria-label={t("newView")}
-                >
-                  <IconPlus className="size-4" />
-                </button>
-              ) : null}
-            </>
-          ) : null}
+            ))}
+            {isOwner ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setCreateViewMode(true);
+                  setNewViewLayout(activeView.layout);
+                }}
+                className="grid size-8 shrink-0 place-items-center rounded-full text-[#656c77] transition-colors hover:bg-white/[0.05] hover:text-white"
+                aria-label={t("newView")}
+              >
+                <IconPlus className="size-4" />
+              </button>
+            ) : null}
+          </>
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <button
               type="button"
@@ -542,7 +543,9 @@ function LinearTaskSession({
         crewName={crewName}
         project={project}
         members={members}
-        canManage={isOwner}
+        canManage={canCreate}
+        canSubmitAssigned={canSubmitAssigned}
+        onPublishTask={onPublishTask}
         canManageEpisodes={productionOverviewQuery.data?.capabilities.manage === true}
         active={section === "production"}
         onSelectTask={selectTask}
@@ -556,7 +559,7 @@ function LinearTaskSession({
       {section === "issues" ? (
         <>
           <div className="flex h-11 shrink-0 items-center gap-2 border-b border-white/[0.055] px-3">
-            {isOwner ? (
+            {canCreate ? (
               <Button
                 type="button"
                 size="sm"
@@ -696,7 +699,10 @@ function LinearTaskSession({
                   setWorkflowEditor({ state: null, afterStateId })
                 }
                 onEditWorkflowState={(state) => setWorkflowEditor({ state, afterStateId: null })}
-                onCreateTask={(workflowStateId) => setCreateTaskStateId(workflowStateId)}
+                canCreate={canCreate}
+                onCreateTask={(workflowStateId) => {
+                  if (canCreate) setCreateTaskStateId(workflowStateId);
+                }}
               />
             )}
           </main>
@@ -780,6 +786,8 @@ function LinearTaskSession({
               task={taskQuery.data}
               members={members}
               isOwner={isOwner}
+              canCreate={canCreate}
+              onPublishTask={onPublishTask}
               canReview={canReview}
               canSubmitAssigned={canSubmitAssigned}
               canComment={canComment}
@@ -800,7 +808,7 @@ function LinearTaskSession({
         </SheetContent>
       </Sheet>
 
-      {isOwner && section !== "production" ? (
+      {canCreate && section !== "production" ? (
         <TaskQuickCreate
           open={createTaskStateId !== undefined}
           onOpenChange={(open) => setCreateTaskStateId(open ? null : undefined)}
@@ -810,6 +818,7 @@ function LinearTaskSession({
           project={project}
           activeView={effectiveView}
           presetWorkflowStateId={createTaskStateId ?? null}
+          onPublishTask={onPublishTask}
         />
       ) : null}
       {workflowEditor ? (

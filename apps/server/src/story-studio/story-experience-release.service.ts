@@ -31,16 +31,19 @@ import {
   type StoryChapterReleaseCandidate,
 } from './story-chapter-release-plan';
 import { StoryChapterManifestStorageService } from './story-chapter-manifest-storage.service';
-import { StoryBuildService } from './story-build.service';
+import {
+  STORY_BUILD_COMPILER_SEMANTIC_VERSION,
+  StoryBuildService,
+} from './story-build.service';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectsService } from './story-projects.service';
 
 const RELEASE_BUILD_CONCURRENCY = 8;
 const CHAPTER_MANIFEST_UPLOAD_CONCURRENCY = 16;
-// A release Build may be replayed indefinitely by its idempotency key. Bump
-// this only when candidate materialization changes, so an older immutable
-// receipt cannot be mistaken for the new request shape.
-const RELEASE_BUILD_KEY_VERSION = 2;
+// A release Build is replayed by this key, including a failed one. Bump when
+// publishability rules change, otherwise the next submit returns the old
+// failure and never runs the new compiler.
+const RELEASE_BUILD_KEY_VERSION = 3;
 
 interface PreparedChapter {
   chapterId: string;
@@ -416,6 +419,19 @@ function runtimeReleaseRequest(
   );
 }
 
+function publishDiagnosticNodeId(diagnostic: {
+  entityType: string | null;
+  entityId: string | null;
+}): string | null {
+  if (
+    (diagnostic.entityType === 'node' || diagnostic.entityType === 'clip') &&
+    diagnostic.entityId?.includes(':')
+  ) {
+    return diagnostic.entityId;
+  }
+  return null;
+}
+
 function requireReleaseCoverUrl(workbench: StoryWorkbenchDto): string {
   const coverUrl = workbench.project.cover?.previewUrl?.trim();
   if (coverUrl) return coverUrl;
@@ -428,7 +444,7 @@ function requireReleaseCoverUrl(workbench: StoryWorkbenchDto): string {
 
 function preparedChapter(
   projectId: string,
-  chapter: Pick<StoryChapterDto, 'id' | 'rank'>,
+  chapter: Pick<StoryChapterDto, 'id' | 'rank' | 'title'>,
   build: StoryBuildDto,
   expected: PrepareStoryExperienceReleaseInput,
 ): PreparedChapter {
@@ -442,9 +458,24 @@ function preparedChapter(
     build.runtimeSchemaVersion !== EXPERIENCE_RUNTIME_SCHEMA_VERSION ||
     build.diagnostics.some((diagnostic) => diagnostic.severity === 'error')
   ) {
+    const diagnostics = build.diagnostics
+      .filter((diagnostic) => diagnostic.severity === 'error')
+      .map((diagnostic) => ({
+        code: diagnostic.code,
+        message: diagnostic.message,
+        nodeId: publishDiagnosticNodeId(diagnostic),
+      }));
     throw new UnprocessableEntityException({
       code: 'STORY_BUILD_NOT_PUBLISHABLE',
-      message: `Chapter Build ${build.id} is not ready for review.`,
+      message:
+        diagnostics[0]?.message ??
+        (build.status === 'failed'
+          ? `“${chapter.title}” could not be prepared for review.`
+          : build.status === 'ready'
+            ? `“${chapter.title}” changed before it could be submitted. Refresh and submit again.`
+            : `“${chapter.title}” is still being prepared for review.`),
+      chapterId: chapter.id,
+      diagnostics,
     });
   }
   const parsed = ExperienceRuntimeManifestSchema.safeParse(build.runtimeJson);
@@ -494,6 +525,7 @@ function releaseBuildKey(
   chapter: Pick<StoryChapterDto, 'id'>,
 ): string {
   return `story-review:v${RELEASE_BUILD_KEY_VERSION}:${canonicalJsonHash({
+    compiler: STORY_BUILD_COMPILER_SEMANTIC_VERSION,
     projectId: workbench.project.id,
     projectVersion: workbench.project.projectVersion,
     draftRevision: input.expectedDraftRevision,

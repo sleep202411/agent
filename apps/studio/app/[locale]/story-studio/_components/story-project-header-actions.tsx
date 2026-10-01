@@ -12,6 +12,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useCallback, useState } from "react";
+import { useRouter } from "@/i18n/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -45,6 +46,7 @@ const LABEL_CLASS = "@max-[1000px]:sr-only";
 /** Project publication status is read directly from Java by projectId. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
   const { user } = useAuth();
+  const router = useRouter();
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const queryClient = useQueryClient();
@@ -101,15 +103,27 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const statusReady = !publicationQuery.isLoading && !publicationQuery.isError;
   const canSubmitStatus = status === null || status === "draft" || status === "offline";
   const canSubmit = canMutate && statusReady && canSubmitStatus;
-  const submitDisabledReason = publicationQuery.isLoading
-    ? t("publish.statusChecking")
-    : publicationQuery.isError
-      ? t("publish.statusUnavailable")
-      : status === "reviewing"
-        ? t("publish.reviewingLocked")
-        : status === "published"
-          ? t("publish.publishedUpdateLocked")
-          : submission.disabledReason;
+  const submitDisabledReason = !ready
+    ? t("publish.projectLoading")
+    : !submission.canSubmit
+      ? t("publish.errors.permissionDenied")
+      : publicationQuery.isLoading
+        ? t("publish.statusChecking")
+        : publicationQuery.isError
+          ? t("publish.statusUnavailable")
+          : status === "reviewing"
+            ? t("publish.reviewingLocked")
+            : status === "published"
+              ? t("publish.publishedUpdateLocked")
+              : conflicted
+                ? t("publish.draftConflict")
+                : null;
+  const projectTitle = workbench?.project.title.trim() ?? "";
+  const submitTooltip = submission.isPending
+    ? t("publish.actionPending")
+    : (submitDisabledReason ??
+      enabledSubmitTooltip(t, submitActionKind(status, publication), projectTitle));
+  const submitDisabled = !canSubmit || submission.isPending;
   const canOffline = canRelease && (status === "reviewing" || status === "published");
   const canEdit = !workbench || workbench.project.capabilities.includes("story.edit");
 
@@ -130,7 +144,7 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
       variant="ghost"
       size="lg"
       onClick={submission.open}
-      disabled={!canSubmit || submission.isPending}
+      disabled={submitDisabled}
       className="h-9 gap-2 rounded-[14px] bg-transparent px-3 font-semibold text-white/68 hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed"
     >
       {submission.isPending ? (
@@ -161,31 +175,33 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   return (
     <>
       {canRelease ? (
-        <>
-          <PublicationStatusBadge
-            status={status}
-            loading={publicationQuery.isLoading}
-            failed={publicationQuery.isError}
-            rejectReason={publication?.rejectReason ?? null}
-          />
-          {submitDisabledReason && (!canSubmit || submission.isPending) ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span
-                  tabIndex={0}
-                  className="inline-flex rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
-                  aria-label={`${t("publish.action")}: ${submitDisabledReason}`}
-                >
-                  {submitButton}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" sideOffset={8}>
-                {submitDisabledReason}
-              </TooltipContent>
-            </Tooltip>
+        <PublicationStatusBadge
+          status={status}
+          loading={publicationQuery.isLoading}
+          failed={publicationQuery.isError}
+          rejectReason={publication?.rejectReason ?? null}
+        />
+      ) : null}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {submitDisabled ? (
+            <span
+              tabIndex={0}
+              className="inline-flex rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
+              aria-label={submitTooltip}
+            >
+              {submitButton}
+            </span>
           ) : (
             submitButton
           )}
+        </TooltipTrigger>
+        <TooltipContent side="bottom" sideOffset={8} className="max-w-80">
+          {submitTooltip}
+        </TooltipContent>
+      </Tooltip>
+      {canRelease ? (
+        <>
           {canOffline ? (
             <Button
               type="button"
@@ -224,6 +240,13 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
             }}
             onRetry={() => {
               if (canSubmit) void submission.retry();
+            }}
+            onLocateNode={(nodeId) => {
+              if (!activeChapterId) return;
+              submission.close();
+              router.push(
+                `/story-studio/projects/${projectId}/canvas?chapter=${encodeURIComponent(activeChapterId)}&focus=${encodeURIComponent(nodeId)}`
+              );
             }}
           />
           <Dialog
@@ -300,6 +323,32 @@ function PublicationStatusBadge({
       </TooltipContent>
     </Tooltip>
   );
+}
+
+type PublishCanvasT = ReturnType<typeof useTranslations<"storyStudio.canvas">>;
+
+function submitActionKind(
+  status: InteractiveFilmPublicationStatus | null,
+  publication: InteractiveFilmPublication | null
+): "submit" | "update" | "resubmit" {
+  if (publication?.rejectReason) return "resubmit";
+  if (status === "offline") return "update";
+  return "submit";
+}
+
+function enabledSubmitTooltip(
+  t: PublishCanvasT,
+  kind: "submit" | "update" | "resubmit",
+  title: string
+): string {
+  if (!title) {
+    if (kind === "resubmit") return t("publish.actionResubmit");
+    if (kind === "update") return t("publish.actionUpdate");
+    return t("publish.action");
+  }
+  if (kind === "resubmit") return t("publish.resubmitTooltip", { title });
+  if (kind === "update") return t("publish.updateTooltip", { title });
+  return t("publish.submitTooltip", { title });
 }
 
 type PublishT = ReturnType<typeof useTranslations<"storyStudio.canvas.publish">>;

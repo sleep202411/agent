@@ -24,6 +24,7 @@ import {
   IconEye,
   IconFile,
   IconFileText,
+  IconLoader2,
   IconFolder,
   IconFolderPlus,
   IconHistory,
@@ -181,7 +182,7 @@ export function CrewAssetsTab({
     },
     true
   );
-  const folderQuery = useCrewAssetFolders(crewId, assetAction === "move");
+  const folderQuery = useCrewAssetFolders(crewId);
   const createFolder = useCreateCrewAssetFolder(crewId);
   const updateAsset = useUpdateCrewAsset(crewId);
   const trashAsset = useTrashCrewAsset(crewId);
@@ -654,7 +655,20 @@ export function CrewAssetsTab({
             t={t}
             onSelectSource={changeSource}
             onOpenRoot={openRoot}
-            onOpenFolderAt={openFolderAt}
+            folders={folderQuery.data ?? []}
+            foldersLoading={folderQuery.isPending}
+            foldersError={
+              folderQuery.isError ? describeError(folderQuery.error, t("operationFailed")) : null
+            }
+            onOpenFolder={(path) => {
+              setActiveSource("all");
+              setFolderPath(path);
+              setCheckedIds(new Set());
+              setSelectedAssetId("");
+              setInspectorOpen(false);
+              setCreatingFolder(false);
+              onSelectedAssetChange?.(null);
+            }}
           />
 
           <div className="flex min-h-0 min-w-0 flex-col border-l border-border/60">
@@ -1166,7 +1180,10 @@ function AssetSourceRail({
   t,
   onSelectSource,
   onOpenRoot,
-  onOpenFolderAt,
+  folders,
+  foldersLoading,
+  foldersError,
+  onOpenFolder,
 }: {
   crewName?: string;
   workbench: boolean;
@@ -1187,8 +1204,75 @@ function AssetSourceRail({
   t: Translation;
   onSelectSource: (source: CrewAssetSource) => void;
   onOpenRoot: () => void;
-  onOpenFolderAt: (index: number) => void;
+  folders: CrewAssetFolderDTO[];
+  foldersLoading: boolean;
+  foldersError: string | null;
+  onOpenFolder: (path: FolderCrumb[]) => void;
 }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [rootOpen, setRootOpen] = useState(true);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const renderFolders = (parentId: string | null, path: FolderCrumb[] = []): ReactNode =>
+    folders
+      .filter(
+        (folder) =>
+          (folder.parentId === parentId ||
+            (parentId === null && !folders.some((parent) => parent.id === folder.parentId))) &&
+          !path.some((ancestor) => ancestor.id === folder.id)
+      )
+      .map((folder) => {
+        const nextPath = [...path, { id: folder.id, name: folder.name }];
+        const hasChildren = folders.some((child) => child.parentId === folder.id);
+        const isOpen =
+          !collapsed.has(folder.id) &&
+          (expanded.has(folder.id) || folderPath.some((crumb) => crumb.id === folder.id));
+        return (
+          <div key={folder.id}>
+            <div
+              className={cn(
+                "flex items-center rounded-lg text-xs",
+                activeSource === "all" && folderPath.at(-1)?.id === folder.id
+                  ? "bg-primary/12 text-primary"
+                  : "text-muted-foreground"
+              )}
+              style={{ paddingLeft: path.length * 12 + 12 }}
+            >
+              {hasChildren ? (
+                <button
+                  type="button"
+                  aria-label={folder.name}
+                  aria-expanded={isOpen}
+                  className="p-1"
+                  onClick={() => {
+                    setExpanded((current) => new Set(current).add(folder.id));
+                    setCollapsed((current) => {
+                      const next = new Set(current);
+                      if (isOpen) next.add(folder.id);
+                      else next.delete(folder.id);
+                      return next;
+                    });
+                  }}
+                >
+                  <IconChevronDown
+                    className={cn("size-3 transition-transform", !isOpen && "-rotate-90")}
+                  />
+                </button>
+              ) : (
+                <span className="w-5" />
+              )}
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
+                onClick={() => onOpenFolder(nextPath)}
+              >
+                <IconFolder className="size-3.5 shrink-0" />
+                <span className="truncate">{folder.name}</span>
+              </button>
+            </div>
+            {isOpen ? renderFolders(folder.id, nextPath) : null}
+          </div>
+        );
+      });
   return (
     <aside className="hidden min-h-0 min-w-0 flex-col bg-[#0a0c0f] lg:flex">
       {workbench ? (
@@ -1230,7 +1314,11 @@ function AssetSourceRail({
       <div className="flex-1 overflow-y-auto p-2">
         <button
           type="button"
-          onClick={onOpenRoot}
+          onClick={() => {
+            setRootOpen((value) => !value);
+            onOpenRoot();
+          }}
+          aria-expanded={rootOpen}
           className={cn(
             "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
             activeSource === "all" && folderPath.length === 0
@@ -1242,23 +1330,16 @@ function AssetSourceRail({
           <IconFolder className="size-3.5" />
           <span className="truncate">{t("folderCrewAssets")}</span>
         </button>
-        {folderPath.map((folder, index) => (
-          <button
-            key={folder.id}
-            type="button"
-            onClick={() => onOpenFolderAt(index)}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-lg py-2 pr-2 text-left text-xs transition-colors",
-              index === folderPath.length - 1 && activeSource === "all"
-                ? "bg-primary/12 font-semibold text-primary"
-                : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground"
-            )}
-            style={{ paddingLeft: `${index * 12 + 30}px` }}
-          >
-            <IconFolder className="size-3.5 shrink-0" />
-            <span className="truncate">{folder.name}</span>
-          </button>
-        ))}
+        {foldersError ? (
+          <p role="alert" className="p-2 text-xs text-destructive">
+            {foldersError}
+          </p>
+        ) : null}
+        {foldersLoading ? (
+          <IconLoader2 className="m-2 size-4 animate-spin" />
+        ) : rootOpen ? (
+          renderFolders(null)
+        ) : null}
       </div>
       <div className="border-t border-border/60 p-3">
         <div className="flex items-center gap-2">

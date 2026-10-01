@@ -202,6 +202,12 @@ function installFetch() {
           },
         });
       }
+      if (method === "GET" && url.endsWith("/assets/nodes/nested-folder")) {
+        return jsonResponse({
+          node: { ...ROOT_ITEMS[0], id: "nested-folder", parentId: "folder-1", name: "Subtitled" },
+          path: [{ id: "folder-1", name: "Storyboard" }],
+        });
+      }
       if (method === "GET" && url.endsWith("/assets/nodes/folder-1")) {
         return jsonResponse({ node: ROOT_ITEMS[0], path: [] });
       }
@@ -247,7 +253,10 @@ function installFetch() {
       if (method === "GET" && url.endsWith("/assets/folders")) {
         if (folderReadFails)
           return jsonResponse({ message: "Folders unavailable" }, { status: 503 });
-        return jsonResponse([ROOT_ITEMS[0]]);
+        return jsonResponse([
+          ROOT_ITEMS[0],
+          { ...ROOT_ITEMS[0], id: "nested-folder", parentId: "folder-1", name: "Subtitled" },
+        ]);
       }
       if (method === "GET" && url.includes("/assets")) {
         if (assetListFails)
@@ -475,7 +484,9 @@ describe("crew asset center", () => {
   it("opens folders in place and updates the API parent scope", async () => {
     await render();
 
-    const row = byText("span", "Storyboard").closest<HTMLElement>('[role="button"]');
+    const row = [...document.querySelectorAll<HTMLElement>('[role="button"]')].find((row) =>
+      row.textContent?.includes("Storyboard")
+    );
     if (!row) throw new Error("Folder row not found");
     await act(async () => {
       row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
@@ -1356,3 +1367,23 @@ it.each([false, true])(
     }
   }
 );
+
+it("expands and collapses nested folders without navigating until selected", async () => {
+  await render();
+  const rail = document.querySelector("aside")!;
+  const toggle = rail.querySelector<HTMLButtonElement>('button[aria-label="Storyboard"]')!;
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(rail.textContent).not.toContain("Subtitled");
+  await click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(rail.textContent).toContain("Subtitled");
+  expect(requests.some((r) => r.url.includes("parentId=nested-folder"))).toBe(false);
+  await click(
+    [...rail.querySelectorAll("button")].find((button) => button.textContent === "Subtitled")!
+  );
+  await vi.waitFor(() =>
+    expect(requests.some((r) => r.url.includes("parentId=nested-folder"))).toBe(true)
+  );
+  await click(toggle);
+  expect(rail.textContent).not.toContain("Subtitled");
+});

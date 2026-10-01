@@ -3321,6 +3321,11 @@
         "actionPending": "Submitting…",
         "actionReviewing": "In review",
         "actionPublished": "Published",
+        "submitTooltip": "Submit {title} for review",
+        "updateTooltip": "Submit an update of {title}",
+        "resubmitTooltip": "Resubmit {title} for review",
+        "draftConflict": "This story has a conflict. Resolve it before submitting.",
+        "projectLoading": "The project is still loading.",
         "statusChecking": "Checking publication status…",
         "statusUnavailable": "Publication status is unavailable. Try again after it refreshes.",
         "reviewingLocked": "This project is already in review.",
@@ -3373,7 +3378,8 @@
         },
         "failure": {
           "title": "This version was not submitted",
-          "description": "Resolve the issue below, then try submitting again."
+          "description": "Resolve the issue below, then try submitting again.",
+          "locate": "Show on the plot tree"
         },
         "offline": {
           "action": "Take offline",
@@ -3909,7 +3915,11 @@
       "share": "Share",
       "catalogPanel": {
         "choice": "Choice",
-        "end": "END"
+        "end": "END",
+        "unlinked": "Unlinked",
+        "problem": "Problem",
+        "redundant": "Unused",
+        "unusedState": "Unused state"
       },
       "mobileNav": {
         "label": "Production navigation",
@@ -4197,6 +4207,7 @@
     "title": "FizzAgent",
     "subtitle": "Chat with an execution agent — tools write to your project",
     "close": "Close FizzAgent",
+    "collapse": "Collapse FizzAgent",
     "open": "Open FizzAgent",
     "launcherPrompts": {
       "create": "What would you like to create?",

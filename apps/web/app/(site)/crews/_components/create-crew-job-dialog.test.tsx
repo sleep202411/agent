@@ -429,3 +429,15 @@ it("allows correcting a rejected amount without losing the rest of the draft", a
     salary: { min: 150, max: 200 },
   });
 });
+
+it("preselects the saved task supplied by the publishing handoff", async () => {
+  await act(async () =>
+    root.render(
+      <CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" initialTaskId="task-one" />
+    )
+  );
+  expect(
+    [...container.querySelectorAll("select")].some((select) => select.value === "task-one")
+  ).toBe(true);
+  expect(state.create).not.toHaveBeenCalled();
+});

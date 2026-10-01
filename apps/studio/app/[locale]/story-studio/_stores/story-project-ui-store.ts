@@ -61,6 +61,9 @@ interface StoryProjectUIState {
    */
   sidePanel: StorySidePanel;
   setSidePanel: (panel: StorySidePanel) => void;
+  /** Desktop FizzAgent dock. Phones keep using `mobileView` and ignore this. */
+  agentDockOpen: boolean;
+  setAgentDockOpen: (open: boolean) => void;
   /** Chapter the canvas is editing — context hint for the agent panel. */
   activeChapterId: string | null;
   setActiveChapterId: (chapterId: string | null) => void;
@@ -118,6 +121,7 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
             const id = state.composerPrefillSequence + 1;
             return {
               mobileView: "chat",
+              agentDockOpen: true,
               composerPrefillSequence: id,
               composerPrefillRequest: { id, text },
             };
@@ -134,6 +138,8 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
         ),
       sidePanel: null,
       setSidePanel: (panel) => set({ sidePanel: panel }, false, "setSidePanel"),
+      agentDockOpen: true,
+      setAgentDockOpen: (open) => set({ agentDockOpen: open }, false, "setAgentDockOpen"),
       activeChapterId: null,
       setActiveChapterId: (chapterId) =>
         set({ activeChapterId: chapterId }, false, "setActiveChapterId"),

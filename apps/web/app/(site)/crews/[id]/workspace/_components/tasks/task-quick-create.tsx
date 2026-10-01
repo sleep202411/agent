@@ -1,11 +1,15 @@
 "use client";
 
+import { Calendar } from "@/components/ui/calendar";
+import { enUS, zhCN, zhHK } from "date-fns/locale";
 import { CREW_CURRENCY } from "@/src/lib/crew-money";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconArrowsDiagonal,
   IconCalendar,
+  IconCoin,
+  IconPercentage,
   IconCheck,
   IconChevronRight,
   IconCircle,
@@ -54,8 +58,10 @@ interface TaskQuickCreateProps {
   activeView: CrewTaskViewDTO;
   presetWorkflowStateId?: string | null;
   presetEpisodeId?: string | null;
+  presetTaskKind?: CrewTaskKind | null;
   parentId?: string | null;
   onCreated?: (task: CrewTaskDTO) => void;
+  onPublishTask?: (taskId: string) => void;
   onStage?: (input: CreateCrewTaskInput) => void;
   keyboardShortcut?: boolean;
   initialInput?: CreateCrewTaskInput;
@@ -71,8 +77,10 @@ export function TaskQuickCreate({
   activeView,
   presetWorkflowStateId,
   presetEpisodeId,
+  presetTaskKind,
   parentId,
   onCreated,
+  onPublishTask,
   onStage,
   keyboardShortcut = true,
   initialInput,
@@ -94,7 +102,9 @@ export function TaskQuickCreate({
   const [title, setTitle] = useState(initialInput?.title ?? "");
   const [description, setDescription] = useState(initialInput?.description ?? "");
   const [priority, setPriority] = useState<CrewTaskPriority>(initialInput?.priority ?? "normal");
-  const [taskKind, setTaskKind] = useState<CrewTaskKind | "">(initialInput?.taskKind ?? "");
+  const [taskKind, setTaskKind] = useState<CrewTaskKind | "">(
+    initialInput?.taskKind ?? presetTaskKind ?? ""
+  );
   const [workflowStateId, setWorkflowStateId] = useState<string | null>(
     initialInput?.workflowStateId ?? null
   );
@@ -109,6 +119,13 @@ export function TaskQuickCreate({
   const [estimatePoints, setEstimatePoints] = useState(
     initialInput?.estimatePoints?.toString() ?? ""
   );
+  const [publishOpening, setPublishOpening] = useState(false);
+  const [rewardUsd, setRewardUsd] = useState(
+    initialInput?.rewardUsdMinor == null ? "" : String(initialInput.rewardUsdMinor / 100)
+  );
+  const [profitShare, setProfitShare] = useState(
+    initialInput?.profitShareBps == null ? "" : String(initialInput.profitShareBps / 100)
+  );
   const [dueDate, setDueDate] = useState(initialInput?.dueAt?.slice(0, 10) ?? "");
   const [createMore, setCreateMore] = useState(false);
   const [draft, setDraft] = useState<CrewTaskDraftDTO | null>(null);
@@ -117,16 +134,23 @@ export function TaskQuickCreate({
   const [context, setContext] = useState({ open, crewId, parentId });
   if (context.open !== open || context.crewId !== crewId || context.parentId !== parentId) {
     setContext({ open, crewId, parentId });
+    setPublishOpening(false);
     setTitle(initialInput?.title ?? "");
     setDescription(initialInput?.description ?? "");
     setPriority(initialInput?.priority ?? "normal");
-    setTaskKind(initialInput?.taskKind ?? "");
+    setTaskKind(initialInput?.taskKind ?? presetTaskKind ?? "");
     setWorkflowStateId(initialInput?.workflowStateId ?? null);
     setAssigneeUserId(initialInput?.assignees[0]?.userId ?? "");
     setLabelIds(initialInput?.labelIds ?? []);
     setCycleId(initialInput ? (initialInput.cycleId ?? "") : null);
     setEpisodeId(initialInput?.episodeId ?? presetEpisodeId ?? null);
     setEstimatePoints(initialInput?.estimatePoints?.toString() ?? "");
+    setRewardUsd(
+      initialInput?.rewardUsdMinor == null ? "" : String(initialInput.rewardUsdMinor / 100)
+    );
+    setProfitShare(
+      initialInput?.profitShareBps == null ? "" : String(initialInput.profitShareBps / 100)
+    );
     setDueDate(initialInput?.dueAt?.slice(0, 10) ?? "");
     setDraft(null);
   }
@@ -267,6 +291,10 @@ export function TaskQuickCreate({
       return;
     }
     if (!resolvedWorkflowStateId) return;
+    if (dueDate && new Date(`${dueDate}T23:59:59.999`).getTime() < Date.now()) {
+      toast.error(projectT("workbench.pastDeadline"));
+      return;
+    }
     if (
       estimatePoints !== "" &&
       (!Number.isInteger(Number(estimatePoints)) ||
@@ -274,6 +302,16 @@ export function TaskQuickCreate({
         Number(estimatePoints) > 1000000)
     ) {
       toast.error(projectT("workbench.invalidPoints"));
+      return;
+    }
+    if (
+      [rewardUsd, profitShare].some(
+        (value) => value !== "" && !/^\d+(?:\.\d{1,2})?$/.test(value)
+      ) ||
+      Number(rewardUsd) > 1_000_000_000 ||
+      Number(profitShare) > 100
+    ) {
+      toast.error(projectT("workbench.invalidCompensation"));
       return;
     }
     operationInFlight.current = true;
@@ -292,6 +330,8 @@ export function TaskQuickCreate({
             ? initialInput.dueAt
             : dateEndIso(dueDate || null),
         startAt: draft ? dateStartIso(draft.startDate ?? null) : (initialInput?.startAt ?? null),
+        rewardUsdMinor: rewardUsd === "" ? null : Math.round(Number(rewardUsd) * 100),
+        profitShareBps: profitShare === "" ? null : Math.round(Number(profitShare) * 100),
         estimatePoints: estimatePoints === "" ? null : Number(estimatePoints),
         revisionLimit: draft?.revisionLimit ?? initialInput?.revisionLimit ?? null,
         cycleId: resolvedCycleId || null,
@@ -315,6 +355,11 @@ export function TaskQuickCreate({
       if (session.current !== requestedSession) return;
       toast.success(t("created"));
       onCreated?.(task);
+      if (publishOpening && !assigneeUserId) {
+        setOpen(false);
+        onPublishTask?.(task.id);
+        return;
+      }
       if (createMore) {
         reset();
         requestAnimationFrame(() => titleRef.current?.focus());
@@ -380,6 +425,18 @@ export function TaskQuickCreate({
           </div>
         </div>
 
+        {onPublishTask && !onStage ? (
+          <label className="mx-[18px] mb-3 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={publishOpening && !assigneeUserId}
+              disabled={Boolean(assigneeUserId)}
+              onChange={(event) => setPublishOpening(event.target.checked)}
+            />
+            {projectT("workbench.publishOpening")}
+            {assigneeUserId ? <span>{projectT("workbench.unassignedOnly")}</span> : null}
+          </label>
+        ) : null}
         <div className="min-w-0 px-[18px] pt-[8.5px]">
           <textarea
             ref={titleRef}
@@ -546,22 +603,37 @@ export function TaskQuickCreate({
                     : t("labels")
                 }
               />
-              <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-                {projectT("workbench.estimatePointsLabel")}
-                <input
-                  type="number"
-                  min={0}
-                  max={1000000}
-                  step={1}
-                  value={estimatePoints}
-                  aria-label={projectT("workbench.estimatePointsLabel")}
-                  className="h-7 w-20 rounded-md border border-white/10 bg-[#111216] px-2"
-                  onChange={(event) => {
-                    draftRevision.current += 1;
-                    setEstimatePoints(event.target.value);
-                  }}
-                />
-              </label>
+              {(
+                [
+                  { key: "rewardUsd", value: rewardUsd, set: setRewardUsd, max: 1_000_000_000 },
+                  { key: "profitShare", value: profitShare, set: setProfitShare, max: 100 },
+                ] as const
+              ).map((field) => (
+                <label
+                  key={field.key}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#252529] px-2 text-xs text-[#a4a4ac]"
+                >
+                  {field.key === "rewardUsd" ? (
+                    <IconCoin className="size-3.5" />
+                  ) : (
+                    <IconPercentage className="size-3.5" />
+                  )}
+                  {projectT(`workbench.${field.key}`)}
+                  <input
+                    type="number"
+                    min={0}
+                    max={field.max}
+                    step="0.01"
+                    value={field.value}
+                    aria-label={projectT(`workbench.${field.key}`)}
+                    className="w-20 bg-transparent px-1 outline-none"
+                    onChange={(event) => {
+                      draftRevision.current += 1;
+                      field.set(event.target.value);
+                    }}
+                  />
+                </label>
+              ))}
               <DateChip
                 value={dueDate}
                 onChange={(value) => {
@@ -707,20 +779,54 @@ function LabelChip({
 
 function DateChip({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const t = useTranslations("crewTasks");
+  const locale = useLocale();
+  const [open, setOpen] = useState(false);
+  const date = value ? new Date(`${value}T12:00:00`) : undefined;
   return (
-    <label
-      className="inline-flex h-6 min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-[#252529] py-0 pr-2 pl-1.5 text-[12px] font-medium leading-3 text-[#a4a4ac] hover:bg-[#2d2d32] hover:text-[#d8d8dd]"
-      aria-label={t("due")}
-    >
-      <IconCalendar className="size-3.5 shrink-0" />
-      <input
-        type="date"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        aria-label={t("due")}
-        className="w-auto cursor-pointer bg-transparent text-[11px] text-[#c9c9cf] outline-none"
-      />
-    </label>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={t("due")}
+          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#252529] px-2 text-xs text-[#a4a4ac]"
+        >
+          <IconCalendar className="size-3.5" />
+          {date && !Number.isNaN(date.getTime())
+            ? new Intl.DateTimeFormat(locale, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              }).format(date)
+            : t("due")}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-auto border-white/15 bg-[#151618] p-2" align="end">
+        <Calendar
+          mode="single"
+          disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
+          locale={locale === "zh-CN" ? zhCN : locale === "zh-HK" ? zhHK : enUS}
+          selected={date}
+          onSelect={(next) => {
+            onChange(
+              next
+                ? `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`
+                : ""
+            );
+            setOpen(false);
+          }}
+        />
+        <button
+          type="button"
+          className="w-full rounded p-2 text-xs hover:bg-white/5"
+          onClick={() => {
+            onChange("");
+            setOpen(false);
+          }}
+        >
+          {t("clear")}
+        </button>
+      </PopoverContent>
+    </Popover>
   );
 }
 

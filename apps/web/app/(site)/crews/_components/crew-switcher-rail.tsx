@@ -4,7 +4,7 @@ import { CrewUnreadMarker } from "./crew-unread-marker";
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { IconAlertTriangle, IconLayoutGrid, IconListCheck } from "@tabler/icons-react";
+import { IconAlertTriangle, IconLayoutGrid } from "@tabler/icons-react";
 
 import { CrewLogo } from "@/app/(site)/messages/_components/crew-logo";
 import { useMyCrews, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
@@ -98,7 +98,6 @@ export function CrewSwitcherRailView({
 }: CrewSwitcherRailViewProps) {
   const locale = useLocale() as Locale;
   const t = useTranslations("crewWorkbench");
-  const taskT = useTranslations("crewTaskCenter");
   const effectiveRootLabel = rootLabel ?? t("allCrews");
 
   return (
@@ -132,15 +131,6 @@ export function CrewSwitcherRailView({
             {effectiveRootLabel}
           </span>
         ) : null}
-      </Link>
-
-      <Link
-        href={localizePath("/crews/tasks", locale)}
-        aria-label={taskT("title")}
-        title={taskT("title")}
-        className="grid size-10 shrink-0 place-items-center rounded-xl text-muted-foreground hover:bg-secondary/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary"
-      >
-        <IconListCheck className="size-[18px]" stroke={1.75} />
       </Link>
 
       <div className={cn("my-2 h-px w-8 shrink-0 bg-white/[0.075]", showNames && "md:w-full")} />

@@ -189,6 +189,7 @@ async function render(deeplinkTaskId?: string | null, reuse = false, production 
         canEditCrewInfo={false}
         members={[]}
         isOwner={state.owner}
+        canCreate={state.owner}
         canReview={false}
         canSubmitAssigned={false}
         canComment={false}

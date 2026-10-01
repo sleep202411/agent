@@ -22,7 +22,7 @@ export function PrivateCasesScreen({ caseId }: { caseId?: string }) {
   const { user, isLoading } = useCurrentUser();
   const t = useTranslations("crewCases");
   return (
-    <main className="mx-auto max-w-4xl space-y-4 px-4 py-6">
+    <main className="mx-auto w-full max-w-[1800px] space-y-4 px-4 py-6">
       <CrewSectionNavigation active="cases" />
       <h1 className="text-xl font-semibold">{t("title")}</h1>
       <p className="text-sm text-muted-foreground">{t("privacy")}</p>

@@ -46,3 +46,14 @@ it("loads a folder only when expanded and links its actual files", () => {
     host.remove();
   }
 });
+
+it("localizes seeded folders while preserving user-renamed folders", async () => {
+  const { assetFolderLabel } = await import("./workbench-asset-folder");
+  expect(
+    assetFolderLabel({ folderKey: "music.bgm", name: "背景音乐" }, () => "Background music")
+  ).toBe("Background music");
+  expect(
+    assetFolderLabel({ folderKey: "music.bgm", name: "My soundtrack" }, () => "Background music")
+  ).toBe("My soundtrack");
+  expect(assetFolderLabel({ name: "背景音乐" }, () => "Background music")).toBe("背景音乐");
+});

@@ -6,6 +6,7 @@ import {
 import {
   storyAutoFallbackNodeId,
   storyExitNodeIds,
+  storyRouteEndingId,
   storyRouteNodeId,
 } from '@repo/shared/story-stats';
 import type { ExperienceRuntimeManifest } from '@repo/shared/experience-runtime';
@@ -327,8 +328,8 @@ export function compileStoryBuild(
             'error',
             item.code,
             item.message,
-            'revision',
-            String(input.sourceDraftRevision),
+            item.nodeId ? 'node' : 'revision',
+            item.nodeId ?? String(input.sourceDraftRevision),
           ),
         ),
       );
@@ -897,6 +898,18 @@ function compileIntermediateRelease(
       }
     }
   }
+  const referencedEndingIds = new Set<string>();
+  for (const node of runtimeNodes) {
+    if (!reachableRuntimeIds.has(node.nodeId)) continue;
+    const targets =
+      node.exit.kind === 'choice'
+        ? node.exit.choices.map((choice) => choice.target)
+        : node.exit.routes.map((route) => route.target);
+    for (const target of targets) {
+      const endingId = storyRouteEndingId(target);
+      if (endingId) referencedEndingIds.add(endingId);
+    }
+  }
   return {
     schemaVersion: INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION,
     channel: input.channel,
@@ -915,11 +928,13 @@ function compileIntermediateRelease(
         initialValue: variable.initialValue,
       }),
     ),
-    endings: (input.draft.storyBible.endings ?? []).map((ending) => ({
-      endingId: ending.endingId,
-      title: ending.title,
-      kind: ending.kind,
-    })),
+    endings: (input.draft.storyBible.endings ?? [])
+      .filter((ending) => referencedEndingIds.has(ending.endingId))
+      .map((ending) => ({
+        endingId: ending.endingId,
+        title: ending.title,
+        kind: ending.kind,
+      })),
     nodes: runtimeNodes.filter((node) => reachableRuntimeIds.has(node.nodeId)),
   };
 }
@@ -931,10 +946,11 @@ function compileExit(
   if (exit.kind === 'auto') {
     return { kind: 'auto', routes: exit.routes };
   }
+  const prompt = releaseChoicePrompt(exit.prompt);
   return {
     kind: 'choice',
     decisionId: exit.decisionId,
-    prompt: exit.prompt,
+    ...(prompt ? { prompt } : {}),
     choices: exit.choices.flatMap((choice) =>
       choice.target
         ? [
@@ -1189,6 +1205,19 @@ function explainReleaseIssues(
     );
   });
   return diagnostics;
+}
+
+/** A blank question is a valid choice. Drop whitespace-only copy so the release can omit it. */
+function releaseChoicePrompt(
+  prompt: Record<string, string>,
+): Record<string, string> | undefined {
+  const entries = Object.entries(prompt).filter(
+    ([, text]) => text.trim().length > 0,
+  );
+  if (entries.length === 0) return undefined;
+  return Object.fromEntries(
+    entries.map(([locale, text]) => [locale, text.trim()]),
+  );
 }
 
 function storyNodeTitle(

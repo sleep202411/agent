@@ -15,6 +15,7 @@ import {
 } from "@repo/shared/story-agent";
 import { getStoryWorkbench } from "@/lib/story-projects-api";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
+import { FizzAgentOrbButton } from "@/components/fizz-agent";
 import { getStoryProductionState, storyProductionKeys } from "@/lib/story-production-api";
 import { cn } from "@/lib/utils";
 import { isProductionStepSegment } from "../_lib/production-steps";
@@ -43,7 +44,10 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
   });
   const queryClient = useQueryClient();
   const t = useTranslations("storyStudio.authoringRun");
+  const tAgent = useTranslations("agentOs");
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
+  const agentDockOpen = useStoryProjectUiStore((state) => state.agentDockOpen);
+  const setAgentDockOpen = useStoryProjectUiStore((state) => state.setAgentDockOpen);
   const { run: authoringRun } = useStoryAuthoringRun(projectId, activeChapterId);
   const applyingRunId = authoringRun?.status === "applying" ? authoringRun.id : null;
   useQuery({
@@ -97,81 +101,96 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
           }
         : null;
 
+  const dockedOpen = mobileH5 || agentDockOpen;
+
   return (
-    <AgentOsPanel
-      canWrite={workbench.data?.project.capabilities.includes("story.edit") ?? false}
-      className={cn("p-0 max-md:min-w-0 max-md:flex-1", mobileView === "work" && "max-md:hidden")}
-      variant="docked"
-      projectId={projectId}
-      projectKind="story"
-      workbenchMode="story"
-      workbenchContext={
-        activeChapterId
-          ? { chapterId: activeChapterId, ...(mobileH5 ? { experience: "mobile_h5" } : {}) }
-          : undefined
-      }
-      composerGate={(composer) => (
-        <StoryAuthoringComposer
-          composer={composer}
-          projectId={projectId}
-          chapterId={activeChapterId}
-        />
-      )}
-      approvalGate={({ approval, busy, onResolve }) =>
-        approval.toolId === "story.applyProposal"
-          ? {
-              composer: (
-                <StoryAuthoringProposalApproval
-                  projectId={projectId}
-                  approval={approval}
-                  busy={busy}
-                  onResolve={onResolve}
-                  mobileH5={mobileH5}
-                />
-              ),
-            }
-          : null
-      }
-      artifactRenderer={(artifact) => {
-        if (artifact.reference.kind === "story_stage_proposal") {
-          return (
-            <StoryAuthoringProposalTranscript
-              projectId={projectId}
-              artifact={artifact}
-              mobileH5={mobileH5}
-            />
-          );
+    <>
+      <AgentOsPanel
+        canWrite={workbench.data?.project.capabilities.includes("story.edit") ?? false}
+        className={cn("p-0 max-md:min-w-0 max-md:flex-1", mobileView === "work" && "max-md:hidden")}
+        variant="docked"
+        projectId={projectId}
+        projectKind="story"
+        workbenchMode="story"
+        workbenchContext={
+          activeChapterId
+            ? { chapterId: activeChapterId, ...(mobileH5 ? { experience: "mobile_h5" } : {}) }
+            : undefined
         }
-        if (artifact.reference.kind === "story_generation_batch") {
-          return (
-            <StoryGenerationBatchTranscript
-              reference={artifact.reference}
-              compactMobile={mobileH5}
-            />
-          );
+        composerGate={(composer) => (
+          <StoryAuthoringComposer
+            composer={composer}
+            projectId={projectId}
+            chapterId={activeChapterId}
+          />
+        )}
+        approvalGate={({ approval, busy, onResolve }) =>
+          approval.toolId === "story.applyProposal"
+            ? {
+                composer: (
+                  <StoryAuthoringProposalApproval
+                    projectId={projectId}
+                    approval={approval}
+                    busy={busy}
+                    onResolve={onResolve}
+                    mobileH5={mobileH5}
+                  />
+                ),
+              }
+            : null
         }
-        return null;
-      }}
-      assistantTextResolver={(content, message) => {
-        if (!mobileH5) return content;
-        const includesAssetProposal = message.artifacts?.some(
-          (artifact) =>
-            artifact.reference.kind === "story_stage_proposal" &&
-            artifact.reference.stage === "assets"
-        );
-        if (!includesAssetProposal) return content;
-        return content.trim() === t("proposalStage.assets.legacyReadyMessage")
-          ? t("proposalStage.assets.mobileReadyMessage")
-          : content;
-      }}
-      activityStatus={authoringActivityStatus}
-      composerPrefill={composerPrefill}
-      onComposerPrefillConsumed={consumeComposerPrefill}
-      // Agent mutations can touch any projection (draft, layout, references) —
-      // refresh the whole story-studio query tree.
-      onMutationCompleted={() => queryClient.invalidateQueries({ queryKey: ["story-studio"] })}
-      open
-    />
+        artifactRenderer={(artifact) => {
+          if (artifact.reference.kind === "story_stage_proposal") {
+            return (
+              <StoryAuthoringProposalTranscript
+                projectId={projectId}
+                artifact={artifact}
+                mobileH5={mobileH5}
+              />
+            );
+          }
+          if (artifact.reference.kind === "story_generation_batch") {
+            return (
+              <StoryGenerationBatchTranscript
+                reference={artifact.reference}
+                compactMobile={mobileH5}
+              />
+            );
+          }
+          return null;
+        }}
+        assistantTextResolver={(content, message) => {
+          if (!mobileH5) return content;
+          const includesAssetProposal = message.artifacts?.some(
+            (artifact) =>
+              artifact.reference.kind === "story_stage_proposal" &&
+              artifact.reference.stage === "assets"
+          );
+          if (!includesAssetProposal) return content;
+          return content.trim() === t("proposalStage.assets.legacyReadyMessage")
+            ? t("proposalStage.assets.mobileReadyMessage")
+            : content;
+        }}
+        activityStatus={authoringActivityStatus}
+        composerPrefill={composerPrefill}
+        onComposerPrefillConsumed={consumeComposerPrefill}
+        // Agent mutations can touch any projection (draft, layout, references) —
+        // refresh the whole story-studio query tree.
+        onMutationCompleted={() => queryClient.invalidateQueries({ queryKey: ["story-studio"] })}
+        open={dockedOpen}
+        onClose={mobileH5 ? undefined : () => setAgentDockOpen(false)}
+      />
+      {panelActive && !mobileH5 && !agentDockOpen ? (
+        <div className="flex w-12 shrink-0 flex-col items-center border-l border-white/8 bg-[#0C0C0D] pt-3 max-md:hidden">
+          <FizzAgentOrbButton
+            size={32}
+            aria-label={tAgent("open")}
+            title={tAgent("open")}
+            onClick={() => setAgentDockOpen(true)}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

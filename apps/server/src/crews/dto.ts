@@ -349,6 +349,7 @@ export const ApplySchema = z.object({
 export type ApplyInput = z.infer<typeof ApplySchema>;
 
 export const ListCrewApplicationsQuerySchema = z.object({
+  scope: z.enum(['sent', 'received']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z
     .string()
@@ -541,6 +542,14 @@ export const CreateCrewTaskSchema = z
       .max(1_000_000)
       .nullable()
       .optional(),
+    rewardUsdMinor: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000_000)
+      .nullable()
+      .optional(),
+    profitShareBps: z.number().int().min(0).max(10_000).nullable().optional(),
     computeBudgetPoints: z
       .number()
       .int()
@@ -652,6 +661,14 @@ export const UpdateCrewTaskSchema = z
       .max(1_000_000)
       .nullable()
       .optional(),
+    rewardUsdMinor: z
+      .number()
+      .int()
+      .min(0)
+      .max(100_000_000_000)
+      .nullable()
+      .optional(),
+    profitShareBps: z.number().int().min(0).max(10_000).nullable().optional(),
     computeBudgetPoints: z
       .number()
       .int()

@@ -40,6 +40,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { WorkspacePermissionService } from '../workspaces';
 import { canonicalJsonHash } from './canonical-json';
+import { storyRevisionSnapshotAction } from './story-revision-snapshot';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   createLockableInteractiveStoryDraftContentSchema,
@@ -1726,14 +1727,27 @@ export class StoryProjectsService {
               },
             });
             if (existing) {
-              if (existing.contentHash !== revisionContentHash) {
-                throw new ConflictException({
-                  code: 'STORY_REVISION_INTEGRITY_ERROR',
-                  message:
-                    'The existing immutable revision does not match its source draft.',
-                });
+              const action = storyRevisionSnapshotAction({
+                existingSchemaVersion: existing.schemaVersion,
+                existingContentHash: existing.contentHash,
+                existingContentHashMatchesContent:
+                  canonicalJsonHash(existing.content) === existing.contentHash,
+                nextSchemaVersion: draft.schemaVersion,
+                nextContentHash: revisionContentHash,
+              });
+              if (action === 'reuse') {
+                return { kind: 'revision', revision: existing } as const;
               }
-              return { kind: 'revision', revision: existing } as const;
+              const revision = await tx.storyRevision.update({
+                where: { id: existing.id },
+                data: {
+                  schemaVersion: draft.schemaVersion,
+                  content: lockable.data as Prisma.InputJsonObject,
+                  contentHash: revisionContentHash,
+                  ...(input.label ? { label: input.label } : {}),
+                },
+              });
+              return { kind: 'revision', revision } as const;
             }
 
             const latest = await tx.storyRevision.aggregate({

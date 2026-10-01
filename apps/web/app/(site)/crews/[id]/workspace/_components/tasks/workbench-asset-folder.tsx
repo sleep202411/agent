@@ -1,6 +1,9 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import en from "@/messages/en-US.json";
+import cn from "@/messages/zh-CN.json";
+import hk from "@/messages/zh-HK.json";
 import { IconFile, IconFolder } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
@@ -19,6 +22,7 @@ export function WorkbenchAssetFolder({
 }) {
   const [open, setOpen] = useState(false);
   const t = useTranslations("crewTaskProject.workbench");
+  const folderT = useTranslations("crewAssetFolders");
   const isFolder = asset.kind === "folder";
   const children = useCrewAssets(
     crewId,
@@ -32,7 +36,7 @@ export function WorkbenchAssetFolder({
         href={`?crew=${encodeURIComponent(crewId)}&tab=assets&asset=${encodeURIComponent(asset.id)}`}
       >
         <IconFile className="size-4 shrink-0 text-blue-400" />
-        <span className="truncate">{asset.name}</span>
+        <span className="truncate">{assetFolderLabel(asset, folderT)}</span>
       </Link>
     );
   return (
@@ -44,7 +48,7 @@ export function WorkbenchAssetFolder({
         onClick={() => setOpen(!open)}
       >
         <IconFolder className="size-4 shrink-0 text-muted-foreground" />
-        <span className="truncate">{asset.name}</span>
+        <span className="truncate">{assetFolderLabel(asset, folderT)}</span>
       </button>
       {open ? (
         <div className="ml-2 border-l border-white/10 pl-3">
@@ -86,4 +90,17 @@ export function WorkbenchAssetFolder({
       ) : null}
     </div>
   );
+}
+
+// Translate seeded folder names only; preserve user-created and renamed folders.
+export function assetFolderLabel(
+  asset: { folderKey?: string | null; name: string },
+  t: (key: string) => string
+) {
+  const key = asset.folderKey?.replaceAll(".", "_");
+  if (!key) return asset.name;
+  const defaults = [en, cn, hk].map(
+    (messages) => (messages.crewAssetFolders as Record<string, string>)[key]
+  );
+  return defaults.includes(asset.name) ? t(key) : asset.name;
 }

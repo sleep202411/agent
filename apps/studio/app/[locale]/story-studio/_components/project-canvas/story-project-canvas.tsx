@@ -172,6 +172,7 @@ import {
   connectChoiceTarget,
   createStoryEndingForAutoRoute,
   createStoryEndingForChoice,
+  endingsInUse,
   createClipNode,
   moveChoiceOption,
   putStoryEnding,
@@ -1272,7 +1273,7 @@ function StoryProjectCanvasInner({
     [content, t]
   );
   const choiceStateVariables = content?.storyBible.stateVariables ?? NO_STORY_VARIABLES;
-  const choiceEndings = content?.storyBible.endings ?? NO_STORY_ENDINGS;
+  const choiceEndings = content ? endingsInUse(content) : NO_STORY_ENDINGS;
   const choiceRuntimeRef = useRef<StoryCanvasChoiceContextValue>(null!);
   choiceRuntimeRef.current = {
     setCommunityPointPrice: async (nodeId, price) => {
@@ -1930,7 +1931,6 @@ function StoryProjectCanvasInner({
     if (!canvasNodes.some((node) => node.id === requestedFocusNodeId)) return;
     appliedFocusRef.current = focusKey;
     hasFittedInitialCanvasRef.current = true;
-    setSidePanel(null);
     selectCanvasNodeExclusively(requestedFocusNodeId);
     void fitView({
       nodes: [{ id: requestedFocusNodeId }],
@@ -1946,7 +1946,6 @@ function StoryProjectCanvasInner({
     requestedFocusNodeId,
     resolvedChapterId,
     selectCanvasNodeExclusively,
-    setSidePanel,
   ]);
 
   const closeCreatorMenu = useCallback(() => setCreatorMenu(null), []);

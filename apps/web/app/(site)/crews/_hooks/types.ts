@@ -521,6 +521,8 @@ export interface CrewTaskDTO {
   priority: CrewTaskPriority;
   startAt: string | null;
   dueAt: string | null;
+  rewardUsdMinor?: number | null;
+  profitShareBps?: number | null;
   estimatePoints: number | null;
   computeBudgetPoints: number | null;
   computeUsedPoints: number;
@@ -666,6 +668,8 @@ export interface UpdateCrewTaskInput {
   priority?: CrewTaskPriority;
   startAt?: string | null;
   dueAt?: string | null;
+  rewardUsdMinor?: number | null;
+  profitShareBps?: number | null;
   estimatePoints?: number | null;
   computeBudgetPoints?: number | null;
   revisionLimit?: number | null;
@@ -705,6 +709,8 @@ export interface CreateCrewTaskInput {
   priority: CrewTaskPriority;
   startAt?: string | null;
   dueAt?: string | null;
+  rewardUsdMinor?: number | null;
+  profitShareBps?: number | null;
   estimatePoints?: number | null;
   computeBudgetPoints?: number | null;
   revisionLimit?: number | null;
@@ -950,6 +956,8 @@ export interface CrewTaskDraftDTO {
   priority: CrewTaskPriority;
   startDate: string | null;
   dueDate: string | null;
+  rewardUsdMinor?: number | null;
+  profitShareBps?: number | null;
   estimatePoints: number | null;
   revisionLimit: number | null;
   cycleId: string | null;

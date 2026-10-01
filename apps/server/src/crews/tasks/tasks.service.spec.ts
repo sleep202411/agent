@@ -388,6 +388,86 @@ function build() {
 }
 
 describe('CrewTasksService', () => {
+  it('rejects past deadlines before creating a task', async () => {
+    const t = build();
+    await expect(
+      t.service.create(CREW_ID, OWNER_ID, {
+        blockedByTaskIds: [],
+        customFieldValues: [],
+        labelIds: [],
+        title: 'Past deadline',
+        description: '',
+        priority: 'normal',
+        assignees: [],
+        dueAt: '2000-01-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('Choose today or a future deadline.');
+    expect(t.prisma.$transaction).not.toHaveBeenCalled();
+  });
+  it.each([
+    [{ rewardUsdMinor: 0 }, { rewardUsdMinor: 0, profitShareBps: 250 }],
+    [{ profitShareBps: null }, { rewardUsdMinor: 3000, profitShareBps: null }],
+  ])(
+    'preserves the other compensation term on partial update (%j)',
+    async (patch, expected) => {
+      const t = build();
+      const current = task({
+        canvasProjectId: null,
+        metadata: {
+          clipId: 'clip-1',
+          compensation: { rewardUsdMinor: 3000, profitShareBps: 250 },
+        },
+      });
+      t.prisma.crewTask.findUnique.mockResolvedValue(current);
+      t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+      t.tx.crewTask.update.mockResolvedValue(current);
+      await t.service.update(TASK_ID, OWNER_ID, {
+        expectedVersion: 1,
+        ...patch,
+      });
+      const update = firstCallArgument<Prisma.CrewTaskUpdateArgs>(
+        t.tx.crewTask.update,
+      );
+      expect(update.data.metadata).toEqual({
+        clipId: 'clip-1',
+        compensation: expected,
+      });
+    },
+  );
+
+  it('persists compensation without losing canvas metadata and exposes the saved terms', async () => {
+    const t = build();
+    const metadata = {
+      clipId: 'clip-1',
+      compensation: { rewardUsdMinor: 3000, profitShareBps: 0 },
+    };
+    const current = task({ canvasProjectId: null, metadata });
+    t.prisma.crewTask.findUnique.mockResolvedValue(current);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+    t.tx.crewTask.update.mockResolvedValue(
+      task({
+        canvasProjectId: null,
+        metadata: {
+          ...metadata,
+          compensation: { rewardUsdMinor: 3025, profitShareBps: 250 },
+        },
+      }),
+    );
+    const result = await t.service.update(TASK_ID, OWNER_ID, {
+      expectedVersion: 1,
+      rewardUsdMinor: 3025,
+      profitShareBps: 250,
+    });
+    const update = firstCallArgument<Prisma.CrewTaskUpdateArgs>(
+      t.tx.crewTask.update,
+    );
+    expect(update.data.metadata).toEqual({
+      clipId: 'clip-1',
+      compensation: { rewardUsdMinor: 3025, profitShareBps: 250 },
+    });
+    expect(result).toMatchObject({ rewardUsdMinor: 3025, profitShareBps: 250 });
+  });
+
   it('exposes stable asset categories without exposing raw metadata', async () => {
     const t = build();
     t.prisma.crewTask.findUnique.mockResolvedValue(
@@ -1005,7 +1085,11 @@ describe('CrewTasksService', () => {
     async (query) => {
       const t = build();
       t.prisma.crewTask.findMany.mockResolvedValue([]);
-      await t.service.listOptions(CREW_ID, OWNER_ID, { query });
+      await t.service.listOptions(
+        CREW_ID,
+        OWNER_ID,
+        ListCrewTaskOptionsQuerySchema.parse({ query }),
+      );
       const input = firstCallArgument<{ where: { OR: unknown[] } }>(
         t.prisma.crewTask.findMany,
       );
@@ -1026,7 +1110,11 @@ describe('CrewTasksService', () => {
     async (query) => {
       const t = build();
       t.prisma.crewTask.findMany.mockResolvedValue([]);
-      await t.service.listOptions(CREW_ID, OWNER_ID, { query });
+      await t.service.listOptions(
+        CREW_ID,
+        OWNER_ID,
+        ListCrewTaskOptionsQuerySchema.parse({ query }),
+      );
       const input = firstCallArgument<{ where: { OR: unknown[] } }>(
         t.prisma.crewTask.findMany,
       );
