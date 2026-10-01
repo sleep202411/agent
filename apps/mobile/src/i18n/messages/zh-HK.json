@@ -2730,5 +2730,18 @@
   "trustAppeals.confirm": "記錄決定",
   "trustAppeals.cancel": "取消",
   "trustAppeals.refresh": "重新整理佇列",
-  "trustAppeals.history": "包括已審核申訴"
+  "trustAppeals.history": "包括已審核申訴",
+  "contentReviewHistory.title": "內容審核報告",
+  "contentReviewHistory.refresh": "重新整理",
+  "contentReviewHistory.historyLimit": "此工作區最近儲存的報告。",
+  "contentReviewHistory.empty": "暫無記錄。",
+  "contentReviewHistory.findings": "審核發現",
+  "contentReviewHistory.credits": "已扣算力積分",
+  "contentReviewHistory.duration": "時長（秒）",
+  "contentReviewHistory.risk": "風險級別",
+  "contentReviewHistory.suggestion": "建議",
+  "contentReviewHistory.frameRisk": "畫面風險",
+  "contentReviewHistory.audioRisk": "音訊風險",
+  "contentReviewHistory.confidence": "置信度",
+  "contentReviewHistory.comments": "評論"
 }

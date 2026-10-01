@@ -2730,5 +2730,18 @@
   "trustAppeals.confirm": "Record decision",
   "trustAppeals.cancel": "Cancel",
   "trustAppeals.refresh": "Refresh queue",
-  "trustAppeals.history": "Include reviewed appeals"
+  "trustAppeals.history": "Include reviewed appeals",
+  "contentReviewHistory.title": "Content review reports",
+  "contentReviewHistory.refresh": "Refresh",
+  "contentReviewHistory.historyLimit": "Latest saved reports in this workspace.",
+  "contentReviewHistory.empty": "No records.",
+  "contentReviewHistory.findings": "Findings",
+  "contentReviewHistory.credits": "Compute credits charged",
+  "contentReviewHistory.duration": "Duration (seconds)",
+  "contentReviewHistory.risk": "Risk level",
+  "contentReviewHistory.suggestion": "Suggestion",
+  "contentReviewHistory.frameRisk": "Frame risk",
+  "contentReviewHistory.audioRisk": "Audio risk",
+  "contentReviewHistory.confidence": "Confidence",
+  "contentReviewHistory.comments": "Comments"
 }

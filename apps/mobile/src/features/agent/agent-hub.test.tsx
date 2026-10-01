@@ -12,6 +12,9 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
 }));
+vi.mock("@/features/agent/content-review-history", () => ({
+  ContentReviewHistory: () => <span>Content review reports</span>,
+}));
 vi.mock("@/features/agent/workspace-analytics", () => ({
   WorkspaceAnalyticsScreen: () => <span>Workspace Analytics</span>,
 }));

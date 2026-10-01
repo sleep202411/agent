@@ -2730,5 +2730,18 @@
   "trustAppeals.confirm": "记录决定",
   "trustAppeals.cancel": "取消",
   "trustAppeals.refresh": "刷新队列",
-  "trustAppeals.history": "包括已审核申诉"
+  "trustAppeals.history": "包括已审核申诉",
+  "contentReviewHistory.title": "内容审核报告",
+  "contentReviewHistory.refresh": "刷新",
+  "contentReviewHistory.historyLimit": "此工作区最近保存的报告。",
+  "contentReviewHistory.empty": "暂无记录。",
+  "contentReviewHistory.findings": "审核发现",
+  "contentReviewHistory.credits": "已扣算力积分",
+  "contentReviewHistory.duration": "时长（秒）",
+  "contentReviewHistory.risk": "风险级别",
+  "contentReviewHistory.suggestion": "建议",
+  "contentReviewHistory.frameRisk": "画面风险",
+  "contentReviewHistory.audioRisk": "音频风险",
+  "contentReviewHistory.confidence": "置信度",
+  "contentReviewHistory.comments": "评论"
 }

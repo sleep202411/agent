@@ -1,3 +1,4 @@
+import { ContentReviewHistory } from "@/features/agent/content-review-history";
 import { WorkspaceAnalyticsScreen } from "@/features/agent/workspace-analytics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useRef, useState } from "react";
@@ -81,6 +82,7 @@ function AgentHubSession({
   const { requireAuth, isAuthenticated } = useAuthGate();
   const [platformWorkspace, setPlatformWorkspace] = useState<StudioWorkspace>();
   const [joiningInvite, setJoiningInvite] = useState(false);
+  const [reviewWorkspace, setReviewWorkspace] = useState<string>();
   const [analyticsWorkspace, setAnalyticsWorkspace] = useState<string>();
   const [workspaceSettings, setWorkspaceSettings] = useState<{ id?: string }>();
   const [memberScope, setMemberScope] = useState<StudioInviteScope>();
@@ -205,6 +207,14 @@ function AgentHubSession({
     [selectedWorkspace, generation, router, t]
   );
 
+  if (reviewWorkspace)
+    return (
+      <ContentReviewHistory
+        workspaceId={reviewWorkspace}
+        generation={generation}
+        onClose={() => setReviewWorkspace(undefined)}
+      />
+    );
   if (analyticsWorkspace)
     return (
       <WorkspaceAnalyticsScreen
@@ -350,6 +360,16 @@ function AgentHubSession({
             style={[styles.banner, { borderColor: theme.textSecondary }]}
           >
             <ThemedText type="small">{t("studioWorkspace.create")}</ThemedText>
+          </Pressable>
+        )}
+        {selectedWorkspace?.accessScope === "workspace" && (
+          <Pressable
+            accessibilityRole="button"
+            disabled={creating || loading}
+            onPress={() => setReviewWorkspace(selectedWorkspace.id)}
+            style={[styles.banner, { borderColor: theme.textSecondary }]}
+          >
+            <ThemedText type="small">{t("contentReviewHistory.title")}</ThemedText>
           </Pressable>
         )}
         {selectedWorkspace?.accessScope === "workspace" && (
