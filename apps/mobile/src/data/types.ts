@@ -33,6 +33,8 @@ export interface IpEpisode {
   free?: boolean;
   /** Playable video URL (from the episode's trailer/video asset). */
   videoUrl?: string;
+  /** Server-resolved full episode video; never a trailer fallback. */
+  mediaUrl?: string;
 }
 
 export interface IpEngagementSnapshot {
@@ -79,6 +81,8 @@ export interface IpDetail extends IpSummary {
   tags: string[];
   /** Playable IP-level trailer URL, if the IP has one. */
   trailerUrl?: string;
+  /** Official public preview priority: IP trailer, episode trailers, episode media. */
+  previewVideoUrl?: string;
   /** Human-shareable "room number". Not yet provided by the server — optional. */
   roomCode?: string;
   /** Rights holder (`Ip.copyrightOwner`). */

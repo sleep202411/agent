@@ -31,7 +31,10 @@ import type {
   TaxonomyTerm,
 } from "./types";
 
-type AssetDto = { url?: string | null; externalUrl?: string | null } | null | undefined;
+type AssetDto =
+  | { kind?: string; url?: string | null; externalUrl?: string | null }
+  | null
+  | undefined;
 
 type ContributorDto = {
   userId?: string | null;
@@ -229,6 +232,10 @@ function mapDetail(dto: IpDto): IpDetail {
     thumbnailUrl: assetUrl(episode.coverAsset),
     // The episode's playable video is `mediaAsset`; fall back to a trailer preview.
     videoUrl: assetUrl(episode.mediaAsset) ?? assetUrl(episode.trailerAsset),
+    mediaUrl:
+      episode.status === "published" && episode.mediaAsset?.kind === "video"
+        ? (episode.mediaAsset.url ?? undefined)
+        : undefined,
     free: !!episode.isFreePreview,
   }));
   const people = mapPeople(dto);
@@ -248,6 +255,12 @@ function mapDetail(dto: IpDto): IpDetail {
     cast,
     creators,
     trailerUrl: assetUrl(dto.trailerAsset),
+    previewVideoUrl:
+      [
+        dto.trailerAsset,
+        ...(dto.episodes ?? []).map((ep) => ep.trailerAsset),
+        ...(dto.episodes ?? []).map((ep) => ep.mediaAsset),
+      ].find((asset) => asset?.kind === "video" && asset.url)?.url ?? undefined,
     tags: [...(dto.genres ?? []), ...(dto.tags ?? [])].filter(Boolean),
     // No server-side room number yet; the detail chip stays hidden when undefined.
     roomCode: undefined,

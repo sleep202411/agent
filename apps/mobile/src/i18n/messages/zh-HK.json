@@ -4107,5 +4107,7 @@
   "ipBookmark.target": "收藏對象",
   "ipBookmark.wholeIp": "整個 IP",
   "ipBookmark.episode": "收藏單集",
-  "ipBookmark.unavailable": "該單集已不可用，請選擇其他對象。"
+  "ipBookmark.unavailable": "該單集已不可用，請選擇其他對象。",
+  "contentGpsDiscovery.play": "播放所選 IP",
+  "contentGpsDiscovery.playbackUnavailable": "此選擇暫時無法播放。請在下方劇集中查看存取權限及解鎖選項。"
 }

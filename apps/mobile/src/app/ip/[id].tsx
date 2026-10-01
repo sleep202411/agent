@@ -1,3 +1,4 @@
+import { resolvePlaybackEntry } from "@/features/content-gps/playback-entry";
 import { BookmarkControl } from "@/features/ip-collection/bookmark-control";
 import { IpTags } from "@/features/browse/ip-tags";
 import { EpisodeFeedback } from "@/components/episode-feedback";
@@ -148,7 +149,31 @@ function resolvePlan(access: IpAccess | undefined, episode: IpEpisode): UnlockPl
 }
 
 export default function IpDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{
+    id: string;
+    watch?: string | string[];
+    episode?: string | string[];
+  }>();
+  const auth = useAuth();
+  const locale = useLocale();
+  // A different viewer, locale or playback target cannot retain the previous video.
+  return (
+    <IpDetailSession
+      key={JSON.stringify([params.id, params.watch, params.episode, auth.generation, locale])}
+    />
+  );
+}
+
+function IpDetailSession() {
+  const params = useLocalSearchParams<{
+    id: string;
+    watch?: string | string[];
+    episode?: string | string[];
+  }>();
+  const { id } = params;
+  // Invalid duplicate parameters remain invalid, with stable effect dependencies.
+  const watch = Array.isArray(params.watch) ? "invalid" : params.watch;
+  const episode = Array.isArray(params.episode) ? "" : params.episode;
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const t = useTranslations();
@@ -184,6 +209,7 @@ export default function IpDetailScreen() {
         if (!alive) return;
         setIp(detail);
         setAccess(acc);
+        setPlaying(detail ? resolvePlaybackEntry(detail, acc, watch, episode) : undefined);
       } catch {
         if (alive) setIp(undefined);
       } finally {
@@ -194,7 +220,7 @@ export default function IpDetailScreen() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, watch, episode]);
 
   const applyEngagement = useCallback(
     (ipId: string, engagement: IpEngagementSnapshot | undefined) => {
@@ -574,6 +600,11 @@ export default function IpDetailScreen() {
         </View>
 
         <View style={styles.body}>
+          {watch !== undefined && !playing && !resolvePlaybackEntry(ip, access, watch, episode) && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {t("contentGpsDiscovery.playbackUnavailable")}
+            </ThemedText>
+          )}
           {playing?.episodeId && <EpisodeFeedback ipId={ip.id} episodeId={playing.episodeId} />}
           <IpKnowledgeChat ipId={ip.id} ipTitle={ip.title} />
           <IpGenerationPanel ipId={ip.id} />

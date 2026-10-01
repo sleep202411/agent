@@ -1,3 +1,4 @@
+import { gpsPlaybackPath } from "./playback-entry";
 import { DiscoveryAssistantPanel } from "@/features/discovery-assistant/discovery-assistant-panel";
 import { useIpBookmark } from "@/features/ip-collection/use-ip-bookmark";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
@@ -186,6 +187,12 @@ function Card({
         <Action
           label={t("contentGpsDiscovery.selectTitle").replace("{title}", item.title)}
           onPress={select}
+        />
+      )}
+      {selected && (
+        <Action
+          label={t("contentGpsDiscovery.play")}
+          onPress={() => router.push(toHref(gpsPlaybackPath(item.id, item.episode?.id)))}
         />
       )}
       <Action

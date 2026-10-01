@@ -4107,5 +4107,7 @@
   "ipBookmark.target": "Bookmark target",
   "ipBookmark.wholeIp": "Whole IP",
   "ipBookmark.episode": "Bookmark episode",
-  "ipBookmark.unavailable": "This episode is no longer available. Choose another target."
+  "ipBookmark.unavailable": "This episode is no longer available. Choose another target.",
+  "contentGpsDiscovery.play": "Play selected IP",
+  "contentGpsDiscovery.playbackUnavailable": "Playback is unavailable for this selection. Check the episodes below for access and unlock options."
 }

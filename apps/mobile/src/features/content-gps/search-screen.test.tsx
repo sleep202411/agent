@@ -8,10 +8,11 @@ const h = vi.hoisted(() => ({
   search: vi.fn(),
   get: vi.fn(),
   gate: vi.fn(),
+  push: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
-  useRouter: () => ({ setParams: vi.fn() }),
+  useRouter: () => ({ setParams: vi.fn(), push: h.push }),
   useLocalSearchParams: () => h.params,
 }));
 vi.mock("@/auth", () => ({
@@ -178,6 +179,11 @@ it("selected IP bookmark opens the auth sheet for guests without a collection wr
     expect(button.disabled).toBe(false);
     await act(async () => button.click());
     expect(h.gate).toHaveBeenCalledTimes(1);
+    const play = Array.from(host.querySelectorAll("button")).find(
+      (b) => b.textContent === "contentGpsDiscovery.play"
+    )!;
+    await act(async () => play.click());
+    expect(h.push).toHaveBeenCalledWith(`/ip/${id}?watch=1`);
     expect(h.get).not.toHaveBeenCalled();
     expect(h.params).toEqual({ selected: id, from: "0", to: "100" });
   } finally {
