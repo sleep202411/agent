@@ -72,11 +72,11 @@ async function flush() {
     await new Promise((resolve) => setTimeout(resolve, 30));
   });
 }
-async function render(positionId?: string) {
+async function render(positionId?: string, hideWhenEmpty = false) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={qc}>
-        <PositionInvitationsPanel positionId={positionId} />
+        <PositionInvitationsPanel positionId={positionId} hideWhenEmpty={hideWhenEmpty} />
       </QueryClientProvider>
     )
   );
@@ -238,4 +238,27 @@ it("clears an old application draft when selecting another invitation", async ()
   expect(h.post).toHaveBeenCalledWith("/crew-position-invitations/second/accept", {
     body: { message: null, portfolioUrl: null },
   });
+});
+
+it("hides an empty recipient inbox but retains the manager invitation controls", async () => {
+  h.get.mockResolvedValue({ items: [], nextCursor: null });
+  await render(undefined, true);
+  expect(host.querySelector("section")).toBeNull();
+  await render("position", true);
+  expect(host.textContent).toContain("recipient");
+});
+
+it("keeps failed inbox loading visible with retry access", async () => {
+  h.get.mockRejectedValue(new Error("Invitation service unavailable"));
+  await render(undefined, true);
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Invitation service unavailable"
+  );
+  expect(button("refresh")).toBeTruthy();
+});
+
+it("shows real invitations in the compact recipient inbox", async () => {
+  await render(undefined, true);
+  expect(button("view")).toBeTruthy();
+  expect(host.querySelectorAll("h2")).toHaveLength(1);
 });

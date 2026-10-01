@@ -2087,7 +2087,7 @@
     "importSummary": "{nodes} plot nodes, {shots} shots",
     "importIssuesTitle": "Draft not ready",
     "importClearSelection": "Clear selection",
-    "messagesOffersTab": "Messages & Offers",
+    "messagesOffersTab": "Recruitment Inbox",
     "taskDashboardTab": "Task Dashboard"
   },
   "crewRoles": {
@@ -10455,8 +10455,8 @@
     "useFee": "Use agreed fee"
   },
   "crewPositionInvites": {
-    "title": "Private recruitment invitations",
-    "help": "Accepting creates an application. It does not grant Crew membership or task access.",
+    "title": "Invitations to apply",
+    "help": "Accepting an invitation submits an application for review.",
     "loading": "Loading…",
     "failed": "Request failed.",
     "refresh": "Refresh",
@@ -10897,9 +10897,9 @@
     "video_final": "Final"
   },
   "crewCommunications": {
-    "title": "Messages & Offers",
+    "title": "Recruitment Inbox",
     "allMessages": "Message center",
-    "invitations": "Private recruitment invitations",
+    "invitations": "Invitations to apply",
     "direction": "Application inbox",
     "sent": "My applications",
     "received": "Applications to my tasks",

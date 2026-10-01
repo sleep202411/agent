@@ -27,7 +27,7 @@ type Preview = Invitation & {
     requiredSkills: string[];
   };
 };
-type Props = { positionId?: string };
+type Props = { positionId?: string; hideWhenEmpty?: boolean };
 type Request = { path: string; body?: Record<string, unknown> };
 
 /** Mounted only for authorized position managers, or on the recipient's private page. */
@@ -42,7 +42,7 @@ export function PositionInvitationsPanel(props: Props) {
     />
   );
 }
-function InvitationSession({ positionId, userId }: Props & { userId: string }) {
+function InvitationSession({ positionId, userId, hideWhenEmpty }: Props & { userId: string }) {
   const t = useTranslations("crewPositionInvites");
   const locale = useLocale();
   const client = useQueryClient();
@@ -166,10 +166,14 @@ function InvitationSession({ positionId, userId }: Props & { userId: string }) {
         : {}),
     });
   }
+  if (hideWhenEmpty && !positionId && readable && !items.length && !retry && !error) return null;
+
   return (
     <section className="space-y-3 rounded-lg border border-border p-4" aria-label={t("title")}>
       <h2 className="font-semibold">{t("title")}</h2>
-      <p className="text-sm text-muted-foreground">{t("help")}</p>
+      {(positionId || items.length > 0) && (
+        <p className="text-sm text-muted-foreground">{t("help")}</p>
+      )}
       {list.isPending && <p>{t("loading")}</p>}
       {list.isError && <p role="alert">{list.error.message}</p>}
       {error && <p role="alert">{error}</p>}

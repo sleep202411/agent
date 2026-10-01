@@ -2087,7 +2087,7 @@
     "importSummary": "{nodes} 个情节节点，{shots} 个片段",
     "importIssuesTitle": "情节树未就绪",
     "importClearSelection": "清除选择",
-    "messagesOffersTab": "消息与邀约",
+    "messagesOffersTab": "招募收件箱",
     "taskDashboardTab": "任务工作台"
   },
   "crewRoles": {
@@ -10455,8 +10455,8 @@
     "useFee": "使用约定费用"
   },
   "crewPositionInvites": {
-    "title": "私密招聘邀请",
-    "help": "接受邀请会创建申请，不会授予 Crew 成员身份或任务访问权限。",
+    "title": "应聘邀请",
+    "help": "接受邀请后将提交应聘申请，等待审核。",
     "loading": "加载中…",
     "failed": "请求失败。",
     "refresh": "刷新",
@@ -10897,9 +10897,9 @@
     "video_final": "成片"
   },
   "crewCommunications": {
-    "title": "消息与邀约",
+    "title": "招募收件箱",
     "allMessages": "消息中心",
-    "invitations": "私密招募邀请",
+    "invitations": "应聘邀请",
     "direction": "申请收件箱",
     "sent": "我的申请",
     "received": "收到的任务申请",
