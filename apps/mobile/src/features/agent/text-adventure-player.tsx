@@ -3,7 +3,7 @@ import { ActivityIndicator, ScrollView, TextInput, View } from "react-native";
 import type { TextGamePlaySession } from "@repo/shared/text-game";
 import { ThemedText } from "@/components/themed-text";
 import { getAuthGeneration } from "@/auth/auth-store";
-import { useLocale, useTranslations } from "@/i18n";
+import { useLocale, useTranslations, type MessageKey } from "@/i18n";
 import { useTheme } from "@/hooks/use-theme";
 import type { TextAdventureSession } from "./api/text-adventure-api";
 import { TextAdventureMedia } from "./text-adventure-media";
@@ -13,10 +13,12 @@ export function TextAdventurePlayer({
   gameId,
   account,
   onBack,
+  backLabel = "textAdventures.mobile.backToEditor",
 }: {
   gameId: string;
   account: TextAdventureSession;
   onBack: () => void;
+  backLabel?: MessageKey;
 }) {
   const t = useTranslations(),
     locale = useLocale(),
@@ -242,7 +244,7 @@ export function TextAdventurePlayer({
         disabled={busy || !!confirm}
         onPress={() => void run(refresh)}
       />
-      <Action label="textAdventures.mobile.backToEditor" onPress={onBack} />
+      <Action label={backLabel} onPress={onBack} />
     </ScrollView>
   );
 }

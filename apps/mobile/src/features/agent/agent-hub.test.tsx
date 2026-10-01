@@ -12,6 +12,9 @@ const h = vi.hoisted(() => ({
   create: vi.fn(),
   push: vi.fn(),
 }));
+vi.mock("@/features/agent/text-adventures", () => ({
+  TextAdventures: () => <span>Native Text Adventures</span>,
+}));
 vi.mock("@/features/agent/content-review-history", () => ({
   ContentReviewHistory: () => <span>Content review reports</span>,
 }));
@@ -263,4 +266,14 @@ it("selects the workspace requested by an accepted invite and falls back after r
   ]);
   await act(async () => host.querySelector("button")!.click());
   expect(h.list).toHaveBeenLastCalledWith(expect.any(AbortSignal), "workspace");
+});
+
+it("opens native Text Adventures from the authenticated creation hub", async () => {
+  await render();
+  const entry = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "textAdventure.title"
+  );
+  expect(entry).toBeDefined();
+  await act(async () => entry!.click());
+  expect(host.textContent).toContain("Native Text Adventures");
 });

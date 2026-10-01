@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TextAdventureLibrary } from "./text-adventure-library";
 const h = vi.hoisted(() => ({ list: vi.fn(), generation: 1 }));
+vi.mock("./text-adventure-preview", () => ({
+  TextAdventurePreview: ({ gameId }: { gameId: string }) => <span>Preview {gameId}</span>,
+}));
 vi.mock("./text-adventure-player", () => ({
   TextAdventurePlayer: ({ onBack }: { onBack: () => void }) => (
     <button onClick={onBack}>player back</button>
@@ -100,4 +103,10 @@ it("opens native playtesting from the editor and returns to the editor", async (
   expect(host.textContent).toContain("player back");
   await act(async () => button("player back").click());
   expect(host.textContent).toContain("tg_0123456789abcdef");
+});
+
+it("opens the saved preview from the library", async () => {
+  await render();
+  await act(async () => button("textAdventure.preview").click());
+  expect(host.textContent).toContain("Preview tg_0123456789abcdef");
 });
