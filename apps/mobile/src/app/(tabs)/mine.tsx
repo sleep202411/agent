@@ -11,7 +11,7 @@ import { ThemedText } from "@/components/themed-text";
 import { appEnv, resolveAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { fetchMyCrews } from "@/data/crew-api";
-import { fetchMyIps, type MyIp } from "@/data/ip-api";
+import { useMyIps } from "@/features/profile/use-my-ips";
 import { useMyWorks } from "@/features/profile/use-my-works";
 import { ListFooter } from "@/components/ui";
 import type { CrewSummary } from "@/data/types";
@@ -88,7 +88,7 @@ export default function MineScreen() {
   const [tab, setTab] = useState<TabKey>("works");
   const [languageOpen, setLanguageOpen] = useState(false);
   const ownerWorks = useMyWorks(authOwnerKey);
-  const [ips, setIps] = useState<MyIp[]>();
+  const ownerIps = useMyIps(authOwnerKey);
   const [crews, setCrews] = useState<CrewSummary[]>();
   const balances = usePersonalBalances(authOwnerKey);
   const pointsBalance = balances?.community;
@@ -100,16 +100,14 @@ export default function MineScreen() {
     // guest never fires (and 401s) these requests.
     if (!authOwnerKey) return;
     let active = true;
-    void Promise.all([fetchMyIps(), fetchMyCrews()])
-      .then(([nextIps, nextCrews]) => {
+    void fetchMyCrews()
+      .then((nextCrews) => {
         if (!active) return;
-        setIps(nextIps);
         setCrews(nextCrews);
         setLoadedFor(authOwnerKey);
       })
       .catch(() => {
         if (!active) return;
-        setIps([]);
         setCrews([]);
         setLoadedFor(authOwnerKey);
       });
@@ -137,7 +135,7 @@ export default function MineScreen() {
 
   const hasCurrentUserData = Boolean(authOwnerKey && loadedFor === authOwnerKey);
   const currentWorks = ownerWorks.works;
-  const currentIps = hasCurrentUserData ? ips : undefined;
+  const currentIps = ownerIps.items;
   const currentCrews = hasCurrentUserData ? crews : undefined;
 
   const tiles = useMemo<Tile[] | undefined>(() => {
@@ -225,7 +223,9 @@ export default function MineScreen() {
         columnWrapperStyle={styles.column}
         contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         showsVerticalScrollIndicator={false}
-        onEndReached={tab === "works" ? ownerWorks.loadMore : undefined}
+        onEndReached={
+          tab === "works" ? ownerWorks.loadMore : tab === "ips" ? ownerIps.loadMore : undefined
+        }
         onEndReachedThreshold={0.5}
         ListFooterComponent={
           tab === "works" ? (
@@ -241,6 +241,23 @@ export default function MineScreen() {
             ) : (
               <ListFooter loading={ownerWorks.loading} />
             )
+          ) : tab === "ips" ? (
+            <View style={styles.empty}>
+              {ownerIps.error ? (
+                <>
+                  <ThemedText accessibilityRole="alert">{ownerIps.error}</ThemedText>
+                  <Pressable accessibilityRole="button" onPress={ownerIps.retry}>
+                    <ThemedText>{t("common.retry")}</ThemedText>
+                  </Pressable>
+                </>
+              ) : ownerIps.loading ? (
+                <ListFooter loading />
+              ) : (
+                <Pressable accessibilityRole="button" onPress={ownerIps.refresh}>
+                  <ThemedText>{t("thread.refresh")}</ThemedText>
+                </Pressable>
+              )}
+            </View>
           ) : null
         }
         ListHeaderComponent={
@@ -503,7 +520,9 @@ export default function MineScreen() {
         }
         ListEmptyComponent={
           <ThemedText type="small" themeColor="textSecondary" style={styles.empty}>
-            {loading || (tab === "works" && (ownerWorks.failed || ownerWorks.loading))
+            {loading ||
+            (tab === "works" && (ownerWorks.failed || ownerWorks.loading)) ||
+            (tab === "ips" && (ownerIps.error || ownerIps.loading))
               ? ""
               : emptyText}
           </ThemedText>

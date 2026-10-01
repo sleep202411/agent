@@ -707,19 +707,36 @@ export function isMemberOnlyError(error: unknown): boolean {
 export type MyIp = IpSummary & { published: boolean };
 
 /** The signed-in user's own IPs (auth'd; `/aurora/ip-commerce/me/ips`). */
-export async function fetchMyIps(): Promise<MyIp[]> {
-  try {
-    const res = await api.get<ListResponse>("/ip-commerce/me/ips", {
-      ...AURORA,
-      params: { limit: 50, locale: locale() },
-    });
-    return (res.items ?? []).map((dto) => ({
+export async function fetchMyIpsPage(
+  cursor: string | null = null,
+  signal?: AbortSignal
+): Promise<{ items: MyIp[]; nextCursor: string | null }> {
+  const res = await api.get<ListResponse>("/ip-commerce/me/ips", {
+    ...AURORA,
+    signal,
+    params: { cursor: cursor ?? undefined, limit: 50, locale: locale() },
+  });
+  if (
+    !res ||
+    !Array.isArray(res.items) ||
+    res.items.some(
+      (item) => !item || typeof item.id !== "string" || !item.id || typeof item.title !== "string"
+    ) ||
+    (res.nextCursor !== null &&
+      (typeof res.nextCursor !== "string" ||
+        !res.nextCursor ||
+        res.nextCursor === cursor ||
+        !res.items.some((item) => item.id === res.nextCursor)))
+  ) {
+    throw new Error("Invalid owned IP response. Please retry.");
+  }
+  return {
+    items: res.items.map((dto) => ({
       ...mapSummary(dto),
       published:
         (dto.status === "published" || dto.status === "scheduled") &&
         (dto.listingVisibility === "public" || dto.listingVisibility === "unlisted"),
-    }));
-  } catch {
-    return [];
-  }
+    })),
+    nextCursor: res.nextCursor,
+  };
 }
