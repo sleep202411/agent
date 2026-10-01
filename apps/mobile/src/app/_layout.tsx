@@ -66,6 +66,7 @@ export default function RootLayout() {
                 <Stack.Screen name="about" />
                 <Stack.Screen name="certificate-verify" />
                 <Stack.Screen name="earnings" />
+                <Stack.Screen name="crew-income" />
                 <Stack.Screen name="account-security" />
                 <Stack.Screen name="bind-invite" />
                 <Stack.Screen name="referrals" />

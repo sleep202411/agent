@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
@@ -42,6 +42,7 @@ export default function EarningsScreen() {
   );
 }
 function Earnings({ owner }: { owner: string }) {
+  const router = useRouter();
   const theme = useTheme(),
     t = useTranslations(),
     locale = useLocale(),
@@ -64,6 +65,13 @@ function Earnings({ owner }: { owner: string }) {
       ListHeaderComponent={
         <View style={{ gap: 12 }}>
           <ThemedText type="small">{label("subtitle")}</ThemedText>
+          <Pressable accessibilityRole="button" onPress={() => router.push("/crew-income")}>
+            <ThemedText type="small">{label("crewIncome")}</ThemedText>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.push("/referrals")}>
+            <ThemedText type="small">{label("referralIncome")}</ThemedText>
+          </Pressable>
+          <ThemedText type="small">{label("incomeSourcesHint")}</ThemedText>
           <ThemedText type="small">{label("unit")}</ThemedText>
           {(
             [
