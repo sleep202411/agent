@@ -123,6 +123,7 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
         { userId: owner, levelIds: [13] },
         {
           title: 'Auto Crew IP',
+          channelType: 'ip' as const,
           sourceLocale,
           genreCodes: [genre.code],
           tagCodes: [],
@@ -195,6 +196,7 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
     });
     const input = {
       title: 'Retry-safe project',
+      channelType: 'ip' as const,
       sourceLocale: 'en-US' as const,
       genreCodes: [genre.code],
       tagCodes: [],
@@ -236,6 +238,7 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
     });
     const input = {
       title: 'Separate creators',
+      channelType: 'ip' as const,
       sourceLocale: 'en-US' as const,
       genreCodes: [genre.code],
       tagCodes: [],
@@ -264,6 +267,7 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
       { userId: owner, levelIds: [13] },
       {
         title: 'Interactive IP',
+        channelType: 'ip' as const,
         sourceLocale: 'en-US',
         genreCodes: [genre.code],
         tagCodes: [],
@@ -277,11 +281,9 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
     });
     expect(crew.productionKind).toBe('interactive_film');
     expect(crew.studioWorkspaceId).toBe(workspace.id);
-    expect(
-      await db.crewTask.count({
-        where: { crewId: crew.id, taskKind: 'gameplay' },
-      }),
-    ).toBe(1);
+    // Crew creation establishes ownership and the selected workspace; tasks
+    // are created only after explicit confirmation in the workbench.
+    expect(await db.crewTask.count({ where: { crewId: crew.id } })).toBe(0);
     await db.ip.delete({ where: { id: result.ip.id } });
     await db.crew.update({
       where: { id: crew.id },
@@ -301,6 +303,7 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
         { userId: owner, levelIds: [13] },
         {
           title: 'Unauthorized setup',
+          channelType: 'ip' as const,
           sourceLocale: 'en-US',
           genreCodes: [genre.code],
           tagCodes: [],
@@ -319,6 +322,7 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
       { userId: owner, levelIds: [] },
       {
         title: 'No auto Crew',
+        channelType: 'ip' as const,
         sourceLocale: 'en-US',
         genreCodes: [genre.code],
         tagCodes: [],
@@ -344,6 +348,7 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
         { userId: owner, levelIds: [13] },
         {
           title: 'Failing creation',
+          channelType: 'ip' as const,
           sourceLocale: 'en-US',
           genreCodes: [],
           tagCodes: [],

@@ -41,6 +41,8 @@ export class LegacyCreatorsService {
     limit: number;
     offset: number;
     authenticated: boolean;
+    /** true restricts results to open-to-work creators; false/omitted lists all. */
+    availableForWork?: boolean;
   }): Promise<{
     items: PublicCreator[];
     total: number;
@@ -51,9 +53,13 @@ export class LegacyCreatorsService {
     const limit = Math.min(MAX_PAGE, Math.max(1, Math.trunc(opts.limit)));
     const offset = Math.max(0, Math.trunc(opts.offset));
 
+    const where = opts.availableForWork
+      ? `${WHERE_REAL} AND jobseeking = 1`
+      : WHERE_REAL;
+
     const countRow = await this.legacy.queryOne<
       RowDataPacket & { total: number }
-    >(`SELECT COUNT(*) AS total FROM client_user ${WHERE_REAL}`);
+    >(`SELECT COUNT(*) AS total FROM client_user ${where}`);
     const total = Number(countRow?.total ?? 0);
 
     // Guests can't page past the cap.
@@ -66,7 +72,7 @@ export class LegacyCreatorsService {
 
     const rows = await this.legacy.query<CreatorRow>(
       `SELECT CAST(id AS CHAR) AS id, nick_name, avatar, jobseeking
-         FROM client_user ${WHERE_REAL}
+         FROM client_user ${where}
         ORDER BY create_time DESC, id DESC
         LIMIT ${effLimit} OFFSET ${offset}`,
     );
