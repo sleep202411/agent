@@ -92,3 +92,16 @@ it("does not start an aborted read", async () => {
   await expect(fetchCrewInvitationResponse(row.id, "user", 1, c.signal)).rejects.toThrow("session");
   expect(h.get).not.toHaveBeenCalled();
 });
+
+it("preserves the assigned position and blocks acceptance when the reviewed grant changes", async () => {
+  const invited = {
+    ...row,
+    positionCategory: "director" as const,
+    policyKeys: ["finance" as const],
+  };
+  h.get.mockResolvedValue(invited);
+  expect(await fetchCrewInvitationResponse(row.id, "user", 1, signal())).toEqual(invited);
+  h.get.mockResolvedValue({ ...invited, positionCategory: "producer" });
+  await expect(respondToCrewInvitation(invited, "user", 1, "accept", signal())).rejects.toThrow();
+  expect(h.post).not.toHaveBeenCalled();
+});

@@ -2,6 +2,10 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CrewMembers } from "./crew-members";
+vi.mock("./crew-team-invitations", () => ({
+  CrewTeamInvitations: () => <span>team invitation manager</span>,
+}));
+
 vi.mock("./crew-ownership-transfer", () => ({
   CrewOwnershipTransfer: ({ onSuccess }: { onSuccess: () => void }) => (
     <button onClick={onSuccess}>complete transfer</button>
@@ -260,4 +264,14 @@ it("hides ownership transfer from ordinary managers", async () => {
   });
   await render();
   expect(button("crewTransfer.title")).toBeUndefined();
+});
+
+it("opens team invitations only when member-invite access is present", async () => {
+  h.read.mockResolvedValue({ items: [], nextCursor: null, total: 0, canInvite: true });
+  await render();
+  const invite = [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === "teamInvites.title"
+  )!;
+  await act(async () => invite.click());
+  expect(host.textContent).toContain("team invitation manager");
 });

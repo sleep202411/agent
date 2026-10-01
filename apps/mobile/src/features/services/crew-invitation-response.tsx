@@ -1,3 +1,4 @@
+import { crewPositionLabel } from "@/lib/crew-position-label";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -99,6 +100,14 @@ function Session(props: Props) {
             />
           )}
           <ThemedText>{row.crew.name}</ThemedText>
+          {row.positionCategory && (
+            <ThemedText>
+              {t("teamInvites.assignedPosition")} · {crewPositionLabel(row.positionCategory, t)}
+            </ThemedText>
+          )}
+          {row.policyKeys?.map((p) => (
+            <ThemedText key={p}>{t(`crewMembers.${p}`)}</ThemedText>
+          ))}
           <ThemedText>{row.crew.tagline || t("crewInvitations.body")}</ThemedText>
           <ThemedText>
             {t("crewInvitations.expires")} · {new Date(row.expiresAt).toLocaleString(locale)}

@@ -1,3 +1,4 @@
+import { isPresetPosition } from "@repo/shared/crew";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -7,6 +8,8 @@ const invitation = z.object({
   id: uuid,
   crewId: id,
   inviteeUserId: id,
+  positionCategory: z.string().refine(isPresetPosition).nullable().optional(),
+  policyKeys: z.array(z.enum(["admin", "finance"])).optional(),
   status: z.enum(["pending", "accepted", "declined", "expired", "revoked"]),
   expiresAt: z.string().datetime({ offset: true }),
   crew: z.object({
@@ -59,6 +62,9 @@ export async function respondToCrewInvitation(
   const fresh = await fetchCrewInvitationResponse(reviewed.id, userId, generation, signal);
   if (
     fresh.crewId !== reviewed.crewId ||
+    (fresh.positionCategory ?? null) !== (reviewed.positionCategory ?? null) ||
+    [...(fresh.policyKeys ?? [])].sort().join() !==
+      [...(reviewed.policyKeys ?? [])].sort().join() ||
     fresh.status !== "pending" ||
     Date.parse(fresh.expiresAt) <= Date.now()
   )

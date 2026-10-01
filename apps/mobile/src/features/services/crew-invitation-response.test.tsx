@@ -152,3 +152,11 @@ it("ignores late results after account changes and aborts on unmount", async () 
   await act(async () => root.render(null));
   expect(h.get.mock.calls[0][1].signal.aborted).toBe(true);
 });
+
+it("shows the invitation position and access before acceptance", async () => {
+  h.get.mockResolvedValue({ ...row, positionCategory: "director", policyKeys: ["finance"] });
+  await render();
+  expect(host.textContent).toContain("crewRoles.director");
+  expect(host.textContent).toContain("crewMembers.finance");
+  expect(h.post).not.toHaveBeenCalled();
+});

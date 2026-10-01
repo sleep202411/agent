@@ -66,6 +66,7 @@ export async function fetchCrewMemberPage(
     throw new Error("Crew member page could not be verified. Refresh the directory.");
   return {
     ...page,
+    canInvite: access.permissions.includes("members.invite"),
     canManageMembers: access.permissions.includes("members.manage"),
     canTransferOwnership: access.permissions.includes("ownership.transfer"),
     canManagePermissions: access.permissions.includes("members.permissions.manage"),
