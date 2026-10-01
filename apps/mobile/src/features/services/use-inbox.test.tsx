@@ -91,3 +91,29 @@ it("stops repeated cursors instead of looping forever", async () => {
   await click(0);
   expect(h.load).toHaveBeenCalledTimes(2);
 });
+
+it.each([401, 403])(
+  "clears private previews on %s and explicitly restarts pagination",
+  async (status) => {
+    h.load
+      .mockResolvedValueOnce({ items: [item], nextCursor: "next" })
+      .mockRejectedValueOnce(Object.assign(new Error("Access denied"), { status }))
+      .mockResolvedValueOnce({
+        items: [{ ...item, lastMessagePreview: "Revalidated" }],
+        nextCursor: "next",
+      })
+      .mockResolvedValueOnce({ items: [], nextCursor: null });
+    await render("1");
+    await click(0);
+    expect(host.textContent).not.toContain("First");
+    expect(host.textContent).toContain("Access denied");
+    await click(0);
+    expect(h.load).toHaveBeenCalledTimes(2);
+    await click(1);
+    expect(h.load.mock.calls[2][1]).toBeNull();
+    expect(host.textContent).toContain("Revalidated");
+    expect(host.textContent).not.toContain("Access denied");
+    await click(0);
+    expect(h.load.mock.calls[3][1]).toBe("next");
+  }
+);
