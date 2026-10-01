@@ -2818,5 +2818,16 @@
   "contentReviewCreate.phase.saved": "報告已儲存",
   "contentReviewCreate.phase.failed": "審核失敗",
   "contentReviewCreate.phase.refunding": "確認退款中",
-  "contentReviewCreate.phase.refunded": "已取消"
+  "contentReviewCreate.phase.refunded": "已取消",
+  "notifications.title": "通知",
+  "notifications.markAllRead": "全部標為已讀",
+  "notifications.empty": "暫時沒有新通知",
+  "notifications.retry": "重試",
+  "notifications.filters.all": "全部",
+  "notifications.filters.unread": "未讀",
+  "notifications.filters.crew": "劇組",
+  "notifications.filters.sharing": "共享",
+  "notifications.filters.system": "系統",
+  "notifications.markRead": "標為已讀",
+  "notifications.loadMore": "載入更多"
 }

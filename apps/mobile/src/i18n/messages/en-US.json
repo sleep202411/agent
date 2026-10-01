@@ -2818,5 +2818,16 @@
   "contentReviewCreate.phase.saved": "Report saved",
   "contentReviewCreate.phase.failed": "Review failed",
   "contentReviewCreate.phase.refunding": "Confirming refund",
-  "contentReviewCreate.phase.refunded": "Cancelled"
+  "contentReviewCreate.phase.refunded": "Cancelled",
+  "notifications.title": "Notifications",
+  "notifications.markAllRead": "Mark all read",
+  "notifications.empty": "You're all caught up",
+  "notifications.retry": "Retry",
+  "notifications.filters.all": "All",
+  "notifications.filters.unread": "Unread",
+  "notifications.filters.crew": "Crew",
+  "notifications.filters.sharing": "Sharing",
+  "notifications.filters.system": "System",
+  "notifications.markRead": "Mark read",
+  "notifications.loadMore": "Load more"
 }

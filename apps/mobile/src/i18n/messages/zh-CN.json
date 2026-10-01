@@ -2818,5 +2818,16 @@
   "contentReviewCreate.phase.saved": "报告已保存",
   "contentReviewCreate.phase.failed": "审核失败",
   "contentReviewCreate.phase.refunding": "确认退款中",
-  "contentReviewCreate.phase.refunded": "已取消"
+  "contentReviewCreate.phase.refunded": "已取消",
+  "notifications.title": "通知",
+  "notifications.markAllRead": "全部标为已读",
+  "notifications.empty": "暂时没有新通知",
+  "notifications.retry": "重试",
+  "notifications.filters.all": "全部",
+  "notifications.filters.unread": "未读",
+  "notifications.filters.crew": "剧组",
+  "notifications.filters.sharing": "共享",
+  "notifications.filters.system": "系统",
+  "notifications.markRead": "标为已读",
+  "notifications.loadMore": "加载更多"
 }

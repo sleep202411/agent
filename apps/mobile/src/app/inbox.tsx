@@ -52,6 +52,13 @@ export default function InboxScreen() {
         </Pressable>
       ) : (
         <>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push(toHref("/notifications"))}
+            style={{ padding: 10 }}
+          >
+            <ThemedText>{t("notifications.title")}</ThemedText>
+          </Pressable>
           <View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {(["", ...CONVERSATION_CONTEXT_TYPES] as const).map((value) => (
