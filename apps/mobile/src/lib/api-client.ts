@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { streamFetch } from "./stream-fetch";
 
 import { appEnv } from "@/config";
 import { getLocale } from "@/i18n/locale-store";
@@ -393,6 +394,110 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     if (Object.prototype.hasOwnProperty.call(envelope, key)) return envelope[key] as T;
   }
   return envelope as T;
+}
+
+/** Authenticated streaming POST. Never retries; cancellation covers the entire body. */
+export async function postApiStream(
+  path: string,
+  config: {
+    data: unknown;
+    service: Exclude<ApiService, "auto">;
+    signal: AbortSignal;
+    timeout: number;
+  },
+  onChunk: (text: string) => void
+): Promise<void> {
+  if (!path.startsWith("/") || path.startsWith("//"))
+    throw new Error("Streaming requests require a relative API path.");
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  config.signal.addEventListener("abort", abort, { once: true });
+  if (config.signal.aborted) abort();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    abort();
+  }, config.timeout);
+  const token = tokenProvider?.();
+  const current = () => {
+    if (controller.signal.aborted) throw abortError();
+    const latest = tokenProvider?.();
+    if (latest?.name !== token?.name || latest?.value !== token?.value)
+      throw new Error("Streaming request account changed.");
+  };
+  try {
+    current();
+    const locale = getLocale();
+    const response = await withCancellation(
+      streamFetch(buildApiUrl(path, { service: config.service }), {
+        method: "POST",
+        credentials: "include",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          accept: "text/event-stream",
+          "accept-language": locale,
+          lan: locale,
+          ...(token ? { [token.name.toLowerCase()]: token.value } : {}),
+        },
+        body: JSON.stringify(config.data),
+      }),
+      controller.signal
+    );
+    current();
+    if (
+      !response.ok ||
+      !response.body ||
+      !/^text\/event-stream(?:;|$)/i.test(response.headers.get("content-type") ?? "")
+    ) {
+      const { body, rawBody } = await withCancellation(
+        parseResponseBody(response),
+        controller.signal
+      );
+      current();
+      const envelope =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>)
+          : null;
+      const unauthorized =
+        response.status === 401 || (envelope && isUnauthorizedEnvelope(envelope));
+      if (unauthorized) notifyUnauthorized();
+      throw new ApiRequestError(
+        (envelope?.code as number | string | undefined) ?? `HTTP_${response.status}`,
+        messageFromBody(body, "Expected an event stream"),
+        unauthorized ? 401 : response.status,
+        rawBody
+      );
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let completed = false;
+    try {
+      while (true) {
+        current();
+        const { value, done } = await withCancellation(reader.read(), controller.signal);
+        current();
+        if (done) {
+          const tail = decoder.decode();
+          if (tail) onChunk(tail);
+          completed = true;
+          break;
+        }
+        onChunk(decoder.decode(value, { stream: true }));
+      }
+    } finally {
+      if (!completed) void reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+  } catch (error) {
+    if (config.signal.aborted) throw abortError();
+    if (timedOut) throw new ApiRequestError("NETWORK_ERROR", "Request timed out", 0);
+    throw error;
+  } finally {
+    controller.abort();
+    clearTimeout(timer);
+    config.signal.removeEventListener("abort", abort);
+  }
 }
 
 export const api = {
