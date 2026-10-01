@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
+  generationRetryOutbox,
+  retryGenerationOnce,
   cancelGeneration,
   generationCommand,
   generationOutbox,
@@ -159,4 +161,23 @@ it("keeps pending work on malformed receipts or aborted requests", async () => {
   h.get.mockClear();
   await expect(submitPendingGeneration(command(), "alice", 1, c.signal)).rejects.toThrow("expired");
   expect(h.get).not.toHaveBeenCalled();
+});
+
+it("persists uncertain server retries and never replays them after restart", async () => {
+  h.post.mockRejectedValueOnce(new Error("retry reply lost"));
+  const command = { clientKey: key, jobId };
+  await expect(retryGenerationOnce(command, "alice", 1, signal())).rejects.toThrow(
+    "retry reply lost"
+  );
+  expect(generationRetryOutbox("alice", 1).read()).toEqual(command);
+  await expect(retryGenerationOnce(command, "alice", 1, signal())).rejects.toThrow("needs review");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(generationRetryOutbox("bob", 1).read()).toBeNull();
+});
+it("clears only a validated retry receipt and sends no invented idempotency payload", async () => {
+  await retryGenerationOnce({ clientKey: key, jobId }, "alice", 1, signal());
+  expect(h.post.mock.calls[0][0]).toBe(`/ai/jobs/${jobId}/retry`);
+  expect(h.post.mock.calls[0][1]).toMatchObject({ retry: false });
+  expect(h.post.mock.calls[0][1]).not.toHaveProperty("data");
+  expect(generationRetryOutbox("alice", 1).read()).toBeNull();
 });

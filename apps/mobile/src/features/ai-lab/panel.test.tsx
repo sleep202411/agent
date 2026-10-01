@@ -1,0 +1,329 @@
+import { act, StrictMode, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { GenerationPanel } from "./panel";
+import { ApiRequestError } from "@/lib/api-client";
+vi.mock("expo-image", () => ({ Image: () => null }));
+const h = vi.hoisted(() => ({
+  signedIn: true,
+  active: true,
+  generation: 1,
+  get: vi.fn(),
+  patch: vi.fn(),
+  put: vi.fn(),
+  post: vi.fn(),
+  del: vi.fn(),
+  push: vi.fn(),
+  key: 10,
+  open: vi.fn(),
+  pick: vi.fn(),
+  selected: vi.fn(),
+  records: new Map<string, string>(),
+}));
+vi.mock("@/lib/api-client", () => ({
+  api: { get: h.get, put: h.put, patch: h.patch, post: h.post, delete: h.del },
+  ApiRequestError: class extends Error {
+    status: number;
+    constructor(_code: string, message: string, status: number) {
+      super(message);
+      this.status = status;
+    }
+  },
+}));
+vi.mock("@/lib/durable-record", () => ({
+  durableRecord: (ns: string, user: string, id: string) => ({
+    read: () => h.records.get(`${ns}:${user}:${id}`) ?? null,
+    write: (s: string) => h.records.set(`${ns}:${user}:${id}`, s),
+  }),
+}));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
+vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));
+vi.mock("@/i18n", () => ({
+  useTranslations: () => (key: string) => key,
+  useLocale: () => "en-US",
+}));
+vi.mock("expo-modules-core", () => ({
+  uuid: { v4: () => `00000000-0000-4000-8000-${String(++h.key).padStart(12, "0")}` },
+}));
+vi.mock("@/components/authed-web-view", () => ({
+  AuthedWebView: ({ path }: { path: string }) => <div>web:{path}</div>,
+}));
+vi.mock("@/components/themed-text", () => ({
+  ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
+vi.mock("react-native", () => ({
+  Linking: { openURL: h.open },
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ActivityIndicator: () => null,
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+  }: {
+    children: ReactNode;
+    onPress: () => void;
+    disabled: boolean;
+  }) => (
+    <button onClick={onPress} disabled={disabled}>
+      {children}
+    </button>
+  ),
+  TextInput: ({
+    value,
+    onChangeText,
+    editable,
+    accessibilityLabel,
+  }: {
+    value: string;
+    onChangeText: (s: string) => void;
+    editable: boolean;
+    accessibilityLabel: string;
+  }) => (
+    <input
+      value={value}
+      onChange={(e) => onChangeText(e.target.value)}
+      readOnly={!editable}
+      aria-label={accessibilityLabel}
+    />
+  ),
+}));
+
+vi.mock("@/i18n/locale-store", () => ({ getLocale: () => "en-US" }));
+vi.mock("@/data/browse-refresh", () => ({ invalidateBrowse: vi.fn() }));
+vi.mock("@/features/services/conversation-video", () => ({
+  ConversationVideo: () => <div>Video preview</div>,
+}));
+vi.mock("expo-router", () => ({
+  router: { push: h.push },
+  useLocalSearchParams: () => ({ id: "11111111-1111-4111-8111-111111111111" }),
+  useRouter: () => ({ push: h.push }),
+  Stack: {
+    Screen: ({ options }: { options: { headerRight?: () => ReactNode } }) => (
+      <>{options.headerRight?.()}</>
+    ),
+  },
+}));
+vi.mock("@/auth", () => ({
+  useAuth: () => ({
+    status: h.signedIn ? "authenticated" : "anonymous",
+    user: { userId: "alice" },
+    generation: 1,
+  }),
+  useAuthGate: () => ({ requireAuth: vi.fn() }),
+}));
+vi.mock("@/features/ip-author/contributors-panel", () => ({ IpContributorsPanel: () => null }));
+
+vi.mock("expo-document-picker", () => ({ getDocumentAsync: h.pick }));
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+let root: Root, host: HTMLDivElement;
+const model = {
+  id: "model",
+  name: "Image model",
+  type: "image",
+  enabled: true,
+  schemaVersion: "1",
+  input_schema: {
+    type: "object",
+    required: ["prompt"],
+    properties: {
+      prompt: { type: "string", title: "Prompt", "x-ui": { control: "textarea" } },
+      seed: { type: "integer", title: "Seed" },
+      references: { type: "array", title: "References", items: { type: "string", format: "uri" } },
+    },
+  },
+};
+const catalog = {
+  version: "1",
+  region: "global",
+  models: [model],
+  presets: [
+    {
+      id: "preset",
+      label: "Image preset",
+      type: "image",
+      modelIds: ["model"],
+      enabled: true,
+      billingPolicy: { mode: "charge", preflightCost: 2, displayCurrency: "points" },
+    },
+  ],
+};
+let jobs: unknown[];
+const job = {
+  id: "11111111-1111-4111-8111-111111111111",
+  modelId: "model",
+  type: "image",
+  status: "in_queue",
+  stage: "queued",
+  prompt: "Lake",
+  outputs: [],
+  createdAt: "today",
+  updatedAt: "today",
+  sourceSurface: "ai-lab",
+};
+const mount = () =>
+  act(async () =>
+    root.render(
+      <StrictMode>
+        <GenerationPanel userId="alice" generation={1} />
+      </StrictMode>
+    )
+  );
+const button = (label: string) =>
+  [...host.querySelectorAll("button")].find((b) => b.textContent === label)!;
+const click = (label: string) => act(async () => button(label).click());
+const input = (label: string) =>
+  host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+const change = (label: string, value: string) =>
+  act(async () => {
+    const node = input(label);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(node, value);
+    node.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+beforeEach(() => {
+  vi.resetAllMocks();
+  h.records.clear();
+  h.generation = 1;
+  h.active = true;
+  jobs = [];
+  host = document.createElement("div");
+  root = createRoot(host);
+  h.get.mockImplementation(async (path) =>
+    path === "/ai/models"
+      ? catalog
+      : path.includes("entitlement")
+        ? { entitlement: { rank: 0 } }
+        : path === "/ai/jobs"
+          ? { jobs, nextCursor: null }
+          : job
+  );
+  h.post.mockResolvedValue({ request_id: job.id, status: "in_queue" });
+});
+afterEach(() => act(() => root.unmount()));
+it("restores raw draft inputs through remount and submits only after confirmation", async () => {
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Lake ");
+  await change("Seed", "12");
+  await change("References", "https://example.test/a");
+  await act(async () => root.render(null));
+  await mount();
+  expect(input("Prompt").value).toBe("Lake ");
+  expect(input("Seed").value).toBe("12");
+  await click("aiLab.generate");
+  expect(h.post).not.toHaveBeenCalled();
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls[0][1].data).toMatchObject({
+    modelId: "model",
+    presetId: "preset",
+    input: { prompt: "Lake ", seed: 12, references: ["https://example.test/a"] },
+  });
+});
+it("recovers an uncertain paid job after restart without duplicate POST", async () => {
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Lake");
+  h.post.mockRejectedValueOnce(new Error("lost response"));
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(host.textContent).toContain("aiLab.pending");
+  const key = h.post.mock.calls[0][1].data.idempotencyKey;
+  jobs = [{ ...job, idempotencyKey: key }];
+  await act(async () => root.render(null));
+  await mount();
+  await click("aiLab.recover");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  expect(host.textContent).not.toContain("aiLab.pending");
+});
+it("does not enable paid submission when entitlement/catalogue read fails", async () => {
+  h.get.mockRejectedValue(new Error("catalog unavailable"));
+  await mount();
+  expect(host.textContent).toContain("catalog unavailable");
+  expect(button("aiLab.generate").disabled).toBe(true);
+});
+it("hides private history after access is revoked and ignores late catalog success", async () => {
+  jobs = [job];
+  await mount();
+  await click("aiLab.history");
+  expect(host.textContent).toContain("Lake");
+  h.get.mockImplementation(async (path) => {
+    if (path === "/ai/jobs") throw new ApiRequestError("DENIED", "Access revoked", 403);
+    return path === "/ai/models" ? catalog : { entitlement: { rank: 0 } };
+  });
+  await click("common.retry");
+  expect(host.textContent).toContain("Access revoked");
+  expect(host.textContent).not.toContain("Lake");
+});
+it("loads a job and confirms cancellation through the official endpoint", async () => {
+  jobs = [job];
+  h.post.mockResolvedValue({ ...job, status: "cancelled" });
+  await mount();
+  await click("aiLab.history");
+  await click("Image model · aiLab.status.in_queue");
+  await click("aiLab.cancel");
+  expect(h.post).not.toHaveBeenCalled();
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls[0][0]).toBe(`/ai/jobs/${job.id}/cancel`);
+});
+it("unmounts private work when backgrounded or account generation changes", async () => {
+  jobs = [job];
+  await mount();
+  await click("aiLab.history");
+  h.active = false;
+  await mount();
+  expect(host.textContent).toBe("");
+  h.active = true;
+  h.generation = 2;
+  await mount();
+  expect(host.textContent).toBe("");
+});
+
+it("keeps an uncertain retry visible after remount and disables further paid writes", async () => {
+  const failed = {
+    ...job,
+    status: "failed",
+    error: { userMessage: "Provider failed", retryable: true },
+  };
+  jobs = [failed];
+  const oldGet = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, ...args) =>
+    path === `/ai/jobs/${job.id}` ? failed : oldGet(path, ...args)
+  );
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Lake");
+  await click("aiLab.history");
+  await click("Image model · aiLab.status.failed");
+  h.post.mockRejectedValueOnce(new Error("retry reply lost"));
+  await click("aiLab.retryJob");
+  await click("aiLab.confirm");
+  expect(host.textContent).toContain("aiLab.retryPending");
+  await act(async () => root.render(null));
+  await mount();
+  expect(host.textContent).toContain("aiLab.retryPending");
+  expect(button("aiLab.generate").disabled).toBe(true);
+  expect(h.post).toHaveBeenCalledTimes(1);
+});
+it("preserves the draft when a new catalog schema requires explicit reset", async () => {
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Keep my words");
+  const oldGet = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path, ...args) =>
+    path === "/ai/models"
+      ? { ...catalog, models: [{ ...model, schemaVersion: "2" }] }
+      : oldGet(path, ...args)
+  );
+  await click("common.retry");
+  expect(host.textContent).toContain("aiLab.schemaChanged");
+  expect(button("aiLab.generate").disabled).toBe(true);
+  expect(input("Prompt").value).toBe("Keep my words");
+  await click("aiLab.reset");
+  await click("aiLab.back");
+  expect(input("Prompt").value).toBe("Keep my words");
+  await click("aiLab.reset");
+  await click("aiLab.confirm");
+  expect(input("Prompt").value).toBe("");
+});

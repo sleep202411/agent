@@ -196,3 +196,33 @@ export async function cancelGeneration(jobId: string, generation: number, signal
 // POST /jobs/:id/retry mints a new key on every request. It must not be wrapped
 // in automatic retry/replay. Its UI needs a separate durable uncertain-result
 // state, unlike submitPendingGeneration's client-owned idempotent command.
+
+const retryCommand = z.object({ clientKey: id, jobId: id });
+export type GenerationRetry = z.infer<typeof retryCommand>;
+export function generationRetryOutbox(userId: string, generation: number) {
+  return pendingRequest(retryCommand, generation, durableRecord("ai-lab-retry", userId, "pending"));
+}
+/** The server creates a new key on each retry call: never replay an uncertain retry. */
+export async function retryGenerationOnce(
+  command: GenerationRetry,
+  userId: string,
+  generation: number,
+  signal: AbortSignal
+) {
+  generationSession(generation, signal);
+  const box = generationRetryOutbox(userId, generation);
+  if (box.read()) throw new Error("A previous generation retry needs review in job history.");
+  const intent = retryCommand.parse(command);
+  box.save(intent);
+  const value = receipt.parse(
+    await api.post(`/ai/jobs/${intent.jobId}/retry`, {
+      service: "aurora",
+      signal,
+      retry: false,
+      timeout: 30_000,
+    })
+  );
+  generationSession(generation, signal);
+  box.clear(intent.clientKey);
+  return value;
+}
