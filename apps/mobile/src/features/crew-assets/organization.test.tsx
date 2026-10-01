@@ -399,3 +399,51 @@ it("does not navigate with a previous account response", async () => {
   await act(async () => finish({ node, path: [] }));
   expect(h.listing.mock.lastCall?.[2].parentId).toBeUndefined();
 });
+
+it("opens the requested asset through the existing authorized node lookup", async () => {
+  await act(async () =>
+    root.render(
+      <AssetOrganization
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialNodeId={node.id}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(h.node).toHaveBeenCalledWith("crew", "1", 1, node.id, expect.any(AbortSignal));
+  expect(host.querySelector("input")?.value).toBe("Art");
+  h.node.mockRejectedValue(new Error("Asset access revoked"));
+  await act(async () =>
+    root.render(
+      <AssetOrganization
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialNodeId={id(3)}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(host.textContent).toContain("Asset access revoked");
+  expect(host.querySelector("input")).toBeNull();
+});
+
+it("does not treat an invalid external asset ID as the new-folder action", async () => {
+  h.node.mockRejectedValue(new Error("Invalid asset ID"));
+  await act(async () =>
+    root.render(
+      <AssetOrganization
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialNodeId="new"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(h.node).toHaveBeenCalledWith("crew", "1", 1, "new", expect.any(AbortSignal));
+  expect(host.textContent).toContain("Invalid asset ID");
+  expect(h.create).not.toHaveBeenCalled();
+});

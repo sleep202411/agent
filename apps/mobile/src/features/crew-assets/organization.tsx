@@ -23,10 +23,20 @@ import {
   type OrganizationNode,
   type OrganizationFolder,
 } from "./organization-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+const NEW_FOLDER = Symbol("new-folder");
+type Props = {
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+  initialNodeId?: string;
+};
 export function AssetOrganization(props: Props) {
   return props.generation === getAuthGeneration() ? (
-    <Browser key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
+    <Browser
+      key={JSON.stringify([props.crewId, props.userId, props.generation, props.initialNodeId])}
+      {...props}
+    />
   ) : null;
 }
 function Browser(props: Props) {
@@ -42,7 +52,9 @@ function Browser(props: Props) {
   const [showUpload, setShowUpload] = useState(false);
   const [showTrash, setShowTrash] = useState(false);
   const [path, setPath] = useState<{ id: string; name: string }[]>([]),
-    [selection, setSelection] = useState<string>();
+    [selection, setSelection] = useState<string | typeof NEW_FOLDER | undefined>(
+      props.initialNodeId
+    );
   const navigation = useRef<AbortController | undefined>(undefined);
   const [navigating, setNavigating] = useState(false),
     [navigationError, setNavigationError] = useState<string>();
@@ -136,7 +148,7 @@ function Browser(props: Props) {
     return (
       <Editor
         {...props}
-        nodeId={selection === "new" ? undefined : selection}
+        nodeId={selection === NEW_FOLDER ? undefined : selection}
         initialParentId={path.at(-1)?.id ?? null}
         onClose={back}
       />
@@ -192,7 +204,7 @@ function Browser(props: Props) {
         <Button label={t("thread.uploadFile")} onPress={() => setShowUpload(true)} />
       )}
       {source === "all" && (
-        <Button label={t("assetOrganization.create")} onPress={() => setSelection("new")} />
+        <Button label={t("assetOrganization.create")} onPress={() => setSelection(NEW_FOLDER)} />
       )}
       {listing.items.map((row) => (
         <View key={row.id} style={{ gap: 6 }}>

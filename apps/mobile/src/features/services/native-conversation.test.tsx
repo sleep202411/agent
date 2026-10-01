@@ -22,6 +22,13 @@ const h = vi.hoisted(() => ({
   messages: [] as NativeMessage[],
   view: undefined as undefined | ((args: unknown) => void),
 }));
+vi.mock("@/features/crew-assets/organization", () => ({
+  AssetOrganization: ({ crewId, initialNodeId }: { crewId: string; initialNodeId: string }) => (
+    <div>
+      asset-detail:{crewId}:{initialNodeId}
+    </div>
+  ),
+}));
 vi.mock("./conversation-outbox", () => ({
   conversationOutbox: () => ({ read: h.outboxRead, save: h.outboxSave, clear: h.outboxClear }),
 }));
@@ -580,4 +587,41 @@ it("clears an acknowledged durable request even when the composer has unmounted"
   await act(async () => finish(message));
   expect(h.outboxClear).toHaveBeenCalledWith("stable-key");
   expect(h.refresh).not.toHaveBeenCalled();
+});
+
+it("opens a crew attachment's exact asset and returns to the conversation", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  h.messages = [
+    {
+      ...message,
+      type: "file",
+      payload: {
+        kind: "attachments",
+        attachments: [
+          {
+            assetNodeId: "node",
+            mediaAssetId: "media",
+            name: "Shot.mp4",
+            mediaKind: "video",
+            contentType: "video/mp4",
+            sizeBytes: 1024,
+          },
+        ],
+      },
+    },
+  ];
+  await render();
+  await act(async () => click("thread.openInCrewAssets"));
+  expect(host.textContent).toContain("asset-detail:crew:node");
+  expect(host.textContent).not.toContain("file:Shot.mp4");
+  h.active = false;
+  await render();
+  expect(host.textContent).not.toContain("asset-detail");
+  h.active = true;
+  await render();
+  await act(async () => click("thread.backToChat"));
+  expect(host.textContent).toContain("file:Shot.mp4");
+  h.detail = { ...detail, contextType: "order" };
+  await render();
+  expect(host.textContent).not.toContain("thread.openInCrewAssets");
 });

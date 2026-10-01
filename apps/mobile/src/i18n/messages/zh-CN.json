@@ -3066,5 +3066,6 @@
   "creatorCertificates.imageUnavailable": "证书图片暂不可用。",
   "creatorCertificates.close": "关闭",
   "creatorCertificates.save": "保存或分享图片",
-  "creatorCertificates.saving": "正在准备图片…"
+  "creatorCertificates.saving": "正在准备图片…",
+  "thread.openInCrewAssets": "在剧组资产中打开"
 }

@@ -31,6 +31,7 @@ import { useUserDisplays } from "./user-displays";
 import { inquiryKey } from "./inquiry-api";
 import { conversationActivity, conversationDisplayIds } from "./conversation-activity";
 import { ConversationProposal, ConversationProposalEditor } from "./conversation-proposal-ui";
+import { AssetOrganization } from "@/features/crew-assets/organization";
 import { CrewAssetPicker } from "@/features/crew-assets/asset-picker";
 import type { CrewAsset } from "@/features/crew-assets/api";
 import { canAttachCrewFiles, sendConversationAttachments } from "./conversation-attachments";
@@ -116,6 +117,7 @@ function ConversationSession({
       initial.pending?.tasks ?? []
     );
   const [selectedTask, setSelectedTask] = useState<{ crewId: string; taskId: string }>();
+  const [selectedAsset, setSelectedAsset] = useState<string>();
   const [taskTarget, setTaskTarget] = useState<string>();
   const intent = useRef<
     | {
@@ -145,7 +147,8 @@ function ConversationSession({
   const requiresWeb =
     contextType === "crew" && crewChannel !== "team" && crewChannel !== "community";
   useEffect(() => {
-    if (!active || !visibleId || !detailId || web || requiresWeb || selectedTask) return;
+    if (!active || !visibleId || !detailId || web || requiresWeb || selectedTask || selectedAsset)
+      return;
     const controller = new AbortController();
     void markConversationRead(id, visibleId, controller.signal).then(
       () => {
@@ -157,7 +160,7 @@ function ConversationSession({
       }
     );
     return () => controller.abort();
-  }, [id, visibleId, active, detailId, requiresWeb, web, readRetry, selectedTask]);
+  }, [id, visibleId, active, detailId, requiresWeb, web, readRetry, selectedTask, selectedAsset]);
   const button = (label: string, onPress: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
@@ -203,6 +206,19 @@ function ConversationSession({
       />
     );
   const conversation = history.detail;
+  if (selectedAsset && conversation.contextType === "crew")
+    return active ? (
+      <View style={{ flex: 1 }}>
+        {button(t("thread.backToChat"), () => setSelectedAsset(undefined))}
+        <AssetOrganization
+          crewId={conversation.contextId}
+          userId={userId}
+          generation={generation}
+          initialNodeId={selectedAsset}
+          onClose={() => setSelectedAsset(undefined)}
+        />
+      </View>
+    ) : null;
   const canAttach = canAttachCrewFiles(conversation, userId);
   if (taskPicker && canAttach)
     return (
@@ -333,14 +349,21 @@ function ConversationSession({
             )}
             {item.payload?.kind === "attachments" &&
               item.payload.attachments.map((file) => (
-                <ConversationFile
-                  inlinePreview
-                  key={file.assetNodeId}
-                  mediaAssetId={file.mediaAssetId}
-                  mediaKind={file.mediaKind}
-                  contentType={file.contentType}
-                  name={file.name}
-                />
+                <View key={file.assetNodeId}>
+                  <ConversationFile
+                    inlinePreview
+                    mediaAssetId={file.mediaAssetId}
+                    mediaKind={file.mediaKind}
+                    contentType={file.contentType}
+                    name={file.name}
+                  />
+                  {conversation.contextType === "crew" &&
+                    button(
+                      t("thread.openInCrewAssets"),
+                      () => setSelectedAsset(file.assetNodeId),
+                      uploading || op.busy
+                    )}
+                </View>
               ))}
             {conversation.contextType === "crew" &&
               (item.payload?.kind === "text" || item.payload?.kind === "attachments") &&

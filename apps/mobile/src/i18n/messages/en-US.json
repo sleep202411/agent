@@ -3066,5 +3066,6 @@
   "creatorCertificates.imageUnavailable": "Certificate image unavailable.",
   "creatorCertificates.close": "Close",
   "creatorCertificates.save": "Save or share image",
-  "creatorCertificates.saving": "Preparing image…"
+  "creatorCertificates.saving": "Preparing image…",
+  "thread.openInCrewAssets": "Open in Crew Assets"
 }
