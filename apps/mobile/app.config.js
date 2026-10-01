@@ -345,6 +345,18 @@ module.exports = ({ config }) => {
                   }))
                 ),
               },
+              {
+                action: "VIEW",
+                autoVerify: true,
+                category: ["BROWSABLE", "DEFAULT"],
+                data: ["", "/en-US", "/zh-CN", "/zh-HK"].flatMap((locale) =>
+                  ["", "/"].map((suffix) => ({
+                    scheme: "https",
+                    host: siteHost,
+                    path: `${locale}/ips/gps${suffix}`,
+                  }))
+                ),
+              },
             ]
           : []),
       ],

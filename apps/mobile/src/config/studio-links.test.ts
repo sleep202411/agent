@@ -46,6 +46,18 @@ it.each(["global", "cn"])(
         }))
       ),
     });
+    expect(config.android.intentFilters[3]).toEqual({
+      action: "VIEW",
+      autoVerify: true,
+      category: ["BROWSABLE", "DEFAULT"],
+      data: ["", "/en-US", "/zh-CN", "/zh-HK"].flatMap((locale) =>
+        ["", "/"].map((suffix) => ({
+          scheme: "https",
+          host: siteHost,
+          path: `${locale}/ips/gps${suffix}`,
+        }))
+      ),
+    });
     for (const variant of ["development", "preview"]) {
       vi.stubEnv("APP_VARIANT", variant);
       const dev = configure({ config: {} });

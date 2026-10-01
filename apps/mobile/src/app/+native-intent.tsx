@@ -1,3 +1,4 @@
+import { redirectGpsSearch } from "@/features/content-gps/search-link";
 import { redirectCastingInvite } from "@/features/ai-lab/casting-invite-link";
 import { redirectCrewOpening } from "@/features/browse/crew-opening-link";
 import Constants from "expo-constants";
@@ -8,11 +9,15 @@ import { redirectStudioSearch } from "@/features/studios/studio-search-link";
 export function redirectSystemPath({ path }: { path: string; initial: boolean }) {
   const configured = Constants.expoConfig?.scheme;
   const schemes = typeof configured === "string" ? [configured] : (configured ?? []);
-  return redirectStudioSearch(
-    redirectIpTagLink(
-      redirectStudioInvite(
-        redirectCastingInvite(
-          redirectCrewOpening(path, appEnv.appRegion, schemes),
+  return redirectGpsSearch(
+    redirectStudioSearch(
+      redirectIpTagLink(
+        redirectStudioInvite(
+          redirectCastingInvite(
+            redirectCrewOpening(path, appEnv.appRegion, schemes),
+            appEnv.appRegion,
+            schemes
+          ),
           appEnv.appRegion,
           schemes
         ),
