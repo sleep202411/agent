@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { CurrentUser, Public, type AuthUser } from '../auth';
 import { LegacyCreatorsService } from './legacy-creators.service';
 
@@ -17,11 +17,20 @@ export class LegacyCreatorsController {
     @CurrentUser() user: AuthUser | undefined,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('availableForWork') availableForWork?: string,
   ) {
+    if (
+      availableForWork !== undefined &&
+      availableForWork !== 'true' &&
+      availableForWork !== 'false'
+    ) {
+      throw new BadRequestException('availableForWork must be true or false');
+    }
     const data = await this.service.listCreators({
       limit: Number(limit) || 50,
       offset: Number(offset) || 0,
       authenticated: !!user,
+      availableForWork: availableForWork === 'true',
     });
     return { code: 200, data };
   }

@@ -162,6 +162,7 @@ export class MediaProcessingWorkerService
   }
 
   private async processOne(row: MediaProcessingJob): Promise<void> {
+    const stopHeartbeat = this.startHeartbeat(row);
     try {
       switch (row.jobType) {
         case MediaProcessingJobType.backfill_original_placement:
@@ -187,7 +188,56 @@ export class MediaProcessingWorkerService
       }
     } catch (err) {
       await this.fail(row, errorText(err));
+    } finally {
+      await stopHeartbeat();
     }
+  }
+
+  /** Renew liveness without changing startedAt, the immutable claim fence. */
+  private startHeartbeat(row: MediaProcessingJob): () => Promise<void> {
+    let pending: Promise<void> | null = null;
+    let stopped = false;
+    const timer = setInterval(
+      () => {
+        if (stopped || pending) return;
+        const now = new Date();
+        pending = this.prisma.mediaProcessingJob
+          .updateMany({
+            where: {
+              id: row.id,
+              status: MediaProcessingJobStatus.processing,
+              deadAt: null,
+              lockedBy: row.lockedBy,
+              startedAt: row.startedAt,
+              lockedAt: {
+                gte: new Date(now.getTime() - MEDIA_PROCESSING_LOCK_TTL_MS),
+              },
+            },
+            data: { lockedAt: now },
+          })
+          .then((result) => {
+            if (result.count === 0) {
+              stopped = true;
+              clearInterval(timer);
+            }
+          })
+          .catch((err: unknown) => {
+            this.logger.warn(
+              `media processing heartbeat failed job=${row.id}: ${errorText(err)}`,
+            );
+          })
+          .finally(() => {
+            pending = null;
+          });
+      },
+      Math.floor(MEDIA_PROCESSING_LOCK_TTL_MS / 3),
+    );
+    timer.unref?.();
+    return async () => {
+      stopped = true;
+      clearInterval(timer);
+      await pending;
+    };
   }
 
   private async backfillOriginalPlacement(
@@ -468,7 +518,7 @@ export class MediaProcessingWorkerService
         id: row.id,
         status: MediaProcessingJobStatus.processing,
         lockedBy: row.lockedBy,
-        lockedAt: row.lockedAt,
+        startedAt: row.startedAt,
       },
       data: {
         status: MediaProcessingJobStatus.pending,
@@ -491,7 +541,7 @@ export class MediaProcessingWorkerService
         id: row.id,
         status: MediaProcessingJobStatus.processing,
         lockedBy: row.lockedBy,
-        lockedAt: row.lockedAt,
+        startedAt: row.startedAt,
       },
       data: {
         status: MediaProcessingJobStatus.completed,
@@ -523,7 +573,7 @@ export class MediaProcessingWorkerService
         id: row.id,
         status: MediaProcessingJobStatus.processing,
         lockedBy: row.lockedBy,
-        lockedAt: row.lockedAt,
+        startedAt: row.startedAt,
       },
       data: {
         status: isDead

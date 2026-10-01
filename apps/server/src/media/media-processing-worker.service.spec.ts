@@ -226,7 +226,7 @@ describe('MediaProcessingWorkerService', () => {
           id: row.id,
           status: MediaProcessingJobStatus.processing,
           lockedBy: row.lockedBy,
-          lockedAt: row.lockedAt,
+          startedAt: row.startedAt,
         },
         data: expect.objectContaining({
           status: MediaProcessingJobStatus.completed,
@@ -253,7 +253,7 @@ describe('MediaProcessingWorkerService', () => {
           id: row.id,
           status: MediaProcessingJobStatus.processing,
           lockedBy: row.lockedBy,
-          lockedAt: row.lockedAt,
+          startedAt: row.startedAt,
         },
         data: expect.objectContaining({
           status: MediaProcessingJobStatus.dead,

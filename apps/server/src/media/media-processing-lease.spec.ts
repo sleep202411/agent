@@ -11,7 +11,7 @@ type ResultWriter = {
   ): Promise<void>;
 };
 type Write = {
-  where: { id: string; lockedBy: string; lockedAt: Date; status: string };
+  where: { id: string; lockedBy: string; startedAt: Date; status: string };
   data: Record<string, unknown>;
 };
 
@@ -25,6 +25,7 @@ describe('media processing result lease ownership', () => {
         id: 'job',
         lockedBy: 'same-pod',
         lockedAt: newTime,
+        startedAt: newTime,
         status: 'processing',
         output: { replacement: true },
       };
@@ -46,6 +47,7 @@ describe('media processing result lease ownership', () => {
         id: 'job',
         lockedBy: 'same-pod',
         lockedAt: oldTime,
+        startedAt: oldTime,
         status: 'processing',
         attempt: 0,
         maxAttempts: 8,
@@ -59,7 +61,7 @@ describe('media processing result lease ownership', () => {
       const replacement = { ...stored };
       await run(row);
       expect(stored).toEqual(replacement);
-      await run({ ...row, lockedAt: newTime });
+      await run({ ...row, startedAt: newTime });
       expect(stored.lockedAt).toBeNull();
       expect(stored.status).toBe(
         action === 'complete'
