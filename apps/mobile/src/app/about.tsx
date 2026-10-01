@@ -1,7 +1,7 @@
 import Constants from "expo-constants";
 import { Image } from "expo-image";
-import { Stack } from "expo-router";
-import { StyleSheet, View } from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { isChinaRegion } from "@/config";
@@ -22,6 +22,7 @@ function versionLabel(): string {
 
 export default function AboutScreen() {
   const t = useTranslations();
+  const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const company = isChinaRegion ? COMPANY_CN : COMPANY_GLOBAL;
@@ -46,6 +47,14 @@ export default function AboutScreen() {
             {versionLabel()}
           </ThemedText>
         </View>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/certificate-verify")}
+          style={{ paddingVertical: Spacing.three }}
+        >
+          <ThemedText type="small">{t("certificateVerification.toolTitle")}</ThemedText>
+        </Pressable>
 
         <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, Spacing.five) }]}>
           <ThemedText type="small" themeColor="textSecondary" style={styles.footerLine}>
