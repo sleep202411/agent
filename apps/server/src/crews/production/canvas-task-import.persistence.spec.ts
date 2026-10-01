@@ -170,7 +170,7 @@ describe('Canvas import isolated SQL persistence', () => {
         nodes: ['one', 'two'].map((id) => ({
           id,
           type: 'scene',
-          content: { title: id },
+          content: { title: id, description: '' },
           transitions: [],
         })),
       },

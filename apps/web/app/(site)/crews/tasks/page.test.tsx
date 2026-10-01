@@ -24,6 +24,17 @@ vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "zh-CN",
   useTranslations: () => (key: string) => key,
 }));
+vi.mock("../_hooks/use-tasks", () => ({ useCrewTask: vi.fn(), useCrewTaskTimeline: vi.fn() }));
+vi.mock("../_hooks/use-users", () => ({
+  useUserDisplays: () => new Map(),
+  displayNameOf: (id: string) => id,
+}));
+vi.mock("../[id]/workspace/_components/tasks/task-dialogs", () => ({
+  SubmitTaskDialog: () => null,
+}));
+vi.mock("../[id]/workspace/_components/tasks/task-review-form", () => ({
+  TaskReviewForm: () => null,
+}));
 vi.mock("../_components/task-unread-marker", () => ({ TaskUnreadMarker: () => null }));
 vi.mock("../_hooks/api", () => ({ crewApi: { get: state.get } }));
 vi.mock("@/components/ui/native-select", () => ({
@@ -116,31 +127,36 @@ it("shows Crew context and localized task links across Crews, and requests the n
     link.textContent?.includes("Second review")
   )!;
   expect(taskLink.getAttribute("href")).toBe("/zh-CN/crews/crew-b/workspace?tab=tasks&task=task-2");
-  act(() => document.querySelector("button")!.click());
+  act(() =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "loadMore")!
+      .click()
+  );
   expect(state.next).toHaveBeenCalledOnce();
 });
-it("uses separate queries for assignment and completion filters", () => {
+it("uses account-scoped queries for creator, producer and status filters", () => {
   render();
-  const selects = [
-    document.querySelector('select[aria-label="scope"]'),
-    document.querySelector('select[aria-label="status"]'),
-  ] as HTMLSelectElement[];
-  act(() => {
-    selects[0]!.value = "mine";
-    selects[0]!.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(state.key).toEqual(["crew", "task-center", "viewer", "mine", "active", ""]);
-  act(() => {
-    selects[1]!.value = "all";
-    selects[1]!.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  expect(state.key).toEqual(["crew", "task-center", "viewer", "mine", "all", ""]);
+  expect(state.key).toEqual(["crew", "task-center", "viewer", "mine", "active", "", "", ""]);
+  act(() =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "producer")!
+      .click()
+  );
+  expect(state.key).toEqual(["crew", "task-center", "viewer", "managed", "active", "", "", ""]);
+  act(() =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "filter_submitted")!
+      .click()
+  );
+  expect(state.key).toEqual(["crew", "task-center", "viewer", "managed", "submitted", "", "", ""]);
 });
 it("shows an empty state with no load-more action", () => {
   state.empty = true;
   render();
   expect(document.body.textContent).toContain("empty");
-  expect(document.querySelector("button")).toBeNull();
+  expect(
+    [...document.querySelectorAll("button")].find((button) => button.textContent === "loadMore")
+  ).toBeUndefined();
 });
 
 it("keeps existing tasks visible after a failed next page and retries that page", () => {

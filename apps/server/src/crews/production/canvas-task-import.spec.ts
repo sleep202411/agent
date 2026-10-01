@@ -2,13 +2,9 @@ import { CrewCanvasTaskImportService } from './canvas-task-import';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
 } from '../../story-studio/interactive-film.schema';
 import { exportPlotTreeFromDraft } from '../../story-studio/story-plot-tree-export';
-jest.mock('../../story-studio/story-plot-tree-export', () => ({
-  exportPlotTreeFromDraft: jest.fn(() => ({
-    plotTree: { nodes: [{ id: 'scene' }] },
-  })),
-}));
 function fixture() {
   const db = {
     crewTask: { findMany: jest.fn().mockResolvedValue([]) },
@@ -63,7 +59,6 @@ it('returns the source revision and validated plot without writes', async () => 
     'project',
     'story.read',
   );
-  expect(exportPlotTreeFromDraft).toHaveBeenCalledTimes(1);
 });
 it('denies unauthorized users before reading a project', async () => {
   const { service, auth, stories } = fixture();
@@ -94,7 +89,6 @@ it('rejects unsupported draft versions', async () => {
   await expect(service.preview('crew', 'project', 'user')).rejects.toThrow(
     'Unsupported',
   );
-  expect(exportPlotTreeFromDraft).not.toHaveBeenCalled();
 });
 it('does not return private content after permissions are revoked', async () => {
   const { service, auth } = fixture();
@@ -150,7 +144,7 @@ function applyFixture() {
         {
           id: 'scene',
           type: 'scene',
-          content: { title: 'Scene One' },
+          content: { title: 'Scene One', description: '' },
           transitions: [],
         },
       ],
@@ -346,4 +340,102 @@ it('explicit re-import creates only missing scenes and leaves existing work unch
       }[][]
     )[0][0].data.metadata.sourceNodeId,
   ).toBe('new-scene');
+});
+
+function unfinishedDraft() {
+  return InteractiveStoryDraftContentSchema.parse({
+    ...EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+    graph: {
+      entryNodeId: 'scene_01_night_call',
+      nodes: [
+        'scene_01_night_call',
+        'scene_01b_question',
+        'clip:scene-52',
+        'ending_lone_palace_a',
+        'scene_post_credits',
+      ].map((nodeId, index) => ({
+        kind: 'clip',
+        nodeId,
+        clipKey: `SCENE_${index}`,
+        name: `Scene ${index}`,
+        description: `Production brief ${index}`,
+        exit: { kind: 'auto', routes: [{ target: null }] },
+      })),
+    },
+  });
+}
+
+it('imports unfinished, ending-named and unreachable clips through real preview and apply', async () => {
+  const { service, db, tx, input, previewSpy } = applyFixture();
+  previewSpy.mockRestore();
+  const content = unfinishedDraft();
+  const before = JSON.stringify(content);
+  // Reproduces Pax's failure at the old boundary, without mocking the exporter.
+  expect(() => exportPlotTreeFromDraft('project', 'Story', content)).toThrow();
+  db.storyDraft.findUnique.mockResolvedValue({
+    schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+    content,
+    revision: input.sourceRevision,
+    contentHash: input.sourceHash,
+  });
+  const preview = await service.preview('crew', 'project', 'user');
+  expect(preview.plotTree.nodes.map((node) => node.id)).toEqual(
+    content.graph.nodes.map((node) => node.nodeId),
+  );
+  await service.apply('crew', 'project', 'user', {
+    ...input,
+    importKey: preview.importKey,
+  });
+  expect(tx.crewTask.create).toHaveBeenCalledTimes(5);
+  expect(
+    (tx.crewTask.create.mock.calls as Array<[{ data: { title: string } }]>).map(
+      ([command]) => command.data.title,
+    ),
+  ).toEqual(['Scene 0', 'Scene 1', 'Scene 2', 'Scene 3', 'Scene 4']);
+  expect(
+    (
+      tx.crewTask.create.mock.calls as Array<
+        [{ data: { metadata: { sourceNodeId: string } } }]
+      >
+    )[2][0].data.metadata.sourceNodeId,
+  ).toBe('clip:scene-52');
+  expect(JSON.stringify(content)).toBe(before);
+});
+
+it('rejects duplicate source IDs instead of creating ambiguous tasks', async () => {
+  const { service, db } = fixture();
+  const content = unfinishedDraft();
+  content.graph.nodes.push(content.graph.nodes[0]);
+  db.storyDraft.findUnique.mockResolvedValue({
+    schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+    content,
+    revision: 3,
+    contentHash: 'hash',
+  });
+  await expect(service.preview('crew', 'project', 'user')).rejects.toThrow(
+    'unique IDs',
+  );
+});
+
+it('plans clips before an entry or choices are authored, excluding decision nodes', async () => {
+  const { service, db } = fixture();
+  const content = unfinishedDraft();
+  content.graph.entryNodeId = null;
+  content.graph.nodes.push({
+    kind: 'decision',
+    nodeId: 'unwritten-choice',
+    exit: { kind: 'auto', routes: [{ target: null }] },
+  });
+  db.storyDraft.findUnique.mockResolvedValue({
+    schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+    content,
+    revision: 3,
+    contentHash: 'hash',
+  });
+  const preview = await service.preview('crew', 'project', 'user');
+  expect(preview.plotTree.startNodeId).toBeNull();
+  expect(preview.plotTree.nodes).toHaveLength(5);
+  expect(
+    preview.plotTree.nodes.some((node) => node.id === 'unwritten-choice'),
+  ).toBe(false);
 });

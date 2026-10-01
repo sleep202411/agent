@@ -7,61 +7,60 @@ import Link from "next/link";
 import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { TaskUnreadMarker } from "../_components/task-unread-marker";
 import { crewKeys } from "../_hooks/shared";
 import { crewApi } from "../_hooks/api";
-import type { CrewTaskPriority, CrewTaskStatus } from "../_hooks/use-crew";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
-import { TaskDeadline } from "../_components/task-deadline";
+import { CREW_TASK_KIND_MESSAGE_KEYS, type CrewTaskKind } from "../_hooks/types";
+import { TaskTrackingCard, type TrackingTask } from "./task-tracking-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 
 interface TaskPage {
-  items: Array<{
-    id: string;
-    title: string;
-    number: number;
-    status: CrewTaskStatus;
-    workflowState: { name: string; systemKey: string | null; semantic: CrewTaskStatus };
-    priority: CrewTaskPriority;
-    dueAt: string | null;
-    crew: { id: string; name: string };
-  }>;
+  items: TrackingTask[];
   nextCursor: string | null;
+  crews: Array<{ id: string; name: string }>;
+  categories: string[];
+  stats: { dueSoon: number; pendingReviews: number };
 }
 
 export default function CrewTaskCenter() {
   const deadlineT = useTranslations("crewDeadline");
   const [warningHours, setWarningHours] = useState(48);
   const t = useTranslations("crewTaskCenter");
+  const taskT = useTranslations("crewTasks");
   const { user, isLoading: authLoading } = useCurrentUser();
   const { open: openAuthDialog } = useAuthDialog();
-  const taskT = useTranslations("crewTasks");
   const locale = useLocale() as Locale;
-  const [scope, setScope] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [scope, setScope] = useState("mine");
   const [status, setStatus] = useState("active");
+  const [crewId, setCrewId] = useState("");
+  const [taskKind, setTaskKind] = useState("");
   const [search, setSearch] = useState("");
   const query = useDeferredValue(search.trim());
   const feed = useInfiniteQuery({
-    queryKey: [...crewKeys.taskCenter, user?.id ?? null, scope, status, query],
+    queryKey: [...crewKeys.taskCenter, user?.id ?? null, scope, status, query, crewId, taskKind],
     enabled: Boolean(user?.id),
     refetchInterval: 60_000,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) => {
       const params = new URLSearchParams({ scope, status, query, limit: "30" });
+      if (crewId) params.set("crewId", crewId);
+      if (taskKind) params.set("taskKind", taskKind);
       if (pageParam) params.set("cursor", pageParam);
       return crewApi.get<TaskPage>(`/crew-task-center?${params}`, { signal, cache: "no-store" });
     },
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
   const items = feed.data?.pages.flatMap((page) => page.items) ?? [];
+  const summary = feed.data?.pages[0];
   return (
     <main className="mx-auto w-full max-w-[1800px] px-4 py-8 sm:px-6">
       <CrewSectionNavigation active="tasks" />
-      <div className="mx-auto max-w-6xl space-y-6">
+      <div className="space-y-6 rounded-2xl bg-[#121212] p-4 sm:p-6">
         <header className="space-y-2">
           <Link
             className="text-sm text-muted-foreground hover:text-foreground"
@@ -72,120 +71,163 @@ export default function CrewTaskCenter() {
           <h1 className="text-2xl font-semibold">{t("title")}</h1>
           <p className="text-sm text-muted-foreground">{t("description")}</p>
         </header>
-        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)]">
-          <label className="flex min-w-0 flex-col gap-2 text-sm text-muted-foreground">
-            {deadlineT("warningWindow")}
-            <NativeSelect
-              className="data-[size=default]:h-11 sm:data-[size=default]:h-10"
-              value={String(warningHours)}
-              onChange={(value) => setWarningHours(Number(value))}
-              aria-label={deadlineT("warningWindow")}
-            >
-              {[24, 48, 72].map((hours) => (
-                <NativeSelectOption key={hours} value={String(hours)}>
-                  {deadlineT("hours", { count: hours })}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-          <label className="flex min-w-0 flex-col gap-2 text-sm text-muted-foreground">
-            {t("scope")}
-            <NativeSelect
-              className="data-[size=default]:h-11 sm:data-[size=default]:h-10"
-              value={scope}
-              aria-label={t("scope")}
-              onChange={setScope}
-            >
-              <NativeSelectOption value="all">{t("allTasks")}</NativeSelectOption>
-              <NativeSelectOption value="mine">{t("mine")}</NativeSelectOption>
-            </NativeSelect>
-          </label>
-          <label className="flex min-w-0 flex-col gap-2 text-sm text-muted-foreground">
-            {t("status")}
-            <NativeSelect
-              className="data-[size=default]:h-11 sm:data-[size=default]:h-10"
-              value={status}
-              aria-label={t("status")}
-              onChange={setStatus}
-            >
-              <NativeSelectOption value="active">{t("active")}</NativeSelectOption>
-              <NativeSelectOption value="all">{t("allStatuses")}</NativeSelectOption>
-            </NativeSelect>
-          </label>
-          <Input
-            className="h-11 w-full sm:h-10"
-            aria-label={t("search")}
-            placeholder={t("search")}
-            maxLength={180}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        {authLoading ? (
-          <p role="status">{t("loading")}</p>
-        ) : !user ? (
-          <div className="space-y-3">
-            <p>{t("signInRequired")}</p>
-            <Button onClick={() => openAuthDialog()}>{t("signIn")}</Button>
-          </div>
-        ) : feed.isPending ? (
-          <p role="status">{t("loading")}</p>
-        ) : feed.isError && !feed.isFetchNextPageError ? (
-          <div role="alert" className="space-y-3">
-            <p>{feed.error.message}</p>
-            <Button onClick={() => void feed.refetch()}>{t("retry")}</Button>
-          </div>
-        ) : items.length === 0 ? (
-          <p className="py-8 text-muted-foreground">{t("empty")}</p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl bg-card/40">
-            {items.map((task) => (
-              <li key={task.id}>
-                <Link
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 hover:bg-secondary/40"
-                  href={localizePath(
-                    `/crews/${task.crew.id}/workspace?tab=tasks&task=${task.id}`,
-                    locale
-                  )}
+        <div className="grid min-w-0 gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+          <aside className="space-y-6 lg:border-r lg:border-white/10 lg:pr-6">
+            <div className="flex rounded-xl bg-white/5 p-1" role="group" aria-label={t("scope")}>
+              {(["mine", "managed"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={scope === value}
+                  className={`min-h-11 flex-1 rounded-lg px-3 text-sm ${scope === value ? "bg-sky-500/20 text-sky-300" : "text-muted-foreground"}`}
+                  onClick={() => {
+                    setScope(value);
+                    setCrewId("");
+                    setTaskKind("");
+                  }}
                 >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-xs text-muted-foreground">
-                      {task.crew.name} · TASK-{task.number}
-                    </span>
-                    <span className="block truncate font-medium">
-                      {task.title}
-                      <TaskUnreadMarker taskId={task.id} />
-                    </span>
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {task.workflowState.systemKey
-                      ? taskT(`status.${task.workflowState.systemKey}`)
-                      : task.workflowState.name}{" "}
-                    · {taskT(`priority.${task.priority}`)}
-                  </span>
-                  <TaskDeadline
-                    dueAt={task.dueAt}
-                    status={task.status}
+                  {t(value === "mine" ? "creator" : "producer")}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="min-h-11 rounded-full bg-white/5 px-4 text-sm lg:hidden"
+              aria-expanded={filtersOpen}
+              aria-controls="tracking-filters"
+              onClick={() => setFiltersOpen(!filtersOpen)}
+            >
+              {t("filters")}
+            </button>
+            <div
+              id="tracking-filters"
+              className={`${filtersOpen ? "block" : "hidden"} space-y-6 lg:block`}
+            >
+              <nav className="flex flex-wrap gap-1 lg:flex-col" aria-label={t("status")}>
+                {["active", "submitted", "revision_requested", "overdue", "approved", "all"].map(
+                  (value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={status === value}
+                      className={`min-h-11 rounded-xl px-4 text-left text-sm ${status === value ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/5"}`}
+                      onClick={() => setStatus(value)}
+                    >
+                      {t(`filter_${value}`)}
+                    </button>
+                  )
+                )}
+              </nav>
+              <div className="space-y-3">
+                <Input
+                  aria-label={t("search")}
+                  placeholder={t("search")}
+                  maxLength={180}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                <NativeSelect
+                  aria-label={t("crewFilter")}
+                  value={crewId}
+                  onChange={(value) => {
+                    setCrewId(value);
+                    setTaskKind("");
+                  }}
+                >
+                  <NativeSelectOption value="">{t("allCrews")}</NativeSelectOption>
+                  {summary?.crews?.map((crew) => (
+                    <NativeSelectOption key={crew.id} value={crew.id}>
+                      {crew.name}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+                <NativeSelect
+                  aria-label={t("categoryFilter")}
+                  value={taskKind}
+                  onChange={setTaskKind}
+                >
+                  <NativeSelectOption value="">{t("allCategories")}</NativeSelectOption>
+                  {summary?.categories?.map((kind) => (
+                    <NativeSelectOption key={kind} value={kind}>
+                      {taskT(CREW_TASK_KIND_MESSAGE_KEYS[kind as CrewTaskKind])}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+                <label className="flex flex-col gap-2 text-xs text-muted-foreground">
+                  {deadlineT("warningWindow")}
+                  <NativeSelect
+                    value={String(warningHours)}
+                    onChange={(value) => setWarningHours(Number(value))}
+                    aria-label={deadlineT("warningWindow")}
+                  >
+                    {[24, 48, 72].map((hours) => (
+                      <NativeSelectOption key={hours} value={String(hours)}>
+                        {deadlineT("hours", { count: hours })}
+                      </NativeSelectOption>
+                    ))}
+                  </NativeSelect>
+                </label>
+              </div>
+            </div>
+            {user && !feed.isError && summary?.stats ? (
+              <dl className="space-y-3 rounded-xl bg-white/5 p-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <dt>{t("dueSoon")}</dt>
+                  <dd className="font-semibold text-red-400">{summary.stats.dueSoon}</dd>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <dt>{t("pendingReviews")}</dt>
+                  <dd className="font-semibold text-sky-400">{summary.stats.pendingReviews}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </aside>
+          <section className="min-w-0 space-y-4" aria-label={t("title")}>
+            {authLoading ? (
+              <p role="status">{t("loading")}</p>
+            ) : !user ? (
+              <div className="space-y-3">
+                <p>{t("signInRequired")}</p>
+                <Button onClick={() => openAuthDialog()}>{t("signIn")}</Button>
+              </div>
+            ) : feed.isPending ? (
+              <p role="status">{t("loading")}</p>
+            ) : feed.isError && !feed.isFetchNextPageError ? (
+              <div role="alert" className="space-y-3">
+                <p>{feed.error.message}</p>
+                <Button onClick={() => void feed.refetch()}>{t("retry")}</Button>
+              </div>
+            ) : items.length === 0 ? (
+              <p className="py-8 text-muted-foreground">{t("empty")}</p>
+            ) : (
+              <ul className="space-y-4">
+                {items.map((task) => (
+                  <TaskTrackingCard
+                    key={`${user?.id}:${scope}:${task.id}`}
+                    task={task}
                     warningHours={warningHours}
                   />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-        {user && !authLoading && feed.isFetchNextPageError && (
-          <p role="alert" className="text-sm text-destructive">
-            {feed.error?.message}
-          </p>
-        )}
-        {user &&
-          !authLoading &&
-          feed.hasNextPage &&
-          (!feed.isError || feed.isFetchNextPageError) && (
-            <Button disabled={feed.isFetchingNextPage} onClick={() => void feed.fetchNextPage()}>
-              {feed.isFetchNextPageError ? t("retry") : t("loadMore")}
-            </Button>
-          )}
+                ))}
+              </ul>
+            )}
+            {user && !authLoading && feed.isFetchNextPageError && (
+              <p role="alert" className="text-sm text-destructive">
+                {feed.error?.message}
+              </p>
+            )}
+            {user &&
+              !authLoading &&
+              feed.hasNextPage &&
+              (!feed.isError || feed.isFetchNextPageError) && (
+                <Button
+                  disabled={feed.isFetchingNextPage}
+                  onClick={() => void feed.fetchNextPage()}
+                >
+                  {feed.isFetchNextPageError ? t("retry") : t("loadMore")}
+                </Button>
+              )}
+          </section>
+        </div>
       </div>
     </main>
   );
