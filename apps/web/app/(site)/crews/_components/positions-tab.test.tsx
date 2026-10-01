@@ -65,6 +65,8 @@ it.each(["initial", "refresh", "next"])(
     root = createRoot(container);
     act(() => root.render(<PositionsTab />));
     expect(container.querySelectorAll("article").length).toBe(kind === "initial" ? 0 : 1);
+    if (kind !== "initial")
+      expect(container.querySelector('a[href$="/crews/crew/positions/position"]')).not.toBeNull();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Positions unavailable"
     );

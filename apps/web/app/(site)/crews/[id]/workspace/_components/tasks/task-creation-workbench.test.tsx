@@ -630,10 +630,10 @@ it("hands a created unassigned task to the recruitment form without publishing a
   const publish = vi.fn();
   await render(true, true, "crew", publish);
   await stage();
-  expect(button("Publish Job")).toBeUndefined();
+  expect(button("Recruit Creators")).toBeUndefined();
   await click("Create All Tasks");
   expect(publish).not.toHaveBeenCalled();
-  await click("Publish Job");
+  await click("Recruit Creators");
   expect(publish).toHaveBeenCalledWith("created");
 });
 

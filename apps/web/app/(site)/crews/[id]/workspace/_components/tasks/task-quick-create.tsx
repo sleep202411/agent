@@ -437,44 +437,50 @@ export function TaskQuickCreate({
             {assigneeUserId ? <span>{projectT("workbench.unassignedOnly")}</span> : null}
           </label>
         ) : null}
-        <div className="min-w-0 px-[18px] pt-[8.5px]">
-          <textarea
-            ref={titleRef}
-            value={title}
-            onChange={(event) => {
-              draftRevision.current += 1;
-              setTitle(event.target.value);
-              setDraft(null);
-            }}
-            onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                event.preventDefault();
-                void submit();
-              }
-            }}
-            rows={1}
-            maxLength={180}
-            placeholder={t("titlePlaceholder")}
-            aria-label={t("taskTitle")}
-            className="block h-6 min-h-6 w-full resize-none overflow-hidden bg-transparent p-0 text-[18px] leading-6 font-semibold tracking-[-0.1px] text-white outline-none placeholder:text-[#686871]"
-          />
-          <div className="relative">
+        <div className="min-w-0 space-y-3 px-[18px] pt-[8.5px]">
+          <label className="block space-y-2">
+            <span className="text-sm font-medium">{t("taskTitle")}</span>
             <textarea
-              value={description}
+              ref={titleRef}
+              value={title}
               onChange={(event) => {
                 draftRevision.current += 1;
-                setDescription(event.target.value);
+                setTitle(event.target.value);
                 setDraft(null);
               }}
-              rows={2}
-              maxLength={10_000}
-              placeholder={t("descriptionPlaceholder")}
-              aria-label={t("taskBrief")}
-              className={cn(
-                "mt-1.5 block h-[79.2px] w-full resize-none overflow-y-auto bg-transparent px-0 pt-1.5 pb-3 text-[15px] leading-6 font-[450] text-[#d5d5da] outline-none placeholder:text-[#6d6d76]",
-                expanded && "h-[140px]"
-              )}
+              onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+              rows={1}
+              maxLength={180}
+              placeholder={t("titlePlaceholder")}
+              aria-label={t("taskTitle")}
+              className="block min-h-11 w-full resize-y rounded-md border border-white/15 bg-[#0b0c0f] p-3 text-base text-white outline-none focus:border-primary"
             />
+          </label>
+          <div className="relative">
+            <label className="block space-y-2">
+              <span className="text-sm font-medium">{t("taskBrief")}</span>
+              <textarea
+                value={description}
+                onChange={(event) => {
+                  draftRevision.current += 1;
+                  setDescription(event.target.value);
+                  setDraft(null);
+                }}
+                rows={2}
+                maxLength={10_000}
+                placeholder={t("descriptionPlaceholder")}
+                aria-label={t("taskBrief")}
+                className={cn(
+                  "block min-h-36 w-full resize-y rounded-md border border-white/15 bg-[#0b0c0f] p-3 text-sm leading-6 text-[#d5d5da] outline-none focus:border-primary",
+                  expanded && "h-[140px]"
+                )}
+              />
+            </label>
             <div className="mt-1 flex items-center justify-between gap-2">
               <Button
                 type="button"

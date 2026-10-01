@@ -212,6 +212,7 @@ function PositionCard({
   const tCrew = useTranslations("crew");
   const translatePosition = useTranslatePositionValue();
   const crewHref = localizePath(`/crews/${crew.id}`, locale);
+  const openingHref = localizePath(`/crews/${crew.id}/positions/${position.id}`, locale);
   const logoUrl = crew.logo
     ? crew.logo.startsWith("http")
       ? crew.logo
@@ -295,8 +296,7 @@ function PositionCard({
         </div>
       ) : null}
 
-      {/* One deliberate CTA. FizzDragon does not support private messages:
-          communication starts in the crew group after membership is granted. */}
+      {/* Open this specific role before starting its application. */}
       <div className="mt-auto pt-0.5">
         <Button
           asChild={canApply}
@@ -306,7 +306,7 @@ function PositionCard({
           disabled={!canApply}
           className="h-8 w-full px-2 text-xs"
         >
-          {canApply ? <Link href={crewHref}>{ctaLabel}</Link> : <span>{ctaLabel}</span>}
+          {canApply ? <Link href={openingHref}>{ctaLabel}</Link> : <span>{ctaLabel}</span>}
         </Button>
       </div>
     </article>
