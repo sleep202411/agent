@@ -8,6 +8,7 @@ import { ThemedText } from "@/components/themed-text";
 import { AuthedWebView } from "@/components/authed-web-view";
 import { TaskDetail } from "./task-detail";
 import { TaskDeadline } from "./task-deadline";
+import { useTaskUnread } from "./use-task-unread";
 import { useTaskCenter } from "./use-task-center";
 import type { CenterFilters, CenterTask } from "./task-center-api";
 export function TaskCenter({ userId, generation }: { userId: string; generation: number }) {
@@ -75,6 +76,7 @@ export function TaskCenterList({
   const [warningHours, setWarningHours] = useState(48);
   const active = useScreenActive();
   const list = useTaskCenter(active && enabled, generation, filters);
+  const unread = useTaskUnread(active && enabled, generation);
   const label = (key: string) => t(`crewTaskCenter.${key}` as MessageKey);
   const box = { padding: 12, borderRadius: 8, backgroundColor: theme.backgroundElement };
   const update = (next: Partial<CenterFilters>) => {
@@ -97,7 +99,10 @@ export function TaskCenterList({
       keyExtractor={(item) => item.id}
       contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }}
       refreshing={list.loading}
-      onRefresh={list.refresh}
+      onRefresh={() => {
+        list.refresh();
+        unread.refresh();
+      }}
       onEndReached={list.loadMore}
       ListHeaderComponent={
         <View style={{ gap: 12 }}>
@@ -210,6 +215,11 @@ export function TaskCenterList({
             {item.crew.name} · #{item.number}
           </ThemedText>
           <ThemedText type="smallBold">{item.title}</ThemedText>
+          {!list.error && unread.counts[item.id] > 0 && (
+            <ThemedText type="small" accessibilityLiveRegion="polite">
+              {label("unreadNotifications").replace("{count}", String(unread.counts[item.id]))}
+            </ThemedText>
+          )}
           <ThemedText type="small">
             {item.workflowState.name} · {t(`taskSchedule.${item.priority}` as MessageKey)}
           </ThemedText>
@@ -234,6 +244,14 @@ export function TaskCenterList({
       ListFooterComponent={
         <View style={{ gap: 12 }}>
           {list.loading && <ActivityIndicator />}
+          {unread.error && (
+            <View style={{ gap: 8 }}>
+              <ThemedText accessibilityRole="alert">{unread.error}</ThemedText>
+              <Pressable accessibilityRole="button" onPress={unread.refresh}>
+                <ThemedText>{label("retry")}</ThemedText>
+              </Pressable>
+            </View>
+          )}
           {list.error && (
             <>
               <ThemedText accessibilityRole="alert">{list.error}</ThemedText>
