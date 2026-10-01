@@ -413,3 +413,21 @@ it("opens guided Crew setup from existing task tools and returns for assignments
   await act(async () => button("setup assignments").click());
   expect(button("pick")).toBeDefined();
 });
+
+it("opens guided setup directly after successful Crew creation", async () => {
+  await act(async () =>
+    root.render(
+      <CrewTaskBrowser
+        key="created"
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialSection="setup"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(button("setup assignments")).toBeDefined();
+  await act(async () => button("setup assignments").click());
+  expect(button("pick")).toBeDefined();
+});

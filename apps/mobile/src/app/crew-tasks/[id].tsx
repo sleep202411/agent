@@ -14,7 +14,8 @@ export default function CrewTasksScreen() {
     task?: string;
     section?: string;
   }>();
-  const initialSection = section === "members" && !task ? "members" : undefined;
+  const initialSection =
+    !task && (section === "members" || section === "setup") ? section : undefined;
   const initialTaskId = z.string().uuid().safeParse(task).success ? task : undefined;
   const auth = useAuth(),
     gate = useAuthGate(),

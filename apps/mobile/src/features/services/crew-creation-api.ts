@@ -78,6 +78,34 @@ const attempt = z.object({
 });
 export type CrewCreationAttempt = z.infer<typeof attempt>;
 
+const ownedCrew = receipt.extend({
+  studioWorkspaceId: uuid.nullable(),
+  createdAt: z.string().datetime({ offset: true }),
+});
+/** Fresh owner directory for manual recovery; absence is never a creation receipt. */
+export async function fetchCrewsForCreationReview(
+  userId: string,
+  generation: number,
+  signal: AbortSignal
+) {
+  id.parse(userId);
+  current(generation, signal);
+  const result = z.object({ founded: z.array(ownedCrew) }).parse(
+    await api.get("/crews/my", {
+      service: "aurora",
+      signal,
+      retry: false,
+    })
+  );
+  current(generation, signal);
+  if (
+    result.founded.some((row) => row.ownerUserId !== userId) ||
+    new Set(result.founded.map((row) => row.id)).size !== result.founded.length
+  )
+    throw new Error("Crew ownership list could not be verified. Refresh before continuing.");
+  return result.founded;
+}
+
 function current(generation: number, signal?: AbortSignal) {
   if (generation !== getAuthGeneration() || signal?.aborted)
     throw new Error("Crew creation session expired or request cancelled.");

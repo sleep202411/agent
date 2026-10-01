@@ -37,14 +37,14 @@ export function CrewTaskBrowser({
   initialSection,
 }: {
   initialTaskId?: string;
-  initialSection?: "members";
+  initialSection?: "members" | "setup";
   crewId: string;
   userId: string;
   generation: number;
   onClose: () => void;
 }) {
   const t = useTranslations();
-  const [showSetup, setShowSetup] = useState(false);
+  const [showSetup, setShowSetup] = useState(initialSection === "setup");
   const [showAppeals, setShowAppeals] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [showDocument, setShowDocument] = useState(false);

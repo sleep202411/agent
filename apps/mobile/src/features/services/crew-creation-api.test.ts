@@ -7,6 +7,7 @@ import {
   crewCreationPending,
   fetchCrewCreationCanvas,
   fetchCrewCreationEligibility,
+  fetchCrewsForCreationReview,
 } from "./crew-creation-api";
 const h = vi.hoisted(() => ({
   generation: 1,
@@ -249,4 +250,24 @@ it("does not silently discard a corrupt saved attempt and send another creation"
   await expect(create()).rejects.toThrow();
   expect(api.get).not.toHaveBeenCalled();
   expect(api.post).not.toHaveBeenCalled();
+});
+
+it("reads the current owner directory with legacy unlinked Crews and never suppresses network errors", async () => {
+  const row = { ...response(), studioWorkspaceId: null, createdAt: "2026-10-01T00:00:00Z" };
+  vi.mocked(api.get).mockResolvedValue({ founded: [row], joined: [] });
+  expect(await fetchCrewsForCreationReview("user", 1, signal())).toMatchObject([
+    { id: "crew", ownerUserId: "user", studioWorkspaceId: null, createdAt: row.createdAt },
+  ]);
+  expect(api.get).toHaveBeenCalledWith("/crews/my", expect.objectContaining({ retry: false }));
+  vi.mocked(api.get).mockRejectedValue(new Error("Directory unavailable"));
+  await expect(fetchCrewsForCreationReview("user", 1, signal())).rejects.toThrow(
+    "Directory unavailable"
+  );
+});
+it.each(["owner", "duplicate"])("rejects %s mismatches in the recovery directory", async (mode) => {
+  const row = { ...response(), createdAt: "2026-10-01T00:00:00Z" };
+  vi.mocked(api.get).mockResolvedValue({
+    founded: mode === "owner" ? [{ ...row, ownerUserId: "other" }] : [row, row],
+  });
+  await expect(fetchCrewsForCreationReview("user", 1, signal())).rejects.toThrow("verified");
 });
