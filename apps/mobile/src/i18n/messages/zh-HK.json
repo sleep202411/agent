@@ -3049,5 +3049,10 @@
   "textGames.empty": "暫無已發佈的文字影遊。",
   "textGames.play": "開始遊玩",
   "textGames.backToCatalogue": "返回文字影遊",
-  "textGames.backToDetails": "返回詳情"
+  "textGames.backToDetails": "返回詳情",
+  "profileEdit.availability": "接單狀態",
+  "profileEdit.availabilityHint": "選擇是否在創作者市場開放接單，儲存後生效。",
+  "profileEdit.availabilityUnknown": "未設定，點擊設定",
+  "profileEdit.available": "可接單",
+  "profileEdit.unavailable": "暫不接單"
 }

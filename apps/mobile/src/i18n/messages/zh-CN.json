@@ -3049,5 +3049,10 @@
   "textGames.empty": "暂无已发布的文字影游。",
   "textGames.play": "开始游玩",
   "textGames.backToCatalogue": "返回文字影游",
-  "textGames.backToDetails": "返回详情"
+  "textGames.backToDetails": "返回详情",
+  "profileEdit.availability": "接单状态",
+  "profileEdit.availabilityHint": "选择是否在创作者市场开放接单，保存后生效。",
+  "profileEdit.availabilityUnknown": "未设置，点击设置",
+  "profileEdit.available": "可接单",
+  "profileEdit.unavailable": "暂不接单"
 }

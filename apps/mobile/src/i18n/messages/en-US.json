@@ -3049,5 +3049,10 @@
   "textGames.empty": "No published adventures yet.",
   "textGames.play": "Play adventure",
   "textGames.backToCatalogue": "Back to adventures",
-  "textGames.backToDetails": "Back to details"
+  "textGames.backToDetails": "Back to details",
+  "profileEdit.availability": "Available for work",
+  "profileEdit.availabilityHint": "Choose whether you are open to work in the creator marketplace. Changes apply when you save.",
+  "profileEdit.availabilityUnknown": "Not specified — tap to set",
+  "profileEdit.available": "Available for work",
+  "profileEdit.unavailable": "Not available for work"
 }

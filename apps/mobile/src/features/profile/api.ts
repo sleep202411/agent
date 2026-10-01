@@ -17,12 +17,17 @@ export function profileDraft(user: AuthUser): ProfileDraft {
   };
 }
 /** Same partial JSON update as Web; never send unrelated profile fields. */
-export async function updateProfile(draft: ProfileDraft, study?: string) {
+export async function updateProfile(
+  draft: ProfileDraft,
+  study?: string,
+  availableForWork?: boolean
+) {
   if (!draft.nickName.trim()) throw new Error("Nickname is required");
   await api.post("/user/update/user/info", {
     service: "content",
     data: {
       ...(study !== undefined ? { study } : {}),
+      ...(availableForWork !== undefined ? { availableForWork } : {}),
       nickName: draft.nickName.trim(),
       contact: draft.contact.trim(),
       description: draft.description.trim(),

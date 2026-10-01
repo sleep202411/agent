@@ -71,6 +71,8 @@ function ProfileForm() {
   const [attempt, setAttempt] = useState(0);
   const [originalStudy, setOriginalStudy] = useState("");
   const [editedStudy, setEditedStudy] = useState<string>();
+  const [availability, setAvailability] = useState<boolean>();
+  const [editedAvailability, setEditedAvailability] = useState<boolean>();
   const refresh = auth.refreshCurrentUser;
   const uploadScope = useRef<AbortController | null>(null);
   const [updatedImage, setUpdatedImage] = useState<ProfileImageKind>();
@@ -120,6 +122,11 @@ function ProfileForm() {
           return;
         }
         setDraft(profileDraft(user));
+        setAvailability(
+          "availableForWork" in user && typeof user.availableForWork === "boolean"
+            ? user.availableForWork
+            : undefined
+        );
         setOriginalStudy("study" in user && typeof user.study === "string" ? user.study : "");
       })
       .catch((cause: unknown) => {
@@ -135,7 +142,7 @@ function ProfileForm() {
     await operation.run(
       async () => {
         setError(undefined);
-        await updateProfile(draft, editedStudy);
+        await updateProfile(draft, editedStudy, editedAvailability);
         if (getAuthGeneration() === generation) await refresh();
       },
       () => router.back(),
@@ -202,6 +209,37 @@ function ProfileForm() {
               />
             </View>
           ))}
+        {draft && (
+          <View style={styles.field}>
+            <ThemedText type="smallBold">{t("profileEdit.availability")}</ThemedText>
+            <ThemedText>{t("profileEdit.availabilityHint")}</ThemedText>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityLabel={t("profileEdit.availability")}
+              aria-checked={editedAvailability ?? availability ?? "mixed"}
+              accessibilityState={{
+                checked: editedAvailability ?? availability ?? "mixed",
+                disabled: operation.busy,
+              }}
+              disabled={operation.busy}
+              onPress={() => setEditedAvailability(!(editedAvailability ?? availability ?? false))}
+              style={[
+                styles.input,
+                { borderColor: theme.border, backgroundColor: theme.backgroundElement },
+              ]}
+            >
+              <ThemedText>
+                {t(
+                  (editedAvailability ?? availability) === undefined
+                    ? "profileEdit.availabilityUnknown"
+                    : (editedAvailability ?? availability)
+                      ? "profileEdit.available"
+                      : "profileEdit.unavailable"
+                )}
+              </ThemedText>
+            </Pressable>
+          </View>
+        )}
         {draft && (
           <EducationEditor
             study={originalStudy}

@@ -335,3 +335,38 @@ it("uploads a public cover without saving the text draft or leaving the editor",
   expect(h.post).not.toHaveBeenCalled();
   expect(h.back).not.toHaveBeenCalled();
 });
+
+it("changes work availability only on explicit profile save", async () => {
+  await render();
+  const toggle = () =>
+    [...host.querySelectorAll("button")].find(
+      (b) =>
+        b.textContent === "profileEdit.available" ||
+        b.textContent === "profileEdit.unavailable" ||
+        b.textContent === "profileEdit.availabilityUnknown"
+    )!;
+  expect(toggle().textContent).toBe("profileEdit.available");
+  await act(async () => toggle().click());
+  expect(toggle().textContent).toBe("profileEdit.unavailable");
+  expect(h.post).not.toHaveBeenCalled();
+  await act(async () => save());
+  expect(h.post.mock.calls[0][1].data.availableForWork).toBe(false);
+});
+it("does not infer availability when the server omits it", async () => {
+  h.refresh.mockResolvedValue({ ...user, availableForWork: undefined });
+  await render();
+  expect(host.textContent).toContain("profileEdit.availabilityUnknown");
+  await act(async () => save());
+  expect(h.post.mock.calls[0][1].data).not.toHaveProperty("availableForWork");
+});
+it("lets an unspecified creator explicitly opt into availability", async () => {
+  h.refresh.mockResolvedValue({ ...user, availableForWork: undefined });
+  await render();
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "profileEdit.availabilityUnknown")!
+      .click()
+  );
+  await act(async () => save());
+  expect(h.post.mock.calls[0][1].data.availableForWork).toBe(true);
+});
