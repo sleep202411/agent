@@ -3122,5 +3122,11 @@
   "taskCase.noRespondent": "No other participants are available.",
   "taskCase.subject": "Case subject",
   "taskCase.evidence": "Submission evidence (optional, up to 20)",
-  "taskCase.clearEvidence": "Selected evidence changed. Clear selection"
+  "taskCase.clearEvidence": "Selected evidence changed. Clear selection",
+  "ipTag.title": "Activity",
+  "ipTag.entries": "Entries",
+  "ipTag.search": "Search entries",
+  "ipTag.missing": "Activity not found.",
+  "ipTag.empty": "No matching entries.",
+  "ipTag.searchMore": "No matches in the loaded entries. Load more to continue searching."
 }

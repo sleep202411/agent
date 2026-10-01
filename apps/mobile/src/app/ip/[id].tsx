@@ -1,3 +1,4 @@
+import { IpTags } from "@/features/browse/ip-tags";
 import { EpisodeFeedback } from "@/components/episode-feedback";
 import { IpKnowledgeChat } from "@/components/ip-knowledge-chat";
 import { IpGenerationPanel } from "@/components/ip-generation-panel";
@@ -26,7 +27,7 @@ import {
 } from "@/components/report-actions";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
+import { EmptyState, PosterImage, SectionHeader } from "@/components/ui";
 import { webBaseUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { promptInsufficientPaywall } from "@/features/paywall";
@@ -745,9 +746,7 @@ export default function IpDetailScreen() {
           </View>
 
           <View style={styles.tagWrap}>
-            {ip.tags.map((tag) => (
-              <Tag key={tag} label={tag} />
-            ))}
+            <IpTags ip={ip} />
           </View>
 
           <View style={styles.section}>

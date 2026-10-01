@@ -378,6 +378,50 @@ export async function fetchIpCatalogPage({
   };
 }
 
+export interface IpTagPage {
+  term: { code: string; label: string; description: string | null };
+  total: number | null;
+  items: IpSummary[];
+  nextCursor: string | null;
+}
+
+/** Dedicated tag scope includes hidden taxonomy tags; ordinary catalog filters do not. */
+export async function fetchIpTagPage(
+  code: string,
+  options: { cursor?: string; signal?: AbortSignal } = {}
+): Promise<IpTagPage> {
+  if (!code.trim() || code.length > 80) throw new Error("Invalid activity tag.");
+  const result = await api.get<{
+    term: IpTagPage["term"];
+    total: number | null;
+    items: IpDto[];
+    nextCursor: string | null;
+  }>(`/ip-commerce/tags/${encodeURIComponent(code)}/ips`, {
+    ...AURORA,
+    signal: options.signal,
+    params: { cursor: options.cursor, limit: 24, locale: locale() },
+  });
+  if (
+    !result ||
+    result.term?.code !== code ||
+    typeof result.term.label !== "string" ||
+    (result.term.description !== null && typeof result.term.description !== "string") ||
+    (result.total !== null && (!Number.isSafeInteger(result.total) || result.total < 0)) ||
+    !Array.isArray(result.items) ||
+    result.items.some(
+      (item) => !item || typeof item.id !== "string" || !item.id || typeof item.title !== "string"
+    ) ||
+    new Set(result.items.map((item) => item.id)).size !== result.items.length ||
+    (result.nextCursor !== null &&
+      (typeof result.nextCursor !== "string" ||
+        !result.nextCursor ||
+        result.nextCursor === options.cursor ||
+        !result.items.some((item) => item.id === result.nextCursor)))
+  )
+    throw new Error("Invalid activity response. Please retry.");
+  return { ...result, items: result.items.map((item) => mapSummary(item)) };
+}
+
 /** A creator's published, publicly-listed IPs (Nest `creators/:id/ips`, @Public). */
 export async function fetchCreatorIps(creatorId: string, limit = 12): Promise<IpSummary[]> {
   const res = await api.get<ListResponse>(`/ip-commerce/creators/${creatorId}/ips`, {

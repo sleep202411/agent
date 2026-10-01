@@ -3122,5 +3122,11 @@
   "taskCase.noRespondent": "暂无其他参与者。",
   "taskCase.subject": "案件主题",
   "taskCase.evidence": "交付证据（可选，最多 20 项）",
-  "taskCase.clearEvidence": "所选证据已变化，清除选择"
+  "taskCase.clearEvidence": "所选证据已变化，清除选择",
+  "ipTag.title": "活动",
+  "ipTag.entries": "作品数量",
+  "ipTag.search": "搜索作品",
+  "ipTag.missing": "未找到此活动。",
+  "ipTag.empty": "没有匹配的作品。",
+  "ipTag.searchMore": "已加载的作品中没有匹配项。加载更多以继续搜索。"
 }

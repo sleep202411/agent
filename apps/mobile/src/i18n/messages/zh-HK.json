@@ -3122,5 +3122,11 @@
   "taskCase.noRespondent": "暫無其他參與者。",
   "taskCase.subject": "案件主題",
   "taskCase.evidence": "交付證據（可選，最多 20 項）",
-  "taskCase.clearEvidence": "所選證據已變更，清除選擇"
+  "taskCase.clearEvidence": "所選證據已變更，清除選擇",
+  "ipTag.title": "活動",
+  "ipTag.entries": "作品數量",
+  "ipTag.search": "搜尋作品",
+  "ipTag.missing": "找不到此活動。",
+  "ipTag.empty": "沒有符合的作品。",
+  "ipTag.searchMore": "已載入的作品中沒有符合項目。載入更多以繼續搜尋。"
 }
