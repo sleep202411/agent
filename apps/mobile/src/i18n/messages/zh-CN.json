@@ -3056,5 +3056,13 @@
   "profileEdit.available": "可接单",
   "profileEdit.unavailable": "暂不接单",
   "creators.search": "搜索创作者姓名",
-  "creators.searchAction": "搜索"
+  "creators.searchAction": "搜索",
+  "creatorCertificates.title": "证书",
+  "creatorCertificates.empty": "暂无已签发证书。",
+  "creatorCertificates.preview": "预览证书",
+  "creatorCertificates.issued": "签发日期",
+  "creatorCertificates.validUntil": "有效期至",
+  "creatorCertificates.openOriginal": "打开原图",
+  "creatorCertificates.imageUnavailable": "证书图片暂不可用。",
+  "creatorCertificates.close": "关闭"
 }

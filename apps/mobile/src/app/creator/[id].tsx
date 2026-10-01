@@ -30,6 +30,7 @@ import { toHref } from "@/lib/navigation";
 
 import { CreatorPersonalWorks } from "@/features/profile/creator-personal-works";
 import { CreatorExperience } from "@/features/profile/creator-experience";
+import { CreatorCertificates } from "@/features/certificates/creator-certificates";
 import { CreatorEducation } from "@/features/profile/creator-education";
 
 export default function CreatorDetailScreen() {
@@ -198,6 +199,7 @@ export default function CreatorDetailScreen() {
           </View>
 
           <CreatorEducation study={creator.study} />
+          <CreatorCertificates creatorId={creator.id} />
           <CreatorExperience creatorId={creator.id} />
           <CreatorPersonalWorks creatorId={creator.id} />
 

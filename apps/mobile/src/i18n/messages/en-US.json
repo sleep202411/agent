@@ -3056,5 +3056,13 @@
   "profileEdit.available": "Available for work",
   "profileEdit.unavailable": "Not available for work",
   "creators.search": "Search creators by name",
-  "creators.searchAction": "Search"
+  "creators.searchAction": "Search",
+  "creatorCertificates.title": "Certificates",
+  "creatorCertificates.empty": "No issued certificates.",
+  "creatorCertificates.preview": "Preview certificate",
+  "creatorCertificates.issued": "Issued",
+  "creatorCertificates.validUntil": "Valid until",
+  "creatorCertificates.openOriginal": "Open original image",
+  "creatorCertificates.imageUnavailable": "Certificate image unavailable.",
+  "creatorCertificates.close": "Close"
 }

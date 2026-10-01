@@ -14,6 +14,9 @@ vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => ({ id: h.id }),
 }));
+vi.mock("@/features/certificates/creator-certificates", () => ({
+  CreatorCertificates: () => null,
+}));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("expo-symbols", () => ({ SymbolView: () => null }));
 vi.mock("react-native-safe-area-context", () => ({

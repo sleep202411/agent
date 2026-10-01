@@ -3056,5 +3056,13 @@
   "profileEdit.available": "可接單",
   "profileEdit.unavailable": "暫不接單",
   "creators.search": "搜尋創作者姓名",
-  "creators.searchAction": "搜尋"
+  "creators.searchAction": "搜尋",
+  "creatorCertificates.title": "證書",
+  "creatorCertificates.empty": "暫無已簽發證書。",
+  "creatorCertificates.preview": "預覽證書",
+  "creatorCertificates.issued": "簽發日期",
+  "creatorCertificates.validUntil": "有效期至",
+  "creatorCertificates.openOriginal": "開啟原圖",
+  "creatorCertificates.imageUnavailable": "證書圖片暫不可用。",
+  "creatorCertificates.close": "關閉"
 }
