@@ -1,3 +1,5 @@
+import { TaskCompensationFields } from "./task-compensation-fields";
+import { compensationText, parseCompensation } from "./task-compensation";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -55,6 +57,7 @@ function Access({ task, userId, generation, onRefresh }: Props) {
   return (
     <View style={{ gap: 8 }}>
       {allowed === undefined && !error && <ActivityIndicator />}
+
       {error && (
         <>
           <ThemedText accessibilityRole="alert">{error}</ThemedText>
@@ -121,6 +124,8 @@ function Editor({
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(snapshot.id, true);
+  const [reward, setReward] = useState(compensationText(snapshot.rewardUsdMinor));
+  const [share, setShare] = useState(compensationText(snapshot.profitShareBps));
   const [estimate, setEstimate] = useState(
     snapshot.estimatePoints == null ? "" : String(snapshot.estimatePoints)
   );
@@ -137,6 +142,8 @@ function Editor({
     try {
       return planningChanges(snapshot, draft, taskKind, {
         estimatePoints: parsePlanningNumber(estimate, 1_000_000),
+        rewardUsdMinor: parseCompensation(reward, 100_000_000_000),
+        profitShareBps: parseCompensation(share, 10_000),
         revisionLimit: parsePlanningNumber(revisionLimit, 100),
       });
     } catch {
@@ -146,6 +153,7 @@ function Editor({
   return (
     <View style={{ gap: 8 }}>
       <ThemedText type="smallBold">{t("taskPlanning.edit")}</ThemedText>
+
       <ThemedText>{t("taskPlanning.estimate")}</ThemedText>
       <TextInput
         accessibilityLabel={t("taskPlanning.estimate")}
@@ -183,6 +191,13 @@ function Editor({
         generation={generation}
         value={draft}
         onChange={setDraft}
+        locked={locked}
+      />
+      <TaskCompensationFields
+        reward={reward}
+        share={share}
+        onReward={setReward}
+        onShare={setShare}
         locked={locked}
       />
       {error && (

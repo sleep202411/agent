@@ -1,3 +1,4 @@
+import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskSubmission } from "./task-delivery-api";
@@ -10,6 +11,7 @@ export const taskReference = taskOption.extend({
   parentId: z.string().uuid().nullable(),
 });
 export const taskDetailSchema = taskOption.extend({
+  ...taskCompensationShape,
   taskKind: taskKindSchema.nullable().optional(),
   estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
   crewId: z.string().min(1),

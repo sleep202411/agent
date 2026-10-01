@@ -239,3 +239,17 @@ it("rejects duplicate or oversized custom values before creation", async () => {
     await expect(createTask("crew", { ...input, customFieldValues })).rejects.toThrow();
   expect(api.post).not.toHaveBeenCalled();
 });
+
+it("preserves exact task compensation and rejects missing acknowledgement", async () => {
+  const terms = { rewardUsdMinor: 12345, profitShareBps: 125 };
+  vi.mocked(api.post).mockResolvedValue({ ...detail, ...terms });
+  await expect(createTask("crew", { ...input, ...terms })).resolves.toMatchObject(terms);
+  expect(vi.mocked(api.post).mock.calls[0][1]?.data).toMatchObject(terms);
+  vi.mocked(api.post).mockResolvedValue(detail);
+  await expect(createTask("crew", { ...input, ...terms })).rejects.toThrow("acknowledgement");
+});
+it("does not send invalid compensation", async () => {
+  for (const terms of [{ rewardUsdMinor: -1 }, { rewardUsdMinor: 1.1 }, { profitShareBps: 10001 }])
+    await expect(createTask("crew", { ...input, ...terms })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});

@@ -1,9 +1,11 @@
+import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskKindSchema } from "./task-kind-api";
 import { taskDetailSchema } from "./task-detail-api";
 export const taskCreateInput = z
   .object({
+    ...taskCompensationShape,
     customFieldValues: z
       .array(
         z
@@ -98,6 +100,8 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
       }));
   if (
     !customMatches ||
+    (data.rewardUsdMinor !== undefined && result.rewardUsdMinor !== data.rewardUsdMinor) ||
+    (data.profitShareBps !== undefined && result.profitShareBps !== data.profitShareBps) ||
     result.crewId !== crewId ||
     (data.estimatePoints !== undefined && result.estimatePoints !== data.estimatePoints) ||
     (data.revisionLimit !== undefined && result.revisionLimit !== data.revisionLimit) ||

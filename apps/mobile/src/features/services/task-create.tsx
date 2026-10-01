@@ -1,3 +1,5 @@
+import { TaskCompensationFields } from "./task-compensation-fields";
+import { compensationText, parseCompensation } from "./task-compensation";
 import { fetchTaskCreationDefaults, type TaskCreationDefaults } from "./task-creation-defaults";
 import type { TaskDraftInput, TaskDraftReview, TaskDraft } from "./task-draft-session";
 import { TaskCustomFieldControl } from "./task-custom-field-control";
@@ -135,6 +137,8 @@ function Editor({
   const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">(
     initial?.priority ?? "normal"
   );
+  const [reward, setReward] = useState(compensationText(initial?.rewardUsdMinor));
+  const [share, setShare] = useState(compensationText(initial?.profitShareBps));
   const [estimate, setEstimate] = useState(
     initial?.estimatePoints == null ? "" : String(initial.estimatePoints)
   );
@@ -166,6 +170,8 @@ function Editor({
       priority,
       taskKind,
       estimatePoints: parsePlanningNumber(estimate, 1_000_000),
+      rewardUsdMinor: parseCompensation(reward, 100_000_000_000),
+      profitShareBps: parseCompensation(share, 10_000),
       revisionLimit: parsePlanningNumber(revisionLimit, 100),
       ...(workflow ? { workflowStateId: workflow.id } : {}),
       cycleId: planning.cycle?.id ?? null,
@@ -255,6 +261,7 @@ function Editor({
         placeholderTextColor={theme.textSecondary}
         style={{ color: theme.text, padding: 12 }}
       />
+
       <ThemedText>{t("taskPlanning.estimate")}</ThemedText>
       <TextInput
         accessibilityLabel={t("taskPlanning.estimate")}
@@ -329,6 +336,13 @@ function Editor({
         locked={locked}
         onParentChange={setParent}
         onBlockersChange={setBlockers}
+      />
+      <TaskCompensationFields
+        reward={reward}
+        share={share}
+        onReward={setReward}
+        onShare={setShare}
+        locked={locked}
       />
       <ThemedText>
         {t("taskCreate.assignees")} · {assignees.length}/30

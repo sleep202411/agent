@@ -1,3 +1,4 @@
+import { TaskCompensationSummary } from "./task-compensation-summary";
 import { TaskDelete } from "./task-delete";
 import { TaskClosure } from "./task-closure";
 import { TaskDeadline } from "./task-deadline";
@@ -164,6 +165,7 @@ function TaskContent({
               {t(data.taskKind ? `taskKind.${data.taskKind}` : "taskKind.unset")}
             </ThemedText>
           )}
+          <TaskCompensationSummary {...data} />
           {data.estimatePoints !== undefined && (
             <ThemedText>
               {t("taskPlanning.estimate")}: {data.estimatePoints ?? t("taskPlanning.unset")}

@@ -1,3 +1,4 @@
+import { TaskCompensationSummary } from "./task-compensation-summary";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -223,6 +224,7 @@ function Session(props: Props) {
                       {t("thread.taskDue")}: {row.input.dueAt}
                     </ThemedText>
                   )}
+                  <TaskCompensationSummary {...row.input} />
                   {row.input.estimatePoints != null && (
                     <ThemedText>
                       {t("taskPlanning.estimate")}: {row.input.estimatePoints}

@@ -279,3 +279,20 @@ it("clears numeric values explicitly instead of converting them to zero", async 
     revisionLimit: null,
   });
 });
+
+it("loads compensation in display units and clears only the chosen term", async () => {
+  const snapshot = await h.fetch();
+  h.fetch.mockResolvedValue({ ...snapshot, rewardUsdMinor: 12345, profitShareBps: 125 });
+  h.update.mockResolvedValue({});
+  await render();
+  await act(async () => button("taskPlanning.edit")!.click());
+  expect(host.querySelectorAll("input")[2]!.value).toBe("123.45");
+  expect(host.querySelectorAll("input")[3]!.value).toBe("1.25");
+  expect(button("taskPlanning.save")!.disabled).toBe(true);
+  await act(async () => typeNumber(2, ""));
+  await act(async () => button("taskPlanning.save")!.click());
+  expect(h.update).toHaveBeenCalledWith(expect.anything(), {
+    expectedVersion: 4,
+    rewardUsdMinor: null,
+  });
+});

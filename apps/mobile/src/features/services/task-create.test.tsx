@@ -688,3 +688,20 @@ it("reopens a staged draft, preserves unchanged metadata and saves through stagi
   expect(onStage.mock.calls[0][0]).toMatchObject({ ...initial, title: "Edited draft" });
   expect(h.update).not.toHaveBeenCalled();
 });
+
+it("creates exact USD and percentage terms and rejects excessive precision", async () => {
+  h.update.mockResolvedValue({ id: "new" });
+  await render();
+  await act(async () => {
+    type(0, "Task");
+    type(6, "123.45");
+    type(7, "1.255");
+  });
+  expect(button("taskCreate.submit")!.disabled).toBe(true);
+  await act(async () => type(7, "1.25"));
+  await act(async () => button("taskCreate.submit")!.click());
+  expect(h.update).toHaveBeenCalledWith(
+    "crew",
+    expect.objectContaining({ rewardUsdMinor: 12345, profitShareBps: 125 })
+  );
+});

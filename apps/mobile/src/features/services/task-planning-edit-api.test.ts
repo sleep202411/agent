@@ -215,3 +215,26 @@ it("requires complete estimate data and validates updated and retained numeric a
     ).rejects.toThrow("acknowledgement");
   }
 });
+
+it("updates and clears compensation using a versioned snapshot and exact acknowledgement", async () => {
+  const prior = { ...snapshot, rewardUsdMinor: 12345, profitShareBps: 125 };
+  const changes = planningChanges(prior, planningDraft(prior), prior.taskKind, {
+    estimatePoints: prior.estimatePoints,
+    revisionLimit: prior.revisionLimit,
+    rewardUsdMinor: 0,
+    profitShareBps: null,
+  });
+  expect(changes.data).toEqual({ expectedVersion: 1, rewardUsdMinor: 0, profitShareBps: null });
+  vi.mocked(api.patch).mockResolvedValue({
+    ...prior,
+    version: 2,
+    rewardUsdMinor: 0,
+    profitShareBps: null,
+  });
+  await expect(updateTaskPlanning(prior, changes.data!)).resolves.toMatchObject({
+    rewardUsdMinor: 0,
+    profitShareBps: null,
+  });
+  vi.mocked(api.patch).mockResolvedValue({ ...prior, version: 2 });
+  await expect(updateTaskPlanning(prior, changes.data!)).rejects.toThrow("acknowledgement");
+});

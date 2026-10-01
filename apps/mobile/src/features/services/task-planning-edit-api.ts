@@ -1,3 +1,4 @@
+import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { taskDetailSchema, type TaskDetail } from "./task-detail-api";
@@ -27,6 +28,7 @@ const planningSnapshotSchema = taskDetailSchema
 export type PlanningSnapshot = z.infer<typeof planningSnapshotSchema>;
 export const planningEditInput = z
   .object({
+    ...taskCompensationShape,
     taskKind: taskKindSchema.nullable().optional(),
     expectedVersion: z.number().int().positive(),
     estimatePoints: z.number().int().min(0).max(1_000_000).nullable().optional(),
@@ -42,6 +44,8 @@ export const planningEditInput = z
   .strict()
   .refine(
     (data) =>
+      data.rewardUsdMinor !== undefined ||
+      data.profitShareBps !== undefined ||
       data.estimatePoints !== undefined ||
       data.revisionLimit !== undefined ||
       data.taskKind !== undefined ||
@@ -63,7 +67,12 @@ export function planningChanges(
   task: PlanningSnapshot,
   draft: TaskPlanningDraft,
   taskKind: TaskKind | null = task.taskKind,
-  numbers: { estimatePoints: number | null; revisionLimit: number | null } = {
+  numbers: {
+    estimatePoints: number | null;
+    revisionLimit: number | null;
+    rewardUsdMinor?: number | null;
+    profitShareBps?: number | null;
+  } = {
     estimatePoints: task.estimatePoints,
     revisionLimit: task.revisionLimit,
   }
@@ -78,6 +87,14 @@ export function planningChanges(
     )
     .safeParse({
       expectedVersion: task.version,
+      ...(numbers.rewardUsdMinor !== undefined &&
+      numbers.rewardUsdMinor !== (task.rewardUsdMinor ?? null)
+        ? { rewardUsdMinor: numbers.rewardUsdMinor }
+        : {}),
+      ...(numbers.profitShareBps !== undefined &&
+      numbers.profitShareBps !== (task.profitShareBps ?? null)
+        ? { profitShareBps: numbers.profitShareBps }
+        : {}),
       ...(numbers.estimatePoints !== task.estimatePoints
         ? { estimatePoints: numbers.estimatePoints }
         : {}),
@@ -118,6 +135,10 @@ export async function updateTaskPlanning(
   const episodeId = data.episodeId === undefined ? task.episodeId : data.episodeId;
   const labels = data.labelIds ?? task.labels.map((label) => label.id);
   if (
+    result.rewardUsdMinor !==
+      (data.rewardUsdMinor === undefined ? task.rewardUsdMinor : data.rewardUsdMinor) ||
+    result.profitShareBps !==
+      (data.profitShareBps === undefined ? task.profitShareBps : data.profitShareBps) ||
     result.id !== task.id ||
     result.crewId !== task.crewId ||
     result.version !== data.expectedVersion + 1 ||
