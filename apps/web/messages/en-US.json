@@ -5239,6 +5239,7 @@
       "durationOverdue": "{duration} overdue",
       "durationRemaining": "{duration} remaining",
       "pastDeadline": "Choose today or a future deadline.",
+      "canvasAlreadyImported": "All current scenes already have tasks. Preview again after adding scenes or deleting an imported task.",
       "emptyCanvas": "This film has no scenes to import yet. Open it in Studio, add scenes, then preview again.",
       "publishJob": "Publish Job",
       "publishOpening": "Publish to AIGC Crew Openings after creation",
@@ -5251,6 +5252,7 @@
     },
     "episodeTemplate": {
       "title": "Review Episode Task Template",
+      "fieldsHelp": "Complete the crew fields for each task. Fields marked * are required.",
       "help": "Review the published task group before creating it. Tasks and dependencies are created together; existing work is never overwritten. You can edit tasks after creation.",
       "loading": "Loading Template…",
       "reload": "Reload Preview",
@@ -10232,12 +10234,16 @@
     "correction": "Result corrected"
   },
   "crewDeliveryTemplate": {
+    "uploadFile": "Upload file",
+    "uploadProgress": "Uploading… {percent}%",
+    "uploadUnavailable": "File upload is currently unavailable.",
+    "uploadFailed": "File upload failed.",
     "referencePrices": "Reference prices",
     "referencePriceNote": "Reference only. Agreed task compensation is recorded separately.",
     "title": "Professional delivery template",
     "revision": "Revision",
     "required": "required",
-    "selectAttachments": "Select submission attachments above first.",
+    "selectAttachments": "Upload a file here or choose an existing submission attachment below.",
     "loading": "Loading delivery requirements…",
     "none": "No professional template",
     "retry": "Refresh / retry",

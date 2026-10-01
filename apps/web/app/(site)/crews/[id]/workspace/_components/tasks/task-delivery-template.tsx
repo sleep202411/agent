@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -57,12 +57,14 @@ export function TaskDeliveryFields({
   onChange,
   assets,
   disabled,
+  renderUpload,
 }: {
   template: CrewDeliveryTemplateDTO;
   answers: Record<string, string | string[]>;
   onChange: (answers: Record<string, string | string[]>) => void;
   assets: { id: string; name: string }[];
   disabled: boolean;
+  renderUpload?: (field: CrewDeliveryTemplateDTO["definition"]["fields"][number]) => ReactNode;
 }) {
   const t = useTranslations("crewDeliveryTemplate");
   return (
@@ -95,7 +97,8 @@ export function TaskDeliveryFields({
               onChange={(e) => onChange({ ...answers, [field.key]: e.target.value })}
             />
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-2">
+              {renderUpload?.(field)}
               {!assets.length ? (
                 <p>{t("selectAttachments")}</p>
               ) : (

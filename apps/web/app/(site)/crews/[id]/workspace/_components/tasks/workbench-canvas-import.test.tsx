@@ -138,3 +138,30 @@ it("loads a selected film immediately and explains an empty canvas", async () =>
   expect(button("confirmImport").disabled).toBe(true);
   expect(state.post).not.toHaveBeenCalled();
 });
+
+it("stages only missing scenes with a durable explicit re-import key", async () => {
+  state.get.mockResolvedValue({
+    projectId: id,
+    title: "Story",
+    importKey: "request",
+    sourceRevision: 4,
+    sourceHash: "b".repeat(64),
+    existingSourceNodeIds: ["old"],
+    plotTree: {
+      nodes: [
+        { id: "old", type: "scene", content: { title: "Existing" } },
+        { id: "new", type: "scene", content: { title: "New scene" } },
+      ],
+    },
+  });
+  const stage = vi.fn();
+  act(() => root.render(<WorkbenchCanvasImport crewId="crew" onStage={stage} />));
+  await preview();
+  expect(host.textContent).not.toContain("Existing");
+  await act(async () => button("stageTasks").click());
+  expect(stage.mock.calls[0][0]).toMatchObject({
+    key: `canvas:${id}:request`,
+    body: { importKey: "request" },
+    items: [{ title: "New scene", assetCategory: "production" }],
+  });
+});

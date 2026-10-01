@@ -30,7 +30,7 @@ function adapter(sql: Sql) {
         ).rows[0] ?? null,
     },
     projectTaskTemplate: { findFirst: () => Promise.resolve(null) },
-    crewTaskFieldDefinition: { count: () => Promise.resolve(0) },
+    crewTaskFieldDefinition: { findMany: () => Promise.resolve([]) },
     crewTaskWorkflowState: { findFirst: () => Promise.resolve({ id: 'open' }) },
     crewTask: {
       findMany: async ({

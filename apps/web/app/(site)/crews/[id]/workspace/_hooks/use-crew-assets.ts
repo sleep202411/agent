@@ -289,10 +289,12 @@ export interface AttachCrewAssetFileInput {
 
 export function attachCrewAssetFile(
   crewId: string,
-  input: AttachCrewAssetFileInput
+  input: AttachCrewAssetFileInput,
+  signal?: AbortSignal
 ): Promise<CrewAssetNodeDTO> {
   return crewApi.post(`/crews/${encodeURIComponent(crewId)}/assets/files`, {
     body: input,
+    signal,
   });
 }
 

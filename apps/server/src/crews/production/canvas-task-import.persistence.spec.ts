@@ -48,12 +48,12 @@ function adapter(sql: Sql) {
       findFirst: async ({
         where,
       }: {
-        where: { crewId: string; payload: { equals: string } };
+        where: { crewId: string; payload: { equals: string; path: string[] } };
       }) =>
         (
           await sql.query(
-            "SELECT payload FROM activity WHERE crew=$1 AND payload->>'canvasTaskImport'=$2",
-            [where.crewId, where.payload.equals],
+            'SELECT payload FROM activity WHERE crew=$1 AND payload->>$3=$2',
+            [where.crewId, where.payload.equals, where.payload.path[0]],
           )
         ).rows[0],
       create: ({ data }: { data: { crewId: string; payload: unknown } }) =>
@@ -65,6 +65,17 @@ function adapter(sql: Sql) {
     crewTaskFieldDefinition: { count: () => Promise.resolve(0) },
     crewTaskWorkflowState: { findFirst: () => Promise.resolve({ id: 'open' }) },
     crewTask: {
+      findMany: async ({
+        where,
+      }: {
+        where: { crewId: string; metadata: { equals: string } };
+      }) =>
+        (
+          await sql.query(
+            "SELECT id,metadata FROM tasks WHERE crew=$1 AND metadata->>'canvasTaskImport'=$2",
+            [where.crewId, where.metadata.equals],
+          )
+        ).rows,
       findFirst: async ({ where }: { where: { crewId: string } }) => {
         const row = (
           await sql.query<{ number: number; rank: string }>(
@@ -150,6 +161,8 @@ describe('Canvas import isolated SQL persistence', () => {
       crewId: 'crew',
       projectId,
       title: 'Story',
+      importKey: '01990000-0000-7000-8000-000000000009',
+      existingSourceNodeIds: [],
       ...input,
       plotTree: {
         title: 'Story',
@@ -194,5 +207,23 @@ describe('Canvas import isolated SQL persistence', () => {
     await expect(
       service.apply('crew', projectId, 'user', input),
     ).resolves.toMatchObject({ replayed: false });
+  });
+  it('reimports missing tasks explicitly while replaying the original command without resurrection', async () => {
+    const first = { ...input, importKey: randomUUID() };
+    const original = await service.apply('crew', projectId, 'user', first);
+    await db.query('DELETE FROM tasks WHERE id=$1', [original.taskIds[0]]);
+    await expect(
+      service.apply('crew', projectId, 'user', first),
+    ).resolves.toMatchObject({ replayed: true, taskIds: original.taskIds });
+    expect((await db.query('SELECT * FROM tasks')).rows).toHaveLength(1);
+    const next = { ...input, importKey: randomUUID() };
+    const replacement = await service.apply('crew', projectId, 'user', next);
+    expect(replacement.taskIds).toHaveLength(1);
+    expect(replacement.taskIds[0]).not.toBe(original.taskIds[0]);
+    expect((await db.query('SELECT * FROM tasks')).rows).toHaveLength(2);
+    await expect(
+      service.apply('crew', projectId, 'user', next),
+    ).resolves.toMatchObject({ replayed: true, taskIds: replacement.taskIds });
+    expect((await db.query('SELECT * FROM tasks')).rows).toHaveLength(2);
   });
 });

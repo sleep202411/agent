@@ -32,7 +32,34 @@ const savedSchema = z.object({
       key: z.string(),
       title: z.string(),
       path: z.string(),
-      body: z.record(z.string(), z.union([z.string(), z.number()])),
+      body: z.record(
+        z.string(),
+        z.union([
+          z.string(),
+          z.number(),
+          z.array(
+            z
+              .object({
+                templateKey: z.string(),
+                values: z.array(
+                  z
+                    .object({
+                      fieldId: z.string(),
+                      value: z.union([
+                        z.string(),
+                        z.number(),
+                        z.boolean(),
+                        z.array(z.string()),
+                        z.null(),
+                      ]),
+                    })
+                    .strict()
+                ),
+              })
+              .strict()
+          ),
+        ])
+      ),
       items: z.array(
         z.object({
           title: z.string(),

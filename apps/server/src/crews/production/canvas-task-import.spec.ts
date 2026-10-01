@@ -11,6 +11,7 @@ jest.mock('../../story-studio/story-plot-tree-export', () => ({
 }));
 function fixture() {
   const db = {
+    crewTask: { findMany: jest.fn().mockResolvedValue([]) },
     crew: {
       findFirst: jest.fn().mockResolvedValue({
         id: 'crew',
@@ -138,6 +139,8 @@ function applyFixture() {
     crewId: 'crew',
     projectId: 'project',
     title: 'Story',
+    importKey: '01990000-0000-7000-8000-000000000009',
+    existingSourceNodeIds: [],
     sourceRevision: 3,
     sourceHash: hash,
     plotTree: {
@@ -176,6 +179,7 @@ function applyFixture() {
       findFirst: jest.fn().mockResolvedValue({ id: 'open' }),
     },
     crewTask: {
+      findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'task' }),
     },
@@ -307,4 +311,39 @@ it('allows a linked canvas for a short-drama crew while rechecking permissions',
     service.preview('crew', 'project', 'user'),
   ).resolves.toMatchObject({ projectId: 'project' });
   expect(auth.require).toHaveBeenCalledTimes(2);
+});
+
+it('explicit re-import creates only missing scenes and leaves existing work unchanged', async () => {
+  const { service, tx, input, previewSpy } = applyFixture();
+  const preview = await service.preview('crew', 'project', 'user');
+  previewSpy.mockResolvedValue({
+    ...preview,
+    plotTree: {
+      ...preview.plotTree,
+      nodes: [
+        ...preview.plotTree.nodes,
+        { ...preview.plotTree.nodes[0], id: 'new-scene' },
+      ],
+    },
+  });
+  tx.crewTask.findMany.mockResolvedValue([
+    { id: 'existing', metadata: { sourceNodeId: 'scene' } },
+  ]);
+  await service.apply('crew', 'project', 'user', {
+    ...input,
+    importKey: '01990000-0000-7000-8000-000000000009',
+  });
+  expect(
+    (
+      tx.crewTask.findMany.mock.calls as { where: { deletedAt: unknown } }[][]
+    )[0][0].where.deletedAt,
+  ).toBeNull();
+  expect(tx.crewTask.create).toHaveBeenCalledTimes(1);
+  expect(
+    (
+      tx.crewTask.create.mock.calls as {
+        data: { metadata: { sourceNodeId: string } };
+      }[][]
+    )[0][0].data.metadata.sourceNodeId,
+  ).toBe('new-scene');
 });

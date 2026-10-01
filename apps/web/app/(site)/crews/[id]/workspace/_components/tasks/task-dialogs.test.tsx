@@ -28,6 +28,7 @@ vi.mock("../../_hooks/use-crew-assets", () => ({
   useCrewAssets: () => assetQuery,
 }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("./task-delivery-upload", () => ({ TaskDeliveryUpload: () => null }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root | undefined;
@@ -286,12 +287,13 @@ it("requires nonblank text and a still-attached file, preserving answers after v
   act(clickSubmit);
   expect(submit).not.toHaveBeenCalled();
   act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
-  const boxes = document.querySelectorAll<HTMLButtonElement>('[role="checkbox"]');
-  act(() => boxes[1]!.click());
-  act(() => boxes[0]!.click()); // Removing the file invalidates its required answer.
+  const picker = () => document.querySelector<HTMLButtonElement>('details [role="checkbox"]')!;
+  const field = () => document.querySelector<HTMLButtonElement>('section [role="checkbox"]')!;
+  act(() => field().click());
+  act(() => picker().click()); // Removing the file invalidates its required answer.
   act(clickSubmit);
   expect(submit).not.toHaveBeenCalled();
-  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  act(() => picker().click());
   submit.mockResolvedValue({ id: "task-1" });
   await act(async () => clickSubmit());
   expect(submit).toHaveBeenCalledWith(

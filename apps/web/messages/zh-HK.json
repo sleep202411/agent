@@ -5239,6 +5239,7 @@
       "durationOverdue": "已逾期 {duration}",
       "durationRemaining": "剩餘 {duration}",
       "pastDeadline": "請選擇今天或之後的截止日期。",
+      "canvasAlreadyImported": "目前場景均已有任務。新增場景或刪除已匯入任務後，請重新預覽。",
       "emptyCanvas": "此影遊尚無可匯入場景。請在 Studio 中新增場景後重新預覽。",
       "publishJob": "發佈職位",
       "publishOpening": "建立後發佈到 AIGC 劇組招募",
@@ -5251,6 +5252,7 @@
     },
     "episodeTemplate": {
       "title": "核對本集任務模板",
+      "fieldsHelp": "請填寫每個任務的劇組欄位，帶 * 的欄位為必填。",
       "help": "建立前請核對已發佈的任務組。任務與相依關係將一併建立，不覆蓋已有工作；建立後可編輯任務。",
       "loading": "正在載入模板…",
       "reload": "重新載入預覽",
@@ -10232,12 +10234,16 @@
     "correction": "已更正結果"
   },
   "crewDeliveryTemplate": {
+    "uploadFile": "上傳檔案",
+    "uploadProgress": "上傳中… {percent}%",
+    "uploadUnavailable": "暫時無法上傳檔案。",
+    "uploadFailed": "檔案上傳失敗。",
     "referencePrices": "參考價格",
     "referencePriceNote": "僅供參考。任務約定報酬另行記錄。",
     "title": "專業交付模板",
     "revision": "版本",
     "required": "必填",
-    "selectAttachments": "請先在上方選擇提審附件。",
+    "selectAttachments": "在此上傳檔案，或在下方選擇現有的交付附件。",
     "loading": "正在載入交付要求…",
     "none": "不使用專業模板",
     "retry": "重新整理／重試",
