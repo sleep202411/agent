@@ -1,3 +1,4 @@
+import { LikenessOutputsPanel } from "./likeness-outputs-panel";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -146,6 +147,15 @@ function CharacterSession(props: Viewer & { workspaceId: string; retry: () => vo
         />
       ))}
       {selected ? <Grants key={selected.id} {...props} character={selected} /> : null}
+      {selected ? (
+        <LikenessOutputsPanel
+          key={`outputs:${selected.id}`}
+          characterId={selected.id}
+          characterName={selected.name}
+          userId={props.userId}
+          generation={props.generation}
+        />
+      ) : null}
     </View>
   );
 }
