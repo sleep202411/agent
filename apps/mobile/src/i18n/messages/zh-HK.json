@@ -3008,5 +3008,9 @@
   "textAdventures.mobile.notFoundYet": "暫未找到相符作品，伺服器可能仍在處理。請重新整理作品庫或稍後再檢查。",
   "textAdventures.mobile.clearCreation": "清除建立記錄",
   "textAdventures.mobile.discardUnknown": "伺服器可能仍會建立此作品。清除本機記錄不會取消請求；請先檢查作品庫，再次開始可能建立重複作品。",
-  "textAdventures.mobile.discardCreation": "清除本機記錄？已上傳檔案及已建立作品會保留在伺服器上。"
+  "textAdventures.mobile.discardCreation": "清除本機記錄？已上傳檔案及已建立作品會保留在伺服器上。",
+  "textAdventures.mobile.playUnknown": "上一次操作的結果尚未確定。請重新整理對話核對後再傳送。",
+  "textAdventures.mobile.clearPlay": "清除待確認操作",
+  "textAdventures.mobile.clearPlayWarning": "伺服器可能仍會完成該操作。清除此記錄不會取消它。請先檢查對話；再次傳送可能導致重複操作。",
+  "textAdventures.mobile.backToEditor": "返回編輯"
 }

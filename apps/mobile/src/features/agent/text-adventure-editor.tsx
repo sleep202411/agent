@@ -17,12 +17,18 @@ import {
   transitionTextAdventure,
   type TextAdventureSession,
 } from "./api/text-adventure-api";
+import { TextAdventureMusic } from "./text-adventure-media";
 import { textAdventureDraft } from "./text-adventure-draft";
 import {
   pickAndUploadTextAdventureMedia,
   type TextAdventureUploadTarget,
 } from "./text-adventure-upload";
-type Props = { gameId: string; session: TextAdventureSession; onBack: () => void };
+type Props = {
+  gameId: string;
+  session: TextAdventureSession;
+  onBack: () => void;
+  onPlay?: () => void;
+};
 export function TextAdventureEditor(props: Props) {
   const [revision, setRevision] = useState(0);
   return (
@@ -155,6 +161,16 @@ function Editor(props: Props & { reload: () => void; game: TextGameDetail }) {
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <ThemedText>{t(`textAdventures.status.${props.game.status}`)}</ThemedText>
+      {props.onPlay &&
+        (props.game.publishedVersionId !== null ? (
+          <Action
+            label="textAdventures.playtest.title"
+            disabled={busy || !!confirm}
+            onPress={props.onPlay}
+          />
+        ) : (
+          <ThemedText>{t("textAdventures.playtest.unavailableBody")}</ThemedText>
+        ))}
       {props.game.rejectReason && (
         <ThemedText>
           {t("textAdventures.publish.rejected")} · {props.game.rejectReason}
@@ -237,6 +253,7 @@ function Editor(props: Props & { reload: () => void; game: TextGameDetail }) {
         disabled={!editable}
         onPress={() => void upload("music")}
       />
+      {form.bgmUrl && <TextAdventureMusic url={form.bgmUrl} />}
       {form.bgmUrl && (
         <Action
           label="textAdventures.editor.removeMusic"

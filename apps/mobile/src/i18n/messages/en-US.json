@@ -3008,5 +3008,9 @@
   "textAdventures.mobile.notFoundYet": "No matching work was found yet. Processing may still be underway. Refresh the library or check again later.",
   "textAdventures.mobile.clearCreation": "Clear creation record",
   "textAdventures.mobile.discardUnknown": "The server may still create this work. Clearing this local record will not cancel it. Check the library first; starting again can create another work.",
-  "textAdventures.mobile.discardCreation": "Clear this local record? Uploaded files and any created work will remain on the server."
+  "textAdventures.mobile.discardCreation": "Clear this local record? Uploaded files and any created work will remain on the server.",
+  "textAdventures.mobile.playUnknown": "The last action has an unknown result. Refresh to check the conversation before sending again.",
+  "textAdventures.mobile.clearPlay": "Clear pending action",
+  "textAdventures.mobile.clearPlayWarning": "The server may still finish this action. Clearing this record does not cancel it. Check the conversation first; sending again may duplicate an action.",
+  "textAdventures.mobile.backToEditor": "Back to editor"
 }

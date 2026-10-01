@@ -1,3 +1,4 @@
+import { TextAdventurePlayer } from "./text-adventure-player";
 import { TextAdventureCreate } from "./text-adventure-create";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView } from "react-native";
@@ -10,11 +11,22 @@ import { Action, TextAdventureEditor } from "./text-adventure-editor";
 export function TextAdventureLibrary({ session }: { session: TextAdventureSession }) {
   const [identity] = useState(session),
     [selected, setSelected] = useState<string>(),
+    [playing, setPlaying] = useState(false),
     [revision, setRevision] = useState(0);
+  if (selected && playing)
+    return (
+      <TextAdventurePlayer
+        key={selected}
+        gameId={selected}
+        account={identity}
+        onBack={() => setPlaying(false)}
+      />
+    );
   if (selected)
     return (
       <TextAdventureEditor
         gameId={selected}
+        onPlay={() => setPlaying(true)}
         session={identity}
         onBack={() => {
           setSelected(undefined);

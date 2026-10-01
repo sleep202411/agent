@@ -3,11 +3,27 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TextAdventureLibrary } from "./text-adventure-library";
 const h = vi.hoisted(() => ({ list: vi.fn(), generation: 1 }));
+vi.mock("./text-adventure-player", () => ({
+  TextAdventurePlayer: ({ onBack }: { onBack: () => void }) => (
+    <button onClick={onBack}>player back</button>
+  ),
+}));
 vi.mock("./text-adventure-create", () => ({ TextAdventureCreate: () => null }));
 vi.mock("./api/text-adventure-api", () => ({ listTextAdventures: h.list }));
 vi.mock("./text-adventure-editor", () => ({
-  TextAdventureEditor: ({ gameId, onBack }: { gameId: string; onBack: () => void }) => (
-    <button onClick={onBack}>{gameId}</button>
+  TextAdventureEditor: ({
+    gameId,
+    onBack,
+    onPlay,
+  }: {
+    gameId: string;
+    onBack: () => void;
+    onPlay?: () => void;
+  }) => (
+    <div>
+      <button onClick={onBack}>{gameId}</button>
+      <button onClick={onPlay}>playtest</button>
+    </div>
   ),
   Action: ({ onPress }: { onPress: () => void }) => <button onClick={onPress}>refresh</button>,
 }));
@@ -75,4 +91,13 @@ it("does not navigate under a stale account", async () => {
   h.generation = 2;
   await act(async () => button("World").click());
   expect(host.textContent).not.toContain("tg_");
+});
+
+it("opens native playtesting from the editor and returns to the editor", async () => {
+  await render();
+  await act(async () => button("World").click());
+  await act(async () => button("playtest").click());
+  expect(host.textContent).toContain("player back");
+  await act(async () => button("player back").click());
+  expect(host.textContent).toContain("tg_0123456789abcdef");
 });

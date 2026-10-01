@@ -3008,5 +3008,9 @@
   "textAdventures.mobile.notFoundYet": "暂未找到匹配作品，服务器可能仍在处理。请刷新作品库或稍后再检查。",
   "textAdventures.mobile.clearCreation": "清除创建记录",
   "textAdventures.mobile.discardUnknown": "服务器可能仍会创建该作品。清除本地记录不会取消请求；请先检查作品库，再次开始可能创建重复作品。",
-  "textAdventures.mobile.discardCreation": "清除本地记录？已上传文件及已创建作品会保留在服务器上。"
+  "textAdventures.mobile.discardCreation": "清除本地记录？已上传文件及已创建作品会保留在服务器上。",
+  "textAdventures.mobile.playUnknown": "上一次操作的结果尚未确定。请刷新对话核对后再发送。",
+  "textAdventures.mobile.clearPlay": "清除待确认操作",
+  "textAdventures.mobile.clearPlayWarning": "服务器可能仍会完成该操作。清除此记录不会取消它。请先检查对话；再次发送可能导致重复操作。",
+  "textAdventures.mobile.backToEditor": "返回编辑"
 }

@@ -12,6 +12,10 @@ const h = vi.hoisted(() => ({
   raw: null as string | null,
   fields: {} as Record<string, (s: string) => void>,
 }));
+vi.mock("./text-adventure-media", () => ({
+  TextAdventureMedia: () => null,
+  TextAdventureMusic: () => null,
+}));
 vi.mock("./api/text-adventure-api", () => ({
   getTextAdventure: h.get,
   updateTextAdventure: h.update,
