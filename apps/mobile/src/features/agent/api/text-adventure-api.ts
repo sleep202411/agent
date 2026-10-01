@@ -78,11 +78,17 @@ export async function updateTextAdventure(
   gameId: string,
   input: TextGameUpdateInput,
   session: TextAdventureSession,
-  signal: AbortSignal
+  signal: AbortSignal,
+  expected?: { draftVersionId: string; updatedAt: string }
 ) {
   current(session, signal);
   const data = TextGameUpdateInputSchema.parse(input);
   const fresh = await getTextAdventure(gameId, session, signal);
+  if (
+    expected &&
+    (fresh.draftVersionId !== expected.draftVersionId || fresh.updatedAt !== expected.updatedAt)
+  )
+    throw new Error("Text adventure changed on the server. Refresh before saving.");
   if (!isTextGameEditableByCreator(fresh.status))
     throw new Error("This text adventure is under review and cannot be edited.");
   current(session, signal);

@@ -455,6 +455,13 @@ export default function MineScreen() {
             >
               <ThemedText type="smallBold">{t("crewTaskCenter.title")}</ThemedText>
             </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              style={{ paddingHorizontal: Spacing.four, paddingVertical: Spacing.two }}
+              onPress={() => router.push(toHref("/text-adventures"))}
+            >
+              <ThemedText type="smallBold">{t("textAdventures.library.title")}</ThemedText>
+            </Pressable>
             {/* Tab bar */}
             <View style={[styles.tabBar, { borderBottomColor: theme.border }]}>
               {TABS.map((item) => {

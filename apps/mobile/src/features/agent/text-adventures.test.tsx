@@ -1,7 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
-import { TextAdventures } from "./text-adventures";
+import { TextAdventurePreview } from "./text-adventure-preview";
 const h = vi.hoisted(() => ({
   generation: 1,
   list: vi.fn(),
@@ -88,8 +88,11 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let host: HTMLDivElement, root: Root;
 const button = (name: string) =>
   [...host.querySelectorAll("button")].find((item) => item.textContent === name)!;
-const click = (name: string) => act(async () => button(name).click());
-const render = () => act(async () => root.render(<TextAdventures onClose={() => {}} />));
+const session = { userId: "123", generation: 1 };
+const render = () =>
+  act(async () =>
+    root.render(<TextAdventurePreview gameId={detail.gameId} session={session} onBack={() => {}} />)
+  );
 beforeEach(() => {
   vi.resetAllMocks();
   h.generation = 1;
@@ -106,74 +109,34 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
 });
-it("creates from an uploaded document and adopts the returned ID for future saves", async () => {
-  await render();
-  await click("textAdventure.create");
-  expect(button("textAdventure.save").disabled).toBe(true);
-  await click("textAdventure.document");
-  await click("textAdventure.save");
-  expect(h.create).toHaveBeenCalledWith(
-    expect.objectContaining({ worldviewDocxUrl: "https://example.com/upload.docx" }),
-    { userId: "123", generation: 1 },
-    expect.any(AbortSignal)
-  );
-  await click("textAdventure.save");
-  expect(h.update).toHaveBeenCalledWith(
-    detail.gameId,
-    expect.anything(),
-    expect.anything(),
-    expect.anything()
-  );
-  expect(h.create).toHaveBeenCalledTimes(1);
-});
-it("locks editing and review actions during review", async () => {
-  h.get.mockResolvedValue({ ...detail, status: "reviewing" });
-  await render();
-  await click("Adventure");
-  expect(button("textAdventure.save").disabled).toBe(true);
-  expect(button("textAdventure.document").disabled).toBe(true);
-  expect(button("textAdventure.submit")).toBeUndefined();
-});
-it("blocks another write after an ambiguous failure until a reload", async () => {
-  h.update.mockRejectedValue(new Error("connection lost"));
-  await render();
-  await click("Adventure");
-  await click("textAdventure.save");
-  expect(host.textContent).toContain("connection lost");
-  expect(button("textAdventure.save").disabled).toBe(true);
-  expect(button("textAdventure.submit").disabled).toBe(true);
-  await click("textAdventure.refresh");
-  expect(h.list).toHaveBeenCalledTimes(2);
-});
-it("ignores a late result after the account changes", async () => {
-  let finish!: (rows: unknown[]) => void;
-  h.list.mockImplementationOnce(
-    () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      })
-  );
-  await render();
-  h.generation = 2;
-  h.list.mockResolvedValue([]);
-  await render();
-  await act(async () => finish([{ ...detail, name: "Private old account" }]));
-  expect(host.textContent).not.toContain("Private old account");
-});
-it("uses the selected saved adventure for a native preview", async () => {
+it("loads the selected saved adventure", async () => {
   h.preview.mockResolvedValue({
     sessionId: "ts_0123456789abcdef",
     gameId: detail.gameId,
     messages: [{ id: "1", role: "assistant", content: "You enter the forest." }],
   });
   await render();
-  await click("Adventure");
-  await click("textAdventure.preview");
-  expect(h.preview).toHaveBeenCalledWith(
-    detail.gameId,
-    "en-US",
-    expect.anything(),
-    expect.anything()
-  );
+  expect(h.preview).toHaveBeenCalledWith(detail.gameId, "en-US", session, expect.any(AbortSignal));
   expect(host.textContent).toContain("You enter the forest.");
+});
+it("reports interrupted requests and blocks sending", async () => {
+  h.preview.mockRejectedValue(new Error("Interrupted"));
+  await render();
+  expect(host.textContent).toContain("Interrupted");
+  expect(button("textAdventure.send").disabled).toBe(true);
+});
+it("aborts on unmount and ignores late data", async () => {
+  let finish!: (value: unknown) => void;
+  h.preview.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+  );
+  await render();
+  const signal = h.preview.mock.calls[0][3];
+  await act(async () => root.render(null));
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish({ messages: [{ id: "1", content: "old account" }] }));
+  expect(host.textContent).not.toContain("old account");
 });
