@@ -31,7 +31,7 @@ const episode = z.object({
   trailerAsset: asset.nullable(),
 });
 export type AuthorEpisode = z.infer<typeof episode>;
-const snapshot = z
+export const episodeSnapshotSchema = z
   .object({
     id,
     version: z.number().int().nonnegative(),
@@ -42,7 +42,7 @@ const snapshot = z
     (value) => new Set(value.episodes.map((item) => item.id)).size === value.episodes.length,
     "Duplicate episode identities."
   );
-export type EpisodeSnapshot = z.infer<typeof snapshot>;
+export type EpisodeSnapshot = z.infer<typeof episodeSnapshotSchema>;
 export const episodeFields = z.object({
   title: z.string().trim().min(1).max(80),
   summary: z.string().trim().min(1).max(800),
@@ -76,7 +76,7 @@ export async function fetchAuthorEpisodes(ipId: string, generation: number, sign
   id.parse(ipId);
   current(generation, signal);
   const read = async (language: string) => {
-    const value = z.object({ ip: snapshot }).parse(
+    const value = z.object({ ip: episodeSnapshotSchema }).parse(
       await api.get(`/ip-commerce/me/ips/${ipId}`, {
         service: "aurora",
         signal,
@@ -146,7 +146,7 @@ export async function mutateAuthorEpisode(
           data: { ...command.data, expectedVersion: command.expectedVersion },
         });
   current(generation, signal);
-  const saved = z.object({ ip: snapshot }).parse(response).ip;
+  const saved = z.object({ ip: episodeSnapshotSchema }).parse(response).ip;
   const updated = saved.episodes.find((item) => item.id === command.episodeId);
   if (
     saved.id !== ipId ||

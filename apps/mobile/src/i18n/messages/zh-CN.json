@@ -3193,5 +3193,20 @@
   "ipEpisodes.draft": "草稿",
   "ipEpisodes.hidden": "隐藏",
   "ipEpisodes.save": "保存单集",
-  "ipEpisodes.pending": "此修改的结果待确认。重试会先检查保存结果，再决定是否重新发送。"
+  "ipEpisodes.pending": "此修改的结果待确认。重试会先检查保存结果，再决定是否重新发送。",
+  "ipEpisodeCreate.heading": "新建剧集",
+  "ipEpisodeCreate.create": "创建剧集",
+  "ipEpisodeCreate.help": "标题、简介和源视频为必填项。草稿保存在当前设备。支持 MP4、MOV 或 WebM，最大 35 GiB。上传时请保持此页面打开；中断后重新选择原文件即可续传。",
+  "ipEpisodeCreate.pick": "选择源视频",
+  "ipEpisodeCreate.resume": "重新选择原视频以续传",
+  "ipEpisodeCreate.videoReady": "源视频已上传",
+  "ipEpisodeCreate.progress": "已上传分片：{percent}%",
+  "ipEpisodeCreate.pause": "暂停上传",
+  "ipEpisodeCreate.pending": "创建结果尚未确认。重试将检查原 IP 版本。如果版本已变更，请刷新并检查剧集列表后再清除此请求。",
+  "ipEpisodeCreate.resolve": "已检查列表，处理待确认请求",
+  "ipEpisodeCreate.resolveConfirm": "清除此待确认请求？此操作不会删除已创建的剧集。再次创建前请检查刷新后的列表。",
+  "ipEpisodeCreate.discard": "丢弃草稿",
+  "ipEpisodeCreate.discardConfirm": "丢弃此草稿并取消未完成的上传？",
+  "ipEpisodeCreate.confirmDiscard": "确认",
+  "ipEpisodeCreate.saved": "剧集已创建。"
 }

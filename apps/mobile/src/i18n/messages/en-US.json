@@ -3193,5 +3193,20 @@
   "ipEpisodes.draft": "Draft",
   "ipEpisodes.hidden": "Hidden",
   "ipEpisodes.save": "Save episode",
-  "ipEpisodes.pending": "This change is awaiting confirmation. Retry checks the saved result before resending."
+  "ipEpisodes.pending": "This change is awaiting confirmation. Retry checks the saved result before resending.",
+  "ipEpisodeCreate.heading": "New episode",
+  "ipEpisodeCreate.create": "Create episode",
+  "ipEpisodeCreate.help": "Title, summary and source video are required. Drafts stay on this device. MP4, MOV or WebM, up to 35 GiB. Keep this screen open while uploading; after an interruption, reselect the original file to resume.",
+  "ipEpisodeCreate.pick": "Choose source video",
+  "ipEpisodeCreate.resume": "Reselect original video to resume",
+  "ipEpisodeCreate.videoReady": "Source video uploaded",
+  "ipEpisodeCreate.progress": "Uploaded parts: {percent}%",
+  "ipEpisodeCreate.pause": "Pause upload",
+  "ipEpisodeCreate.pending": "Creation is unresolved. Retry checks the original IP version. If it changed, refresh and check the episode list before clearing this request.",
+  "ipEpisodeCreate.resolve": "I checked the list — resolve pending request",
+  "ipEpisodeCreate.resolveConfirm": "Clear this pending request? This does not remove any episode already created. Check the refreshed list before creating another.",
+  "ipEpisodeCreate.discard": "Discard draft",
+  "ipEpisodeCreate.discardConfirm": "Discard this draft and cancel its unfinished upload?",
+  "ipEpisodeCreate.confirmDiscard": "Confirm",
+  "ipEpisodeCreate.saved": "Episode created."
 }
