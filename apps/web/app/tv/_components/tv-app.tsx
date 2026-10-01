@@ -26,7 +26,8 @@ import { TvRightRail } from "./tv-right-rail";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
 import { TvCatalogToolbar } from "./tv-catalog-toolbar";
 
-export function TvApp({ embedded = false }: { embedded?: boolean }) {
+type TvEntryProps = { embedded?: boolean; initialIpId?: string; initialEpisodeId?: string };
+export function TvApp({ embedded = false, initialIpId, initialEpisodeId }: TvEntryProps) {
   const { user } = useCurrentUser();
   const [createOpen, setCreateOpen] = useState(false);
   const tv = useTranslations("tv");
@@ -49,7 +50,12 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
       )}
       {mode === "videos" ? (
         <>
-          <TvVideoApp key={user?.id ?? "guest"} embedded={embedded} />
+          <TvVideoApp
+            key={`${user?.id ?? "guest"}:${initialIpId ?? ""}:${initialEpisodeId ?? ""}`}
+            embedded={embedded}
+            initialIpId={initialIpId}
+            initialEpisodeId={initialEpisodeId}
+          />
         </>
       ) : (
         <TvGames />
@@ -58,7 +64,7 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
+function TvVideoApp({ embedded = false, initialIpId, initialEpisodeId }: TvEntryProps) {
   const { user } = useCurrentUser();
   const signaledEpisodes = useRef(new Set<string>());
   const t = useTranslations("tv");
@@ -85,9 +91,9 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
     isFetchingNextPage,
   } = useTvIps({ q: debouncedSearch });
   const [episodeChoice, setEpisodeChoice] = useState<{ ipId: string; episodeId: string } | null>(
-    null
+    initialIpId && initialEpisodeId ? { ipId: initialIpId, episodeId: initialEpisodeId } : null
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialIpId ?? null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [nextError, setNextError] = useState<string | null>(null);
@@ -103,23 +109,33 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
     }
   }
 
-  const listedItem = items.find((entry) => entry.id === selectedId) ?? items[0];
-  const detail = useTvSelectedIp(listedItem?.id);
-  const item = detail.item ?? listedItem;
+  const requestedId = selectedId ?? items[0]?.id;
+  const listedItem = items.find((entry) => entry.id === requestedId);
+  const detail = useTvSelectedIp(requestedId);
+  // A deep link resolves independently of the current catalogue page. Never
+  // substitute the first channel or a cached public preview after access fails.
+  const entryNeedsDetail = Boolean(initialIpId && requestedId === initialIpId);
+  const item = detail.isError
+    ? undefined
+    : (detail.item ?? (entryNeedsDetail ? undefined : listedItem));
   // Remember the initial channel so a catalog refresh cannot change it.
   if (item && item.id !== selectedId) {
     setSelectedId(item.id);
     setIsPlaying(false);
   }
   const episode =
-    episodeChoice?.ipId === item?.id
+    episodeChoice && episodeChoice.ipId === item?.id
       ? item?.episodes?.find((entry) => entry.id === episodeChoice.episodeId)
       : undefined;
+  const missingEpisode = Boolean(
+    item && episodeChoice?.ipId === item.id && !episode && detail.isSuccess && !detail.isFetching
+  );
   const playbackItem =
     item && episode ? { ...item, trailer: episode.video, trailerType: episode.videoType } : item;
   const errorMessage = error instanceof Error ? error.message : undefined;
   const index = items.findIndex((entry) => entry.id === item?.id);
-  const hasNext = hasNextPage || items.slice(index + 1).some((entry) => entry.trailer);
+  const hasNext =
+    index >= 0 && (hasNextPage || items.slice(index + 1).some((entry) => entry.trailer));
 
   useEffect(
     () => () => {
@@ -200,7 +216,9 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
         <div
           className={`${stageStyles.viewport} relative aspect-video shrink-0 lg:aspect-auto lg:min-h-0 lg:flex-1`}
         >
-          {item ? (
+          {missingEpisode ? (
+            <TvErrorState message={t("entryUnavailable")} onRetry={() => void detail.refetch()} />
+          ) : item ? (
             <TvStage
               item={playbackItem!}
               onPlaybackChange={(playing, source) => {
@@ -243,6 +261,15 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
               navigationError={nextError}
               onRefreshSource={() => void detail.refetch()}
             />
+          ) : requestedId && detail.isError ? (
+            <TvErrorState
+              message={detail.error instanceof Error ? detail.error.message : t("entryUnavailable")}
+              onRetry={() => void detail.refetch()}
+            />
+          ) : requestedId && detail.isPending ? (
+            <TvLoadingState />
+          ) : entryNeedsDetail ? (
+            <TvErrorState message={t("entryUnavailable")} onRetry={() => void detail.refetch()} />
           ) : isLoading ? (
             <TvLoadingState />
           ) : isError ? (

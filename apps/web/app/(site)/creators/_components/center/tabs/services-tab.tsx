@@ -135,8 +135,32 @@ function ServicesTabContent({ creator, isOwner }: ServicesTabProps) {
     );
   }
 
+  const accessDenied = Boolean(list.error && [401, 403, 404].includes(list.error.status));
+  if (list.error && (accessDenied || !list.isFetchNextPageError)) {
+    return (
+      <div className="space-y-3">
+        <p role="alert" className="break-words text-sm text-red-400">
+          {list.error.message}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={list.isFetching}
+          onClick={() => void list.refetch()}
+        >
+          {t("retryLoad")}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
+      {list.isFetchNextPageError && list.error && (
+        <p role="alert" className="break-words text-sm text-red-400">
+          {list.error.message}
+        </p>
+      )}
       {isOwner ? (
         <header className="flex flex-wrap items-center justify-between gap-3">
           <OwnerStatusFilter value={statusFilter} onChange={setStatusFilter} />
@@ -208,6 +232,7 @@ function ServicesTabContent({ creator, isOwner }: ServicesTabProps) {
           tier comparison + scope. Phase 1b "下单 / 联系" CTAs are
           stubbed inside the dialog. */}
       <ServiceDetailDialog
+        key={detailId ?? "closed"}
         serviceId={detailId}
         onOpenChange={(o) => {
           if (!o) setDetailId(null);

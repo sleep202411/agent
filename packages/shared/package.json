@@ -125,6 +125,14 @@
     "./content-gps": {
       "types": "./dist/content-gps.d.ts",
       "default": "./dist/content-gps.js"
+    },
+    "./creator-location": {
+      "types": "./dist/creator-location.d.ts",
+      "default": "./dist/creator-location.js"
+    },
+    "./discovery-assistant": {
+      "types": "./dist/discovery-assistant.d.ts",
+      "default": "./dist/discovery-assistant.js"
     }
   },
   "scripts": {

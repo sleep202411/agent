@@ -46,7 +46,8 @@ interface ServiceDetailDialogProps {
 export function ServiceDetailDialog({ serviceId, onOpenChange }: ServiceDetailDialogProps) {
   const t = useTranslations("creatorService");
   const tc = useTranslations("common");
-  const { data: service, isLoading } = useCreatorService(serviceId);
+  const query = useCreatorService(serviceId);
+  const service = query.error || query.isFetching ? undefined : query.data;
   const open = !!serviceId;
   const [contactOpen, setContactOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
@@ -64,7 +65,21 @@ export function ServiceDetailDialog({ serviceId, onOpenChange }: ServiceDetailDi
           />
 
           <DialogBody className="min-h-0 flex-1 overflow-y-auto p-5">
-            {isLoading || !service ? (
+            {query.error ? (
+              <div className="space-y-3">
+                <p role="alert" className="break-words text-sm text-red-400">
+                  {query.error.message}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={query.isFetching}
+                  onClick={() => void query.refetch()}
+                >
+                  {t("retryLoad")}
+                </Button>
+              </div>
+            ) : query.isLoading || query.isFetching || !service ? (
               <div className="flex h-40 items-center justify-center">
                 <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
               </div>
@@ -103,12 +118,12 @@ export function ServiceDetailDialog({ serviceId, onOpenChange }: ServiceDetailDi
       {/* Stacked above ServiceDetailDialog — Radix handles z-index
           + focus trapping correctly for nested dialogs. */}
       <ContactCreatorDialog
-        open={contactOpen}
+        open={contactOpen && Boolean(service)}
         onOpenChange={setContactOpen}
         service={service ?? null}
       />
       <StartRequestDialog
-        open={requestOpen}
+        open={requestOpen && Boolean(service)}
         onOpenChange={setRequestOpen}
         service={service ?? null}
       />

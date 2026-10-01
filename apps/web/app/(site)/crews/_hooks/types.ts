@@ -165,6 +165,7 @@ export interface ApplyInput {
 }
 
 export interface CreateCrewInvitationInput {
+  positionCategory?: PresetPositionValue;
   account: string;
   policyKeys: CrewPolicyKey[];
   expiresInDays?: number;
@@ -968,6 +969,7 @@ export interface CrewTaskDraftDTO {
 }
 
 export interface CrewInvitationDTO {
+  positionCategory?: PresetPositionValue | null;
   id: string;
   crewId: string;
   inviteeUserId: string;

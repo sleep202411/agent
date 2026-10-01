@@ -10,6 +10,7 @@ import {
 } from "@repo/shared";
 
 import type { ToolDefinition } from "./types.js";
+import { CONTENT_GPS_AGENT_OS_TOOLS } from "./content-gps-definitions.js";
 import { STORY_AGENT_OS_TOOLS } from "./story-definitions.js";
 import {
   isCompleteStoryCreativeProfileInputRequest,
@@ -461,6 +462,7 @@ const AGENT_INTERACTION_TOOLS = [
 export const AGENT_OS_TOOLS = [
   ...AGENT_INTERACTION_TOOLS,
   ...PLATFORM_AGENT_OS_TOOLS,
+  ...CONTENT_GPS_AGENT_OS_TOOLS,
   ...STORY_AGENT_OS_TOOLS,
 ] as const;
 

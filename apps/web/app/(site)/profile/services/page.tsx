@@ -11,6 +11,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useCreatorDetail } from "@/app/(site)/creators/_hooks/use-creator";
 import { ServicesTab } from "@/app/(site)/creators/_components/center/tabs/services-tab";
+import { CreatorLocationEditor } from "@/app/(site)/creators/_components/creator-location-editor";
 
 /** Preserve owner service management outside the IP-first profile portfolio. */
 export default function ProfileServicesPage() {
@@ -43,6 +44,7 @@ export default function ProfileServicesPage() {
         {t("cta.backToProfile")}
       </Link>
       <h1 className="text-2xl font-semibold">{t("cta.manageServices")}</h1>
+      <CreatorLocationEditor />
       {error ? (
         <p role="alert">{error.message}</p>
       ) : creator ? (

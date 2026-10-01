@@ -10,10 +10,10 @@ describe("App download destinations", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_REGION", "cn");
     const { APP_DOWNLOADS } = await import("./app-download-menu");
     expect(APP_DOWNLOADS.map(({ href }) => href)).toEqual([
-      "https://media.fizzspace.cn/releases/android/fizzdragon-cn-2.2.0-80-0254c347.apk",
+      "https://media.fizzspace.cn/releases/android/fizzdragon-cn-2.3.1-82-f14572b2.apk",
       "https://apps.apple.com/cn/app/fizzdragon/id6761763480",
     ]);
-    expect(APP_DOWNLOADS[0]?.download).toBe("FizzDragon-2.2.0-cn.apk");
+    expect(APP_DOWNLOADS[0]?.download).toBe("FizzDragon-2.3.1-cn.apk");
   });
 
   it.each(["global", "com"])("uses the international stores for %s", async (region) => {

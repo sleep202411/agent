@@ -44,7 +44,7 @@ import {
   loadExperienceTheme as defaultLoadExperienceTheme,
   type ExperienceThemeLoader,
 } from "../lib/experience-theme-loader";
-import { localize, resolvePlaybackLocale } from "../lib/localize";
+import { localize, localizeVisible, resolvePlaybackLocale } from "../lib/localize";
 import { ExperienceSpatialLayer } from "./experience-spatial-layer";
 import { EXPERIENCE_START_ACCENT, ExperienceStartShell } from "./experience-start-shell";
 import {
@@ -812,13 +812,14 @@ function RendererPanel({
           type: "runtime.visibility",
         })
     );
+    const promptText = localizeVisible(config.prompt, locale, defaultLocale);
     return (
       <View style={styles.choiceOverlay} pointerEvents="box-none">
-        {config.prompt && (
+        {promptText ? (
           <ThemedText type="smallBold" style={styles.choicePrompt}>
-            {localize(config.prompt, locale, defaultLocale)}
+            {promptText}
           </ThemedText>
-        )}
+        ) : null}
         {choices.length === 0 ? (
           <ThemedText type="small" style={styles.lightMuted}>
             {copy.noVisibleChoices}

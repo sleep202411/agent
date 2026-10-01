@@ -37,6 +37,32 @@ const WHERE_REAL = "WHERE nick_name IS NOT NULL AND TRIM(nick_name) <> ''";
 export class LegacyCreatorsService {
   constructor(private readonly legacy: LegacyMysqlService) {}
 
+  /** Internal bounded join for service discovery. Uses the same public-directory
+   * gate; no nickname/availability data is copied into a second authority. */
+  async publicCreatorBatch(ids: string[]) {
+    if (!ids.length) return [];
+    if (ids.length > 500)
+      throw new Error('Creator lookup batch exceeds 500 IDs.');
+    const requested = new Set(ids);
+    const rows = await this.legacy.query<CreatorRow>(
+      `SELECT CAST(id AS CHAR) AS id, nick_name, avatar, jobseeking FROM client_user
+       ${WHERE_REAL} AND id IN (${ids.map(() => '?').join(',')})`,
+      ids,
+    );
+    // MySQL may coerce strings when comparing a numeric PK. Require exact IDs
+    // after reading, so a malformed identifier cannot become a different user.
+    return rows.filter((row) => requested.has(row.id));
+  }
+
+  async publicCreatorDisplay(row: CreatorRow): Promise<PublicCreator> {
+    return {
+      id: row.id,
+      name: row.nick_name?.trim() || 'Creator',
+      avatarUrl: await resolveUserAvatar(row.avatar, row.id),
+      openToWork: Number(row.jobseeking ?? 0) === 1,
+    };
+  }
+
   async listCreators(opts: {
     limit: number;
     offset: number;
@@ -78,12 +104,7 @@ export class LegacyCreatorsService {
     );
 
     const items = await Promise.all(
-      rows.map(async (r) => ({
-        id: r.id,
-        name: r.nick_name?.trim() || 'Creator',
-        avatarUrl: await resolveUserAvatar(r.avatar, r.id),
-        openToWork: Number(r.jobseeking ?? 0) === 1,
-      })),
+      rows.map((r) => this.publicCreatorDisplay(r)),
     );
 
     const requiresLogin =

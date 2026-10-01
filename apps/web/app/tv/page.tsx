@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { parseTvEntry } from "./_data/tv-entry";
 import { headers } from "next/headers";
 import enUS from "@/messages/en-US.json";
 import zhCN from "@/messages/zh-CN.json";
@@ -24,14 +26,20 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function TvPage() {
+export default async function TvPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const entry = parseTvEntry(await searchParams);
+  if (!entry.success) notFound();
   // Chrome-less fullscreen surface (top-level route, sibling of /play): the
   // plaza's TV button links here; the top-right X closes back to
   // the plaza. The root layout already supplies the dark canvas, React
   // Query provider, and toasts.
   return (
     <main className="relative min-h-[100dvh] text-white md:h-[100dvh] md:overflow-hidden">
-      <TvApp />
+      <TvApp initialIpId={entry.data.ip} initialEpisodeId={entry.data.episode} />
     </main>
   );
 }

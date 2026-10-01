@@ -2,12 +2,17 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { CrewApiError } from "../_hooks/api";
 import { TaskTrackingCard, type TrackingTask } from "./task-tracking-card";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   status: "in_progress",
   error: false,
   next: vi.fn(),
+  retry: vi.fn(),
+  timelineEnabled: true,
+  historyStatus: null as number | null,
+  historyRetry: vi.fn(),
   detail: vi.fn(),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
@@ -24,6 +29,7 @@ vi.mock("../_hooks/use-tasks", () => ({
     state.detail();
     return {
       isError: state.error,
+      refetch: state.retry,
       error: new Error("Access revoked"),
       data: {
         id: "task",
@@ -34,25 +40,34 @@ vi.mock("../_hooks/use-tasks", () => ({
       },
     };
   },
-  useCrewTaskTimeline: () => ({
-    data: {
-      pages: [
-        {
-          items: [
-            {
-              id: "event",
-              actorUserId: "pax",
-              kind: "task.revision_requested",
-              payload: { note: "Revise lighting" },
-              createdAt: "2026-10-01T02:00:00Z",
-            },
-          ],
-        },
-      ],
-    },
-    hasNextPage: true,
-    fetchNextPage: state.next,
-  }),
+  useCrewTaskTimeline: (_id: string, enabled: boolean) => {
+    state.timelineEnabled = enabled;
+    return {
+      isError: state.historyStatus !== null,
+      isFetchNextPageError: state.historyStatus !== null,
+      error: state.historyStatus
+        ? new CrewApiError(state.historyStatus, { message: "History unavailable" })
+        : null,
+      refetch: state.historyRetry,
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "event",
+                actorUserId: "pax",
+                kind: "task.revision_requested",
+                payload: { note: "Revise lighting" },
+                createdAt: "2026-10-01T02:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+      hasNextPage: true,
+      fetchNextPage: state.next,
+    };
+  },
 }));
 vi.mock("../[id]/workspace/_components/tasks/task-dialogs", () => ({
   SubmitTaskDialog: ({ inline, onSubmitted }: { inline: boolean; onSubmitted: () => void }) => (
@@ -97,6 +112,8 @@ afterEach(() => {
   document.body.innerHTML = "";
   state.status = "in_progress";
   state.error = false;
+  state.timelineEnabled = true;
+  state.historyStatus = null;
   vi.clearAllMocks();
 });
 it("opens inline delivery directly from Submit and closes it after submission", () => {
@@ -140,10 +157,37 @@ it("does not open delivery if the fresh task state no longer accepts it", () => 
   click("submit");
   expect(document.querySelector('[data-inline="true"]')).toBeNull();
 });
-it("hides cached delivery on a failed access recheck", () => {
+it("hides cached delivery and history on a failed access recheck and permits retry", () => {
   state.error = true;
   render();
   click("submit");
   expect(document.querySelector('[data-inline="true"]')).toBeNull();
   expect(document.querySelector('[role="alert"]')?.textContent).toContain("Access revoked");
+  expect(document.body.textContent).not.toContain("Revise lighting");
+  expect(document.body.textContent).not.toContain("Pax");
+  expect(document.querySelector("time")).toBeNull();
+  expect(state.timelineEnabled).toBe(false);
+  click("retry");
+  expect(state.retry).toHaveBeenCalledOnce();
+  expect(state.next).not.toHaveBeenCalled();
+});
+
+it.each([401, 403, 404])("hides cached task history after a denied history page (%s)", (status) => {
+  state.historyStatus = status;
+  render();
+  click("history");
+  expect(document.body.textContent).not.toContain("Revise lighting");
+  expect(document.body.textContent).not.toContain("Recorded delivery");
+  expect(document.body.textContent).toContain("History unavailable");
+  click("retry");
+  expect(state.historyRetry).toHaveBeenCalledOnce();
+  expect(state.next).not.toHaveBeenCalled();
+});
+it("preserves history on a transient next-page failure", () => {
+  state.historyStatus = 503;
+  render();
+  click("history");
+  expect(document.body.textContent).toContain("Revise lighting");
+  click("retry");
+  expect(state.next).toHaveBeenCalledOnce();
 });

@@ -25,6 +25,36 @@ function fixture(total = 75) {
 }
 
 describe('Public creator availability filter', () => {
+  it('binds creator-batch identifiers and rejects coerced or unrequested IDs', async () => {
+    const { legacy, service } = fixture();
+    legacy.query.mockResolvedValueOnce([
+      { id: '0', nick_name: 'Wrong identity', avatar: null, jobseeking: 0 },
+      {
+        id: '9007199254740993',
+        nick_name: 'Creator',
+        avatar: null,
+        jobseeking: 1,
+      },
+    ]);
+    const ids = ['not-a-number', '9007199254740993', "1') OR 1=1 --"];
+    const result = await service.publicCreatorBatch(ids);
+    expect(result.map((row) => row.id)).toEqual(['9007199254740993']);
+    expect(legacy.query).toHaveBeenCalledWith(
+      expect.stringContaining('id IN (?,?,?)'),
+      ids,
+    );
+    const calls = legacy.query.mock.calls as unknown as [string, string[]][];
+    expect(calls[0][0]).not.toContain(ids[2]);
+  });
+
+  it('bounds lookup batches and skips empty lookups', async () => {
+    const { legacy, service } = fixture();
+    expect(await service.publicCreatorBatch([])).toEqual([]);
+    await expect(
+      service.publicCreatorBatch(Array.from({ length: 501 }, () => '1')),
+    ).rejects.toThrow('500');
+    expect(legacy.query).not.toHaveBeenCalled();
+  });
   it('filters count and rows before pagination, preserving string IDs', async () => {
     const { legacy, controller } = fixture();
     const result = await controller.list(undefined, '20', '40', 'true');

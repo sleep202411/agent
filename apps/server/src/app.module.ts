@@ -1,3 +1,4 @@
+import { DiscoveryAssistantModule } from './discovery-assistant/discovery-assistant.module';
 import { AiActorsModule } from './ai-actors/ai-actors.module';
 import { Module } from '@nestjs/common';
 import { TasksModule } from './tasks/tasks.module';
@@ -90,6 +91,7 @@ const agentOsGatewayEnabled = (() => {
     InternalModule,
     LegacyPointsModule,
     IpCommerceModule,
+    DiscoveryAssistantModule,
     DocumentsModule,
     CertificatesModule,
     CharactersModule,

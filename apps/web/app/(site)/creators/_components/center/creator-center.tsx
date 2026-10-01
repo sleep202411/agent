@@ -36,6 +36,7 @@ import { WorksTab } from "./tabs/works-tab";
 import { CertificatesTab } from "./tabs/certificates-tab";
 import { IpsTab } from "./tabs/ips-tab";
 import { CrewsTab } from "./tabs/crews-tab";
+import { PublicStudioServices } from "./public-studio-services";
 
 export interface CreatorCenterProps {
   /** Creator userId to render. For the owner self-view this is the
@@ -277,6 +278,7 @@ export function SharedCreatorCenterLayout({
               ))}
             </div>
           )}
+          {contentMode === "sections" && <PublicStudioServices creator={creator} />}
         </main>
       </div>
 

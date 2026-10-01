@@ -1,3 +1,16 @@
+import {
+  CreatorGeocodingService,
+  CreatorGeocodingController,
+} from './creator-geocoding';
+import {
+  CreatorDiscoveryController,
+  CreatorDiscoveryService,
+} from './creator-discovery';
+import { LegacyCreatorsModule } from '../legacy-creators/legacy-creators.module';
+import {
+  CreatorLocationsController,
+  CreatorLocationsService,
+} from './creator-locations';
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth';
 import { CreatorServicesController } from './creator-services.controller';
@@ -12,9 +25,19 @@ import { CreatorServicesService } from './creator-services.service';
  * controller method runs).
  */
 @Module({
-  imports: [AuthModule],
-  controllers: [CreatorServicesController],
-  providers: [CreatorServicesService],
-  exports: [CreatorServicesService],
+  imports: [AuthModule, LegacyCreatorsModule],
+  controllers: [
+    CreatorServicesController,
+    CreatorLocationsController,
+    CreatorGeocodingController,
+    CreatorDiscoveryController,
+  ],
+  providers: [
+    CreatorServicesService,
+    CreatorLocationsService,
+    CreatorGeocodingService,
+    CreatorDiscoveryService,
+  ],
+  exports: [CreatorServicesService, CreatorDiscoveryService],
 })
 export class CreatorServicesModule {}

@@ -1,6 +1,7 @@
 "use client";
 
 import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
+import { ContentGpsOwnerEditor } from "@/app/(site)/ips/_components/content-gps-owner-editor";
 import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
 import { AudienceGenerationTemplatesEditor } from "./audience-generation-templates-editor";
 import { IpGameAssociations } from "@/app/(site)/ips/_components/ip-game-associations";
@@ -3156,6 +3157,7 @@ function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
       <RightsGovernanceEditor key={ip.id} ip={ip} t={t} />
       <IpCrewOrigin ipId={ip.id} editable />
       <IpReleaseLinks ipId={ip.id} editable />
+      <ContentGpsOwnerEditor ipId={ip.id} ownerId={ip.createdById} />
       <IpGameAssociations ipId={ip.id} />
       <IpStageApplications ipId={ip.id} />
     </Section>

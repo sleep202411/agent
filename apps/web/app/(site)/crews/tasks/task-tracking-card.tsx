@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
 import { Button } from "@/components/ui/button";
+import { CrewApiError } from "../_hooks/api";
 import { useCrewTask, useCrewTaskTimeline } from "../_hooks/use-tasks";
 import { displayNameOf, useUserDisplays } from "../_hooks/use-users";
 import type { CrewTaskPriority, CrewTaskStatus } from "../_hooks/types";
@@ -128,11 +129,27 @@ function TaskTrackingDetails({
   const taskT = useTranslations("crewTasks");
   const locale = useLocale();
   const detail = useCrewTask(task.id);
-  const timeline = useCrewTaskTimeline(task.id);
-  const events = timeline.data?.pages.flatMap((page) => page.items) ?? [];
+  const timeline = useCrewTaskTimeline(task.id, !detail.isError);
+  const historyDenied =
+    timeline.error instanceof CrewApiError && [401, 403, 404].includes(timeline.error.status);
+  const events =
+    detail.isError || historyDenied
+      ? []
+      : (timeline.data?.pages.flatMap((page) => page.items) ?? []);
   const displays = useUserDisplays(
     events.flatMap((event) => (event.actorUserId ? [event.actorUserId] : []))
   );
+  // A failed task access check invalidates cached history as well as delivery.
+  if (detail.isError || historyDenied) {
+    return (
+      <div role="alert">
+        <p>{(detail.isError ? detail.error : timeline.error)?.message}</p>
+        <Button onClick={() => void (detail.isError ? detail.refetch() : timeline.refetch())}>
+          {t("retry")}
+        </Button>
+      </div>
+    );
+  }
   const labels: Record<string, string> = {
     "task.created": "activity.created",
     "task.submitted": "activity.submitted",
@@ -147,11 +164,6 @@ function TaskTrackingDetails({
     <div className="space-y-6">
       {detail.isPending ? (
         <p role="status">{t("loading")}</p>
-      ) : detail.isError ? (
-        <div role="alert">
-          <p>{detail.error.message}</p>
-          <Button onClick={() => void detail.refetch()}>{t("retry")}</Button>
-        </div>
       ) : detail.data ? (
         <>
           {detail.data.description ? (

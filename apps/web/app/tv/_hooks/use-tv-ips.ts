@@ -139,7 +139,8 @@ export function useTvSelectedIp(ipId: string | undefined) {
       }),
     enabled: Boolean(ipId),
     retry: false,
-    staleTime: 30_000,
+    staleTime: 0,
+    gcTime: 0,
   });
   return { ...query, item: query.data?.ip ? toTvItem(query.data.ip, t) : undefined };
 }

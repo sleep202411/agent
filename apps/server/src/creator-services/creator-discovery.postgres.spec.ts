@@ -1,0 +1,464 @@
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { PrismaClient } from '@prisma/client';
+import {
+  type CreatorLocationProfile,
+  CreatorDiscoveryRequestSchema,
+} from '@repo/shared/creator-location';
+import { buildPrisma, type PrismaService } from '../infra/db/db.module';
+import { postgresFixtureUrl } from '../common/__tests__/postgres-fixture-url';
+import { LegacyCreatorsService } from '../legacy-creators/legacy-creators.service';
+import type { LegacyMysqlService } from '../infra/legacy-mysql/legacy-mysql.service';
+import { CreatorLocationsService } from './creator-locations';
+import { CreatorDiscoveryService } from './creator-discovery';
+
+const url = process.env.CONTENT_GPS_TEST_DATABASE_URL;
+(url ? describe : describe.skip)(
+  'creator discovery (PostgreSQL with directory fixture)',
+  () => {
+    let db: PrismaClient;
+    let search: CreatorDiscoveryService;
+    let locations: CreatorLocationsService;
+    const identities = new Map<
+      string,
+      { id: string; nick_name: string; avatar: string; jobseeking: number }
+    >();
+    const legacy = {
+      query: jest.fn((_sql: string, ids: string[]) =>
+        Promise.resolve(
+          ids.flatMap((id) => {
+            const row = identities.get(id);
+            return row?.nick_name.trim() ? [row] : [];
+          }),
+        ),
+      ),
+    };
+    const profile = {
+      basedIn: { countryCode: 'SG', city: 'Singapore' },
+      serves: [{ countryCode: 'MY', city: 'Johor Bahru' }],
+      remote: false,
+      showOnMap: true,
+    };
+    const input = () =>
+      CreatorDiscoveryRequestSchema.parse({
+        requestId: randomUUID(),
+        query: {
+          basedIn: null,
+          serves: null,
+          remoteOnly: false,
+          availableForWork: false,
+          category: null,
+          text: '',
+        },
+      });
+    beforeAll(async () => {
+      const parsed = postgresFixtureUrl(url!);
+      if (
+        !['localhost', '127.0.0.1'].includes(parsed.hostname) ||
+        parsed.port !== '55441' ||
+        parsed.pathname !== '/gps_test'
+      )
+        throw new Error('Dedicated loopback GPS fixture required.');
+      db = buildPrisma(url);
+      await db.$executeRawUnsafe(
+        `CREATE TABLE creator_services(id text PRIMARY KEY, creator_id text, status text DEFAULT 'listed', deleted_at timestamptz, title text DEFAULT 'Advertising video', category text DEFAULT 'video_production', tags text[] DEFAULT '{}')`,
+      );
+      await db.$executeRawUnsafe(
+        `CREATE TABLE ip_user_content_blocks(user_id text,target_id text,target_type text,unblocked_at timestamptz)`,
+      );
+      const migration = readFileSync(
+        join(
+          __dirname,
+          '../../prisma/migrations/20261001190000_creator_location_profiles/migration.sql',
+        ),
+        'utf8',
+      );
+      for (const sql of migration.split(';').filter((s) => s.trim()))
+        await db.$executeRawUnsafe(sql);
+      const geocodes = readFileSync(
+        join(
+          __dirname,
+          '../../prisma/migrations/20261001213000_creator_geocodes/migration.sql',
+        ),
+        'utf8',
+      );
+      for (const sql of geocodes.split(';').filter((s) => s.trim()))
+        await db.$executeRawUnsafe(sql);
+      locations = new CreatorLocationsService(db as PrismaService);
+      search = new CreatorDiscoveryService(
+        db as PrismaService,
+        new LegacyCreatorsService(legacy as unknown as LegacyMysqlService),
+      );
+    });
+    afterEach(async () => {
+      await db.$executeRaw`DELETE FROM creator_location_revisions`;
+      await db.$executeRaw`DELETE FROM creator_services`;
+      await db.$executeRaw`DELETE FROM ip_user_content_blocks`;
+      identities.clear();
+      legacy.query.mockClear();
+    });
+    afterAll(async () => {
+      if (!db) return;
+      for (const name of [
+        'creator_location_geocodes',
+        'creator_location_revisions',
+        'creator_services',
+        'ip_user_content_blocks',
+      ])
+        await db.$executeRawUnsafe(`DROP TABLE IF EXISTS ${name}`);
+      await db.$disconnect();
+    });
+    async function add(
+      id: string,
+      declaration: CreatorLocationProfile = profile,
+    ) {
+      identities.set(id, {
+        id,
+        nick_name: `Studio ${id}`,
+        avatar: 'https://example.test/avatar.png',
+        jobseeking: 1,
+      });
+      await db.$executeRaw`INSERT INTO creator_services(id,creator_id) VALUES (${randomUUID()},${id})`;
+      await locations.save(
+        { userId: id },
+        { requestId: randomUUID(), expectedVersion: 0, profile: declaration },
+      );
+    }
+    it('counts creators once across multiple matching services, before pagination', async () => {
+      await add('1');
+      await add('2');
+      await db.$executeRaw`INSERT INTO creator_services(id,creator_id) VALUES (${randomUUID()},'1')`;
+      const result = await search.search({ ...input(), limit: 1 });
+      expect(result.matchedCount).toBe(2);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({
+        id: '1',
+        serviceCount: 2,
+        matchingServiceCount: 2,
+      });
+      expect(
+        (
+          await search.search({
+            ...input(),
+            limit: 1,
+            cursor: result.nextCursor,
+          })
+        ).items[0].id,
+      ).toBe('2');
+      expect(result.countScope).toBe(
+        'public_platform_creators_with_listed_services',
+      );
+    });
+    it('keeps private base cities out of payloads and Based in matching while public service areas remain discoverable', async () => {
+      await add('1', { ...profile, showOnMap: false });
+      const all = await search.search(input());
+      expect(all.items[0].basedIn).toBeNull();
+      expect(JSON.stringify(all)).not.toContain('Singapore');
+      const request = input();
+      request.query.basedIn = profile.basedIn;
+      expect((await search.search(request)).matchedCount).toBe(0);
+      request.query.basedIn = null;
+      request.query.serves = profile.serves[0];
+      expect((await search.search(request)).items[0].id).toBe('1');
+    });
+    it('supports remote-only services without a base and does not confuse Serves with Based in', async () => {
+      await add('1', {
+        ...profile,
+        basedIn: null,
+        showOnMap: false,
+        remote: true,
+      });
+      await add('2');
+      const request = input();
+      request.query.remoteOnly = true;
+      expect((await search.search(request)).items.map((i) => i.id)).toEqual([
+        '1',
+      ]);
+      request.query.remoteOnly = false;
+      request.query.serves = profile.basedIn;
+      expect((await search.search(request)).matchedCount).toBe(0);
+      request.query.serves = null;
+      request.query.basedIn = { countryCode: 'SG', city: 'singapore' };
+      expect((await search.search(request)).items.map((i) => i.id)).toEqual([
+        '2',
+      ]);
+    });
+    it('removes paused/deleted services, non-public identities and blocked creators from every public projection', async () => {
+      for (const id of ['1', '2', '3', '4', '5']) await add(id);
+      await db.$executeRaw`UPDATE creator_services SET status='paused' WHERE creator_id='2'`;
+      await db.$executeRaw`UPDATE creator_services SET deleted_at=now() WHERE creator_id='3'`;
+      identities.get('4')!.nick_name = '';
+      await db.$executeRaw`INSERT INTO ip_user_content_blocks(user_id,target_id,target_type) VALUES ('viewer','5','creator')`;
+      const result = await search.search(
+        { ...input(), selectedCreatorId: '5' },
+        { userId: 'viewer' },
+      );
+      expect(result.items.map((i) => i.id)).toEqual(['1']);
+      expect(result.accessibleCount).toBe(1);
+      expect(result.selected).toBeNull();
+    });
+    it('withdraws map consent immediately even when a late request replays an earlier opt-in', async () => {
+      await add('1');
+      const request = { requestId: randomUUID(), expectedVersion: 1, profile };
+      await locations.save({ userId: '1' }, request);
+      await locations.save(
+        { userId: '1' },
+        {
+          requestId: randomUUID(),
+          expectedVersion: 2,
+          profile: { ...profile, showOnMap: false },
+        },
+      );
+      await locations.save({ userId: '1' }, request);
+      expect((await search.search(input())).items[0]).toMatchObject({
+        basedIn: null,
+        showOnMap: false,
+      });
+    });
+    it('treats search text literally and matches only listed service categories', async () => {
+      await add('1');
+      await add('2');
+      await db.$executeRaw`UPDATE creator_services SET title='100% ad',category='animation' WHERE creator_id='1'`;
+      const request = input();
+      request.query.text = '%';
+      expect((await search.search(request)).items.map((i) => i.id)).toEqual([
+        '1',
+      ]);
+      request.query.category = 'video_production';
+      expect((await search.search(request)).matchedCount).toBe(0);
+    });
+    async function bulk(n: number) {
+      await db.$executeRaw`INSERT INTO creator_services(id,creator_id) SELECT ('service-'||n), (100000+n)::text FROM generate_series(1,${n}::int) n`;
+      for (let n1 = 1; n1 <= n; n1++) {
+        const id = String(100000 + n1);
+        identities.set(id, {
+          id,
+          nick_name: `Studio ${id}`,
+          avatar: 'https://example.test/avatar.png',
+          jobseeking: n1 === n ? 1 : 0,
+        });
+      }
+    }
+    it('checks more than one identity batch and filters availability before page/count selection', async () => {
+      await bulk(505);
+      const request = input();
+      request.query.availableForWork = true;
+      const result = await search.search(request, { userId: 'viewer' });
+      expect(result.accessibleCount).toBe(505);
+      expect(result.matchedCount).toBe(1);
+      expect(result.items[0].id).toBe('100505');
+      expect(legacy.query.mock.calls.map((c) => c[1].length)).toEqual([500, 5]);
+      expect(
+        legacy.query.mock.calls.every((c) =>
+          c[0].includes("TRIM(nick_name) <> ''"),
+        ),
+      ).toBe(true);
+    });
+    it('enforces the first 50 matching guest creators even for forged boundaries or explicit selection', async () => {
+      await bulk(55);
+      const request = { ...input(), limit: 50, selectedCreatorId: '100055' };
+      const first = await search.search(request);
+      expect(first.items).toHaveLength(50);
+      expect(first.matchedCount).toBe(55);
+      expect(first.requiresLogin).toBe(true);
+      expect(first.nextCursor).toBeNull();
+      expect(first.selected).toBeNull();
+      const forged = await search.search({
+        ...request,
+        cursor: { afterId: '100050', queryId: first.queryId },
+      });
+      expect(forged.items).toEqual([]);
+      expect(forged.selected).toBeNull();
+      const signed = await search.search(request, { userId: 'viewer' });
+      expect(signed.selected?.id).toBe('100055');
+      expect(signed.nextCursor).not.toBeNull();
+    });
+    it('does not substitute partial counts if the identity service fails', async () => {
+      await bulk(505);
+      legacy.query.mockRejectedValueOnce(new Error('Directory unavailable'));
+      await expect(search.search(input())).rejects.toThrow(
+        'Directory unavailable',
+      );
+    });
+    it('reads a single public studio directly with the same identity/visibility and private-base rules', async () => {
+      await add('1', { ...profile, showOnMap: false });
+      await add('2');
+      expect(await search.profile('1')).toMatchObject({
+        id: '1',
+        basedIn: null,
+        showOnMap: false,
+      });
+      expect(legacy.query.mock.calls.at(-1)![1]).toEqual(['1']);
+      await db.$executeRaw`UPDATE creator_services SET status='paused' WHERE creator_id='1'`;
+      await expect(search.profile('1')).rejects.toMatchObject({ status: 404 });
+      identities.delete('2');
+      await expect(search.profile('2')).rejects.toMatchObject({ status: 404 });
+    });
+    it('rejects cursors from another account or query', async () => {
+      await add('1');
+      await add('2');
+      const request = { ...input(), limit: 1 };
+      const first = await search.search(request);
+      await expect(
+        search.search(
+          { ...request, cursor: first.nextCursor },
+          { userId: 'viewer' },
+        ),
+      ).rejects.toMatchObject({ status: 400 });
+      await expect(
+        search.search({
+          ...request,
+          cursor: first.nextCursor,
+          query: { ...request.query, remoteOnly: true },
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    const world = {
+      coordinateSystem: 'WGS84' as const,
+      west: -180,
+      east: 180,
+      south: -90,
+      north: 90,
+    };
+    async function pin(
+      id: string,
+      longitude = 103.8,
+      coordinateSystem = 'WGS84',
+      precision = 'city',
+    ) {
+      const result = {
+        status: 'resolved',
+        point: {
+          latitude: 1.3,
+          longitude,
+          coordinateSystem,
+          precision,
+          provider: coordinateSystem === 'WGS84' ? 'google' : 'amap',
+          providerPlaceId: null,
+        },
+      };
+      await db.$executeRaw`INSERT INTO creator_location_geocodes(id,creator_id,version,provider,status,result,expires_at)
+        VALUES(${randomUUID()}::uuid,${id},1,${coordinateSystem === 'WGS84' ? 'google' : 'amap'},'completed',${JSON.stringify(result)}::jsonb,now()+interval '1 hour')`;
+    }
+    it('aggregates consented cities across all pages and resolves a selected creator outside the page', async () => {
+      await add('1');
+      await add('2');
+      await pin('1');
+      await pin('2');
+      const result = await search.search(
+        { ...input(), limit: 1, map: world, selectedCreatorId: '2' },
+        { userId: 'viewer' },
+      );
+      expect(result.items).toHaveLength(1);
+      expect(result.selected?.id).toBe('2');
+      expect(result.map).toMatchObject({
+        creatorCount: 2,
+        matchedCreatorCount: 2,
+        clusters: [{ count: 2, creatorId: null, matched: true }],
+      });
+      expect(result.items[0].point).toMatchObject({
+        precision: 'city',
+        latitude: 1.3,
+      });
+    });
+    it('keeps matched and muted city clusters separate without changing search bounds', async () => {
+      await add('1');
+      await add('2');
+      await pin('1');
+      await pin('2');
+      await db.$executeRaw`UPDATE creator_services SET title='Other service' WHERE creator_id='2'`;
+      const request = input();
+      request.query.text = 'Advertising';
+      const result = await search.search(
+        { ...request, map: world, selectedCreatorId: '2' },
+        { userId: 'viewer' },
+      );
+      expect(result.matchedCount).toBe(1);
+      expect(result.selected?.matched).toBe(false);
+      expect(result.map?.clusters.map((c) => c.matched).sort()).toEqual([
+        false,
+        true,
+      ]);
+      const moved = await search.search(
+        { ...request, map: { ...world, west: -10, east: 10 } },
+        { userId: 'viewer' },
+      );
+      expect(moved.matchedCount).toBe(1);
+      expect(moved.map?.creatorCount).toBe(0);
+    });
+    it('removes public points after consent, profile revision or provider expiry changes', async () => {
+      await add('1');
+      await pin('1');
+      expect((await search.profile('1')).point).not.toBeNull();
+      await locations.save(
+        { userId: '1' },
+        {
+          requestId: randomUUID(),
+          expectedVersion: 1,
+          profile: { ...profile, showOnMap: false },
+        },
+      );
+      expect((await search.profile('1')).point).toBeNull();
+      expect(
+        (await search.search({ ...input(), map: world })).map?.creatorCount,
+      ).toBe(0);
+      await locations.save(
+        { userId: '1' },
+        { requestId: randomUUID(), expectedVersion: 2, profile },
+      );
+      expect((await search.profile('1')).point).toBeNull();
+      await add('2');
+      await pin('2');
+      await db.$executeRaw`UPDATE creator_location_geocodes SET expires_at=now()-interval '1 second' WHERE creator_id='2'`;
+      expect((await search.profile('2')).point).toBeNull();
+    });
+    it('never publishes points for blocked, unlisted or missing identities', async () => {
+      for (const id of ['1', '2', '3']) {
+        await add(id);
+        await pin(id);
+      }
+      await db.$executeRaw`INSERT INTO ip_user_content_blocks(user_id,target_type,target_id) VALUES('viewer','creator','1')`;
+      await db.$executeRaw`UPDATE creator_services SET status='draft' WHERE creator_id='2'`;
+      identities.delete('3');
+      const result = await search.search(
+        { ...input(), map: world },
+        { userId: 'viewer' },
+      );
+      expect(result.items).toEqual([]);
+      expect(result.map?.creatorCount).toBe(0);
+    });
+    it('uses the same guest cap for pins and card selection while reporting full matching counts', async () => {
+      for (let i = 0; i < 52; i++) {
+        const id = String(i).padStart(3, '0');
+        await add(id);
+        await pin(id);
+      }
+      const result = await search.search({
+        ...input(),
+        map: world,
+        selectedCreatorId: '051',
+      });
+      expect(result.matchedCount).toBe(52);
+      expect(result.map?.creatorCount).toBe(50);
+      expect(result.selected).toBeNull();
+    });
+    it('handles antimeridian bounds, separates coordinate systems and refuses street precision', async () => {
+      for (const id of ['east', 'west', 'cn', 'street']) await add(id);
+      await pin('east', 179);
+      await pin('west', -179);
+      await pin('cn', 179, 'GCJ02');
+      await pin('street', 179, 'WGS84', 'place');
+      const result = await search.search(
+        { ...input(), map: { ...world, west: 170, east: -170 } },
+        { userId: 'viewer' },
+      );
+      expect(result.map?.creatorCount).toBe(2);
+      expect(
+        result.map?.clusters.every((c) => Math.abs(c.longitude) >= 170),
+      ).toBe(true);
+      expect((await search.profile('street')).point).toBeNull();
+    });
+  },
+);

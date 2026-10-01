@@ -165,14 +165,12 @@ it.each(["alice", null])(
     const nav = container.querySelector('nav[aria-label="navigationLabel"]')!;
     expect(nav).not.toBeNull();
     expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
-      "/en-US/crews?view=mine",
+      "/en-US/crews?view=positions",
       "/en-US/crews/applications",
+      "/en-US/crews?view=mine",
       "/en-US/crews/tasks",
-      "/en-US/crews/feedback",
-      "/en-US/crews/cases",
       "/en-US/crews/income",
       "/en-US/crews?view=crews",
-      "/en-US/crews?view=positions",
     ]);
     expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
     expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("myIncomeTab");

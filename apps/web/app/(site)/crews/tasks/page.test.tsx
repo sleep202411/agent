@@ -2,6 +2,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { CrewApiError } from "../_hooks/api";
 import CrewTaskCenter from "./page";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -11,6 +12,8 @@ const state = vi.hoisted(() => ({
   get: vi.fn(),
   empty: false,
   nextError: false,
+  denialStatus: null as number | null,
+  retry: vi.fn(),
   userId: "viewer" as string | null,
   login: vi.fn(),
 }));
@@ -36,7 +39,10 @@ vi.mock("../[id]/workspace/_components/tasks/task-review-form", () => ({
   TaskReviewForm: () => null,
 }));
 vi.mock("../_components/task-unread-marker", () => ({ TaskUnreadMarker: () => null }));
-vi.mock("../_hooks/api", () => ({ crewApi: { get: state.get } }));
+vi.mock("../_hooks/api", async (original) => ({
+  ...(await original<object>()),
+  crewApi: { get: state.get },
+}));
 vi.mock("@/components/ui/native-select", () => ({
   NativeSelect: ({
     value,
@@ -65,6 +71,8 @@ vi.mock("@tanstack/react-query", () => ({
       data: {
         pages: [
           {
+            crews: [{ id: "crew-a", name: "Private Crew" }],
+            categories: ["edit"],
             items: state.empty
               ? []
               : [
@@ -98,7 +106,12 @@ vi.mock("@tanstack/react-query", () => ({
       },
       isError: state.nextError,
       isFetchNextPageError: state.nextError,
-      error: state.nextError ? new Error("Page unavailable") : null,
+      error: state.denialStatus
+        ? new CrewApiError(state.denialStatus, { message: "Access denied" })
+        : state.nextError
+          ? new Error("Page unavailable")
+          : null,
+      refetch: state.retry,
       hasNextPage: !state.empty,
       fetchNextPage: state.next,
     };
@@ -110,6 +123,7 @@ afterEach(() => {
   document.body.innerHTML = "";
   state.empty = false;
   state.nextError = false;
+  state.denialStatus = null;
   state.userId = "viewer";
   vi.clearAllMocks();
 });
@@ -217,5 +231,22 @@ it.each(["viewer", null])(
       "/zh-CN/crews/feedback",
       "/zh-CN/crews/cases",
     ]);
+  }
+);
+
+it.each([401, 403, 404])(
+  "hides cached tasks and filter metadata after a denied next page (%s)",
+  (status) => {
+    state.nextError = true;
+    state.denialStatus = status;
+    render();
+    expect(document.body.textContent).not.toContain("First review");
+    expect(document.body.textContent).not.toContain("Private Crew");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Access denied");
+    act(() =>
+      [...document.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click()
+    );
+    expect(state.retry).toHaveBeenCalledOnce();
+    expect(state.next).not.toHaveBeenCalled();
   }
 );

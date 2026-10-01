@@ -386,6 +386,7 @@ const CrewMemberPositionInputSchema = z
 
 export const CreateCrewInvitationSchema = z
   .object({
+    positionCategory: presetPosition.optional(),
     account: z
       .string()
       .trim()

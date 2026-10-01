@@ -204,3 +204,60 @@ function formatEngagementCount(value: number, locale: Locale) {
     maximumFractionDigits: 1,
   }).format(Math.max(0, value));
 }
+
+/** GPS uses verified display fields without fabricating catalogue engagement metrics. */
+export function ContentGpsPlazaCard({
+  item,
+  selected,
+  onSelect,
+}: {
+  item: import("@repo/shared/content-gps").ContentGpsSearchResult["items"][number];
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const locale = useLocale() as Locale;
+  const t = useTranslations("contentGpsDiscovery");
+  const href = localizePath(ipRoomPath(item.roomNumber), locale);
+  return (
+    <article
+      className={`group flex h-full min-w-0 flex-col gap-3 rounded-2xl p-2 ${selected ? "bg-muted ring-2 ring-primary" : "hover:bg-muted/50"}`}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        aria-label={t("selectTitle", { title: item.title })}
+        className="relative aspect-video w-full overflow-hidden rounded-xl bg-secondary focus-visible:outline-2 focus-visible:outline-primary"
+      >
+        {item.coverUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.coverUrl} alt="" loading="lazy" className="size-full object-cover" />
+        ) : (
+          <IconSparkles className="mx-auto size-8 text-muted-foreground" />
+        )}
+        {selected && (
+          <span className="absolute bottom-2 left-2 rounded bg-background/90 px-2 py-1 text-xs">
+            ◆ {t("selected")}
+          </span>
+        )}
+      </button>
+      <Link href={href} className="line-clamp-2 text-sm font-semibold hover:underline">
+        {item.title}
+      </Link>
+      {item.summary && (
+        <p className="line-clamp-3 text-xs leading-relaxed text-muted-foreground">{item.summary}</p>
+      )}
+      <p className="mt-auto text-xs text-muted-foreground">
+        {item.locations.map((location) => location.label).join(" · ") || t("unknownLocation")}
+      </p>
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        className="min-h-11 text-left text-sm hover:underline"
+      >
+        {t("viewMatch")}
+      </button>
+    </article>
+  );
+}

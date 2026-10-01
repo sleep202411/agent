@@ -27,6 +27,7 @@ const harness = vi.hoisted(() => ({
   post: vi.fn(),
   list: vi.fn(),
   discovery: vi.fn(),
+  detail: vi.fn(),
   routerPush: vi.fn(),
 }));
 vi.mock("@/src/hooks/use-user", () => ({
@@ -52,7 +53,7 @@ vi.mock("@/src/lib/api", () => ({
           wallet: null,
         });
       }
-      if (/\/ips\//.test(path)) return Promise.resolve({ ip: null });
+      if (/\/ips\//.test(path)) return harness.detail(path);
       return harness.list(config);
     },
   },
@@ -144,6 +145,11 @@ describe("TV IP list", () => {
 
   beforeEach(() => {
     harness.userId = "viewer-a";
+    // JSDOM has no codecs. Admit the fixture MP4s so asynchronous unsupported-
+    // source errors cannot race assertions about explicitly simulated playback.
+    vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockImplementation((mime) =>
+      mime === "video/mp4" ? "probably" : ""
+    );
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
@@ -163,6 +169,7 @@ describe("TV IP list", () => {
       }
     );
     harness.get.mockReset();
+    harness.detail.mockReset().mockResolvedValue({ ip: null });
     harness.post.mockReset().mockResolvedValue({ recorded: true });
     harness.list.mockReset().mockResolvedValue({ items: ips, nextCursor: null });
     harness.discovery.mockReset().mockResolvedValue({ items: [] });
@@ -180,12 +187,15 @@ describe("TV IP list", () => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
-  async function render(embedded = false) {
+  async function render(
+    embedded = false,
+    entry: { initialIpId?: string; initialEpisodeId?: string } = {}
+  ) {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <StrictMode>
-            <TvApp embedded={embedded} />
+            <TvApp embedded={embedded} {...entry} />
           </StrictMode>
         </QueryClientProvider>
       );
@@ -951,5 +961,69 @@ describe("TV IP list", () => {
     await waitForText("First IP");
     clickIp("First IP");
     expect(selected()).toContain("First IP");
+  });
+  it("resolves a deep-linked IP and episode outside the loaded catalogue without substituting the first channel", async () => {
+    const linked = makeIp("linked-ip", "Linked IP");
+    linked.episodes = [
+      {
+        id: "linked-episode",
+        episodeNo: 1,
+        title: "Linked episode",
+        status: "published",
+        mediaAsset: { ...linked.trailerAsset!, url: "https://cdn.test/linked-episode.mp4" },
+      },
+    ] as typeof linked.episodes;
+    harness.detail.mockResolvedValue({ ip: linked });
+    await render(false, { initialIpId: linked.id, initialEpisodeId: "linked-episode" });
+    await waitForSource("linked-episode");
+    expect(harness.get).toHaveBeenCalledWith(
+      "/aurora/ip-commerce/ips/linked-ip",
+      expect.any(Object)
+    );
+    expect(
+      container.querySelector('[data-episode-id="linked-episode"]')?.getAttribute("aria-pressed")
+    ).toBe("true");
+    expect(selected()).toBeUndefined();
+  });
+  it("does not substitute a trailer when the linked episode was removed", async () => {
+    const linked = makeIp("linked-ip", "Linked IP");
+    harness.detail.mockResolvedValue({ ip: linked });
+    await render(false, { initialIpId: linked.id, initialEpisodeId: "withdrawn" });
+    await waitForText("tv.entryUnavailable");
+    expect(container.querySelector(".video-js")).toBeNull();
+  });
+  it("removes the player when a linked IP loses access and does not fall back to the catalogue", async () => {
+    const linked = makeIp("linked-ip", "Linked IP");
+    harness.detail.mockResolvedValue({ ip: linked });
+    await render(false, { initialIpId: linked.id });
+    await waitForSource("linked-ip");
+    harness.detail.mockRejectedValue(new Error("IP unavailable"));
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["tv", "selected-ip"] });
+    });
+    await waitForText("IP unavailable");
+    expect(container.querySelector(".video-js")).toBeNull();
+    expect(container.textContent).toContain("First IP");
+  });
+  it("keeps a deep-linked locked episode locked and exposes no full media", async () => {
+    const linked = makeIp("linked-ip", "Linked IP");
+    linked.episodes = [
+      {
+        id: "locked",
+        episodeNo: 1,
+        title: "Locked",
+        status: "published",
+        mediaLocked: true,
+        mediaAsset: null,
+      },
+    ] as typeof linked.episodes;
+    harness.detail.mockResolvedValue({ ip: linked });
+    await render(false, { initialIpId: linked.id, initialEpisodeId: "locked" });
+    await waitForText("Locked");
+    expect(player().currentSrc()).toBe("");
+    expect(
+      container.querySelector('[data-episode-id="locked"]')?.getAttribute("aria-pressed")
+    ).toBe("true");
+    expect(harness.post).not.toHaveBeenCalled();
   });
 });

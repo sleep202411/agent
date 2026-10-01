@@ -1,3 +1,11 @@
+import {
+  DiscoveryWorkerRequestSchema,
+  DiscoveryAssistantResultSchema,
+} from "@repo/shared/discovery-assistant";
+import { runDiscoveryAgent } from "../content-gps/discovery-agent.js";
+import { createDiscoveryQueryPort } from "../content-gps/discovery-query-port.js";
+import { ContentGpsExtractionRequestSchema } from "@repo/shared/content-gps";
+import { extractContentGps } from "../content-gps/extract.js";
 import { recommendViewing } from "../viewer/recommend.js";
 import { answerFilmKnowledge } from "../viewer/film-knowledge.js";
 import { FilmKnowledgeQueryRequestSchema } from "@repo/agent-protocol";
@@ -293,6 +301,119 @@ export function createAgentOsHttpServer() {
           billing: "free",
           rateLimit: "disabled",
         });
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/v1/agent-os/content-gps/discover") {
+        const parsed = DiscoveryWorkerRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          send(res, 400, {
+            error: { code: "INVALID_DISCOVERY_REQUEST", message: "Invalid discovery request." },
+          });
+          return;
+        }
+        const profileId = process.env.AGENT_OS_DISCOVERY_MODEL_PROFILE?.trim();
+        const baseUrl = process.env.AGENT_OS_DOMAIN_URL?.trim();
+        const internalToken = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
+        if (!profileId || !baseUrl || !internalToken || !isLiveModelConfigured()) {
+          send(res, 503, {
+            error: {
+              code: "DISCOVERY_NOT_CONFIGURED",
+              message: "Discovery model profile and catalogue domain must be configured.",
+            },
+          });
+          return;
+        }
+        const controller = new AbortController();
+        const disconnect = () => controller.abort(new Error("Discovery caller disconnected"));
+        res.once("close", disconnect);
+        try {
+          const result = await runDiscoveryAgent({
+            conversation: parsed.data.conversation,
+            model: createLiteLlmChatModel({ profileId }),
+            genres: parsed.data.genres,
+            host: {
+              locale: parsed.data.locale,
+              coordinateSystem: parsed.data.coordinateSystem,
+              port: createDiscoveryQueryPort({
+                baseUrl,
+                internalToken,
+                credential: parsed.data.credential,
+              }),
+            },
+            signal: controller.signal,
+          });
+          if (!controller.signal.aborted)
+            send(res, 200, DiscoveryAssistantResultSchema.parse(result));
+        } catch (error) {
+          if (!res.destroyed && !res.writableEnded)
+            send(res, 502, {
+              error: {
+                code: "DISCOVERY_FAILED",
+                message: (error instanceof Error ? error.message : "Discovery failed")
+                  .replaceAll(internalToken, "[redacted]")
+                  .replaceAll(parsed.data.credential.readToken, "[redacted]")
+                  .replaceAll(baseUrl, "[redacted]"),
+              },
+            });
+        } finally {
+          controller.abort();
+          res.off("close", disconnect);
+        }
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/v1/agent-os/content-gps/extract") {
+        const parsed = ContentGpsExtractionRequestSchema.safeParse(await readJson(req));
+        if (!parsed.success) {
+          send(res, 400, {
+            error: {
+              code: "INVALID_GPS_SOURCES",
+              message: "Invalid or oversized GPS source snapshot.",
+            },
+          });
+          return;
+        }
+        const profileId = process.env.AGENT_OS_CONTENT_GPS_MODEL_PROFILE?.trim();
+        if (!profileId || !isLiveModelConfigured()) {
+          send(res, 503, {
+            error: {
+              code: "GPS_MODEL_NOT_CONFIGURED",
+              message: "Content GPS model profile is not configured.",
+            },
+          });
+          return;
+        }
+        const controller = new AbortController();
+        const disconnect = () => controller.abort(new Error("GPS caller disconnected"));
+        res.once("close", disconnect);
+        const timeout = setTimeout(
+          () => controller.abort(new Error("GPS extraction timed out")),
+          40_000
+        );
+        try {
+          const model = createLiteLlmChatModel({ profileId });
+          const result = await extractContentGps(
+            parsed.data,
+            async (messages, signal) => {
+              const response = await model.invoke(messages, { signal });
+              return response.content;
+            },
+            controller.signal
+          );
+          if (!controller.signal.aborted) send(res, 200, result);
+        } catch (error) {
+          if (!res.destroyed && !res.writableEnded)
+            send(res, controller.signal.aborted ? 504 : 502, {
+              error: {
+                code: "GPS_EXTRACTION_FAILED",
+                message: error instanceof Error ? error.message : "GPS extraction failed",
+              },
+            });
+        } finally {
+          clearTimeout(timeout);
+          res.off("close", disconnect);
+        }
         return;
       }
 

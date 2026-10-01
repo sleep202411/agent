@@ -23,6 +23,7 @@ import type { Locale } from "@/src/i18n/config";
 
 export default function CreatorsPage() {
   const t = useTranslations("creator");
+  const studioT = useTranslations("studioDiscovery");
   const locale = useLocale() as Locale;
 
   const [qualification, setQualification] = useState<"all" | CreatorQualificationKind>("all");
@@ -85,6 +86,14 @@ export default function CreatorsPage() {
           <IconUserCircle className="size-4" />
           {t("completeProfileCta")}
           <IconArrowRight className="size-4" />
+        </Link>
+      </div>
+      <div className="mx-auto max-w-screen-2xl px-6 pt-4">
+        <Link
+          href={localizePath("/creators/studios", locale)}
+          className="inline-flex min-h-11 items-center rounded-full bg-white/[0.06] px-5 text-sm font-medium hover:bg-white/10"
+        >
+          {studioT("title")}
         </Link>
       </div>
       <div className="mx-auto max-w-screen-2xl px-6 pt-8">
