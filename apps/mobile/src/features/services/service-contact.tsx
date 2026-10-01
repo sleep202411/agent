@@ -1,3 +1,4 @@
+import { inquiryOutbox } from "./inquiry-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useIsFocused, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
@@ -55,19 +56,42 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
   const t = useTranslations(),
     theme = useTheme(),
     router = useRouter();
+  const auth = useAuth();
   const op = useAuthFormOperation(serviceId, useIsFocused());
-  const [body, setBody] = useState(""),
-    [error, setError] = useState<string>(),
+  const [outbox] = useState(() =>
+    inquiryOutbox(serviceId, String(auth.user?.userId ?? auth.user?.id ?? ""), auth.generation)
+  );
+  const [initial] = useState(() => {
+    try {
+      return { pending: outbox.read(), error: undefined };
+    } catch (cause) {
+      return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+  const [locked, setLocked] = useState(!!initial.pending);
+  const [body, setBody] = useState(initial.pending?.body ?? ""),
+    [error, setError] = useState<string | undefined>(initial.error),
     [conversation, setConversation] = useState<string>();
-  const intent = useRef<{ body: string; key: string } | undefined>(undefined);
+  const intent = useRef<{ body: string; clientKey: string } | undefined>(
+    initial.pending ?? undefined
+  );
   const send = () => {
     const trimmed = body.trim();
-    if (!trimmed) return;
+    if (!trimmed || initial.error) return;
     void op.run(
       async () => {
         setError(undefined);
-        if (intent.current?.body !== trimmed) intent.current = { body: trimmed, key: inquiryKey() };
-        return sendServiceInquiry(serviceId, trimmed, intent.current.key);
+        const pending = intent.current ?? { body: trimmed, clientKey: inquiryKey() };
+        outbox.save(pending);
+        intent.current = pending;
+        setLocked(true);
+        const id = await sendServiceInquiry(
+          serviceId,
+          intent.current.body,
+          intent.current.clientKey
+        );
+        outbox.clear(intent.current.clientKey);
+        return id;
       },
       setConversation,
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
@@ -92,7 +116,7 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
             accessibilityLabel={t("serviceContact.message")}
             value={body}
             onChangeText={setBody}
-            editable={!op.busy}
+            editable={!locked && !op.busy && !initial.error}
             multiline
             maxLength={4000}
             style={{
@@ -105,7 +129,11 @@ function Composer({ serviceId, close }: { serviceId: string; close: () => void }
               backgroundColor: theme.backgroundElement,
             }}
           />
-          <Pressable accessibilityRole="button" disabled={op.busy || !body.trim()} onPress={send}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={op.busy || !body.trim() || !!initial.error}
+            onPress={send}
+          >
             <ThemedText>{t("serviceContact.send")}</ThemedText>
           </Pressable>
         </>

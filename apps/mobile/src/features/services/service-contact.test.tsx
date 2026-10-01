@@ -3,12 +3,18 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ServiceContact } from "./service-contact";
 const h = vi.hoisted(() => ({
+  read: vi.fn(),
+  save: vi.fn(),
+  clear: vi.fn(),
   send: vi.fn(),
   push: vi.fn(),
   gate: vi.fn(),
   generation: 1,
   userId: "buyer",
   authenticated: true,
+}));
+vi.mock("./inquiry-outbox", () => ({
+  inquiryOutbox: () => ({ read: h.read, save: h.save, clear: h.clear }),
 }));
 vi.mock("./inquiry-api", () => ({ sendServiceInquiry: h.send, inquiryKey: () => "stable-key" }));
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }), useIsFocused: () => true }));
@@ -69,6 +75,7 @@ function type(text: string) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  h.read.mockReturnValue(null);
   h.generation = 1;
   h.userId = "buyer";
   h.authenticated = true;
@@ -136,4 +143,50 @@ it("ignores late success after an account change and clears the draft", async ()
   await act(async () => finish("old"));
   expect(host.querySelector("input")!.value).toBe("");
   expect(host.textContent).not.toContain("serviceContact.sent");
+});
+
+it("restores the original inquiry after reopening and freezes edits until acknowledgement", async () => {
+  h.read.mockReturnValue({ body: "Recovered inquiry", clientKey: "original-key" });
+  h.send.mockResolvedValue("conversation");
+  await render();
+  await act(async () => click("serviceContact.title"));
+  expect(host.querySelector("input")!.value).toBe("Recovered inquiry");
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  await act(async () => click("serviceContact.send"));
+  expect(h.send).toHaveBeenCalledWith("service", "Recovered inquiry", "original-key");
+  expect(h.save.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
+  expect(h.clear).toHaveBeenCalledWith("original-key");
+});
+it("does not send when durable storage fails", async () => {
+  h.save.mockImplementation(() => {
+    throw new Error("Disk full");
+  });
+  await compose();
+  await act(async () => click("serviceContact.send"));
+  expect(h.send).not.toHaveBeenCalled();
+  expect(h.clear).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Disk full");
+});
+
+it("keeps an uncertain send immutable until the same request is acknowledged", async () => {
+  h.send.mockRejectedValueOnce(new Error("Lost response")).mockResolvedValue("conversation");
+  await compose();
+  await act(async () => click("serviceContact.send"));
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  expect(h.clear).not.toHaveBeenCalled();
+  await act(async () => click("serviceContact.send"));
+  expect(h.send.mock.calls[0]).toEqual(h.send.mock.calls[1]);
+  expect(h.clear).toHaveBeenCalledWith("stable-key");
+});
+it("allows editing after a storage failure that prevented sending", async () => {
+  h.save.mockImplementationOnce(() => {
+    throw new Error("Disk full");
+  });
+  h.send.mockResolvedValue("conversation");
+  await compose();
+  await act(async () => click("serviceContact.send"));
+  expect(host.querySelector("input")!.disabled).toBe(false);
+  await act(async () => type("Updated before any send"));
+  await act(async () => click("serviceContact.send"));
+  expect(h.send).toHaveBeenCalledWith("service", "Updated before any send", "stable-key");
 });
