@@ -25,10 +25,12 @@ import {
   type AssistantRequest,
   type AssistantReceipt,
 } from "./discovery-assistant-api";
-type Result = Extract<DiscoveryAssistantResult, { status: "results"; kind: "creators" }>;
+type Result = Extract<DiscoveryAssistantResult, { status: "results" }>;
 type Props = {
   scope: AssistantScope;
-  current: Extract<AssistantRequest["conversation"]["current"], { kind: "creators" }>;
+  current: AssistantRequest["conversation"]["current"];
+  genreLabels?: { code: string; label: string }[];
+  onOpen?: () => void;
   valid: boolean;
   onReview: (result: Result) => void;
   onApply: (result: Result) => void;
@@ -62,7 +64,13 @@ export function DiscoveryAssistantPanel(props: Props) {
   return (
     <View style={{ gap: 10 }}>
       {!open ? (
-        <Action label={t("discoveryAssistant.title")} onPress={() => setOpen(true)} />
+        <Action
+          label={t("discoveryAssistant.title")}
+          onPress={() => {
+            setOpen(true);
+            props.onOpen?.();
+          }}
+        />
       ) : (
         <>
           {!props.scope.userId ? (
@@ -89,6 +97,7 @@ function Conversation({
   onApply,
   onSelect,
   onClose,
+  genreLabels = [],
 }: Props & { onClose: () => void }) {
   const t = useTranslations(),
     theme = useTheme(),
@@ -201,7 +210,7 @@ function Conversation({
       accept(next, expected);
       if (action === "send") setText("");
       const result = next.result;
-      if (result?.status === "results" && result.kind === "creators") {
+      if (result?.status === "results" && result.kind === scope.kind) {
         if (action === "review") {
           onReview(result);
           onClose();
@@ -214,7 +223,14 @@ function Conversation({
           if (result.cards.some((card) => card.id === id)) {
             onSelect(result, id);
             onClose();
-          } else setError(t("studioDiscovery.selectionUnavailable"));
+          } else
+            setError(
+              t(
+                scope.kind === "ips"
+                  ? "contentGpsDiscovery.selectionUnavailable"
+                  : "studioDiscovery.selectionUnavailable"
+              )
+            );
         }
       }
     } catch (e) {
@@ -345,35 +361,41 @@ function Conversation({
           )}
         </View>
       )}
-      {result?.status === "results" && result.kind === "creators" && request && (
+      {result?.status === "results" && result.kind === scope.kind && request && (
         <View style={{ gap: 8 }}>
           <ThemedText type="smallBold">{t("discoveryAssistant.proposal")}</ThemedText>
           <ThemedText>
             {t("discoveryAssistant.scope").replace("{count}", String(result.matchedCount))}
           </ThemedText>
-          {result.query.basedIn && (
-            <ThemedText>
-              {t("discoveryAssistant.basedIn").replace(
-                "{place}",
-                `${result.query.basedIn.city} · ${regionLabel(result.query.basedIn.countryCode, scope.locale)}`
+          {result.kind === "creators" ? (
+            <>
+              {result.query.basedIn && (
+                <ThemedText>
+                  {t("discoveryAssistant.basedIn").replace(
+                    "{place}",
+                    `${result.query.basedIn.city} · ${regionLabel(result.query.basedIn.countryCode, scope.locale)}`
+                  )}
+                </ThemedText>
               )}
-            </ThemedText>
-          )}
-          {result.query.serves && (
-            <ThemedText>
-              {t("discoveryAssistant.serves").replace(
-                "{place}",
-                `${result.query.serves.city} · ${regionLabel(result.query.serves.countryCode, scope.locale)}`
+              {result.query.serves && (
+                <ThemedText>
+                  {t("discoveryAssistant.serves").replace(
+                    "{place}",
+                    `${result.query.serves.city} · ${regionLabel(result.query.serves.countryCode, scope.locale)}`
+                  )}
+                </ThemedText>
               )}
-            </ThemedText>
-          )}
-          {!!result.query.text && <ThemedText>{result.query.text}</ThemedText>}
-          {result.query.category && (
-            <ThemedText>{serviceCategoryLabel(result.query.category, t)}</ThemedText>
-          )}
-          {result.query.remoteOnly && <ThemedText>{t("discoveryAssistant.remote")}</ThemedText>}
-          {result.query.availableForWork && (
-            <ThemedText>{t("discoveryAssistant.available")}</ThemedText>
+              {!!result.query.text && <ThemedText>{result.query.text}</ThemedText>}
+              {result.query.category && (
+                <ThemedText>{serviceCategoryLabel(result.query.category, t)}</ThemedText>
+              )}
+              {result.query.remoteOnly && <ThemedText>{t("discoveryAssistant.remote")}</ThemedText>}
+              {result.query.availableForWork && (
+                <ThemedText>{t("discoveryAssistant.available")}</ThemedText>
+              )}
+            </>
+          ) : (
+            <IpConditions result={result} genres={genreLabels} />
           )}
           <Action
             label={t("discoveryAssistant.review")}
@@ -386,22 +408,50 @@ function Conversation({
             disabled={busy || !active}
           />
           {!result.cards.length && <ThemedText>{t("discoveryAssistant.empty")}</ThemedText>}
-          {result.cards.map((card) => (
-            <View key={card.id} style={{ gap: 8, paddingVertical: 8 }}>
-              <ThemedText type="smallBold">{card.name}</ThemedText>
-              <ThemedText>
-                {t("discoveryAssistant.services").replace(
-                  "{count}",
-                  String(card.matchingServiceCount)
-                )}
-              </ThemedText>
-              <Action
-                label={t("studioDiscovery.viewStudio")}
-                onPress={() => void run("select", request, card.id)}
-                disabled={busy || !active}
-              />
-            </View>
-          ))}
+          {result.kind === "creators"
+            ? result.cards.map((card) => (
+                <View key={card.id} style={{ gap: 8, paddingVertical: 8 }}>
+                  <ThemedText type="smallBold">{card.name}</ThemedText>
+                  <ThemedText>
+                    {t("discoveryAssistant.services").replace(
+                      "{count}",
+                      String(card.matchingServiceCount)
+                    )}
+                  </ThemedText>
+                  <Action
+                    label={t("studioDiscovery.viewStudio")}
+                    onPress={() => void run("select", request, card.id)}
+                    disabled={busy || !active}
+                  />
+                </View>
+              ))
+            : result.cards.map((card) => (
+                <View key={card.id} style={{ gap: 8, paddingVertical: 8 }}>
+                  <ThemedText type="smallBold">{card.title}</ThemedText>
+                  <ThemedText>
+                    {card.locations.map((place) => place.label).join(" · ") ||
+                      t("discoveryAssistant.unknownPlace")}
+                  </ThemedText>
+                  {card.eras.map((era, index) => (
+                    <ThemedText key={index}>
+                      {era.startYear}–{era.endYear}
+                    </ThemedText>
+                  ))}
+                  <ThemedText>
+                    {card.episode?.durationSeconds != null
+                      ? t("discoveryAssistant.seconds").replace(
+                          "{seconds}",
+                          String(card.episode.durationSeconds)
+                        )
+                      : t("discoveryAssistant.unknownDuration")}
+                  </ThemedText>
+                  <Action
+                    label={t("contentGpsDiscovery.selectTitle").replace("{title}", card.title)}
+                    onPress={() => void run("select", request, card.id)}
+                    disabled={busy || !active}
+                  />
+                </View>
+              ))}
         </View>
       )}
       {!valid && (
@@ -411,7 +461,11 @@ function Conversation({
       )}
       <TextInput
         accessibilityLabel={t("discoveryAssistant.prompt")}
-        placeholder={t("discoveryAssistant.creatorExample")}
+        placeholder={t(
+          current.kind === "ips"
+            ? "discoveryAssistant.ipExample"
+            : "discoveryAssistant.creatorExample"
+        )}
         placeholderTextColor={theme.textSecondary}
         value={text}
         onChangeText={setText}
@@ -440,6 +494,83 @@ function Conversation({
         </>
       )}
       <Action label={t("discoveryAssistant.close")} onPress={onClose} />
+    </View>
+  );
+}
+
+function IpConditions({
+  result,
+  genres,
+}: {
+  result: Extract<Result, { kind: "ips" }>;
+  genres: { code: string; label: string }[];
+}) {
+  const t = useTranslations(),
+    q = result.query;
+  return (
+    <View style={{ gap: 6 }}>
+      {q.location && (
+        <ThemedText>
+          {t(
+            q.location.kind === "story_setting"
+              ? "contentGpsDiscovery.storyPlaces"
+              : "contentGpsDiscovery.productionPlaces"
+          )}{" "}
+          ·{" "}
+          {t(
+            q.location.relation === "any"
+              ? "contentGpsDiscovery.anyPlace"
+              : "contentGpsDiscovery.allPlaces"
+          )}
+          :{" "}
+          {q.location.placeIds
+            .map(
+              (id) =>
+                result.cards.flatMap((card) => card.locations).find((place) => place.placeId === id)
+                  ?.label ?? t("discoveryAssistant.selectedPlacesCount").replace("{count}", "1")
+            )
+            .join(" · ")}
+        </ThemedText>
+      )}
+      {q.era && (
+        <ThemedText>
+          {q.era.startYear}–{q.era.endYear} ·{" "}
+          {t(
+            q.era.relation === "overlaps"
+              ? "contentGpsDiscovery.overlappingEra"
+              : "contentGpsDiscovery.containedEra"
+          )}
+        </ThemedText>
+      )}
+      {q.duration && (
+        <ThemedText>
+          {t("discoveryAssistant.maximumSeconds").replace(
+            "{seconds}",
+            String(q.duration.maxSeconds)
+          )}{" "}
+          ·{" "}
+          {t(
+            q.duration.unknown === "exclude"
+              ? "contentGpsDiscovery.excludeUnknown"
+              : "contentGpsDiscovery.includeUnknown"
+          )}
+        </ThemedText>
+      )}
+      {q.genreCodes.length > 0 && (
+        <ThemedText>
+          {t("contentGpsDiscovery.genre")}:{" "}
+          {q.genreCodes
+            .map(
+              (code) =>
+                genres.find((g) => g.code === code)?.label ??
+                t("discoveryAssistant.genreCount").replace("{count}", "1")
+            )
+            .join(" · ")}
+        </ThemedText>
+      )}
+      {(q.duration?.unit === "film" || q.moodPreferences.length > 0) && (
+        <ThemedText>{t("contentGpsDiscovery.unsupportedConditions")}</ThemedText>
+      )}
     </View>
   );
 }

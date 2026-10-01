@@ -10,7 +10,7 @@ import {
   type AssistantScope,
   type AssistantRequest,
 } from "./discovery-assistant-api";
-import { emptyStudioQuery } from "./studio-search-api";
+import { emptyStudioQuery } from "../studios/studio-search-api";
 const h = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),

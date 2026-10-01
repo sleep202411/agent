@@ -22,7 +22,9 @@ vi.mock("@/i18n", () => ({
   useLocale: () => "en-US",
 }));
 vi.mock("./use-studio-search", () => ({ useStudioSearch: h.search }));
-vi.mock("./discovery-assistant-panel", () => ({ DiscoveryAssistantPanel: () => null }));
+vi.mock("../discovery-assistant/discovery-assistant-panel", () => ({
+  DiscoveryAssistantPanel: () => null,
+}));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({

@@ -1,9 +1,10 @@
+import { EMPTY_GPS_DRAFT, normalizeGpsDraft } from "../content-gps/search-draft";
 import { act, StrictMode, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { DiscoveryAssistantPanel } from "./discovery-assistant-panel";
 import { discoveryPending, type AssistantScope } from "./discovery-assistant-api";
-import { emptyStudioQuery } from "./studio-search-api";
+import { emptyStudioQuery } from "../studios/studio-search-api";
 import { ApiRequestError } from "@/lib/api-client";
 const h = vi.hoisted(() => ({
   login: vi.fn(),
@@ -161,9 +162,13 @@ const render = (s = scope, valid = true) =>
     root.render(
       <StrictMode>
         <DiscoveryAssistantPanel
-          key={s.generation + ":" + s.userId}
+          key={s.generation + ":" + s.userId + ":" + s.kind}
           scope={s}
-          current={{ kind: "creators", query: emptyStudioQuery }}
+          current={
+            s.kind === "creators"
+              ? { kind: "creators", query: emptyStudioQuery }
+              : ipSaved.conversation.current
+          }
           valid={valid}
           onReview={h.review}
           onApply={h.apply}
@@ -357,4 +362,153 @@ it("offers exact retry if a previously denied request is now read-confirmed miss
   await click("discoveryAssistant.retry");
   expect(h.post).toHaveBeenCalledOnce();
   expect(h.post.mock.calls[0][1].data).toEqual(saved);
+});
+
+const ipScope: AssistantScope = { ...scope, kind: "ips" };
+const ipQuery = normalizeGpsDraft(
+  { ...EMPTY_GPS_DRAFT, startYear: "-100", endYear: "0", maxSeconds: "120", genres: ["drama"] },
+  "en-US"
+).data!;
+const ipSaved = {
+  ...saved,
+  conversation: {
+    current: {
+      kind: "ips" as const,
+      query: {
+        schemaVersion: 1 as const,
+        location: ipQuery.location,
+        era: ipQuery.era,
+        duration: ipQuery.duration,
+        genreCodes: ipQuery.genreCodes,
+        moodPreferences: ipQuery.moodPreferences,
+      },
+    },
+    messages: [{ role: "user" as const, content: "Find short stories" }],
+  },
+};
+const ipCard = {
+  id: "22222222-2222-4222-8222-222222222222",
+  creatorId: "owner",
+  title: "Matching IP",
+  roomNumber: "123",
+  summary: "Story",
+  coverUrl: null,
+  matched: true,
+  locationSource: "unknown",
+  locations: [],
+  eras: [],
+  episode: null,
+};
+const ipProposal = {
+  requestId: id,
+  status: "succeeded",
+  result: {
+    status: "results",
+    kind: "ips",
+    queryId: "b".repeat(64),
+    query: ipQuery,
+    matchedCount: 1,
+    accessibleCount: 2,
+    countScope: "accessible_ips_with_published_translation",
+    cards: [ipCard],
+  },
+};
+const openIp = async () => {
+  h.get.mockResolvedValue(ipProposal);
+  h.post.mockResolvedValue(ipProposal);
+  await render(ipScope);
+  await click("discoveryAssistant.title");
+  await settle();
+};
+it("restores IP proposals without a model call and rechecks before review/apply", async () => {
+  discoveryPending(ipScope).save(ipSaved);
+  await openIp();
+  expect(h.get).not.toHaveBeenCalled();
+  expect(h.post).not.toHaveBeenCalled();
+  await click("discoveryAssistant.check");
+  expect(host.textContent).toContain("Matching IP");
+  expect(host.textContent).toContain("-100–0");
+  expect(h.review).not.toHaveBeenCalled();
+  await click("discoveryAssistant.review");
+  expect(h.get).toHaveBeenCalledTimes(2);
+  expect(h.review).toHaveBeenCalledWith(ipProposal.result);
+  await click("discoveryAssistant.title");
+  await settle();
+  await click("discoveryAssistant.check");
+  await click("discoveryAssistant.applyResults");
+  expect(h.apply).toHaveBeenCalledWith(ipProposal.result);
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("persists exact IP filter context and recovers a lost send reply without replay", async () => {
+  await openIp();
+  await type("Find short stories");
+  h.post.mockRejectedValueOnce(Error("IP reply lost"));
+  await click("discoveryAssistant.send");
+  expect(h.post).toHaveBeenCalledTimes(1);
+  const sent = h.post.mock.calls[0]![1].data;
+  expect(sent.conversation.current).toEqual(ipSaved.conversation.current);
+  expect(sent.conversation.current.query).not.toHaveProperty("locale");
+  await click("discoveryAssistant.close");
+  await click("discoveryAssistant.title");
+  await settle();
+  expect(h.post).toHaveBeenCalledTimes(1);
+  await click("discoveryAssistant.check");
+  expect(host.textContent).toContain("Matching IP");
+  expect(h.post).toHaveBeenCalledTimes(1);
+});
+it("selects only an IP still present in a fresh recommendation result", async () => {
+  discoveryPending(ipScope).save(ipSaved);
+  await openIp();
+  await click("discoveryAssistant.check");
+  await click("contentGpsDiscovery.selectTitle");
+  expect(h.select).toHaveBeenCalledWith(ipProposal.result, ipCard.id);
+  await click("discoveryAssistant.title");
+  await settle();
+  await click("discoveryAssistant.check");
+  h.select.mockClear();
+  h.get.mockResolvedValueOnce({
+    ...ipProposal,
+    result: { ...ipProposal.result, cards: [], matchedCount: 0 },
+  });
+  await click("contentGpsDiscovery.selectTitle");
+  expect(h.select).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("contentGpsDiscovery.selectionUnavailable");
+  expect(host.textContent).not.toContain("Matching IP");
+});
+it("hides IP results after access loss and never applies them", async () => {
+  discoveryPending(ipScope).save(ipSaved);
+  await openIp();
+  await click("discoveryAssistant.check");
+  h.get.mockRejectedValueOnce(new ApiRequestError("DENIED", "IP permission changed", 403));
+  await click("discoveryAssistant.applyResults");
+  expect(h.apply).not.toHaveBeenCalled();
+  expect(host.textContent).not.toContain("Matching IP");
+  expect(host.textContent).not.toContain("Find short stories");
+  expect(host.textContent).toContain("IP permission changed");
+  expect(h.post).not.toHaveBeenCalled();
+});
+it("rejects IP receipts from another mode or locale", async () => {
+  discoveryPending(ipScope).save(ipSaved);
+  await openIp();
+  h.get.mockResolvedValueOnce(proposal);
+  await click("discoveryAssistant.check");
+  expect(host.textContent).toContain("does not match");
+  h.get.mockResolvedValueOnce({
+    ...ipProposal,
+    result: { ...ipProposal.result, query: { ...ipQuery, locale: "zh-CN" } },
+  });
+  await click("discoveryAssistant.check");
+  expect(host.textContent).toContain("does not match");
+  expect(host.textContent).not.toContain("Matching IP");
+  expect(h.apply).not.toHaveBeenCalled();
+});
+it("keeps studio and IP conversations isolated and disables invalid IP requests", async () => {
+  discoveryPending(scope).save(saved);
+  await openIp();
+  expect(button("discoveryAssistant.check")).toBeUndefined();
+  await render(ipScope, false);
+  await type("Find stories");
+  expect(button("discoveryAssistant.send").disabled).toBe(true);
+  expect(h.post).not.toHaveBeenCalled();
+  expect(discoveryPending(scope).read()).toEqual(saved);
 });

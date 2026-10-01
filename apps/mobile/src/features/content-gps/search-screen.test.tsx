@@ -28,6 +28,9 @@ vi.mock("@/i18n", () => ({
   useLocale: () => "en-US",
 }));
 vi.mock("./use-gps-search", () => ({ useGpsSearch: h.search }));
+vi.mock("expo-modules-core", () => ({
+  uuid: { v4: () => "11111111-1111-4111-8111-111111111111" },
+}));
 vi.mock("expo-image", () => ({ Image: () => null }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({
@@ -177,6 +180,28 @@ it("selected IP bookmark opens the auth sheet for guests without a collection wr
     expect(h.gate).toHaveBeenCalledTimes(1);
     expect(h.get).not.toHaveBeenCalled();
     expect(h.params).toEqual({ selected: id, from: "0", to: "100" });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("loads public genre labels when Copilot is opened so proposals can name their genres", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<GpsSearchScreen />));
+    expect(h.get).not.toHaveBeenCalled();
+    await act(async () =>
+      Array.from(host.querySelectorAll("button"))
+        .find((b) => b.textContent === "discoveryAssistant.title")!
+        .click()
+    );
+    expect(h.get).toHaveBeenCalledWith(
+      "/ip-commerce/taxonomy",
+      expect.objectContaining({ params: { type: "genre", locale: "en-US" }, credentials: "omit" })
+    );
   } finally {
     await act(async () => root.unmount());
     host.remove();
