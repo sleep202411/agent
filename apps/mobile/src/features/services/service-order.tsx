@@ -1,3 +1,4 @@
+import { orderOutbox } from "./order-outbox";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useIsFocused, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
@@ -12,10 +13,31 @@ import { formatServicePrice } from "@/lib/creator-service-format";
 import { inquiryKey } from "./inquiry-api";
 import { orderPayload, submitServiceOrder } from "./order-api";
 export function ServiceOrder({ service }: { service: CreatorServiceDetail }) {
+  const auth = useAuth();
+  return (
+    <ScopedServiceOrder
+      key={JSON.stringify([service.id, auth.generation, auth.status])}
+      service={service}
+    />
+  );
+}
+function ScopedServiceOrder({ service }: { service: CreatorServiceDetail }) {
   const auth = useAuth(),
     gate = useAuthGate(),
     t = useTranslations();
   const [open, setOpen] = useState(false);
+  const [hasPending, setHasPending] = useState(() => {
+    if (auth.status !== "authenticated") return false;
+    try {
+      return !!orderOutbox(
+        service.id,
+        String(auth.user?.userId ?? auth.user?.id ?? ""),
+        auth.generation
+      ).read();
+    } catch {
+      return false;
+    }
+  });
   const active = useRef(false);
   useLayoutEffect(() => {
     active.current = true;
@@ -24,17 +46,32 @@ export function ServiceOrder({ service }: { service: CreatorServiceDetail }) {
     };
   }, []);
   if (
-    service.status !== "listed" ||
     String(auth.user?.userId ?? auth.user?.id ?? "") === service.creatorId ||
-    !Number.isSafeInteger(service.version) ||
-    !service.packages.length
+    (!hasPending &&
+      (service.status !== "listed" ||
+        !Number.isSafeInteger(service.version) ||
+        !service.packages.length))
   )
     return null;
   return open && auth.status === "authenticated" ? (
     <RequestForm
       key={JSON.stringify([service.id, service.version, auth.generation])}
       service={service}
-      close={() => setOpen(false)}
+      onPending={() => setHasPending(true)}
+      close={() => {
+        setOpen(false);
+        try {
+          setHasPending(
+            !!orderOutbox(
+              service.id,
+              String(auth.user?.userId ?? auth.user?.id ?? ""),
+              auth.generation
+            ).read()
+          );
+        } catch {
+          /* Preserve the recovery entry if storage is temporarily unavailable. */
+        }
+      }}
     />
   ) : (
     <Pressable
@@ -51,29 +88,64 @@ export function ServiceOrder({ service }: { service: CreatorServiceDetail }) {
     </Pressable>
   );
 }
-function RequestForm({ service, close }: { service: CreatorServiceDetail; close: () => void }) {
+function RequestForm({
+  service,
+  close,
+  onPending,
+}: {
+  service: CreatorServiceDetail;
+  close: () => void;
+  onPending: () => void;
+}) {
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme(),
     router = useRouter();
+  const auth = useAuth();
   const op = useAuthFormOperation(service.id, useIsFocused());
-  const [tier, setTier] = useState(service.packages[0]!.tier),
-    [answers, setAnswers] = useState<Record<string, string>>({}),
-    [note, setNote] = useState(""),
-    [error, setError] = useState<string>(),
-    [order, setOrder] = useState<string>(),
-    [locked, setLocked] = useState(false);
-  const intent = useRef<ReturnType<typeof orderPayload> | undefined>(undefined);
-  const valid = !service.requirementQuestions.some(
-    (q) => q.required && !(answers[q.id] ?? "").trim()
+  const [outbox] = useState(() =>
+    orderOutbox(service.id, String(auth.user?.userId ?? auth.user?.id ?? ""), auth.generation)
   );
+  const [initial] = useState(() => {
+    try {
+      return { pending: outbox.read(), error: undefined };
+    } catch (cause) {
+      return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+  const offer = initial.pending?.offer ?? service;
+  const [tier, setTier] = useState(
+      initial.pending?.payload.packageTier ?? service.packages[0]!.tier
+    ),
+    [answers, setAnswers] = useState<Record<string, string>>(
+      Object.fromEntries(
+        initial.pending?.payload.answers.map((answer) => [answer.questionId, answer.answer]) ?? []
+      )
+    ),
+    [note, setNote] = useState(initial.pending?.payload.note ?? ""),
+    [error, setError] = useState<string | undefined>(initial.error),
+    [order, setOrder] = useState<string>(),
+    [locked, setLocked] = useState(!!initial.pending);
+  const intent = useRef(initial.pending ?? undefined);
+  const valid =
+    locked || !offer.requirementQuestions.some((q) => q.required && !(answers[q.id] ?? "").trim());
   const send = () =>
     void op.run(
       async () => {
         setError(undefined);
-        intent.current ??= orderPayload(service, tier, answers, note, inquiryKey());
+        if (initial.error) throw new Error(initial.error);
+        const key = intent.current?.clientKey ?? inquiryKey();
+        const pending = intent.current ?? {
+          clientKey: key,
+          payload: orderPayload(service, tier, answers, note, key),
+          offer: { packages: service.packages, requirementQuestions: service.requirementQuestions },
+        };
+        intent.current = outbox.save(pending);
+        onPending();
         setLocked(true);
-        return submitServiceOrder(intent.current);
+        const id = await submitServiceOrder(intent.current.payload);
+        outbox.clear(intent.current.clientKey);
+        return id;
       },
       setOrder,
       (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
@@ -103,12 +175,12 @@ function RequestForm({ service, close }: { service: CreatorServiceDetail; close:
         </>
       ) : (
         <>
-          {service.packages.map((pkg) => (
+          {offer.packages.map((pkg) => (
             <Pressable
               key={pkg.id}
               accessibilityRole="radio"
               accessibilityState={{ selected: pkg.tier === tier }}
-              disabled={locked || op.busy}
+              disabled={locked || op.busy || !!initial.error}
               onPress={() => setTier(pkg.tier)}
               style={{
                 padding: 12,
@@ -123,7 +195,7 @@ function RequestForm({ service, close }: { service: CreatorServiceDetail; close:
               </ThemedText>
             </Pressable>
           ))}
-          {service.requirementQuestions.map((q) => (
+          {offer.requirementQuestions.map((q) => (
             <View key={q.id}>
               <ThemedText>
                 {q.prompt}
@@ -134,7 +206,7 @@ function RequestForm({ service, close }: { service: CreatorServiceDetail; close:
                 accessibilityLabel={q.prompt}
                 value={answers[q.id] ?? ""}
                 onChangeText={(value) => setAnswers((current) => ({ ...current, [q.id]: value }))}
-                editable={!locked && !op.busy}
+                editable={!locked && !op.busy && !initial.error}
                 multiline
                 maxLength={4000}
                 style={inputStyle}
@@ -146,13 +218,17 @@ function RequestForm({ service, close }: { service: CreatorServiceDetail; close:
             accessibilityLabel={t("serviceOrder.note")}
             value={note}
             onChangeText={setNote}
-            editable={!locked && !op.busy}
+            editable={!locked && !op.busy && !initial.error}
             multiline
             maxLength={2000}
             style={inputStyle}
           />
           {locked && error && <ThemedText>{t("serviceOrder.retryHint")}</ThemedText>}
-          <Pressable accessibilityRole="button" disabled={op.busy || !valid} onPress={send}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={op.busy || !valid || !!initial.error}
+            onPress={send}
+          >
             <ThemedText>{t("serviceOrder.submit")}</ThemedText>
           </Pressable>
         </>

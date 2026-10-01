@@ -4,12 +4,18 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { service } from "./order-fixture.test-helper";
 import { ServiceOrder } from "./service-order";
 const h = vi.hoisted(() => ({
+  read: vi.fn(),
+  save: vi.fn(),
+  clear: vi.fn(),
   send: vi.fn(),
   push: vi.fn(),
   gate: vi.fn(),
   generation: 1,
   userId: "buyer",
   authenticated: true,
+}));
+vi.mock("./order-outbox", () => ({
+  orderOutbox: () => ({ read: h.read, save: h.save, clear: h.clear }),
 }));
 vi.mock("./inquiry-api", () => ({ sendServiceInquiry: h.send, inquiryKey: () => "stable-key" }));
 vi.mock("@/lib/api-client", () => ({ api: { post: vi.fn() } }));
@@ -76,6 +82,8 @@ function type(text: string) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  h.read.mockReturnValue(null);
+  h.save.mockImplementation((value) => value);
   h.generation = 1;
   h.userId = "buyer";
   h.authenticated = true;
@@ -132,8 +140,10 @@ it("ignores old-account completion and resets the questionnaire", async () => {
   h.generation = 2;
   await render();
   await act(async () => finish("old"));
-  expect(host.querySelector("input")!.value).toBe("");
+  expect(host.querySelector("input")).toBeNull();
   expect(host.textContent).not.toContain("serviceOrder.sent");
+  await act(async () => click("serviceOrder.title"));
+  expect(host.querySelector("input")!.value).toBe("");
 });
 it("requires sign-in and hides order entry for the owner or an unlisted service", async () => {
   h.authenticated = false;
@@ -148,4 +158,67 @@ it("requires sign-in and hides order entry for the owner or an unlisted service"
   h.userId = "buyer";
   await render("paused");
   expect(host.textContent).toBe("");
+});
+
+it("restores original terms and answers even after the service changes", async () => {
+  const pending = {
+    clientKey: "old-request-key",
+    payload: {
+      serviceId: service.id,
+      expectedServiceVersion: 2,
+      packageTier: "premium",
+      answers: [{ questionId: "old-brief", answer: "Original brief" }],
+      note: "Original note",
+      idempotencyKey: "old-request-key",
+    },
+    offer: {
+      packages: [{ ...service.packages[1], title: "Original package", price: 20 }],
+      requirementQuestions: [{ id: "old-brief", prompt: "Original question", required: true }],
+    },
+  };
+  h.read.mockReturnValue(pending);
+  h.send.mockResolvedValue("original-order");
+  await render();
+  await act(async () => click("serviceOrder.title"));
+  expect(host.textContent).toContain("Original package");
+  expect(host.textContent).toContain("Original question");
+  expect(host.querySelector("input")!.value).toBe("Original brief");
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  await act(async () => click("serviceOrder.submit"));
+  expect(h.send).toHaveBeenCalledWith(pending.payload);
+  expect(h.save.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
+  expect(h.clear).toHaveBeenCalledWith("old-request-key");
+});
+it("does not submit or freeze edits when saving fails", async () => {
+  h.save.mockImplementationOnce(() => {
+    throw new Error("Disk full");
+  });
+  h.send.mockResolvedValue("order");
+  await compose();
+  await act(async () => click("serviceOrder.submit"));
+  expect(h.send).not.toHaveBeenCalled();
+  expect(host.querySelector("input")!.disabled).toBe(false);
+  await act(async () => type("Changed before submission"));
+  await act(async () => click("serviceOrder.submit"));
+  expect(h.send.mock.calls[0][0].answers[0].answer).toBe("Changed before submission");
+});
+
+it("allows an original pending order to be recovered when the service is paused", async () => {
+  const payload = {
+    serviceId: service.id,
+    expectedServiceVersion: 2,
+    packageTier: "basic",
+    answers: [],
+    idempotencyKey: "pending-key",
+  };
+  h.read.mockReturnValue({
+    clientKey: "pending-key",
+    payload,
+    offer: { packages: service.packages, requirementQuestions: [] },
+  });
+  h.send.mockResolvedValue("original-order");
+  await render("paused");
+  await act(async () => click("serviceOrder.title"));
+  await act(async () => click("serviceOrder.submit"));
+  expect(h.send).toHaveBeenCalledWith(payload);
 });
