@@ -30,7 +30,7 @@
  * OSS read-back reuses OSS_BUCKET / OSS_REGION / OSS_INTERNAL.
  */
 import { Injectable, Logger } from '@nestjs/common';
-import RPCClient from '@alicloud/pop-core';
+import { RPCClient } from '@alicloud/pop-core';
 import OSS from 'ali-oss';
 
 export type ImmTaskState = 'running' | 'succeeded' | 'failed';
