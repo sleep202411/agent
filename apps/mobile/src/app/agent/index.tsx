@@ -1,3 +1,4 @@
+import { TextAdventures } from "@/features/agent/text-adventures";
 import { ContentReviewHistory } from "@/features/agent/content-review-history";
 import { WorkspaceAnalyticsScreen } from "@/features/agent/workspace-analytics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -81,6 +82,7 @@ function AgentHubSession({
   const insets = useSafeAreaInsets();
   const { requireAuth, isAuthenticated } = useAuthGate();
   const [platformWorkspace, setPlatformWorkspace] = useState<StudioWorkspace>();
+  const [adventuresOpen, setAdventuresOpen] = useState(false);
   const [joiningInvite, setJoiningInvite] = useState(false);
   const [reviewWorkspace, setReviewWorkspace] = useState<string>();
   const [analyticsWorkspace, setAnalyticsWorkspace] = useState<string>();
@@ -215,6 +217,7 @@ function AgentHubSession({
         onClose={() => setReviewWorkspace(undefined)}
       />
     );
+  if (adventuresOpen) return <TextAdventures onClose={() => setAdventuresOpen(false)} />;
   if (analyticsWorkspace)
     return (
       <WorkspaceAnalyticsScreen
@@ -353,6 +356,15 @@ function AgentHubSession({
           </View>
         )}
 
+        {isAuthenticated && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setAdventuresOpen(true)}
+            style={[styles.banner, { borderColor: theme.textSecondary }]}
+          >
+            <ThemedText type="small">{t("textAdventure.title")}</ThemedText>
+          </Pressable>
+        )}
         {isAuthenticated && (
           <Pressable
             disabled={creating || loading}
