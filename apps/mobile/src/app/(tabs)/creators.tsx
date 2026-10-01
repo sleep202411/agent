@@ -163,6 +163,9 @@ export default function CreatorsScreen() {
   const header = (
     <View style={{ gap: Spacing.three }}>
       <ScreenHeader title={t("creators.title")} />
+      <Pressable accessibilityRole="button" onPress={() => router.push(toHref("/studios"))}>
+        <ThemedText>{t("studioDiscovery.title")}</ThemedText>
+      </Pressable>
       <TextInput
         accessibilityLabel={t("creators.search")}
         placeholder={t("creators.search")}
