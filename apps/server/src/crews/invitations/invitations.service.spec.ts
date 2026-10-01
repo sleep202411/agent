@@ -466,13 +466,11 @@ describe('role-specific setup invitations', () => {
 
 it('requires member-management permission before inviting someone for a production role', async () => {
   const t = build();
-  t.authorization.require.mockImplementation(
-    async (_crew, _actor, permission) => {
-      if (permission === 'members.manage')
-        throw new Error('Member management required');
-      return { memberId: 'member-owner' };
-    },
-  );
+  t.authorization.require.mockImplementation((_crew, _actor, permission) => {
+    if (permission === 'members.manage')
+      throw new Error('Member management required');
+    return Promise.resolve({ memberId: 'member-owner' });
+  });
   await expect(
     t.service.create(
       CREW_ID,
