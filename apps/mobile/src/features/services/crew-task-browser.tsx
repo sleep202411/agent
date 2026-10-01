@@ -1,3 +1,4 @@
+import { TrustAppeals } from "./trust-appeals";
 import { ProjectActivity } from "./project-activity";
 import { ProjectDocument } from "./project-document";
 import { ProjectResources } from "./project-resources";
@@ -36,6 +37,7 @@ export function CrewTaskBrowser({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const [showAppeals, setShowAppeals] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [showDocument, setShowDocument] = useState(false);
   const [showProjectProperties, setShowProjectProperties] = useState(false);
@@ -57,6 +59,15 @@ export function CrewTaskBrowser({
   const [taskId, setTaskId] = useState<string>();
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
+  if (showAppeals)
+    return (
+      <TrustAppeals
+        crewId={crewId}
+        userId={userId}
+        generation={generation}
+        onClose={() => setShowAppeals(false)}
+      />
+    );
   if (showActivity)
     return (
       <ProjectActivity
@@ -218,6 +229,13 @@ export function CrewTaskBrowser({
   if (webTask)
     return (
       <View style={{ flex: 1 }}>
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 12 }}
+          onPress={() => setShowAppeals(true)}
+        >
+          <ThemedText>{t("trustAppeals.queue")}</ThemedText>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={() => setWebTask(undefined)}

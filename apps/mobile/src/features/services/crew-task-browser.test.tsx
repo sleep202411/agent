@@ -2,6 +2,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CrewTaskBrowser } from "./crew-task-browser";
+vi.mock("./trust-appeals", () => ({ TrustAppeals: () => <span>Trust appeals</span> }));
 const h = vi.hoisted(() => ({
   generation: 1,
   close: vi.fn(),
