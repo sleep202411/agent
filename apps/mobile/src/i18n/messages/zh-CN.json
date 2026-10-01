@@ -3161,5 +3161,20 @@
   "ipCreate.unspecified": "未指定",
   "ipCreate.pending": "创建结果待确认。重试将使用同一请求，不会重复创建 IP。",
   "ipCreate.submit": "创建草稿",
-  "ipCreate.clearAnalysis": "清除文档建议"
+  "ipCreate.clearAnalysis": "清除文档建议",
+  "ipMedia.heading": "IP 媒体",
+  "ipMedia.working": "正在上传或保存媒体",
+  "ipMedia.saved": "媒体已保存。",
+  "ipMedia.cover": "封面",
+  "ipMedia.trailer": "预告片",
+  "ipMedia.preview": "预览预告片",
+  "ipMedia.processing": "媒体正在处理或暂不可用。",
+  "ipMedia.empty": "尚未选择媒体。",
+  "ipMedia.coverHint": "JPG、PNG 或 WebP，最大 20 MiB。",
+  "ipMedia.trailerHint": "MP4、MOV 或 WebM，最大 2 GiB。",
+  "ipMedia.uploadCover": "上传封面",
+  "ipMedia.uploadTrailer": "上传预告片",
+  "ipMedia.pending": "已上传媒体等待确认或关联。重试将从已保存步骤继续。",
+  "ipMedia.changed": "IP 已更改。请先查看上方刷新后的媒体，再决定是否替换。",
+  "ipMedia.applyUploaded": "应用已上传媒体"
 }

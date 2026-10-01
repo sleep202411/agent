@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
@@ -8,6 +8,7 @@ import { useTranslations } from "@/i18n";
 import { IpProfileEditor } from "@/features/ip-author/profile-editor";
 export default function IpStudioScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
+  const router = useRouter();
   const auth = useAuth(),
     gate = useAuthGate(),
     theme = useTheme(),
@@ -18,6 +19,20 @@ export default function IpStudioScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
+          headerRight:
+            auth.status === "authenticated" &&
+            typeof id === "string" &&
+            z.string().uuid().safeParse(id).success
+              ? () => (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.push(`/ip-studio/${id}/media` as never)}
+                    style={{ padding: 8 }}
+                  >
+                    <ThemedText>{t("ipMedia.heading")}</ThemedText>
+                  </Pressable>
+                )
+              : undefined,
           headerTitle: t("ipAuthor.heading"),
           headerTintColor: theme.text,
           headerStyle: { backgroundColor: theme.background },

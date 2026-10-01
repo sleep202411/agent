@@ -3161,5 +3161,20 @@
   "ipCreate.unspecified": "Unspecified",
   "ipCreate.pending": "Creation is awaiting confirmation. Retry resends the same request and will not create a duplicate IP.",
   "ipCreate.submit": "Create draft",
-  "ipCreate.clearAnalysis": "Clear document suggestions"
+  "ipCreate.clearAnalysis": "Clear document suggestions",
+  "ipMedia.heading": "IP media",
+  "ipMedia.working": "Uploading or saving media",
+  "ipMedia.saved": "Media saved.",
+  "ipMedia.cover": "Cover",
+  "ipMedia.trailer": "Trailer",
+  "ipMedia.preview": "Preview trailer",
+  "ipMedia.processing": "Media is processing or unavailable.",
+  "ipMedia.empty": "No media selected.",
+  "ipMedia.coverHint": "JPG, PNG or WebP, up to 20 MiB.",
+  "ipMedia.trailerHint": "MP4, MOV or WebM, up to 2 GiB.",
+  "ipMedia.uploadCover": "Upload cover",
+  "ipMedia.uploadTrailer": "Upload trailer",
+  "ipMedia.pending": "Uploaded media is awaiting confirmation or attachment. Retry continues from the saved step.",
+  "ipMedia.changed": "The IP has changed. Review the refreshed media above before replacing it.",
+  "ipMedia.applyUploaded": "Apply uploaded media"
 }
