@@ -231,13 +231,6 @@ export function CrewTaskBrowser({
       <View style={{ flex: 1 }}>
         <Pressable
           accessibilityRole="button"
-          style={{ padding: 12 }}
-          onPress={() => setShowAppeals(true)}
-        >
-          <ThemedText>{t("trustAppeals.queue")}</ThemedText>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
           onPress={() => setWebTask(undefined)}
           style={{ padding: 12 }}
         >
@@ -268,6 +261,15 @@ export function CrewTaskBrowser({
     );
   return (
     <View style={{ flex: 1 }}>
+      <Pressable
+        accessibilityRole="button"
+        style={{ padding: 12 }}
+        onPress={() => {
+          if (generation === getAuthGeneration()) setShowAppeals(true);
+        }}
+      >
+        <ThemedText>{t("trustAppeals.queue")}</ThemedText>
+      </Pressable>
       <Pressable
         accessibilityRole="button"
         style={{ padding: 12 }}

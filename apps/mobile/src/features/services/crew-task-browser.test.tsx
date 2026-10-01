@@ -2,7 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CrewTaskBrowser } from "./crew-task-browser";
-vi.mock("./trust-appeals", () => ({ TrustAppeals: () => <span>Trust appeals</span> }));
+vi.mock("./trust-appeals", () => ({
+  TrustAppeals: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>close appeals</button>
+  ),
+}));
 const h = vi.hoisted(() => ({
   generation: 1,
   close: vi.fn(),
@@ -326,4 +330,18 @@ it("opens project activity and returns to the existing task browser", async () =
   expect(button("close activity")).toBeDefined();
   await act(async () => button("close activity").click());
   expect(button("pick")).toBeDefined();
+});
+
+it("opens trust appeals from the native task menu and returns without entering the Web fallback", async () => {
+  expect(button("trustAppeals.queue")).toBeDefined();
+  await act(async () => button("trustAppeals.queue").click());
+  expect(button("close appeals")).toBeDefined();
+  expect(host.textContent).not.toContain("/workspace");
+  await act(async () => button("close appeals").click());
+  expect(button("pick")).toBeDefined();
+});
+it("does not open appeal data after an account switch", async () => {
+  h.generation = 2;
+  await act(async () => button("trustAppeals.queue").click());
+  expect(button("close appeals")).toBeUndefined();
 });
