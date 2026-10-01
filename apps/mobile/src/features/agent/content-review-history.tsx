@@ -1,3 +1,4 @@
+import { ContentReviewCreate } from "./content-review-create";
 import { ContentReviewExport } from "./content-review-export";
 import { ContentReviewPlayback } from "./content-review-playback";
 import { ContentReviewComment } from "./content-review-comment";
@@ -84,6 +85,13 @@ function History({ workspaceId, generation, onClose }: Props) {
       </Pressable>
       {!data && <ActivityIndicator />}
       {data?.error && <ThemedText accessibilityRole="alert">{data.error}</ThemedText>}
+      {data?.items && (
+        <ContentReviewCreate
+          workspaceId={workspaceId}
+          generation={generation}
+          onOpen={setRecordId}
+        />
+      )}
       {data?.items && (
         <>
           <ThemedText type="small">{label("historyLimit")}</ThemedText>
