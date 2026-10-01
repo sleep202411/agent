@@ -64,7 +64,11 @@ export function openInboxRealtime(
         close();
         return;
       }
-      if (["message.created", "read.advanced", "context.changed"].includes(String(event)))
+      if (
+        ["message.created", "read.advanced", "context.changed", "notification.created"].includes(
+          String(event)
+        )
+      )
         invalidate();
     })
     .catch(() => {

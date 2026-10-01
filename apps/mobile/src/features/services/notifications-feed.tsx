@@ -11,19 +11,22 @@ import {
   readAllNotifications,
   type NotificationFilter,
 } from "./notification-api";
+import { useInboxRealtime } from "./use-inbox-realtime";
 import { useNotifications } from "./use-notifications";
-export function NotificationsFeed({ generation }: { generation: number }) {
+type Props = { generation: number; userId: string };
+export function NotificationsFeed({ generation, userId }: Props) {
   const active = useScreenActive();
   if (!active || generation !== getAuthGeneration()) return null;
-  return <Feed key={generation} generation={generation} />;
+  return <Feed key={`${generation}:${userId}`} generation={generation} userId={userId} />;
 }
-function Feed({ generation }: { generation: number }) {
+function Feed({ generation, userId }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
     locale = useLocale();
   const label = (key: string) => t(`notifications.${key}` as MessageKey);
   const [filter, setFilter] = useState<NotificationFilter>("all");
   const list = useNotifications(String(generation), filter);
+  const liveUnavailable = useInboxRealtime(userId, generation, true, list.refresh);
   const operation = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
@@ -55,6 +58,7 @@ function Feed({ generation }: { generation: number }) {
   }
   return (
     <View style={{ flex: 1, padding: 16, gap: 12 }}>
+      {liveUnavailable && <ThemedText>{t("inbox.liveUnavailable")}</ThemedText>}
       <ScrollView horizontal style={{ flexGrow: 0 }}>
         {NOTIFICATION_FILTERS.map((value) => (
           <Pressable

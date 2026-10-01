@@ -32,7 +32,11 @@ export default function NotificationsFeedScreen() {
           <ThemedText>{t("login.signIn")}</ThemedText>
         </Pressable>
       ) : (
-        <NotificationsFeed key={`${auth.generation}:${userId}`} generation={auth.generation} />
+        <NotificationsFeed
+          key={`${auth.generation}:${userId}`}
+          generation={auth.generation}
+          userId={userId}
+        />
       )}
     </View>
   );

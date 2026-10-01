@@ -129,3 +129,19 @@ it("refreshes a resumed attached channel without waiting for a new message", () 
   h.connectionState({ current: "connected" });
   expect(refresh).toHaveBeenCalledOnce();
 });
+it("invalidates notifications without trusting event payloads and ignores them after cleanup", () => {
+  const refresh = vi.fn();
+  const close = openInboxRealtime("1", 1, refresh, vi.fn());
+  h.message({
+    data: { event: "notification.created", data: { id: "notice", body: "Untrusted preview" } },
+  });
+  expect(refresh).toHaveBeenCalledOnce();
+  expect(refresh).toHaveBeenCalledWith();
+  h.generation = 2;
+  h.message({ data: { event: "notification.created" } });
+  expect(refresh).toHaveBeenCalledOnce();
+  h.generation = 1;
+  close();
+  h.message({ data: { event: "notification.created" } });
+  expect(refresh).toHaveBeenCalledOnce();
+});
