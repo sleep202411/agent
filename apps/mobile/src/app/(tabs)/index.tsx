@@ -327,6 +327,14 @@ export default function IpDiscoveryScreen() {
         </View>
       ) : null}
 
+      <View style={styles.section}>
+        <SectionHeader
+          title={t("textGames.title")}
+          trailing={t("home.seeAll")}
+          onPressTrailing={() => router.push(toHref("/text-games"))}
+        />
+      </View>
+
       {games.length ? (
         <View style={styles.section}>
           <SectionHeader

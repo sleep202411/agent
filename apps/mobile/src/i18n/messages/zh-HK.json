@@ -3043,5 +3043,11 @@
   "games.filmLabel": "互動影遊",
   "games.textPlay": "開始遊玩",
   "games.textBack": "返回故事",
-  "games.invalidTextGame": "文字影遊連結無效。"
+  "games.invalidTextGame": "文字影遊連結無效。",
+  "textGames.title": "文字影遊",
+  "textGames.subtitle": "瀏覽已發佈的故事，選擇下一段冒險。",
+  "textGames.empty": "暫無已發佈的文字影遊。",
+  "textGames.play": "開始遊玩",
+  "textGames.backToCatalogue": "返回文字影遊",
+  "textGames.backToDetails": "返回詳情"
 }

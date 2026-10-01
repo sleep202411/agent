@@ -14,6 +14,10 @@ import { TextAdventureMedia } from "@/features/agent/text-adventure-media";
 import { TextAdventurePlayer } from "@/features/agent/text-adventure-player";
 import { Action } from "@/features/agent/text-adventure-editor";
 export function PublishedTextAdventure({ gameId }: { gameId: string }) {
+  const active = useScreenActive();
+  return active ? <PublishedTextAdventureDetail key={gameId} gameId={gameId} /> : null;
+}
+function PublishedTextAdventureDetail({ gameId }: { gameId: string }) {
   const auth = useAuth(),
     gate = useAuthGate(),
     active = useScreenActive(),
@@ -57,7 +61,12 @@ export function PublishedTextAdventure({ gameId }: { gameId: string }) {
         account={{ userId, generation: auth.generation }}
         mode="public"
         backLabel="games.textBack"
-        onBack={() => setPlayGeneration(undefined)}
+        onBack={() => {
+          setPlayGeneration(undefined);
+          setGame(undefined);
+          setError(undefined);
+          setRevision((n) => n + 1);
+        }}
       />
     );
   if (!game)
