@@ -3731,5 +3731,15 @@
   "likenessOutputs.confirmHint": "封鎖此範圍內的已儲存作品？這會影響生成媒體的存取，無法在此撤銷。請核對範圍；項目/全部範圍以伺服器處理請求時存在的作品為準。",
   "likenessOutputs.confirm": "確認下架",
   "likenessOutputs.previewFailed": "無法載入作品預覽。",
-  "likenessOutputs.unsupported": "此處不支援預覽該媒體類型。"
+  "likenessOutputs.unsupported": "此處不支援預覽該媒體類型。",
+  "grantCreate.title": "授權項目",
+  "grantCreate.close": "關閉項目授權",
+  "grantCreate.hint": "將本人已驗證肖像授權給您有編輯權限的創作項目。請先閱讀授權同意書。",
+  "grantCreate.history": "查看授權歷史",
+  "grantCreate.done": "項目已獲授權。",
+  "grantCreate.pending": "授權結果未知，請先核對項目授權歷史再清除此本地記錄；不會自動重發此請求。",
+  "grantCreate.clearHint": "核對歷史後，僅清除本地待確認記錄。不會授予、撤回或恢復伺服器上的授權。",
+  "grantCreate.search": "搜尋項目或工作區",
+  "grantCreate.empty": "沒有符合搜尋條件的可用項目。",
+  "grantCreate.confirm": "授權此項目"
 }

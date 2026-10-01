@@ -1,3 +1,4 @@
+import { LikenessGrantCreatePanel } from "./likeness-grant-create-panel";
 import { LikenessOutputsPanel } from "./likeness-outputs-panel";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -229,6 +230,12 @@ function GrantSession({
   return (
     <View style={{ gap: 12 }}>
       <ThemedText type="smallBold">{character.name}</ThemedText>
+      <LikenessGrantCreatePanel
+        characterId={character.id}
+        userId={userId}
+        generation={generation}
+        onHistory={refresh}
+      />
       <Button label={t("likenessGrants.refresh")} onPress={refresh} disabled={op.busy} />
       {error ? <ThemedText accessibilityRole="alert">{error}</ThemedText> : null}
       {message ? <ThemedText>{message}</ThemedText> : null}

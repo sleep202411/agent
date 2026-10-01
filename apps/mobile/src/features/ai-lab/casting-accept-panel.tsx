@@ -1,3 +1,4 @@
+import { ProjectLikenessConsent } from "./project-likeness-consent";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Linking, Pressable, ScrollView, View } from "react-native";
@@ -15,7 +16,6 @@ import {
   acceptCastingInvitation,
   castingAcceptanceBox,
   prepareCastingAcceptance,
-  PROJECT_LIKENESS_CONSENT_VERSION,
   reviewCastingInvite,
   type CastingReview,
 } from "./casting-accept-api";
@@ -96,10 +96,6 @@ function Session({
     [epoch, setEpoch] = useState(0),
     [selected, setSelected] = useState<string>(),
     [consent, setConsent] = useState(false),
-    [read, setRead] = useState(false),
-    [attested, setAttested] = useState(false),
-    [height, setHeight] = useState(0),
-    [viewport, setViewport] = useState(0),
     [done, setDone] = useState(false),
     [clear, setClear] = useState(false);
   const controller = useRef<AbortController | null>(null);
@@ -111,10 +107,6 @@ function Session({
     setReview(undefined);
     setSelected(undefined);
     setConsent(false);
-    setRead(false);
-    setAttested(false);
-    setHeight(0);
-    setViewport(0);
     void reviewCastingInvite(token, generation, c.signal)
       .then((r) => {
         if (!c.signal.aborted) {
@@ -130,8 +122,7 @@ function Session({
       });
     return () => c.abort();
   }, [token, generation, epoch]);
-  const readAll = read || (height > 0 && viewport > 0 && height <= viewport + 12);
-  function accept() {
+  function accept(readAll: boolean, attested: boolean) {
     if (!review || op.busy || pending) return;
     let intent;
     try {
@@ -156,8 +147,6 @@ function Session({
       },
       (e) => {
         setError(e instanceof Error ? e.message : String(e));
-        setRead(false);
-        setAttested(false);
         setConsent(false);
         setReview(undefined);
         try {
@@ -258,8 +247,6 @@ function Session({
                   disabled={op.busy}
                   onPress={() => {
                     setSelected(c.id);
-                    setRead(false);
-                    setAttested(false);
                   }}
                   style={{
                     flexDirection: "row",
@@ -284,76 +271,20 @@ function Session({
             <Button
               label={t("castingAccept.reviewConsent")}
               onPress={() => {
-                setRead(false);
-                setAttested(false);
-                setHeight(0);
-                setViewport(0);
                 setConsent(true);
               }}
               disabled={op.busy}
             />
           ) : null}
           {consent ? (
-            <View style={{ gap: 10 }}>
-              <ScrollView
-                testID="casting-consent-copy"
-                nestedScrollEnabled
-                style={{ height: 300, borderRadius: 8, backgroundColor: theme.backgroundElement }}
-                contentContainerStyle={{ padding: 12, gap: 10 }}
-                onLayout={(e) => setViewport(e.nativeEvent.layout.height)}
-                onContentSizeChange={(_w, h) => setHeight(h)}
-                scrollEventThrottle={16}
-                onScroll={(e) => {
-                  const n = e.nativeEvent;
-                  if (n.layoutMeasurement.height + n.contentOffset.y >= n.contentSize.height - 12)
-                    setRead(true);
-                }}
-              >
-                <ThemedText type="small">{PROJECT_LIKENESS_CONSENT_VERSION}</ThemedText>
-                {(["Project", "Purpose", "Prohibited", "Transfer", "Controls"] as const).map(
-                  (s) => (
-                    <View key={s} style={{ gap: 4 }}>
-                      <ThemedText type="smallBold">{t(`castingConsent.grant${s}Title`)}</ThemedText>
-                      <ThemedText type="small">
-                        {t(`castingConsent.grant${s}Body`).replace(
-                          "{project}",
-                          review.preview.projectName
-                        )}
-                      </ThemedText>
-                    </View>
-                  )
-                )}
-              </ScrollView>
-              {!readAll ? (
-                <ThemedText type="small">{t("castingConsent.consentScrollHint")}</ThemedText>
-              ) : null}
-              <Pressable
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: attested }}
-                disabled={op.busy}
-                onPress={() => setAttested((v) => !v)}
-                style={{ padding: 10 }}
-              >
-                <ThemedText>
-                  {attested ? "✓ " : "□ "}
-                  {t("castingConsent.grantAttestation")}
-                </ThemedText>
-              </Pressable>
-              <Button
-                label={t("castingAccept.accept")}
-                onPress={accept}
-                disabled={op.busy || !readAll || !attested}
-              />
-              <Button
-                label={t("common.back")}
-                onPress={() => {
-                  setConsent(false);
-                  setRead(false);
-                  setAttested(false);
-                }}
-                disabled={op.busy}
-              />
-            </View>
+            <ProjectLikenessConsent
+              key={`${selected}:${review.preview.projectName}`}
+              projectName={review.preview.projectName}
+              confirmLabel={t("castingAccept.accept")}
+              busy={op.busy}
+              onConfirm={accept}
+              onBack={() => setConsent(false)}
+            />
           ) : null}
         </>
       ) : null}

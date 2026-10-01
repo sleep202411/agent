@@ -3731,5 +3731,15 @@
   "likenessOutputs.confirmHint": "屏蔽此范围内的已存储作品？这会影响生成媒体的访问，无法在此撤销。请核对范围；项目/全部范围以服务器处理请求时存在的作品为准。",
   "likenessOutputs.confirm": "确认下架",
   "likenessOutputs.previewFailed": "无法加载作品预览。",
-  "likenessOutputs.unsupported": "此处不支持预览该媒体类型。"
+  "likenessOutputs.unsupported": "此处不支持预览该媒体类型。",
+  "grantCreate.title": "授权项目",
+  "grantCreate.close": "关闭项目授权",
+  "grantCreate.hint": "将本人已验证肖像授权给您有编辑权限的创作项目。请先阅读授权同意书。",
+  "grantCreate.history": "查看授权历史",
+  "grantCreate.done": "项目已获授权。",
+  "grantCreate.pending": "授权结果未知，请先核对项目授权历史再清除此本地记录；不会自动重发此请求。",
+  "grantCreate.clearHint": "核对历史后，仅清除本地待确认记录。不会授予、撤回或恢复服务器上的授权。",
+  "grantCreate.search": "搜索项目或工作区",
+  "grantCreate.empty": "没有符合搜索条件的可用项目。",
+  "grantCreate.confirm": "授权此项目"
 }

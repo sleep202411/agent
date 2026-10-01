@@ -3731,5 +3731,15 @@
   "likenessOutputs.confirmHint": "Block the stored outputs in this scope? This affects access to generated media and cannot be undone here. Review the scope carefully; project/all scope applies to outputs present when the server processes the request.",
   "likenessOutputs.confirm": "Confirm takedown",
   "likenessOutputs.previewFailed": "Output preview could not be loaded.",
-  "likenessOutputs.unsupported": "This media type cannot be previewed here."
+  "likenessOutputs.unsupported": "This media type cannot be previewed here.",
+  "grantCreate.title": "Authorize a project",
+  "grantCreate.close": "Close project authorization",
+  "grantCreate.hint": "Authorize use of your own verified likeness in a Creative project you edit. Review the consent before granting access.",
+  "grantCreate.history": "Review authorization history",
+  "grantCreate.done": "Project authorized.",
+  "grantCreate.pending": "The authorization result is unknown. Review the project history before clearing this local record; this request will not be resent automatically.",
+  "grantCreate.clearHint": "Clear only the local pending record after checking the history. This does not grant, withdraw or restore any server authorization.",
+  "grantCreate.search": "Search projects or workspaces",
+  "grantCreate.empty": "No available projects match this search.",
+  "grantCreate.confirm": "Authorize this project"
 }
