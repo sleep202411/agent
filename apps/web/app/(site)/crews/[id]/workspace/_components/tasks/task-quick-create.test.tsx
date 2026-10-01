@@ -450,6 +450,7 @@ describe("TaskQuickCreate", () => {
   it.each(["deadline", "priority", "assignee"])(
     "preserves a %s choice made during AI preparation",
     async (field) => {
+      const futureDate = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
       let finish!: (value: unknown) => void;
       state.draft.mockReturnValueOnce(
         new Promise((resolve) => {
@@ -469,7 +470,7 @@ describe("TaskQuickCreate", () => {
       if (field === "deadline") {
         await act(async () => click(document.querySelector('button[aria-label="Due date"]')!));
         act(() =>
-          fill(document.querySelector<HTMLInputElement>('input[type="date"]')!, "2026-10-01")
+          fill(document.querySelector<HTMLInputElement>('input[type="date"]')!, futureDate)
         );
       } else {
         const label = field === "priority" ? "Priority" : "Assignees";
@@ -496,7 +497,9 @@ describe("TaskQuickCreate", () => {
       await act(async () => click(exactButton("Create")));
       expect(state.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          ...(field === "deadline" ? { dueAt: new Date("2026-10-01T23:59:59").toISOString() } : {}),
+          ...(field === "deadline"
+            ? { dueAt: new Date(`${futureDate}T23:59:59`).toISOString() }
+            : {}),
           ...(field === "priority" ? { priority: "low" } : {}),
           ...(field === "assignee" ? { assignees: [{ userId: "member-1", currency: "USD" }] } : {}),
         })

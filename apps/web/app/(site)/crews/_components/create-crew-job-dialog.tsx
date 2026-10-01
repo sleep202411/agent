@@ -61,7 +61,7 @@ import {
   type WorkMode,
 } from "@/app/(site)/crews/_hooks/use-crew";
 
-import { useCrewTaskOptions } from "../_hooks/use-tasks";
+import { useCrewTask, useCrewTaskOptions } from "../_hooks/use-tasks";
 import { useCrewPermissions } from "../_hooks/use-crew-permissions";
 
 const CREATE_JOB_HERO_URL = "/crews/publish-position-hero.jpg";
@@ -160,6 +160,8 @@ function PositionForm({
       !tasks.isError &&
       tasks.isSuccess &&
       tasks.data.some((task) => task.id === taskId));
+
+  const sourceTask = useCrewTask(taskId, !isEdit && canLinkTask && taskValid && Boolean(taskId));
 
   const [step, setStep] = useState<StepId>(1);
 
@@ -270,6 +272,7 @@ function PositionForm({
     taskValid &&
     positionType.length > 0 &&
     description.trim().length > 0 &&
+    description.trim().length <= 1000 &&
     countOk;
   const step2Valid = locationOk;
   const step3Valid = salaryAmountsOk && salaryRangeOk && durationOk && shareOk;
@@ -407,6 +410,30 @@ function PositionForm({
 
               <Field>
                 <FieldLabel required>{t("createJobDescriptionLabel")}</FieldLabel>
+                {!isEdit &&
+                canLinkTask &&
+                taskValid &&
+                taskId &&
+                sourceTask.isSuccess &&
+                !sourceTask.isError &&
+                sourceTask.data?.crewId === crewId &&
+                sourceTask.data?.id === taskId ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={submitting || Boolean(description.trim())}
+                    onClick={() => setDescription(sourceTask.data.description)}
+                  >
+                    {t("useTaskBrief")}
+                  </Button>
+                ) : null}
+                <p className="text-xs text-muted-foreground">{t("publicBriefHelp")}</p>
+                {description.trim().length > 1000 ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {t("publicBriefTooLong")}
+                  </p>
+                ) : null}
                 <Textarea
                   className="max-h-40 overflow-y-auto"
                   value={description}

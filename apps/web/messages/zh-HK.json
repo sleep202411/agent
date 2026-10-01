@@ -4594,7 +4594,10 @@
     "recruitmentVisibility": "招聘可見性",
     "recruitmentPublic": "公開",
     "recruitmentPrivate": "私密 — 僅限受邀者",
-    "createJobSalaryAmountError": "請輸入 0 至 100,000,000 之間的有效報酬金額，或留空。"
+    "createJobSalaryAmountError": "請輸入 0 至 100,000,000 之間的有效報酬金額，或留空。",
+    "useTaskBrief": "使用任務說明",
+    "publicBriefHelp": "發佈前請確認公開工作說明，包含交付內容、要求和驗收標準，最多1,000字。",
+    "publicBriefTooLong": "請將公開說明縮短至1,000字以內，完整任務說明不受影響。"
   },
   "crewAssets": {
     "title": "劇組資產中心",
@@ -5242,8 +5245,8 @@
       "pastDeadline": "請選擇今天或之後的截止日期。",
       "canvasAlreadyImported": "目前場景均已有任務。新增場景或刪除已匯入任務後，請重新預覽。",
       "emptyCanvas": "此影遊尚無可匯入場景。請在 Studio 中新增場景後重新預覽。",
-      "publishJob": "發佈職位",
-      "publishOpening": "建立後發佈到 AIGC 劇組招募",
+      "publishJob": "招募創作者",
+      "publishOpening": "招募創作者",
       "unassignedOnly": "僅限未分配的任務",
       "savedCount": "{count} 個已儲存任務",
       "recoverTemplates": "已儲存的範本草稿（{count}）",
@@ -11247,5 +11250,12 @@
     "publish": "招募：{role}",
     "workspace": "開啟劇組工作台",
     "invitedRole": "邀請崗位：{role}"
+  },
+  "crewOpening": {
+    "back": "返回職位廣場",
+    "unavailable": "該職位已不可用。",
+    "description": "工作說明",
+    "skills": "所需技能",
+    "deadline": "申請截止日期"
   }
 }

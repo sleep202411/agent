@@ -4594,7 +4594,10 @@
     "recruitmentVisibility": "招聘可见性",
     "recruitmentPublic": "公开",
     "recruitmentPrivate": "私密 — 仅限受邀者",
-    "createJobSalaryAmountError": "请输入 0 至 100,000,000 之间的有效报酬金额，或留空。"
+    "createJobSalaryAmountError": "请输入 0 至 100,000,000 之间的有效报酬金额，或留空。",
+    "useTaskBrief": "使用任务说明",
+    "publicBriefHelp": "发布前请确认公开工作说明，包含交付内容、要求和验收标准，最多1,000字。",
+    "publicBriefTooLong": "请将公开说明缩短至1,000字以内，完整任务说明不受影响。"
   },
   "crewAssets": {
     "title": "剧组资产中心",
@@ -5242,8 +5245,8 @@
       "pastDeadline": "请选择今天或之后的截止日期。",
       "canvasAlreadyImported": "当前场景均已有任务。新增场景或删除已导入任务后，请重新预览。",
       "emptyCanvas": "此影游尚无可导入场景。请在 Studio 中添加场景后重新预览。",
-      "publishJob": "发布职位",
-      "publishOpening": "创建后发布到 AIGC 剧组招募",
+      "publishJob": "招募创作者",
+      "publishOpening": "招募创作者",
       "unassignedOnly": "仅限未分配的任务",
       "savedCount": "{count} 个已保存任务",
       "recoverTemplates": "已保存的模板草稿（{count}）",
@@ -11247,5 +11250,12 @@
     "publish": "招募：{role}",
     "workspace": "打开剧组工作台",
     "invitedRole": "邀请岗位：{role}"
+  },
+  "crewOpening": {
+    "back": "返回职位广场",
+    "unavailable": "该职位已不可用。",
+    "description": "工作说明",
+    "skills": "所需技能",
+    "deadline": "申请截止日期"
   }
 }

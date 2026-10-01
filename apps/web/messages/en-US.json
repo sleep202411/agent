@@ -4594,7 +4594,10 @@
     "recruitmentVisibility": "Recruitment visibility",
     "recruitmentPublic": "Public",
     "recruitmentPrivate": "Private — invitation only",
-    "createJobSalaryAmountError": "Enter a valid compensation amount from 0 to 100,000,000, or leave it blank."
+    "createJobSalaryAmountError": "Enter a valid compensation amount from 0 to 100,000,000, or leave it blank.",
+    "useTaskBrief": "Use task brief",
+    "publicBriefHelp": "Review this public job description before publishing. Include the deliverables, requirements, and acceptance criteria. Maximum 1,000 characters.",
+    "publicBriefTooLong": "Shorten the public description to 1,000 characters; your full task brief is unchanged."
   },
   "crewAssets": {
     "title": "Crew Asset Center",
@@ -5242,8 +5245,8 @@
       "pastDeadline": "Choose today or a future deadline.",
       "canvasAlreadyImported": "All current scenes already have tasks. Preview again after adding scenes or deleting an imported task.",
       "emptyCanvas": "This film has no scenes to import yet. Open it in Studio, add scenes, then preview again.",
-      "publishJob": "Publish Job",
-      "publishOpening": "Publish to AIGC Crew Openings after creation",
+      "publishJob": "Recruit Creators",
+      "publishOpening": "Recruit Creators",
       "unassignedOnly": "Unassigned tasks only",
       "savedCount": "{count} saved tasks",
       "recoverTemplates": "Saved template drafts ({count})",
@@ -11247,5 +11250,12 @@
     "publish": "Recruit: {role}",
     "workspace": "Open Crew workspace",
     "invitedRole": "Invited role: {role}"
+  },
+  "crewOpening": {
+    "back": "Back to openings",
+    "unavailable": "This opening is no longer available.",
+    "description": "Job description",
+    "skills": "Required skills",
+    "deadline": "Application deadline"
   }
 }

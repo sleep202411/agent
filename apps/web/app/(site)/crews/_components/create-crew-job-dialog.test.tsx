@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   account: "alice",
   canLink: true,
   taskError: false,
+  brief: "Storyboard requirements",
   save: vi.fn(),
   create: vi.fn(),
   close: vi.fn(),
@@ -16,6 +17,11 @@ vi.mock("../_hooks/use-crew-permissions", () => ({
   useCrewPermissions: () => ({ can: () => state.canLink }),
 }));
 vi.mock("../_hooks/use-tasks", () => ({
+  useCrewTask: () => ({
+    isSuccess: true,
+    isError: state.taskError,
+    data: { id: "task-one", crewId: "crew", description: state.brief },
+  }),
   useCrewTaskOptions: () => ({
     data: [{ id: "task-one", number: 1, title: "Storyboard" }],
     isSuccess: true,
@@ -83,6 +89,7 @@ beforeEach(() => {
   state.account = "alice";
   state.canLink = true;
   state.taskError = false;
+  state.brief = "Storyboard requirements";
   container = document.createElement("div");
   root = createRoot(container);
 });
@@ -439,5 +446,38 @@ it("preselects the saved task supplied by the publishing handoff", async () => {
   expect(
     [...container.querySelectorAll("select")].some((select) => select.value === "task-one")
   ).toBe(true);
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("copies the selected task brief only when explicitly requested, without publishing", async () => {
+  await act(async () =>
+    root.render(
+      <CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" initialTaskId="task-one" />
+    )
+  );
+  expect(container.querySelector("textarea")?.value).toBe("");
+  const copy = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "useTaskBrief"
+  )!;
+  await act(async () => copy.click());
+  expect(container.querySelector("textarea")?.value).toBe("Storyboard requirements");
+  expect(copy.disabled).toBe(true);
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("preserves an oversized task brief for editing and blocks advancing the public description", async () => {
+  state.brief = "a".repeat(1001);
+  await act(async () =>
+    root.render(
+      <CreateCrewJobDialog open onOpenChange={state.close} crewId="crew" initialTaskId="task-one" />
+    )
+  );
+  await act(async () =>
+    [...container.querySelectorAll("button")]
+      .find((button) => button.textContent === "useTaskBrief")!
+      .click()
+  );
+  expect(container.querySelector("textarea")?.value).toHaveLength(1001);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("publicBriefTooLong");
   expect(state.create).not.toHaveBeenCalled();
 });
