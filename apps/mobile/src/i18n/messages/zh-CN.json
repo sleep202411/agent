@@ -3540,5 +3540,11 @@
   "aiLab.status.completed": "已完成",
   "aiLab.status.failed": "失败",
   "aiLab.status.cancelled": "已取消",
-  "aiLab.status.expired": "已过期"
+  "aiLab.status.expired": "已过期",
+  "aiLab.discardUpload": "放弃待确认上传",
+  "aiLab.confirmDiscardUpload": "停止附加此图片？其他草稿内容会保留，已上传的文件不会被删除。",
+  "aiLab.uploadImage": "上传参考图",
+  "aiLab.uploadPending": "图片已上传，待确认：",
+  "aiLab.confirmUpload": "重试图片确认",
+  "aiLab.uploadChanged": "上传期间草稿已变化，请重新打开草稿再关联图片。"
 }

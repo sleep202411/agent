@@ -3540,5 +3540,11 @@
   "aiLab.status.completed": "Completed",
   "aiLab.status.failed": "Failed",
   "aiLab.status.cancelled": "Cancelled",
-  "aiLab.status.expired": "Expired"
+  "aiLab.status.expired": "Expired",
+  "aiLab.discardUpload": "Discard pending upload",
+  "aiLab.confirmDiscardUpload": "Stop attaching this image? The rest of your draft is kept. This does not delete the uploaded file.",
+  "aiLab.uploadImage": "Upload reference image",
+  "aiLab.uploadPending": "Image uploaded; confirmation is pending:",
+  "aiLab.confirmUpload": "Retry image confirmation",
+  "aiLab.uploadChanged": "The draft changed during upload. Reopen it before attaching this image."
 }

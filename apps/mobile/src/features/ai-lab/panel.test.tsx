@@ -75,19 +75,29 @@ vi.mock("react-native", () => ({
     onChangeText,
     editable,
     accessibilityLabel,
+    multiline,
   }: {
     value: string;
     onChangeText: (s: string) => void;
     editable: boolean;
     accessibilityLabel: string;
-  }) => (
-    <input
-      value={value}
-      onChange={(e) => onChangeText(e.target.value)}
-      readOnly={!editable}
-      aria-label={accessibilityLabel}
-    />
-  ),
+    multiline?: boolean;
+  }) =>
+    multiline ? (
+      <textarea
+        value={value}
+        onChange={(e) => onChangeText(e.target.value)}
+        readOnly={!editable}
+        aria-label={accessibilityLabel}
+      />
+    ) : (
+      <input
+        value={value}
+        onChange={(e) => onChangeText(e.target.value)}
+        readOnly={!editable}
+        aria-label={accessibilityLabel}
+      />
+    ),
 }));
 
 vi.mock("@/i18n/locale-store", () => ({ getLocale: () => "en-US" }));
@@ -115,6 +125,7 @@ vi.mock("@/auth", () => ({
 }));
 vi.mock("@/features/ip-author/contributors-panel", () => ({ IpContributorsPanel: () => null }));
 
+vi.mock("@/features/ip-author/selected-media", () => ({ selectedMedia: h.selected }));
 vi.mock("expo-document-picker", () => ({ getDocumentAsync: h.pick }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -131,7 +142,13 @@ const model = {
     properties: {
       prompt: { type: "string", title: "Prompt", "x-ui": { control: "textarea" } },
       seed: { type: "integer", title: "Seed" },
-      references: { type: "array", title: "References", items: { type: "string", format: "uri" } },
+      references: {
+        type: "array",
+        title: "References",
+        maxItems: 2,
+        "x-ui": { control: "image_upload" },
+        items: { type: "string", format: "uri" },
+      },
     },
   },
 };
@@ -175,11 +192,16 @@ const button = (label: string) =>
   [...host.querySelectorAll("button")].find((b) => b.textContent === label)!;
 const click = (label: string) => act(async () => button(label).click());
 const input = (label: string) =>
-  host.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+  host.querySelector<HTMLInputElement | HTMLTextAreaElement>(`[aria-label="${label}"]`)!;
 const change = (label: string, value: string) =>
   act(async () => {
     const node = input(label);
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(node, value);
+    Object.getOwnPropertyDescriptor(
+      node instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype,
+      "value"
+    )!.set!.call(node, value);
     node.dispatchEvent(new Event("input", { bubbles: true }));
   });
 beforeEach(() => {
@@ -326,4 +348,74 @@ it("preserves the draft when a new catalog schema requires explicit reset", asyn
   await click("aiLab.reset");
   await click("aiLab.confirm");
   expect(input("Prompt").value).toBe("");
+});
+
+it("recovers uploaded reference confirmation after remount without reuploading", async () => {
+  const put = vi.fn().mockResolvedValue({ ok: true });
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file:///image.png", name: "image.png", mimeType: "image/png" }],
+  });
+  h.selected.mockResolvedValue({ size: 100, put });
+  h.post
+    .mockResolvedValueOnce({
+      uploadUrl: "https://storage.test/upload",
+      method: "PUT",
+      headers: {},
+      storageKey: "staging/image",
+    })
+    .mockRejectedValueOnce(Error("Confirmation offline"));
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Lake");
+  await change("References", "https://storage.test/existing.png");
+  await click("aiLab.uploadImage");
+  expect(host.textContent).toContain("Confirmation offline");
+  expect(host.textContent).toContain("aiLab.uploadPending");
+  expect(button("aiLab.generate").disabled).toBe(true);
+  await act(async () => root.render(null));
+  await mount();
+  h.post.mockResolvedValueOnce({
+    mediaAssetId: "22222222-2222-4222-8222-222222222222",
+    storageKey: "final/image",
+    url: "https://storage.test/final.png",
+  });
+  await click("aiLab.confirmUpload");
+  expect(h.pick).toHaveBeenCalledTimes(1);
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(input("References").value).toBe(
+    "https://storage.test/existing.png\nhttps://storage.test/final.png"
+  );
+  expect(input("Prompt").value).toBe("Lake");
+  expect(host.textContent).not.toContain("aiLab.uploadPending");
+  expect(button("aiLab.uploadImage").disabled).toBe(true);
+  expect(button("aiLab.generate").disabled).toBe(false);
+});
+it("discards an unfinished attachment only after confirmation and preserves the draft", async () => {
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file:///image.png", name: "image.png", mimeType: "image/png" }],
+  });
+  h.selected.mockResolvedValue({ size: 100, put: vi.fn().mockResolvedValue({ ok: true }) });
+  h.post
+    .mockResolvedValueOnce({
+      uploadUrl: "https://storage.test/upload",
+      method: "PUT",
+      headers: {},
+      storageKey: "staging/image",
+    })
+    .mockRejectedValueOnce(Error("Confirmation offline"));
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Lake");
+  await click("aiLab.uploadImage");
+  await click("aiLab.discardUpload");
+  await click("aiLab.back");
+  expect(host.textContent).toContain("aiLab.uploadPending");
+  await click("aiLab.discardUpload");
+  await click("aiLab.confirm");
+  expect(host.textContent).not.toContain("aiLab.uploadPending");
+  expect(input("Prompt").value).toBe("Lake");
+  expect(button("aiLab.generate").disabled).toBe(false);
+  expect(h.post).toHaveBeenCalledTimes(2);
 });

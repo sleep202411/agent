@@ -13,6 +13,12 @@ import { ConversationVideo } from "@/features/services/conversation-video";
 import { ApiRequestError } from "@/lib/api-client";
 import { canUseGeneration, loadGenerationCatalog, planRank } from "./catalog-api";
 import { prepareFormValues } from "./form-values";
+import {
+  acceptsReferenceImage,
+  confirmReferenceImage,
+  pickReferenceImage,
+  type ReferenceCheckpoint,
+} from "./reference-image";
 import { generationDraft, type GenerationDraft } from "./draft";
 import {
   generationRetryOutbox,
@@ -89,7 +95,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
     [loading, setLoading] = useState(true),
     [tab, setTab] = useState<"create" | "history">("create"),
     [confirm, setConfirm] = useState<
-      "generate" | "reset" | "clear" | "cancel" | "retry" | "clearRetry" | null
+      "generate" | "reset" | "clear" | "cancel" | "retry" | "clearRetry" | "discardUpload" | null
     >(null),
     [privateDenied, setPrivateDenied] = useState(false),
     [epoch, setEpoch] = useState(0);
@@ -223,8 +229,72 @@ function Session({ userId, generation }: { userId: string; generation: number })
       }
     );
   }
+  async function finishUpload(value: ReferenceCheckpoint) {
+    const original = store.read();
+    if (!original || original.upload?.storageKey !== value.storageKey)
+      throw new Error(t("aiLab.uploadChanged"));
+    const receipt = await confirmReferenceImage(value, generation, controller.current!.signal);
+    const latest = store.read();
+    if (
+      !latest ||
+      latest.modelId !== original.modelId ||
+      latest.schemaVersion !== original.schemaVersion ||
+      latest.upload?.storageKey !== value.storageKey
+    )
+      throw new Error(t("aiLab.uploadChanged"));
+    const current = latest.values[value.field];
+    const urls = Array.isArray(current)
+      ? current.map(String)
+      : typeof current === "string"
+        ? current
+            .split(/\r?\n/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+    const next = value.multiple ? [...new Set([...urls, receipt.url])].join("\n") : receipt.url;
+    save({
+      ...latest,
+      upload: undefined,
+      values: { ...latest.values, [value.field]: next },
+      uploadedReferences: [
+        ...(latest.uploadedReferences ?? []).filter(
+          (r) =>
+            r.field !== value.field || (value.multiple && r.mediaAssetId !== receipt.mediaAssetId)
+        ),
+        {
+          field: value.field,
+          mediaAssetId: receipt.mediaAssetId,
+          url: receipt.url,
+          fileName: value.fileName,
+        },
+      ],
+    });
+  }
+  function uploadImage(field: string, multiple: boolean) {
+    if (!draft || draft.upload) return;
+    run(async () => {
+      const checkpoint = await pickReferenceImage(
+        field,
+        multiple,
+        generation,
+        controller.current!.signal,
+        (value) => {
+          const latest = store.read();
+          if (
+            !latest ||
+            latest.modelId !== draft.modelId ||
+            latest.schemaVersion !== draft.schemaVersion
+          )
+            throw new Error(t("aiLab.uploadChanged"));
+          save({ ...latest, upload: value });
+        }
+      );
+      if (checkpoint) await finishUpload(checkpoint);
+    });
+  }
   function prepare() {
-    if (!model || !draft || !data || !preset || !usable) throw new Error(t("aiLab.unavailable"));
+    if (!model || !draft || draft.upload || !data || !preset || !usable)
+      throw new Error(t("aiLab.unavailable"));
     const values = prepareFormValues(model.input_schema, draft.values, {
       required: (label) => t("aiLab.required").replace("{label}", label),
       minLength: (label, min) =>
@@ -307,6 +377,23 @@ function Session({ userId, generation }: { userId: string; generation: number })
           <Button label={t("aiLab.clear")} disabled={op.busy} onPress={() => setConfirm("clear")} />
         </View>
       ) : null}
+      {draft?.upload ? (
+        <View style={{ gap: 8 }}>
+          <ThemedText>
+            {t("aiLab.uploadPending")} {draft.upload.fileName}
+          </ThemedText>
+          <Button
+            label={t("aiLab.confirmUpload")}
+            disabled={op.busy}
+            onPress={() => run(() => finishUpload(draft.upload!))}
+          />
+          <Button
+            label={t("aiLab.discardUpload")}
+            disabled={op.busy}
+            onPress={() => setConfirm("discardUpload")}
+          />
+        </View>
+      ) : null}
       {retryPending ? (
         <View style={{ gap: 8 }}>
           <ThemedText>{t("aiLab.retryPending")}</ThemedText>
@@ -325,7 +412,11 @@ function Session({ userId, generation }: { userId: string; generation: number })
                 key={value}
                 label={t(value === "image" ? "aiLab.image" : "aiLab.video")}
                 disabled={
-                  op.busy || !!pending || !data?.catalog.presets.some((p) => p.type === value)
+                  op.busy ||
+                  !!pending ||
+                  !!retryPending ||
+                  !!draft?.upload ||
+                  !data?.catalog.presets.some((p) => p.type === value)
                 }
                 onPress={() => {
                   const p = data?.catalog.presets.find((p) => p.type === value);
@@ -340,7 +431,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
               <Button
                 key={p.id}
                 label={`${p.id === preset?.id ? "✓ " : ""}${p.label}`}
-                disabled={op.busy || !!pending || !!retryPending}
+                disabled={op.busy || !!pending || !!retryPending || !!draft?.upload}
                 onPress={() => requestChoose(p.id)}
               />
             ))}
@@ -352,7 +443,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
               <Button
                 key={m.id}
                 label={`${m.id === model?.id ? "✓ " : ""}${m.name}`}
-                disabled={op.busy || !!pending || !!retryPending}
+                disabled={op.busy || !!pending || !!retryPending || !!draft?.upload}
                 onPress={() => requestChoose(preset!.id, m.id)}
               />
             ))}
@@ -373,7 +464,13 @@ function Session({ userId, generation }: { userId: string; generation: number })
                 const { name, field, enabled } = descriptor,
                   options = readOptions(field),
                   value = draft.values[name],
-                  disabled = op.busy || !!pending || !!retryPending || !enabled || schemaChanged;
+                  disabled =
+                    op.busy ||
+                    !!pending ||
+                    !!retryPending ||
+                    !!draft?.upload ||
+                    !enabled ||
+                    schemaChanged;
                 const update = (next: unknown) => {
                   try {
                     save({ ...draft, values: { ...draft.values, [name]: next } });
@@ -389,6 +486,23 @@ function Session({ userId, generation }: { userId: string; generation: number })
                     </ThemedText>
                     {fieldDescription(field) ? (
                       <ThemedText type="small">{fieldDescription(field)}</ThemedText>
+                    ) : null}
+                    {acceptsReferenceImage(descriptor) ? (
+                      <Button
+                        label={t("aiLab.uploadImage")}
+                        disabled={
+                          disabled ||
+                          (field.type === "array" &&
+                            typeof field.maxItems === "number" &&
+                            (Array.isArray(value)
+                              ? value
+                              : typeof value === "string"
+                                ? value.split(/\r?\n/).filter((v) => v.trim())
+                                : []
+                            ).length >= field.maxItems)
+                        }
+                        onPress={() => uploadImage(name, field.type === "array")}
+                      />
                     ) : null}
                     {options.length ? (
                       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
@@ -441,7 +555,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
           ) : null}
           <Button
             label={t("aiLab.generate")}
-            disabled={op.busy || !!pending || !!retryPending || !usable}
+            disabled={op.busy || !!pending || !!retryPending || !!draft?.upload || !usable}
             onPress={() => {
               try {
                 prepare();
@@ -454,7 +568,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
           {draft ? (
             <Button
               label={t("aiLab.reset")}
-              disabled={op.busy || !!pending || !!retryPending}
+              disabled={op.busy || !!pending || !!retryPending || !!draft?.upload}
               onPress={() => {
                 setNextChoice(undefined);
                 setConfirm("reset");
@@ -539,7 +653,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
               selected.error?.retryable ? (
                 <Button
                   label={t("aiLab.retryJob")}
-                  disabled={op.busy || !!pending || !!retryPending}
+                  disabled={op.busy || !!pending || !!retryPending || !!draft?.upload}
                   onPress={() => setConfirm("retry")}
                 />
               ) : null}
@@ -564,7 +678,9 @@ function Session({ userId, generation }: { userId: string; generation: number })
                   ? "aiLab.confirmCancel"
                   : confirm === "clear" || confirm === "clearRetry"
                     ? "aiLab.confirmClear"
-                    : "aiLab.confirmReset"
+                    : confirm === "discardUpload"
+                      ? "aiLab.confirmDiscardUpload"
+                      : "aiLab.confirmReset"
             )}
           </ThemedText>
           <Button
@@ -607,6 +723,16 @@ function Session({ userId, generation }: { userId: string; generation: number })
                   },
                   () => setEpoch((x) => x + 1)
                 );
+              } else if (confirm === "discardUpload") {
+                try {
+                  const latest = store.read();
+                  if (!latest || latest.upload?.storageKey !== draft?.upload?.storageKey)
+                    throw new Error(t("aiLab.uploadChanged"));
+                  save({ ...latest, upload: undefined });
+                  setConfirm(null);
+                } catch (e) {
+                  fail(e);
+                }
               } else if (confirm === "reset") {
                 setConfirm(null);
                 if (nextChoice) choose(nextChoice.presetId, nextChoice.modelId);
