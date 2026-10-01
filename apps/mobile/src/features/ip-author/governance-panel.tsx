@@ -21,6 +21,8 @@ import {
   type GovernanceKind,
   type GovernanceSnapshot,
 } from "./governance-api";
+import { IpProductionPanel } from "./production-panel";
+import type { ProductionKind } from "./production-api";
 type Props = { ipId: string; userId: string; generation: number };
 function Button({
   label,
@@ -58,11 +60,11 @@ export function IpGovernancePanel(props: Props) {
 function Session(props: Props) {
   const t = useTranslations(),
     theme = useTheme();
-  const [kind, setKind] = useState<GovernanceKind>("disclosures");
+  const [kind, setKind] = useState<GovernanceKind | ProductionKind>("disclosures");
   return (
     <View style={{ flex: 1 }}>
       <View style={{ flexDirection: "row", flexWrap: "wrap", paddingHorizontal: 8 }}>
-        {governanceKinds.map((item) => (
+        {([...governanceKinds, "games", "stages"] as const).map((item) => (
           <Pressable
             key={item}
             accessibilityRole="tab"
@@ -78,7 +80,11 @@ function Session(props: Props) {
           </Pressable>
         ))}
       </View>
-      <Editor key={kind} {...props} kind={kind} />
+      {kind === "games" || kind === "stages" ? (
+        <IpProductionPanel key={kind} {...props} kind={kind} />
+      ) : (
+        <Editor key={kind} {...props} kind={kind} />
+      )}
     </View>
   );
 }
