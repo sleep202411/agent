@@ -201,8 +201,19 @@ describe('applicant-owned application history', () => {
     });
     expect(f.db.crewApplication.findMany).toHaveBeenCalledWith({
       include: {
-        crew: { select: { name: true } },
-        position: { select: { positionType: true, taskId: true } },
+        crew: {
+          select: {
+            name: true,
+            ownership: { select: { member: { select: { userId: true } } } },
+          },
+        },
+        position: {
+          select: {
+            positionType: true,
+            taskId: true,
+            task: { select: { title: true, dueAt: true } },
+          },
+        },
         interviewEvents: {
           orderBy: { version: 'desc' },
           take: 1,
@@ -234,6 +245,46 @@ describe('applicant-owned application history', () => {
       where: { applicantId: 'applicant', id: 'foreign' },
       select: { id: true },
     });
+    expect(f.db.crewApplication.findMany).not.toHaveBeenCalled();
+  });
+  it('scopes the received inbox to current active ownership, including cursor validation', async () => {
+    const f = fixture();
+    f.db.crewApplication.findMany.mockResolvedValue([]);
+    f.db.crewApplication.findFirst.mockResolvedValue({ id: 'cursor' });
+    await f.service.listMine('owner', {
+      limit: 20,
+      scope: 'received',
+      cursor: 'cursor',
+    });
+    const ownership = {
+      crew: {
+        deletedAt: null,
+        ownership: {
+          member: { userId: 'owner', status: 'active', removedAt: null },
+        },
+      },
+    };
+    expect(f.db.crewApplication.findFirst).toHaveBeenCalledWith({
+      where: { ...ownership, id: 'cursor' },
+      select: { id: true },
+    });
+    expect(f.db.crewApplication.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: ownership }),
+    );
+    expect(f.db.crewApplication.count).toHaveBeenCalledWith({
+      where: ownership,
+    });
+  });
+  it('rejects another owner’s received cursor before loading private applications', async () => {
+    const f = fixture();
+    f.db.crewApplication.findFirst.mockResolvedValue(null);
+    await expect(
+      f.service.listMine('owner', {
+        limit: 20,
+        scope: 'received',
+        cursor: 'foreign',
+      }),
+    ).rejects.toMatchObject({ status: 400 });
     expect(f.db.crewApplication.findMany).not.toHaveBeenCalled();
   });
 });

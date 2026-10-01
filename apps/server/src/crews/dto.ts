@@ -349,6 +349,7 @@ export const ApplySchema = z.object({
 export type ApplyInput = z.infer<typeof ApplySchema>;
 
 export const ListCrewApplicationsQuerySchema = z.object({
+  scope: z.enum(['sent', 'received']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z
     .string()

@@ -185,16 +185,21 @@ it.each(["viewer", null])(
     const nav = container.querySelector('nav[aria-label="navigationLabel"]')!;
     expect(nav).not.toBeNull();
     expect([...nav.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
+      "/zh-CN/crews?view=positions",
+      "/zh-CN/crews/applications",
       "/zh-CN/crews?view=mine",
+      "/zh-CN/crews/tasks",
+      "/zh-CN/crews/income",
+      "/zh-CN/crews?view=crews",
+    ]);
+    expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("taskDashboardTab");
+    const dashboard = container.querySelector('nav[aria-label="taskDashboardTab"]')!;
+    expect([...dashboard.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
       "/zh-CN/crews/applications",
       "/zh-CN/crews/tasks",
       "/zh-CN/crews/feedback",
       "/zh-CN/crews/cases",
-      "/zh-CN/crews/income",
-      "/zh-CN/crews?view=crews",
-      "/zh-CN/crews?view=positions",
     ]);
-    expect(nav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
-    expect(nav.querySelector('[aria-current="page"]')?.textContent).toBe("myTasksTab");
   }
 );

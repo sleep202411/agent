@@ -149,7 +149,9 @@ it.each([
         button.getAttribute("aria-label") ?? button.textContent ?? ""
       )
     );
-  await act(async () => root.render(<TaskProjectView {...props} canManage={false} />));
+  await act(async () =>
+    root.render(<TaskProjectView {...props} canManage={false} canCreate={false} />)
+  );
   expect(managementButtons()).toHaveLength(0);
   if (empty) expect(el.textContent).toContain("noIssues");
   else {
@@ -160,10 +162,12 @@ it.each([
     await act(async () => taskButton!.click());
     expect(props.onOpenTask).toHaveBeenCalledWith("task");
   }
-  await act(async () => root.render(<TaskProjectView {...props} canManage />));
+  await act(async () => root.render(<TaskProjectView {...props} canManage canCreate />));
   expect(managementButtons().length).toBeGreaterThan(0);
   await act(async () => managementButtons()[0]!.click());
   expect(layout === "board" ? props.onEditWorkflowState : props.onCreateTask).toHaveBeenCalled();
-  await act(async () => root.render(<TaskProjectView {...props} canManage={false} />));
+  await act(async () =>
+    root.render(<TaskProjectView {...props} canManage={false} canCreate={false} />)
+  );
   expect(managementButtons()).toHaveLength(0);
 });

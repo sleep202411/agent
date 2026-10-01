@@ -8,6 +8,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconArrowsDiagonal,
   IconCalendar,
+  IconCoin,
+  IconPercentage,
   IconCheck,
   IconChevronRight,
   IconCircle,
@@ -59,6 +61,7 @@ interface TaskQuickCreateProps {
   presetTaskKind?: CrewTaskKind | null;
   parentId?: string | null;
   onCreated?: (task: CrewTaskDTO) => void;
+  onPublishTask?: (taskId: string) => void;
   onStage?: (input: CreateCrewTaskInput) => void;
   keyboardShortcut?: boolean;
   initialInput?: CreateCrewTaskInput;
@@ -77,6 +80,7 @@ export function TaskQuickCreate({
   presetTaskKind,
   parentId,
   onCreated,
+  onPublishTask,
   onStage,
   keyboardShortcut = true,
   initialInput,
@@ -115,6 +119,7 @@ export function TaskQuickCreate({
   const [estimatePoints, setEstimatePoints] = useState(
     initialInput?.estimatePoints?.toString() ?? ""
   );
+  const [publishOpening, setPublishOpening] = useState(false);
   const [rewardUsd, setRewardUsd] = useState(
     initialInput?.rewardUsdMinor == null ? "" : String(initialInput.rewardUsdMinor / 100)
   );
@@ -129,6 +134,7 @@ export function TaskQuickCreate({
   const [context, setContext] = useState({ open, crewId, parentId });
   if (context.open !== open || context.crewId !== crewId || context.parentId !== parentId) {
     setContext({ open, crewId, parentId });
+    setPublishOpening(false);
     setTitle(initialInput?.title ?? "");
     setDescription(initialInput?.description ?? "");
     setPriority(initialInput?.priority ?? "normal");
@@ -285,6 +291,10 @@ export function TaskQuickCreate({
       return;
     }
     if (!resolvedWorkflowStateId) return;
+    if (dueDate && new Date(`${dueDate}T23:59:59.999`).getTime() < Date.now()) {
+      toast.error(projectT("workbench.pastDeadline"));
+      return;
+    }
     if (
       estimatePoints !== "" &&
       (!Number.isInteger(Number(estimatePoints)) ||
@@ -345,6 +355,11 @@ export function TaskQuickCreate({
       if (session.current !== requestedSession) return;
       toast.success(t("created"));
       onCreated?.(task);
+      if (publishOpening && !assigneeUserId) {
+        setOpen(false);
+        onPublishTask?.(task.id);
+        return;
+      }
       if (createMore) {
         reset();
         requestAnimationFrame(() => titleRef.current?.focus());
@@ -410,6 +425,18 @@ export function TaskQuickCreate({
           </div>
         </div>
 
+        {onPublishTask && !onStage ? (
+          <label className="mx-[18px] mb-3 flex items-center justify-end gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={publishOpening && !assigneeUserId}
+              disabled={Boolean(assigneeUserId)}
+              onChange={(event) => setPublishOpening(event.target.checked)}
+            />
+            {projectT("workbench.publishOpening")}
+            {assigneeUserId ? <span>{projectT("workbench.unassignedOnly")}</span> : null}
+          </label>
+        ) : null}
         <div className="min-w-0 px-[18px] pt-[8.5px]">
           <textarea
             ref={titleRef}
@@ -586,6 +613,11 @@ export function TaskQuickCreate({
                   key={field.key}
                   className="inline-flex h-7 items-center gap-1.5 rounded-full bg-[#252529] px-2 text-xs text-[#a4a4ac]"
                 >
+                  {field.key === "rewardUsd" ? (
+                    <IconCoin className="size-3.5" />
+                  ) : (
+                    <IconPercentage className="size-3.5" />
+                  )}
                   {projectT(`workbench.${field.key}`)}
                   <input
                     type="number"
@@ -771,6 +803,7 @@ function DateChip({ value, onChange }: { value: string; onChange: (value: string
       <PopoverContent className="w-auto border-white/15 bg-[#151618] p-2" align="end">
         <Calendar
           mode="single"
+          disabled={{ before: new Date(new Date().setHours(0, 0, 0, 0)) }}
           locale={locale === "zh-CN" ? zhCN : locale === "zh-HK" ? zhHK : enUS}
           selected={date}
           onSelect={(next) => {

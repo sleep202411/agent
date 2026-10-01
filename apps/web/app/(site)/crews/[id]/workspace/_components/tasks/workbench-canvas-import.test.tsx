@@ -113,3 +113,28 @@ it("stages the versioned scene batch without submitting it", async () => {
     })
   );
 });
+
+it("loads a selected film immediately and explains an empty canvas", async () => {
+  state.get
+    .mockResolvedValueOnce({ studioWorkspace: { id: "workspace" } })
+    .mockResolvedValueOnce({
+      code: 200,
+      data: { items: [{ id, title: "Beautiful" }], nextCursor: null },
+    })
+    .mockResolvedValueOnce({
+      projectId: id,
+      title: "Beautiful",
+      sourceRevision: 1,
+      sourceHash: "hash",
+      plotTree: { nodes: [] },
+    });
+  await act(async () => button("chooseFilm").click());
+  await act(async () => button("Beautiful").click());
+  expect(state.get).toHaveBeenLastCalledWith(
+    `/crews/crew/canvas-task-import/story-projects/${id}/preview`,
+    { cache: "no-store" }
+  );
+  expect(host.textContent).toContain("emptyCanvas");
+  expect(button("confirmImport").disabled).toBe(true);
+  expect(state.post).not.toHaveBeenCalled();
+});

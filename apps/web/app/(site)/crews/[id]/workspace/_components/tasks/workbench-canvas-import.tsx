@@ -63,9 +63,9 @@ function CanvasImportSession({
   }, []);
   const path = (id: string) =>
     `/crews/${encodeURIComponent(crewId)}/canvas-task-import/story-projects/${encodeURIComponent(id)}`;
-  async function load() {
+  async function load(selectedLink = link) {
     if (lock.current || uncertain || done) return;
-    const id = canvasImportProjectId(link, getStudioHref(locale));
+    const id = canvasImportProjectId(selectedLink, getStudioHref(locale));
     if (!id) {
       setError(t("invalidCanvasLink"));
       return;
@@ -139,6 +139,7 @@ function CanvasImportSession({
           setLink(url);
           setPreview(null);
           setError(null);
+          void load(url);
         }}
       />
       <form
@@ -149,7 +150,7 @@ function CanvasImportSession({
         }}
       >
         <Input
-          className="w-full min-w-0 bg-[#090a0c]"
+          className="w-full min-w-0"
           aria-label={t("canvasLink")}
           placeholder={t("canvasLink")}
           value={link}
@@ -165,6 +166,11 @@ function CanvasImportSession({
           {t("previewImport")}
         </Button>
       </form>
+      {busy ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          {t("loading")}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="text-xs text-destructive">
           {error}
@@ -173,6 +179,11 @@ function CanvasImportSession({
       {preview ? (
         <div className="space-y-2">
           <p className="break-words text-sm font-medium">{preview.title}</p>
+          {!scenes.length ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              {t("emptyCanvas")}
+            </p>
+          ) : null}
           <ul className="max-h-48 overflow-auto text-xs text-muted-foreground">
             {scenes.map((node) => (
               <li key={node.id} className="py-1">

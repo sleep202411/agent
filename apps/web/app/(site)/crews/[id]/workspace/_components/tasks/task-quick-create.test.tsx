@@ -143,6 +143,7 @@ function renderQuickCreate(
     activeView?: CrewTaskViewDTO;
     presetEpisodeId?: string;
     onStage?: (input: CreateCrewTaskInput) => void;
+    onPublishTask?: (taskId: string) => void;
   } = {}
 ) {
   if (!root) {
@@ -670,7 +671,7 @@ describe("TaskQuickCreate", () => {
       })
     );
   });
-  it.each(["", "2026-09-25"])("respects the user changing a deadline to %s", async (date) => {
+  it.each(["", "2099-09-25"])("respects the user changing a deadline to %s", async (date) => {
     renderQuickCreate();
     const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
     act(() => fill(input, "Prepare storyboard"));
@@ -828,3 +829,39 @@ it.each(["-1", "100.01", "0.001"])(
     expect(state.create).not.toHaveBeenCalled();
   }
 );
+
+it("rejects an expired deadline restored from a saved draft", async () => {
+  const stage = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, {
+    onStage: stage,
+    initialInput: {
+      title: "Expired task",
+      description: "Brief",
+      priority: "normal",
+      assignees: [],
+      dueAt: "2000-01-01T23:59:59.000Z",
+    } as CreateCrewTaskInput,
+  });
+  await act(async () => click(exactButton("Save Changes")));
+  expect(stage).not.toHaveBeenCalled();
+  expect(state.create).not.toHaveBeenCalled();
+});
+
+it("hands a newly saved task to the publishing form when requested", async () => {
+  const publish = vi.fn();
+  renderQuickCreate(vi.fn(), vi.fn(), project, { onPublishTask: publish });
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      "Open role"
+    )
+  );
+  act(() => document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+  expect(publish).not.toHaveBeenCalled();
+  await act(async () => {
+    click(exactButton("Create"));
+    await Promise.resolve();
+  });
+  expect(state.create).toHaveBeenCalledTimes(1);
+  expect(publish).toHaveBeenCalledWith("task-created");
+});

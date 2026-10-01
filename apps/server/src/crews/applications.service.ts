@@ -133,7 +133,16 @@ export class ApplicationsService {
   /** Applicant-owned history remains accessible after rejection or leaving a Crew. */
   async listMine(userId: string, query: ListCrewApplicationsQuery) {
     const where: Prisma.CrewApplicationWhereInput = {
-      applicantId: userId,
+      ...(query.scope === 'received'
+        ? {
+            crew: {
+              deletedAt: null,
+              ownership: {
+                member: { userId, status: 'active', removedAt: null },
+              },
+            },
+          }
+        : { applicantId: userId }),
       ...(query.positionId ? { positionId: query.positionId } : {}),
       ...(query.status ? { status: query.status } : {}),
     };
@@ -152,8 +161,19 @@ export class ApplicationsService {
         where,
         include: {
           ...INTERVIEW_PROGRESS,
-          crew: { select: { name: true } },
-          position: { select: { positionType: true, taskId: true } },
+          crew: {
+            select: {
+              name: true,
+              ownership: { select: { member: { select: { userId: true } } } },
+            },
+          },
+          position: {
+            select: {
+              positionType: true,
+              taskId: true,
+              task: { select: { title: true, dueAt: true } },
+            },
+          },
         },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         take: query.limit + 1,
@@ -168,6 +188,9 @@ export class ApplicationsService {
         crewName: row.crew.name,
         positionType: row.position.positionType,
         taskId: row.position.taskId,
+        ownerUserId: row.crew.ownership?.member.userId ?? null,
+        taskTitle: row.position.task?.title ?? null,
+        dueAt: row.position.task?.dueAt?.toISOString() ?? null,
       })),
       total,
       nextCursor: rows.length > query.limit ? page.at(-1)!.id : null,

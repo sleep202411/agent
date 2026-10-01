@@ -64,7 +64,7 @@ async function flush() {
     await new Promise((resolve) => setTimeout(resolve, 30));
   });
 }
-async function render(reviewer = false) {
+async function render(reviewer = false, conversation = false) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={qc}>
@@ -72,6 +72,7 @@ async function render(reviewer = false) {
           applicationId="app"
           applicantId="applicant"
           reviewer={reviewer}
+          conversation={conversation}
           onReady={h.ready}
           onUpdated={h.updated}
         />
@@ -254,4 +255,38 @@ it("guards duplicate submits and ignores late completion after switching account
   expect(h.get).toHaveBeenCalledTimes(reads);
   expect(h.updated).not.toHaveBeenCalled();
   expect(host.textContent).not.toContain("Private interview plan");
+});
+
+it("renders chronological conversation bubbles and sends a versioned message", async () => {
+  h.get.mockResolvedValue({
+    ...page,
+    items: [
+      ...page.items,
+      {
+        ...page.items[0],
+        id: "earlier",
+        version: 1,
+        action: "message",
+        actorUserId: "applicant",
+        message: "Earlier question",
+      },
+    ],
+  });
+  await render(false, true);
+  const entries = [...host.querySelectorAll("li")];
+  expect(entries[0].textContent).toContain("Earlier question");
+  expect(entries[1].textContent).toContain("Private interview plan");
+  expect(entries[0].className).toContain("ml-auto");
+  await field("textarea", "Can we discuss the delivery scope?");
+  await click("send");
+  expect(h.post).toHaveBeenCalledWith(
+    "/applications/app/interview",
+    expect.objectContaining({
+      body: expect.objectContaining({
+        action: "message",
+        expectedVersion: 2,
+        message: "Can we discuss the delivery scope?",
+      }),
+    })
+  );
 });

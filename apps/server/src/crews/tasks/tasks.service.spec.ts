@@ -388,6 +388,22 @@ function build() {
 }
 
 describe('CrewTasksService', () => {
+  it('rejects past deadlines before creating a task', async () => {
+    const t = build();
+    await expect(
+      t.service.create(CREW_ID, OWNER_ID, {
+        blockedByTaskIds: [],
+        customFieldValues: [],
+        labelIds: [],
+        title: 'Past deadline',
+        description: '',
+        priority: 'normal',
+        assignees: [],
+        dueAt: '2000-01-01T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('Choose today or a future deadline.');
+    expect(t.prisma.$transaction).not.toHaveBeenCalled();
+  });
   it.each([
     [{ rewardUsdMinor: 0 }, { rewardUsdMinor: 0, profitShareBps: 250 }],
     [{ profitShareBps: null }, { rewardUsdMinor: 3000, profitShareBps: null }],

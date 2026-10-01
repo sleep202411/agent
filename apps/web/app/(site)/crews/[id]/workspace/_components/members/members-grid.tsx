@@ -397,7 +397,7 @@ function MembersGridSession({
   );
 }
 
-function MemberDecision({
+export function MemberDecision({
   crewId,
   kind,
   id,

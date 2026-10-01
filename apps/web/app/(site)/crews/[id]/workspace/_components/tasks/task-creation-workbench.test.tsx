@@ -48,6 +48,11 @@ const state = vi.hoisted(() => ({
     parentId: null;
     status: "approved" | "open";
     assetCategory: string;
+    title?: string;
+    description?: string;
+    priority?: string;
+    taskKind?: string;
+    assignees?: { userId: string }[];
   }>,
   taskLoading: false,
   taskMore: false,
@@ -111,38 +116,50 @@ vi.mock("./task-quick-create", () => ({
   TaskQuickCreate: ({
     open,
     onStage,
+    onCreated,
+    onOpenChange,
     presetEpisodeId,
     presetTaskKind,
     initialInput,
   }: {
     open: boolean;
     initialInput?: { title: string };
-    onStage: (input: unknown) => void;
+    onStage?: (input: unknown) => void;
+    onCreated?: () => void;
+    onOpenChange: (open: boolean) => void;
     presetEpisodeId: string | null;
     presetTaskKind?: string;
   }) =>
     open ? (
       <button
-        onClick={() => {
+        onClick={async () => {
           state.episodeId = presetEpisodeId;
-          onStage({
+          const input = {
             title: initialInput ? "Revised Script" : "Storyboard",
             taskKind: presetTaskKind ?? "script",
             description: "Brief",
             priority: "normal",
             assignees: [],
             episodeId: presetEpisodeId,
-          });
+          };
+          if (onStage) onStage(input);
+          else {
+            await state.create(input);
+            onCreated?.();
+            onOpenChange(false);
+          }
         }}
       >
-        {initialInput ? "Save Draft" : "Stage Draft"}
+        {initialInput ? "Save Draft" : "Save Task"}
       </button>
     ) : null,
 }));
+let publishCallback: ((id: string) => void) | undefined;
 let root: Root;
 let host: HTMLDivElement;
 const project = { views: [{ filters: {} }] } as CrewTaskProjectDTO;
 beforeEach(() => {
+  publishCallback = undefined;
   window.localStorage.clear();
   state.userId = "user";
   state.assetQuery.mockClear();
@@ -151,7 +168,16 @@ beforeEach(() => {
   root = createRoot(host);
   state.invalidate.mockReset().mockResolvedValue(undefined);
   state.post.mockReset().mockResolvedValue({ taskIds: ["one", "two"] });
-  state.create.mockReset().mockResolvedValue({ id: "created" });
+  state.create.mockReset().mockImplementation(async (input) => {
+    state.tasks.push({
+      ...input,
+      id: "created",
+      parentId: null,
+      status: "open",
+      assetCategory: "scripts",
+    });
+    return { id: "created" };
+  });
   state.refresh.mockReset();
   state.tasks = [];
 });
@@ -159,7 +185,13 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
 });
-async function render(canManage = true, active = true, crewId = "crew") {
+async function render(
+  canManage = true,
+  active = true,
+  crewId = "crew",
+  onPublishTask?: (id: string) => void
+) {
+  if (onPublishTask) publishCallback = onPublishTask;
   await act(async () =>
     root.render(
       <TaskCreationWorkbench
@@ -168,22 +200,42 @@ async function render(canManage = true, active = true, crewId = "crew") {
         project={project}
         members={[]}
         canManage={canManage}
+        canSubmitAssigned
         canManageEpisodes={canManage}
         active={active}
+        onPublishTask={publishCallback}
         onSelectTask={() => undefined}
       />
     )
   );
 }
 function button(label: string) {
-  return [...host.querySelectorAll("button")].find((b) => b.textContent === label)!;
+  return [...host.querySelectorAll("button")].find(
+    (b) => b.textContent === label || b.getAttribute("aria-label") === label
+  )!;
 }
 async function click(label: string) {
   await act(async () => button(label).click());
 }
 async function stage() {
-  await click("Create Task");
-  await click("Stage Draft");
+  // Recover an existing browser draft; new tasks now save directly.
+  const key = `fizz:workbench:v1:${state.userId}:crew`;
+  const snapshot = JSON.parse(
+    window.localStorage.getItem(key) ?? '{"version":1,"drafts":[],"batches":[]}'
+  );
+  snapshot.drafts.push({
+    id: snapshot.drafts.length + 1,
+    state: "staged",
+    input: {
+      title: "Storyboard",
+      description: "Brief",
+      taskKind: "script",
+      priority: "normal",
+      assignees: [],
+    },
+  });
+  window.localStorage.setItem(key, JSON.stringify(snapshot));
+  await remount();
 }
 it("stages without posting and submits once despite rapid confirmation clicks", async () => {
   await render();
@@ -243,7 +295,7 @@ it("removes a draft before confirmation", async () => {
 
 it("opens the selected episode template without creating tasks", async () => {
   await render();
-  await click("Choose Episode");
+  await click("Production Episodes");
   await click("Preview Tasks");
   expect(host.querySelector('[data-testid="episode-preview"]')?.textContent).toBe("ep");
   expect(state.create).not.toHaveBeenCalled();
@@ -274,9 +326,9 @@ it("keeps existing task tables out of creation and anchors confirmation in the f
   expect(host.querySelector("footer")).toBeNull();
   await stage();
   expect(host.querySelector("footer")?.textContent).toContain("Create All Tasks");
-  expect(button("Choose Episode").getAttribute("aria-expanded")).toBe("false");
-  await click("Choose Episode");
-  expect(button("Choose Episode").getAttribute("aria-expanded")).toBe("true");
+  expect(button("Choose Episode")).toBeUndefined();
+  await click("Production Episodes");
+  expect(host.querySelector("[role=dialog]")).not.toBeNull();
 });
 it("discards only staged drafts without sending a create request", async () => {
   await render();
@@ -290,7 +342,7 @@ it("stages batches without writing and retries the exact reviewed command", asyn
   await render();
   await click("Production");
   await click("Stage Canvas");
-  expect(host.textContent).toContain("Scene One");
+  expect(host.textContent).toContain("Canvas Batch");
   expect(state.post).not.toHaveBeenCalled();
   state.post.mockRejectedValueOnce(new Error("Connection lost"));
   await click("Create All Tasks");
@@ -356,7 +408,7 @@ it("starts with zero saved counts and opens episode selection immediately", asyn
       (node) => node.textContent === "0/0"
     )
   ).toBe(true);
-  await click("Choose Episode");
+  await click("Production Episodes");
   expect(host.querySelector('[role="dialog"]')?.textContent).toContain("Pilot");
   expect(button("Stage Standard Tasks")).toBeUndefined();
 });
@@ -441,7 +493,7 @@ it("restores a reviewed batch without altering its idempotent command", async ()
   state.post.mockRejectedValueOnce(new Error("Connection lost"));
   await click("Create All Tasks");
   await remount();
-  expect(host.textContent).toContain("Scene One");
+  expect(host.textContent).toContain("Canvas Batch");
   await click("Create All Tasks");
   expect(state.post.mock.calls[1]).toEqual(state.post.mock.calls[0]);
 });
@@ -456,13 +508,15 @@ it("isolates drafts by Crew and retains them when switching back", async () => {
 });
 it("keeps the draft and does not send an unrecorded create when browser storage fails", async () => {
   await render();
+  await stage();
   const storage = vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
     throw new Error("Quota exceeded");
   });
   try {
-    await stage();
+    await click("Storyboard");
+    await click("Save Draft");
     expect(host.textContent).toContain("Drafts could not be saved");
-    expect(host.textContent).toContain("Storyboard");
+    expect(host.textContent).toContain("Revised Script");
     await click("Create All Tasks");
     expect(state.create).not.toHaveBeenCalled();
   } finally {
@@ -473,7 +527,6 @@ it("does not overwrite unreadable saved drafts with an empty or new session", as
   const key = "fizz:workbench:v1:user:crew";
   window.localStorage.setItem(key, "broken JSON");
   await render();
-  await stage();
   expect(host.textContent).toContain("Drafts could not be saved");
   expect(window.localStorage.getItem(key)).toBe("broken JSON");
 });
@@ -489,7 +542,7 @@ it("lets users dismiss a checked uncertain notice without retrying or deleting a
   expect(host.textContent).not.toContain("Check Creation Result");
 });
 
-it("shows deadline, assignee avatar and unset reward without an extra edit icon", async () => {
+it("shows deadline and named assignee without staging or reward clutter", async () => {
   window.localStorage.setItem(
     "fizz:workbench:v1:user:crew",
     JSON.stringify({
@@ -513,7 +566,9 @@ it("shows deadline, assignee avatar and unset reward without an extra edit icon"
   );
   await render();
   expect(host.textContent).toContain("2026-10-03");
-  expect(host.textContent).toContain("Reward not set");
+  expect(host.textContent).not.toContain("Reward not set");
+  expect(host.textContent).toContain("assigned-user");
+  expect(host.textContent).not.toMatch(/\bStaged\b/);
   expect(
     host.querySelector('[role="img"][aria-label="assigned-user"]')?.getAttribute("data-src")
   ).toBe("https://example.com/avatar.png");
@@ -526,7 +581,7 @@ it("shows deadline, assignee avatar and unset reward without an extra edit icon"
   expect(button("Save Draft")).toBeDefined();
 });
 
-it("opens a category-specific task without writing to the server", async () => {
+it("saves category-specific tasks directly to the server", async () => {
   await act(async () =>
     root.render(
       <TaskCreationWorkbench
@@ -545,11 +600,135 @@ it("opens a category-specific task without writing to the server", async () => {
   expect(add).not.toBeNull();
   await act(async () => add!.click());
   await act(async () =>
-    [...host.querySelectorAll("button")].find((b) => b.textContent === "Stage Draft")!.click()
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "Save Task")!.click()
   );
-  expect(state.create).not.toHaveBeenCalled();
+  expect(state.create).toHaveBeenCalledWith(expect.objectContaining({ taskKind: "music" }));
   const music = [...host.querySelectorAll("details")]
     .filter((d) => d.querySelector("summary")?.textContent?.includes("Music"))
     .at(-1);
-  expect(music?.textContent).toContain("Storyboard");
+  expect(music).toBeDefined();
+});
+
+it("formats long deadlines in weeks, days and hours", async () => {
+  const now = Date.now();
+  const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+  try {
+    window.localStorage.setItem(
+      "fizz:workbench:v1:user:crew",
+      JSON.stringify({
+        version: 1,
+        batches: [],
+        drafts: [
+          {
+            id: 1,
+            state: "staged",
+            input: {
+              title: "Future task",
+              description: "",
+              priority: "normal",
+              assignees: [],
+              dueAt: new Date(now + 219 * 3600000).toISOString(),
+            },
+          },
+        ],
+      })
+    );
+    await render();
+    expect(host.textContent).toContain("1 wks 2 days 3 h remaining");
+    expect(host.textContent).not.toContain("219h");
+  } finally {
+    clock.mockRestore();
+  }
+});
+
+it("hands a created unassigned task to the recruitment form without publishing automatically", async () => {
+  const publish = vi.fn();
+  await render(true, true, "crew", publish);
+  await stage();
+  expect(button("Publish Job")).toBeUndefined();
+  await click("Create All Tasks");
+  expect(publish).not.toHaveBeenCalled();
+  await click("Publish Job");
+  expect(publish).toHaveBeenCalledWith("created");
+});
+
+it("counts saved tasks and keeps template previews out of task categories", async () => {
+  window.localStorage.setItem(
+    "fizz:workbench:v1:user:crew",
+    JSON.stringify({
+      version: 1,
+      drafts: [],
+      batches: [
+        {
+          key: "canvas:project",
+          title: "Old template preview",
+          path: "/crews/crew/canvas-task-import/story-projects/project/apply",
+          body: { sourceRevision: 3, sourceHash: "hash" },
+          items: [{ title: "Template item", assetCategory: "scripts" }],
+        },
+      ],
+    })
+  );
+  await render();
+  const scripts = () =>
+    [...host.querySelectorAll("details")]
+      .filter((d) => d.querySelector("summary")?.textContent?.includes("Scripts"))
+      .at(-1)!;
+  expect(scripts().querySelector("summary")?.textContent).toMatch(/0$/);
+  expect(scripts().textContent).not.toContain("Template item");
+  expect(host.textContent).toContain("Saved template drafts (1)");
+  state.tasks = [{ id: "saved", parentId: null, status: "open", assetCategory: "scripts" }];
+  await render();
+  expect(scripts().querySelector("summary")?.textContent).toMatch(/1$/);
+});
+
+it("does not resurrect a deleted server task from an old confirmed browser draft", async () => {
+  window.localStorage.setItem(
+    "fizz:workbench:v1:user:crew",
+    JSON.stringify({
+      version: 1,
+      batches: [],
+      drafts: [
+        {
+          id: 1,
+          state: "created",
+          taskId: "deleted-task",
+          input: {
+            title: "Deleted task",
+            description: "",
+            priority: "normal",
+            taskKind: "script",
+            assignees: [],
+          },
+        },
+      ],
+    })
+  );
+  await render();
+  expect(host.textContent).not.toContain("Deleted task");
+  expect(host.textContent).toContain("0 saved tasks");
+});
+
+it("lets an assigned non-manager find a saved task for delivery without creation controls", async () => {
+  state.tasks = [
+    {
+      id: "assigned",
+      title: "Assigned delivery",
+      description: "",
+      parentId: null,
+      priority: "normal",
+      taskKind: "script",
+      status: "open",
+      assetCategory: "scripts",
+      assignees: [{ userId: "user" }],
+    },
+  ];
+  await render(false);
+  expect(host.textContent).toContain("Assigned delivery");
+  expect(host.textContent).toContain("Open task & submit delivery");
+  expect(
+    [...host.querySelectorAll("button")].some((button) =>
+      button.getAttribute("aria-label")?.startsWith("Create Task")
+    )
+  ).toBe(false);
 });

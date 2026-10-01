@@ -39,6 +39,7 @@ interface Props {
   applicationId: string;
   applicantId: string;
   reviewer?: boolean;
+  conversation?: boolean;
   onReady?: (ready: boolean) => void;
   onUpdated?: () => void;
 }
@@ -56,16 +57,19 @@ function InterviewSession({
   applicationId,
   applicantId,
   reviewer,
+  conversation = false,
   userId,
   onReady,
   onUpdated,
 }: Props & { userId: string }) {
   const t = useTranslations("crewInterview");
+  const c = useTranslations("crewCommunications");
   const locale = useLocale();
   const query = useInfiniteQuery({
     queryKey: ["crew-application-interview", applicationId, userId],
     enabled: Boolean(userId),
     retry: false,
+    refetchInterval: conversation ? 15000 : false,
     initialPageParam: undefined as number | undefined,
     queryFn: ({ pageParam, signal }) =>
       crewApi.get<InterviewPage>(`/applications/${encodeURIComponent(applicationId)}/interview`, {
@@ -160,13 +164,17 @@ function InterviewSession({
     }
   }
   return (
-    <section className="space-y-3 px-4 py-3" aria-label={t("title")}>
-      <h3 className="text-sm font-semibold">{t("title")}</h3>
+    <section
+      className={conversation ? "flex flex-col gap-3 px-6 py-4" : "space-y-3 px-4 py-3"}
+      aria-label={conversation ? c("conversation") : t("title")}
+    >
+      <h3 className="text-sm font-semibold">{conversation ? c("conversation") : t("title")}</h3>
       {query.isPending && <p>{t("loading")}</p>}
       {query.isError && <p role="alert">{query.error.message}</p>}
       <Button
         type="button"
-        variant="outline"
+        variant={conversation ? "ghost" : "outline"}
+        className={conversation ? "self-start" : undefined}
         disabled={busy || query.isFetching}
         onClick={() => void query.refetch()}
       >
@@ -175,9 +183,12 @@ function InterviewSession({
       {error && <p role="alert">{error}</p>}
       {readable && current && (
         <>
-          <p>
-            {t(current.state)} · {t("version", { version: current.version })}
-          </p>
+          {!conversation || current.state !== "not_started" ? (
+            <p className={conversation ? "text-xs text-muted-foreground" : undefined}>
+              {t(current.state)}
+              {!conversation ? <> · {t("version", { version: current.version })}</> : null}
+            </p>
+          ) : null}
           {current.scheduledAt && <p>{formatTime(current.scheduledAt)}</p>}
           {!current.canUpdate && <p>{t("readOnly")}</p>}
           {retry && (
@@ -189,7 +200,14 @@ function InterviewSession({
             </div>
           )}
           {editable && (
-            <fieldset disabled={busy || Boolean(retry)} className="space-y-3">
+            <fieldset
+              disabled={busy || Boolean(retry)}
+              className={
+                conversation
+                  ? "order-last space-y-3 rounded-xl border border-white/10 bg-white/[0.025] p-4"
+                  : "space-y-3"
+              }
+            >
               <label className="block text-sm">
                 {t("messageLabel")}
                 <Textarea
@@ -202,7 +220,7 @@ function InterviewSession({
                 />
               </label>
               <p className="text-xs text-muted-foreground">{t("sharedNote")}</p>
-              {!applicant && reviewer && (
+              {!conversation && !applicant && reviewer && (
                 <label className="block text-sm">
                   {t("timeLabel", { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })}
                   <Input
@@ -216,7 +234,7 @@ function InterviewSession({
                 </label>
               )}
               <div className="flex flex-wrap gap-2">
-                {!applicant && reviewer && (
+                {!conversation && !applicant && reviewer && (
                   <Button type="button" onClick={() => void write("schedule")}>
                     {t("schedule")}
                   </Button>
@@ -237,7 +255,7 @@ function InterviewSession({
                   </Button>
                 )}
                 <Button type="button" variant="outline" onClick={() => void write("message")}>
-                  {t("message")}
+                  {conversation ? c("send") : t("message")}
                 </Button>
                 <Button type="button" variant="outline" onClick={discard}>
                   {t("discard")}
@@ -248,15 +266,23 @@ function InterviewSession({
           <ol className="space-y-3 text-sm">
             {query.data.pages
               .flatMap((page) => page.items)
+              .sort((a, b) => (conversation ? a.version - b.version : b.version - a.version))
               .map((event) => (
-                <li key={event.id}>
+                <li
+                  key={event.id}
+                  className={
+                    conversation
+                      ? `max-w-[90%] rounded-xl border border-white/10 p-3 ${event.actorUserId === userId ? "ml-auto bg-primary/10" : "mr-auto bg-white/5"}`
+                      : undefined
+                  }
+                >
                   <p>
-                    {t(event.action)} ·{" "}
+                    {!conversation || event.action !== "message" ? <>{t(event.action)} · </> : null}
                     {t(event.actorUserId === applicantId ? "applicant" : "reviewer")} ·{" "}
                     {formatTime(event.createdAt)}
                   </p>
                   {event.scheduledAt && <p>{formatTime(event.scheduledAt)}</p>}
-                  <p className="whitespace-pre-wrap">{event.message}</p>
+                  <p className="mt-2 whitespace-pre-wrap break-words">{event.message}</p>
                 </li>
               ))}
           </ol>

@@ -2005,6 +2005,9 @@ export class CrewTasksService {
 
   async create(crewId: string, userId: string, input: CreateCrewTaskInput) {
     await this.authorization.require(crewId, userId, 'tasks.manage');
+    if (input.dueAt && new Date(input.dueAt).getTime() < Date.now()) {
+      throw new BadRequestException('Choose today or a future deadline.');
+    }
     const uniqueAssigneeIds = [
       ...new Set(input.assignees.map((a) => a.userId)),
     ];

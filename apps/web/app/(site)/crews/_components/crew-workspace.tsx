@@ -171,9 +171,9 @@ export function CrewWorkspace({
   const [addMemberOpen, setAddMemberOpen] = useState(false);
   const [communityInviteOpen, setCommunityInviteOpen] = useState(false);
   const [publishJobOpen, setPublishJobOpen] = useState(false);
+  const [publishTaskId, setPublishTaskId] = useState<string>();
   const [editOpen, setEditOpen] = useState(false);
-  // Member-remove confirmation state moved into MembersGrid — the only
-  // surface that triggers a remove.
+  // Member removal uses the shared confirmation in the member grid and chat.
   // Position expand / freeze state is owned by PositionsGrid +
   // PositionDetailSheet — workspace no longer manages it here.
 
@@ -392,12 +392,13 @@ export function CrewWorkspace({
                 {!requestedCommunityChannel ? (
                   <CrewChatMembers
                     key={id}
+                    crewId={id}
+                    canRemove={viewer.can("members.manage")}
                     members={members}
                     crewName={crewDetail.name}
                     onInvite={
                       viewer.can("members.invite") ? () => setAddMemberOpen(true) : undefined
                     }
-                    onManage={() => selectTab("members")}
                   />
                 ) : null}
               </div>
@@ -422,7 +423,10 @@ export function CrewWorkspace({
                 crewId={id}
                 positions={positions}
                 isOwner={viewer.can("openings.manage")}
-                onPublish={() => setPublishJobOpen(true)}
+                onPublish={() => {
+                  setPublishTaskId(undefined);
+                  setPublishJobOpen(true);
+                }}
               />
             ) : null}
 
@@ -465,6 +469,15 @@ export function CrewWorkspace({
                 crewVersion={crewDetail.version}
                 members={members}
                 isOwner={viewer.can("tasks.manage")}
+                canCreate={viewer.can("tasks.manage")}
+                onPublishTask={
+                  viewer.can("openings.manage")
+                    ? (taskId) => {
+                        setPublishTaskId(taskId);
+                        setPublishJobOpen(true);
+                      }
+                    : undefined
+                }
                 canReview={viewer.can("tasks.review")}
                 canSubmitAssigned={viewer.can("tasks.submit_assigned")}
                 canComment={viewer.can("tasks.comment")}
@@ -487,7 +500,12 @@ export function CrewWorkspace({
       {communityInviteOpen ? (
         <CommunityInviteDialog crewId={id} open onOpenChange={setCommunityInviteOpen} />
       ) : null}
-      <CreateCrewJobDialog open={publishJobOpen} onOpenChange={setPublishJobOpen} crewId={id} />
+      <CreateCrewJobDialog
+        initialTaskId={publishTaskId}
+        open={publishJobOpen}
+        onOpenChange={setPublishJobOpen}
+        crewId={id}
+      />
       {/* Notification deeplink → direct review. Only mounted for the
           owner so applicants who somehow land on this URL never see
           someone else's application. */}

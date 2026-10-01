@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 export default function MessagesLayout({ children }: { children: React.ReactNode }) {
   const locale = useLocale();
   const t = useTranslations("messages");
+  const c = useTranslations("crew");
   const pathname = usePathname();
   const params = useSearchParams();
   const notifications = pathname?.endsWith("/messages") && params.get("tab") === "notifications";
@@ -27,13 +28,22 @@ export default function MessagesLayout({ children }: { children: React.ReactNode
       Icon: IconBell,
       active: notifications,
     },
+    {
+      href: `/${locale}/crews/applications`,
+      label: c("messagesOffersTab"),
+      Icon: IconMessageCircle,
+      active: false,
+    },
   ];
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-4rem)] min-h-[360px] w-full max-w-6xl flex-col">
+    <div className="mx-auto flex h-[calc(100dvh-4rem)] min-h-[360px] w-full max-w-[1800px] flex-col">
       <header className="shrink-0 px-4 pt-6 sm:px-6">
         <h1 className="text-xl font-semibold text-foreground">{t("centerTitle")}</h1>
-        <nav className="mt-4 flex gap-6 border-b border-border" aria-label={t("centerTitle")}>
+        <nav
+          className="mt-4 flex flex-wrap gap-6 border-b border-border"
+          aria-label={t("centerTitle")}
+        >
           {tabs.map(({ href, label, Icon, active }, index) => (
             <Link
               key={href}

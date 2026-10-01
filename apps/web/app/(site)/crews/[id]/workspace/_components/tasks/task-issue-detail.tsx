@@ -116,6 +116,8 @@ interface TaskIssueDetailProps {
   task: CrewTaskDTO;
   members: CrewMemberDTO[];
   isOwner: boolean;
+  canCreate?: boolean;
+  onPublishTask?: (taskId: string) => void;
   canReview: boolean;
   canSubmitAssigned: boolean;
   canComment: boolean;
@@ -131,6 +133,8 @@ export function TaskIssueDetail({
   task,
   members,
   isOwner,
+  canCreate = false,
+  onPublishTask,
   canReview,
   canSubmitAssigned,
   canComment,
@@ -628,7 +632,7 @@ export function TaskIssueDetail({
                     </div>
                   </>
                 ) : null}
-                {isOwner && task.status !== "approved" && task.status !== "cancelled" ? (
+                {canCreate && task.status !== "approved" && task.status !== "cancelled" ? (
                   <button
                     type="button"
                     onClick={() => setSubtaskOpen(true)}
@@ -669,6 +673,17 @@ export function TaskIssueDetail({
           ) : null}
 
           <RailSection title={t("taskInfo")}>
+            {onPublishTask &&
+            task.assignees.length === 0 &&
+            !["approved", "cancelled", "submitted"].includes(task.status) ? (
+              <button
+                type="button"
+                className="mb-2 text-xs underline"
+                onClick={() => onPublishTask(task.id)}
+              >
+                {projectT("workbench.publishJob")}
+              </button>
+            ) : null}
             {task.rewardUsdMinor != null || task.profitShareBps != null ? (
               <RailRow icon={<IconAt className="size-4" />} align="start">
                 <div className="space-y-1 text-[11px] text-[#c9cacf]">
@@ -827,7 +842,7 @@ export function TaskIssueDetail({
 
       {project?.views[0] ? (
         <TaskQuickCreate
-          open={subtaskOpen}
+          open={canCreate && subtaskOpen}
           onOpenChange={setSubtaskOpen}
           crewId={task.crewId}
           members={members}

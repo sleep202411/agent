@@ -111,7 +111,7 @@ export function WorkbenchFilmPicker({
       </Button>
       {opened && (
         <div className="space-y-2">
-          <div className="max-h-48 overflow-auto rounded-lg border border-white/20 bg-[#111216] p-1">
+          <div className="max-h-48 overflow-auto rounded-lg border border-white/20 bg-input/20 dark:bg-input/30 p-1">
             {busy && films.length === 0 ? (
               <p role="status" className="p-3 text-xs text-muted-foreground">
                 {t("loading")}
@@ -127,7 +127,10 @@ export function WorkbenchFilmPicker({
                 key={film.id}
                 type="button"
                 disabled={disabled || busy}
-                onClick={() => onSelect(href(film.id))}
+                onClick={() => {
+                  setCreated(film);
+                  onSelect(href(film.id));
+                }}
                 className="block w-full rounded-md px-2 py-2 text-left text-xs hover:bg-white/5"
               >
                 {film.title}

@@ -9,6 +9,7 @@ import {
   IconDots,
   IconFilter,
   IconFlag3,
+  IconClock,
   IconLayoutKanban,
   IconLayoutDashboard,
   IconLayoutSidebarRight,
@@ -75,6 +76,8 @@ interface LinearTaskWorkspaceProps {
   canEditCrewInfo: boolean;
   members: CrewMemberDTO[];
   isOwner: boolean;
+  canCreate?: boolean;
+  onPublishTask?: (taskId: string) => void;
   canReview: boolean;
   canSubmitAssigned: boolean;
   canComment: boolean;
@@ -98,6 +101,8 @@ function LinearTaskSession({
   canEditCrewInfo,
   members,
   isOwner,
+  canCreate = false,
+  onPublishTask,
   canReview,
   canSubmitAssigned,
   canComment,
@@ -328,12 +333,14 @@ function LinearTaskSession({
         >
           <ProjectTab
             active={section === "production"}
+            icon={<IconLayoutKanban />}
             label={t("workbench.title")}
             onClick={() => openSection("production")}
           />
           <>
             <ProjectTab
               active={section === "issues" && activeView.id === project.views[0]?.id}
+              icon={<IconList />}
               label={t("issues")}
               onClick={() => openSection("issues", project.views[0]?.id)}
             />
@@ -345,6 +352,7 @@ function LinearTaskSession({
             />
             <ProjectTab
               active={section === "activity"}
+              icon={<IconClock />}
               label={t("activity")}
               onClick={() => openSection("activity")}
             />
@@ -535,7 +543,9 @@ function LinearTaskSession({
         crewName={crewName}
         project={project}
         members={members}
-        canManage={isOwner}
+        canManage={canCreate}
+        canSubmitAssigned={canSubmitAssigned}
+        onPublishTask={onPublishTask}
         canManageEpisodes={productionOverviewQuery.data?.capabilities.manage === true}
         active={section === "production"}
         onSelectTask={selectTask}
@@ -549,7 +559,7 @@ function LinearTaskSession({
       {section === "issues" ? (
         <>
           <div className="flex h-11 shrink-0 items-center gap-2 border-b border-white/[0.055] px-3">
-            {isOwner ? (
+            {canCreate ? (
               <Button
                 type="button"
                 size="sm"
@@ -689,7 +699,10 @@ function LinearTaskSession({
                   setWorkflowEditor({ state: null, afterStateId })
                 }
                 onEditWorkflowState={(state) => setWorkflowEditor({ state, afterStateId: null })}
-                onCreateTask={(workflowStateId) => setCreateTaskStateId(workflowStateId)}
+                canCreate={canCreate}
+                onCreateTask={(workflowStateId) => {
+                  if (canCreate) setCreateTaskStateId(workflowStateId);
+                }}
               />
             )}
           </main>
@@ -773,6 +786,8 @@ function LinearTaskSession({
               task={taskQuery.data}
               members={members}
               isOwner={isOwner}
+              canCreate={canCreate}
+              onPublishTask={onPublishTask}
               canReview={canReview}
               canSubmitAssigned={canSubmitAssigned}
               canComment={canComment}
@@ -793,7 +808,7 @@ function LinearTaskSession({
         </SheetContent>
       </Sheet>
 
-      {isOwner && section !== "production" ? (
+      {canCreate && section !== "production" ? (
         <TaskQuickCreate
           open={createTaskStateId !== undefined}
           onOpenChange={(open) => setCreateTaskStateId(open ? null : undefined)}
@@ -803,6 +818,7 @@ function LinearTaskSession({
           project={project}
           activeView={effectiveView}
           presetWorkflowStateId={createTaskStateId ?? null}
+          onPublishTask={onPublishTask}
         />
       ) : null}
       {workflowEditor ? (

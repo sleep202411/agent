@@ -15,7 +15,7 @@
  * full whitelist, defaults to USD).
  */
 
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IconCheck, IconHelpCircle, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -77,6 +77,7 @@ interface PublishPositionDialogProps {
    * means create mode (original behaviour).
    */
   editingPosition?: CrewPositionDTO;
+  initialTaskId?: string;
 }
 
 type StepId = 1 | 2 | 3;
@@ -115,13 +116,19 @@ export function CreateCrewJobDialog(props: PublishPositionDialogProps) {
   if (!props.open) return null;
   return (
     <PositionForm
-      key={JSON.stringify([user?.id, props.crewId, props.editingPosition?.id])}
+      key={JSON.stringify([user?.id, props.crewId, props.editingPosition?.id, props.initialTaskId])}
       {...props}
     />
   );
 }
 
-function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPositionDialogProps) {
+function PositionForm({
+  open,
+  onOpenChange,
+  crewId,
+  editingPosition,
+  initialTaskId,
+}: PublishPositionDialogProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const presetPositions = useTranslatedPresetPositions();
@@ -132,8 +139,19 @@ function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPo
   const permissions = useCrewPermissions(crewId);
   const canLinkTask = permissions.can("tasks.manage") && permissions.can("tasks.view");
   const [visibility, setVisibility] = useState<"public" | "private">("public");
-  const [taskId, setTaskId] = useState("");
+  const [taskId, setTaskId] = useState(initialTaskId ?? "");
   const tasks = useCrewTaskOptions(crewId, { recruitmentOnly: true }, !isEdit && canLinkTask);
+  useEffect(() => {
+    if (
+      initialTaskId &&
+      !tasks.data.some((task) => task.id === initialTaskId) &&
+      tasks.hasNextPage &&
+      !tasks.isFetching &&
+      !tasks.isError
+    ) {
+      void tasks.fetchNextPage();
+    }
+  }, [initialTaskId, tasks]);
   const taskValid =
     !taskId ||
     (canLinkTask &&

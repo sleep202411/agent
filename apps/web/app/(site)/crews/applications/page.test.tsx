@@ -8,7 +8,10 @@ vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: h.user ? { id: h.user } : null, isLoading: false }),
 }));
 vi.mock("../_hooks/api", () => ({ crewApi: { get: (...a: unknown[]) => h.get(...a) } }));
-vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/src/i18n/i18n", () => ({
+  useLocale: () => "en-US",
+  useTranslations: () => (key: string) => key,
+}));
 vi.mock("../_components/crew-section-navigation", () => ({ CrewSectionNavigation: () => null }));
 vi.mock("../_components/application-terms-panel", () => ({
   ApplicationTermsPanel: ({ applicationId }: { applicationId: string }) => (
@@ -20,6 +23,8 @@ const row = (id: string) => ({
   id,
   applicantId: "alice",
   crewName: "Crew",
+  crewId: "crew",
+  ownerUserId: "owner",
   positionType: "Writer",
   status: "pending",
   createdAt: "2026-09-25",
@@ -53,7 +58,7 @@ async function render() {
 }
 it("opens private terms from applicant-owned history and loads the next bounded page", async () => {
   await render();
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
   expect(host.textContent).toContain("Terms for first");
   h.get.mockResolvedValue({ items: [row("second")], nextCursor: null });
   await act(async () =>
@@ -63,12 +68,12 @@ it("opens private terms from applicant-owned history and loads the next bounded 
   );
   expect(h.get).toHaveBeenLastCalledWith(
     "/me/crew-applications",
-    expect.objectContaining({ query: { limit: 20, cursor: "first" } })
+    expect.objectContaining({ query: { limit: 20, cursor: "first", scope: "sent" } })
   );
 });
 it("clears selected private terms and history on account switch", async () => {
   await render();
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
   h.user = "bob";
   h.get.mockResolvedValue({ items: [], nextCursor: null });
   await render();
@@ -93,3 +98,36 @@ vi.mock("../_components/position-invitations-panel", () => ({
 vi.mock("../_components/application-amendments-panel", () => ({
   ApplicationAmendmentsPanel: () => null,
 }));
+
+vi.mock("../_hooks/use-users", () => ({
+  useUserDisplays: () => new Map(),
+  displayNameOf: (id: string) => id,
+}));
+vi.mock("../_components/application-review-dialog", () => ({
+  ApplicationReviewDialog: () => <div>Review application</div>,
+}));
+it("switches to owner inbox without retaining the selected applicant conversation", async () => {
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  expect(host.textContent).toContain("Terms for first");
+  h.get.mockResolvedValue({
+    items: [{ ...row("received"), applicantId: "creator" }],
+    nextCursor: null,
+  });
+  await act(async () =>
+    Array.from(host.querySelectorAll("button"))
+      .find((b) => b.textContent === "received")!
+      .click()
+  );
+  await render();
+  expect(host.textContent).not.toContain("Terms for first");
+  expect(h.get).toHaveBeenLastCalledWith(
+    "/me/crew-applications",
+    expect.objectContaining({ query: { limit: 20, cursor: undefined, scope: "received" } })
+  );
+  await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  expect(host.textContent).toContain("Terms for received");
+  expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "review")).toBe(
+    true
+  );
+});

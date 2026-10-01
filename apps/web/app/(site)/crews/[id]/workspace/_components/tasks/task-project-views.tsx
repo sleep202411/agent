@@ -72,6 +72,7 @@ export interface TaskProjectViewProps {
   displays: Displays;
   selectedIds: Set<string>;
   canManage: boolean;
+  canCreate?: boolean;
   onToggleSelected: (taskId: string) => void;
   onToggleAll: (taskIds: string[]) => void;
   onOpenTask: (taskId: string) => void;
@@ -122,9 +123,9 @@ function ListView(props: TaskProjectViewProps) {
       ))}
 
       {groups.length === 0 ? (
-        <EmptyIssues onCreate={props.canManage ? () => props.onCreateTask(null) : undefined} />
+        <EmptyIssues onCreate={props.canCreate ? () => props.onCreateTask(null) : undefined} />
       ) : null}
-      {props.canManage && view.groupBy == null && tasks.length > 0 ? (
+      {props.canCreate && view.groupBy == null && tasks.length > 0 ? (
         <button
           type="button"
           onClick={() => props.onCreateTask(null)}
@@ -168,7 +169,7 @@ function ListGroup({ group, props }: { group: ListGroupValue; props: TaskProject
           <StatusMark state={group.state} color={group.color} />
           <span className="text-[11px] font-medium text-[#c8cbd1]">{group.label}</span>
           <span className="text-[10px] tabular-nums text-[#666d77]">{group.tasks.length}</span>
-          {props.canManage ? (
+          {props.canCreate ? (
             <button
               type="button"
               className="ml-auto grid size-6 place-items-center rounded text-[#666d77] hover:bg-white/[0.05] hover:text-white"
@@ -183,7 +184,7 @@ function ListGroup({ group, props }: { group: ListGroupValue; props: TaskProject
       {!collapsed
         ? group.tasks.map((task) => <IssueRow key={task.id} task={task} props={props} />)
         : null}
-      {!collapsed && grouped && props.canManage ? (
+      {!collapsed && grouped && props.canCreate ? (
         <button
           type="button"
           onClick={() => props.onCreateTask(group.state?.id ?? null)}
@@ -461,7 +462,7 @@ function BoardColumn({
             <IconDots className="size-3.5" />
           </button>
         ) : null}
-        {props.canManage ? (
+        {props.canCreate ? (
           <button
             type="button"
             onClick={() => props.onCreateTask(state.id)}
@@ -487,7 +488,7 @@ function BoardColumn({
             />
           ))}
         </SortableContext>
-        {props.canManage ? (
+        {props.canCreate ? (
           <button
             type="button"
             onClick={() => props.onCreateTask(state.id)}
