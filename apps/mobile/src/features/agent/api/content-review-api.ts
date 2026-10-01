@@ -1,3 +1,4 @@
+import { fetchCrewAssetAccess } from "@/features/crew-assets/api";
 import { CONTENT_REVIEW_MAX_DURATION_SECONDS } from "@repo/shared";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
@@ -122,4 +123,16 @@ export async function addContentReviewComment(
   )
     throw new Error("Comment receipt mismatch. Refresh the report before retrying.");
   return result;
+}
+
+export async function getContentReviewPlayback(
+  workspaceId: string,
+  generation: number,
+  recordId: string,
+  signal: AbortSignal
+) {
+  const record = await getContentReview(workspaceId, generation, recordId, signal);
+  const access = await fetchCrewAssetAccess(record.mediaAssetId, signal);
+  current(generation, signal);
+  return access;
 }

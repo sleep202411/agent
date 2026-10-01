@@ -2747,5 +2747,7 @@
   "contentReviewHistory.addComment": "添加评论",
   "contentReviewHistory.timestamp": "时间戳（秒）",
   "contentReviewHistory.commentBody": "评论",
-  "contentReviewHistory.checkBeforeRetry": "再次发布前，请刷新报告并检查评论是否已保存。"
+  "contentReviewHistory.checkBeforeRetry": "再次发布前，请刷新报告并检查评论是否已保存。",
+  "contentReviewHistory.reloadVideo": "重新加载视频",
+  "contentReviewHistory.playbackFailed": "视频无法播放，请重新加载以获取新的访问链接。"
 }

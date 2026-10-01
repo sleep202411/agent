@@ -2747,5 +2747,7 @@
   "contentReviewHistory.addComment": "新增評論",
   "contentReviewHistory.timestamp": "時間戳（秒）",
   "contentReviewHistory.commentBody": "評論",
-  "contentReviewHistory.checkBeforeRetry": "再次發布前，請重新整理報告並檢查評論是否已儲存。"
+  "contentReviewHistory.checkBeforeRetry": "再次發布前，請重新整理報告並檢查評論是否已儲存。",
+  "contentReviewHistory.reloadVideo": "重新載入影片",
+  "contentReviewHistory.playbackFailed": "影片無法播放，請重新載入以取得新的存取連結。"
 }

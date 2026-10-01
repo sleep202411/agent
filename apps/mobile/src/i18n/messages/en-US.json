@@ -2747,5 +2747,7 @@
   "contentReviewHistory.addComment": "Add comment",
   "contentReviewHistory.timestamp": "Timestamp (seconds)",
   "contentReviewHistory.commentBody": "Comment",
-  "contentReviewHistory.checkBeforeRetry": "Refresh the report and check whether your comment was saved before posting again."
+  "contentReviewHistory.checkBeforeRetry": "Refresh the report and check whether your comment was saved before posting again.",
+  "contentReviewHistory.reloadVideo": "Reload video",
+  "contentReviewHistory.playbackFailed": "Video could not be played. Reload to request fresh access."
 }

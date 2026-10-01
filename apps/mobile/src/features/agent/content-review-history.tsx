@@ -1,3 +1,4 @@
+import { ContentReviewPlayback } from "./content-review-playback";
 import { ContentReviewComment } from "./content-review-comment";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -110,6 +111,12 @@ function History({ workspaceId, generation, onClose }: Props) {
       {record && (
         <>
           <ThemedText type="smallBold">{record.fileName}</ThemedText>
+          <ContentReviewPlayback
+            key={`${key}:${record.mediaAssetId}`}
+            workspaceId={workspaceId}
+            generation={generation}
+            record={record}
+          />
           <View style={box}>
             <ThemedText>
               {label("duration")}: {record.durationSeconds}

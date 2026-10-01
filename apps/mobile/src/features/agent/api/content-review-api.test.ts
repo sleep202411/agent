@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import { fetchWorkspaceSettings } from "./studio-workspace-settings-api";
 import {
+  getContentReviewPlayback,
   listContentReviews,
   getContentReview,
   addContentReviewComment,
@@ -136,4 +137,21 @@ it("does not retry an uncertain comment write", async () => {
     addContentReviewComment("workspace", 1, id, { seconds: 0, body: "text" }, signal)
   ).rejects.toThrow("Response lost");
   expect(api.post).toHaveBeenCalledTimes(1);
+});
+
+it("resolves playback only through the authorized report asset", async () => {
+  const report = { ...row, exportFileName: "r.xlsx", overview: {}, details: [], comments: [] };
+  vi.mocked(api.get).mockImplementation(async (path) =>
+    path.startsWith("/content-review")
+      ? report
+      : { assetId: other, variantKey: "original", url: "https://files.test/video", expiresAt: null }
+  );
+  expect(await getContentReviewPlayback("workspace", 1, id, signal)).toMatchObject({
+    assetId: other,
+    url: "https://files.test/video",
+  });
+  expect(api.get).toHaveBeenLastCalledWith(
+    `/media/assets/${other}/access`,
+    expect.objectContaining({ params: { variantKey: "original" }, signal })
+  );
 });
