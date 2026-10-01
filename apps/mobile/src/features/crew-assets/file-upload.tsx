@@ -1,3 +1,4 @@
+import { uploadReceipt } from "./upload-receipt";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView } from "react-native";
 import { getAuthGeneration, subscribeAuth } from "@/auth/auth-store";
@@ -26,9 +27,20 @@ export function AssetFileUpload(props: Props) {
 function Form(props: Props) {
   const t = useTranslations(),
     op = useAuthFormOperation(`${props.crewId}:${props.parentId}`, true);
-  const [file, setFile] = useState<CrewUpload>();
-  const [attempted, setAttempted] = useState(false),
-    [error, setError] = useState<string>();
+  const [receipt] = useState(() =>
+    uploadReceipt(props.crewId, props.userId, props.generation, props.parentId)
+  );
+  const [initial] = useState(() => {
+    try {
+      return { saved: receipt.read(), error: undefined };
+    } catch (cause) {
+      return { saved: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+  const [file, setFile] = useState<CrewUpload | undefined>(initial.saved?.file);
+  const restored = initial.error === undefined;
+  const [attempted, setAttempted] = useState(initial.saved?.attempted ?? false),
+    [error, setError] = useState<string | undefined>(initial.error);
   const controller = useRef<AbortController | undefined>(undefined);
   useEffect(() => {
     const unsubscribe = subscribeAuth(() => {
@@ -41,10 +53,12 @@ function Form(props: Props) {
   }, [props.generation]);
   const report = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
   const pick = () => {
-    if (op.busy || file || props.generation !== getAuthGeneration()) return;
+    if (!restored || op.busy || file || props.generation !== getAuthGeneration()) return;
     void op.run(
       async () => {
         setError(undefined);
+        if (receipt.read())
+          throw new Error("Another upload is pending. Reopen this folder before continuing.");
         const c = new AbortController();
         controller.current = c;
         await validateAssetDestination(
@@ -59,7 +73,10 @@ function Form(props: Props) {
         return result;
       },
       (result) => {
-        if (result) setFile(result);
+        if (result) {
+          setFile(result);
+          receipt.save({ file: result, attempted: false });
+        }
       },
       report
     );
@@ -69,6 +86,7 @@ function Form(props: Props) {
     void op.run(
       async () => {
         setError(undefined);
+        receipt.save({ file, attempted: true });
         setAttempted(true);
         return attachOrganizationFile(props.crewId, props.userId, props.generation, {
           mediaAssetId: file.mediaAssetId,
@@ -76,7 +94,10 @@ function Form(props: Props) {
           parentId: props.parentId,
         });
       },
-      props.onClose,
+      () => {
+        receipt.clear(file.mediaAssetId);
+        props.onClose();
+      },
       report
     );
   };
@@ -84,9 +105,16 @@ function Form(props: Props) {
     if (op.busy || !file || attempted || props.generation !== getAuthGeneration()) return;
     void op.run(
       async () => {
+        if (receipt.read()?.attempted)
+          throw new Error(
+            "This file may already be attached. Reopen the folder before continuing."
+          );
         await discardCrewUpload(props.crewId, file.mediaAssetId);
       },
-      props.onClose,
+      () => {
+        receipt.clear(file.mediaAssetId);
+        props.onClose();
+      },
       report
     );
   };
@@ -97,7 +125,9 @@ function Form(props: Props) {
         {t("assetOrganization.destination")}: {props.destination}
       </ThemedText>
       <ThemedText>{t("assetUpload.help")}</ThemedText>
-      {!file && <Button label={t("thread.uploadFile")} disabled={op.busy} onPress={pick} />}
+      {!file && (
+        <Button label={t("thread.uploadFile")} disabled={!restored || op.busy} onPress={pick} />
+      )}
       {file && <ThemedText>{file.name}</ThemedText>}
       {file && (
         <Button

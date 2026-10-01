@@ -4,12 +4,18 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { AssetFileUpload } from "./file-upload";
 const h = vi.hoisted(() => ({
   generation: 1,
+  receiptRead: vi.fn(),
+  receiptSave: vi.fn(),
+  receiptClear: vi.fn(),
   pick: vi.fn(),
   discard: vi.fn(),
   attach: vi.fn(),
   destination: vi.fn(),
   close: vi.fn(),
   listeners: new Set<() => void>(),
+}));
+vi.mock("./upload-receipt", () => ({
+  uploadReceipt: () => ({ read: h.receiptRead, save: h.receiptSave, clear: h.receiptClear }),
 }));
 vi.mock("@/auth/auth-store", () => ({
   getAuthGeneration: () => h.generation,
@@ -77,6 +83,7 @@ const render = () =>
   );
 beforeEach(() => {
   vi.resetAllMocks();
+  h.receiptRead.mockReturnValue(null);
   h.generation = 1;
   h.listeners.clear();
   h.pick.mockResolvedValue(file);
@@ -190,4 +197,36 @@ it("allows returning after discard fails without silently deleting or attaching"
   expect(h.close).toHaveBeenCalledTimes(1);
   expect(h.attach).not.toHaveBeenCalled();
   expect(h.discard).toHaveBeenCalledTimes(1);
+});
+
+it("restores an uncertain attachment and retries the original media without another upload", async () => {
+  h.receiptRead.mockReturnValue({ file, attempted: true });
+  await render();
+  expect(host.textContent).toContain(file.name);
+  expect(button("assetUpload.discard")).toBeUndefined();
+  await click("inbox.retry");
+  expect(h.pick).not.toHaveBeenCalled();
+  expect(h.receiptSave).toHaveBeenCalledWith({ file, attempted: true });
+  expect(h.receiptSave.mock.invocationCallOrder[0]).toBeLessThan(
+    h.attach.mock.invocationCallOrder[0]
+  );
+  expect(h.receiptClear).toHaveBeenCalledWith(file.mediaAssetId);
+});
+it("does not attach if recovery state cannot be saved", async () => {
+  h.receiptRead.mockReturnValue({ file, attempted: false });
+  h.receiptSave.mockImplementation(() => {
+    throw new Error("Disk full");
+  });
+  await render();
+  await click("assetUpload.attach");
+  expect(h.attach).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Disk full");
+});
+it("does not discard when another view already attempted attachment", async () => {
+  h.receiptRead.mockReturnValue({ file, attempted: false });
+  await render();
+  h.receiptRead.mockReturnValue({ file, attempted: true });
+  await click("assetUpload.discard");
+  expect(h.discard).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("may already be attached");
 });
