@@ -19,6 +19,7 @@ import {
   type WorkTag,
 } from "@/features/profile/publish-work-api";
 import { refreshPersonalWorks } from "@/features/profile/work-refresh";
+import { WorkCreationRecovery } from "@/features/profile/work-creation-recovery";
 export default function PublishWorkScreen() {
   const auth = useAuth(),
     theme = useTheme(),
@@ -52,7 +53,7 @@ function OwnedWorkForm({ workId }: { workId?: string }) {
   const [store] = useState(() =>
     workDraft(String(auth.user?.userId ?? auth.user?.id ?? ""), auth.generation, workId)
   );
-  const [recovery] = useState(() => {
+  const [recovery, setRecovery] = useState(() => {
     try {
       return { draft: store.read(), error: undefined };
     } catch (cause) {
@@ -76,8 +77,22 @@ function OwnedWorkForm({ workId }: { workId?: string }) {
     return () => controller.abort();
   }, [resolvedId, recovery.error, attempt]);
   if (recovery.error) return <ThemedText accessibilityRole="alert">{recovery.error}</ThemedText>;
-  if (!resolvedId) return <PublishForm store={store} recovered={recovery.draft} />;
-  if (work) return <PublishForm initial={work} store={store} recovered={recovery.draft} />;
+  const onRecovered = (draft: WorkDraft, owned: MyWork) => {
+    setWork(owned);
+    setRecovery({ draft, error: undefined });
+  };
+  if (!resolvedId)
+    return <PublishForm store={store} recovered={recovery.draft} onRecovered={onRecovered} />;
+  if (work?.id === resolvedId)
+    return (
+      <PublishForm
+        key={work.id}
+        initial={work}
+        store={store}
+        recovered={recovery.draft}
+        onRecovered={onRecovered}
+      />
+    );
   if (failed)
     return (
       <View style={{ padding: 16 }}>
@@ -99,10 +114,12 @@ function PublishForm({
   initial,
   store,
   recovered,
+  onRecovered,
 }: {
   initial?: MyWork;
   store: ReturnType<typeof workDraft>;
   recovered: WorkDraft | null;
+  onRecovered: (draft: WorkDraft, work: MyWork) => void;
 }) {
   const auth = useAuth(),
     theme = useTheme(),
@@ -340,7 +357,25 @@ function PublishForm({
         </>
       )}
       {creationUnknown && !op.busy && (
-        <ThemedText accessibilityRole="alert">{t("publishWork.creationUnknown")}</ThemedText>
+        <>
+          <ThemedText accessibilityRole="alert">{t("publishWork.creationUnknown")}</ThemedText>
+          <WorkCreationRecovery
+            owner={JSON.stringify([auth.generation, auth.user?.userId ?? auth.user?.id])}
+            onSelect={(workId) => {
+              const request = scope.current;
+              const draft = pendingRef.current;
+              if (!request || draft?.phase !== "creating") return;
+              void op.run(
+                () => findMyWork(workId, request.signal),
+                (owned) => {
+                  const saved = store.confirm(draft.key, owned.id);
+                  onRecovered(saved, owned);
+                },
+                (cause) => setError(cause instanceof Error ? cause.message : String(cause))
+              );
+            }}
+          />
+        </>
       )}
       {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {op.busy && <ActivityIndicator />}

@@ -2534,5 +2534,10 @@
   "taskCreate.deadlinePast": "請選擇尚未過去的截止時間。",
   "assetUpload.restart": "重新開始上傳",
   "assetUpload.confirmRecovery": "檔案已上傳。請重試確認，然後將其加入此資料夾。",
-  "publishWork.creationUnknown": "建立結果尚未確認。請先檢查個人作品，避免重複建立。此請求不會自動重新傳送。"
+  "publishWork.creationUnknown": "建立結果尚未確認。請先檢查個人作品，避免重複建立。此請求不會自動重新傳送。",
+  "publishWork.checkWorks": "檢查我的作品",
+  "publishWork.recoverHelp": "選擇本次請求建立的作品，確認後繼續上傳。不會新增作品。",
+  "publishWork.useExisting": "繼續使用此作品",
+  "publishWork.moreWorks": "載入更多作品",
+  "publishWork.noWorks": "未找到作品。請保留待確認請求，直到建立結果得到確認。"
 }

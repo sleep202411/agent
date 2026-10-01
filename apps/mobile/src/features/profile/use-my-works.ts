@@ -10,7 +10,13 @@ type Session = {
   failed: boolean;
   works: MyWork[];
 };
-type Snapshot = { owner: string; works: MyWork[]; loading: boolean; failed: boolean };
+type Snapshot = {
+  owner: string;
+  works: MyWork[];
+  loading: boolean;
+  failed: boolean;
+  hasMore: boolean;
+};
 /** Owner includes auth generation so logging back into the same account starts fresh. */
 export function useMyWorks(owner: string | undefined) {
   const revision = useSyncExternalStore(subscribeWorks, getWorkRevision, getWorkRevision);
@@ -39,6 +45,7 @@ export function useMyWorks(owner: string | undefined) {
           works: session.works,
           loading: false,
           failed: session.failed,
+          hasMore: session.hasMore,
         });
     }
   }, []);
@@ -70,7 +77,13 @@ export function useMyWorks(owner: string | undefined) {
       !session.controller.signal.aborted &&
       (retry || !session.failed)
     ) {
-      setSnapshot({ owner: session.owner, works: session.works, loading: true, failed: false });
+      setSnapshot({
+        owner: session.owner,
+        works: session.works,
+        loading: true,
+        failed: false,
+        hasMore: session.hasMore,
+      });
       void load(session);
     }
   };
@@ -79,6 +92,7 @@ export function useMyWorks(owner: string | undefined) {
     works: visible?.works,
     loading: !!owner && (visible?.loading ?? true),
     failed: visible?.failed ?? false,
+    hasMore: !!owner && (visible?.hasMore ?? false),
     loadMore: () => request(false),
     retry: () => request(true),
   };

@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   storageFailure: false,
   workId: undefined as string | undefined,
   find: vi.fn(),
+  page: vi.fn(),
   update: vi.fn(),
   focused: true,
   generation: 1,
@@ -39,8 +40,7 @@ vi.mock("./publish-work-api", () => ({
   pickWorkFile: h.pick,
   uploadWorkFile: h.upload,
 }));
-vi.mock("@/data/mine-api", () => ({ findMyWork: h.find }));
-vi.mock("./work-refresh", () => ({ refreshPersonalWorks: vi.fn() }));
+vi.mock("@/data/mine-api", () => ({ findMyWork: h.find, fetchMyWorksPage: h.page }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
   useLocalSearchParams: () => ({ workId: h.workId }),
@@ -316,3 +316,45 @@ it("restores an interrupted metadata update without creating another record", as
   expect(h.update.mock.calls[0].slice(0, 3)).toEqual(h.update.mock.calls[1].slice(0, 3));
   expect(h.create).not.toHaveBeenCalled();
 });
+
+it.each(["success", "not-owned", "changed-account", "storage-failure"])(
+  "recovers an unknown creation through explicit owner selection: %s",
+  async (outcome) => {
+    const owned = {
+      id: "42",
+      title: "Film",
+      introduction: "Story",
+      isPrivate: false,
+      hasVideo: false,
+    };
+    h.page.mockResolvedValue({ works: [owned], hasMore: false });
+    h.create.mockRejectedValue(new Error("Lost response"));
+    await fill();
+    await act(async () => click("publishWork.next"));
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await render();
+    await act(async () => click("publishWork.checkWorks"));
+    await act(async () => click("FilmStory"));
+    expect(h.find).not.toHaveBeenCalled();
+    h.find.mockImplementation(async () => {
+      if (outcome === "not-owned") throw new Error("Not owned");
+      if (outcome === "changed-account") h.generation = 2;
+      if (outcome === "storage-failure") h.storageFailure = true;
+      return owned;
+    });
+    await act(async () => click("publishWork.useExisting"));
+    expect(h.create).toHaveBeenCalledTimes(1);
+    const record = JSON.parse([...h.records.values()][0]).draft;
+    if (outcome === "success") {
+      expect(record.workId).toBe("42");
+      expect(record.phase).toBe("uploading");
+      await act(async () => click("publishWork.video"));
+      expect(h.upload.mock.calls[0][0]).toBe("42");
+    } else {
+      expect(record.phase).toBe("creating");
+      expect(record.workId).toBeUndefined();
+      expect(h.upload).not.toHaveBeenCalled();
+    }
+  }
+);

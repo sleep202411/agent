@@ -2534,5 +2534,10 @@
   "taskCreate.deadlinePast": "请选择尚未过去的截止时间。",
   "assetUpload.restart": "重新开始上传",
   "assetUpload.confirmRecovery": "文件已上传。请重试确认，然后将其添加到此文件夹。",
-  "publishWork.creationUnknown": "创建结果尚未确认。请先检查个人作品，避免重复创建。此请求不会自动重新发送。"
+  "publishWork.creationUnknown": "创建结果尚未确认。请先检查个人作品，避免重复创建。此请求不会自动重新发送。",
+  "publishWork.checkWorks": "检查我的作品",
+  "publishWork.recoverHelp": "选择本次请求创建的作品，确认后继续上传。不会新建作品。",
+  "publishWork.useExisting": "继续使用此作品",
+  "publishWork.moreWorks": "加载更多作品",
+  "publishWork.noWorks": "未找到作品。请保留待确认请求，直到创建结果得到确认。"
 }

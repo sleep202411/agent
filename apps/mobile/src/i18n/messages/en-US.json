@@ -2534,5 +2534,10 @@
   "taskCreate.deadlinePast": "Choose a deadline that has not already passed.",
   "assetUpload.restart": "Start upload again",
   "assetUpload.confirmRecovery": "The file was uploaded. Retry to confirm it, then add it to this folder.",
-  "publishWork.creationUnknown": "The creation result is not confirmed. Check your personal works before creating another copy. This request will not be sent again automatically."
+  "publishWork.creationUnknown": "The creation result is not confirmed. Check your personal works before creating another copy. This request will not be sent again automatically.",
+  "publishWork.checkWorks": "Check my works",
+  "publishWork.recoverHelp": "Select the work created by this request, then confirm to continue its upload. No new work will be created.",
+  "publishWork.useExisting": "Continue with this work",
+  "publishWork.moreWorks": "Load more works",
+  "publishWork.noWorks": "No works found. Keep this request pending until the creation result is confirmed."
 }
