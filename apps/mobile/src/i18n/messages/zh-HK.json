@@ -2530,5 +2530,6 @@
   "taskCompensation.reward": "報酬（美元）",
   "taskCompensation.share": "分潤比例（%）",
   "taskCompensation.help": "可選任務條款。留空表示未設定，0 表示明確為零。最多兩位小數；填寫不會觸發付款或結算。",
-  "thread.pendingAttachments": "待發送附件"
+  "thread.pendingAttachments": "待發送附件",
+  "taskCreate.deadlinePast": "請選擇尚未過去的截止時間。"
 }

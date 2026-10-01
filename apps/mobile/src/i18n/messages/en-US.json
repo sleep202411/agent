@@ -2530,5 +2530,6 @@
   "taskCompensation.reward": "Reward (USD)",
   "taskCompensation.share": "Profit share (%)",
   "taskCompensation.help": "Optional task terms. Blank means unset; 0 is explicit. Up to two decimal places. These terms do not initiate payment or settlement.",
-  "thread.pendingAttachments": "Pending attachments"
+  "thread.pendingAttachments": "Pending attachments",
+  "taskCreate.deadlinePast": "Choose a deadline that has not already passed."
 }

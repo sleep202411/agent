@@ -1,3 +1,4 @@
+import { assertTaskCreationDeadline, TaskCreationDeadlineError } from "./task-creation-deadline";
 import { TaskCompensationFields } from "./task-compensation-fields";
 import { compensationText, parseCompensation } from "./task-compensation";
 import { fetchTaskCreationDefaults, type TaskCreationDefaults } from "./task-creation-defaults";
@@ -160,6 +161,8 @@ function Editor({
     [attempted, setAttempted] = useState(false);
   const attemptedRef = useRef(false),
     locked = attempted || op.busy;
+  const [validationError, setValidationError] = useState<string>();
+  let deadlineInvalid = false;
   let input: ReturnType<typeof taskCreateInput.parse> | undefined;
   try {
     if (!custom.values) throw new Error("Custom fields are not ready");
@@ -188,8 +191,10 @@ function Editor({
           (appEnv.siteRegion === "cn" ? "CNY" : "USD"),
       })),
     });
-  } catch {
-    /* Editable validation state. */
+    assertTaskCreationDeadline(input.dueAt);
+  } catch (cause) {
+    deadlineInvalid = cause instanceof TaskCreationDeadlineError;
+    input = undefined;
   }
   if (!active) return null;
   return (
@@ -370,8 +375,11 @@ function Editor({
         <ThemedText>{t("taskCreate.add")}</ThemedText>
       </Pressable>
       {!input && title.trim() && (
-        <ThemedText accessibilityRole="alert">{t("taskCreate.invalid")}</ThemedText>
+        <ThemedText accessibilityRole="alert">
+          {t(deadlineInvalid ? "taskCreate.deadlinePast" : "taskCreate.invalid")}
+        </ThemedText>
       )}
+      {validationError && <ThemedText accessibilityRole="alert">{validationError}</ThemedText>}
       {error && (
         <>
           <ThemedText accessibilityRole="alert">{error}</ThemedText>
@@ -385,6 +393,13 @@ function Editor({
         onPress={() => {
           if (!active || !input || attemptedRef.current || generation !== getAuthGeneration())
             return;
+          try {
+            assertTaskCreationDeadline(input.dueAt);
+          } catch {
+            setValidationError(t("taskCreate.deadlinePast"));
+            return;
+          }
+          setValidationError(undefined);
           const data = input;
           if (onStage) {
             attemptedRef.current = true;

@@ -1,3 +1,4 @@
+import { assertTaskCreationDeadline } from "./task-creation-deadline";
 import { taskCompensationShape } from "./task-compensation";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
@@ -70,6 +71,7 @@ export async function createTask(crewId: string, input: z.infer<typeof taskCreat
     .regex(/^[A-Za-z0-9_-]{1,64}$/)
     .parse(crewId);
   const data = taskCreateInput.parse(input);
+  assertTaskCreationDeadline(data.dueAt);
   const result = taskDetailSchema
     .extend({
       customFieldValues: z

@@ -705,3 +705,23 @@ it("creates exact USD and percentage terms and rejects excessive precision", asy
     expect.objectContaining({ rewardUsdMinor: 12345, profitShareBps: 125 })
   );
 });
+it("keeps an expired form editable and rejects a deadline that passes while the form is open", async () => {
+  const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2029-01-01T00:00:00Z"));
+  try {
+    await render();
+    await act(async () => {
+      type(0, "Task");
+      type(3, "2028-01-01 10:00");
+    });
+    expect(button("taskCreate.submit")!.disabled).toBe(true);
+    expect(host.textContent).toContain("taskCreate.deadlinePast");
+    await act(async () => type(3, "2030-01-01 10:00"));
+    expect(button("taskCreate.submit")!.disabled).toBe(false);
+    clock.mockReturnValue(Date.parse("2031-01-01T00:00:00Z"));
+    await act(async () => button("taskCreate.submit")!.click());
+    expect(h.update).not.toHaveBeenCalled();
+    expect(host.querySelector("input")!.disabled).toBe(false);
+  } finally {
+    clock.mockRestore();
+  }
+});

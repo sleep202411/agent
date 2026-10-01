@@ -1,3 +1,4 @@
+import { assertTaskCreationDeadline, TaskCreationDeadlineError } from "./task-creation-deadline";
 import { taskWorkflowSchema } from "./task-workflow-api";
 import { taskOption } from "./task-options";
 import { taskMention } from "./task-mentions";
@@ -252,6 +253,7 @@ export function createTaskDraftSession(
           const access = await fetchTaskCommentAccess(crewId, userId, new AbortController().signal);
           if (!current() || !isActive()) break;
           if (!access.canManage) throw new Error("Task management permission is required.");
+          if (row.kind === "task") assertTaskCreationDeadline(row.input.dueAt);
           change(row.id, { state: "creating" });
           if (!persist()) {
             change(row.id, { state: "staged" });
@@ -285,7 +287,10 @@ export function createTaskDraftSession(
           } catch (cause) {
             if (current())
               change(row.id, {
-                state: row.kind !== "task" ? "staged" : "uncertain",
+                state:
+                  row.kind !== "task" || cause instanceof TaskCreationDeadlineError
+                    ? "staged"
+                    : "uncertain",
                 error: cause instanceof Error ? cause.message : String(cause),
               });
             if (current()) persist();

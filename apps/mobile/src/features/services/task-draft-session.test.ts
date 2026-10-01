@@ -405,3 +405,19 @@ it("retains exact custom fields when replaying an interrupted episode batch", as
   await s.createAll(() => true);
   expect(h.apply).toHaveBeenCalledWith("crew", episodeId, full, h.generation);
 });
+it("keeps an expired persisted draft editable without marking an unknown creation", async () => {
+  let raw: string | null = null;
+  const storage = {
+    read: () => raw,
+    write: (value: string) => {
+      raw = value;
+    },
+  };
+  const s = createTaskDraftSession("crew", "user", h.generation, storage);
+  s.stage({ ...input, dueAt: "2000-01-01T00:00:00Z" }, review);
+  const restored = createTaskDraftSession("crew", "user", h.generation, storage);
+  await restored.createAll(() => true);
+  expect(h.create).not.toHaveBeenCalled();
+  expect(restored.getSnapshot().drafts[0]?.state).toBe("staged");
+  expect(restored.getSnapshot().error).toContain("future deadline");
+});

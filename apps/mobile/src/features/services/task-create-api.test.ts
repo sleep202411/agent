@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import { createTask } from "./task-create-api";
 vi.mock("@/lib/api-client", () => ({ api: { post: vi.fn() } }));
@@ -36,7 +36,11 @@ const input = {
   dueAt: detail.dueAt,
   assignees: [],
 };
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-30T00:00:00Z"));
+});
+afterEach(() => vi.restoreAllMocks());
 it("creates a task using the existing server defaults without granting rewards", async () => {
   vi.mocked(api.post).mockResolvedValue(detail);
   await createTask("crew", input);
@@ -251,5 +255,11 @@ it("preserves exact task compensation and rejects missing acknowledgement", asyn
 it("does not send invalid compensation", async () => {
   for (const terms of [{ rewardUsdMinor: -1 }, { rewardUsdMinor: 1.1 }, { profitShareBps: 10001 }])
     await expect(createTask("crew", { ...input, ...terms })).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("rejects an expired deadline before issuing a non-idempotent creation", async () => {
+  await expect(createTask("crew", { ...input, dueAt: "2026-09-29T23:59:59Z" })).rejects.toThrow(
+    "future deadline"
+  );
   expect(api.post).not.toHaveBeenCalled();
 });
