@@ -3067,5 +3067,8 @@
   "creatorCertificates.close": "关闭",
   "creatorCertificates.save": "保存或分享图片",
   "creatorCertificates.saving": "正在准备图片…",
-  "thread.openInCrewAssets": "在剧组资产中打开"
+  "thread.openInCrewAssets": "在剧组资产中打开",
+  "settings.refund": "退款政策",
+  "settings.faq": "帮助与常见问题",
+  "settings.openFailed": "无法打开此页面，请重试。"
 }

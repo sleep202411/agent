@@ -3067,5 +3067,8 @@
   "creatorCertificates.close": "Close",
   "creatorCertificates.save": "Save or share image",
   "creatorCertificates.saving": "Preparing image…",
-  "thread.openInCrewAssets": "Open in Crew Assets"
+  "thread.openInCrewAssets": "Open in Crew Assets",
+  "settings.refund": "Refund Policy",
+  "settings.faq": "Help & FAQ",
+  "settings.openFailed": "Could not open this page. Please try again."
 }

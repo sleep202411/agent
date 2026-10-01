@@ -3067,5 +3067,8 @@
   "creatorCertificates.close": "關閉",
   "creatorCertificates.save": "儲存或分享圖片",
   "creatorCertificates.saving": "正在準備圖片…",
-  "thread.openInCrewAssets": "在劇組資產中開啟"
+  "thread.openInCrewAssets": "在劇組資產中開啟",
+  "settings.refund": "退款政策",
+  "settings.faq": "幫助與常見問題",
+  "settings.openFailed": "無法開啟此頁面，請重試。"
 }

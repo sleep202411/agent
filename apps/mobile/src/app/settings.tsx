@@ -1,3 +1,6 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as WebBrowser from "expo-web-browser";
+import { webBaseUrl } from "@/config";
 import { Stack, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -16,8 +19,45 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const router = useRouter();
   const authGate = useAuthGate();
+  const mounted = useRef(false);
+  const opening = useRef(false);
+  const [linkError, setLinkError] = useState<string>();
+  const [openingLink, setOpeningLink] = useState(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const handleOpenPage = useCallback(
+    (path: string) => {
+      if (opening.current) return;
+      opening.current = true;
+      setOpeningLink(true);
+      setLinkError(undefined);
+      void (async () => {
+        try {
+          if (path === "/faq") await WebBrowser.openBrowserAsync(`${webBaseUrl}/${locale}/faq`);
+          else await openLegal(path, locale);
+        } catch (cause) {
+          if (mounted.current)
+            setLinkError(cause instanceof Error ? cause.message : t("settings.openFailed"));
+        } finally {
+          opening.current = false;
+          if (mounted.current) setOpeningLink(false);
+        }
+      })();
+    },
+    [t, locale]
+  );
 
-  const rows: { key: string; label: string; onPress: () => void; danger?: boolean }[] = [
+  const rows: {
+    key: string;
+    label: string;
+    onPress?: () => void;
+    danger?: boolean;
+    publicPage?: string;
+  }[] = [
     {
       key: "accountSecurity",
       label: t("settings.accountSecurity"),
@@ -32,12 +72,22 @@ export default function SettingsScreen() {
     {
       key: "privacy",
       label: t("settings.privacy"),
-      onPress: () => void openLegal("/privacy-policy", locale),
+      publicPage: "/privacy-policy",
     },
     {
       key: "terms",
       label: t("settings.terms"),
-      onPress: () => void openLegal("/terms-of-service", locale),
+      publicPage: "/terms-of-service",
+    },
+    {
+      key: "refund",
+      label: t("settings.refund"),
+      publicPage: "/refund-policy",
+    },
+    {
+      key: "faq",
+      label: t("settings.faq"),
+      publicPage: "/faq",
     },
     {
       key: "checkUpdate",
@@ -71,12 +121,17 @@ export default function SettingsScreen() {
         }}
       />
       <ScrollView contentContainerStyle={styles.list}>
+        {linkError && <ThemedText accessibilityRole="alert">{linkError}</ThemedText>}
         {rows.map((row) => (
           <Pressable
             key={row.key}
             accessibilityRole="button"
-            onPress={row.onPress}
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
+            onPress={() => (row.publicPage ? handleOpenPage(row.publicPage) : row.onPress?.())}
+            disabled={!!row.publicPage && openingLink}
+            accessibilityState={{ disabled: !!row.publicPage && openingLink }}
+            style={({ pressed }) =>
+              pressed || (row.publicPage && openingLink) ? styles.pressed : null
+            }
           >
             <View style={[styles.row, { borderBottomColor: theme.border }]}>
               <ThemedText style={[styles.label, row.danger ? { color: theme.brand } : null]}>
