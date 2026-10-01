@@ -34,8 +34,11 @@ export interface MediaConfirmation {
 }
 
 export async function confirmMobileMediaUpload(data: MediaConfirmation, signal?: AbortSignal) {
+  const generation = getAuthGeneration();
   signal?.throwIfAborted();
   const confirmed = await api.post<ConfirmResponse>("/media/confirm", { ...AURORA, data, signal });
+  signal?.throwIfAborted();
+  if (generation !== getAuthGeneration()) throw new Error("Upload account changed");
   return { mediaAssetId: confirmed.mediaAssetId, url: confirmed.url };
 }
 
@@ -53,9 +56,13 @@ export async function uploadMobileMediaFile(
   options: MobileUploadOptions
 ): Promise<{ mediaAssetId: string; url: string }> {
   const generation = getAuthGeneration();
+  const assertCurrent = () => {
+    options.signal?.throwIfAborted();
+    if (generation !== getAuthGeneration()) throw new Error("Upload account changed");
+  };
   // Read the selected bytes before reserving storage. Picker size is optional
   // and may be stale; the server requires a positive, accurate byte count.
-  options.signal?.throwIfAborted();
+  assertCurrent();
   const crewId = options.scope?.crewId?.trim();
   if (options.scope && (!crewId || crewId.length > 64))
     throw new Error("Provide a valid Crew upload scope");
@@ -65,7 +72,7 @@ export async function uploadMobileMediaFile(
   const response = await fetch(file.uri, { signal: options.signal });
   if (!response.ok) throw new Error(`Cannot read selected file: HTTP ${response.status}`);
   const blob = await response.blob();
-  options.signal?.throwIfAborted();
+  assertCurrent();
   if (!Number.isSafeInteger(blob.size) || blob.size <= 0)
     throw new Error("Selected file is empty or has an invalid size");
   if (
@@ -93,7 +100,7 @@ export async function uploadMobileMediaFile(
   let recoverySaved = false;
   try {
     // 2. PUT bytes straight to storage provider
-    options.signal?.throwIfAborted();
+    assertCurrent();
     if (signed.method !== "PUT") throw new Error("Unsupported upload method");
 
     const headers: Record<string, string> = {
@@ -112,7 +119,7 @@ export async function uploadMobileMediaFile(
       throw new Error(`Upload failed with HTTP ${uploadRes.status}`);
     }
 
-    options.signal?.throwIfAborted();
+    assertCurrent();
 
     // Save recovery state after the bytes are accepted, before the confirmation write.
     const confirmation: MediaConfirmation = {
@@ -123,6 +130,7 @@ export async function uploadMobileMediaFile(
     };
     options.beforeConfirm?.(confirmation);
     recoverySaved = !!options.beforeConfirm;
+    assertCurrent();
     return await confirmMobileMediaUpload(confirmation, options.signal);
   } catch (error) {
     if (

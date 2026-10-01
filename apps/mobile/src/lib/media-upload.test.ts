@@ -217,3 +217,54 @@ it("does not use a new account to cancel the previous account upload", async () 
   ).rejects.toThrow("Account changed");
   expect(api.post).toHaveBeenCalledTimes(1);
 });
+it("does not reserve storage after the account changes during local file reading", async () => {
+  fetchMock.mockReset().mockResolvedValue({
+    ok: true,
+    blob: async () => {
+      auth.generation = 2;
+      return new Blob(["data"]);
+    },
+  });
+  await expect(uploadMobileMediaFile(file, { kind: "agent_attachment_document" })).rejects.toThrow(
+    "account changed"
+  );
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("does not PUT or confirm after the signing account changes", async () => {
+  vi.mocked(api.post)
+    .mockReset()
+    .mockImplementationOnce(async () => {
+      auth.generation = 2;
+      return signed;
+    });
+  await expect(uploadMobileMediaFile(file, { kind: "agent_attachment_document" })).rejects.toThrow(
+    "account changed"
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+it("does not confirm under a new account after a successful storage PUT", async () => {
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
+    .mockImplementationOnce(async () => {
+      auth.generation = 2;
+      return { ok: true };
+    });
+  await expect(uploadMobileMediaFile(file, { kind: "agent_attachment_document" })).rejects.toThrow(
+    "account changed"
+  );
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+it("rejects a confirmation receipt after an account switch", async () => {
+  vi.mocked(api.post)
+    .mockReset()
+    .mockResolvedValueOnce(signed)
+    .mockImplementationOnce(async () => {
+      auth.generation = 2;
+      return { mediaAssetId: "media", url: "https://cdn.example/file" };
+    });
+  await expect(uploadMobileMediaFile(file, { kind: "agent_attachment_document" })).rejects.toThrow(
+    "account changed"
+  );
+});
