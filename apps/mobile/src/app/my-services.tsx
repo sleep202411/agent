@@ -1,4 +1,5 @@
 import { ServiceCreate } from "@/features/services/service-create";
+import { CreatorLocationEditor } from "@/features/services/creator-location-editor";
 import { useState } from "react";
 import { Stack, useRouter } from "expo-router";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
@@ -66,13 +67,19 @@ export default function MyServicesScreen() {
           <FlatList
             keyboardShouldPersistTaps="handled"
             ListHeaderComponent={
-              <ServiceCreate
-                key={auth.generation}
-                onCreated={(id) => {
-                  list.refresh();
-                  router.push(toHref(`/service/${encodeURIComponent(id)}`));
-                }}
-              />
+              <View>
+                <CreatorLocationEditor
+                  key={`location:${auth.generation}`}
+                  scope={{ userId: creatorId, generation: auth.generation }}
+                />
+                <ServiceCreate
+                  key={auth.generation}
+                  onCreated={(id) => {
+                    list.refresh();
+                    router.push(toHref(`/service/${encodeURIComponent(id)}`));
+                  }}
+                />
+              </View>
             }
             data={list.items}
             keyExtractor={(item) => item.id}
