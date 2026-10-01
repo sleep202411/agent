@@ -22,6 +22,8 @@ import { getCurrentLocale, localizePath } from "@/src/i18n/locale-url";
 
 export default function CrewInvitationPage() {
   const t = useTranslations("crewInvitations");
+  const roleT = useTranslations("crewRoles");
+  const setupT = useTranslations("crewSetup");
   const { user, isLoading: accountLoading } = useCurrentUser();
   const { open: openAuthDialog } = useAuthDialog();
   const params = useParams<{ id: string }>();
@@ -137,6 +139,11 @@ export default function CrewInvitationPage() {
               <InfoRow label={t("statusLabel")} value={t(`status.${item.status}`)} />
             </dl>
 
+            {item.positionCategory && (
+              <p className="mt-4 text-sm">
+                {setupT("invitedRole", { role: roleT(item.positionCategory) })}
+              </p>
+            )}
             {item.agreementRequest ? (
               <div className="mt-5 rounded-xl bg-white/[0.035] p-4 ring-1 ring-white/[0.08]">
                 <div className="flex items-start gap-3">

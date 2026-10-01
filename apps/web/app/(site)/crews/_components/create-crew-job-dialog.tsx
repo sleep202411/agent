@@ -78,6 +78,7 @@ interface PublishPositionDialogProps {
    */
   editingPosition?: CrewPositionDTO;
   initialTaskId?: string;
+  initialPositionType?: string;
 }
 
 type StepId = 1 | 2 | 3;
@@ -128,6 +129,7 @@ function PositionForm({
   crewId,
   editingPosition,
   initialTaskId,
+  initialPositionType,
 }: PublishPositionDialogProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
@@ -162,7 +164,9 @@ function PositionForm({
   const [step, setStep] = useState<StepId>(1);
 
   // ─── Step 1: Basic ──────────────────
-  const [positionType, setPositionType] = useState<string>(editingPosition?.positionType ?? "");
+  const [positionType, setPositionType] = useState<string>(
+    editingPosition?.positionType ?? initialPositionType ?? ""
+  );
   const [description, setDescription] = useState(editingPosition?.description ?? "");
   const [count, setCount] = useState<string>(String(editingPosition?.targetCount ?? 1));
   const [requiredSkills, setRequiredSkills] = useState<string[]>(

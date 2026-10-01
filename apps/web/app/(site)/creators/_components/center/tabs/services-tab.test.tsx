@@ -6,6 +6,9 @@ import type { Creator } from "@/app/(site)/creators/_hooks/use-creator";
 import { ServicesTab } from "./services-tab";
 const mocks = vi.hoisted(() => ({
   account: "alice",
+  listError: null as { status: number; message: string } | null,
+  nextPageError: false,
+  refetch: vi.fn(),
   status: "draft",
   publish: vi.fn(),
   pause: vi.fn(),
@@ -24,6 +27,9 @@ vi.mock("../dialogs/service-detail-dialog", () => ({ ServiceDetailDialog: () => 
 vi.mock("@/app/(site)/creators/_hooks/use-creator-services", () => ({
   useCreatorServices: () => ({
     isLoading: false,
+    error: mocks.listError,
+    isFetchNextPageError: mocks.nextPageError,
+    refetch: mocks.refetch,
     data: {
       items: [
         {
@@ -83,6 +89,8 @@ let root: Root, container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.account = "alice";
+  mocks.listError = null;
+  mocks.nextPageError = false;
   mocks.status = "draft";
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement("div");
@@ -175,4 +183,23 @@ it("releases a failed card transition for an active retry", async () => {
   expect(mocks.publish).toHaveBeenCalledTimes(2);
   expect(mocks.error).toHaveBeenCalledOnce();
   expect(mocks.success).toHaveBeenCalledOnce();
+});
+
+it("clears cached offerings on denied pagination and retries explicitly", async () => {
+  await act(async () => render(false));
+  expect(container.textContent).toContain("Fixture");
+  mocks.listError = { status: 403, message: "Access removed" };
+  mocks.nextPageError = true;
+  await act(async () => render(false));
+  expect(container.textContent).not.toContain("Fixture");
+  expect(container.querySelector("[role=alert]")?.textContent).toBe("Access removed");
+  await act(async () => button("retryLoad").click());
+  expect(mocks.refetch).toHaveBeenCalledOnce();
+});
+it("retains earlier public cards on a transient next-page error", async () => {
+  mocks.listError = { status: 503, message: "Try again" };
+  mocks.nextPageError = true;
+  await act(async () => render(false));
+  expect(container.textContent).toContain("Fixture");
+  expect(container.querySelector("[role=alert]")?.textContent).toBe("Try again");
 });

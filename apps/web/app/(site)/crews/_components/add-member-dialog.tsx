@@ -68,12 +68,18 @@ interface AddCrewMemberDialogProps {
   onOpenChange: (open: boolean) => void;
   crewId: string;
   canGrantPolicies: boolean;
+  positionCategory?: import("@repo/shared/crew").PresetPositionValue;
 }
 
 export function AddCrewMemberDialog(props: AddCrewMemberDialogProps) {
   const { user } = useCurrentUser();
   if (!props.open) return null;
-  return <MemberInvitationForm key={JSON.stringify([user?.id, props.crewId])} {...props} />;
+  return (
+    <MemberInvitationForm
+      key={JSON.stringify([user?.id, props.crewId, props.positionCategory])}
+      {...props}
+    />
+  );
 }
 
 function MemberInvitationForm({
@@ -81,9 +87,12 @@ function MemberInvitationForm({
   onOpenChange,
   crewId,
   canGrantPolicies,
+  positionCategory,
 }: AddCrewMemberDialogProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
+  const roleT = useTranslations("crewRoles");
+  const setupT = useTranslations("crewSetup");
 
   // Two ways in, one dialog: name an account, or mint a link. They share the
   // access vocabulary and nothing else, so they are siblings, not a wizard.
@@ -165,6 +174,7 @@ function MemberInvitationForm({
     try {
       await inviteMember({
         account: debouncedQuery.trim(),
+        ...(positionCategory ? { positionCategory } : {}),
         policyKeys: canGrantPolicies ? policyKeysForAccessPreset(accessPreset) : [],
         ...(agreementEnabled
           ? {
@@ -209,23 +219,30 @@ function MemberInvitationForm({
         />
 
         <DialogBody>
+          {positionCategory && (
+            <p className="mb-4 text-sm">
+              {setupT("invitedRole", { role: roleT(positionCategory) })}
+            </p>
+          )}
           <div className="mb-5 flex gap-1 rounded-lg bg-white/[0.03] p-1 ring-1 ring-white/[0.06]">
-            {(["account", "link"] as const).map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setMode(value)}
-                disabled={submitting}
-                className={cn(
-                  "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  mode === value
-                    ? "bg-white/[0.08] text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {value === "account" ? t("inviteLinkTabAccount") : t("inviteLinkTabLink")}
-              </button>
-            ))}
+            {(["account", "link"] as const)
+              .filter((value) => !positionCategory || value === "account")
+              .map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMode(value)}
+                  disabled={submitting}
+                  className={cn(
+                    "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    mode === value
+                      ? "bg-white/[0.08] text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {value === "account" ? t("inviteLinkTabAccount") : t("inviteLinkTabLink")}
+                </button>
+              ))}
           </div>
 
           {mode === "link" ? (

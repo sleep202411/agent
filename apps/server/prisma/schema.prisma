@@ -3578,6 +3578,10 @@ enum IpChannelType {
 }
 
 model Ip {
+  contentGpsAnalysisRequests IpContentGpsAnalysisRequest[]
+  contentGpsDispatches IpContentGpsDispatch[]
+  contentGpsAnalyses IpContentGpsAnalysis[]
+  contentGpsLocationRevisions IpContentGpsLocationRevision[]
   creationKey String? @map("creation_key") @db.VarChar(128)
   creationFingerprint String? @map("creation_fingerprint") @db.VarChar(64)
   @@unique([createdById, creationKey], map: "ips_creator_creation_key_unique")
@@ -5330,6 +5334,7 @@ model CrewInvitation {
   inviteeUserId        String               @map("invitee_user_id") @db.VarChar(64)
   invitedByUserId      String               @map("invited_by_user_id") @db.VarChar(64)
   policyKeys           String[]             @default([]) @map("policy_keys")
+  positionCategory     String?              @map("position_category") @db.VarChar(64)
   status               CrewInvitationStatus @default(pending)
   expiresAt            DateTime             @map("expires_at") @db.Timestamptz(6)
   acceptedAt           DateTime?            @map("accepted_at") @db.Timestamptz(6)
@@ -10694,4 +10699,142 @@ model CrewComputeRequest {
   @@index([crewId, createdAt, id])
   @@index([taskId, userId, status])
   @@map("crew_compute_requests")
+}
+
+/// Append-only owner overrides; AI enrichment must never replace these revisions.
+model IpContentGpsLocationRevision {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  ipId            String   @map("ip_id") @db.Uuid
+  ip              Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  version         Int
+  expectedVersion Int      @map("expected_version")
+  requestId       String   @map("request_id") @db.Uuid
+  locations       Json     @db.JsonB
+  updatedById     String   @map("updated_by_id") @db.VarChar(64)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([ipId, version])
+  @@unique([ipId, requestId])
+  @@map("ip_content_gps_location_revisions")
+}
+
+model IpContentGpsAnalysis {
+  geocodes IpContentGpsGeocode[]
+  ipId              String   @map("ip_id") @db.Uuid
+  ip                Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  locale            String   @db.VarChar(16)
+  sourceFingerprint String   @map("source_fingerprint") @db.VarChar(64)
+  analysisVersion   String   @map("analysis_version") @db.VarChar(200)
+  metadata          Json     @db.JsonB
+  sourceSnapshot    Json?    @map("source_snapshot") @db.JsonB
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([ipId, locale, sourceFingerprint, analysisVersion])
+  @@map("ip_content_gps_analyses")
+}
+
+model IpContentGpsDispatch {
+  requests IpContentGpsAnalysisRequest[]
+  id                String   @id @db.Uuid
+  ipId              String   @map("ip_id") @db.Uuid
+  ip                Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  actorId           String   @map("actor_id") @db.VarChar(64)
+  requestId         String   @map("request_id") @db.Uuid
+  locale            String   @db.VarChar(16)
+  sourceFingerprint String   @map("source_fingerprint") @db.VarChar(64)
+  analysisVersion   String   @map("analysis_version") @db.VarChar(200)
+  status            String   @default("dispatched") @db.VarChar(16)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  finishedAt        DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  @@unique([actorId, requestId])
+  @@unique([ipId, locale, sourceFingerprint, analysisVersion])
+  @@index([createdAt, status], map: "gps_dispatch_quota_idx")
+  @@index([status], map: "gps_dispatch_status_idx")
+  @@map("ip_content_gps_dispatches")
+}
+
+model IpContentGpsAnalysisRequest {
+  actorId           String   @map("actor_id") @db.VarChar(64)
+  requestId         String   @map("request_id") @db.Uuid
+  ipId              String   @map("ip_id") @db.Uuid
+  ip                Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  locale            String   @db.VarChar(16)
+  sourceFingerprint String   @map("source_fingerprint") @db.VarChar(64)
+  analysisVersion   String   @map("analysis_version") @db.VarChar(200)
+  dispatchId        String?  @map("dispatch_id") @db.Uuid
+  dispatch          IpContentGpsDispatch? @relation(fields: [dispatchId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([actorId, requestId])
+  @@map("ip_content_gps_analysis_requests")
+}
+
+// Authenticated Java identity owns the declarations; no coordinate fields.
+model CreatorLocationRevision {
+  geocodes CreatorLocationGeocode[]
+  id              String   @id @db.Uuid
+  creatorId       String   @map("creator_id") @db.VarChar(64)
+  version         Int
+  expectedVersion Int      @map("expected_version")
+  requestId       String   @map("request_id") @db.Uuid
+  profile         Json
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([creatorId, version])
+  @@unique([creatorId, requestId])
+  @@map("creator_location_revisions")
+}
+
+model IpContentGpsGeocode {
+  id String @id @db.Uuid
+  ipId String @map("ip_id") @db.Uuid
+  locale String @db.VarChar(16)
+  sourceFingerprint String @map("source_fingerprint") @db.VarChar(64)
+  analysisVersion String @map("analysis_version") @db.VarChar(200)
+  analysis IpContentGpsAnalysis @relation(fields: [ipId, locale, sourceFingerprint, analysisVersion], references: [ipId, locale, sourceFingerprint, analysisVersion], onDelete: Cascade)
+  locationId String @map("location_id") @db.VarChar(200)
+  provider String @db.VarChar(16)
+  status String @db.VarChar(16)
+  result Json? @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  @@index([ipId, locale, sourceFingerprint, analysisVersion, locationId, provider, createdAt(sort: Desc)], map: "gps_geocode_location")
+  @@index([createdAt, status], map: "gps_geocode_quota")
+  @@map("ip_content_gps_geocodes")
+}
+
+model CreatorLocationGeocode {
+  id String @id @db.Uuid
+  creatorId String @map("creator_id") @db.VarChar(64)
+  version Int
+  revision CreatorLocationRevision @relation(fields: [creatorId, version], references: [creatorId, version], onDelete: Cascade)
+  provider String @db.VarChar(16)
+  status String @db.VarChar(16)
+  result Json? @db.JsonB
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  @@index([creatorId, version, provider, createdAt(sort: Desc)], map: "creator_geocode_revision")
+  @@index([createdAt, status], map: "creator_geocode_quota")
+  @@map("creator_location_geocodes")
+}
+
+model DiscoveryAssistantRequest {
+  actorId          String    @map("actor_id") @db.VarChar(64)
+  requestId        String    @map("request_id") @db.Uuid
+  requestHash      String    @map("request_hash") @db.VarChar(64)
+  locale           String    @db.VarChar(16)
+  kind             String    @db.VarChar(16)
+  coordinateSystem String    @map("coordinate_system") @db.VarChar(8)
+  readTokenHash    String?   @map("read_token_hash") @db.VarChar(64)
+  readCount        Int       @default(0) @map("read_count")
+  status           String    @db.VarChar(16)
+  result           Json?
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  readExpiresAt    DateTime  @map("read_expires_at") @db.Timestamptz(6)
+  finishedAt       DateTime? @map("finished_at") @db.Timestamptz(6)
+
+  @@id([actorId, requestId])
+  @@index([createdAt, status, readExpiresAt], map: "discovery_assistant_quota_idx")
+  @@map("discovery_assistant_requests")
 }

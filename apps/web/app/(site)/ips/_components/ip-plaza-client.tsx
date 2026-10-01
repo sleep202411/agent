@@ -41,6 +41,7 @@ export function IpPlazaClient() {
   const t = useTranslations("ip");
   const commonT = useTranslations("common");
   const tvT = useTranslations("tv");
+  const gpsT = useTranslations("contentGpsDiscovery");
   const locale = useLocale() as Locale;
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -176,6 +177,12 @@ export function IpPlazaClient() {
       </div>
 
       <div id="listings" className="mx-auto max-w-[1800px] px-6 py-10">
+        <Link
+          href={localizePath("/ips/gps", locale)}
+          className="mb-4 inline-flex min-h-11 items-center text-sm font-medium hover:underline"
+        >
+          {gpsT("title")}
+        </Link>
         {/* ── Row 1: bracketed wordmark (left) + capped search (right) ── */}
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
           <div className="flex shrink-0 items-center gap-2">

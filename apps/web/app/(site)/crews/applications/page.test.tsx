@@ -3,7 +3,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import MyApplicationsPage from "./page";
-const h = vi.hoisted(() => ({ user: "alice", get: vi.fn() }));
+const h = vi.hoisted(() => ({ user: "alice", get: vi.fn(), login: vi.fn() }));
+vi.mock("@/components/auth/auth-dialog-provider", () => ({
+  useAuthDialog: () => ({ open: h.login }),
+}));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: h.user ? { id: h.user } : null, isLoading: false }),
 }));
@@ -33,6 +36,7 @@ const row = (id: string) => ({
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   h.user = "alice";
+  h.login.mockReset();
   h.get.mockReset().mockResolvedValue({ items: [row("first")], nextCursor: "first" });
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   host = document.createElement("div");
@@ -85,6 +89,8 @@ it("does not request applicant history when signed out", async () => {
   await render();
   expect(h.get).not.toHaveBeenCalled();
   expect(host.textContent).toContain("signIn");
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  expect(h.login).toHaveBeenCalledOnce();
 });
 
 vi.mock("../_components/application-interview-panel", () => ({
@@ -130,4 +136,31 @@ it("switches to owner inbox without retaining the selected applicant conversatio
   expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "review")).toBe(
     true
   );
+});
+
+it("hides selected private panels after a failed inbox refresh and restores access on retry", async () => {
+  await render();
+  await act(async () => host.querySelector<HTMLButtonElement>("li button")!.click());
+  expect(host.textContent).toContain("Terms for first");
+  h.get.mockRejectedValue(new Error("Application access revoked"));
+  await act(async () => {
+    await qc.refetchQueries({ queryKey: ["my-crew-applications", "alice", "sent"] });
+    await new Promise((r) => setTimeout(r, 30));
+  });
+  expect(host.textContent).not.toContain("Terms for first");
+  expect(host.textContent).not.toContain("Interview controls");
+  expect(host.querySelector("aside")?.className).not.toContain("hidden");
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain("Application access revoked");
+  expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent === "more")).toBe(
+    false
+  );
+  h.get.mockResolvedValue({ items: [row("first")], nextCursor: null });
+  await act(async () => {
+    Array.from(host.querySelectorAll("button"))
+      .find((b) => b.textContent === "refresh")!
+      .click();
+    await new Promise((r) => setTimeout(r, 30));
+  });
+  expect(host.textContent).toContain("Terms for first");
+  expect(host.querySelector('[role="alert"]')).toBeNull();
 });

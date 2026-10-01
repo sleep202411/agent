@@ -202,6 +202,9 @@ export class CrewInvitationsService {
       userId,
       'members.invite',
     );
+    if (input.positionCategory) {
+      await this.authorization.require(crewId, userId, 'members.manage');
+    }
     if (input.policyKeys.length > 0) {
       await this.authorization.require(
         crewId,
@@ -250,6 +253,7 @@ export class CrewInvitationsService {
           inviteeUserId: target.userId,
           invitedByUserId: userId,
           policyKeys: input.policyKeys,
+          positionCategory: input.positionCategory,
           agreementTitle: input.agreement?.title,
           agreementSignerName: input.agreement?.signerName,
           agreementSignerEmail: input.agreement?.signerEmail.toLowerCase(),
@@ -342,9 +346,22 @@ export class CrewInvitationsService {
           policyKeys: invitation.policyKeys,
           grantedByUserId: invitation.invitedByUserId,
           action: 'member.joined.invitation',
-          auditAfter: { invitationId: invitation.id },
+          auditAfter: {
+            invitationId: invitation.id,
+            positionCategory: invitation.positionCategory ?? null,
+          },
         },
       );
+      if (invitation.positionCategory) {
+        await tx.crewMemberPosition.create({
+          data: {
+            crewId: invitation.crewId,
+            memberId: joined.memberId,
+            categoryKey: invitation.positionCategory,
+            isPrimary: true,
+          },
+        });
+      }
       pendingMessages.push(joined.systemMessage);
       const agreement = await this.agreements.stageInvitationAgreement(
         invitation,
@@ -493,6 +510,7 @@ function invitationDto(
     inviteeUserId: invitation.inviteeUserId,
     invitedByUserId: invitation.invitedByUserId,
     policyKeys: invitation.policyKeys.filter(isCrewPolicyKey),
+    positionCategory: invitation.positionCategory ?? null,
     status: invitation.status,
     expiresAt: invitation.expiresAt.toISOString(),
     acceptedAt: invitation.acceptedAt?.toISOString() ?? null,

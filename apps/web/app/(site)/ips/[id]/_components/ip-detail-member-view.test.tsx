@@ -3,8 +3,18 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { creatorHref } from "@/src/lib/user-id-codec";
 import { IpPublicDetail } from "./ip-public-detail";
 const state = vi.hoisted(() => ({
+  locale: "en-US",
+  ownerId: "42" as string | null,
+  contributors: [] as Array<{
+    id: string;
+    userId: string | null;
+    displayName: string;
+    role: string;
+    isPublic: boolean;
+  }>,
   user: { id: "viewer" } as { id: string } | null,
   member: undefined as boolean | undefined,
   fullMedia: true,
@@ -42,13 +52,14 @@ vi.mock("@/src/lib/ip-commerce/hooks", () => ({
         title: "Published IP",
         summary: "Summary",
         genres: [],
-        contributors: [],
+        contributors: state.contributors,
         campaigns: [],
         tags: [],
         status: "published",
         listingVisibility: "public",
         sourceLocale: "en-US",
-        createdById: "creator",
+        createdById: state.ownerId,
+        copyrightOwner: "FizzDragon Official",
         trailerAsset: { url: "https://cdn.test/trailer.mp4" },
         price: state.priced
           ? { id: "rule", targetType: "ip", amount: "299", currency: "community_point" }
@@ -104,7 +115,7 @@ vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: state.user, isLoading: false }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
-  useLocale: () => "en-US",
+  useLocale: () => state.locale,
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({}) }));
@@ -115,6 +126,9 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
+  state.locale = "en-US";
+  state.ownerId = "42";
+  state.contributors = [];
   state.user = { id: "viewer" };
   state.member = undefined;
   state.fullMedia = true;
@@ -219,4 +233,48 @@ it("keeps the purchase entry visible with low balance and opens recharge without
   expect(host.querySelector("[data-recharge]")).not.toBeNull();
   expect(state.purchase).not.toHaveBeenCalled();
   expect(state.player).toBeNull();
+});
+
+for (const locale of ["en-US", "zh-CN", "zh-HK"]) {
+  it(`links the owner avatar and team name to the public profile in ${locale}`, () => {
+    state.locale = locale;
+    state.user = null;
+    render();
+    const links = Array.from(host.querySelectorAll("a")).filter(
+      (a) => a.getAttribute("href") === `/${locale}${creatorHref("42")}`
+    );
+    expect(links).toHaveLength(2);
+    expect(links.some((a) => a.querySelector("h2")?.textContent === "FizzDragon Official")).toBe(
+      true
+    );
+  });
+}
+it("links contributors to their own profiles and leaves unlinked credits as text", () => {
+  state.contributors = [
+    {
+      id: "collaborator",
+      userId: "43",
+      displayName: "Collaborator",
+      role: "writer",
+      isPublic: true,
+    },
+    { id: "credit", userId: null, displayName: "External credit", role: "writer", isPublic: true },
+  ];
+  render();
+  const button = Array.from(host.querySelectorAll("button")).find(
+    (b) => b.textContent === "creatorTeam.action"
+  );
+  act(() => button!.click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.querySelector(`a[href="/en-US${creatorHref("43")}"]`)?.textContent).toContain(
+    "Collaborator"
+  );
+  expect(
+    Array.from(dialog.querySelectorAll("a")).some((a) => a.textContent?.includes("External credit"))
+  ).toBe(false);
+});
+it("does not invent a profile link when the IP owner is unavailable", () => {
+  state.ownerId = null;
+  render();
+  expect(host.querySelector("h2")?.closest("a")).toBeNull();
 });

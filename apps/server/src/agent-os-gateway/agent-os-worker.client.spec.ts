@@ -9,6 +9,54 @@ describe('AgentOsWorkerClient', () => {
     global.fetch = originalFetch;
   });
 
+  it('dispatches discovery with scoped context and propagates cancellation', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ status: 'clarification', question: 'Which city?' }),
+    });
+    const client = new AgentOsWorkerClient({
+      value: {
+        workerBaseUrl: 'http://127.0.0.1:4301',
+        internalToken: 'test-internal-token-16',
+      },
+    } as AgentOsGatewayConfigService);
+    const controller = new AbortController();
+    const body = {
+      requestId: '11111111-1111-4111-8111-111111111111',
+      locale: 'en-US',
+      coordinateSystem: 'WGS84',
+      genres: [],
+      credential: {
+        requestId: '11111111-1111-4111-8111-111111111111',
+        readToken: 'a'.repeat(64),
+      },
+      conversation: {
+        current: {
+          kind: 'creators',
+          query: {
+            basedIn: null,
+            serves: null,
+            remoteOnly: false,
+            availableForWork: false,
+            category: null,
+            text: '',
+          },
+        },
+        messages: [{ role: 'user', content: 'Find a studio' }],
+      },
+    };
+    await expect(
+      client.discoverContentGps(body, controller.signal),
+    ).resolves.toEqual({ status: 'clarification', question: 'Which city?' });
+    const [url, init] = requireFetchCall(global.fetch);
+    expect(url).toBe('http://127.0.0.1:4301/v1/agent-os/content-gps/discover');
+    expect(init?.redirect).toBe('error');
+    expect(JSON.parse(init?.body as string)).toEqual(body);
+    controller.abort();
+    expect(init?.signal?.aborted).toBe(true);
+  });
+
   it('preserves viewing-assistance configuration errors', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
@@ -185,6 +233,51 @@ describe('AgentOsWorkerClient', () => {
         '"approvalId":"22222222-2222-4222-8222-222222222222"',
       ),
     );
+  });
+  it('validates GPS sources before dispatch and preserves missing-profile errors', async () => {
+    const fetcher = jest
+      .fn<ReturnType<typeof fetch>, Parameters<typeof fetch>>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: 'GPS_MODEL_NOT_CONFIGURED',
+              message: 'GPS profile missing.',
+            },
+          }),
+          { status: 503 },
+        ),
+      );
+    global.fetch = fetcher;
+    const client = new AgentOsWorkerClient({
+      value: {
+        workerBaseUrl: 'http://127.0.0.1:4301',
+        internalToken: 'test-internal-token-16',
+      },
+    } as AgentOsGatewayConfigService);
+    await expect(
+      client.extractContentGps({}, new AbortController().signal),
+    ).rejects.toThrow();
+    expect(fetcher).not.toHaveBeenCalled();
+    const body = {
+      ipId: '01900000-0000-7000-8000-000000000001',
+      locale: 'en-US',
+      analysisVersion: 'v1',
+      analyzedAt: '2026-10-01T00:00:00Z',
+      sources: [],
+    };
+    await expect(
+      client.extractContentGps(body, new AbortController().signal),
+    ).rejects.toMatchObject({ response: { code: 'GPS_MODEL_NOT_CONFIGURED' } });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe(
+      'http://127.0.0.1:4301/v1/agent-os/content-gps/extract',
+    );
+    expect(fetcher.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      redirect: 'error',
+      headers: { 'x-agent-os-internal-token': 'test-internal-token-16' },
+    });
   });
 });
 

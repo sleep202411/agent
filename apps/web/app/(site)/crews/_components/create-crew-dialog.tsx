@@ -303,8 +303,7 @@ function CrewFormDialog({
 
   // ─── Submit ─────────────────────────────────────────
   const handleSubmit = () => {
-    if (!alive.current || operation.current || !name.trim() || !description.trim())
-      return;
+    if (!alive.current || operation.current || !name.trim() || !description.trim()) return;
     if (
       !isEdit &&
       ((workspaceMode === "link" && !studioWorkspaceId) ||
@@ -364,7 +363,7 @@ function CrewFormDialog({
           posthog.capture("crew_created", { crew_id: crew.id });
           onOpenChange(false);
           toast.success(t("createSuccess"));
-          router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
+          router.push(localizePath(`/crews/${crew.id}/setup`, locale));
         },
         onError: (err) => {
           if (!alive.current) return;

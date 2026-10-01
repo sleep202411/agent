@@ -54,6 +54,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { ApiRequestError } from "@/src/lib/api";
 import { axonViewItem } from "@/src/lib/axon";
+import { creatorHref } from "@/src/lib/user-id-codec";
 import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
 import { recordMemberView } from "@/src/lib/ip-commerce/api";
 import type {
@@ -123,7 +124,6 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const t = useTranslations("newIpDetail");
-  const originT = useTranslations("ipCrewOrigin");
   const tPay = useTranslations("payment");
   const statusT = useTranslations("newIpWorkbench");
   const { user, isLoading: userLoading } = useCurrentUser();
@@ -534,7 +534,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   ))}
                 </div>
 
-                <IpEngagementActions notice={originT("likeNotice")}>
+                <IpEngagementActions>
                   <ActionButton
                     onClick={() => void shareIp(ipRoomPath(detailIp.roomNumber), locale, t)}
                     icon={IconShare3}
@@ -857,6 +857,19 @@ function MediaFrame({
   );
 }
 
+function CreatorProfileLink({ userId, children }: { userId?: string | null; children: ReactNode }) {
+  const locale = useLocale() as Locale;
+  if (!userId) return <>{children}</>;
+  return (
+    <Link
+      href={localizePath(creatorHref(userId), locale)}
+      className="flex min-w-0 items-center gap-3 rounded-lg hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
+      {children}
+    </Link>
+  );
+}
+
 function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: string; t: Translate }) {
   const [membersOpen, setMembersOpen] = useState(false);
   const members = ip.contributors;
@@ -939,17 +952,18 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
         {stack.length > 0 ? (
           <div className="flex shrink-0 -space-x-2">
             {stack.map((person) => (
-              <UserAvatar
-                key={person.userId ?? person.id}
-                src={
-                  person.userId
-                    ? resolveUserAvatarUrl(displays.get(person.userId)?.avatar)
-                    : undefined
-                }
-                seed={person.userId || person.id}
-                name={person.displayName}
-                className="size-9 ring-2 ring-secondary"
-              />
+              <CreatorProfileLink key={person.userId ?? person.id} userId={person.userId}>
+                <UserAvatar
+                  src={
+                    person.userId
+                      ? resolveUserAvatarUrl(displays.get(person.userId)?.avatar)
+                      : undefined
+                  }
+                  seed={person.userId || person.id}
+                  name={person.displayName}
+                  className="size-9 ring-2 ring-secondary"
+                />
+              </CreatorProfileLink>
             ))}
           </div>
         ) : (
@@ -959,7 +973,9 @@ function CreatorTeamCard({ ip, bannerUrl, t }: { ip: DetailIp; bannerUrl?: strin
         )}
 
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-foreground">{teamName}</h2>
+          <CreatorProfileLink userId={ownerId}>
+            <h2 className="truncate text-base font-semibold text-foreground">{teamName}</h2>
+          </CreatorProfileLink>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {ip.episodes.length > 0
               ? t("creatorTeam.subtitle", { count: ip.episodes.length })
@@ -1027,18 +1043,20 @@ function ContributorsDialog({
             const role = member.customRole?.trim() || member.role;
             return (
               <div key={member.id} className="flex items-center gap-3 rounded-lg p-1.5">
-                <UserAvatar
-                  src={resolveUserAvatarUrl(display?.avatar)}
-                  seed={member.userId || member.id}
-                  name={name}
-                  className="size-9 shrink-0"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-foreground">{name}</div>
-                  {role ? (
-                    <div className="truncate text-xs text-muted-foreground">{role}</div>
-                  ) : null}
-                </div>
+                <CreatorProfileLink userId={member.userId}>
+                  <UserAvatar
+                    src={resolveUserAvatarUrl(display?.avatar)}
+                    seed={member.userId || member.id}
+                    name={name}
+                    className="size-9 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-foreground">{name}</div>
+                    {role ? (
+                      <div className="truncate text-xs text-muted-foreground">{role}</div>
+                    ) : null}
+                  </div>
+                </CreatorProfileLink>
               </div>
             );
           })}

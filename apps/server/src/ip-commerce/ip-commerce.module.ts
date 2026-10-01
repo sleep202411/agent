@@ -1,3 +1,21 @@
+import { ContentGpsGeocodingService } from './content-gps-geocoding';
+import {
+  ContentGpsSearchController,
+  ContentGpsSearchService,
+} from './content-gps-search';
+import {
+  ContentGpsDispatchService,
+  ContentGpsDispatchController,
+} from './content-gps-dispatch';
+import { ContentGpsSourcesService } from './content-gps-sources';
+import {
+  ContentGpsAnalysisService,
+  ContentGpsSuggestionsController,
+} from './content-gps-analysis';
+import {
+  ContentGpsLocationsController,
+  ContentGpsLocationsService,
+} from './content-gps-locations';
 import { ChannelSubmissionsAdminController } from './channel-submissions-admin.controller';
 import {
   ChannelSubmissionsService,
@@ -67,6 +85,10 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     AiGenerationModule,
   ],
   controllers: [
+    ContentGpsSearchController,
+    ContentGpsSuggestionsController,
+    ContentGpsDispatchController,
+    ContentGpsLocationsController,
     ChannelSubmissionsAdminController,
     ChannelSubmissionsController,
     IpGameAssociationController,
@@ -90,6 +112,12 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     CreatorTrustController,
   ],
   providers: [
+    ContentGpsSearchService,
+    ContentGpsGeocodingService,
+    ContentGpsDispatchService,
+    ContentGpsSourcesService,
+    ContentGpsAnalysisService,
+    ContentGpsLocationsService,
     ChannelSubmissionsService,
     IpGameAssociationService,
     IpStageApplicationsService,
@@ -107,6 +135,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     CreatorEarningsService,
   ],
   exports: [
+    ContentGpsSearchService,
     IpCommerceService,
     IpGenerationTemplatesService,
     IpKnowledgeService,

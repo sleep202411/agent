@@ -15,7 +15,10 @@ const state = vi.hoisted(() => ({ userId: "alice" as string | null, get: vi.fn()
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: state.userId ? { id: state.userId } : null }),
 }));
-vi.mock("../_hooks/api", () => ({ crewApi: { get: state.get } }));
+vi.mock("../_hooks/api", async (original) => ({
+  ...(await original<object>()),
+  crewApi: { get: state.get },
+}));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,

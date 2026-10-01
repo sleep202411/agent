@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { IconMessageCircle, IconArrowLeft } from "@tabler/icons-react";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
@@ -31,8 +32,22 @@ type Application = CrewApplicationDTO & {
 export default function MyApplicationsPage() {
   const { user, isLoading } = useCurrentUser();
   const t = useTranslations("crewTerms");
-  if (isLoading) return <p>{t("loading")}</p>;
-  if (!user) return <p>{t("signIn")}</p>;
+  const authT = useTranslations("crewTaskCenter");
+  const { open: openAuthDialog } = useAuthDialog();
+  if (isLoading || !user)
+    return (
+      <main className="mx-auto w-full max-w-[1800px] px-4 py-8 sm:px-6">
+        <CrewSectionNavigation active="applications" />
+        {isLoading ? (
+          <p role="status">{t("loading")}</p>
+        ) : (
+          <div className="space-y-3">
+            <p>{t("signIn")}</p>
+            <Button onClick={() => openAuthDialog()}>{authT("signIn")}</Button>
+          </div>
+        )}
+      </main>
+    );
   return <MyApplications key={user.id} userId={user.id} />;
 }
 function MyApplications({ userId }: { userId: string }) {
@@ -56,7 +71,8 @@ function MyApplications({ userId }: { userId: string }) {
     retry: false,
     refetchInterval: 15000,
   });
-  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  // The selected conversation must obey the same access/error state as the inbox.
+  const items = query.isError ? [] : (query.data?.pages.flatMap((page) => page.items) ?? []);
   const peerId = (item: Application) =>
     scope === "received" ? item.applicantId : item.ownerUserId;
   const displays = useUserDisplays(items.flatMap((item) => (peerId(item) ? [peerId(item)!] : [])));
@@ -172,7 +188,7 @@ function MyApplications({ userId }: { userId: string }) {
                 </ul>
               </>
             )}
-            {query.hasNextPage && (
+            {query.hasNextPage && !query.isError && (
               <Button disabled={query.isFetching} onClick={() => void query.fetchNextPage()}>
                 {t("more")}
               </Button>

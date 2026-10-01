@@ -7,5 +7,6 @@ import { LegacyCreatorsService } from './legacy-creators.service';
   imports: [LegacyMysqlModule],
   controllers: [LegacyCreatorsController],
   providers: [LegacyCreatorsService],
+  exports: [LegacyCreatorsService],
 })
 export class LegacyCreatorsModule {}

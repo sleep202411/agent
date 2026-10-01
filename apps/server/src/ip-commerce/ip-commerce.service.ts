@@ -4072,6 +4072,80 @@ export class IpCommerceService {
     };
   }
 
+  /** GPS shares the catalogue's publication, taxonomy and viewer-block authority.
+   * Both predicates use alias `ip`; caller supplies the same read transaction. */
+  async contentGpsCatalogueFilters(
+    genreCodes: string[],
+    locale: ListIpsQuery['locale'],
+    user: AuthUser | undefined,
+    db: Prisma.TransactionClient,
+  ) {
+    const blocks = await this.viewerBlockLists(user, db);
+    const query: ListIpsQuery = {
+      genreCodes: [],
+      tagCodes: [],
+      regions: [],
+      locale,
+      limit: 20,
+      channelType: 'ip',
+    };
+    return {
+      accessible: publicIpRankBaseFilterSql(query, blocks),
+      matching: publicIpRankBaseFilterSql({ ...query, genreCodes }, blocks),
+    };
+  }
+
+  /** Bounded display hydration for IDs already authorized by the GPS SQL query.
+   * Use the same transaction and media moderation gate as the public catalogue. */
+  async contentGpsPresentations(
+    ids: string[],
+    locale: string,
+    db: Prisma.TransactionClient,
+  ) {
+    if (!ids.length)
+      return new Map<
+        string,
+        { roomNumber: string; summary: string; coverUrl: string | null }
+      >();
+    const cover = {
+      storageProvider: true,
+      bucket: true,
+      region: true,
+      objectKey: true,
+      externalUrl: true,
+      status: true,
+      moderationStatus: true,
+      deletedAt: true,
+    } as const;
+    const rows = await db.ip.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        roomNumber: true,
+        coverAsset: { select: cover },
+        localizations: {
+          where: { locale, status: 'published', archivedAt: null },
+          select: { summary: true, coverAsset: { select: cover } },
+          take: 1,
+        },
+      },
+    });
+    return new Map(
+      rows.map((row) => {
+        const copy = row.localizations[0];
+        const asset = copy?.coverAsset ?? row.coverAsset;
+        return [
+          row.id,
+          {
+            roomNumber: row.roomNumber,
+            summary: copy?.summary ?? '',
+            coverUrl: asset ? resolveMediaPlaybackUrl(asset).url : null,
+          },
+        ];
+      }),
+    );
+  }
+
   private async rankedPublicIpIds(query: ListIpsQuery, user?: AuthUser) {
     const viewerBlocks = await this.viewerBlockLists(user);
     const rows = await this.prisma.$queryRaw<PublicIpRankRow[]>(

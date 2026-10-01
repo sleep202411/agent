@@ -66,6 +66,7 @@ function build() {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(member),
     },
+    crewMemberPosition: { create: jest.fn().mockResolvedValue({}) },
     crewMemberPolicy: { createMany: jest.fn().mockResolvedValue({ count: 0 }) },
     crewAuthorizationEvent: { create: jest.fn().mockResolvedValue({}) },
   };
@@ -103,7 +104,11 @@ function build() {
     requireDispatchConfigured: jest.fn(),
     stageInvitationAgreement: jest.fn().mockResolvedValue(null),
   };
+  const authorization = {
+    require: jest.fn().mockResolvedValue({ memberId: 'member-owner' }),
+  };
   return {
+    authorization,
     tx,
     prisma,
     users,
@@ -118,9 +123,7 @@ function build() {
       conversations as never,
       collaboration as never,
       agreements as never,
-      {
-        require: jest.fn().mockResolvedValue({ memberId: 'member-owner' }),
-      } as never,
+      authorization as never,
     ),
   };
 }
@@ -416,4 +419,71 @@ it('does not expire an invitation that was accepted after the detail read', asyn
       }) as unknown,
     }),
   );
+});
+
+describe('role-specific setup invitations', () => {
+  it('validates the role and creates no membership before acceptance', async () => {
+    const t = build();
+    t.users.lookupByContact.mockResolvedValue({
+      userId: INVITEE_ID,
+      isCrewMember: false,
+    });
+    const input = CreateCrewInvitationSchema.parse({
+      account: 'member@example.com',
+      positionCategory: 'screenwriter',
+    });
+    const result = await t.service.create(CREW_ID, OWNER_ID, 'cookie', input);
+    expect(result).toMatchObject({ positionCategory: 'screenwriter' });
+    expect(t.tx.crewMember.create).not.toHaveBeenCalled();
+    expect(t.tx.crewMemberPosition.create).not.toHaveBeenCalled();
+    expect(
+      CreateCrewInvitationSchema.safeParse({
+        account: 'member@example.com',
+        positionCategory: 'admin',
+      }).success,
+    ).toBe(false);
+  });
+  it('assigns the disclosed production role atomically on acceptance without granting policies', async () => {
+    const t = build();
+    t.tx.crewInvitation.findUnique.mockResolvedValue(
+      invitation({ positionCategory: 'screenwriter' }),
+    );
+    t.prisma.crewInvitation.findUnique.mockResolvedValue(
+      invitation({ positionCategory: 'screenwriter' }),
+    );
+    await t.service.accept(INVITATION_ID, INVITEE_ID);
+    expect(t.tx.crewMemberPosition.create).toHaveBeenCalledWith({
+      data: {
+        crewId: CREW_ID,
+        memberId: 'crew-member-1',
+        categoryKey: 'screenwriter',
+        isPrimary: true,
+      },
+    });
+    expect(t.tx.crewMemberPolicy.createMany).not.toHaveBeenCalled();
+  });
+});
+
+it('requires member-management permission before inviting someone for a production role', async () => {
+  const t = build();
+  t.authorization.require.mockImplementation(
+    async (_crew, _actor, permission) => {
+      if (permission === 'members.manage')
+        throw new Error('Member management required');
+      return { memberId: 'member-owner' };
+    },
+  );
+  await expect(
+    t.service.create(
+      CREW_ID,
+      OWNER_ID,
+      'cookie',
+      CreateCrewInvitationSchema.parse({
+        account: 'member@example.com',
+        positionCategory: 'director',
+      }),
+    ),
+  ).rejects.toThrow('Member management required');
+  expect(t.users.lookupByContact).not.toHaveBeenCalled();
+  expect(t.tx.crewInvitation.create).not.toHaveBeenCalled();
 });

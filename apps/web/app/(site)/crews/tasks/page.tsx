@@ -8,7 +8,7 @@ import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { crewKeys } from "../_hooks/shared";
-import { crewApi } from "../_hooks/api";
+import { crewApi, CrewApiError } from "../_hooks/api";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -55,8 +55,11 @@ export default function CrewTaskCenter() {
     },
     getNextPageParam: (page) => page.nextCursor ?? undefined,
   });
-  const items = feed.data?.pages.flatMap((page) => page.items) ?? [];
-  const summary = feed.data?.pages[0];
+  const accessDenied =
+    feed.error instanceof CrewApiError && [401, 403, 404].includes(feed.error.status);
+  const retryNextPage = feed.isFetchNextPageError && !accessDenied;
+  const items = accessDenied ? [] : (feed.data?.pages.flatMap((page) => page.items) ?? []);
+  const summary = user && !feed.isError ? feed.data?.pages[0] : undefined;
   return (
     <main className="mx-auto w-full max-w-[1800px] px-4 py-8 sm:px-6">
       <CrewSectionNavigation active="tasks" />
@@ -192,7 +195,7 @@ export default function CrewTaskCenter() {
               </div>
             ) : feed.isPending ? (
               <p role="status">{t("loading")}</p>
-            ) : feed.isError && !feed.isFetchNextPageError ? (
+            ) : feed.isError && !retryNextPage ? (
               <div role="alert" className="space-y-3">
                 <p>{feed.error.message}</p>
                 <Button onClick={() => void feed.refetch()}>{t("retry")}</Button>
@@ -210,22 +213,16 @@ export default function CrewTaskCenter() {
                 ))}
               </ul>
             )}
-            {user && !authLoading && feed.isFetchNextPageError && (
+            {user && !authLoading && retryNextPage && (
               <p role="alert" className="text-sm text-destructive">
                 {feed.error?.message}
               </p>
             )}
-            {user &&
-              !authLoading &&
-              feed.hasNextPage &&
-              (!feed.isError || feed.isFetchNextPageError) && (
-                <Button
-                  disabled={feed.isFetchingNextPage}
-                  onClick={() => void feed.fetchNextPage()}
-                >
-                  {feed.isFetchNextPageError ? t("retry") : t("loadMore")}
-                </Button>
-              )}
+            {user && !authLoading && feed.hasNextPage && (!feed.isError || retryNextPage) && (
+              <Button disabled={feed.isFetchingNextPage} onClick={() => void feed.fetchNextPage()}>
+                {retryNextPage ? t("retry") : t("loadMore")}
+              </Button>
+            )}
           </section>
         </div>
       </div>

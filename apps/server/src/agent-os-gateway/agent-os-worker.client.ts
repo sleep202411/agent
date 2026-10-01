@@ -1,4 +1,12 @@
 import {
+  DiscoveryWorkerRequestSchema,
+  DiscoveryAssistantResultSchema,
+} from '@repo/shared/discovery-assistant';
+import {
+  ContentGpsExtractionRequestSchema,
+  ContentGpsMetadataSchema,
+} from '@repo/shared/content-gps';
+import {
   ViewerAssistanceResponseSchema,
   FilmKnowledgeQueryResponseSchema,
 } from '@repo/agent-protocol';
@@ -232,6 +240,74 @@ export class AgentOsWorkerClient {
       },
       10_000,
     );
+  }
+
+  async discoverContentGps(body: unknown, signal: AbortSignal) {
+    const input = DiscoveryWorkerRequestSchema.parse(body);
+    signal.throwIfAborted();
+    const response = await fetch(
+      `${this.config.value.workerBaseUrl}/v1/agent-os/content-gps/discover`,
+      {
+        method: 'POST',
+        redirect: 'error',
+        headers: {
+          'content-type': 'application/json',
+          ...this.internalHeaders(),
+        },
+        body: JSON.stringify(input),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
+      },
+    );
+    const json: unknown = await response.json();
+    signal.throwIfAborted();
+    if (!response.ok) {
+      const failure = z
+        .object({ error: z.object({ code: z.string(), message: z.string() }) })
+        .safeParse(json);
+      throw new ServiceUnavailableException(
+        failure.success
+          ? failure.data.error
+          : {
+              code: 'DISCOVERY_WORKER_ERROR',
+              message: `Discovery worker returned HTTP ${response.status}`,
+            },
+      );
+    }
+    return DiscoveryAssistantResultSchema.parse(json);
+  }
+
+  async extractContentGps(body: unknown, signal: AbortSignal) {
+    const input = ContentGpsExtractionRequestSchema.parse(body);
+    signal.throwIfAborted();
+    const response = await fetch(
+      `${this.config.value.workerBaseUrl}/v1/agent-os/content-gps/extract`,
+      {
+        method: 'POST',
+        redirect: 'error',
+        headers: {
+          'content-type': 'application/json',
+          ...this.internalHeaders(),
+        },
+        body: JSON.stringify(input),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(45_000)]),
+      },
+    );
+    const json: unknown = await response.json();
+    signal.throwIfAborted();
+    if (!response.ok) {
+      const failure = z
+        .object({ error: z.object({ code: z.string(), message: z.string() }) })
+        .safeParse(json);
+      throw new ServiceUnavailableException(
+        failure.success
+          ? failure.data.error
+          : {
+              code: 'GPS_WORKER_ERROR',
+              message: `Content GPS worker returned HTTP ${response.status}`,
+            },
+      );
+    }
+    return ContentGpsMetadataSchema.parse(json);
   }
 
   async answerFilmKnowledge(body: unknown, signal: AbortSignal) {

@@ -134,6 +134,95 @@ describe("worker HTTP auth", () => {
     expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
+  it("protects discovery and validates scoped identity before model admission", async () => {
+    const previous = process.env.AGENT_OS_DISCOVERY_MODEL_PROFILE;
+    delete process.env.AGENT_OS_DISCOVERY_MODEL_PROFILE;
+    try {
+      const path = `${baseUrl}/v1/agent-os/content-gps/discover`;
+      expect((await fetch(path, { method: "POST", body: "{}" })).status).toBe(401);
+      const headers = { "content-type": "application/json", "x-agent-os-internal-token": TOKEN };
+      expect((await fetch(path, { method: "POST", headers, body: "{}" })).status).toBe(400);
+      const body = {
+        requestId: "11111111-1111-4111-8111-111111111111",
+        locale: "en-US",
+        credential: {
+          requestId: "11111111-1111-4111-8111-111111111111",
+          readToken: "b".repeat(64),
+        },
+        coordinateSystem: "WGS84",
+        genres: [],
+        conversation: {
+          current: {
+            kind: "creators",
+            query: {
+              basedIn: null,
+              serves: null,
+              remoteOnly: false,
+              availableForWork: false,
+              category: null,
+              text: "",
+            },
+          },
+          messages: [{ role: "user", content: "Find a studio" }],
+        },
+      };
+      const reply = await fetch(path, { method: "POST", headers, body: JSON.stringify(body) });
+      expect(reply.status).toBe(503);
+      expect((await reply.json()).error.code).toBe("DISCOVERY_NOT_CONFIGURED");
+      expect(
+        (
+          await fetch(path, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ ...body, actorId: "forged" }),
+          })
+        ).status
+      ).toBe(400);
+      expect(
+        (
+          await fetch(path, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ...body,
+              credential: { ...body.credential, requestId: "22222222-2222-4222-8222-222222222222" },
+            }),
+          })
+        ).status
+      ).toBe(400);
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_OS_DISCOVERY_MODEL_PROFILE;
+      else process.env.AGENT_OS_DISCOVERY_MODEL_PROFILE = previous;
+    }
+  });
+
+  it("protects Content GPS extraction and fails closed without model configuration", async () => {
+    const previous = process.env.AGENT_OS_CONTENT_GPS_MODEL_PROFILE;
+    delete process.env.AGENT_OS_CONTENT_GPS_MODEL_PROFILE;
+    try {
+      const path = `${baseUrl}/v1/agent-os/content-gps/extract`;
+      expect((await fetch(path, { method: "POST", body: "{}" })).status).toBe(401);
+      const headers = { "content-type": "application/json", "x-agent-os-internal-token": TOKEN };
+      expect((await fetch(path, { method: "POST", headers, body: "{}" })).status).toBe(400);
+      const reply = await fetch(path, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          ipId: "01900000-0000-7000-8000-000000000001",
+          locale: "en-US",
+          analysisVersion: "v1",
+          analyzedAt: "2026-10-01T00:00:00Z",
+          sources: [],
+        }),
+      });
+      expect(reply.status).toBe(503);
+      expect((await reply.json()).error.code).toBe("GPS_MODEL_NOT_CONFIGURED");
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_OS_CONTENT_GPS_MODEL_PROFILE;
+      else process.env.AGENT_OS_CONTENT_GPS_MODEL_PROFILE = previous;
+    }
+  });
+
   it("requires the internal token for viewing assistance", async () => {
     const res = await fetch(`${baseUrl}/v1/agent-os/viewer-assistance`, {
       method: "POST",
