@@ -55,7 +55,7 @@ describe('linked Crew workspace authorization (Prisma + PGlite)', () => {
       server.addEventListener(
         'error',
         (event) => {
-          const cause: unknown = event.detail;
+          const cause: unknown = 'detail' in event ? event.detail : event.type;
           reject(cause instanceof Error ? cause : new Error(String(cause)));
         },
         { once: true },

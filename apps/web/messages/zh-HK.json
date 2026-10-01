@@ -10764,6 +10764,8 @@
     "errorGeneric": "生成請求失敗，請稍後重試。"
   },
   "ipGenerationAdmin": {
+    "logoUploaded": "Logo已上傳",
+    "logoUploadFailed": "Logo上傳失敗",
     "title": "影迷生成模板配置",
     "subtitle": "配置IP Room中向觀眾開放的AI海報、紀念照與定製短片生成模板",
     "addTemplate": "添加模板",

@@ -1,5 +1,7 @@
 "use client";
 
+import type { UploadKind } from "@repo/shared/media-upload";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -71,7 +73,7 @@ const HISTORY_LIMIT = 60;
 type VideoStudioT = ReturnType<typeof useTranslations>;
 
 /** Direct-to-storage upload kind per reference media kind (server allowlist). */
-const UPLOAD_KIND_BY_REFERENCE: Record<FizzAiReferenceKind, string> = {
+const UPLOAD_KIND_BY_REFERENCE: Record<FizzAiReferenceKind, UploadKind> = {
   image: "ai_reference_image",
   video: "ai_reference_video",
   audio: "ai_reference_audio",

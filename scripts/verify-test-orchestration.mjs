@@ -17,6 +17,7 @@ const flags = [
   "STORY_COMMERCE_POSTGRES_TEST",
   "CREATOR_EARNINGS_POSTGRES_TEST",
   "AI_ACTOR_TEST_DATABASE_URL",
+  "CONTENT_GPS_TEST_DATABASE_URL",
   "STORY_AGENT_POSTGRES_INTEGRATION",
   "STORY_PRODUCTION_GENERATION_POSTGRES_INTEGRATION",
   "AGENT_OS_START_POSTGRES_INTEGRATION",
@@ -74,10 +75,17 @@ try {
   });
   const env = { PATH: process.env.PATH, HOME: dir, TURBO_TELEMETRY_DISABLED: "1", CI: "1" };
   let previousHash;
-  for (const value of [undefined, "1", "0"]) {
+  for (const [value, gpsUrl] of [
+    [undefined, undefined],
+    ["1", undefined],
+    ["0", undefined],
+    ["0", "postgres://fixture@127.0.0.1:55441/gps_test"],
+    ["0", "postgres://fixture@127.0.0.1:55441/gps_test?application_name=other"],
+  ]) {
     const runEnv = {
       ...env,
       ...Object.fromEntries(flags.filter(() => value !== undefined).map((k) => [k, value])),
+      ...(gpsUrl ? { CONTENT_GPS_TEST_DATABASE_URL: gpsUrl } : {}),
     };
     const run = (extra) => {
       const result = spawnSync(
@@ -97,7 +105,11 @@ try {
     run([]);
     const observed = JSON.parse(readFileSync(join(dir, "fixture/result.json"), "utf8"));
     for (const flag of flags)
-      assert.equal(observed[flag], value ?? null, `${flag} did not reach the test process`);
+      assert.equal(
+        observed[flag],
+        flag === "CONTENT_GPS_TEST_DATABASE_URL" && gpsUrl ? gpsUrl : (value ?? null),
+        `${flag} did not reach the test process`
+      );
     console.log(
       `PASS: mode ${value ?? "unset"}; all ${flags.length} integration settings reach the task with a distinct hash`
     );

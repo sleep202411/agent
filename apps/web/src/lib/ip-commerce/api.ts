@@ -1,3 +1,4 @@
+import type { UploadKind } from "@repo/shared/media-upload";
 import { api } from "@/src/lib/api";
 import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
 import {
@@ -933,7 +934,7 @@ export function updateIpCommerceIpAssets(input: UpdateIpAssetsInput) {
  * source material don't have a dedicated server kind yet; they fall back
  * to the closest container kind by the file's media type.
  */
-function mapToUploadKind(input: UploadIpMediaInput): string {
+function mapToUploadKind(input: UploadIpMediaInput): UploadKind {
   // IP-level hero/banner image.
   if (input.purpose === "cover" || input.purpose === "trailer") {
     return input.kind === "video" ? "episode_video" : "ip_banner";

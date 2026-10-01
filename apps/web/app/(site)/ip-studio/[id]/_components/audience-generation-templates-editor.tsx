@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import {
   IconPlus,
@@ -15,6 +15,7 @@ import {
   IconSparkles,
 } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
+import { NativeSelect } from "@/components/ui/native-select";
 import { api } from "@/src/lib/api";
 import { useAiCatalog } from "@/app/(fizzstudio)/_hooks/use-ai-catalog";
 import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
@@ -41,6 +42,10 @@ interface AudienceGenerationTemplatesEditorProps {
 export function AudienceGenerationTemplatesEditor({
   ipId,
 }: AudienceGenerationTemplatesEditorProps) {
+  return <TemplateEditorSession key={ipId} ipId={ipId} />;
+}
+
+function TemplateEditorSession({ ipId }: AudienceGenerationTemplatesEditorProps) {
   const t = useTranslations("ipGenerationAdmin");
   const catalogQuery = useAiCatalog();
 
@@ -57,25 +62,35 @@ export function AudienceGenerationTemplatesEditor({
     (m) => m.type === "image" || m.type === "video"
   );
 
-  const fetchTemplates = async () => {
-    setLoading(true);
-    setConflictError(false);
-    try {
-      const res = await api.get<{ templates: GenerationTemplateAdmin[]; version: number }>(
-        `/aurora/ip-commerce/me/ips/${ipId}/generation-templates`
-      );
-      setTemplates(res.templates || []);
-      setVersion(res.version ?? 0);
-    } catch (err) {
-      toast.error(t("saveFailed"));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const fetchTemplates = useCallback(
+    (signal?: AbortSignal) => {
+      return api
+        .get<{ templates: GenerationTemplateAdmin[]; version: number }>(
+          `/aurora/ip-commerce/me/ips/${ipId}/generation-templates`,
+          { signal }
+        )
+        .then((res) => {
+          if (signal?.aborted) return;
+          setTemplates(res.templates || []);
+          setVersion(res.version ?? 0);
+          setConflictError(false);
+        })
+        .catch((error: unknown) => {
+          if (!signal?.aborted)
+            toast.error(error instanceof Error ? error.message : t("saveFailed"));
+        })
+        .finally(() => {
+          if (!signal?.aborted) setLoading(false);
+        });
+    },
+    [ipId, t]
+  );
 
   useEffect(() => {
-    void fetchTemplates();
-  }, [ipId]);
+    const controller = new AbortController();
+    void fetchTemplates(controller.signal);
+    return () => controller.abort();
+  }, [fetchTemplates]);
 
   const handleAddTemplate = () => {
     const defaultModel = availableModels[0]?.id || "fal_flux_schnell";
@@ -125,12 +140,12 @@ export function AudienceGenerationTemplatesEditor({
     try {
       setUploadingLogoIndex(index);
       const res = await uploadFileViaSignedUrl(file, {
-        kind: "ip_logo_asset",
+        kind: "ip_banner",
       });
       handleUpdateTemplate(index, { logoAssetId: res.mediaAssetId });
-      toast.success("Logo uploaded");
-    } catch {
-      toast.error("Failed to upload logo asset");
+      toast.success(t("logoUploaded"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("logoUploadFailed"));
     } finally {
       setUploadingLogoIndex(null);
     }
@@ -164,7 +179,13 @@ export function AudienceGenerationTemplatesEditor({
       setTemplates(res.templates || []);
       setVersion(res.version ?? version + 1);
       toast.success(t("saved"));
-    } catch (err: any) {
+    } catch (error) {
+      const err = error as {
+        status?: unknown;
+        statusCode?: unknown;
+        response?: { status?: unknown };
+        code?: unknown;
+      } | null;
       const isConflict =
         err?.status === 409 ||
         err?.statusCode === 409 ||
@@ -230,7 +251,10 @@ export function AudienceGenerationTemplatesEditor({
           </div>
           <button
             type="button"
-            onClick={fetchTemplates}
+            onClick={() => {
+              setLoading(true);
+              void fetchTemplates();
+            }}
             className="flex items-center gap-1 px-3 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium transition"
           >
             <IconRefresh className="w-3.5 h-3.5" />
@@ -307,9 +331,9 @@ export function AudienceGenerationTemplatesEditor({
                 {/* Model */}
                 <div>
                   <label className="block text-white/70 mb-1">{t("fieldModel")} *</label>
-                  <select
+                  <NativeSelect
                     value={tpl.modelId}
-                    onChange={(e) => handleUpdateTemplate(idx, { modelId: e.target.value })}
+                    onChange={(value) => handleUpdateTemplate(idx, { modelId: value })}
                     className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:border-primary"
                   >
                     {availableModels.map((m) => (
@@ -317,7 +341,7 @@ export function AudienceGenerationTemplatesEditor({
                         {m.name} ({m.type})
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
 
                 {/* Description */}
@@ -394,12 +418,11 @@ export function AudienceGenerationTemplatesEditor({
                 <div className="space-y-3">
                   <div>
                     <label className="block text-white/70 mb-1">{t("fieldAspectRatio")}</label>
-                    <select
+                    <NativeSelect
                       value={tpl.outputAspectRatio}
-                      onChange={(e) =>
+                      onChange={(value) =>
                         handleUpdateTemplate(idx, {
-                          outputAspectRatio: e.target
-                            .value as GenerationTemplateAdmin["outputAspectRatio"],
+                          outputAspectRatio: value as GenerationTemplateAdmin["outputAspectRatio"],
                         })
                       }
                       className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:border-primary"
@@ -416,7 +439,7 @@ export function AudienceGenerationTemplatesEditor({
                       <option value="16:9" className="bg-neutral-900 text-white">
                         16:9 (Landscape)
                       </option>
-                    </select>
+                    </NativeSelect>
                   </div>
 
                   <div>
