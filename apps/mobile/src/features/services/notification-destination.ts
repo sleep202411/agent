@@ -55,6 +55,18 @@ export function notificationDestination(
     url.searchParams.getAll("tab").length === 1 &&
     [...url.searchParams.keys()].every((key) => key === "tab")
   ) {
+    if (url.searchParams.get("tab") === "chat") {
+      if (
+        notification.type === "crew.chat.mentioned" &&
+        notification.meta.crewId === match[1] &&
+        uuid.safeParse(notification.meta.conversationId).success
+      )
+        return {
+          kind: "native" as const,
+          path: `/conversation/${notification.meta.conversationId}`,
+        };
+      return { kind: "native" as const, path: `/crew-chat/${match[1]}?channel=team` };
+    }
     if (url.searchParams.get("tab") === "income")
       return { kind: "native" as const, path: `/crew-finance/${match[1]}` };
     if (url.searchParams.get("tab") === "members")

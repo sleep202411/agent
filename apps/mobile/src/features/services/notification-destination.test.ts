@@ -106,3 +106,32 @@ it("opens recipient invitations separately from invitation management", () => {
     path,
   });
 });
+
+it("resolves Crew chat links and preserves the exact mentioned conversation", () => {
+  const n = notification(`/crews/${crew}/workspace?tab=chat`);
+  expect(notificationDestination(n, "global", "en-US")).toEqual({
+    kind: "native",
+    path: `/crew-chat/${crew}?channel=team`,
+  });
+  const mention = {
+    ...n,
+    type: "crew.chat.mentioned",
+    meta: { ...n.meta, crewId: crew, conversationId: task },
+  };
+  expect(notificationDestination(mention, "global", "en-US")).toEqual({
+    kind: "native",
+    path: `/conversation/${task}`,
+  });
+  expect(
+    notificationDestination(
+      { ...mention, meta: { ...mention.meta, crewId: "other" } },
+      "global",
+      "en-US"
+    )
+  ).toEqual({ kind: "native", path: `/crew-chat/${crew}?channel=team` });
+  const path = `/crews/${crew}/workspace?tab=chat&message=123`;
+  expect(notificationDestination(notification(path), "global", "en-US")).toEqual({
+    kind: "web",
+    path,
+  });
+});

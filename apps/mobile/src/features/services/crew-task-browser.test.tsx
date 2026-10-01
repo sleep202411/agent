@@ -9,10 +9,13 @@ vi.mock("./trust-appeals", () => ({
 }));
 const h = vi.hoisted(() => ({
   generation: 1,
+  push: vi.fn(),
   close: vi.fn(),
   detail: vi.fn(),
   workbench: vi.fn(),
 }));
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: h.push }) }));
+vi.mock("@/lib/navigation", () => ({ toHref: (path: string) => path }));
 vi.mock("./project-activity", () => ({
   ProjectActivity: ({ onClose }: { onClose: () => void }) => (
     <button onClick={onClose}>close activity</button>
@@ -384,4 +387,17 @@ it("opens the native member panel for member notification destinations", async (
   expect(h.detail).not.toHaveBeenCalled();
   await act(async () => button("close members").click());
   expect(button("close members")).toBeUndefined();
+});
+
+it("opens both native chat channels and blocks stale-account navigation", async () => {
+  await act(async () =>
+    root.render(<CrewTaskBrowser crewId="crew" userId="1" generation={1} onClose={h.close} />)
+  );
+  await act(async () => button("thread.teamChat").click());
+  expect(h.push).toHaveBeenLastCalledWith("/crew-chat/crew?channel=team");
+  await act(async () => button("thread.communityChat").click());
+  expect(h.push).toHaveBeenLastCalledWith("/crew-chat/crew?channel=community");
+  h.generation = 2;
+  await act(async () => button("thread.teamChat").click());
+  expect(h.push).toHaveBeenCalledTimes(2);
 });

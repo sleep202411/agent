@@ -3,6 +3,7 @@ import { api } from "@/lib/api-client";
 import {
   chronologicalMessages,
   fetchConversation,
+  fetchCrewConversation,
   fetchConversationMessages,
   markConversationRead,
   messageSchema,
@@ -152,4 +153,43 @@ it("preserves attachments, proposals and system payloads without treating storag
   });
   expect(messageSchema.parse(system)).toEqual(system);
   expect(messageSchema.safeParse({ ...attached, type: "proposal" }).success).toBe(false);
+});
+
+it.each(["team", "community"] as const)(
+  "resolves the authorized %s Crew channel",
+  async (channel) => {
+    const row = { ...detail, contextType: "crew", contextId: "shortCrew", crewChannel: channel };
+    vi.mocked(api.get).mockResolvedValue(row);
+    expect(
+      await fetchCrewConversation("shortCrew", channel, "1", new AbortController().signal)
+    ).toEqual(row);
+    expect(api.get).toHaveBeenCalledWith(
+      `/crews/shortCrew/${channel === "team" ? "conversation" : "community-conversation"}`,
+      expect.objectContaining({ service: "aurora", retry: false })
+    );
+  }
+);
+it.each([
+  { contextId: "other" },
+  { contextType: "service" },
+  { crewChannel: "community" },
+  { participants: [] },
+  { lastMessage: message("foreign", { conversationId: "another" }) },
+])("rejects a mismatched Crew channel response", async (changes) => {
+  vi.mocked(api.get).mockResolvedValue({
+    ...detail,
+    contextType: "crew",
+    contextId: "shortCrew",
+    crewChannel: "team",
+    ...changes,
+  });
+  await expect(
+    fetchCrewConversation("shortCrew", "team", "1", new AbortController().signal)
+  ).rejects.toThrow();
+});
+it("does not resolve an aborted Crew channel", async () => {
+  const c = new AbortController();
+  c.abort();
+  await expect(fetchCrewConversation("crew", "team", "1", c.signal)).rejects.toThrow("aborted");
+  expect(api.get).not.toHaveBeenCalled();
 });

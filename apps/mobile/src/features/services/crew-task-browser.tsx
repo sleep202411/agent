@@ -1,3 +1,5 @@
+import { useRouter } from "expo-router";
+import { toHref } from "@/lib/navigation";
 import { TrustAppeals } from "./trust-appeals";
 import { ProjectActivity } from "./project-activity";
 import { ProjectDocument } from "./project-document";
@@ -46,6 +48,7 @@ export function CrewTaskBrowser({
   const [showDocument, setShowDocument] = useState(false);
   const [showProjectProperties, setShowProjectProperties] = useState(false);
   const [showResources, setShowResources] = useState(false);
+  const router = useRouter();
   const [showMembers, setShowMembers] = useState(initialSection === "members");
   const [managingEpisodes, setManagingEpisodes] = useState(false);
   const [creatingEpisode, setCreatingEpisode] = useState(false);
@@ -265,6 +268,23 @@ export function CrewTaskBrowser({
     );
   return (
     <View style={{ flex: 1 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+        {(["team", "community"] as const).map((channel) => (
+          <Pressable
+            key={channel}
+            accessibilityRole="button"
+            style={{ padding: 12 }}
+            onPress={() => {
+              if (generation === getAuthGeneration())
+                router.push(toHref(`/crew-chat/${encodeURIComponent(crewId)}?channel=${channel}`));
+            }}
+          >
+            <ThemedText>
+              {t(channel === "team" ? "thread.teamChat" : "thread.communityChat")}
+            </ThemedText>
+          </Pressable>
+        ))}
+      </View>
       <Pressable
         accessibilityRole="button"
         style={{ padding: 12 }}
