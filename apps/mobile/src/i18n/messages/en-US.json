@@ -3002,5 +3002,11 @@
   "textAdventures.publish.offlined": "Work taken offline",
   "textAdventures.mobile.conflict": "The server version changed. Your local changes are shown for comparison. Discard them to load the current version before editing.",
   "textAdventures.mobile.discard": "Discard local changes",
-  "textAdventures.mobile.removeImage": "Remove image"
+  "textAdventures.mobile.removeImage": "Remove image",
+  "textAdventures.mobile.creationUnknown": "Creation was submitted, but its result is not confirmed. Check existing works before creating again.",
+  "textAdventures.mobile.checkCreation": "Check creation result",
+  "textAdventures.mobile.notFoundYet": "No matching work was found yet. Processing may still be underway. Refresh the library or check again later.",
+  "textAdventures.mobile.clearCreation": "Clear creation record",
+  "textAdventures.mobile.discardUnknown": "The server may still create this work. Clearing this local record will not cancel it. Check the library first; starting again can create another work.",
+  "textAdventures.mobile.discardCreation": "Clear this local record? Uploaded files and any created work will remain on the server."
 }

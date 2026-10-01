@@ -1,3 +1,4 @@
+import { TextAdventureCreate } from "./text-adventure-create";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView } from "react-native";
 import type { TextGameSummary } from "@repo/shared/text-game";
@@ -57,6 +58,7 @@ function Listing({
   }, [session]);
   return (
     <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+      <TextAdventureCreate session={session} onOpen={select} onRefresh={refresh} />
       {!rows && !error && <ActivityIndicator />}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {rows?.length === 0 && <ThemedText>{t("textAdventures.library.emptyTitle")}</ThemedText>}

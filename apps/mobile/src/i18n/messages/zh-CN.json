@@ -3002,5 +3002,11 @@
   "textAdventures.publish.offlined": "作品已下架",
   "textAdventures.mobile.conflict": "服务器版本已变化。当前显示本地修改供核对；请丢弃本地修改后加载最新版本再编辑。",
   "textAdventures.mobile.discard": "丢弃本地修改",
-  "textAdventures.mobile.removeImage": "移除图片"
+  "textAdventures.mobile.removeImage": "移除图片",
+  "textAdventures.mobile.creationUnknown": "已提交创建，但结果尚未确认。再次创建前请先检查已有作品。",
+  "textAdventures.mobile.checkCreation": "检查创建结果",
+  "textAdventures.mobile.notFoundYet": "暂未找到匹配作品，服务器可能仍在处理。请刷新作品库或稍后再检查。",
+  "textAdventures.mobile.clearCreation": "清除创建记录",
+  "textAdventures.mobile.discardUnknown": "服务器可能仍会创建该作品。清除本地记录不会取消请求；请先检查作品库，再次开始可能创建重复作品。",
+  "textAdventures.mobile.discardCreation": "清除本地记录？已上传文件及已创建作品会保留在服务器上。"
 }

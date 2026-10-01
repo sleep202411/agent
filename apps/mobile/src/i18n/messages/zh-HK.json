@@ -3002,5 +3002,11 @@
   "textAdventures.publish.offlined": "作品已下架",
   "textAdventures.mobile.conflict": "伺服器版本已變更。目前顯示本機修改供核對；請捨棄本機修改後載入最新版本再編輯。",
   "textAdventures.mobile.discard": "捨棄本機修改",
-  "textAdventures.mobile.removeImage": "移除圖片"
+  "textAdventures.mobile.removeImage": "移除圖片",
+  "textAdventures.mobile.creationUnknown": "已提交建立，但結果尚未確認。再次建立前請先檢查已有作品。",
+  "textAdventures.mobile.checkCreation": "檢查建立結果",
+  "textAdventures.mobile.notFoundYet": "暫未找到相符作品，伺服器可能仍在處理。請重新整理作品庫或稍後再檢查。",
+  "textAdventures.mobile.clearCreation": "清除建立記錄",
+  "textAdventures.mobile.discardUnknown": "伺服器可能仍會建立此作品。清除本機記錄不會取消請求；請先檢查作品庫，再次開始可能建立重複作品。",
+  "textAdventures.mobile.discardCreation": "清除本機記錄？已上傳檔案及已建立作品會保留在伺服器上。"
 }

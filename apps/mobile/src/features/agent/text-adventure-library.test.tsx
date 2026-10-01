@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TextAdventureLibrary } from "./text-adventure-library";
 const h = vi.hoisted(() => ({ list: vi.fn(), generation: 1 }));
+vi.mock("./text-adventure-create", () => ({ TextAdventureCreate: () => null }));
 vi.mock("./api/text-adventure-api", () => ({ listTextAdventures: h.list }));
 vi.mock("./text-adventure-editor", () => ({
   TextAdventureEditor: ({ gameId, onBack }: { gameId: string; onBack: () => void }) => (
