@@ -85,6 +85,11 @@ export async function loadLibraryCharacter(
   generationSession(generation, signal);
   if (row.id !== characterId || row.workspaceId !== workspaceId)
     throw Error("Character response does not match your selection.");
+  if (
+    new Set(row.media.map((m) => m.id)).size !== row.media.length ||
+    new Set(row.media.map((m) => m.mediaAssetId)).size !== row.media.length
+  )
+    throw Error("Duplicate character media. Refresh before continuing.");
   return row;
 }
 const command = z.discriminatedUnion("action", [

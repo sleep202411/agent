@@ -1,3 +1,4 @@
+import { CharacterMediaPanel } from "./character-media-panel";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
@@ -127,6 +128,7 @@ function Session({
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(`library:${workspace.id}`, true);
+  const [mediaBusy, setMediaBusy] = useState(false);
   const [box] = useState(() => characterLibraryBox(userId, generation, workspace.id));
   const [initial] = useState(() => {
     try {
@@ -222,7 +224,7 @@ function Session({
     );
   };
   const editable = canCreateStudioProject(workspace),
-    disabled = op.busy || !!pending || !!initial.error;
+    disabled = op.busy || mediaBusy || !!pending || !!initial.error;
   const field = (
     label: string,
     value: string,
@@ -324,6 +326,18 @@ function Session({
               .replace("{video}", String(detail.mediaCounts.video))
               .replace("{audio}", String(detail.mediaCounts.audio))}
           </ThemedText>
+          <CharacterMediaPanel
+            key={detail.id}
+            workspaceId={workspace.id}
+            characterId={detail.id}
+            userId={userId}
+            generation={generation}
+            canEdit={
+              editable && !op.busy && !pending && !initial.error && !editing && !confirmation
+            }
+            onBusy={setMediaBusy}
+            onDetail={setDetail}
+          />
           {editable && !["revoked", "disabled"].includes(detail.status) ? (
             <Button
               label={t("characterLibrary.edit")}
