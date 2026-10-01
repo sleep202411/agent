@@ -170,3 +170,19 @@ it("binds image and video mentions with globally ordered stable identities", () 
     "missing"
   );
 });
+
+it("keeps mixed image, video and audio aliases ordered and rejects removed audio mentions", () => {
+  const input = {
+    prompt: "@Image1 @Video1 @Audio1",
+    referenceImages: [{ url: "https://cdn.test/i" }],
+    referenceVideos: [{ url: "https://cdn.test/v" }],
+    referenceAudios: [{ url: "https://cdn.test/a" }],
+  };
+  const result = buildReferenceContract(input);
+  expect(result.referenceBindings.map((r) => [r.kind, r.label, r.order])).toEqual([
+    ["image", "Image1", 1],
+    ["video", "Video1", 2],
+    ["audio", "Audio1", 3],
+  ]);
+  expect(() => buildReferenceContract({ ...input, referenceAudios: [] })).toThrow("Audio1");
+});

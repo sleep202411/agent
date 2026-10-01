@@ -9,6 +9,7 @@ import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTranslations } from "@/i18n";
+import { ConversationAudio } from "@/features/services/conversation-audio";
 import { ConversationVideo } from "@/features/services/conversation-video";
 import { ApiRequestError } from "@/lib/api-client";
 import { canUseGeneration, loadGenerationCatalog, planRank } from "./catalog-api";
@@ -24,6 +25,8 @@ import {
   referenceLabel,
   nextReferenceLabel,
   objectVideoField,
+  objectAudioField,
+  type ReferenceKind,
   objectImageField,
   replaceImageUrl,
   referenceInputValues,
@@ -34,6 +37,7 @@ import {
   pickReferenceImage,
   type ReferenceCheckpoint,
 } from "./reference-image";
+import { acceptsReferenceAudio, pickReferenceAudio } from "./reference-audio";
 import { acceptsReferenceVideo, pickReferenceVideo } from "./reference-video";
 import {
   referenceValues,
@@ -298,7 +302,12 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
       ? [...new Set([...urls, receipt.url])].join("\n")
       : receipt.url;
     if (value.objectItems) {
-      const kind = value.kind === "ai_reference_video" ? "video" : "image";
+      const kind =
+        value.kind === "ai_reference_audio"
+          ? "audio"
+          : value.kind === "ai_reference_video"
+            ? "video"
+            : "image";
       const rows = identifiedReferences(imageReferences(current), kind);
       next = rows.some((r) => r.assetId === receipt.mediaAssetId)
         ? rows
@@ -309,12 +318,13 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
               assetId: receipt.mediaAssetId,
               refId: receipt.mediaAssetId,
               label: nextReferenceLabel(rows, latest.values.prompt, kind),
-              ...(value.kind === "ai_reference_video"
+              ...(value.kind !== "ai_reference_image"
                 ? {
                     durationSeconds: value.durationSeconds,
                     bytes: value.bytes,
-                    width: value.width,
-                    height: value.height,
+                    ...(value.kind === "ai_reference_video"
+                      ? { width: value.width, height: value.height }
+                      : {}),
                   }
                 : {}),
             },
@@ -334,20 +344,26 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
           mediaAssetId: receipt.mediaAssetId,
           url: receipt.url,
           fileName: value.fileName,
-          ...(value.kind === "ai_reference_video"
+          ...(value.kind !== "ai_reference_image"
             ? {
-                kind: "video" as const,
+                kind: value.kind === "ai_reference_audio" ? ("audio" as const) : ("video" as const),
                 durationSeconds: value.durationSeconds,
                 bytes: value.bytes,
-                width: value.width,
-                height: value.height,
+                ...(value.kind === "ai_reference_video"
+                  ? { width: value.width, height: value.height }
+                  : {}),
               }
             : {}),
         },
       ],
     });
   }
-  function uploadReference(field: string, multiple: boolean, objectItems = false, video = false) {
+  function uploadReference(
+    field: string,
+    multiple: boolean,
+    objectItems = false,
+    kind: ReferenceKind = "image"
+  ) {
     if (!draft || draft.upload || !canGenerate || !model) return;
     run(async () => {
       const persist = (value: ReferenceCheckpoint) => {
@@ -360,37 +376,38 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
           throw new Error(t("aiLab.uploadChanged"));
         save({ ...latest, upload: value });
       };
-      const checkpoint = video
-        ? await pickReferenceVideo(
-            model.input_schema,
-            draft.values,
-            field,
-            generation,
-            controller.current!.signal,
-            persist,
-            (draft.uploadedReferences ?? [])
-              .filter(
-                (row) =>
-                  row.kind === "video" &&
-                  keyHasUrl(referenceValues(model.input_schema, draft.values)[row.field], row.url)
-              )
-              .map((row) => ({
-                field: row.field,
-                kind: "video" as const,
-                url: row.url,
-                assetId: row.mediaAssetId,
-                durationSeconds: row.durationSeconds,
-                bytes: row.bytes,
-              }))
-          )
-        : await pickReferenceImage(
-            field,
-            multiple,
-            generation,
-            controller.current!.signal,
-            persist,
-            objectItems
-          );
+      const checkpoint =
+        kind !== "image"
+          ? await (kind === "audio" ? pickReferenceAudio : pickReferenceVideo)(
+              model.input_schema,
+              draft.values,
+              field,
+              generation,
+              controller.current!.signal,
+              persist,
+              (draft.uploadedReferences ?? [])
+                .filter(
+                  (row) =>
+                    (row.kind === "video" || row.kind === "audio") &&
+                    keyHasUrl(referenceValues(model.input_schema, draft.values)[row.field], row.url)
+                )
+                .map((row) => ({
+                  field: row.field,
+                  kind: row.kind as "video" | "audio",
+                  url: row.url,
+                  assetId: row.mediaAssetId,
+                  durationSeconds: row.durationSeconds,
+                  bytes: row.bytes,
+                }))
+            )
+          : await pickReferenceImage(
+              field,
+              multiple,
+              generation,
+              controller.current!.signal,
+              persist,
+              objectItems
+            );
       if (checkpoint) await finishUpload(checkpoint);
     });
   }
@@ -430,10 +447,13 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
       model.input_schema,
       activeRaw,
       (draft.uploadedReferences ?? [])
-        .filter((row) => row.kind === "video" && keyHasUrl(values[row.field], row.url))
+        .filter(
+          (row) =>
+            (row.kind === "video" || row.kind === "audio") && keyHasUrl(values[row.field], row.url)
+        )
         .map((row) => ({
           field: row.field,
-          kind: "video" as const,
+          kind: row.kind as "video" | "audio",
           url: row.url,
           assetId: row.mediaAssetId,
           durationSeconds: row.durationSeconds,
@@ -441,7 +461,7 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
         }))
     );
     validateReferenceMedia(model.input_schema, values, media);
-    const structured = ["referenceImages", "referenceVideos"].filter((name) => {
+    const structured = ["referenceImages", "referenceVideos", "referenceAudios"].filter((name) => {
       const field = model.input_schema.properties[name];
       return field?.type === "array" && field.items.type === "object";
     });
@@ -460,6 +480,10 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
               referenceImages:
                 structured.includes("referenceImages") && values.referenceImages
                   ? draft.values.referenceImages
+                  : [],
+              referenceAudios:
+                structured.includes("referenceAudios") && values.referenceAudios
+                  ? draft.values.referenceAudios
                   : [],
               referenceVideos:
                 structured.includes("referenceVideos") && values.referenceVideos
@@ -631,8 +655,12 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
                     !enabled ||
                     schemaChanged;
                 const video = acceptsReferenceVideo(descriptor);
-                const kind = video ? "video" : "image";
-                const objectImages = objectImageField(descriptor) || objectVideoField(descriptor);
+                const audio = acceptsReferenceAudio(descriptor);
+                const kind = audio ? "audio" : video ? "video" : "image";
+                const objectImages =
+                  objectImageField(descriptor) ||
+                  objectVideoField(descriptor) ||
+                  objectAudioField(descriptor);
                 let rows: ReturnType<typeof imageReferences> | undefined;
                 if (objectImages) {
                   try {
@@ -657,10 +685,20 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
                     {fieldDescription(field) ? (
                       <ThemedText type="small">{fieldDescription(field)}</ThemedText>
                     ) : null}
-                    {video ? <ThemedText type="small">{t("aiLab.videoHelp")}</ThemedText> : null}
-                    {acceptsReferenceImage(descriptor) || video ? (
+                    {video || audio ? (
+                      <ThemedText type="small">
+                        {t(audio ? "aiLab.audioHelp" : "aiLab.videoHelp")}
+                      </ThemedText>
+                    ) : null}
+                    {acceptsReferenceImage(descriptor) || video || audio ? (
                       <Button
-                        label={t(video ? "aiLab.uploadVideo" : "aiLab.uploadImage")}
+                        label={t(
+                          audio
+                            ? "aiLab.uploadAudio"
+                            : video
+                              ? "aiLab.uploadVideo"
+                              : "aiLab.uploadImage"
+                        )}
                         disabled={
                           disabled ||
                           !canGenerate ||
@@ -677,7 +715,7 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
                             ).length >= field.maxItems)
                         }
                         onPress={() =>
-                          uploadReference(name, field.type === "array", objectImages, video)
+                          uploadReference(name, field.type === "array", objectImages, kind)
                         }
                       />
                     ) : null}
@@ -696,24 +734,26 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
                             <ThemedText type="smallBold">
                               {referenceLabel(row, index, kind)}
                             </ThemedText>
-                            {!video && /^https?:\/\//.test(row.url) ? (
+                            {kind === "image" && /^https?:\/\//.test(row.url) ? (
                               <Image
                                 source={{ uri: row.url }}
                                 style={{ width: 64, height: 64 }}
                                 contentFit="cover"
                               />
                             ) : null}
-                            {video && typeof row.durationSeconds === "number" ? (
+                            {(video || audio) && typeof row.durationSeconds === "number" ? (
                               <ThemedText type="small">
-                                {t("aiLab.videoFacts")
+                                {t(audio ? "aiLab.audioFacts" : "aiLab.videoFacts")
                                   .replace("{seconds}", String(row.durationSeconds))
                                   .replace("{width}", String(row.width ?? "—"))
                                   .replace("{height}", String(row.height ?? "—"))}
                               </ThemedText>
                             ) : null}
-                            {video && /^https:\/\//.test(row.url) ? (
+                            {(video || audio) && /^https:\/\//.test(row.url) ? (
                               <Button
-                                label={t("aiLab.previewReference")}
+                                label={t(
+                                  audio ? "aiLab.previewAudioReference" : "aiLab.previewReference"
+                                )}
                                 disabled={op.busy}
                                 onPress={() =>
                                   setReferencePreview(
@@ -721,6 +761,9 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
                                   )
                                 }
                               />
+                            ) : null}
+                            {audio && referencePreview === row.url ? (
+                              <ConversationAudio url={row.url} />
                             ) : null}
                             {video && referencePreview === row.url ? (
                               <View style={{ height: 200 }}>
@@ -742,8 +785,9 @@ function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
                               }
                             />
                             <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                              {["referenceImages", "referenceVideos"].includes(name) &&
-                              model.input_schema.properties.prompt?.type === "string" ? (
+                              {["referenceImages", "referenceVideos", "referenceAudios"].includes(
+                                name
+                              ) && model.input_schema.properties.prompt?.type === "string" ? (
                                 <Button
                                   label={t("aiLab.mention").replace(
                                     "{label}",

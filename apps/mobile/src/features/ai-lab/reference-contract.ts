@@ -3,7 +3,7 @@ import type { AiFieldDescriptor } from "./schema";
 
 export const referenceBinding = z.object({
   refId: z.string().min(1),
-  kind: z.enum(["image", "video"]),
+  kind: z.enum(["image", "video", "audio"]),
   label: z.string().min(1),
   order: z.number().int().positive(),
   url: z.string().url(),
@@ -55,9 +55,11 @@ export function imageReferences(raw: unknown): ImageReference[] {
     )
     .parse(value);
 }
-export type ReferenceKind = "image" | "video";
+export type ReferenceKind = "image" | "video" | "audio";
 export function referenceLabel(row: ImageReference, index: number, kind: ReferenceKind = "image") {
-  return row.label || `${kind === "video" ? "Video" : "Image"}${index + 1}`;
+  return (
+    row.label || `${kind === "audio" ? "Audio" : kind === "video" ? "Video" : "Image"}${index + 1}`
+  );
 }
 export function imageLabel(row: ImageReference, index: number) {
   return referenceLabel(row, index);
@@ -72,13 +74,23 @@ export function objectVideoField(descriptor: AiFieldDescriptor) {
       ui.accept?.split(",").some((x) => x.trim().startsWith("video/")) === true)
   );
 }
+export function objectAudioField(descriptor: AiFieldDescriptor) {
+  const { field, ui } = descriptor;
+  return (
+    field.type === "array" &&
+    field.items.type === "object" &&
+    field.items.properties.url?.type === "string" &&
+    (ui.control === "audio_upload" ||
+      ui.accept?.split(",").some((x) => x.trim().startsWith("audio/")) === true)
+  );
+}
 
 export function nextReferenceLabel(
   rows: ImageReference[],
   prompt: unknown = "",
   kind: ReferenceKind = "image"
 ) {
-  const prefix = kind === "video" ? "Video" : "Image";
+  const prefix = kind === "audio" ? "Audio" : kind === "video" ? "Video" : "Image";
   const labels = new Set(rows.map((row, i) => referenceLabel(row, i, kind)));
   if (typeof prompt === "string")
     for (const match of prompt.matchAll(new RegExp(`@${prefix}\\d+`, "g")))
@@ -114,7 +126,9 @@ export function referenceInputValues(fields: AiFieldDescriptor[], raw: Record<st
   for (const descriptor of fields) {
     const field = descriptor.field;
     if (
-      (!objectImageField(descriptor) && !objectVideoField(descriptor)) ||
+      (!objectImageField(descriptor) &&
+        !objectVideoField(descriptor) &&
+        !objectAudioField(descriptor)) ||
       field.type !== "array" ||
       field.items.type !== "object" ||
       field.items.additionalProperties !== false
@@ -149,6 +163,7 @@ export function buildReferenceContract(
   for (const [field, kind] of [
     ["referenceImages", "image"],
     ["referenceVideos", "video"],
+    ["referenceAudios", "audio"],
   ] as const) {
     const rows = identifiedReferences(imageReferences(input[field]), kind);
     for (const row of rows)
@@ -168,7 +183,9 @@ export function buildReferenceContract(
       messages?.duplicate ?? "Each reference must have a unique URL, identity and label."
     );
   const text = typeof input.prompt === "string" ? input.prompt : "";
-  for (const match of text.matchAll(/(^|[^A-Za-z0-9_@])@((?:Image|Video)\d+)(?![A-Za-z0-9_])/g)) {
+  for (const match of text.matchAll(
+    /(^|[^A-Za-z0-9_@])@((?:Image|Video|Audio)\d+)(?![A-Za-z0-9_])/g
+  )) {
     if (!references.some((ref) => ref.label === match[2]))
       throw new Error(
         messages?.missing(match[2]!) ??

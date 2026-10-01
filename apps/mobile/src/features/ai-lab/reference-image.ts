@@ -13,8 +13,15 @@ const imageCheckpoint = z.object({
   kind: z.literal("ai_reference_image"),
   contentType: z.enum(["image/jpeg", "image/png", "image/webp"]),
 });
+const audioCheckpoint = imageCheckpoint.extend({
+  kind: z.literal("ai_reference_audio"),
+  contentType: z.enum(["audio/mpeg", "audio/wav", "audio/x-wav"]),
+  durationSeconds: z.number().finite().positive(),
+  bytes: z.number().int().positive(),
+});
 export const referenceCheckpoint = z.discriminatedUnion("kind", [
   imageCheckpoint,
+  audioCheckpoint,
   imageCheckpoint.extend({
     kind: z.literal("ai_reference_video"),
     contentType: z.enum(["video/mp4", "video/quicktime"]),
@@ -135,8 +142,8 @@ export async function confirmReferenceUpload(
       })
     );
   generationSession(generation, signal);
-  if (value.kind === "ai_reference_video" && receipt.storageKey !== value.storageKey)
-    throw new Error("Reference video confirmation scope mismatch.");
+  if (value.kind !== "ai_reference_image" && receipt.storageKey !== value.storageKey)
+    throw new Error("Reference media confirmation scope mismatch.");
   // Reference-image confirmation promotes staging to the verified final key.
   // The returned key is deliberately different; confirmation remains idempotent.
   return receipt;

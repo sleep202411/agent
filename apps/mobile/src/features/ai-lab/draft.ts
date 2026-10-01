@@ -16,7 +16,7 @@ const draftSchema = z.object({
         mediaAssetId: z.string().uuid(),
         url: z.string().url(),
         fileName: z.string(),
-        kind: z.enum(["image", "video"]).optional(),
+        kind: z.enum(["image", "video", "audio"]).optional(),
         durationSeconds: z.number().finite().positive().optional(),
         bytes: z.number().int().positive().optional(),
         width: z.number().int().positive().optional(),

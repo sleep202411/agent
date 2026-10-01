@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { GenerationPanel } from "./panel";
 import { ApiRequestError } from "@/lib/api-client";
+vi.mock("@/features/services/conversation-audio", () => ({ ConversationAudio: () => null }));
+vi.mock("./reference-audio-metadata", () => ({ probeReferenceAudio: h.probe }));
 vi.mock("expo-image", () => ({ Image: () => null }));
 const h = vi.hoisted(() => ({
   signedIn: true,
@@ -672,6 +674,90 @@ it("restores video confirmation and exact metadata, then submits video mentions 
       nodes: [
         { type: "text", text: "Animate " },
         { type: "asset_ref", refId: job.id, label: "Video1" },
+      ],
+    },
+  });
+});
+
+it("restores audio confirmation and exact duration, then submits audio references for video generation", async () => {
+  const videoModel = {
+    ...model,
+    type: "video",
+    input_schema: {
+      type: "object",
+      required: ["prompt"],
+      properties: {
+        prompt: model.input_schema.properties.prompt,
+        referenceAudios: {
+          type: "array",
+          title: "Reference audio",
+          maxItems: 2,
+          items: {
+            type: "object",
+            properties: { url: { type: "string", format: "uri" } },
+            additionalProperties: false,
+          },
+          "x-ui": { control: "audio_upload", mediaKind: "audio", maxCombinedDurationSeconds: 15 },
+        },
+      },
+    },
+  };
+  const videoCatalog = {
+    ...catalog,
+    models: [videoModel],
+    presets: [{ ...catalog.presets[0], type: "video", label: "Video preset" }],
+  };
+  h.get.mockImplementation(async (path) =>
+    path === "/ai/models"
+      ? videoCatalog
+      : path === "/billing/entitlement/me"
+        ? { entitlement: { rank: 100 } }
+        : { jobs: [], nextCursor: null }
+  );
+  await mount();
+  await click("aiLab.video");
+  await change("Prompt", "Animate");
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file:///a.wav", name: "a.wav", mimeType: "audio/wav" }],
+  });
+  h.selected.mockResolvedValue({ size: 100, put: vi.fn().mockResolvedValue({ ok: true }) });
+  h.probe.mockResolvedValue({ durationSeconds: 2.125, width: 640, height: 480 });
+  h.post
+    .mockResolvedValueOnce({
+      uploadUrl: "https://storage.test/a",
+      method: "PUT",
+      headers: {},
+      storageKey: "audio/a",
+    })
+    .mockRejectedValueOnce(Error("confirmation lost"));
+  await click("aiLab.uploadAudio");
+  expect(host.textContent).toContain("aiLab.uploadPending");
+  await act(async () => root.render(null));
+  await mount();
+  h.post.mockResolvedValueOnce({
+    mediaAssetId: job.id,
+    storageKey: "audio/a",
+    url: "https://storage.test/a.wav",
+  });
+  await click("aiLab.confirmUpload");
+  expect(h.pick).toHaveBeenCalledTimes(1);
+  const saved = JSON.parse(h.records.get("ai-lab-draft:alice:composer")!);
+  expect(saved.values.referenceAudios[0]).toMatchObject({
+    durationSeconds: 2.125,
+    bytes: 100,
+  });
+  await click("aiLab.mention");
+  await click("aiLab.generate");
+  h.post.mockResolvedValueOnce({ ...job, type: "video" });
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls.at(-1)![1].data).toMatchObject({
+    input: { referenceAudios: [{ url: "https://storage.test/a.wav" }] },
+    referenceBindings: [{ kind: "audio", label: "Audio1", assetId: job.id }],
+    promptDocument: {
+      nodes: [
+        { type: "text", text: "Animate " },
+        { type: "asset_ref", refId: job.id, label: "Audio1" },
       ],
     },
   });

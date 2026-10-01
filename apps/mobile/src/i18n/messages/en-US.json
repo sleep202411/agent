@@ -3582,5 +3582,9 @@
   "aiLab.uploadVideo": "Upload reference video",
   "aiLab.videoFacts": "{seconds}s · {width} × {height}",
   "aiLab.previewReference": "Preview reference video",
-  "aiLab.videoHelp": "MP4/MOV. Upload to inspect duration and dimensions. The selected model’s limits apply; the server rechecks stored media before generation."
+  "aiLab.videoHelp": "MP4/MOV. Upload to inspect duration and dimensions. The selected model’s limits apply; the server rechecks stored media before generation.",
+  "aiLab.uploadAudio": "Upload reference audio",
+  "aiLab.audioFacts": "{seconds}s",
+  "aiLab.previewAudioReference": "Preview reference audio",
+  "aiLab.audioHelp": "MP3/WAV, up to 15 MiB. Upload to inspect duration. The selected model’s limits apply; audio may require an image or video reference."
 }

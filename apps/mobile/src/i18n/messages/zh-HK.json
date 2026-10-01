@@ -3582,5 +3582,9 @@
   "aiLab.uploadVideo": "上傳參考影片",
   "aiLab.videoFacts": "{seconds} 秒 · {width} × {height}",
   "aiLab.previewReference": "預覽參考影片",
-  "aiLab.videoHelp": "支援 MP4/MOV。上傳後讀取時長與尺寸，並按所選模型限制檢查；生成前伺服器會重新檢查已儲存媒體。"
+  "aiLab.videoHelp": "支援 MP4/MOV。上傳後讀取時長與尺寸，並按所選模型限制檢查；生成前伺服器會重新檢查已儲存媒體。",
+  "aiLab.uploadAudio": "上傳參考音訊",
+  "aiLab.audioFacts": "{seconds} 秒",
+  "aiLab.previewAudioReference": "預覽參考音訊",
+  "aiLab.audioHelp": "MP3/WAV，最大 15 MiB。上傳後讀取時長；遵循所選模型的限制，音訊可能需要同時附加圖片或影片參考。"
 }
