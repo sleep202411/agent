@@ -1,3 +1,4 @@
+import { CastingInvitesPanel } from "./casting-invites-panel";
 import { SkillManagementPanel } from "./skill-management-panel";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
@@ -50,7 +51,8 @@ export function ProjectGenerationPanel({
     [error, setError] = useState(initial.error),
     [epoch, setEpoch] = useState(0),
     [busy, setBusy] = useState(false),
-    [manageSkills, setManageSkills] = useState(false);
+    [manageSkills, setManageSkills] = useState(false),
+    [manageCasting, setManageCasting] = useState(false);
   const reportBusy = useCallback(
     (value: boolean) => {
       setBusy(value);
@@ -97,6 +99,8 @@ export function ProjectGenerationPanel({
       record.write(JSON.stringify(value));
       setProject(undefined);
       setSelected(value);
+      setManageCasting(false);
+      setManageSkills(false);
       setOpen(false);
       setError("");
       setLoading(!!value);
@@ -162,10 +166,22 @@ export function ProjectGenerationPanel({
           </ScrollView>
         ) : null}
       </View>
-      {current && !manageSkills
+      {current && !manageSkills && !manageCasting
         ? button(t("aiLab.manageSkills"), () => setManageSkills(true))
         : null}
-      {canRender && current && manageSkills ? (
+      {current?.kind === "platform" && current.canGenerate && !manageCasting && !manageSkills
+        ? button(t("casting.title"), () => setManageCasting(true))
+        : null}
+      {canRender && current?.kind === "platform" && manageCasting ? (
+        <CastingInvitesPanel
+          key={current.id}
+          userId={userId}
+          generation={generation}
+          project={current}
+          onBack={() => setManageCasting(false)}
+          onBusyChange={reportBusy}
+        />
+      ) : canRender && current && manageSkills ? (
         <SkillManagementPanel
           key={`${current.kind}:${current.id}`}
           userId={userId}

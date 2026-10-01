@@ -2,6 +2,11 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ProjectGenerationPanel } from "./project-panel";
+vi.mock("./casting-invites-panel", () => ({
+  CastingInvitesPanel: ({ onBack }: { onBack: () => void }) => (
+    <button onClick={onBack}>casting-back</button>
+  ),
+}));
 vi.mock("./skill-management-panel", () => ({ SkillManagementPanel: () => null }));
 const h = vi.hoisted(() => ({
   get: vi.fn(),
@@ -139,4 +144,18 @@ it("project-only membership never opens a workspace composer or workspace billin
   expect(button("aiLab.noProject")).toBeUndefined();
   await click("Creative · aiLab.creativeProject");
   expect(host.textContent).toContain("composer:Creative:true");
+});
+
+it("opens casting only for Creative editors and returns to the existing composer", async () => {
+  await mount();
+  await click("aiLab.project: aiLab.noProject");
+  await click("Creative · aiLab.creativeProject");
+  await click("casting.title");
+  expect(host.textContent).toContain("casting-back");
+  expect(host.textContent).not.toContain("composer:");
+  await click("casting-back");
+  expect(host.textContent).toContain("composer:Creative:true");
+  h.get.mockResolvedValue({ ...project, canGenerate: false });
+  await click("aiLab.refreshProjects");
+  expect(button("casting.title")).toBeUndefined();
 });
