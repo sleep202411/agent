@@ -3622,5 +3622,14 @@
   "aiLab.skillScope.image_generation": "图像生成",
   "aiLab.skillScope.video_generation": "视频生成",
   "aiLab.skillScope.preflight": "预检",
-  "aiLab.skillScope.qa": "质量检查"
+  "aiLab.skillScope.qa": "质量检查",
+  "aiLab.skillImport": "导入技能包",
+  "aiLab.skillImportHint": "选择 Markdown 文件或 ZIP 技能包，不超过 1 MiB。待确认导入会在此设备保存原文件，直至确认或清除。",
+  "aiLab.skillPickPackage": "选择技能包",
+  "aiLab.skillDiscardPackage": "放弃已选文件",
+  "aiLab.skillImportScope.project": "当前项目",
+  "aiLab.skillImportScope.workspace": "工作区技能库",
+  "aiLab.skillImportKind.general": "通用",
+  "aiLab.skillImportKind.image": "图像",
+  "aiLab.skillImportKind.video": "视频"
 }

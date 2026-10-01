@@ -1,3 +1,5 @@
+import { pickSkillPackage } from "./skill-package-picker";
+import type { SkillPackage } from "./skill-package-content";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -66,6 +68,9 @@ export function SkillManagementPanel({
     [loading, setLoading] = useState(true),
     [epoch, setEpoch] = useState(0),
     [query, setQuery] = useState(""),
+    [packageFile, setPackageFile] = useState<SkillPackage>(),
+    [importScope, setImportScope] = useState<"project" | "workspace">("project"),
+    [importKind, setImportKind] = useState<"general" | "image" | "video">("general"),
     [scope, setScope] = useState<SkillScope>("image_generation"),
     [confirmation, setConfirmation] = useState<
       { intent: SkillMutation; label: string } | "clear"
@@ -102,6 +107,7 @@ export function SkillManagementPanel({
       () => writeSkillMutation(intent, userId, generation, project, controller.current!.signal),
       () => {
         setPending(null);
+        setPackageFile(undefined);
         setError("");
         setEpoch((v) => v + 1);
       },
@@ -180,6 +186,67 @@ export function SkillManagementPanel({
         </View>
       ) : null}
       {data && !data.canManage ? <ThemedText>{t("aiLab.skillManageReadOnly")}</ThemedText> : null}
+      <View style={{ gap: 6 }}>
+        <ThemedText>{t("aiLab.skillImport")}</ThemedText>
+        <ThemedText type="small">{t("aiLab.skillImportHint")}</ThemedText>
+        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+          {(["project", "workspace"] as const).map((value) =>
+            btn(
+              `${importScope === value ? "✓ " : ""}${t(`aiLab.skillImportScope.${value}`)}`,
+              () => setImportScope(value),
+              locked || (value === "workspace" && !data?.canManageWorkspace),
+              value
+            )
+          )}
+        </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+          {(["general", "image", "video"] as const).map((value) =>
+            btn(
+              `${importKind === value ? "✓ " : ""}${t(`aiLab.skillImportKind.${value}`)}`,
+              () => setImportKind(value),
+              locked,
+              value
+            )
+          )}
+        </View>
+        <Button
+          label={t("aiLab.skillPickPackage")}
+          disabled={locked}
+          onPress={() => {
+            void op.run(
+              () => pickSkillPackage(generation, controller.current!.signal),
+              (file) => {
+                if (file) {
+                  setPackageFile(file);
+                  setError("");
+                }
+              },
+              (e) => setError(e instanceof Error ? e.message : String(e))
+            );
+          }}
+        />
+        {packageFile ? (
+          <>
+            <ThemedText type="small">
+              {packageFile.name} · {packageFile.bytes} B
+            </ThemedText>
+            {btn(
+              t("aiLab.skillImport"),
+              () =>
+                prepare(
+                  { kind: "import", scope: importScope, skillKind: importKind, file: packageFile },
+                  `${packageFile.name} · ${t(`aiLab.skillImportScope.${importScope}`)} · ${t(`aiLab.skillImportKind.${importKind}`)}`
+                ),
+              locked || (importScope === "workspace" && !data?.canManageWorkspace)
+            )}
+            {btn(
+              t("aiLab.skillDiscardPackage"),
+              () => setPackageFile(undefined),
+              op.busy || !!pending
+            )}
+          </>
+        ) : null}
+      </View>
       <TextInput
         accessibilityLabel={t("aiLab.skillSearch")}
         placeholder={t("aiLab.skillSearch")}

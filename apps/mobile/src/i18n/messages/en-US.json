@@ -3622,5 +3622,14 @@
   "aiLab.skillScope.image_generation": "Image generation",
   "aiLab.skillScope.video_generation": "Video generation",
   "aiLab.skillScope.preflight": "Preflight",
-  "aiLab.skillScope.qa": "Quality assurance"
+  "aiLab.skillScope.qa": "Quality assurance",
+  "aiLab.skillImport": "Import Skill package",
+  "aiLab.skillImportHint": "Choose a Markdown file or ZIP package, up to 1 MiB. Pending imports retain the original file on this device until confirmed or cleared.",
+  "aiLab.skillPickPackage": "Choose package",
+  "aiLab.skillDiscardPackage": "Discard selected file",
+  "aiLab.skillImportScope.project": "This project",
+  "aiLab.skillImportScope.workspace": "Workspace library",
+  "aiLab.skillImportKind.general": "General",
+  "aiLab.skillImportKind.image": "Image",
+  "aiLab.skillImportKind.video": "Video"
 }

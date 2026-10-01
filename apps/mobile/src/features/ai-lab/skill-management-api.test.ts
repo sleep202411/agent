@@ -1,3 +1,4 @@
+import { packSkillPackage } from "./skill-package-content";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   loadSkillCatalog,
@@ -7,6 +8,7 @@ import {
 } from "./skill-management-api";
 const h = vi.hoisted(() => ({
   get: vi.fn(),
+  form: vi.fn(),
   post: vi.fn(),
   put: vi.fn(),
   delete: vi.fn(),
@@ -14,7 +16,7 @@ const h = vi.hoisted(() => ({
   records: new Map<string, string>(),
 }));
 vi.mock("@/lib/api-client", () => ({
-  api: { get: h.get, post: h.post, put: h.put, delete: h.delete },
+  api: { get: h.get, post: h.post, put: h.put, delete: h.delete, postFormData: h.form },
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/durable-record", () => ({
@@ -224,4 +226,85 @@ it("writes an explicit complete default set and checks the returned set", async 
   await writeSkillMutation(c, "alice", 1, project, signal());
   expect(h.put.mock.calls[1]![0]).toBe(`/project-skills/platform/${id}/defaults/image_generation`);
   expect(h.put.mock.calls[1]![1].data.installationIds).toEqual([id, versionId]);
+});
+
+it("imports exact durable bytes with the original key and revision after interruption", async () => {
+  const file = packSkillPackage(
+    "SKILL.md",
+    new TextEncoder().encode("---\nname: Lighting\ndescription: Light\n---\nUse soft light.")
+  );
+  const intent: SkillMutation = {
+    clientKey,
+    ownerKind: "platform",
+    projectId: id,
+    workspaceId: id,
+    expectedProjectRevision: 1,
+    kind: "import",
+    scope: "project",
+    skillKind: "image",
+    file,
+  };
+  h.form.mockImplementationOnce(async (path, form, config) => {
+    expect(skillMutationBox("alice", 1, project).read()).toEqual(intent);
+    expect(path).toBe(`/project-skills/platform/${id}/catalog/import`);
+    expect(form.get("file").name).toBe("SKILL.md");
+    expect(form.get("kind")).toBe("image");
+    expect(config.retry).toBe(false);
+    throw Error("lost");
+  });
+  await expect(writeSkillMutation(intent, "alice", 1, project, signal())).rejects.toThrow("lost");
+  revision = 2;
+  h.form.mockResolvedValue({
+    projectRevision: 2,
+    skill: { id: skillId, kind: "image", ownershipScope: "project" },
+    installation,
+  });
+  await writeSkillMutation(
+    skillMutationBox("alice", 1, project).read()!,
+    "alice",
+    1,
+    project,
+    signal()
+  );
+  expect(h.form.mock.calls[1]![1].get("idempotencyKey")).toBe(clientKey);
+  expect(h.form.mock.calls[1]![1].get("expectedProjectRevision")).toBe("1");
+  expect(skillMutationBox("alice", 1, project).read()).toBeNull();
+});
+it("requires workspace management and rejects corrupt bytes before sending", async () => {
+  const intent: SkillMutation = {
+    clientKey,
+    ownerKind: "platform",
+    projectId: id,
+    workspaceId: id,
+    expectedProjectRevision: 1,
+    kind: "import",
+    scope: "workspace",
+    skillKind: "general",
+    file: packSkillPackage("skill.zip", new Uint8Array([80, 75, 3, 4])),
+  };
+  await expect(writeSkillMutation(intent, "alice", 1, project, signal())).rejects.toThrow(
+    "administrator"
+  );
+  const base = h.get.getMockImplementation()!;
+  h.get.mockImplementation(async (path) => ({ ...(await base(path)), canManageWorkspace: true }));
+  await expect(
+    writeSkillMutation(
+      { ...intent, file: { ...intent.file, checksum: "0".repeat(64) } },
+      "alice",
+      1,
+      project,
+      signal()
+    )
+  ).rejects.toThrow("checksum");
+  expect(h.form).not.toHaveBeenCalled();
+  expect(skillMutationBox("alice", 1, project).read()).toBeNull();
+  h.form.mockResolvedValue({
+    projectRevision: 2,
+    skill: { id: skillId, kind: "general", ownershipScope: "project" },
+    installation,
+  });
+  await expect(writeSkillMutation(intent, "alice", 1, project, signal())).rejects.toThrow(
+    "receipt mismatch"
+  );
+  expect(skillMutationBox("alice", 1, project).read()).not.toBeNull();
 });

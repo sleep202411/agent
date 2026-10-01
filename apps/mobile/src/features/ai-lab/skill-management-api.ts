@@ -1,3 +1,5 @@
+import { skillPackage, unpackSkillPackage } from "./skill-package-content";
+import { skillPackageForm } from "./skill-package-file";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { durableRecord } from "@/lib/durable-record";
@@ -20,6 +22,7 @@ const catalogSchema = z.object({
   projectId: id,
   projectRevision: z.number().int().nonnegative(),
   canManage: z.boolean(),
+  canManageWorkspace: z.boolean().optional(),
   items: z.array(
     z.object({
       id,
@@ -98,6 +101,12 @@ const base = z.object({
   expectedProjectRevision: z.number().int().nonnegative(),
 });
 export const skillMutation = z.discriminatedUnion("kind", [
+  base.extend({
+    kind: z.literal("import"),
+    scope: z.enum(["project", "workspace"]),
+    skillKind: z.enum(["general", "image", "video"]),
+    file: skillPackage,
+  }),
   base.extend({ kind: z.literal("install"), skillId: id, versionId: id }),
   base.extend({
     kind: z.literal("remove"),
@@ -139,6 +148,9 @@ export async function writeSkillMutation(
     throw new Error("Skill change project mismatch.");
   const fresh = await loadSkillCatalog(project, generation, signal);
   if (!fresh.canManage) throw new Error("You cannot manage Skills in this project.");
+  if (intent.kind === "import" && intent.scope === "workspace" && !fresh.canManageWorkspace)
+    throw new Error("Workspace administrator permission is required to import a workspace Skill.");
+  if (intent.kind === "import") unpackSkillPackage(intent.file);
   const box = skillMutationBox(user, generation, project);
   // Preserve the original revision/key on recovery; server receipts precede revision checks.
   const existing = box.read();
@@ -151,7 +163,37 @@ export async function writeSkillMutation(
     expectedProjectRevision: intent.expectedProjectRevision,
   };
   let value: unknown;
-  if (intent.kind === "install") {
+  if (intent.kind === "import") {
+    const { form, dispose } = skillPackageForm(unpackSkillPackage(intent.file), intent.file.name);
+    form.append("scope", intent.scope);
+    form.append("kind", intent.skillKind);
+    form.append("expectedProjectRevision", String(intent.expectedProjectRevision));
+    form.append("idempotencyKey", intent.clientKey);
+    try {
+      value = await api.postFormData(`${path}/catalog/import`, form, {
+        service: "aurora",
+        signal,
+        retry: false,
+        timeout: 45_000,
+      });
+    } finally {
+      dispose();
+    }
+    const receipt = z
+      .object({
+        projectRevision: z.number().int().nonnegative(),
+        skill: z.object({ id, kind: z.string(), ownershipScope: z.string() }),
+        installation: skillInstallation.extend({ skillId: id }),
+      })
+      .parse(value);
+    if (
+      receipt.skill.id !== receipt.installation.skillId ||
+      receipt.skill.kind !== intent.skillKind ||
+      receipt.skill.ownershipScope !== intent.scope ||
+      receipt.installation.status !== "active"
+    )
+      throw new Error("Skill import receipt mismatch.");
+  } else if (intent.kind === "install") {
     value = await api.post(`${path}/installations`, {
       service: "aurora",
       signal,
