@@ -55,6 +55,7 @@ export default function IpStudioScreen() {
               [
                 { path: "contributors", label: "ipContributors.heading" },
                 { path: "rights", label: "ipGovernance.heading" },
+                { path: "commerce", label: "ipCommerce.heading" },
               ] as const
             ).map((item) => (
               <Pressable
