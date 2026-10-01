@@ -27,8 +27,10 @@ vi.mock("@/i18n", () => ({
 vi.mock("expo-modules-core", () => ({
   uuid: { v4: () => "00000000-0000-4000-8000-000000000004" },
 }));
-vi.mock("@/components/authed-web-view", () => ({
-  AuthedWebView: ({ path }: { path: string }) => <div>web:{path}</div>,
+vi.mock("./private-cases", () => ({
+  PrivateCases: ({ initialCaseId }: { initialCaseId?: string }) => (
+    <div>web:/crews/cases{initialCaseId ? `/${initialCaseId}` : ""}</div>
+  ),
 }));
 vi.mock("@/components/themed-text", () => ({
   ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,

@@ -3091,5 +3091,17 @@
   "feedbackHistory.submit": "提交",
   "feedbackHistory.create": "评价此任务",
   "feedbackHistory.creationHelp": "任务批准后，创作者与实际审核人可相互评价。提交后不可修改。",
-  "feedbackHistory.comment": "评价内容"
+  "feedbackHistory.comment": "评价内容",
+  "privateCases.back": "返回案件",
+  "privateCases.privacy": "案件仅对参与者及授权运营人员开放。",
+  "privateCases.empty": "暂无案件。",
+  "privateCases.open": "待处理",
+  "privateCases.in_review": "审核中",
+  "privateCases.resolved": "已解决",
+  "privateCases.appealed": "已申诉",
+  "privateCases.backDetail": "返回案件详情",
+  "privateCases.evidence": "证据与附件",
+  "privateCases.evidenceRefs": "证据引用：",
+  "privateCases.appeal": "申诉此处理结果",
+  "privateCases.message": "案件留言"
 }

@@ -7,7 +7,7 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
-import { AuthedWebView } from "@/components/authed-web-view";
+import { PrivateCases } from "./private-cases";
 import {
   fetchTaskFeedback,
   feedbackOutbox,
@@ -67,7 +67,7 @@ function History(props: Props) {
     return (
       <View style={{ flex: 1 }}>
         <Action label={t("feedbackHistory.back")} onPress={() => setWeb(undefined)} />
-        <AuthedWebView path={web} title={t("feedbackHistory.title")} />
+        <PrivateCases {...props} initialCaseId={web.split("/")[3]} />
       </View>
     );
   return (

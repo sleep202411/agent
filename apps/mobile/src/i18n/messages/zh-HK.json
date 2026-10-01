@@ -3091,5 +3091,17 @@
   "feedbackHistory.submit": "提交",
   "feedbackHistory.create": "評價此任務",
   "feedbackHistory.creationHelp": "任務批准後，創作者與實際審核人可相互評價。提交後不可修改。",
-  "feedbackHistory.comment": "評價內容"
+  "feedbackHistory.comment": "評價內容",
+  "privateCases.back": "返回案件",
+  "privateCases.privacy": "案件僅對參與者及授權營運人員開放。",
+  "privateCases.empty": "暫無案件。",
+  "privateCases.open": "待處理",
+  "privateCases.in_review": "審核中",
+  "privateCases.resolved": "已解決",
+  "privateCases.appealed": "已申訴",
+  "privateCases.backDetail": "返回案件詳情",
+  "privateCases.evidence": "證據與附件",
+  "privateCases.evidenceRefs": "證據引用：",
+  "privateCases.appeal": "申訴此處理結果",
+  "privateCases.message": "案件留言"
 }

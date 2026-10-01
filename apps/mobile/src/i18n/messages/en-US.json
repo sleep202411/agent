@@ -3091,5 +3091,17 @@
   "feedbackHistory.submit": "Submit",
   "feedbackHistory.create": "Rate this task",
   "feedbackHistory.creationHelp": "After approval, the creator and actual reviewer can evaluate each other. Submitted feedback cannot be edited.",
-  "feedbackHistory.comment": "Feedback comment"
+  "feedbackHistory.comment": "Feedback comment",
+  "privateCases.back": "Back to cases",
+  "privateCases.privacy": "Cases are private to their participants and authorized operations staff.",
+  "privateCases.empty": "No cases.",
+  "privateCases.open": "Open",
+  "privateCases.in_review": "In review",
+  "privateCases.resolved": "Resolved",
+  "privateCases.appealed": "Appealed",
+  "privateCases.backDetail": "Back to case",
+  "privateCases.evidence": "Evidence and attachments",
+  "privateCases.evidenceRefs": "Evidence references:",
+  "privateCases.appeal": "Appeal this resolution",
+  "privateCases.message": "Case message"
 }
