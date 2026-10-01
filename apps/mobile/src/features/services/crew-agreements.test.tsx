@@ -212,3 +212,23 @@ it("only offers creation when server capability allows it", async () => {
   await act(async () => button("agreementCreate.title").click());
   expect(host.textContent).toContain("create form");
 });
+
+it("opens a direct agreement without guessing its recipient and returns to the list", async () => {
+  await act(async () =>
+    root.render(
+      <CrewAgreements
+        crewId="crew"
+        userId="user"
+        generation={1}
+        initialAgreementId={record.id}
+        onClose={h.close}
+      />
+    )
+  );
+  expect(host.textContent).toContain(`agreement ${record.id}:`);
+  expect(host.textContent).not.toContain(`agreement ${record.id}:user`);
+  expect(h.detail).not.toHaveBeenCalled();
+  await act(async () => button("return list").click());
+  expect(h.detail).toHaveBeenCalledTimes(1);
+  expect(host.textContent).toContain("Production Agreement");
+});

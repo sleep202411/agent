@@ -79,3 +79,20 @@ it("maps exact income, members and Crew-list destinations without losing subview
     path,
   });
 });
+it("supports real short Crew IDs and opens an exact native agreement", () => {
+  const shortCrew = "imrAnlXZxyG9";
+  expect(
+    notificationDestination(
+      notification(`/crews/${shortCrew}/workspace?tab=tasks&task=${task}`),
+      "global",
+      "en-US"
+    )
+  ).toEqual({ kind: "native", path: `/crew-tasks/${shortCrew}?task=${task}` });
+  expect(
+    notificationDestination(
+      notification(`/crews/${shortCrew}/workspace?tab=members&agreement=${task}`),
+      "global",
+      "en-US"
+    )
+  ).toEqual({ kind: "native", path: `/crew-agreements/${shortCrew}?agreement=${task}` });
+});

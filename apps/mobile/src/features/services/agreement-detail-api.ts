@@ -49,7 +49,7 @@ export type Agreement = z.infer<typeof agreement>;
 export async function fetchLinkedAgreement(
   crewId: string,
   agreementId: string,
-  memberUserId: string,
+  memberUserId: string | undefined,
   generation: number,
   signal: AbortSignal
 ) {
@@ -79,7 +79,8 @@ export async function fetchLinkedAgreement(
     }
     const match = page.items.find((item) => item.id === agreementId);
     if (match) {
-      if (match.memberUserId !== memberUserId) throw new Error("Agreement recipient mismatch");
+      if (memberUserId !== undefined && match.memberUserId !== memberUserId)
+        throw new Error("Agreement recipient mismatch");
       return { ...match, canSync: page.capabilities.sync };
     }
     if (!page.nextCursor) return null;

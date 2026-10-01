@@ -12,17 +12,38 @@ import {
   type AgreementPage,
   type AgreementView,
 } from "./crew-agreements-api";
-type Props = { crewId: string; userId: string; generation: number; onClose: () => void };
+type Props = {
+  initialAgreementId?: string;
+  crewId: string;
+  userId: string;
+  generation: number;
+  onClose: () => void;
+};
 export function CrewAgreements(props: Props) {
   const active = useScreenActive();
   return active && props.generation === getAuthGeneration() ? (
-    <Session key={`${props.crewId}:${props.userId}:${props.generation}`} {...props} />
+    <Session
+      key={`${props.crewId}:${props.userId}:${props.initialAgreementId ?? ""}:${props.generation}`}
+      {...props}
+    />
   ) : null;
 }
 function Session(props: Props) {
   const t = useTranslations();
+  const [directAgreement, setDirectAgreement] = useState(props.initialAgreementId);
   const [view, setView] = useState<AgreementView>("all"),
     [revision, setRevision] = useState(0);
+  if (directAgreement)
+    return (
+      <AgreementDetail
+        crewId={props.crewId}
+        agreementId={directAgreement}
+        userId={props.userId}
+        generation={props.generation}
+        closeLabel={t("crewAgreements.backToList")}
+        onClose={() => setDirectAgreement(undefined)}
+      />
+    );
   return (
     <View style={{ flex: 1 }}>
       <ThemedText>{t("crewAgreements.title")}</ThemedText>
