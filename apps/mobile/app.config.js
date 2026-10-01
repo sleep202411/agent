@@ -296,6 +296,11 @@ module.exports = ({ config }) => {
       icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
       buildNumber: "80",
+      infoPlist: {
+        ...config.ios?.infoPlist,
+        NSCameraUsageDescription: "Use your camera to verify your own likeness.",
+        NSMicrophoneUsageDescription: "Use your microphone during likeness verification.",
+      },
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
@@ -307,6 +312,13 @@ module.exports = ({ config }) => {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
       versionCode: 80,
+      permissions: [
+        ...new Set([
+          ...(config.android?.permissions ?? []),
+          "android.permission.CAMERA",
+          "android.permission.RECORD_AUDIO",
+        ]),
+      ],
       intentFilters: [
         ...(config.android?.intentFilters ?? []),
         ...(studioLinks

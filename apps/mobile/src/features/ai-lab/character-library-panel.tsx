@@ -1,16 +1,15 @@
 import { EnrollmentConsent } from "./project-likeness-consent";
-import { appEnv } from "@/config/app-env";
+import { EnrollmentPanel } from "./enrollment-panel";
 import { CharacterMediaPanel } from "./character-media-panel";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
-import { useRouter } from "expo-router";
+import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { useRouter, useIsFocused } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
-import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations, useLocale } from "@/i18n";
+import { useTranslations } from "@/i18n";
 import {
   loadAgentWorkspaces,
   canCreateStudioProject,
@@ -56,7 +55,8 @@ function Button({
   );
 }
 export function CharacterLibraryPanel(props: Viewer) {
-  return useScreenActive() && props.generation === getAuthGeneration() ? (
+  // Camera permission dialogs/backgrounding must not destroy the provider session.
+  return useIsFocused() && props.generation === getAuthGeneration() ? (
     <Library key={`${props.userId}:${props.generation}`} {...props} />
   ) : null;
 }
@@ -132,7 +132,7 @@ function Session({
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(`library:${workspace.id}`, true);
-  const locale = useLocale();
+  const [enrolling, setEnrolling] = useState(false);
   const [creatingLikeness, setCreatingLikeness] = useState(false),
     [enrollmentConsent, setEnrollmentConsent] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
@@ -240,7 +240,7 @@ function Session({
     );
   };
   const editable = canCreateStudioProject(workspace),
-    disabled = op.busy || mediaBusy || !!pending || !!initial.error;
+    disabled = op.busy || mediaBusy || enrolling || !!pending || !!initial.error;
   const field = (
     label: string,
     value: string,
@@ -366,23 +366,24 @@ function Session({
           </ThemedText>
           {detail.kind === "real_person" &&
           ["draft", "pending_verification"].includes(detail.status) ? (
-            <>
-              <ThemedText type="small">{t("enrollmentCreate.verificationHint")}</ThemedText>
-              <Button
-                label={t("enrollmentCreate.verify")}
-                disabled={disabled}
-                onPress={() => {
-                  void op.run(
-                    () =>
-                      Linking.openURL(
-                        `https://${appEnv.appRegion === "cn" ? "studio.fizzspace.cn" : "studio.fizzdragon.com"}/${locale}/characters/${detail.id}`
-                      ),
-                    () => {},
-                    fail
-                  );
+            enrolling ? (
+              <EnrollmentPanel
+                key={`enrollment:${detail.id}`}
+                scope={{ workspaceId: workspace.id, characterId: detail.id, generation }}
+                onClose={() => setEnrolling(false)}
+                onDetail={(next) => {
+                  setDetail(next);
+                  setRows((rows) => rows?.map((row) => (row.id === next.id ? next : row)));
+                  if (next.status === "active") setEnrolling(false);
                 }}
               />
-            </>
+            ) : (
+              <Button
+                label={t("enrollment.title")}
+                disabled={disabled || editing || !!confirmation}
+                onPress={() => setEnrolling(true)}
+              />
+            )
           ) : null}
           <CharacterMediaPanel
             key={detail.id}
@@ -391,7 +392,13 @@ function Session({
             userId={userId}
             generation={generation}
             canEdit={
-              editable && !op.busy && !pending && !initial.error && !editing && !confirmation
+              editable &&
+              !op.busy &&
+              !pending &&
+              !initial.error &&
+              !editing &&
+              !confirmation &&
+              !enrolling
             }
             onBusy={setMediaBusy}
             onDetail={setDetail}
@@ -434,6 +441,7 @@ function Session({
               if (creating && creatingLikeness) {
                 try {
                   libraryFields.parse({ name, description });
+                  setError("");
                   setEnrollmentConsent(true);
                 } catch (e) {
                   fail(e);
