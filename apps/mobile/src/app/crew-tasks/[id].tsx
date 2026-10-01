@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { useAuth, useAuthGate } from "@/auth";
@@ -8,7 +9,8 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
 export default function CrewTasksScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, task } = useLocalSearchParams<{ id: string; task?: string }>();
+  const initialTaskId = z.string().uuid().safeParse(task).success ? task : undefined;
   const auth = useAuth(),
     gate = useAuthGate(),
     active = useScreenActive();
@@ -38,7 +40,8 @@ export default function CrewTasksScreen() {
         </Pressable>
       ) : active && userId && typeof id === "string" && id.trim() && id.length <= 64 ? (
         <CrewTaskBrowser
-          key={`${id}:${auth.generation}`}
+          key={`${id}:${initialTaskId ?? ""}:${auth.generation}`}
+          initialTaskId={initialTaskId}
           crewId={id}
           userId={userId}
           generation={auth.generation}

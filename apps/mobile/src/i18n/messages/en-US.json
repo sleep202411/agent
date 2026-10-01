@@ -2829,5 +2829,6 @@
   "notifications.filters.sharing": "Sharing",
   "notifications.filters.system": "System",
   "notifications.markRead": "Mark read",
-  "notifications.loadMore": "Load more"
+  "notifications.loadMore": "Load more",
+  "notifications.view": "View"
 }

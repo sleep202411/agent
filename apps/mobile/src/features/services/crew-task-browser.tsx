@@ -30,7 +30,9 @@ export function CrewTaskBrowser({
   userId,
   generation,
   onClose,
+  initialTaskId,
 }: {
+  initialTaskId?: string;
   crewId: string;
   userId: string;
   generation: number;
@@ -56,7 +58,7 @@ export function CrewTaskBrowser({
   const [managingFields, setManagingFields] = useState(false);
   const [creating, setCreating] = useState(false);
   const [viewId, setViewId] = useState<string>();
-  const [taskId, setTaskId] = useState<string>();
+  const [taskId, setTaskId] = useState<string | undefined>(initialTaskId);
   const [webTask, setWebTask] = useState<string>();
   if (generation !== getAuthGeneration()) return null;
   if (showAppeals)

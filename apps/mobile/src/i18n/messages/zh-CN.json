@@ -2829,5 +2829,6 @@
   "notifications.filters.sharing": "共享",
   "notifications.filters.system": "系统",
   "notifications.markRead": "标为已读",
-  "notifications.loadMore": "加载更多"
+  "notifications.loadMore": "加载更多",
+  "notifications.view": "查看"
 }

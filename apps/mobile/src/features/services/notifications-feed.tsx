@@ -1,5 +1,10 @@
+import { useRouter } from "expo-router";
+import { appEnv } from "@/config";
+import { toHref } from "@/lib/navigation";
+import { AuthedWebView } from "@/components/authed-web-view";
+import { notificationDestination } from "./notification-destination";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Linking, FlatList, Pressable, ScrollView, View } from "react-native";
 import { NOTIFICATION_FILTERS } from "@repo/shared/notifications";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { useScreenActive } from "@/hooks/use-app-active";
@@ -20,13 +25,15 @@ export function NotificationsFeed({ generation, userId }: Props) {
   return <Feed key={`${generation}:${userId}`} generation={generation} userId={userId} />;
 }
 function Feed({ generation, userId }: Props) {
+  const router = useRouter();
+  const [webPath, setWebPath] = useState<string>();
   const t = useTranslations(),
     theme = useTheme(),
     locale = useLocale();
   const label = (key: string) => t(`notifications.${key}` as MessageKey);
   const [filter, setFilter] = useState<NotificationFilter>("all");
-  const list = useNotifications(String(generation), filter);
-  const liveUnavailable = useInboxRealtime(userId, generation, true, list.refresh);
+  const list = useNotifications(webPath ? undefined : String(generation), filter);
+  const liveUnavailable = useInboxRealtime(userId, generation, !webPath, list.refresh);
   const operation = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
@@ -56,6 +63,19 @@ function Feed({ generation, userId }: Props) {
       if (operation.current === controller) operation.current = null;
     }
   }
+  if (webPath)
+    return (
+      <View style={{ flex: 1 }}>
+        <Pressable
+          accessibilityRole="button"
+          style={{ padding: 12 }}
+          onPress={() => setWebPath(undefined)}
+        >
+          <ThemedText>{t("common.back")}</ThemedText>
+        </Pressable>
+        <AuthedWebView path={webPath} title={label("title")} />
+      </View>
+    );
   return (
     <View style={{ flex: 1, padding: 16, gap: 12 }}>
       {liveUnavailable && <ThemedText>{t("inbox.liveUnavailable")}</ThemedText>}
@@ -106,6 +126,26 @@ function Feed({ generation, userId }: Props) {
             <ThemedText type="smallBold">{item.title}</ThemedText>
             <ThemedText>{item.body}</ThemedText>
             <ThemedText type="small">{new Date(item.createdAt).toLocaleString(locale)}</ThemedText>
+            {notificationDestination(item, appEnv.appRegion, locale) && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy || !!list.error}
+                style={{ padding: 10 }}
+                onPress={() => {
+                  if (generation !== getAuthGeneration()) return;
+                  const destination = notificationDestination(item, appEnv.appRegion, locale);
+                  if (destination?.kind === "native") router.push(toHref(destination.path));
+                  else if (destination?.kind === "web") setWebPath(destination.path);
+                  else if (destination?.kind === "studio")
+                    void Linking.openURL(destination.url).catch((cause) => {
+                      if (generation === getAuthGeneration())
+                        setError(cause instanceof Error ? cause.message : String(cause));
+                    });
+                }}
+              >
+                <ThemedText>{label("view")}</ThemedText>
+              </Pressable>
+            )}
             {!item.readAt && (
               <Pressable
                 accessibilityRole="button"

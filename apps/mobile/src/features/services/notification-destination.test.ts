@@ -1,0 +1,49 @@
+import { expect, it } from "vitest";
+import { notificationDestination } from "./notification-destination";
+const crew = "11111111-1111-4111-8111-111111111111",
+  task = "22222222-2222-4222-8222-222222222222";
+const notification = (deeplink: string) => ({
+  id: "n",
+  type: "crew.task.assigned",
+  title: "Task",
+  body: "",
+  meta: { deeplink },
+  createdAt: "2026-10-01T00:00:00Z",
+  readAt: null,
+});
+it("opens the exact native Crew task, including localized Web links", () => {
+  expect(
+    notificationDestination(
+      notification(`/zh-CN/crews/${crew}/workspace?tab=tasks&task=${task}`),
+      "global",
+      "en-US"
+    )
+  ).toEqual({ kind: "native", path: `/crew-tasks/${crew}?task=${task}` });
+});
+it("preserves unsupported task subviews and invitations as Web routes", () => {
+  for (const path of [
+    `/crews/${crew}/workspace?tab=tasks&task=${task}&comment=c`,
+    `/crew-invitations/invitation-id`,
+  ])
+    expect(notificationDestination(notification(path), "global", "en-US")).toEqual({
+      kind: "web",
+      path,
+    });
+});
+it.each([
+  "https://evil.test",
+  "//evil.test",
+  "/%2Fexample.test",
+  "/foo%5Cbar",
+  "/foo%0abar",
+  "/%zz",
+  "javascript:alert(1)",
+])("rejects unsafe destination %s", (path) => {
+  expect(notificationDestination(notification(path), "global", "en-US")).toBeNull();
+});
+it("resolves Studio using the build region and locale, not the API origin", () => {
+  expect(notificationDestination(notification("/project/project-id"), "cn", "zh-HK")).toEqual({
+    kind: "studio",
+    url: "https://studio.fizzspace.cn/zh-HK/project/project-id",
+  });
+});

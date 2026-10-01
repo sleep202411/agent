@@ -345,3 +345,25 @@ it("does not open appeal data after an account switch", async () => {
   await act(async () => button("trustAppeals.queue").click());
   expect(button("close appeals")).toBeUndefined();
 });
+it("opens a notification's initial task through the normal authorized detail component", async () => {
+  await act(async () =>
+    root.render(
+      <CrewTaskBrowser
+        key="notification"
+        crewId="crew"
+        userId="1"
+        generation={1}
+        initialTaskId="notification-task"
+        onClose={h.close}
+      />
+    )
+  );
+  expect(h.detail).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      crewId: "crew",
+      taskId: "notification-task",
+      generation: 1,
+      userId: "1",
+    })
+  );
+});
