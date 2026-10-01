@@ -528,6 +528,15 @@ it("does not send when the pending request cannot be saved", async () => {
   expect(h.send).not.toHaveBeenCalled();
   expect(host.textContent).toContain("Storage full");
   expect(host.querySelector("input")!.value).toBe("Keep me");
+  expect(host.querySelector("input")!.disabled).toBe(false);
+  h.outboxSave.mockImplementation(() => undefined);
+  h.send.mockResolvedValue(message);
+  await act(async () => type("Edited before any send"));
+  await act(async () => click("thread.send"));
+  expect(h.send).toHaveBeenCalledWith("chat", {
+    body: "Edited before any send",
+    clientKey: "stable-key",
+  });
 });
 it("does not overwrite unreadable pending messages", async () => {
   h.outboxRead.mockImplementation(() => {
@@ -555,4 +564,20 @@ it("restores attachment-only sends without uploading the same file again", async
   expect(h.attach).toHaveBeenCalledWith(h.detail, "buyer", saved);
   expect(h.upload).not.toHaveBeenCalled();
   expect(h.outboxClear).toHaveBeenCalledWith("attachment-key");
+});
+
+it("clears an acknowledged durable request even when the composer has unmounted", async () => {
+  let finish!: (value: NativeMessage) => void;
+  h.send.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    })
+  );
+  await render();
+  await act(async () => type("Sent before leaving"));
+  await act(async () => click("thread.send"));
+  await act(async () => root.render(null));
+  await act(async () => finish(message));
+  expect(h.outboxClear).toHaveBeenCalledWith("stable-key");
+  expect(h.refresh).not.toHaveBeenCalled();
 });

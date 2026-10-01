@@ -68,7 +68,17 @@ function ConversationSession({
     )
   );
   const op = useAuthFormOperation(id, active);
-  const [body, setBody] = useState(""),
+  const [outbox] = useState(() => conversationOutbox(id, userId, generation));
+  const [initial] = useState(() => {
+    try {
+      return { pending: outbox.read(), error: undefined };
+    } catch (cause) {
+      return { pending: null, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+  const storageError = initial.error;
+  const restored = initial.error === undefined;
+  const [body, setBody] = useState(initial.pending?.body ?? ""),
     [sendError, setSendError] = useState<string>();
   const [assets, setAssets] = useState<CrewAsset[]>([]),
     [picking, setPicking] = useState(false),
@@ -79,7 +89,7 @@ function ConversationSession({
   const pendingUploads = useRef<{ crewId: string; items: CrewUpload[]; attempted: boolean }>({
     crewId: "",
     items: [],
-    attempted: false,
+    attempted: !!initial.pending,
   });
   useEffect(
     () => () => {
@@ -96,11 +106,15 @@ function ConversationSession({
     },
     [generation]
   );
-  const [mentions, setMentions] = useState<{ userId: string; label: string }[]>([]),
+  const [mentions, setMentions] = useState<{ userId: string; label: string }[]>(
+      initial.pending?.mentions ?? []
+    ),
     [mentionPicker, setMentionPicker] = useState(false),
     [mentionQuery, setMentionQuery] = useState("");
   const [taskPicker, setTaskPicker] = useState(false),
-    [taskReferences, setTaskReferences] = useState<{ taskId: string; label: string }[]>([]);
+    [taskReferences, setTaskReferences] = useState<{ taskId: string; label: string }[]>(
+      initial.pending?.tasks ?? []
+    );
   const [selectedTask, setSelectedTask] = useState<{ crewId: string; taskId: string }>();
   const [taskTarget, setTaskTarget] = useState<string>();
   const intent = useRef<
@@ -112,33 +126,19 @@ function ConversationSession({
         tasks?: { taskId: string; label: string }[];
       }
     | undefined
-  >(undefined);
-  const [outbox] = useState(() => conversationOutbox(id, userId, generation));
-  const [storageError, setStorageError] = useState<string>();
-  const [restored, setRestored] = useState(false);
-  const [pendingAttachmentCount, setPendingAttachmentCount] = useState(0);
-  useEffect(() => {
-    try {
-      const saved = outbox.read();
-      if (saved) {
-        intent.current = { ...saved, attachments: saved.attachments ?? [] };
-        setBody(saved.body);
-        setPendingAttachmentCount(saved.attachments?.length ?? 0);
-        setMentions(saved.mentions);
-        setTaskReferences(saved.tasks);
-        setAttempted(true);
-        pendingUploads.current.attempted = true;
-      }
-      setRestored(true);
-    } catch (cause) {
-      setStorageError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [outbox]);
+  >(
+    initial.pending
+      ? { ...initial.pending, attachments: initial.pending.attachments ?? [] }
+      : undefined
+  );
+  const [pendingAttachmentCount, setPendingAttachmentCount] = useState(
+    initial.pending?.attachments?.length ?? 0
+  );
   const [visibleId, setVisibleId] = useState<string>(),
     [readError, setReadError] = useState<string>(),
     [readRetry, setReadRetry] = useState(0);
   const [viewConfig] = useState({ itemVisiblePercentThreshold: 80, minimumViewTime: 500 });
-  const [attempted, setAttempted] = useState(false);
+  const [attempted, setAttempted] = useState(!!initial.pending);
   const detailId = history.detail?.id;
   const contextType = history.detail?.contextType;
   const crewChannel = history.detail?.crewChannel;
@@ -584,39 +584,39 @@ function ConversationSession({
               (!intent.current && !body.trim() && !assets.length && !uploads.length)
             )
               return;
-            if (!intent.current)
-              intent.current = {
-                body: body.trim(),
-                clientKey: inquiryKey(),
-                ...(canAttach && taskReferences.length
-                  ? { tasks: taskReferences.filter((task) => body.includes(`#${task.label}`)) }
-                  : {}),
-                ...(canAttach && mentions.length
-                  ? { mentions: mentions.filter((m) => body.includes(`@${m.label}`)) }
-                  : {}),
-                attachments: [
-                  ...assets.map((a) => ({ source: "asset" as const, assetNodeId: a.id })),
-                  ...uploads,
-                ],
-              };
-            const submitted = intent.current;
-            setPendingAttachmentCount(submitted.attachments.length);
-            pendingUploads.current.attempted = true;
-            setAttempted(true);
+            const submitted = intent.current ?? {
+              body: body.trim(),
+              clientKey: inquiryKey(),
+              ...(canAttach && taskReferences.length
+                ? { tasks: taskReferences.filter((task) => body.includes(`#${task.label}`)) }
+                : {}),
+              ...(canAttach && mentions.length
+                ? { mentions: mentions.filter((m) => body.includes(`@${m.label}`)) }
+                : {}),
+              attachments: [
+                ...assets.map((a) => ({ source: "asset" as const, assetNodeId: a.id })),
+                ...uploads,
+              ],
+            };
             void op.run(
-              () => {
+              async () => {
                 outbox.save(submitted);
-                return submitted.attachments.length
+                intent.current = submitted;
+                setPendingAttachmentCount(submitted.attachments.length);
+                pendingUploads.current.attempted = true;
+                setAttempted(true);
+                const result = await (submitted.attachments.length
                   ? sendConversationAttachments(conversation, userId, submitted)
                   : sendConversationText(id, {
                       body: submitted.body,
                       clientKey: submitted.clientKey,
                       ...(submitted.tasks ? { tasks: submitted.tasks } : {}),
                       ...(submitted.mentions ? { mentions: submitted.mentions } : {}),
-                    });
+                    }));
+                outbox.clear(submitted.clientKey);
+                return result;
               },
               () => {
-                outbox.clear(submitted.clientKey);
                 intent.current = undefined;
                 setAttempted(false);
                 setPendingAttachmentCount(0);
