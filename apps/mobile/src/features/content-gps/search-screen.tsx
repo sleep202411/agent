@@ -1,9 +1,10 @@
+import { useGpsBookmark } from "./use-gps-bookmark";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, FlatList, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { z } from "zod";
-import { useAuth } from "@/auth";
+import { useAuth, useAuthGate } from "@/auth";
 import { isChinaRegion } from "@/config";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
@@ -206,6 +207,7 @@ export function GpsSearchScreen() {
 }
 function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
   const auth = useAuth(),
+    gate = useAuthGate(),
     active = useScreenActive(),
     locale = useLocale(),
     t = useTranslations(),
@@ -235,6 +237,13 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
     locale,
     active && auth.status !== "hydrating" && valid,
     options
+  );
+  const bookmark = useGpsBookmark(
+    auth.generation,
+    viewerId,
+    locale,
+    state.page?.selected?.id ?? null,
+    active && valid && auth.status !== "hydrating"
   );
   const genres = useGpsGenres(locale, active && filters);
   const parsed = normalizeGpsDraft(draft, locale),
@@ -468,7 +477,25 @@ function Content({ initial }: { initial: ReturnType<typeof readGpsLink> }) {
               <View>
                 <ThemedText type="smallBold">{label("selection")}</ThemedText>
                 {state.page?.selected ? (
-                  <Card selected item={state.page.selected} select={() => {}} />
+                  <>
+                    <Card selected item={state.page.selected} select={() => {}} />
+                    <Action
+                      label={label(
+                        bookmark.busy ? "saving" : bookmark.saved ? "removeBookmark" : "bookmark"
+                      )}
+                      disabled={!active || Boolean(viewerId && (bookmark.busy || !bookmark.known))}
+                      onPress={() => {
+                        if (viewerId) void bookmark.toggle();
+                        else gate.requireAuth();
+                      }}
+                    />
+                    {bookmark.error && (
+                      <ThemedText accessibilityRole="alert">{bookmark.error}</ThemedText>
+                    )}
+                    {viewerId && !bookmark.known && !bookmark.busy && (
+                      <Action label={label("retry")} onPress={bookmark.retry} />
+                    )}
+                  </>
                 ) : (
                   state.page && <ThemedText>{label("selectionUnavailable")}</ThemedText>
                 )}

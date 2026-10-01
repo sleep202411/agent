@@ -1,12 +1,13 @@
 import { act, type ReactNode } from "react";
 import { renderToString } from "react-dom/server";
-import { hydrateRoot } from "react-dom/client";
+import { hydrateRoot, createRoot } from "react-dom/client";
 import { beforeEach, expect, it, vi } from "vitest";
 import { GpsSearchScreen } from "./search-screen";
 const h = vi.hoisted(() => ({
   params: {} as Record<string, string>,
   search: vi.fn(),
   get: vi.fn(),
+  gate: vi.fn(),
 }));
 vi.mock("expo-router", () => ({
   Stack: { Screen: () => null },
@@ -15,7 +16,7 @@ vi.mock("expo-router", () => ({
 }));
 vi.mock("@/auth", () => ({
   useAuth: () => ({ status: "anonymous", generation: 1 }),
-  useAuthGate: () => ({ requireAuth: vi.fn() }),
+  useAuthGate: () => ({ requireAuth: h.gate }),
 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => 1 }));
 vi.mock("@/lib/api-client", () => ({ api: { get: h.get } }));
@@ -140,3 +141,44 @@ it.each([false, true])(
     }
   }
 );
+
+it("selected IP bookmark opens the auth sheet for guests without a collection write", async () => {
+  const id = "11111111-1111-4111-8111-111111111111";
+  h.params = { selected: id, from: "0", to: "100" };
+  h.search.mockReturnValue({
+    items: [],
+    page: {
+      selected: {
+        id,
+        title: "Story",
+        summary: "",
+        matched: true,
+        locations: [],
+        eras: [],
+        episode: null,
+      },
+      places: [],
+      matchedCount: 1,
+      accessibleCount: 1,
+    },
+    loading: false,
+    hasMore: false,
+  });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(<GpsSearchScreen />));
+    const button = Array.from(host.querySelectorAll("button")).find(
+      (b) => b.textContent === "contentGpsDiscovery.bookmark"
+    )!;
+    expect(button.disabled).toBe(false);
+    await act(async () => button.click());
+    expect(h.gate).toHaveBeenCalledTimes(1);
+    expect(h.get).not.toHaveBeenCalled();
+    expect(h.params).toEqual({ selected: id, from: "0", to: "100" });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
