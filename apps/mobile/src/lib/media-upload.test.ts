@@ -2,6 +2,8 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { api } from "./api-client";
 import { uploadMobileMediaFile } from "./media-upload";
 vi.mock("./api-client", () => ({ api: { post: vi.fn() } }));
+const auth = vi.hoisted(() => ({ generation: 1 }));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => auth.generation }));
 const fetchMock = vi.fn();
 const file = { uri: "file:///local.pdf", name: "local.pdf", type: "application/pdf", size: 999 };
 const signed = {
@@ -12,6 +14,7 @@ const signed = {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  auth.generation = 1;
   vi.stubGlobal("fetch", fetchMock);
   fetchMock
     .mockResolvedValueOnce({
@@ -140,5 +143,77 @@ it("does not confirm if saving recovery data fails", async () => {
       },
     })
   ).rejects.toThrow("Disk full");
+  expect(api.post).toHaveBeenLastCalledWith(
+    "/media/cancel-upload",
+    expect.objectContaining({ timeout: 10000 })
+  );
+});
+
+it("releases the original Crew reservation after an aborted PUT using independent cancellation", async () => {
+  const controller = new AbortController();
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
+    .mockImplementationOnce(() => {
+      controller.abort();
+      throw new Error("Upload interrupted");
+    });
+  await expect(
+    uploadMobileMediaFile(file, {
+      kind: "crew_asset_file",
+      scope: { crewId: "crew" },
+      signal: controller.signal,
+    })
+  ).rejects.toThrow("Upload interrupted");
+  expect(api.post).toHaveBeenLastCalledWith("/media/cancel-upload", {
+    service: "aurora",
+    timeout: 10000,
+    data: {
+      storageKey: "issued-key",
+      kind: "crew_asset_file",
+      contentType: "application/pdf",
+      scope: { crewId: "crew" },
+    },
+  });
+});
+it("preserves the upload failure when reservation cleanup also fails", async () => {
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
+    .mockRejectedValueOnce(new Error("Storage offline"));
+  vi.mocked(api.post)
+    .mockReset()
+    .mockResolvedValueOnce(signed)
+    .mockRejectedValueOnce(new Error("Cleanup offline"));
+  await expect(
+    uploadMobileMediaFile(file, { kind: "crew_asset_file", scope: { crewId: "crew" } })
+  ).rejects.toThrow("Storage offline");
+});
+it("retains a saved confirmation checkpoint after confirmation response loss", async () => {
+  vi.mocked(api.post)
+    .mockReset()
+    .mockResolvedValueOnce(signed)
+    .mockRejectedValueOnce(new Error("Response lost"));
+  await expect(
+    uploadMobileMediaFile(file, {
+      kind: "crew_asset_file",
+      scope: { crewId: "crew" },
+      beforeConfirm: vi.fn(),
+    })
+  ).rejects.toThrow("Response lost");
+  expect(api.post).toHaveBeenCalledTimes(2);
+  expect(api.post).toHaveBeenLastCalledWith("/media/confirm", expect.anything());
+});
+it("does not use a new account to cancel the previous account upload", async () => {
+  fetchMock
+    .mockReset()
+    .mockResolvedValueOnce({ ok: true, blob: async () => new Blob(["data"]) })
+    .mockImplementationOnce(() => {
+      auth.generation = 2;
+      throw new Error("Account changed");
+    });
+  await expect(
+    uploadMobileMediaFile(file, { kind: "crew_asset_file", scope: { crewId: "crew" } })
+  ).rejects.toThrow("Account changed");
   expect(api.post).toHaveBeenCalledTimes(1);
 });

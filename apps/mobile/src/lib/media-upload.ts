@@ -1,3 +1,4 @@
+import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "./api-client";
 
 const AURORA = { service: "aurora" } as const;
@@ -51,6 +52,7 @@ export async function uploadMobileMediaFile(
   file: MobileUploadFile,
   options: MobileUploadOptions
 ): Promise<{ mediaAssetId: string; url: string }> {
+  const generation = getAuthGeneration();
   // Read the selected bytes before reserving storage. Picker size is optional
   // and may be stale; the server requires a positive, accurate byte count.
   options.signal?.throwIfAborted();
@@ -88,35 +90,59 @@ export async function uploadMobileMediaFile(
     signal: options.signal,
   });
 
-  // 2. PUT bytes straight to storage provider
-  options.signal?.throwIfAborted();
-  if (signed.method !== "PUT") throw new Error("Unsupported upload method");
+  let recoverySaved = false;
+  try {
+    // 2. PUT bytes straight to storage provider
+    options.signal?.throwIfAborted();
+    if (signed.method !== "PUT") throw new Error("Unsupported upload method");
 
-  const headers: Record<string, string> = {
-    "Content-Type": contentType,
-    ...(signed.headers ?? {}),
-  };
+    const headers: Record<string, string> = {
+      "Content-Type": contentType,
+      ...(signed.headers ?? {}),
+    };
 
-  const uploadRes = await fetch(signed.uploadUrl, {
-    method: "PUT",
-    headers,
-    body: blob,
-    signal: options.signal,
-  });
+    const uploadRes = await fetch(signed.uploadUrl, {
+      method: "PUT",
+      headers,
+      body: blob,
+      signal: options.signal,
+    });
 
-  if (!uploadRes.ok) {
-    throw new Error(`Upload failed with HTTP ${uploadRes.status}`);
+    if (!uploadRes.ok) {
+      throw new Error(`Upload failed with HTTP ${uploadRes.status}`);
+    }
+
+    options.signal?.throwIfAborted();
+
+    // Save recovery state after the bytes are accepted, before the confirmation write.
+    const confirmation: MediaConfirmation = {
+      storageKey: signed.storageKey,
+      ...(scope ? { scope } : {}),
+      kind: options.kind,
+      contentType,
+    };
+    options.beforeConfirm?.(confirmation);
+    recoverySaved = !!options.beforeConfirm;
+    return await confirmMobileMediaUpload(confirmation, options.signal);
+  } catch (error) {
+    if (
+      options.kind === "crew_asset_file" &&
+      signed.storageKey &&
+      !recoverySaved &&
+      generation === getAuthGeneration()
+    ) {
+      try {
+        // The original upload may already be aborted. Use a separate bounded
+        // request; expiry handles cleanup failure without hiding the upload error.
+        await api.post("/media/cancel-upload", {
+          ...AURORA,
+          timeout: 10000,
+          data: { storageKey: signed.storageKey, kind: options.kind, contentType, scope },
+        });
+      } catch {
+        // Preserve the actionable original failure.
+      }
+    }
+    throw error;
   }
-
-  options.signal?.throwIfAborted();
-
-  // Save recovery state after the bytes are accepted, before the confirmation write.
-  const confirmation: MediaConfirmation = {
-    storageKey: signed.storageKey,
-    ...(scope ? { scope } : {}),
-    kind: options.kind,
-    contentType,
-  };
-  options.beforeConfirm?.(confirmation);
-  return confirmMobileMediaUpload(confirmation, options.signal);
 }
