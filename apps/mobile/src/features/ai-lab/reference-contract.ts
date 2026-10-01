@@ -3,7 +3,7 @@ import type { AiFieldDescriptor } from "./schema";
 
 export const referenceBinding = z.object({
   refId: z.string().min(1),
-  kind: z.literal("image"),
+  kind: z.enum(["image", "video"]),
   label: z.string().min(1),
   order: z.number().int().positive(),
   url: z.string().url(),
@@ -55,24 +55,51 @@ export function imageReferences(raw: unknown): ImageReference[] {
     )
     .parse(value);
 }
-export function imageLabel(row: ImageReference, index: number) {
-  return row.label || `Image${index + 1}`;
+export type ReferenceKind = "image" | "video";
+export function referenceLabel(row: ImageReference, index: number, kind: ReferenceKind = "image") {
+  return row.label || `${kind === "video" ? "Video" : "Image"}${index + 1}`;
 }
-export function nextImageLabel(rows: ImageReference[], prompt: unknown = "") {
-  const labels = new Set(rows.map(imageLabel));
+export function imageLabel(row: ImageReference, index: number) {
+  return referenceLabel(row, index);
+}
+export function objectVideoField(descriptor: AiFieldDescriptor) {
+  const { field, ui } = descriptor;
+  return (
+    field.type === "array" &&
+    field.items.type === "object" &&
+    field.items.properties.url?.type === "string" &&
+    (ui.control === "video_upload" ||
+      ui.accept?.split(",").some((x) => x.trim().startsWith("video/")) === true)
+  );
+}
+
+export function nextReferenceLabel(
+  rows: ImageReference[],
+  prompt: unknown = "",
+  kind: ReferenceKind = "image"
+) {
+  const prefix = kind === "video" ? "Video" : "Image";
+  const labels = new Set(rows.map((row, i) => referenceLabel(row, i, kind)));
   if (typeof prompt === "string")
-    for (const match of prompt.matchAll(/@Image\d+/g)) labels.add(match[0].slice(1));
+    for (const match of prompt.matchAll(new RegExp(`@${prefix}\\d+`, "g")))
+      labels.add(match[0].slice(1));
   let n = 1;
-  while (labels.has(`Image${n}`)) n++;
-  return `Image${n}`;
+  while (labels.has(`${prefix}${n}`)) n++;
+  return `${prefix}${n}`;
 }
 /** Freeze aliases/identities before editing the order; old drafts remain compatible. */
-export function identifiedImages(rows: ImageReference[]) {
+export function nextImageLabel(rows: ImageReference[], prompt: unknown = "") {
+  return nextReferenceLabel(rows, prompt);
+}
+export function identifiedReferences(rows: ImageReference[], kind: ReferenceKind = "image") {
   return rows.map((row, index) => ({
     ...row,
-    refId: row.refId || row.assetId || `image:${index + 1}`,
-    label: imageLabel(row, index),
+    refId: row.refId || row.assetId || `${kind}:${index + 1}`,
+    label: referenceLabel(row, index, kind),
   }));
+}
+export function identifiedImages(rows: ImageReference[]) {
+  return identifiedReferences(rows);
 }
 export function uniqueReferences(refs: z.infer<typeof referenceBinding>[]) {
   for (const key of ["refId", "label", "url", "assetId"] as const) {
@@ -87,7 +114,7 @@ export function referenceInputValues(fields: AiFieldDescriptor[], raw: Record<st
   for (const descriptor of fields) {
     const field = descriptor.field;
     if (
-      !objectImageField(descriptor) ||
+      (!objectImageField(descriptor) && !objectVideoField(descriptor)) ||
       field.type !== "array" ||
       field.items.type !== "object" ||
       field.items.additionalProperties !== false
@@ -97,7 +124,17 @@ export function referenceInputValues(fields: AiFieldDescriptor[], raw: Record<st
     values[descriptor.name] = imageReferences(raw[descriptor.name]).map((row) =>
       Object.fromEntries(
         Object.entries(row).filter(
-          ([key]) => !["refId", "label", "assetId"].includes(key) || key in properties
+          ([key]) =>
+            ![
+              "refId",
+              "label",
+              "assetId",
+              "durationSeconds",
+              "bytes",
+              "sizeBytes",
+              "width",
+              "height",
+            ].includes(key) || key in properties
         )
       )
     );
@@ -108,27 +145,34 @@ export function buildReferenceContract(
   input: Record<string, unknown>,
   messages?: { missing: (label: string) => string; duplicate: string }
 ) {
-  const rows = identifiedImages(imageReferences(input.referenceImages));
-  const references = rows.map((row, index) =>
-    referenceBinding.parse({
-      refId: row.refId,
-      kind: "image",
-      label: row.label,
-      order: index + 1,
-      url: row.url,
-      ...(row.assetId ? { assetId: row.assetId } : {}),
-    })
-  );
+  const references: z.infer<typeof referenceBinding>[] = [];
+  for (const [field, kind] of [
+    ["referenceImages", "image"],
+    ["referenceVideos", "video"],
+  ] as const) {
+    const rows = identifiedReferences(imageReferences(input[field]), kind);
+    for (const row of rows)
+      references.push(
+        referenceBinding.parse({
+          refId: row.refId,
+          kind,
+          label: row.label,
+          order: references.length + 1,
+          url: row.url,
+          ...(row.assetId ? { assetId: row.assetId } : {}),
+        })
+      );
+  }
   if (!uniqueReferences(references))
     throw new Error(
-      messages?.duplicate ?? "Each reference image must have a unique URL, identity and label."
+      messages?.duplicate ?? "Each reference must have a unique URL, identity and label."
     );
   const text = typeof input.prompt === "string" ? input.prompt : "";
-  for (const match of text.matchAll(/(^|[^A-Za-z0-9_@])@(Image\d+)(?![A-Za-z0-9_])/g)) {
+  for (const match of text.matchAll(/(^|[^A-Za-z0-9_@])@((?:Image|Video)\d+)(?![A-Za-z0-9_])/g)) {
     if (!references.some((ref) => ref.label === match[2]))
       throw new Error(
         messages?.missing(match[2]!) ??
-          `Reference @${match[2]} is missing. Remove its mention or attach the intended image.`
+          `Reference @${match[2]} is missing. Remove its mention or attach the intended media.`
       );
   }
   const matches: { start: number; end: number; ref: (typeof references)[number] }[] = [];
@@ -169,5 +213,8 @@ export function replaceImageUrl(row: ImageReference, url: string): ImageReferenc
   delete next.assetId;
   delete next.bytes;
   delete next.durationSeconds;
+  delete next.sizeBytes;
+  delete next.width;
+  delete next.height;
   return next;
 }

@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   pickReferenceImage,
-  confirmReferenceImage,
+  confirmReferenceUpload,
   acceptsReferenceImage,
 } from "./reference-image";
 const h = vi.hoisted(() => ({
@@ -72,15 +72,15 @@ it("uses a supported reference-image kind and checkpoints only after the bytes l
     "Content-Type": "image/png",
     "x-ms-blob-type": "BlockBlob",
   });
-  expect(await confirmReferenceImage(checkpoint, 1, signal())).toMatchObject({
+  expect(await confirmReferenceUpload(checkpoint, 1, signal())).toMatchObject({
     mediaAssetId: asset,
     url: "https://storage.test/final.png",
   });
 });
 it("retries confirmation from a stored checkpoint without another upload", async () => {
   h.post.mockRejectedValueOnce(Error("Offline"));
-  await expect(confirmReferenceImage(checkpoint, 1, signal())).rejects.toThrow();
-  expect(await confirmReferenceImage(checkpoint, 1, signal())).toMatchObject({
+  await expect(confirmReferenceUpload(checkpoint, 1, signal())).rejects.toThrow();
+  expect(await confirmReferenceUpload(checkpoint, 1, signal())).toMatchObject({
     mediaAssetId: asset,
     url: "https://storage.test/final.png",
   });
@@ -122,7 +122,7 @@ it("rejects credentials, unsafe URLs, failed uploads and unsafe confirmation rec
     storageKey: "final",
     url: "http://storage.test/final.png",
   });
-  await expect(confirmReferenceImage(checkpoint, 1, signal())).rejects.toThrow();
+  await expect(confirmReferenceUpload(checkpoint, 1, signal())).rejects.toThrow();
 });
 it("does not checkpoint a late upload after auth changes", async () => {
   const save = vi.fn();

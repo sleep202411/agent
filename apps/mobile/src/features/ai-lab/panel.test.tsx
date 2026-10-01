@@ -17,6 +17,7 @@ const h = vi.hoisted(() => ({
   key: 10,
   open: vi.fn(),
   pick: vi.fn(),
+  probe: vi.fn(),
   selected: vi.fn(),
   records: new Map<string, string>(),
 }));
@@ -127,6 +128,7 @@ vi.mock("@/features/ip-author/contributors-panel", () => ({ IpContributorsPanel:
 
 vi.mock("@/features/ip-author/selected-media", () => ({ selectedMedia: h.selected }));
 vi.mock("expo-document-picker", () => ({ getDocumentAsync: h.pick }));
+vi.mock("./reference-video-metadata", () => ({ probeReferenceVideo: h.probe }));
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 let root: Root, host: HTMLDivElement;
@@ -587,4 +589,90 @@ it("does not replay an old personal request against a different selected default
   await click("aiLab.recover");
   expect(host.textContent).toContain("aiLab.workspaceRequestMismatch");
   expect(h.post).toHaveBeenCalledTimes(1);
+});
+
+it("restores video confirmation and exact metadata, then submits video mentions once", async () => {
+  const videoModel = {
+    ...model,
+    type: "video",
+    input_schema: {
+      type: "object",
+      required: ["prompt"],
+      properties: {
+        prompt: model.input_schema.properties.prompt,
+        referenceVideos: {
+          type: "array",
+          title: "Reference videos",
+          maxItems: 2,
+          items: {
+            type: "object",
+            properties: { url: { type: "string", format: "uri" } },
+            additionalProperties: false,
+          },
+          "x-ui": { control: "video_upload", mediaKind: "video", maxCombinedDurationSeconds: 15 },
+        },
+      },
+    },
+  };
+  const videoCatalog = {
+    ...catalog,
+    models: [videoModel],
+    presets: [{ ...catalog.presets[0], type: "video", label: "Video preset" }],
+  };
+  h.get.mockImplementation(async (path) =>
+    path === "/ai/models"
+      ? videoCatalog
+      : path === "/billing/entitlement/me"
+        ? { entitlement: { rank: 100 } }
+        : { jobs: [], nextCursor: null }
+  );
+  await mount();
+  await click("aiLab.video");
+  await change("Prompt", "Animate");
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file:///a.mov", name: "a.mov", mimeType: "video/quicktime" }],
+  });
+  h.selected.mockResolvedValue({ size: 100, put: vi.fn().mockResolvedValue({ ok: true }) });
+  h.probe.mockResolvedValue({ durationSeconds: 2.125, width: 640, height: 480 });
+  h.post
+    .mockResolvedValueOnce({
+      uploadUrl: "https://storage.test/a",
+      method: "PUT",
+      headers: {},
+      storageKey: "video/a",
+    })
+    .mockRejectedValueOnce(Error("confirmation lost"));
+  await click("aiLab.uploadVideo");
+  expect(host.textContent).toContain("aiLab.uploadPending");
+  await act(async () => root.render(null));
+  await mount();
+  h.post.mockResolvedValueOnce({
+    mediaAssetId: job.id,
+    storageKey: "video/a",
+    url: "https://storage.test/a.mov",
+  });
+  await click("aiLab.confirmUpload");
+  expect(h.pick).toHaveBeenCalledTimes(1);
+  const saved = JSON.parse(h.records.get("ai-lab-draft:alice:composer")!);
+  expect(saved.values.referenceVideos[0]).toMatchObject({
+    durationSeconds: 2.125,
+    bytes: 100,
+    width: 640,
+    height: 480,
+  });
+  await click("aiLab.mention");
+  await click("aiLab.generate");
+  h.post.mockResolvedValueOnce({ ...job, type: "video" });
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls.at(-1)![1].data).toMatchObject({
+    input: { referenceVideos: [{ url: "https://storage.test/a.mov" }] },
+    referenceBindings: [{ kind: "video", label: "Video1", assetId: job.id }],
+    promptDocument: {
+      nodes: [
+        { type: "text", text: "Animate " },
+        { type: "asset_ref", refId: job.id, label: "Video1" },
+      ],
+    },
+  });
 });

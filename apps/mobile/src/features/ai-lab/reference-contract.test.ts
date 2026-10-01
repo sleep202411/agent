@@ -148,3 +148,25 @@ it("rejects duplicate underlying images before server deduplication can lose men
     })
   ).toThrow("unique");
 });
+
+it("binds image and video mentions with globally ordered stable identities", () => {
+  const result = buildReferenceContract({
+    referenceImages: [{ url: "https://cdn.test/i", assetId: "image" }],
+    referenceVideos: [
+      { url: "https://cdn.test/v", refId: "video", label: "Video2", durationSeconds: 2.125 },
+    ],
+    prompt: "@Image1参考@Video2",
+  });
+  expect(result.referenceBindings.map((r) => [r.refId, r.kind, r.order])).toEqual([
+    ["image", "image", 1],
+    ["video", "video", 2],
+  ]);
+  expect(result.promptDocument.nodes).toContainEqual({
+    type: "asset_ref",
+    refId: "video",
+    label: "Video2",
+  });
+  expect(() => buildReferenceContract({ referenceVideos: [], prompt: "Use @Video2" })).toThrow(
+    "missing"
+  );
+});

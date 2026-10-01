@@ -47,7 +47,7 @@ export const generationCommand = z
       ) ??
         true)
     );
-  }, "Prompt references must match the attached images.");
+  }, "Prompt references must match the attached media.");
 export type GenerationCommand = z.infer<typeof generationCommand>;
 const output = z
   .object({

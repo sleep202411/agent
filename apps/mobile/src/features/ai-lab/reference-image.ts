@@ -4,7 +4,7 @@ import { api } from "@/lib/api-client";
 import { selectedMedia } from "@/features/ip-author/selected-media";
 import { objectImageField } from "./reference-contract";
 import { generationSession } from "./jobs-api";
-export const referenceCheckpoint = z.object({
+const imageCheckpoint = z.object({
   field: z.string().min(1),
   multiple: z.boolean(),
   objectItems: z.boolean().optional(),
@@ -13,6 +13,17 @@ export const referenceCheckpoint = z.object({
   kind: z.literal("ai_reference_image"),
   contentType: z.enum(["image/jpeg", "image/png", "image/webp"]),
 });
+export const referenceCheckpoint = z.discriminatedUnion("kind", [
+  imageCheckpoint,
+  imageCheckpoint.extend({
+    kind: z.literal("ai_reference_video"),
+    contentType: z.enum(["video/mp4", "video/quicktime"]),
+    durationSeconds: z.number().finite().positive(),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    bytes: z.number().int().positive(),
+  }),
+]);
 export type ReferenceCheckpoint = z.infer<typeof referenceCheckpoint>;
 const secureUrl = z
   .string()
@@ -106,7 +117,7 @@ export async function pickReferenceImage(
   checkpoint(value);
   return value;
 }
-export async function confirmReferenceImage(
+export async function confirmReferenceUpload(
   input: ReferenceCheckpoint,
   generation: number,
   signal: AbortSignal
@@ -124,6 +135,8 @@ export async function confirmReferenceImage(
       })
     );
   generationSession(generation, signal);
+  if (value.kind === "ai_reference_video" && receipt.storageKey !== value.storageKey)
+    throw new Error("Reference video confirmation scope mismatch.");
   // Reference-image confirmation promotes staging to the verified final key.
   // The returned key is deliberately different; confirmation remains idempotent.
   return receipt;
