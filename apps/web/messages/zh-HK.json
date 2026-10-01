@@ -2087,7 +2087,7 @@
     "importSummary": "{nodes} 個情節節點，{shots} 個片段",
     "importIssuesTitle": "情節樹未就緒",
     "importClearSelection": "清除選擇",
-    "messagesOffersTab": "訊息與邀約",
+    "messagesOffersTab": "招募收件箱",
     "taskDashboardTab": "任務工作台"
   },
   "crewRoles": {
@@ -10455,8 +10455,8 @@
     "useFee": "使用約定費用"
   },
   "crewPositionInvites": {
-    "title": "私密招聘邀請",
-    "help": "接受邀請會建立申請，不會授予 Crew 成員身分或任務存取權限。",
+    "title": "應聘邀請",
+    "help": "接受邀請後將提交應聘申請，等待審核。",
     "loading": "載入中…",
     "failed": "請求失敗。",
     "refresh": "重新整理",
@@ -10897,9 +10897,9 @@
     "video_final": "成片"
   },
   "crewCommunications": {
-    "title": "訊息與邀約",
+    "title": "招募收件箱",
     "allMessages": "訊息中心",
-    "invitations": "私人招募邀請",
+    "invitations": "應聘邀請",
     "direction": "申請收件匣",
     "sent": "我的申請",
     "received": "收到的任務申請",

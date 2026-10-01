@@ -98,10 +98,9 @@ function MyApplications({ userId }: { userId: string }) {
           {c("allMessages")}
         </Link>
       </header>
-      <details className="mb-4 rounded-lg bg-white/[0.025] p-3">
-        <summary className="cursor-pointer text-sm">{c("invitations")}</summary>
-        <PositionInvitationsPanel />
-      </details>
+      <div className="mb-4">
+        <PositionInvitationsPanel hideWhenEmpty />
+      </div>
       <div className="grid min-h-[600px] grid-cols-1 overflow-hidden rounded-xl border border-white/10 bg-[#101012] lg:h-[calc(100dvh-320px)] lg:grid-cols-[320px_minmax(0,1fr)]">
         <aside
           className={cn(
