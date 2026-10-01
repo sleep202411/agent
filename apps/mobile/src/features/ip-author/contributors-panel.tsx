@@ -1,3 +1,4 @@
+import { IpUserLookup } from "./user-lookup";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
 import { uuid } from "expo-modules-core";
@@ -15,7 +16,6 @@ import {
   contributorOutbox,
   contributorShare,
   fetchContributors,
-  searchContributorUsers,
   submitContributor,
   withinContributorPool,
   type Contributor,
@@ -50,76 +50,6 @@ export function IpContributorsPanel(props: Props) {
   ) : null;
 }
 type Draft = ContributorFields & { before?: Contributor; shareText: string };
-function UserLookup({
-  generation,
-  disabled,
-  onSelect,
-}: {
-  generation: number;
-  disabled: boolean;
-  onSelect: (user: { userId: string; nickname: string }) => void;
-}) {
-  const t = useTranslations(),
-    theme = useTheme();
-  const [query, setQuery] = useState(""),
-    [error, setError] = useState(""),
-    [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<Awaited<ReturnType<typeof searchContributorUsers>> | null>(
-    null
-  );
-  useEffect(() => {
-    const c = new AbortController();
-    if (disabled || query.trim().length < 3) return () => c.abort();
-    const timer = setTimeout(() => {
-      setLoading(true);
-      void searchContributorUsers(query, generation, c.signal)
-        .then((value) => {
-          if (!c.signal.aborted) setResults(value);
-        })
-        .catch((e) => {
-          if (!c.signal.aborted) setError(String(e.message ?? e));
-        })
-        .finally(() => {
-          if (!c.signal.aborted) setLoading(false);
-        });
-    }, 400);
-    return () => {
-      clearTimeout(timer);
-      c.abort();
-    };
-  }, [query, generation, disabled]);
-  return (
-    <View style={{ gap: 8 }}>
-      <ThemedText type="small">{t("ipContributors.lookupHint")}</ThemedText>
-      <TextInput
-        accessibilityLabel={t("ipContributors.lookup")}
-        value={query}
-        onChangeText={(value) => {
-          setQuery(value);
-          setResults(null);
-          setError("");
-          setLoading(false);
-        }}
-        editable={!disabled}
-        maxLength={64}
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={{ color: theme.text, padding: 12, backgroundColor: theme.background }}
-      />
-      {loading && !disabled && <ActivityIndicator />}
-      {!!error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
-      {results?.length === 0 && <ThemedText>{t("ipContributors.noUsers")}</ThemedText>}
-      {results?.map((user) => (
-        <Button
-          key={user.userId}
-          disabled={disabled}
-          label={`${user.nickname || t("ipContributors.account")} · ${user.userId}`}
-          onPress={() => onSelect(user)}
-        />
-      ))}
-    </View>
-  );
-}
 function Session({ ipId, userId, generation }: Props) {
   const t = useTranslations(),
     theme = useTheme(),
@@ -383,7 +313,7 @@ function Session({ ipId, userId, generation }: Props) {
                   />
                 </View>
               ) : (
-                <UserLookup
+                <IpUserLookup
                   generation={generation}
                   disabled={frozen}
                   onSelect={(user) =>
