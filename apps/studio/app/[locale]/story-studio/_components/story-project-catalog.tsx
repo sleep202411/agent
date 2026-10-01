@@ -2,12 +2,17 @@
 
 import { IconGitBranch, IconWorld } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { useMemo } from "react";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { catalogNodeTitles } from "./story-project-catalog-titles";
-import { storyAutoFallbackNodeId, storyRouteNodeId } from "@repo/shared/story-stats";
+import { catalogStatus } from "./story-project-catalog-status";
+import {
+  storyAutoFallbackNodeId,
+  storyRouteEndingId,
+  storyRouteNodeId,
+} from "@repo/shared/story-stats";
 import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
@@ -22,13 +27,17 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
   const locale = useLocale();
   const searchParams = useSearchParams();
-  const activeNodeId = searchParams.get("node");
+  const segment = useSelectedLayoutSegment();
+  const activeNodeId = searchParams.get("node") ?? searchParams.get("focus");
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const workbenchQuery = useStoryChapterWorkbench(projectId);
   const chapter = workbenchQuery.data?.chapter ?? null;
-  const nodes = useMemo(
-    () => workbenchQuery.data?.draft.content.graph.nodes ?? [],
-    [workbenchQuery.data?.draft.content.graph.nodes]
+  const content = workbenchQuery.data?.draft.content ?? null;
+  const nodes = useMemo(() => content?.graph.nodes ?? [], [content]);
+  const status = useMemo(
+    () =>
+      content ? catalogStatus(content, chapter?.entryNodeId ?? content.graph.entryNodeId) : null,
+    [chapter?.entryNodeId, content]
   );
 
   // Automatic clip keys such as SCENE_1 are storage ids. The catalog uses the
@@ -38,10 +47,16 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
     [nodes, t]
   );
 
-  const rowHref = (nodeId: string) =>
-    `/story-studio/projects/${projectId}/${nodes.find((node) => node.nodeId === nodeId)?.kind === "clip" ? "storyboard" : "canvas"}?chapter=${encodeURIComponent(
-      activeChapterId as string
-    )}&node=${encodeURIComponent(nodeId)}`;
+  const rowHref = (nodeId: string) => {
+    const node = nodes.find((item) => item.nodeId === nodeId);
+    const onStoryboard = segment === "storyboard" && node?.kind === "clip";
+    const chapterId = chapter?.id ?? activeChapterId;
+    const query = `chapter=${encodeURIComponent(chapterId ?? "")}`;
+    if (onStoryboard) {
+      return `/story-studio/projects/${projectId}/storyboard?${query}&node=${encodeURIComponent(nodeId)}`;
+    }
+    return `/story-studio/projects/${projectId}/canvas?${query}&focus=${encodeURIComponent(nodeId)}`;
+  };
   let sceneNumber = 0;
   const catalogRows = nodes.map((node) => ({
     node,
@@ -78,11 +93,18 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
                       <IconWorld className="size-3.5 shrink-0 text-white/65" />
                     )}
                     <span className="truncate">{nodeNames.get(node.nodeId)}</span>
-                    {isEnding ? (
-                      <span className="ml-auto shrink-0 rounded bg-red-400/12 px-1.5 py-px text-[9px] font-semibold tracking-wide text-red-300/75">
-                        {t("catalogPanel.end")}
-                      </span>
-                    ) : null}
+                    <CatalogMark
+                      mark={isEnding ? "end" : (status?.nodeMarks.get(node.nodeId) ?? null)}
+                      label={
+                        isEnding
+                          ? t("catalogPanel.end")
+                          : status?.nodeMarks.get(node.nodeId) === "problem"
+                            ? t("catalogPanel.problem")
+                            : status?.nodeMarks.get(node.nodeId) === "unlinked"
+                              ? t("catalogPanel.unlinked")
+                              : ""
+                      }
+                    />
                   </Link>
                   {node.exit.kind === "choice" ? (
                     <div className="mt-0.5 mb-1 ml-3 border-l border-white/20 pl-2">
@@ -92,33 +114,86 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
                           {localized(node.exit.prompt, locale) || t("catalogPanel.choice")}
                         </span>
                       </p>
-                      {node.exit.choices.map((choice) => (
-                        <Link
-                          key={choice.choiceId}
-                          href={
-                            storyRouteNodeId(choice.target)
-                              ? rowHref(storyRouteNodeId(choice.target)!)
-                              : rowHref(node.nodeId)
-                          }
-                          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white transition hover:bg-white/[0.07]"
-                        >
-                          <span className="truncate">{localized(choice.label, locale)}</span>
-                          <span className="shrink-0 text-white/70">
-                            {storyRouteNodeId(choice.target)
-                              ? `→ ${nodeNames.get(storyRouteNodeId(choice.target)!) ?? storyRouteNodeId(choice.target)}`
-                              : t("interactionCard.unconnected")}
-                          </span>
-                        </Link>
-                      ))}
+                      {node.exit.choices.map((choice) => {
+                        const targetNodeId = storyRouteNodeId(choice.target);
+                        const targetEndingId = storyRouteEndingId(choice.target);
+                        const endingTitle = targetEndingId
+                          ? localized(
+                              content?.storyBible.endings?.find(
+                                (ending) => ending.endingId === targetEndingId
+                              )?.title,
+                              locale
+                            ) || targetEndingId
+                          : "";
+                        return (
+                          <Link
+                            key={choice.choiceId}
+                            href={targetNodeId ? rowHref(targetNodeId) : rowHref(node.nodeId)}
+                            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white transition hover:bg-white/[0.07]"
+                          >
+                            <span className="truncate">{localized(choice.label, locale)}</span>
+                            <span className="shrink-0 text-white/70">
+                              {targetNodeId
+                                ? `→ ${nodeNames.get(targetNodeId) ?? targetNodeId}`
+                                : endingTitle
+                                  ? `→ ${endingTitle}`
+                                  : t("interactionCard.unconnected")}
+                            </span>
+                            {!targetNodeId && !targetEndingId ? (
+                              <CatalogMark mark="unlinked" label={t("catalogPanel.unlinked")} />
+                            ) : null}
+                          </Link>
+                        );
+                      })}
                     </div>
                   ) : null}
                 </div>
               );
             })}
           </div>
+          {status && status.redundantVariables.length > 0 ? (
+            <section className="mt-5">
+              <p className="px-2 text-[10px] font-semibold tracking-[0.12em] text-white/40 uppercase">
+                {t("catalogPanel.unusedState")}
+              </p>
+              <div className="mt-1 space-y-0.5">
+                {status.redundantVariables.map((variable) => (
+                  <div
+                    key={variable.key}
+                    className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs text-white/80"
+                  >
+                    <span className="truncate">
+                      {localized(variable.name, locale) || variable.key}
+                    </span>
+                    <CatalogMark mark="redundant" label={t("catalogPanel.redundant")} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </div>
       ) : null}
     </nav>
+  );
+}
+
+function CatalogMark({
+  mark,
+  label,
+}: {
+  mark: "end" | "problem" | "unlinked" | "redundant" | null;
+  label: string;
+}) {
+  if (!mark || !label) return null;
+  return (
+    <span
+      className={cn(
+        "ml-auto shrink-0 rounded px-1.5 py-px text-[9px] font-semibold tracking-wide",
+        mark === "end" ? "bg-red-400/12 text-red-300/75" : "bg-white/[0.08] text-white/58"
+      )}
+    >
+      {label}
+    </span>
   );
 }
 

@@ -43,6 +43,7 @@ const messages = {
         failure: {
           title: "This version was not submitted",
           description: "Resolve the issue below, then try again.",
+          locate: "Show on the plot tree",
         },
       },
     },
@@ -93,6 +94,29 @@ describe("StoryPublicationDialog", () => {
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
+  it("locates the plot node named by a publish failure", async () => {
+    const onLocateNode = vi.fn();
+    await renderDialog(
+      {
+        status: "failed",
+        phase: "preparing",
+        code: "PREPARE_FAILED",
+        message: "Clip 9 cannot be reached from the chapter start.",
+        issues: [
+          {
+            message: "Clip 9 cannot be reached from the chapter start.",
+            nodeId: "clip:scene-17",
+          },
+        ],
+      },
+      { onLocateNode }
+    );
+
+    expect(document.body.textContent).toContain("Clip 9 cannot be reached from the chapter start.");
+    await click(buttonByText("Show on the plot tree"));
+    expect(onLocateNode).toHaveBeenCalledWith("clip:scene-17");
+  });
+
   it("cannot be dismissed while publication is active", async () => {
     const onClose = vi.fn();
     await renderDialog({ status: "saving" }, { onClose });
@@ -130,6 +154,7 @@ describe("StoryPublicationDialog", () => {
       onClose?: () => void;
       onConfirm?: () => void;
       onRetry?: () => void;
+      onLocateNode?: (nodeId: string) => void;
       canMutate?: boolean;
       disabledReason?: string | null;
     } = {}
@@ -145,6 +170,7 @@ describe("StoryPublicationDialog", () => {
             onClose={callbacks.onClose ?? vi.fn()}
             onConfirm={callbacks.onConfirm ?? vi.fn()}
             onRetry={callbacks.onRetry ?? vi.fn()}
+            onLocateNode={callbacks.onLocateNode}
           />
         </NextIntlClientProvider>
       );

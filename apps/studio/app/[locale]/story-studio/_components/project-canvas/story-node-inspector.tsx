@@ -19,6 +19,7 @@ import {
 import { StoryNodeStoryboardPanel } from "./story-node-storyboard-panel";
 import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import { StorySourceReviewNotes } from "../story-source-review-notes";
+import { endingsInUse } from "./story-project-canvas-mutations";
 import {
   StoryAutoRoutesEditor,
   StoryEffectsEditor,
@@ -240,7 +241,7 @@ function GraphNodeEditor({
   const t = useTranslations("storyStudio.canvas");
   const tStats = useTranslations("storyStudio.canvas.stats");
   const variables = content.storyBible.stateVariables ?? [];
-  const endings = content.storyBible.endings ?? [];
+  const endings = endingsInUse(content);
   const nodeTitles = storyGraphNodePickerTitles(
     content.graph.nodes,
     t("nodeKinds.clip"),

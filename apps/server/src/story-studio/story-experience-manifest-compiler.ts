@@ -78,6 +78,7 @@ export interface StoryExperienceManifestDiagnostic {
     | 'STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID';
   message: string;
   path: PropertyKey[];
+  nodeId?: string;
 }
 
 export interface StoryExperienceManifestCompilerResult {
@@ -195,13 +196,12 @@ export function compileStoryExperienceManifest(
       node.exit.kind === 'auto' &&
       node.exit.routes.some((route) => route.target === null),
   );
-  const hasNamedEnding =
-    (input.release.endings ?? []).length > 0 ||
-    input.release.nodes.some((node) =>
-      node.exit.kind === 'choice'
-        ? node.exit.choices.some((choice) => choice.target.kind === 'ending')
-        : node.exit.routes.some((route) => route.target?.kind === 'ending'),
-    );
+  // An ending that nothing routes to must not turn a loop into a closed film.
+  const hasNamedEnding = input.release.nodes.some((node) =>
+    node.exit.kind === 'choice'
+      ? node.exit.choices.some((choice) => choice.target.kind === 'ending')
+      : node.exit.routes.some((route) => route.target?.kind === 'ending'),
+  );
   const hasTerminalScene = hasNaturalComplete || hasNamedEnding;
 
   if (diagnostics.length > 0) return { manifest: null, diagnostics };
@@ -320,12 +320,42 @@ export function compileStoryExperienceManifest(
   if (parsed.success) return { manifest: parsed.data, diagnostics: [] };
   return {
     manifest: null,
-    diagnostics: parsed.error.issues.map((issue) => ({
-      code: 'STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID' as const,
-      message: `${issue.path.join('.') || 'manifest'}: ${issue.message}`,
-      path: issue.path,
-    })),
+    diagnostics: parsed.error.issues.map((issue) => {
+      const nodeId = sceneIdFromIssuePath(issue.path, candidate.graph.nodes);
+      return {
+        code: 'STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID' as const,
+        message: readableManifestIssue(issue.message, nodeId),
+        path: issue.path,
+        ...(nodeId ? { nodeId } : {}),
+      };
+    }),
   };
+}
+
+function sceneIdFromIssuePath(
+  path: PropertyKey[],
+  nodes: ReadonlyArray<{ sceneId: string }>,
+): string | null {
+  const index = path.indexOf('nodes');
+  if (path[index - 1] !== 'graph') return null;
+  const nodeIndex = path[index + 1];
+  if (typeof nodeIndex !== 'number') return null;
+  return nodes[nodeIndex]?.sceneId ?? null;
+}
+
+function readableManifestIssue(message: string, nodeId: string | null): string {
+  if (message === 'Finite experiences must have a reachable ending action') {
+    return 'This chapter must reach an ending, but no scene a player can get to actually ends the story.';
+  }
+  if (
+    message.startsWith('Scene ') &&
+    message.includes(' is unreachable from ')
+  ) {
+    return nodeId
+      ? `${nodeId} cannot be reached from the chapter start.`
+      : 'A scene cannot be reached from the chapter start.';
+  }
+  return nodeId ? `${nodeId}: ${message}` : message;
 }
 
 function compileRuntimeAsset(
@@ -908,7 +938,7 @@ function compileChoiceExit(
     layer: 100,
     config: {
       decisionId: node.exit.decisionId,
-      prompt: node.exit.prompt,
+      ...(node.exit.prompt ? { prompt: node.exit.prompt } : {}),
       choices: node.exit.choices.map((choice) => ({
         choiceId: choice.choiceId,
         label: choice.label,

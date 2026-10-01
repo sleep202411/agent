@@ -427,7 +427,7 @@ export function deleteGraphNode(
     .filter((node) => node.nodeId !== nodeId)
     .map((node) => removeNodeReferences(node, nodeId));
   const entryNodeId = content.graph.entryNodeId === nodeId ? null : content.graph.entryNodeId;
-  return { ...content, graph: { entryNodeId, nodes } };
+  return pruneUnreferencedEndings({ ...content, graph: { entryNodeId, nodes } });
 }
 
 export function convertExitToAuto(
@@ -764,6 +764,7 @@ export function applyStoryBiblePatch(
     for (const ending of patch.endings) {
       next = putStoryEnding(next, ending);
     }
+    next = pruneUnreferencedEndings(next);
   }
   return next;
 }
@@ -796,6 +797,50 @@ export function removeStoryStateVariable(
   }
   const stateVariables = current.filter((variable) => variable.key !== key);
   return stripStateKeyFromContent(replaceBible(content, { stateVariables }), key);
+}
+
+/** Endings are names of a line's destination. A name with no line pointing at it is removed. */
+export function endingsInUse(content: InteractiveStoryDraftContent): StoryBibleEnding[] {
+  const referenced = referencedEndingIds(content);
+  return (content.storyBible.endings ?? []).filter((ending) => referenced.has(ending.endingId));
+}
+
+function pruneUnreferencedEndings(
+  content: InteractiveStoryDraftContent
+): InteractiveStoryDraftContent {
+  const endings = content.storyBible.endings;
+  if (!endings?.length) return content;
+  const referenced = referencedEndingIds(content);
+  if (endings.every((ending) => referenced.has(ending.endingId))) return content;
+  return {
+    ...content,
+    storyBible: {
+      ...content.storyBible,
+      endings: endings.filter((ending) => referenced.has(ending.endingId)),
+    },
+  };
+}
+
+function referencedEndingIds(content: InteractiveStoryDraftContent): Set<string> {
+  const ids = new Set<string>();
+  const note = (target: StoryRouteTarget | null | undefined) => {
+    const endingId = storyRouteEndingId(target);
+    if (endingId) ids.add(endingId);
+  };
+  for (const node of content.graph.nodes) {
+    if (node.exit.kind === "choice") {
+      for (const choice of node.exit.choices) note(choice.target);
+    } else {
+      for (const route of node.exit.routes) note(route.target);
+    }
+    if (node.kind !== "clip") continue;
+    for (const interaction of node.interactions) {
+      for (const action of Object.values(interaction.outcomes)) {
+        if (action?.kind === "goto") note(action.target);
+      }
+    }
+  }
+  return ids;
 }
 
 export function putStoryEnding(
@@ -1020,13 +1065,13 @@ function replaceGraphNode(
   nodeId: string,
   replacement: StoryGraphNode
 ): InteractiveStoryDraftContent {
-  return {
+  return pruneUnreferencedEndings({
     ...content,
     graph: {
       ...content.graph,
       nodes: content.graph.nodes.map((node) => (node.nodeId === nodeId ? replacement : node)),
     },
-  };
+  });
 }
 
 function replaceChoiceExit(

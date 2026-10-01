@@ -25,6 +25,7 @@ export function StoryPublicationDialog({
   onClose,
   onConfirm,
   onRetry,
+  onLocateNode,
 }: {
   state: StoryPublicationState;
   draftRevision: number;
@@ -33,6 +34,7 @@ export function StoryPublicationDialog({
   onClose: () => void;
   onConfirm: () => void | Promise<void>;
   onRetry: () => void | Promise<void>;
+  onLocateNode?: (nodeId: string) => void;
 }) {
   const t = useTranslations("storyStudio.canvas.publish");
   const pending = isStoryPublicationPending(state);
@@ -93,7 +95,13 @@ export function StoryPublicationDialog({
             <PublicationProgress phase={state.status} />
           ) : null}
 
-          {state.status === "failed" ? <PublicationFailure message={state.message} /> : null}
+          {state.status === "failed" ? (
+            <PublicationFailure
+              message={state.message}
+              issues={state.issues ?? []}
+              onLocateNode={onLocateNode}
+            />
+          ) : null}
 
           {state.status === "succeeded" ? (
             <div className="rounded-2xl bg-white/[0.055] p-4">
@@ -214,11 +222,39 @@ function PublicationProgress({ phase }: { phase: StoryPublicationActivePhase }) 
   );
 }
 
-function PublicationFailure({ message }: { message: string }) {
+function PublicationFailure({
+  message,
+  issues,
+  onLocateNode,
+}: {
+  message: string;
+  issues: { message: string; nodeId: string | null }[];
+  onLocateNode?: (nodeId: string) => void;
+}) {
+  const t = useTranslations("storyStudio.canvas.publish");
+  const rows = issues.length > 0 ? issues : [{ message, nodeId: null }];
   return (
-    <div className="flex items-start gap-3 rounded-2xl bg-destructive/10 p-4 text-destructive">
-      <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
-      <p className="min-w-0 text-xs leading-5">{message}</p>
+    <div className="space-y-2">
+      {rows.map((issue) => (
+        <div
+          key={`${issue.nodeId ?? "release"}:${issue.message}`}
+          className="flex items-start gap-3 rounded-2xl bg-destructive/10 p-4 text-destructive"
+        >
+          <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-xs leading-5">{issue.message}</p>
+            {issue.nodeId && onLocateNode ? (
+              <button
+                type="button"
+                className="mt-2 text-[11px] font-semibold text-white/80 underline-offset-2 hover:underline"
+                onClick={() => onLocateNode(issue.nodeId!)}
+              >
+                {t("failure.locate")}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

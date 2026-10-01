@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode } from "react";
-import { IconPencilPlus, IconX } from "@tabler/icons-react";
+import { IconChevronRight, IconPencilPlus, IconX } from "@tabler/icons-react";
 
 import {
   AlertDialog,
@@ -20,6 +20,8 @@ import { cn } from "@/lib/utils";
 export interface FizzAgentSurfaceLabels {
   surface: string;
   close: string;
+  /** Docked panels collapse instead of dismissing. Falls back to `close`. */
+  collapse?: string;
   newConversation: string;
   newConversationDialog: {
     title: string;
@@ -154,11 +156,16 @@ export function FizzAgentSurface({
           {onOpenChange ? (
             <button
               type="button"
-              aria-label={labels.close}
+              aria-label={variant === "docked" ? (labels.collapse ?? labels.close) : labels.close}
+              title={variant === "docked" ? (labels.collapse ?? labels.close) : labels.close}
               onClick={() => onOpenChange(false)}
               className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-white/72 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
             >
-              <IconX aria-hidden="true" className="size-4" />
+              {variant === "docked" ? (
+                <IconChevronRight aria-hidden="true" className="size-4" />
+              ) : (
+                <IconX aria-hidden="true" className="size-4" />
+              )}
             </button>
           ) : null}
         </header>

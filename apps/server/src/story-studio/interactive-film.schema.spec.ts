@@ -140,6 +140,36 @@ describe('interactive film draft contract', () => {
     ).toBe(true);
   });
 
+  it('drops an ending name that no line points at', () => {
+    const draft = filmDraft();
+    draft.storyBible.endings = [
+      {
+        endingId: 'ending:1',
+        kind: 'neutral',
+        title: { 'en-US': 'Untitled ending' },
+      },
+    ];
+    const normalized =
+      createLockableInteractiveStoryDraftContentSchema('en-US').parse(draft);
+    expect(normalized.storyBible.endings).toEqual([]);
+  });
+
+  it('keeps every labelled option when the choice question is blank', () => {
+    const draft = filmDraft();
+    const opening = draft.graph.nodes[0];
+    if (opening?.exit.kind !== 'choice') throw new Error('Expected a choice.');
+    opening.exit.prompt = { 'en-US': '\n' };
+    const normalized =
+      createLockableInteractiveStoryDraftContentSchema('en-US').parse(draft);
+    expect(normalized.graph.nodes[0]?.exit).toMatchObject({
+      kind: 'choice',
+      choices: [
+        expect.objectContaining({ choiceId: 'cross' }),
+        expect.objectContaining({ choiceId: 'leave' }),
+      ],
+    });
+  });
+
   it('turns unfinished routing into a safe cinematic continuation', () => {
     const dangling = structuredClone(filmDraft());
     const first = dangling.graph.nodes[0];
@@ -512,6 +542,13 @@ describe('interactive film stats contract', () => {
         kind: 'success',
       },
     ];
+    const opening = draft.graph.nodes[0];
+    if (opening?.exit.kind === 'choice') {
+      opening.exit.choices[1] = {
+        ...opening.exit.choices[1]!,
+        target: { kind: 'ending', endingId: 'ending.brave' },
+      };
+    }
     const playable =
       createPlayableInteractiveStoryDraftContentSchema('en-US').parse(draft);
     expect(playable.storyBible.stateVariables?.[0]?.name).toEqual({
