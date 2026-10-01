@@ -106,6 +106,7 @@ export default function IpDiscoveryScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
+  const [pageError, setPageError] = useState<string>();
   const [genreIndex, setGenreIndex] = useState(0);
   const [featuredIndex, setFeaturedIndex] = useState(0);
   // Bumped when a mutation elsewhere (e.g. blocking an IP) invalidates lists.
@@ -136,6 +137,7 @@ export default function IpDiscoveryScreen() {
     setRefreshing(false);
     setLoading(hasDataRef.current === false);
     setError(undefined);
+    setPageError(undefined);
     try {
       const [data, page, gameList] = await Promise.all([
         getIpDiscovery(),
@@ -167,7 +169,7 @@ export default function IpDiscoveryScreen() {
         }
       }
     } catch (loadError) {
-      if (seq === loadSequenceRef.current && !hasDataRef.current) {
+      if (seq === loadSequenceRef.current && gridSeq === gridSequenceRef.current) {
         setError(loadError instanceof Error ? loadError.message : t("home.loadError"));
       }
     } finally {
@@ -199,6 +201,8 @@ export default function IpDiscoveryScreen() {
     loadingMoreRef.current = null;
     // Discard the abandoned page indicator while this filter read replaces its list.
     setLoadingMore(false);
+    setError(undefined);
+    setPageError(undefined);
     async function swapGrid() {
       try {
         const page = await getIpCatalogPage({ genreCode: selectedGenreCode, limit: PAGE_SIZE });
@@ -206,7 +210,9 @@ export default function IpDiscoveryScreen() {
         loadedGenreRef.current = selectedGenreCode;
         setGridIps(page.items);
         setNextCursor(page.nextCursor);
-      } catch {
+      } catch (loadError) {
+        if (seq === gridSequenceRef.current)
+          setError(loadError instanceof Error ? loadError.message : t("home.loadError"));
         // Keep the current grid; its old cursor cannot be used with the new genre.
       } finally {
         if (seq === gridSequenceRef.current) replacingGridRef.current = false;
@@ -216,48 +222,55 @@ export default function IpDiscoveryScreen() {
     return () => {
       if (seq === gridSequenceRef.current) gridSequenceRef.current += 1;
     };
-  }, [selectedGenreCode]);
+  }, [selectedGenreCode, t]);
 
-  const loadMore = useCallback(async () => {
-    if (
-      !nextCursor ||
-      replacingGridRef.current ||
-      loadingMoreRef.current ||
-      loadedGenreRef.current !== selectedGenreCode
-    )
-      return;
-    const seq = gridSequenceRef.current;
-    const operation = {};
-    loadingMoreRef.current = operation;
-    setLoadingMore(true);
-    try {
-      const page = await getIpCatalogPage({
-        cursor: nextCursor,
-        genreCode: selectedGenreCode,
-        limit: PAGE_SIZE,
-      });
-      if (seq !== gridSequenceRef.current) return;
-      setGridIps((current) => {
-        const seen = new Set(current.map((ip) => ip.id));
-        return [
-          ...current,
-          ...page.items.filter((ip) => {
-            if (seen.has(ip.id)) return false;
-            seen.add(ip.id);
-            return true;
-          }),
-        ];
-      });
-      setNextCursor(page.nextCursor);
-    } catch {
-      // Keep the grid and cursor for the next pagination retry.
-    } finally {
-      if (loadingMoreRef.current === operation) {
-        loadingMoreRef.current = null;
-        setLoadingMore(false);
+  const loadMore = useCallback(
+    async (retry = false) => {
+      if (
+        !nextCursor ||
+        (pageError && !retry) ||
+        replacingGridRef.current ||
+        loadingMoreRef.current ||
+        loadedGenreRef.current !== selectedGenreCode
+      )
+        return;
+      const seq = gridSequenceRef.current;
+      const operation = {};
+      loadingMoreRef.current = operation;
+      setLoadingMore(true);
+      setPageError(undefined);
+      try {
+        const page = await getIpCatalogPage({
+          cursor: nextCursor,
+          genreCode: selectedGenreCode,
+          limit: PAGE_SIZE,
+        });
+        if (seq !== gridSequenceRef.current) return;
+        setGridIps((current) => {
+          const seen = new Set(current.map((ip) => ip.id));
+          return [
+            ...current,
+            ...page.items.filter((ip) => {
+              if (seen.has(ip.id)) return false;
+              seen.add(ip.id);
+              return true;
+            }),
+          ];
+        });
+        setNextCursor(page.nextCursor);
+      } catch (loadError) {
+        if (seq === gridSequenceRef.current)
+          setPageError(loadError instanceof Error ? loadError.message : t("home.loadError"));
+        // Keep the grid and cursor for the explicit pagination retry.
+      } finally {
+        if (loadingMoreRef.current === operation) {
+          loadingMoreRef.current = null;
+          setLoadingMore(false);
+        }
       }
-    }
-  }, [nextCursor, selectedGenreCode]);
+    },
+    [nextCursor, selectedGenreCode, pageError, t]
+  );
 
   const onRefresh = useCallback(async () => {
     const pending = load();
@@ -360,6 +373,13 @@ export default function IpDiscoveryScreen() {
           trailing={t("home.seeAll")}
           onPressTrailing={() => router.push("/ips")}
         />
+        {error ? (
+          <EmptyState
+            title={t("home.errorTitle")}
+            detail={error}
+            action={{ label: t("common.retry"), onPress: () => void load() }}
+          />
+        ) : null}
         {genreChips.length > 1 ? (
           <ChipRail items={genreChips} activeIndex={genreIndex} onChange={setGenreIndex} />
         ) : null}
@@ -386,7 +406,7 @@ export default function IpDiscoveryScreen() {
     );
   }
 
-  if (error) {
+  if (error && !discovery) {
     return (
       <View style={[styles.screen, { backgroundColor: theme.background }]}>
         <View
@@ -439,7 +459,17 @@ export default function IpDiscoveryScreen() {
             detail={`${t("home.emptyDetailPrefix")}${activeGenreLabel}${t("home.emptyDetailSuffix")}`}
           />
         }
-        ListFooterComponent={<ListFooter loading={loadingMore} />}
+        ListFooterComponent={
+          pageError ? (
+            <EmptyState
+              title={t("home.errorTitle")}
+              detail={pageError}
+              action={{ label: t("common.retry"), onPress: () => void loadMore(true) }}
+            />
+          ) : (
+            <ListFooter loading={loadingMore} />
+          )
+        }
         onEndReached={() => void loadMore()}
         onEndReachedThreshold={0.5}
         refreshControl={
