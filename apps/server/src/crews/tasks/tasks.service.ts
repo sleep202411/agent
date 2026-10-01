@@ -2060,7 +2060,7 @@ export class CrewTasksService {
         input.parentId ?? null,
         input.blockedByTaskIds,
       );
-      const customFieldValues = await this.validateCustomFieldValues(
+      const customFieldValues = await validateTaskCustomFieldValues(
         tx,
         crewId,
         null,
@@ -2376,7 +2376,7 @@ export class CrewTasksService {
           nextBlockedByTaskIds,
         );
         const customFieldValues = input.customFieldValues
-          ? await this.validateCustomFieldValues(
+          ? await validateTaskCustomFieldValues(
               tx,
               locked.crewId,
               taskId,
@@ -4748,15 +4748,6 @@ export class CrewTasksService {
         });
       }
     }
-  }
-
-  private validateCustomFieldValues(
-    tx: Prisma.TransactionClient,
-    crewId: string,
-    taskId: string | null,
-    values: CreateCrewTaskInput['customFieldValues'],
-  ) {
-    return validateTaskCustomFieldValues(tx, crewId, taskId, values);
   }
 
   private async requireTask(taskId: string): Promise<TaskRow> {

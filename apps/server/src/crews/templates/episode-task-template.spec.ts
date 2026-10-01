@@ -269,6 +269,7 @@ describe('Episode task templates', () => {
         episodeScoped: true,
         workflowStateId: 'open',
         userId: 'user',
+        taskFields: { script: [{ fieldId: 'field', value: 'Reviewed brief' }] },
       }),
     ).rejects.toThrow('link failed');
     expect(
@@ -279,6 +280,105 @@ describe('Episode task templates', () => {
       )[0][0].where.episodeId,
     ).toBe('second');
     expect(tx.crewTask.create).toHaveBeenCalledTimes(12);
+    expect(tx.crewTask.create.mock.calls[0][0].data).toMatchObject({
+      customFieldValues: {
+        create: [
+          {
+            fieldId: 'field',
+            value: 'Reviewed brief',
+            updatedByUserId: 'user',
+          },
+        ],
+      },
+    });
+  });
+});
+
+describe('Episode template custom fields', () => {
+  const field = {
+    id: '01990000-0000-7000-8000-000000000099',
+    name: 'Brief',
+    type: 'text',
+    required: true,
+    options: [],
+  };
+  const rows = () =>
+    DEFAULT_SERIES_TASK_TEMPLATE.items.map((item) => ({
+      templateKey: item.templateKey,
+      values: [{ fieldId: field.id, value: `${item.title} brief` }],
+    }));
+  it('validates all tasks before writing and persists values in the receipt', async () => {
+    const { service, tx, templates } = setup();
+    tx.crewTaskFieldDefinition.findMany.mockResolvedValue([field]);
+    await service.apply('crew', 'episode', 'user', {
+      ...input,
+      taskFields: rows(),
+    });
+    expect(
+      (templates.instantiateTasks.mock.calls as unknown[][])[0][3],
+    ).toMatchObject({
+      taskFields: {
+        script: [
+          {
+            fieldId: '01990000-0000-7000-8000-000000000099',
+            value: '剧本 brief',
+          },
+        ],
+      },
+    });
+    expect(
+      (
+        tx.crewProductionActivity.create.mock.calls as {
+          data: { payload: { taskFields: unknown[] } };
+        }[][]
+      )[0][0].data.payload.taskFields,
+    ).toHaveLength(12);
+  });
+  it('rejects an incomplete last task without creating the first task', async () => {
+    const { service, tx, templates } = setup();
+    tx.crewTaskFieldDefinition.findMany.mockResolvedValue([field]);
+    await expect(
+      service.apply('crew', 'episode', 'user', {
+        ...input,
+        taskFields: rows().slice(0, -1),
+      }),
+    ).rejects.toThrow('required custom field');
+    expect(templates.instantiateTasks).not.toHaveBeenCalled();
+    expect(tx.crewProductionActivity.create).not.toHaveBeenCalled();
+  });
+  it('rejects duplicate and foreign template keys', async () => {
+    const { service, templates } = setup();
+    for (const taskFields of [
+      [rows()[0], rows()[0]],
+      [{ ...rows()[0], templateKey: 'foreign' }],
+    ]) {
+      await expect(
+        service.apply('crew', 'episode', 'user', { ...input, taskFields }),
+      ).rejects.toThrow();
+    }
+    expect(templates.instantiateTasks).not.toHaveBeenCalled();
+  });
+  it('replays reordered identical fields and rejects altered values', async () => {
+    const { service, tx, templates } = setup();
+    tx.crewProductionActivity.findFirst.mockResolvedValue({
+      payload: { ...input, taskIds: ['original'], taskFields: rows() },
+    });
+    await expect(
+      service.apply('crew', 'episode', 'user', {
+        ...input,
+        taskFields: rows().reverse(),
+      }),
+    ).resolves.toEqual({ taskIds: ['original'], replayed: true });
+    await expect(
+      service.apply('crew', 'episode', 'user', {
+        ...input,
+        taskFields: rows().map((row) => ({
+          ...row,
+          values: [{ fieldId: field.id, value: 'changed' }],
+        })),
+      }),
+    ).rejects.toThrow('will not be replaced');
+    expect(templates.instantiateTasks).not.toHaveBeenCalled();
   });
 });
 

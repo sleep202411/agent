@@ -802,6 +802,23 @@ function LinearTaskSession({
               displays={displays}
               onClose={() => selectTask(null)}
               onSubmit={() => setSubmitTask(taskQuery.data)}
+              submissionForm={
+                canSubmitAssigned &&
+                submitTask?.id === taskQuery.data.id && (
+                  <SubmitTaskDialog
+                    inline
+                    key={`${viewerUserId}:${taskQuery.data.id}`}
+                    open={Boolean(submitTask)}
+                    onOpenChange={(open) => !open && setSubmitTask(null)}
+                    crewId={crewId}
+                    task={taskQuery.data}
+                    onSubmitted={(taskId) => {
+                      setSubmitTask(null);
+                      selectTask(taskId);
+                    }}
+                  />
+                )
+              }
               onReviewed={() => undefined}
             />
           ) : null}
@@ -859,18 +876,6 @@ function LinearTaskSession({
           setWorkflowEditor({ state, afterStateId: null });
         }}
       />
-      {canSubmitAssigned && (
-        <SubmitTaskDialog
-          open={Boolean(submitTask)}
-          onOpenChange={(open) => !open && setSubmitTask(null)}
-          crewId={crewId}
-          task={submitTask}
-          onSubmitted={(taskId) => {
-            setSubmitTask(null);
-            selectTask(taskId);
-          }}
-        />
-      )}
     </div>
   );
 }

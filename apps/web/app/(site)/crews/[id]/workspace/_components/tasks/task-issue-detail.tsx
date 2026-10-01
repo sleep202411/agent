@@ -1,4 +1,5 @@
 "use client";
+import { CustomFieldControl, normalizeCustomFieldDraft } from "./task-custom-field-control";
 
 import { TaskDisputeControl } from "@/app/(site)/crews/_components/task-dispute-control";
 import { TaskFeedbackPanel } from "@/app/(site)/crews/_components/task-feedback-panel";
@@ -125,6 +126,7 @@ interface TaskIssueDetailProps {
   viewerUserId?: string;
   displays: ReturnType<typeof useUserDisplays>;
   onSubmit: () => void;
+  submissionForm?: React.ReactNode;
   onReviewed: (decision: "approve" | "request_revision") => void;
   onClose?: () => void;
 }
@@ -142,6 +144,7 @@ export function TaskIssueDetail({
   viewerUserId,
   displays,
   onSubmit,
+  submissionForm,
   onReviewed,
   onClose,
 }: TaskIssueDetailProps) {
@@ -291,8 +294,8 @@ export function TaskIssueDetail({
       </header>
       <TaskDeliveryProgress status={task.status} />
 
-      <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_340px]">
-        <main className="min-h-0 overflow-y-auto bg-[#101012]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_340px]">
+        <main className="min-h-0 min-w-0 overflow-y-auto bg-[#101012]">
           <div className="w-full px-5 py-6 lg:px-6">
             <section className="mb-8">
               {editingBrief ? (
@@ -368,6 +371,7 @@ export function TaskIssueDetail({
               </p>
             </section>
 
+            {canSubmit ? submissionForm : null}
             <TaskDeliverySummary task={task} />
             <TaskCommitments task={task} canManage={isOwner} />
             <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
@@ -2250,86 +2254,6 @@ function CustomFieldEditor({
   );
 }
 
-function CustomFieldControl({
-  field,
-  value,
-  members,
-  displays,
-  onChange,
-}: {
-  field: CrewTaskFieldDTO;
-  value: CrewTaskCustomValue;
-  members: CrewMemberDTO[];
-  displays: ReturnType<typeof useUserDisplays>;
-  onChange: (value: CrewTaskCustomValue) => void;
-}) {
-  const t = useTranslations("crewTasks");
-  if (field.type === "checkbox") {
-    return (
-      <label className="flex cursor-pointer items-center gap-2 text-[11px]">
-        <Checkbox
-          checked={value === true}
-          onCheckedChange={(checked) => onChange(checked === true)}
-        />
-        {t("customFieldYes")}
-      </label>
-    );
-  }
-  if (field.type === "single_select" || field.type === "user") {
-    const options =
-      field.type === "user"
-        ? members.map((member) => ({
-            id: member.userId,
-            label: displayNameOf(member.userId, displays),
-          }))
-        : field.options;
-    return (
-      <TaskSelect
-        value={typeof value === "string" ? value : ""}
-        onValueChange={(nextValue) => onChange(nextValue || null)}
-        className="h-9"
-        options={[
-          { value: "", label: t("customFieldUnset") },
-          ...options.map((option) => ({ value: option.id, label: option.label })),
-        ]}
-      />
-    );
-  }
-  if (field.type === "multi_select") {
-    const selected = Array.isArray(value) ? value : [];
-    return (
-      <div className="space-y-1">
-        {field.options.map((option) => (
-          <label
-            key={option.id}
-            className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
-          >
-            <Checkbox
-              checked={selected.includes(option.id)}
-              onCheckedChange={() =>
-                onChange(
-                  selected.includes(option.id)
-                    ? selected.filter((id) => id !== option.id)
-                    : [...selected, option.id]
-                )
-              }
-            />
-            <span className="text-[11px]">{option.label}</span>
-          </label>
-        ))}
-      </div>
-    );
-  }
-  return (
-    <Input
-      type={field.type === "number" ? "number" : field.type === "date" ? "date" : "text"}
-      value={value == null || Array.isArray(value) ? "" : String(value)}
-      onChange={(event) => onChange(event.target.value || null)}
-      maxLength={field.type === "text" ? 4000 : undefined}
-    />
-  );
-}
-
 function TaskLimitsEditor({
   task,
   editable,
@@ -2444,20 +2368,6 @@ function PropertyActions({
       </Button>
     </div>
   );
-}
-
-function normalizeCustomFieldDraft(
-  field: CrewTaskFieldDTO,
-  value: CrewTaskCustomValue
-): CrewTaskCustomValue {
-  if (field.type === "number") {
-    if (value == null || value === "") return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (field.type === "text" && typeof value === "string") return value.trim() || null;
-  if (field.type === "multi_select" && Array.isArray(value)) return value.length ? value : null;
-  return value;
 }
 
 function parseNullableInteger(value: string, min: number, max: number): number | null {

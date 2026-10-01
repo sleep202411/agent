@@ -5,11 +5,25 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EpisodeTemplatePreview } from "./episode-template-preview";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), user: "user" as string | null }));
-vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { get: state.get, post: state.post } }));
+vi.mock("@/app/(site)/crews/_hooks/api", () => ({
+  CrewApiError: class extends Error {},
+  crewApi: { get: state.get, post: state.post },
+}));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: state.user ? { id: state.user } : null }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+const fields = vi.hoisted(() => ({
+  rows: [] as import("@/app/(site)/crews/_hooks/types").CrewTaskFieldDTO[],
+}));
+vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
+  useCrewTaskProject: () => ({ data: { fields: fields.rows }, isPending: false, isError: false }),
+  useCrewMembers: () => ({ data: [] }),
+}));
+vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
+  useUserDisplays: () => ({}),
+  displayNameOf: (id: string) => id,
+}));
 const snapshot = { templateId: "template", templateVersion: 2, episodeVersion: 3 };
 const plan = {
   ...snapshot,
@@ -36,6 +50,7 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   state.user = "user";
+  fields.rows = [];
   state.get.mockReset().mockResolvedValue(plan);
   state.post.mockReset().mockResolvedValue({ taskIds: ["task"], replayed: false });
 });
@@ -79,7 +94,7 @@ it("previews without writes and sends only the reviewed snapshot once on rapid c
   });
   expect(state.post).toHaveBeenCalledTimes(1);
   expect(state.post).toHaveBeenCalledWith("/crews/crew/episodes/episode/task-template", {
-    body: snapshot,
+    body: { ...snapshot, taskFields: [{ templateKey: "script", values: [] }] },
   });
   expect(document.body.textContent).toContain("created");
   expect(button("confirm")).toBeUndefined();
@@ -138,7 +153,48 @@ it("stages episode tasks and role requirements without a write", async () => {
     key: "episode:episode",
     title: "Standard",
     path: "/crews/crew/episodes/episode/task-template",
-    body: snapshot,
+    body: { ...snapshot, taskFields: [{ templateKey: "script", values: [] }] },
     items: [{ title: "Script", role: "Writer", assetCategory: "scripts" }],
   });
+});
+
+it("requires each task's fields and stages their distinct reviewed values", async () => {
+  fields.rows = [
+    {
+      id: "brief",
+      name: "Brief",
+      type: "text",
+      required: true,
+      options: [],
+      crewId: "crew",
+      description: "",
+      position: 0,
+      createdByUserId: "user",
+      createdAt: "",
+      updatedAt: "",
+    } as import("@/app/(site)/crews/_hooks/types").CrewTaskFieldDTO,
+  ];
+  state.get.mockResolvedValue({
+    ...plan,
+    items: [plan.items[0], { ...plan.items[0], templateKey: "edit", title: "Edit" }],
+  });
+  const stage = vi.fn();
+  await render(stage);
+  expect(button("stageTemplate").disabled).toBe(true);
+  const inputs = [...document.querySelectorAll('input[type="text"]')];
+  for (const [index, input] of inputs.entries()) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        `Brief ${index}`
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    if (index === 0) expect(button("stageTemplate").disabled).toBe(true);
+  }
+  await act(async () => button("stageTemplate").click());
+  expect(stage.mock.calls[0][0].body.taskFields).toEqual([
+    { templateKey: "script", values: [{ fieldId: "brief", value: "Brief 0" }] },
+    { templateKey: "edit", values: [{ fieldId: "brief", value: "Brief 1" }] },
+  ]);
 });

@@ -14,6 +14,8 @@ import type { WorkbenchTaskBatch } from "./workbench-task-batch";
 type Preview = {
   projectId: string;
   title: string;
+  importKey?: string;
+  existingSourceNodeIds?: string[];
   sourceRevision: number;
   sourceHash: string;
   plotTree: { nodes: Array<{ id: string; type: string; content: { title?: string } }> };
@@ -88,13 +90,18 @@ function CanvasImportSession({
     if (!preview || lock.current || done) return;
     if (onStage) {
       onStage({
-        key: `canvas:${preview.projectId}`,
+        key: `canvas:${preview.projectId}${preview.importKey ? `:${preview.importKey}` : ""}`,
         title: preview.title,
         path: `${path(preview.projectId)}/apply`,
-        body: { sourceRevision: preview.sourceRevision, sourceHash: preview.sourceHash },
-        items: preview.plotTree.nodes
-          .filter((node) => node.type === "scene")
-          .map((node) => ({ title: node.content.title || node.id, assetCategory: "production" })),
+        body: {
+          sourceRevision: preview.sourceRevision,
+          sourceHash: preview.sourceHash,
+          ...(preview.importKey ? { importKey: preview.importKey } : {}),
+        },
+        items: scenes.map((node) => ({
+          title: node.content.title || node.id,
+          assetCategory: "production",
+        })),
       });
       setPreview(null);
       setLink("");
@@ -105,7 +112,11 @@ function CanvasImportSession({
     setError(null);
     try {
       await crewApi.post(`${path(preview.projectId)}/apply`, {
-        body: { sourceRevision: preview.sourceRevision, sourceHash: preview.sourceHash },
+        body: {
+          sourceRevision: preview.sourceRevision,
+          sourceHash: preview.sourceHash,
+          ...(preview.importKey ? { importKey: preview.importKey } : {}),
+        },
       });
       if (!alive.current) return;
       setDone(true);
@@ -128,7 +139,10 @@ function CanvasImportSession({
       if (alive.current) setBusy(false);
     }
   }
-  const scenes = preview?.plotTree.nodes.filter((node) => node.type === "scene") ?? [];
+  const scenes =
+    preview?.plotTree.nodes.filter(
+      (node) => node.type === "scene" && !preview.existingSourceNodeIds?.includes(node.id)
+    ) ?? [];
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">{t("canvasImportHelp")}</p>
@@ -181,7 +195,11 @@ function CanvasImportSession({
           <p className="break-words text-sm font-medium">{preview.title}</p>
           {!scenes.length ? (
             <p role="status" className="text-xs text-muted-foreground">
-              {t("emptyCanvas")}
+              {t(
+                preview.plotTree.nodes.some((node) => node.type === "scene")
+                  ? "canvasAlreadyImported"
+                  : "emptyCanvas"
+              )}
             </p>
           ) : null}
           <ul className="max-h-48 overflow-auto text-xs text-muted-foreground">

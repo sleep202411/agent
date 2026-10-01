@@ -1,5 +1,6 @@
 "use client";
 
+import { TaskDeliveryUpload } from "./task-delivery-upload";
 import { TaskDeliveryProgress } from "./task-delivery-progress";
 import { isCrewCursorError } from "@/app/(site)/crews/_hooks/api";
 import { useTaskDeliveryTemplate, TaskDeliveryFields } from "./task-delivery-template";
@@ -31,7 +32,9 @@ export function SubmitTaskDialog({
   crewId,
   task,
   onSubmitted,
+  inline = false,
 }: {
+  inline?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   crewId: string;
@@ -42,12 +45,9 @@ export function SubmitTaskDialog({
   const deliveryT = useTranslations("crewDeliveryTemplate");
   const template = useTaskDeliveryTemplate(task?.id, open);
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
-  const answerKey = `${template.accountId}:${task?.id}:${template.data?.categoryId}:${template.data?.version}`;
+  const answerKey = `${crewId}:${template.accountId}:${task?.id}:${template.data?.categoryId}:${template.data?.version}`;
   const [answerScope, setAnswerScope] = useState(answerKey);
-  if (answerScope !== answerKey) {
-    setAnswerScope(answerKey);
-    setAnswers({});
-  }
+
   const common = useTranslations("common");
   const submitTask = useSubmitCrewTask(crewId);
   const [saving, setSaving] = useState(false);
@@ -55,12 +55,25 @@ export function SubmitTaskDialog({
   const [deliveryFolderId, setDeliveryFolderId] = useState("");
   const folders = useCrewAssetFolders(crewId, open);
   const [assetIds, setAssetIds] = useState<string[]>([]);
+  const [uploadedAssets, setUploadedAssets] = useState<Array<{ id: string; name: string }>>([]);
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const uploadingRef = useRef<Record<string, boolean>>({});
+  if (answerScope !== answerKey) {
+    setAnswerScope(answerKey);
+    setAnswers({});
+    setUploading({});
+  }
+  const hasUploads = Object.values(uploading).some(Boolean);
   const assetQuery = useCrewAssets(
     crewId,
     { source: "recent", sort: "modified", kind: "file" },
     open
   );
-  const assets = assetQuery.data?.items ?? [];
+  const assets = [
+    ...new Map(
+      [...(assetQuery.data?.items ?? []), ...uploadedAssets].map((asset) => [asset.id, asset])
+    ).values(),
+  ];
   const missingRequiredFields =
     template.data?.definition.fields.filter((field) => {
       if (!field.required) return false;
@@ -88,16 +101,19 @@ export function SubmitTaskDialog({
     setAssetIds([]);
     setAnswers({});
     setDeliveryFolderId("");
+    setUploadedAssets([]);
+    setUploading({});
   }
   const generation = useRef(0);
   const pendingGeneration = useRef<number | null>(null);
   useEffect(() => {
     generation.current += 1;
+    uploadingRef.current = {};
     pendingGeneration.current = null;
     return () => {
       generation.current += 1;
     };
-  }, [open, crewId, task?.id, template.accountId]);
+  }, [open, crewId, task?.id, template.accountId, answerKey]);
 
   const close = (next: boolean) => {
     if (!next) {
@@ -106,6 +122,9 @@ export function SubmitTaskDialog({
       setAssetIds([]);
       setAnswers({});
       setDeliveryFolderId("");
+      setUploadedAssets([]);
+      setUploading({});
+      uploadingRef.current = {};
     }
     onOpenChange(next);
   };
@@ -114,6 +133,7 @@ export function SubmitTaskDialog({
     if (
       !open ||
       !task ||
+      Object.values(uploadingRef.current).some(Boolean) ||
       pendingGeneration.current !== null ||
       template.isPending ||
       template.isError ||
@@ -163,134 +183,199 @@ export function SubmitTaskDialog({
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="sm:max-w-3xl">
+  const content = (
+    <>
+      {inline ? (
+        <header className="space-y-2">
+          <h2 className="text-base font-semibold">{t("submitTitle")}</h2>
+          <p className="text-sm text-muted-foreground">{t("submitDescription")}</p>
+        </header>
+      ) : (
         <DialogHeader>
           <DialogTitle>{t("submitTitle")}</DialogTitle>
           <DialogDescription>{t("submitDescription")}</DialogDescription>
         </DialogHeader>
-        {task ? <TaskDeliveryProgress status={task.status} /> : null}
-        <DialogBody className="space-y-4">
-          <label className="block space-y-2 text-sm">
-            {t("deliveryFolder")}
-            <NativeSelect
-              aria-label={t("deliveryFolder")}
-              disabled={saving || folders.isLoading}
-              value={deliveryFolderId}
-              onChange={setDeliveryFolderId}
+      )}
+      {!inline && task ? <TaskDeliveryProgress status={task.status} /> : null}
+      <DialogBody className={inline ? "min-w-0 space-y-4 p-0" : "space-y-4"}>
+        {template.isPending ? <p role="status">{deliveryT("loading")}</p> : null}
+        {template.error ? (
+          <div role="alert">
+            {template.error.message}
+            <Button
+              disabled={saving || template.isFetching}
+              onClick={() => void template.refetch()}
             >
-              <NativeSelectOption value="">{t("automaticDeliveryFolder")}</NativeSelectOption>
-              {(folders.data ?? [])
-                .filter((folder) =>
-                  ["upload", "edit", "manage"].includes(folder.effectivePermission ?? "")
-                )
-                .map((folder) => (
-                  <NativeSelectOption key={folder.id} value={folder.id}>
-                    {folder.name}
-                  </NativeSelectOption>
-                ))}
-            </NativeSelect>
-          </label>
-          {folders.error ? (
-            <div role="alert" className="text-xs">
-              <p>{folders.error instanceof Error ? folders.error.message : common("loadFailed")}</p>
-              <Button
-                variant="outline"
-                disabled={saving || folders.isFetching}
-                onClick={() => void folders.refetch()}
-              >
-                {common("retry")}
-              </Button>
-            </div>
-          ) : null}
-
-          {task?.canvasHref ? (
-            <div className="rounded-lg border border-border bg-muted/25 p-3">
-              <div className="flex items-center gap-2 text-xs font-medium">
-                <IconGitBranch className="size-4 text-primary" />
-                {t("canvasIncluded")}
-              </div>
-              <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-                {t("canvasIncludedHint")}
-              </p>
-            </div>
-          ) : null}
-          <Textarea
-            aria-label={t("submitNotePlaceholder")}
+              {deliveryT("retry")}
+            </Button>
+          </div>
+        ) : null}
+        {template.data ? (
+          <TaskDeliveryFields
+            template={template.data}
+            answers={answers}
+            onChange={setAnswers}
             disabled={saving}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder={t("submitNotePlaceholder")}
-            maxLength={5000}
-            className="min-h-24"
+            assets={assets.filter((asset) => assetIds.includes(asset.id))}
+            renderUpload={(field) =>
+              open ? (
+                <TaskDeliveryUpload
+                  key={`${answerKey}:${field.key}`}
+                  crewId={crewId}
+                  parentId={deliveryFolderId || null}
+                  label={field.label}
+                  disabled={saving}
+                  onBusyChange={(busy) => {
+                    uploadingRef.current = { ...uploadingRef.current, [field.key]: busy };
+                    setUploading(uploadingRef.current);
+                  }}
+                  onUploaded={(asset) => {
+                    setUploadedAssets((current) => [
+                      ...current.filter((item) => item.id !== asset.id),
+                      asset,
+                    ]);
+                    setAssetIds((current) => [...new Set([...current, asset.id])]);
+                    setAnswers((current) => ({
+                      ...current,
+                      [field.key]: [
+                        ...new Set([
+                          ...(Array.isArray(current[field.key])
+                            ? (current[field.key] as string[])
+                            : []),
+                          asset.id,
+                        ]),
+                      ],
+                    }));
+                  }}
+                />
+              ) : null
+            }
           />
-          <div>
-            <p className="mb-2 text-[11px] text-muted-foreground">{t("attachAssets")}</p>
-            <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
-              {assetQuery.isLoading ? (
-                <p
-                  role="status"
-                  className="px-2 py-4 text-center text-[11px] text-muted-foreground"
-                >
-                  {common("loading")}
-                </p>
-              ) : null}
-              {assetQuery.error ? (
-                <div role="alert" className="space-y-2 px-2 py-3 text-xs">
-                  <p>
-                    {assetQuery.error instanceof Error
-                      ? assetQuery.error.message
-                      : common("loadFailed")}
-                  </p>
-                  <Button
-                    variant="outline"
-                    color="muted"
-                    size="sm"
-                    disabled={saving || assetQuery.isFetching}
-                    onClick={() =>
-                      void (assetQuery.isFetchNextPageError &&
-                      !isCrewCursorError(assetQuery.error, "CREW_ASSET_CURSOR_INVALID")
-                        ? assetQuery.fetchNextPage({ cancelRefetch: false })
-                        : assetQuery.refetch())
-                    }
-                  >
-                    {common("retry")}
-                  </Button>
-                </div>
-              ) : null}
-              {assets.length === 0 && !assetQuery.isLoading && !assetQuery.error ? (
-                <p className="px-2 py-4 text-center text-[11px] text-muted-foreground">
-                  {t("noRecentAssets")}
-                </p>
-              ) : (
-                assets.map((asset) => {
-                  const isChecked = assetIds.includes(asset.id);
-                  return (
-                    <div
-                      key={asset.id}
-                      className="flex flex-col gap-1.5 rounded px-2 py-2 text-xs hover:bg-muted/50"
-                    >
-                      <label className="flex cursor-pointer items-center gap-2">
-                        <Checkbox
-                          disabled={saving}
-                          checked={isChecked}
-                          onCheckedChange={() => {
-                            setAssetIds((current) =>
-                              current.includes(asset.id)
-                                ? current.filter((id) => id !== asset.id)
-                                : [...current, asset.id]
-                            );
-                          }}
-                        />
-                        <IconFile className="size-3.5 text-muted-foreground shrink-0" />
-                        <span className="truncate font-medium">{asset.name}</span>
-                      </label>
-                    </div>
-                  );
-                })
-              )}
+        ) : null}
+        {missingRequiredFields.length > 0 ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {deliveryT("missingRequiredFields", {
+              fields: missingRequiredFields.map((field) => field.label).join(", "),
+            })}
+          </p>
+        ) : null}
+        <label className="block space-y-2 text-sm">
+          {t("deliveryFolder")}
+          <NativeSelect
+            aria-label={t("deliveryFolder")}
+            disabled={saving || folders.isLoading}
+            value={deliveryFolderId}
+            onChange={setDeliveryFolderId}
+          >
+            <NativeSelectOption value="">{t("automaticDeliveryFolder")}</NativeSelectOption>
+            {(folders.data ?? [])
+              .filter((folder) =>
+                ["upload", "edit", "manage"].includes(folder.effectivePermission ?? "")
+              )
+              .map((folder) => (
+                <NativeSelectOption key={folder.id} value={folder.id}>
+                  {folder.name}
+                </NativeSelectOption>
+              ))}
+          </NativeSelect>
+        </label>
+        {folders.error ? (
+          <div role="alert" className="text-xs">
+            <p>{folders.error instanceof Error ? folders.error.message : common("loadFailed")}</p>
+            <Button
+              variant="outline"
+              disabled={saving || folders.isFetching}
+              onClick={() => void folders.refetch()}
+            >
+              {common("retry")}
+            </Button>
+          </div>
+        ) : null}
+
+        {task?.canvasHref ? (
+          <div className="rounded-lg border border-border bg-muted/25 p-3">
+            <div className="flex items-center gap-2 text-xs font-medium">
+              <IconGitBranch className="size-4 text-primary" />
+              {t("canvasIncluded")}
             </div>
+            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
+              {t("canvasIncludedHint")}
+            </p>
+          </div>
+        ) : null}
+        <Textarea
+          aria-label={t("submitNotePlaceholder")}
+          disabled={saving}
+          value={note}
+          onChange={(event) => setNote(event.target.value)}
+          placeholder={t("submitNotePlaceholder")}
+          maxLength={5000}
+          className="min-h-24"
+        />
+        <details>
+          <summary className="cursor-pointer py-2 text-sm text-muted-foreground">
+            {t("attachAssets")}
+          </summary>
+          <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
+            {assetQuery.isLoading ? (
+              <p role="status" className="px-2 py-4 text-center text-[11px] text-muted-foreground">
+                {common("loading")}
+              </p>
+            ) : null}
+            {assetQuery.error ? (
+              <div role="alert" className="space-y-2 px-2 py-3 text-xs">
+                <p>
+                  {assetQuery.error instanceof Error
+                    ? assetQuery.error.message
+                    : common("loadFailed")}
+                </p>
+                <Button
+                  variant="outline"
+                  color="muted"
+                  size="sm"
+                  disabled={saving || assetQuery.isFetching}
+                  onClick={() =>
+                    void (assetQuery.isFetchNextPageError &&
+                    !isCrewCursorError(assetQuery.error, "CREW_ASSET_CURSOR_INVALID")
+                      ? assetQuery.fetchNextPage({ cancelRefetch: false })
+                      : assetQuery.refetch())
+                  }
+                >
+                  {common("retry")}
+                </Button>
+              </div>
+            ) : null}
+            {assets.length === 0 && !assetQuery.isLoading && !assetQuery.error ? (
+              <p className="px-2 py-4 text-center text-[11px] text-muted-foreground">
+                {t("noRecentAssets")}
+              </p>
+            ) : (
+              assets.map((asset) => {
+                const isChecked = assetIds.includes(asset.id);
+                return (
+                  <div
+                    key={asset.id}
+                    className="flex flex-col gap-1.5 rounded px-2 py-2 text-xs hover:bg-muted/50"
+                  >
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <Checkbox
+                        disabled={saving}
+                        checked={isChecked}
+                        onCheckedChange={() => {
+                          setAssetIds((current) =>
+                            current.includes(asset.id)
+                              ? current.filter((id) => id !== asset.id)
+                              : [...current, asset.id]
+                          );
+                        }}
+                      />
+                      <IconFile className="size-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate font-medium">{asset.name}</span>
+                    </label>
+                  </div>
+                );
+              })
+            )}
           </div>
           {assetQuery.hasNextPage && !assetQuery.isFetchNextPageError && (
             <Button
@@ -303,51 +388,38 @@ export function SubmitTaskDialog({
               {assetQuery.isFetchingNextPage ? common("loading") : common("loadMore")}
             </Button>
           )}
-          {template.isPending ? <p role="status">{deliveryT("loading")}</p> : null}
-          {template.error ? (
-            <div role="alert">
-              {template.error.message}
-              <Button
-                disabled={saving || template.isFetching}
-                onClick={() => void template.refetch()}
-              >
-                {deliveryT("retry")}
-              </Button>
-            </div>
-          ) : null}
-          {template.data ? (
-            <TaskDeliveryFields
-              template={template.data}
-              answers={answers}
-              onChange={setAnswers}
-              disabled={saving}
-              assets={assets.filter((asset) => assetIds.includes(asset.id))}
-            />
-          ) : null}
-          {missingRequiredFields.length > 0 ? (
-            <p role="status" className="text-sm text-muted-foreground">
-              {deliveryT("missingRequiredFields", {
-                fields: missingRequiredFields.map((field) => field.label).join(", "),
-              })}
-            </p>
-          ) : null}
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" color="muted" onClick={() => close(false)}>
-            {t("cancel")}
-          </Button>
-          <Button
-            disabled={
-              saving || template.isPending || template.isError || missingRequiredFields.length > 0
-            }
-            loading={saving}
-            onClick={() => void submit()}
-            icon={<IconSend />}
-          >
-            {t("submit")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+        </details>
+      </DialogBody>
+      <DialogFooter>
+        <Button variant="outline" color="muted" onClick={() => close(false)}>
+          {t("cancel")}
+        </Button>
+        <Button
+          disabled={
+            saving ||
+            hasUploads ||
+            template.isPending ||
+            template.isError ||
+            missingRequiredFields.length > 0
+          }
+          loading={saving}
+          onClick={() => void submit()}
+          icon={<IconSend />}
+        >
+          {t("submit")}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+  if (inline)
+    return open ? (
+      <section className="mb-6 min-w-0 space-y-4" aria-label={t("submitTitle")}>
+        {content}
+      </section>
+    ) : null;
+  return (
+    <Dialog open={open} onOpenChange={close}>
+      <DialogContent className="sm:max-w-3xl">{content}</DialogContent>
     </Dialog>
   );
 }

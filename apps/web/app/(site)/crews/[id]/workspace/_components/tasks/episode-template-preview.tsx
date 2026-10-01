@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { crewApi } from "@/app/(site)/crews/_hooks/api";
+import { crewApi, CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { crewAccountQueries, crewKeys } from "@/app/(site)/crews/_hooks/shared";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -12,9 +12,14 @@ import {
   DialogBody,
   DialogContent,
   DialogFooter,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import { useCrewTaskProject, useCrewMembers } from "@/app/(site)/crews/_hooks/use-crew";
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import type { CrewTaskCustomValue } from "@/app/(site)/crews/_hooks/types";
+import { CustomFieldControl, normalizeCustomFieldDraft } from "./task-custom-field-control";
 import type { WorkbenchTaskBatch } from "./workbench-task-batch";
 type Plan = {
   templateId: string;
@@ -72,6 +77,13 @@ function EpisodeTemplateSession({
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ taskIds: string[]; replayed: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const project = useCrewTaskProject(crewId, Boolean(userId));
+  const members = useCrewMembers(userId ? crewId : undefined);
+  const displays = useUserDisplays(members.data.map((member) => member.userId));
+  const fields = project.data?.fields ?? [];
+  const [values, setValues] = useState<Record<string, Record<string, CrewTaskCustomValue>>>({});
+  // Once sent, retries must preserve the original command even if the response was lost.
+  const [command, setCommand] = useState<WorkbenchTaskBatch["body"] | null>(null);
   const lock = useRef(false);
   const alive = useRef(true);
   useEffect(() => {
@@ -88,16 +100,49 @@ function EpisodeTemplateSession({
     retry: false,
     queryFn: ({ signal }) => crewApi.get<Plan>(path, { signal, cache: "no-store" }),
   });
+  const taskFields = (preview.data?.items ?? []).map((item) => ({
+    templateKey: item.templateKey,
+    values: fields.flatMap((field) => {
+      const value = normalizeCustomFieldDraft(field, values[item.templateKey]?.[field.id] ?? null);
+      return value === null ? [] : [{ fieldId: field.id, value }];
+    }),
+  }));
+  const fieldsReady =
+    !project.isPending &&
+    !project.isFetching &&
+    !project.isError &&
+    fields.every((field) =>
+      taskFields.every(
+        (row) => !field.required || row.values.some((value) => value.fieldId === field.id)
+      )
+    ) &&
+    !fields.some(
+      (field) =>
+        field.type === "number" &&
+        Object.values(values).some(
+          (row) =>
+            row[field.id] != null && row[field.id] !== "" && !Number.isFinite(Number(row[field.id]))
+        )
+    );
   async function confirm() {
-    if (!userId || !preview.data || preview.isError || preview.isFetching || lock.current || result)
+    if (
+      !userId ||
+      !preview.data ||
+      preview.isError ||
+      preview.isFetching ||
+      (!command && !fieldsReady) ||
+      lock.current ||
+      result
+    )
       return;
     const { templateId, templateVersion, episodeVersion } = preview.data;
+    const body = command ?? { templateId, templateVersion, episodeVersion, taskFields };
     if (onStage) {
       onStage({
         key: `episode:${episodeId}`,
         title: preview.data.name,
         path,
-        body: { templateId, templateVersion, episodeVersion },
+        body,
         items: preview.data.items.map((item) => ({
           title: item.title,
           role: item.roleRequirement,
@@ -120,12 +165,13 @@ function EpisodeTemplateSession({
       onClose();
       return;
     }
+    setCommand(body);
     lock.current = true;
     setBusy(true);
     setError(null);
     try {
       const response = await crewApi.post<{ taskIds: string[]; replayed: boolean }>(path, {
-        body: { templateId, templateVersion, episodeVersion },
+        body,
       });
       if (!alive.current) return;
       setResult(response);
@@ -136,6 +182,8 @@ function EpisodeTemplateSession({
         client.invalidateQueries({ queryKey: [...crewKeys.episodes(crewId), userId] }),
       ]);
     } catch (cause) {
+      if (cause instanceof CrewApiError && [400, 401, 403, 404, 409, 422].includes(cause.status))
+        setCommand(null);
       if (alive.current) setError(cause instanceof Error ? cause.message : t("failed"));
     } finally {
       lock.current = false;
@@ -150,7 +198,9 @@ function EpisodeTemplateSession({
       }}
     >
       <DialogContent className="sm:max-w-3xl" aria-describedby={undefined}>
-        <DialogTitle>{t("title")}</DialogTitle>
+        <DialogHeader>
+          <DialogTitle>{t("title")}</DialogTitle>
+        </DialogHeader>
         <DialogBody className="max-h-[65vh] overflow-y-auto">
           <p className="mb-4 text-sm text-muted-foreground">{t("help")}</p>
           {preview.isPending ? <p>{t("loading")}</p> : null}
@@ -170,6 +220,12 @@ function EpisodeTemplateSession({
             >
               {t("reload")}
             </Button>
+          ) : null}
+          {project.isError ? (
+            <p role="alert">
+              {project.error.message}
+              <Button onClick={() => void project.refetch()}>{t("reload")}</Button>
+            </p>
           ) : null}
           {result ? (
             <p role="status">
@@ -207,6 +263,48 @@ function EpisodeTemplateSession({
                   </tbody>
                 </table>
               </div>
+              {fields.length > 0 ? (
+                <div className="mt-5 space-y-5">
+                  <p className="text-sm text-muted-foreground">{t("fieldsHelp")}</p>
+                  {preview.data.items.map((item) => (
+                    <fieldset
+                      key={item.templateKey}
+                      disabled={busy || Boolean(command) || Boolean(result)}
+                      className="space-y-3 border-t border-white/10 pt-4"
+                    >
+                      <legend className="text-sm font-semibold">{item.title}</legend>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {fields.map((field) => (
+                          <div key={field.id} className="space-y-2">
+                            <p className="text-sm">
+                              {field.name}
+                              {field.required ? " *" : ""}
+                            </p>
+                            {field.description ? (
+                              <p className="text-xs text-muted-foreground">{field.description}</p>
+                            ) : null}
+                            <CustomFieldControl
+                              field={field}
+                              value={values[item.templateKey]?.[field.id] ?? null}
+                              members={members.data.filter((member) => member.status === "active")}
+                              displays={displays}
+                              onChange={(value) =>
+                                setValues((current) => ({
+                                  ...current,
+                                  [item.templateKey]: {
+                                    ...current[item.templateKey],
+                                    [field.id]: value,
+                                  },
+                                }))
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ))}
+                </div>
+              ) : null}
             </>
           ) : null}
         </DialogBody>
@@ -217,7 +315,14 @@ function EpisodeTemplateSession({
           {!result ? (
             <Button
               className="bg-[#E52227] text-white hover:bg-[#E52227]/90"
-              disabled={!userId || !preview.data || preview.isError || preview.isFetching || busy}
+              disabled={
+                !userId ||
+                !preview.data ||
+                preview.isError ||
+                preview.isFetching ||
+                busy ||
+                (!command && !fieldsReady)
+              }
               onClick={() => void confirm()}
             >
               {onStage ? workbenchT("stageTemplate") : t(busy ? "creating" : "confirm")}

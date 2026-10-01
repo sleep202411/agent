@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   Body,
@@ -26,6 +27,7 @@ import { CrewAuthorizationService } from '../crew-authorization.service';
 
 export const ApplyCanvasTaskImportSchema = z
   .object({
+    importKey: z.string().uuid().optional(),
     sourceRevision: z.number().int().nonnegative(),
     sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
@@ -86,19 +88,24 @@ export class CrewCanvasTaskImportService {
           where: {
             crewId,
             kind: 'properties_changed',
-            payload: { path: ['canvasTaskImport'], equals: projectId },
+            payload: input.importKey
+              ? { path: ['canvasImportRequest'], equals: input.importKey }
+              : { path: ['canvasTaskImport'], equals: projectId },
           },
           select: { payload: true },
         });
         if (receipt) {
           const saved = z
             .object({
+              canvasTaskImport: z.string().optional(),
               sourceHash: z.string(),
               sourceRevision: z.number(),
               taskIds: z.array(z.string()),
             })
             .parse(receipt.payload);
           if (
+            (saved.canvasTaskImport !== undefined &&
+              saved.canvasTaskImport !== projectId) ||
             saved.sourceHash !== input.sourceHash ||
             saved.sourceRevision !== input.sourceRevision
           )
@@ -158,8 +165,27 @@ export class CrewCanvasTaskImportService {
         });
         let number = last?.number ?? 0;
         let rank = last?.rank ?? new Prisma.Decimal(0);
+        // Explicit imports append missing scenes. Existing tasks, including their
+        // confirmed terms and submitted work, are never overwritten.
+        const existing = input.importKey
+          ? await tx.crewTask.findMany({
+              where: {
+                crewId,
+                deletedAt: null,
+                metadata: { path: ['canvasTaskImport'], equals: projectId },
+              },
+              select: { id: true, metadata: true },
+            })
+          : [];
+        const existingNodes = new Set(
+          existing.map(
+            (task) =>
+              (task.metadata as Record<string, unknown> | null)?.sourceNodeId,
+          ),
+        );
         const taskIds: string[] = [];
         for (const scene of scenes) {
+          if (existingNodes.has(scene.id)) continue;
           rank = rank.plus(1024);
           const title =
             typeof scene.content.title === 'string'
@@ -196,7 +222,14 @@ export class CrewCanvasTaskImportService {
             crewId,
             createdByUserId: userId,
             kind: 'properties_changed',
-            payload: { canvasTaskImport: projectId, ...input, taskIds },
+            payload: {
+              canvasTaskImport: projectId,
+              ...(input.importKey
+                ? { canvasImportRequest: input.importKey }
+                : {}),
+              ...input,
+              taskIds,
+            },
           },
         });
         await this.authorization.require(crewId, userId, 'tasks.manage', tx);
@@ -250,6 +283,19 @@ export class CrewCanvasTaskImportService {
       project.title,
       content.data,
     );
+    const imported = await this.prisma.crewTask.findMany({
+      where: {
+        crewId,
+        deletedAt: null,
+        metadata: { path: ['canvasTaskImport'], equals: projectId },
+      },
+      select: { metadata: true },
+    });
+    const existingSourceNodeIds = imported.flatMap((task) => {
+      const id = (task.metadata as Record<string, unknown> | null)
+        ?.sourceNodeId;
+      return typeof id === 'string' ? [id] : [];
+    });
     // Recheck access before returning private story content.
     await this.authorization.require(crewId, userId, 'tasks.manage');
     const { project: currentProject } = await this.stories.requireProject(
@@ -273,6 +319,8 @@ export class CrewCanvasTaskImportService {
       crewId,
       projectId,
       title: project.title,
+      importKey: randomUUID(),
+      existingSourceNodeIds,
       sourceRevision: draft.revision,
       sourceHash: draft.contentHash,
       plotTree: exported.plotTree,

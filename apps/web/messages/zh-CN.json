@@ -5239,6 +5239,7 @@
       "durationOverdue": "已逾期 {duration}",
       "durationRemaining": "剩余 {duration}",
       "pastDeadline": "请选择今天或之后的截止日期。",
+      "canvasAlreadyImported": "当前场景均已有任务。新增场景或删除已导入任务后，请重新预览。",
       "emptyCanvas": "此影游尚无可导入场景。请在 Studio 中添加场景后重新预览。",
       "publishJob": "发布职位",
       "publishOpening": "创建后发布到 AIGC 剧组招募",
@@ -5251,6 +5252,7 @@
     },
     "episodeTemplate": {
       "title": "核对本集任务模板",
+      "fieldsHelp": "请填写每个任务的剧组字段，带 * 的字段为必填。",
       "help": "创建前请核对已发布的任务组。任务与依赖关系将一并创建，不覆盖已有工作；创建后可编辑任务。",
       "loading": "正在加载模板…",
       "reload": "重新加载预览",
@@ -10232,12 +10234,16 @@
     "correction": "已更正结果"
   },
   "crewDeliveryTemplate": {
+    "uploadFile": "上传文件",
+    "uploadProgress": "上传中… {percent}%",
+    "uploadUnavailable": "暂时无法上传文件。",
+    "uploadFailed": "文件上传失败。",
     "referencePrices": "参考价格",
     "referencePriceNote": "仅供参考。任务约定报酬单独记录。",
     "title": "专业交付模板",
     "revision": "版本",
     "required": "必填",
-    "selectAttachments": "请先在上方选择提审附件。",
+    "selectAttachments": "在此上传文件，或在下方选择已有的交付附件。",
     "loading": "正在加载交付要求…",
     "none": "不使用专业模板",
     "retry": "刷新／重试",
