@@ -58,6 +58,7 @@ export default function IpStudioScreen() {
                 { path: "commerce", label: "ipCommerce.heading" },
                 { path: "pricing", label: "ipPricing.heading" },
                 { path: "review", label: "ipReview.heading" },
+                { path: "templates", label: "ipTemplates.heading" },
               ] as const
             ).map((item) => (
               <Pressable
