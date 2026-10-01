@@ -3970,5 +3970,7 @@
   "discoveryAssistant.close": "關閉智能助手",
   "discoveryAssistant.applyResults": "套用至搜尋結果",
   "discoveryAssistant.confirmReset": "開始新對話？這會清除本機對話記錄，但不會取消任何遠端任務。",
-  "discoveryAssistant.confirmNew": "開始新對話"
+  "discoveryAssistant.confirmNew": "開始新對話",
+  "studioDiscovery.invalidLink": "此連結包含無效搜尋條件。請修正篩選條件或重設；重複參數或無效工作室選擇需要重設。",
+  "studioDiscovery.outsideFilters": "此工作室不符合目前篩選條件。"
 }

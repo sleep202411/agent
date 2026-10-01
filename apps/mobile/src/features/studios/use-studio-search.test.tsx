@@ -32,23 +32,27 @@ function Probe({
   enabled = true,
   query = emptyStudioQuery,
   locale = "en-US",
+  selected = null,
 }: {
   generation?: number;
   enabled?: boolean;
   query?: StudioQuery;
   locale?: string;
+  selected?: string | null;
 }) {
   const s = useStudioSearch(
     { generation, viewerId: generation === 1 ? null : "viewer" },
     query,
     locale,
-    enabled
+    enabled,
+    selected
   );
   return (
     <div>
       {s.items.map((i) => (
         <span key={i.id}>{i.name}</span>
       ))}
+      {s.page?.selected?.name}
       {s.error}
       <button onClick={s.loadMore}>more</button>
       <button onClick={s.retry}>retry</button>
@@ -136,4 +140,26 @@ it("does not fetch while inactive and clears old identities on account, locale o
   expect(host.textContent).not.toContain("Studio 1");
   await render({ enabled: false });
   expect(host.textContent).not.toContain("Studio fresh");
+});
+
+it("resets paging and hides previous selection while a new link resolves", async () => {
+  h.load.mockResolvedValueOnce({ ...page(), selected: { id: "a", name: "Selected A" } });
+  await render({ selected: "a" });
+  expect(host.textContent).toContain("Selected A");
+  expect(h.load.mock.calls[0][5]).toBe("a");
+  let finish!: (v: unknown) => void;
+  h.load.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        finish = r;
+      })
+  );
+  await render({ selected: "b" });
+  expect(host.textContent).not.toContain("Selected A");
+  expect(h.load.mock.calls[1][2]).toBeNull();
+  expect(h.load.mock.calls[1][5]).toBe("b");
+  await act(async () => finish({ ...page("2", null), selected: { id: "b", name: "Selected B" } }));
+  expect(host.textContent).toContain("Selected B");
+  await render({ enabled: false, selected: "b" });
+  expect(host.textContent).not.toContain("Selected B");
 });

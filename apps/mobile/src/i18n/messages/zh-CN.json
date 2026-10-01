@@ -3970,5 +3970,7 @@
   "discoveryAssistant.close": "关闭智能助手",
   "discoveryAssistant.applyResults": "应用到搜索结果",
   "discoveryAssistant.confirmReset": "开始新对话？这会清除本地对话记录，但不会取消任何远程任务。",
-  "discoveryAssistant.confirmNew": "开始新对话"
+  "discoveryAssistant.confirmNew": "开始新对话",
+  "studioDiscovery.invalidLink": "此链接包含无效搜索条件。请修正筛选条件或重置；重复参数或无效工作室选择需要重置。",
+  "studioDiscovery.outsideFilters": "此工作室不符合当前筛选条件。"
 }

@@ -122,3 +122,26 @@ it("aborts before dispatch and rejects late account results", async () => {
     "expired"
   );
 });
+it("resolves the requested selected studio independently of filters and sanitizes its location", async () => {
+  h.post.mockResolvedValueOnce({
+    ...result(),
+    selected: { ...card, id: "outside", matched: false, showOnMap: false },
+  });
+  const page = await searchStudios(scope, emptyStudioQuery, null, requestId, signal(), "outside");
+  expect(h.post.mock.calls[0][1].data.selectedCreatorId).toBe("outside");
+  expect(page.selected).toMatchObject({
+    id: "outside",
+    matched: false,
+    basedIn: null,
+    point: null,
+  });
+  expect(page.items).toHaveLength(1);
+  h.post.mockResolvedValueOnce({ ...result(), selected: { ...card, id: "wrong" } });
+  await expect(
+    searchStudios(scope, emptyStudioQuery, null, requestId, signal(), "outside")
+  ).rejects.toThrow("does not match");
+  h.post.mockResolvedValueOnce(result());
+  expect(
+    (await searchStudios(scope, emptyStudioQuery, null, requestId, signal(), "missing")).selected
+  ).toBeNull();
+});

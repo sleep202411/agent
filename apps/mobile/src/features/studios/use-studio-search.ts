@@ -31,11 +31,20 @@ export function useStudioSearch(
   scope: StudioScope,
   query: StudioQuery,
   locale: string,
-  enabled: boolean
+  enabled: boolean,
+  selectedCreatorId: string | null = null
 ) {
   const [revision, setRevision] = useState(0),
     [snapshot, setSnapshot] = useState<Snapshot>();
-  const key = JSON.stringify([scope.generation, scope.viewerId, locale, query, revision, enabled]);
+  const key = JSON.stringify([
+    scope.generation,
+    scope.viewerId,
+    locale,
+    query,
+    selectedCreatorId,
+    revision,
+    enabled,
+  ]);
   const owner = useRef<Session | null>(null);
   const { generation, viewerId } = scope;
   const load = useCallback(
@@ -49,7 +58,8 @@ export function useStudioSearch(
           query,
           s.cursor,
           uuid.v4(),
-          s.abort.signal
+          s.abort.signal,
+          selectedCreatorId
         );
         if (s.abort.signal.aborted) return;
         if (
@@ -92,7 +102,7 @@ export function useStudioSearch(
           });
       }
     },
-    [generation, viewerId, query]
+    [generation, viewerId, query, selectedCreatorId]
   );
   useEffect(() => {
     if (!enabled) return;

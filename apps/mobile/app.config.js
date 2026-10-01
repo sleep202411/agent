@@ -226,7 +226,8 @@ module.exports = ({ config }) => {
 
   const wechatApplink = wechatAssociatedDomain();
   const studioHost = appRegion === "cn" ? "studio.fizzspace.cn" : "studio.fizzdragon.com";
-  // The Studio host must publish matching AASA / assetlinks signing identities.
+  const siteHost = appRegion === "cn" ? "fizzdragon.fizzspace.cn" : "fizzdragon.com";
+  // Both hosts must publish matching AASA / assetlinks signing identities.
   // Dev/preview builds use their configured custom scheme and must not claim release links.
   const studioLinks = appVariant === "production";
   const associatedDomains = [
@@ -234,6 +235,7 @@ module.exports = ({ config }) => {
       ...(config.ios?.associatedDomains ?? []),
       ...(wechatApplink ? [wechatApplink] : []),
       ...(studioLinks ? [`applinks:${studioHost}`] : []),
+      ...(studioLinks ? [`applinks:${siteHost}`] : []),
     ]),
   ];
 
@@ -329,6 +331,18 @@ module.exports = ({ config }) => {
                 category: ["BROWSABLE", "DEFAULT"],
                 data: ["/invite/", "/en-US/invite/", "/zh-CN/invite/", "/zh-HK/invite/"].map(
                   (pathPrefix) => ({ scheme: "https", host: studioHost, pathPrefix })
+                ),
+              },
+              {
+                action: "VIEW",
+                autoVerify: true,
+                category: ["BROWSABLE", "DEFAULT"],
+                data: ["", "/en-US", "/zh-CN", "/zh-HK"].flatMap((locale) =>
+                  ["", "/"].map((suffix) => ({
+                    scheme: "https",
+                    host: siteHost,
+                    path: `${locale}/creators/studios${suffix}`,
+                  }))
                 ),
               },
             ]

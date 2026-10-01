@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { Image } from "expo-image";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useLocalSearchParams } from "expo-router";
 import { SERVICE_CATEGORIES } from "@repo/shared/creator-service";
 import { REGIONS, regionLabel } from "@repo/shared/regions";
 import { useAuth, useAuthGate } from "@/auth";
@@ -19,14 +19,17 @@ import { useScreenActive } from "@/hooks/use-app-active";
 import { useLocale, useTranslations } from "@/i18n";
 import { serviceCategoryLabel } from "@/lib/creator-service-format";
 import { toHref } from "@/lib/navigation";
-import {
-  emptyStudioQuery,
-  parseStudioQuery,
-  type StudioQuery,
-  type StudioPage,
-} from "./studio-search-api";
+import { emptyStudioQuery, type StudioQuery, type StudioPage } from "./studio-search-api";
 import { DiscoveryAssistantPanel } from "./discovery-assistant-panel";
 import { useStudioSearch } from "./use-studio-search";
+import {
+  readStudioLink,
+  studioLinkKeys,
+  parseStudioDraft,
+  studioDraftFromQuery,
+  studioLinkParams,
+  type StudioDraft,
+} from "./studio-search-link";
 
 function Action({
   label,
@@ -177,7 +180,21 @@ function StudioCard({ studio }: { studio: StudioPage["items"][number] }) {
     </View>
   );
 }
+const subscribeHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
 export function StudioSearchScreen() {
+  // Static exports have no query string; match their shell before reading an incoming link.
+  const ready = useSyncExternalStore(subscribeHydration, clientReady, serverReady);
+  const params = useLocalSearchParams();
+  const fingerprint = JSON.stringify(
+    Object.fromEntries(studioLinkKeys.map((key) => [key, params[key] ?? ""]))
+  );
+  const initial = useMemo(() => readStudioLink(JSON.parse(fingerprint)), [fingerprint]);
+  if (!ready) return <ActivityIndicator />;
+  return <StudioSearchContent key={fingerprint} initial={initial} />;
+}
+function StudioSearchContent({ initial }: { initial: ReturnType<typeof readStudioLink> }) {
   const router = useRouter();
   const auth = useAuth(),
     gate = useAuthGate(),
@@ -185,9 +202,11 @@ export function StudioSearchScreen() {
     t = useTranslations(),
     locale = useLocale(),
     theme = useTheme();
-  const [draft, setDraft] = useState<StudioQuery>(emptyStudioQuery),
-    [query, setQuery] = useState<StudioQuery>(emptyStudioQuery),
-    [filters, setFilters] = useState(false);
+  const normalized = useMemo(() => parseStudioDraft(initial.draft), [initial]);
+  const query = normalized.success ? normalized.data : emptyStudioQuery;
+  const validLink = normalized.success && !initial.invalid;
+  const [draft, setDraft] = useState<StudioDraft>(initial.draft),
+    [filters, setFilters] = useState(!validLink);
   const state = useStudioSearch(
     {
       generation: auth.generation,
@@ -196,16 +215,25 @@ export function StudioSearchScreen() {
     },
     query,
     locale,
-    active && auth.status !== "hydrating"
+    active && auth.status !== "hydrating" && validLink,
+    initial.selected
   );
-  const parsed = parseStudioQuery(draft),
-    dirty = JSON.stringify(draft) !== JSON.stringify(query);
-  const apply = () => {
-    if (!parsed.success) return;
-    setDraft(parsed.data);
-    if (JSON.stringify(parsed.data) === JSON.stringify(query)) state.refresh();
-    else setQuery(parsed.data);
+  const parsed = parseStudioDraft(draft),
+    dirty = JSON.stringify(draft) !== JSON.stringify(initial.draft);
+  const setSearch = (next: StudioQuery, selected: string | null = null) => {
+    if (
+      validLink &&
+      JSON.stringify(next) === JSON.stringify(query) &&
+      selected === initial.selected
+    )
+      state.refresh();
+    router.setParams(studioLinkParams(next, selected));
+    setDraft(studioDraftFromQuery(next));
     setFilters(false);
+  };
+  const apply = () => {
+    if (!parsed.success || initial.invalid) return;
+    setSearch(parsed.data);
   };
   return (
     <View style={{ flex: 1, backgroundColor: theme.background, padding: 16 }}>
@@ -239,20 +267,16 @@ export function StudioSearchScreen() {
                 kind: "creators",
               }}
               current={{ kind: "creators", query: parsed.success ? parsed.data : query }}
-              valid={parsed.success}
+              valid={parsed.success && !initial.invalid}
               onReview={(result) => {
-                setDraft(result.query);
+                setDraft(studioDraftFromQuery(result.query));
                 setFilters(true);
               }}
               onApply={(result) => {
-                setDraft(result.query);
-                setQuery(result.query);
-                state.refresh();
-                setFilters(false);
+                setSearch(result.query);
               }}
               onSelect={(result, id) => {
-                setDraft(result.query);
-                setQuery(result.query);
+                setSearch(result.query, id);
                 router.push(toHref(`/creator/${encodeURIComponent(id)}`));
               }}
             />
@@ -295,12 +319,12 @@ export function StudioSearchScreen() {
                     <Pressable
                       key={category ?? "all"}
                       accessibilityRole="radio"
-                      accessibilityState={{ selected: draft.category === category }}
-                      onPress={() => setDraft({ ...draft, category })}
+                      accessibilityState={{ selected: draft.category === (category ?? "") }}
+                      onPress={() => setDraft({ ...draft, category: category ?? "" })}
                       style={{
                         padding: 10,
                         backgroundColor:
-                          draft.category === category
+                          draft.category === (category ?? "")
                             ? theme.backgroundSelected
                             : theme.backgroundElement,
                       }}
@@ -315,51 +339,95 @@ export function StudioSearchScreen() {
                 </ScrollView>
                 <PlaceFilter
                   label={t("studioDiscovery.basedIn")}
-                  value={draft.basedIn}
-                  onChange={(basedIn) => setDraft({ ...draft, basedIn })}
+                  value={
+                    draft.basedCountry || draft.basedCity
+                      ? { countryCode: draft.basedCountry, city: draft.basedCity }
+                      : null
+                  }
+                  onChange={(basedIn) =>
+                    setDraft({
+                      ...draft,
+                      basedCountry: basedIn?.countryCode ?? "",
+                      basedCity: basedIn?.city ?? "",
+                    })
+                  }
                 />
                 <PlaceFilter
                   label={t("studioDiscovery.serves")}
-                  value={draft.serves}
-                  onChange={(serves) => setDraft({ ...draft, serves })}
+                  value={
+                    draft.servesCountry || draft.servesCity
+                      ? { countryCode: draft.servesCountry, city: draft.servesCity }
+                      : null
+                  }
+                  onChange={(serves) =>
+                    setDraft({
+                      ...draft,
+                      servesCountry: serves?.countryCode ?? "",
+                      servesCity: serves?.city ?? "",
+                    })
+                  }
                 />
                 <ThemedText>{t("studioDiscovery.remoteOnly")}</ThemedText>
                 <Switch
                   accessibilityLabel={t("studioDiscovery.remoteOnly")}
-                  value={draft.remoteOnly}
-                  onValueChange={(remoteOnly) => setDraft({ ...draft, remoteOnly })}
+                  value={draft.remote === "1"}
+                  onValueChange={(remoteOnly) =>
+                    setDraft({ ...draft, remote: remoteOnly ? "1" : "" })
+                  }
                   trackColor={{ false: theme.border, true: theme.brand }}
                   thumbColor={theme.text}
                 />
                 <ThemedText>{t("studioDiscovery.availableOnly")}</ThemedText>
                 <Switch
                   accessibilityLabel={t("studioDiscovery.availableOnly")}
-                  value={draft.availableForWork}
-                  onValueChange={(availableForWork) => setDraft({ ...draft, availableForWork })}
+                  value={draft.available === "1"}
+                  onValueChange={(availableForWork) =>
+                    setDraft({ ...draft, available: availableForWork ? "1" : "" })
+                  }
                   trackColor={{ false: theme.border, true: theme.brand }}
                   thumbColor={theme.text}
                 />
               </View>
             )}
-            {!parsed.success && (
+            {(!parsed.success || initial.invalid) && (
               <ThemedText accessibilityRole="alert">{t("studioDiscovery.invalid")}</ThemedText>
             )}
             {dirty && <ThemedText>{t("studioDiscovery.applyHint")}</ThemedText>}
             <Action
               label={t("studioDiscovery.search")}
               onPress={apply}
-              disabled={!active || !parsed.success}
+              disabled={!active || !parsed.success || initial.invalid}
             />
             <Action
               label={t("studioDiscovery.reset")}
               onPress={() => {
-                setDraft(emptyStudioQuery);
-                setQuery(emptyStudioQuery);
-                state.refresh();
-                setFilters(false);
+                setSearch(emptyStudioQuery);
               }}
               disabled={!active}
             />
+            {!validLink && (
+              <ThemedText accessibilityRole="alert">{t("studioDiscovery.invalidLink")}</ThemedText>
+            )}
+            {validLink && initial.selected && !state.loading && !state.error && state.page && (
+              <View style={{ gap: 8 }}>
+                <ThemedText type="smallBold">{t("studioDiscovery.selectedStudio")}</ThemedText>
+                {state.page.selected ? (
+                  <>
+                    {!state.page.selected.matched && (
+                      <ThemedText>{t("studioDiscovery.outsideFilters")}</ThemedText>
+                    )}
+                    <StudioCard studio={state.page.selected} />
+                  </>
+                ) : (
+                  <ThemedText>{t("studioDiscovery.selectionUnavailable")}</ThemedText>
+                )}
+                <Action
+                  label={t("studioDiscovery.clearSelection")}
+                  onPress={() => setSearch(query)}
+                  disabled={!active}
+                />
+              </View>
+            )}
             {state.page && !state.error && (
               <ThemedText>
                 {t("studioDiscovery.count").replace("{count}", String(state.page.matchedCount))}
@@ -368,7 +436,7 @@ export function StudioSearchScreen() {
           </View>
         }
         ListEmptyComponent={
-          !state.loading && !state.error ? (
+          validLink && !state.loading && !state.error ? (
             <ThemedText>{t("studioDiscovery.empty")}</ThemedText>
           ) : null
         }

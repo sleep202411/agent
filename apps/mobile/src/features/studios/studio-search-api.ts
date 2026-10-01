@@ -31,14 +31,15 @@ export async function searchStudios(
   query: StudioQuery,
   cursor: StudioPage["nextCursor"],
   requestId: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  selectedCreatorId: string | null = null
 ) {
   current(scope, signal);
   const data = CreatorDiscoveryRequestSchema.parse({
     requestId,
     query,
     cursor,
-    selectedCreatorId: null,
+    selectedCreatorId,
     map: null,
     limit: 20,
   });
@@ -59,7 +60,7 @@ export async function searchStudios(
     page.requestId !== data.requestId ||
     JSON.stringify(page.query) !== JSON.stringify(data.query) ||
     (cursor && cursor.queryId !== page.queryId) ||
-    page.selected !== null ||
+    (page.selected !== null && page.selected.id !== selectedCreatorId) ||
     page.map !== null ||
     page.items.length > data.limit ||
     page.matchedCount > page.accessibleCount ||
@@ -76,6 +77,10 @@ export async function searchStudios(
     );
   return {
     ...page,
+    selected:
+      page.selected && !page.selected.showOnMap
+        ? { ...page.selected, basedIn: null, point: null }
+        : page.selected,
     items: page.items.map((item) =>
       item.showOnMap ? item : { ...item, basedIn: null, point: null }
     ),

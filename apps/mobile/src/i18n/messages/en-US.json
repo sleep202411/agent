@@ -3970,5 +3970,7 @@
   "discoveryAssistant.close": "Close Copilot",
   "discoveryAssistant.applyResults": "Apply to search results",
   "discoveryAssistant.confirmReset": "Start a new conversation? This clears the local transcript and does not cancel any remote work.",
-  "discoveryAssistant.confirmNew": "Start new conversation"
+  "discoveryAssistant.confirmNew": "Start new conversation",
+  "studioDiscovery.invalidLink": "This link contains invalid search conditions. Correct the filters or reset them. Repeated parameters or an invalid studio selection require a reset.",
+  "studioDiscovery.outsideFilters": "This studio does not match the active filters."
 }

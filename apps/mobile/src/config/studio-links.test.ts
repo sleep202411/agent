@@ -21,7 +21,9 @@ it.each(["global", "cn"])(
       },
     });
     const host = region === "cn" ? "studio.fizzspace.cn" : "studio.fizzdragon.com";
+    const siteHost = region === "cn" ? "fizzdragon.fizzspace.cn" : "fizzdragon.com";
     expect(config.ios.associatedDomains).toContain(`applinks:${host}`);
+    expect(config.ios.associatedDomains).toContain(`applinks:${siteHost}`);
     expect(config.ios.associatedDomains).toContain("applinks:existing.example");
     expect(config.android.intentFilters[0].action).toBe("existing");
     expect(config.android.intentFilters[1]).toEqual({
@@ -32,10 +34,23 @@ it.each(["global", "cn"])(
         (pathPrefix) => ({ scheme: "https", host, pathPrefix })
       ),
     });
+    expect(config.android.intentFilters[2]).toEqual({
+      action: "VIEW",
+      autoVerify: true,
+      category: ["BROWSABLE", "DEFAULT"],
+      data: ["", "/en-US", "/zh-CN", "/zh-HK"].flatMap((locale) =>
+        ["", "/"].map((suffix) => ({
+          scheme: "https",
+          host: siteHost,
+          path: `${locale}/creators/studios${suffix}`,
+        }))
+      ),
+    });
     for (const variant of ["development", "preview"]) {
       vi.stubEnv("APP_VARIANT", variant);
       const dev = configure({ config: {} });
       expect(dev.ios.associatedDomains ?? []).not.toContain(`applinks:${host}`);
+      expect(dev.ios.associatedDomains ?? []).not.toContain(`applinks:${siteHost}`);
       expect(dev.android.intentFilters).toEqual([]);
     }
   }
