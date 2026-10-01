@@ -3,6 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { TaskComment } from "./task-comment";
 const h = vi.hoisted(() => ({
+  read: vi.fn(),
+  save: vi.fn(),
+  clear: vi.fn(),
   permission: vi.fn(),
   picker: vi.fn(),
   upload: vi.fn(),
@@ -11,6 +14,9 @@ const h = vi.hoisted(() => ({
   sent: vi.fn(),
   generation: 1,
   active: true,
+}));
+vi.mock("./task-comment-outbox", () => ({
+  taskCommentOutbox: () => ({ read: h.read, save: h.save, clear: h.clear }),
 }));
 vi.mock("./task-mention-picker", () => ({
   TaskMentionPicker: ({ onSelect }: { onSelect: (v: unknown) => void }) => (
@@ -92,6 +98,7 @@ const type = (text: string) => {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  h.read.mockReturnValue(null);
   h.active = true;
   h.generation = 1;
   h.permission.mockResolvedValue({ allowed: true, canManage: false });
@@ -370,4 +377,41 @@ it("removes structured mentions when their label is removed from the draft", asy
   h.post.mockResolvedValue({});
   await act(async () => button("taskActivity.sendComment").click());
   expect(h.post).toHaveBeenCalledWith("task", "1", { body: "No mention", clientKey: "stable" });
+});
+
+it("restores an attachment-only reply and retries its exact request without uploading again", async () => {
+  const comment = {
+    body: "",
+    clientKey: "old-key",
+    replyToId: "reply-id",
+    attachments: [{ source: "upload", mediaAssetId: "media", name: "Recovered.mp4" }],
+  };
+  h.read.mockReturnValue({
+    clientKey: "old-key",
+    comment,
+    reply: { id: "reply-id", body: "Original parent" },
+  });
+  h.post.mockResolvedValue({});
+  await render();
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  expect(host.textContent).toContain("Original parent");
+  await act(async () =>
+    [...host.querySelectorAll("button")].find((b) => b.textContent === "inbox.retry")!.click()
+  );
+  expect(h.post).toHaveBeenCalledWith("task", "1", comment);
+  expect(h.upload).not.toHaveBeenCalled();
+  expect(h.discard).not.toHaveBeenCalled();
+  expect(h.save.mock.invocationCallOrder[0]).toBeLessThan(h.post.mock.invocationCallOrder[0]);
+  expect(h.clear).toHaveBeenCalledWith("old-key");
+});
+it("does not send or lock composition when storage fails before submission", async () => {
+  h.save.mockImplementation(() => {
+    throw new Error("Disk full");
+  });
+  await render();
+  await act(async () => type("New comment"));
+  await act(async () => click());
+  expect(h.post).not.toHaveBeenCalled();
+  expect(host.querySelector("input")!.disabled).toBe(false);
+  expect(host.textContent).toContain("Disk full");
 });
