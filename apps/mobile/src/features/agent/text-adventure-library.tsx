@@ -1,0 +1,80 @@
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView } from "react-native";
+import type { TextGameSummary } from "@repo/shared/text-game";
+import { ThemedText } from "@/components/themed-text";
+import { getAuthGeneration } from "@/auth/auth-store";
+import { useTranslations } from "@/i18n";
+import { listTextAdventures, type TextAdventureSession } from "./api/text-adventure-api";
+import { Action, TextAdventureEditor } from "./text-adventure-editor";
+export function TextAdventureLibrary({ session }: { session: TextAdventureSession }) {
+  const [identity] = useState(session),
+    [selected, setSelected] = useState<string>(),
+    [revision, setRevision] = useState(0);
+  if (selected)
+    return (
+      <TextAdventureEditor
+        gameId={selected}
+        session={identity}
+        onBack={() => {
+          setSelected(undefined);
+          setRevision((n) => n + 1);
+        }}
+      />
+    );
+  return (
+    <Listing
+      key={revision}
+      session={identity}
+      select={setSelected}
+      refresh={() => setRevision((n) => n + 1)}
+    />
+  );
+}
+function Listing({
+  session,
+  select,
+  refresh,
+}: {
+  session: TextAdventureSession;
+  select: (id: string) => void;
+  refresh: () => void;
+}) {
+  const t = useTranslations();
+  const [rows, setRows] = useState<TextGameSummary[]>(),
+    [error, setError] = useState<string>();
+  useEffect(() => {
+    const c = new AbortController();
+    void listTextAdventures(session, c.signal).then(
+      (value) => {
+        if (!c.signal.aborted) setRows(value);
+      },
+      (e) => {
+        if (!c.signal.aborted && session.generation === getAuthGeneration())
+          setError(String(e.message ?? e));
+      }
+    );
+    return () => c.abort();
+  }, [session]);
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+      {!rows && !error && <ActivityIndicator />}
+      {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
+      {rows?.length === 0 && <ThemedText>{t("textAdventures.library.emptyTitle")}</ThemedText>}
+      {rows?.map((row) => (
+        <Pressable
+          key={row.gameId}
+          accessibilityRole="button"
+          style={{ paddingVertical: 12, gap: 6 }}
+          onPress={() => {
+            if (session.generation === getAuthGeneration()) select(row.gameId);
+          }}
+        >
+          <ThemedText>{row.name || t("textAdventures.library.untitled")}</ThemedText>
+          <ThemedText>{t(`textAdventures.status.${row.status}`)}</ThemedText>
+          <ThemedText>{row.synopsis}</ThemedText>
+        </Pressable>
+      ))}
+      <Action label="thread.refresh" onPress={refresh} />
+    </ScrollView>
+  );
+}

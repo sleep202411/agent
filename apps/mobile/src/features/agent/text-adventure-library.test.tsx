@@ -1,0 +1,77 @@
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { TextAdventureLibrary } from "./text-adventure-library";
+const h = vi.hoisted(() => ({ list: vi.fn(), generation: 1 }));
+vi.mock("./api/text-adventure-api", () => ({ listTextAdventures: h.list }));
+vi.mock("./text-adventure-editor", () => ({
+  TextAdventureEditor: ({ gameId, onBack }: { gameId: string; onBack: () => void }) => (
+    <button onClick={onBack}>{gameId}</button>
+  ),
+  Action: ({ onPress }: { onPress: () => void }) => <button onClick={onPress}>refresh</button>,
+}));
+vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
+vi.mock("@/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/components/themed-text", () => ({
+  ThemedText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
+vi.mock("react-native", () => ({
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  ActivityIndicator: () => <span>loading</span>,
+  Pressable: ({
+    children,
+    onPress,
+    disabled,
+  }: {
+    children: ReactNode;
+    onPress: () => void;
+    disabled?: boolean;
+  }) => (
+    <button onClick={onPress} disabled={disabled}>
+      {children}
+    </button>
+  ),
+}));
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+let host: HTMLDivElement, root: Root;
+const session = { userId: "1", generation: 1 };
+const render = () => act(async () => root.render(<TextAdventureLibrary session={session} />));
+const button = (text: string) =>
+  [...host.querySelectorAll("button")].find((b) => b.textContent?.includes(text))!;
+beforeEach(() => {
+  vi.resetAllMocks();
+  h.generation = 1;
+  h.list.mockResolvedValue([
+    { gameId: "tg_0123456789abcdef", name: "World", status: "draft", synopsis: "Story" },
+  ]);
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+});
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+});
+it("opens a selected draft and refreshes the library on return", async () => {
+  await render();
+  await act(async () => button("World").click());
+  expect(host.textContent).toContain("tg_0123456789abcdef");
+  await act(async () => button("tg_").click());
+  expect(h.list).toHaveBeenCalledTimes(2);
+  expect(host.textContent).toContain("World");
+});
+it("shows load errors with an explicit retry", async () => {
+  h.list.mockRejectedValueOnce(new Error("Forbidden"));
+  await render();
+  expect(host.textContent).toContain("Forbidden");
+  await act(async () => button("refresh").click());
+  expect(host.textContent).toContain("World");
+});
+it("does not navigate under a stale account", async () => {
+  await render();
+  h.generation = 2;
+  await act(async () => button("World").click());
+  expect(host.textContent).not.toContain("tg_");
+});

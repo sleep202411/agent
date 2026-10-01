@@ -204,3 +204,12 @@ it("rejects late write receipts and does not retry unknown writes", async () => 
   ).rejects.toThrow("Network lost");
   expect(h.post).toHaveBeenCalledTimes(1);
 });
+it("refuses to save against a different server baseline", async () => {
+  await expect(
+    updateTextAdventure(GAME_ID, { name: "Local" }, session, signal(), {
+      draftVersionId: "old",
+      updatedAt: "old",
+    })
+  ).rejects.toThrow("changed on the server");
+  expect(h.put).not.toHaveBeenCalled();
+});
