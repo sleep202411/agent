@@ -17,7 +17,7 @@ const summary = z.object({
   createdAt: z.string().datetime(),
 });
 const text = z.string().nullable().optional();
-const detail = summary.extend({
+export const contentReviewDetailSchema = summary.extend({
   exportFileName: z.string(),
   overview: z.object({
     userId: z.number().nullable().optional(),
@@ -54,7 +54,7 @@ const detail = summary.extend({
   ),
 });
 export type ContentReviewSummary = z.infer<typeof summary>;
-export type ContentReviewDetail = z.infer<typeof detail>;
+export type ContentReviewDetail = z.infer<typeof contentReviewDetailSchema>;
 function current(generation: number, signal: AbortSignal) {
   if (generation !== getAuthGeneration() || signal.aborted)
     throw new Error("Content review session expired");
@@ -94,7 +94,9 @@ export async function getContentReview(
 ) {
   z.string().uuid().parse(id);
   const config = await authorize(workspaceId, generation, signal);
-  const result = detail.parse(await api.get(`/content-review/records/${id}`, config));
+  const result = contentReviewDetailSchema.parse(
+    await api.get(`/content-review/records/${id}`, config)
+  );
   current(generation, signal);
   if (result.id !== id) throw new Error("Content review record mismatch");
   return result;
@@ -116,7 +118,7 @@ export async function addContentReviewComment(
     .strict()
     .parse(input);
   const config = await authorize(workspaceId, generation, signal);
-  const result = detail.parse(
+  const result = contentReviewDetailSchema.parse(
     await api.post(`/content-review/records/${id}/comments`, { ...config, data })
   );
   current(generation, signal);
