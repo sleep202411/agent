@@ -3114,5 +3114,13 @@
   "caseEvidence.private": "僅自己可見",
   "caseEvidence.unconfirmed": "待確認",
   "caseEvidence.open": "開啟證據",
-  "caseEvidence.select": "隨此留言共享"
+  "caseEvidence.select": "隨此留言共享",
+  "taskCase.open": "發起私密案件",
+  "taskCase.help": "選擇另一位任務參與者並說明問題。僅案件參與者及授權營運人員可查看。",
+  "taskCase.notParticipant": "僅任務參與者可發起案件。",
+  "taskCase.respondent": "另一位參與者",
+  "taskCase.noRespondent": "暫無其他參與者。",
+  "taskCase.subject": "案件主題",
+  "taskCase.evidence": "交付證據（可選，最多 20 項）",
+  "taskCase.clearEvidence": "所選證據已變更，清除選擇"
 }

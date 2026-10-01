@@ -3114,5 +3114,13 @@
   "caseEvidence.private": "仅自己可见",
   "caseEvidence.unconfirmed": "待确认",
   "caseEvidence.open": "打开证据",
-  "caseEvidence.select": "随此留言共享"
+  "caseEvidence.select": "随此留言共享",
+  "taskCase.open": "发起私密案件",
+  "taskCase.help": "选择另一位任务参与者并说明问题。仅案件参与者及授权运营人员可查看。",
+  "taskCase.notParticipant": "仅任务参与者可发起案件。",
+  "taskCase.respondent": "另一位参与者",
+  "taskCase.noRespondent": "暂无其他参与者。",
+  "taskCase.subject": "案件主题",
+  "taskCase.evidence": "交付证据（可选，最多 20 项）",
+  "taskCase.clearEvidence": "所选证据已变化，清除选择"
 }

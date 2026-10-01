@@ -19,6 +19,7 @@ import { TaskBrief } from "./task-brief";
 import { TaskRelationshipEditor } from "./task-relationship-editor";
 import { TaskRelations } from "./task-relations";
 import { TaskSubmit } from "./task-submit";
+import { TaskCaseCreate } from "./task-case-create";
 import { TaskFeedbackCreate } from "./task-feedback-create";
 import { TaskReview } from "./task-review";
 import { TaskDelivery } from "./task-delivery";
@@ -268,6 +269,7 @@ function TaskContent({
             generation={generation}
             onRefresh={() => setRevision((v) => v + 1)}
           />
+          <TaskCaseCreate crewId={crewId} taskId={taskId} userId={userId} generation={generation} />
           <TaskFeedbackCreate task={data} userId={userId} generation={generation} />
           <TaskCommitments
             key={revision}

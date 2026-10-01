@@ -46,6 +46,7 @@ vi.mock("./task-relationship-editor", () => ({
 }));
 vi.mock("./task-brief", () => ({ TaskBrief: () => <div>brief editor</div> }));
 vi.mock("./task-submit", () => ({ TaskSubmit: () => <div>submit</div> }));
+vi.mock("./task-case-create", () => ({ TaskCaseCreate: () => <div>task case</div> }));
 vi.mock("./task-feedback-create", () => ({ TaskFeedbackCreate: () => <div>task feedback</div> }));
 vi.mock("./task-review", () => ({ TaskReview: () => <div>review</div> }));
 vi.mock("./task-delivery", () => ({ TaskDelivery: () => <div>delivery</div> }));

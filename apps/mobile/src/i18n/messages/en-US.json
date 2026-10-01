@@ -3114,5 +3114,13 @@
   "caseEvidence.private": "Private to you",
   "caseEvidence.unconfirmed": "Unconfirmed",
   "caseEvidence.open": "Open evidence",
-  "caseEvidence.select": "Share with this message"
+  "caseEvidence.select": "Share with this message",
+  "taskCase.open": "Open a private case",
+  "taskCase.help": "Choose another task participant and explain the issue. Only case participants and authorized operations staff can access the case.",
+  "taskCase.notParticipant": "Only task participants can open a case.",
+  "taskCase.respondent": "Other participant",
+  "taskCase.noRespondent": "No other participants are available.",
+  "taskCase.subject": "Case subject",
+  "taskCase.evidence": "Submission evidence (optional, up to 20)",
+  "taskCase.clearEvidence": "Selected evidence changed. Clear selection"
 }
