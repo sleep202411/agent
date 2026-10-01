@@ -3038,5 +3038,10 @@
   "textAdventure.reviewing": "審核中",
   "textAdventure.published": "已發佈",
   "textAdventure.offlineStatus": "已下架",
-  "textAdventure.saveFirst": "請先儲存更改，再提交或試玩。"
+  "textAdventure.saveFirst": "請先儲存更改，再提交或試玩。",
+  "games.textLabel": "文字影遊",
+  "games.filmLabel": "互動影遊",
+  "games.textPlay": "開始遊玩",
+  "games.textBack": "返回故事",
+  "games.invalidTextGame": "文字影遊連結無效。"
 }

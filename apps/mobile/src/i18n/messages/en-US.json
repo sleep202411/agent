@@ -3038,5 +3038,10 @@
   "textAdventure.reviewing": "Under review",
   "textAdventure.published": "Published",
   "textAdventure.offlineStatus": "Offline",
-  "textAdventure.saveFirst": "Save your changes before submitting or playing."
+  "textAdventure.saveFirst": "Save your changes before submitting or playing.",
+  "games.textLabel": "Text adventure",
+  "games.filmLabel": "Interactive film",
+  "games.textPlay": "Play",
+  "games.textBack": "Back to story",
+  "games.invalidTextGame": "Invalid text adventure link."
 }

@@ -13,17 +13,19 @@ export function TextAdventurePlayer({
   gameId,
   account,
   onBack,
+  mode = "creator",
   backLabel = "textAdventures.mobile.backToEditor",
 }: {
   gameId: string;
   account: TextAdventureSession;
   onBack: () => void;
   backLabel?: MessageKey;
+  mode?: "creator" | "public";
 }) {
   const t = useTranslations(),
     locale = useLocale(),
     theme = useTheme();
-  const [workflow] = useState(() => textAdventurePlayWorkflow(gameId, account));
+  const [workflow] = useState(() => textAdventurePlayWorkflow(gameId, account, mode));
   const [session, setSession] = useState<TextGamePlaySession | null>(null),
     [pending, setPending] = useState<PendingTextPlay | null>(null),
     [error, setError] = useState<string>(),
@@ -118,8 +120,10 @@ export function TextAdventurePlayer({
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
-      <ThemedText>{t("textAdventures.playtest.title")}</ThemedText>
-      <ThemedText>{t("textAdventures.playtest.draftNotice")}</ThemedText>
+      <ThemedText>
+        {t(mode === "public" ? "games.textLabel" : "textAdventures.playtest.title")}
+      </ThemedText>
+      {mode === "creator" && <ThemedText>{t("textAdventures.playtest.draftNotice")}</ThemedText>}
       {error && <ThemedText accessibilityRole="alert">{error}</ThemedText>}
       {pending && (
         <View style={{ gap: 8 }}>

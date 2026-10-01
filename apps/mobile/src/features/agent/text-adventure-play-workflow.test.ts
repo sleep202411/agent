@@ -6,9 +6,11 @@ const h = vi.hoisted(() => ({
   write: vi.fn(),
   get: vi.fn(),
   game: vi.fn(),
+  published: vi.fn(),
   start: vi.fn(),
   send: vi.fn(),
 }));
+vi.mock("@/data/text-game-api", () => ({ getPublishedTextGame: h.published }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/lib/durable-record", () => ({
   durableRecord: () => ({
@@ -167,4 +169,31 @@ it("does not report a restart as successful when Java returns the old session", 
     "new play session"
   );
   expect((await workflow().refresh(signal())).pending).not.toBeNull();
+});
+
+it("public play uses published metadata without requesting creator access", async () => {
+  h.published.mockResolvedValue({});
+  h.get.mockResolvedValue(null);
+  h.start.mockResolvedValue(session);
+  await textAdventurePlayWorkflow(gameId, { userId: "1", generation: 1 }, "public").start(
+    null,
+    "en-US",
+    signal(),
+    vi.fn()
+  );
+  expect(h.published).toHaveBeenCalledWith(gameId, expect.any(AbortSignal));
+  expect(h.game).not.toHaveBeenCalled();
+});
+it("does not start public play when publication has been withdrawn", async () => {
+  h.published.mockRejectedValue(new Error("Not published"));
+  await expect(
+    textAdventurePlayWorkflow(gameId, { userId: "1", generation: 1 }, "public").start(
+      null,
+      "en-US",
+      signal(),
+      vi.fn()
+    )
+  ).rejects.toThrow("Not published");
+  expect(h.start).not.toHaveBeenCalled();
+  expect(workflow().read()).toBeNull();
 });

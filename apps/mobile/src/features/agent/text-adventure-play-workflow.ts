@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TextGameLocale, TextGamePlaySession } from "@repo/shared/text-game";
+import { getPublishedTextGame } from "@/data/text-game-api";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { durableRecord } from "@/lib/durable-record";
 import { durableRecordKey } from "@/lib/durable-record-key";
@@ -27,7 +28,11 @@ const pendingSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 export type PendingTextPlay = z.infer<typeof pendingSchema>;
-export function textAdventurePlayWorkflow(gameId: string, account: TextAdventureSession) {
+export function textAdventurePlayWorkflow(
+  gameId: string,
+  account: TextAdventureSession,
+  mode: "creator" | "public" = "creator"
+) {
   const storage = durableRecord("text-adventure-play", account.userId, gameId);
   const key = durableRecordKey("text-adventure-play", account.userId, gameId);
   const current = (signal?: AbortSignal) => {
@@ -98,9 +103,12 @@ export function textAdventurePlayWorkflow(gameId: string, account: TextAdventure
       withTextPlayLock(key, async () => {
         current(signal);
         ready();
-        const game = await getTextAdventure(gameId, account, signal);
-        if (game.publishedVersionId === null)
-          throw new Error("Publish this work before starting a play session.");
+        if (mode === "public") await getPublishedTextGame(gameId, signal);
+        else {
+          const game = await getTextAdventure(gameId, account, signal);
+          if (game.publishedVersionId === null)
+            throw new Error("Publish this work before starting a play session.");
+        }
         const latest = await getPlayingTextAdventureSession(gameId, account, signal);
         current(signal);
         if ((latest?.sessionId ?? null) !== previousSessionId)
