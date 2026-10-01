@@ -137,12 +137,34 @@ it("does not fetch for guests", async () => {
   expect(h.gate).toHaveBeenCalled();
 });
 
-it("keeps the current status and surfaces a failed transition without automatic retry", async () => {
+it("requires a fresh read after a failed transition without automatically retrying it", async () => {
   h.send.mockRejectedValue(new Error("Cannot accept a cancelled order"));
   await render();
   await act(async () => click("orderDetail.action.accept"));
   await act(async () => click("orderDetail.confirm"));
   expect(host.textContent).toContain("Cannot accept a cancelled order");
-  expect(host.textContent).toContain("orders.status.pending_creator");
+  expect(host.textContent).not.toContain("orders.status.pending_creator");
+  expect(host.textContent).not.toContain("orderDetail.confirm");
   expect(h.send).toHaveBeenCalledTimes(1);
+  h.load.mockResolvedValue({ ...order, status: "cancelled" });
+  await act(async () => click("orderDetail.refresh"));
+  expect(host.textContent).toContain("orders.status.cancelled");
+  expect(host.textContent).not.toContain("orderDetail.action.accept");
 });
+
+it.each(["denied", "foreign response"])(
+  "removes stale order details when refresh returns %s",
+  async (failure) => {
+    await render();
+    expect(host.textContent).toContain("A film");
+    if (failure === "denied") h.load.mockRejectedValue(new Error("Access revoked"));
+    else h.load.mockResolvedValue({ ...order, buyerId: "other-buyer", creatorId: "other-creator" });
+    await act(async () => click("orderDetail.refresh"));
+    expect(host.textContent).not.toContain("A film");
+    expect(host.textContent).not.toContain("orderDetail.action.accept");
+    expect(h.send).not.toHaveBeenCalled();
+    h.load.mockResolvedValue(order);
+    await act(async () => click("orderDetail.refresh"));
+    expect(host.textContent).toContain("A film");
+  }
+);

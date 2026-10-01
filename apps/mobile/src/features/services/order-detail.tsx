@@ -72,8 +72,11 @@ function Content({ id, userId }: { id: string; userId: string }) {
         setError(undefined);
       })
       .catch((cause) => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted) {
+          setOrder(undefined);
+          setAction(undefined);
           setError(cause instanceof Error ? cause.message : t("profileEdit.failed"));
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -82,6 +85,7 @@ function Content({ id, userId }: { id: string; userId: string }) {
   }, [id, userId, revision, t]);
   const refresh = () => {
     setLoading(true);
+    setOrder(undefined);
     setAction(undefined);
     setRevision((value) => value + 1);
   };
@@ -95,7 +99,13 @@ function Content({ id, userId }: { id: string; userId: string }) {
         setReason("");
         setError(undefined);
       },
-      (cause) => setError(cause instanceof Error ? cause.message : t("profileEdit.failed"))
+      (cause) => {
+        // A failed response does not prove the transition failed. Require a
+        // fresh authoritative read before offering another order action.
+        setOrder(undefined);
+        setAction(undefined);
+        setError(cause instanceof Error ? cause.message : t("profileEdit.failed"));
+      }
     );
   };
   const button = (label: string, onPress: () => void, disabled = false) => (
