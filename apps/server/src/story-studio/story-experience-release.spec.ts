@@ -68,7 +68,7 @@ describe('StoryExperienceReleaseService', () => {
       expect.anything(),
       PROJECT_ID,
       expect.anything(),
-      expect.stringMatching(/^story-review:v2:/),
+      expect.stringMatching(/^story-review:v3:/),
     );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
