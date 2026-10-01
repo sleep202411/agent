@@ -3176,5 +3176,22 @@
   "ipMedia.uploadTrailer": "上傳預告片",
   "ipMedia.pending": "已上傳媒體等待確認或關聯。重試將從已儲存步驟繼續。",
   "ipMedia.changed": "IP 已更改。請先查看上方重新整理後的媒體，再決定是否替換。",
-  "ipMedia.applyUploaded": "套用已上傳媒體"
+  "ipMedia.applyUploaded": "套用已上傳媒體",
+  "ipEpisodes.heading": "單集",
+  "ipEpisodes.saved": "單集修改已儲存。",
+  "ipEpisodes.empty": "暫無單集。",
+  "ipEpisodes.preview": "預覽影片",
+  "ipEpisodes.edit": "編輯資料",
+  "ipEpisodes.delete": "刪除單集",
+  "ipEpisodes.deleteConfirm": "確定刪除此單集？已有訂單或觀看權益的單集無法刪除。",
+  "ipEpisodes.confirmDelete": "確認刪除",
+  "ipEpisodes.title": "單集標題",
+  "ipEpisodes.summary": "單集簡介",
+  "ipEpisodes.duration": "時長（秒，可選）",
+  "ipEpisodes.freePreview": "免費試看",
+  "ipEpisodes.keepStatus": "保持目前狀態",
+  "ipEpisodes.draft": "草稿",
+  "ipEpisodes.hidden": "隱藏",
+  "ipEpisodes.save": "儲存單集",
+  "ipEpisodes.pending": "此修改的結果待確認。重試會先檢查儲存結果，再決定是否重新傳送。"
 }

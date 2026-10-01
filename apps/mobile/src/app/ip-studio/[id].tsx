@@ -24,13 +24,22 @@ export default function IpStudioScreen() {
             typeof id === "string" &&
             z.string().uuid().safeParse(id).success
               ? () => (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => router.push(`/ip-studio/${id}/media` as never)}
-                    style={{ padding: 8 }}
-                  >
-                    <ThemedText>{t("ipMedia.heading")}</ThemedText>
-                  </Pressable>
+                  <View style={{ flexDirection: "row" }}>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => router.push(`/ip-studio/${id}/episodes` as never)}
+                      style={{ padding: 8 }}
+                    >
+                      <ThemedText>{t("ipEpisodes.heading")}</ThemedText>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => router.push(`/ip-studio/${id}/media` as never)}
+                      style={{ padding: 8 }}
+                    >
+                      <ThemedText>{t("ipMedia.heading")}</ThemedText>
+                    </Pressable>
+                  </View>
                 )
               : undefined,
           headerTitle: t("ipAuthor.heading"),

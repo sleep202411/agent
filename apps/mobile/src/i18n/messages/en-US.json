@@ -3176,5 +3176,22 @@
   "ipMedia.uploadTrailer": "Upload trailer",
   "ipMedia.pending": "Uploaded media is awaiting confirmation or attachment. Retry continues from the saved step.",
   "ipMedia.changed": "The IP has changed. Review the refreshed media above before replacing it.",
-  "ipMedia.applyUploaded": "Apply uploaded media"
+  "ipMedia.applyUploaded": "Apply uploaded media",
+  "ipEpisodes.heading": "Episodes",
+  "ipEpisodes.saved": "Episode change saved.",
+  "ipEpisodes.empty": "No episodes yet.",
+  "ipEpisodes.preview": "Preview video",
+  "ipEpisodes.edit": "Edit details",
+  "ipEpisodes.delete": "Delete episode",
+  "ipEpisodes.deleteConfirm": "Delete this episode? Episodes with orders or entitlements cannot be deleted.",
+  "ipEpisodes.confirmDelete": "Confirm deletion",
+  "ipEpisodes.title": "Episode title",
+  "ipEpisodes.summary": "Episode summary",
+  "ipEpisodes.duration": "Duration in seconds (optional)",
+  "ipEpisodes.freePreview": "Free preview",
+  "ipEpisodes.keepStatus": "Keep current status",
+  "ipEpisodes.draft": "Draft",
+  "ipEpisodes.hidden": "Hidden",
+  "ipEpisodes.save": "Save episode",
+  "ipEpisodes.pending": "This change is awaiting confirmation. Retry checks the saved result before resending."
 }
