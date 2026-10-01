@@ -135,3 +135,53 @@ it("resolves Crew chat links and preserves the exact mentioned conversation", ()
     path,
   });
 });
+
+it("opens exact private case and feedback links natively without dropping additional context", () => {
+  for (const [source, path] of [
+    ["/crews/cases", "/private-cases"],
+    [`/zh-HK/crews/cases/${task}`, `/private-cases?caseId=${task}`],
+    ["/crews/feedback/", "/task-feedback"],
+  ])
+    expect(notificationDestination(notification(source!), "global", "en-US")).toEqual({
+      kind: "native",
+      path,
+    });
+  for (const path of [
+    `/crews/cases/${task}?event=2`,
+    `/crews/cases/${task}#evidence`,
+    "/crews/cases/not-a-uuid",
+    "/crews/feedback?task=x",
+  ])
+    expect(notificationDestination(notification(path), "global", "en-US")).toEqual({
+      kind: "web",
+      path,
+    });
+});
+it("opens the case carried by an official dispute task-update notification", () => {
+  const source = `/crews/${crew}/workspace?tab=tasks&task=${task}`,
+    caseId = "33333333-3333-4333-8333-333333333333";
+  const item = {
+    ...notification(source),
+    type: "crew.task.updated",
+    meta: { deeplink: source, crewId: crew, taskId: task, disputeId: caseId },
+  };
+  expect(notificationDestination(item, "global", "en-US")).toEqual({
+    kind: "native",
+    path: `/private-cases?caseId=${caseId}`,
+  });
+  for (const patch of [{ crewId: "other" }, { taskId: crew }, { disputeId: "bad" }])
+    expect(
+      notificationDestination({ ...item, meta: { ...item.meta, ...patch } }, "global", "en-US")
+    ).toEqual({ kind: "native", path: `/crew-tasks/${crew}?task=${task}` });
+  expect(
+    notificationDestination({ ...item, type: "crew.task.assigned" }, "global", "en-US")
+  ).toEqual({ kind: "native", path: `/crew-tasks/${crew}?task=${task}` });
+  const withComment = source + "&comment=keep";
+  expect(
+    notificationDestination(
+      { ...item, meta: { ...item.meta, deeplink: withComment } },
+      "global",
+      "en-US"
+    )
+  ).toEqual({ kind: "web", path: withComment });
+});

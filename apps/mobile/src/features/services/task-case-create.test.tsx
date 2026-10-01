@@ -188,3 +188,11 @@ it("lets the user clear submission evidence removed during a refresh", async () 
   await click("taskCase.clearEvidence");
   expect(host.textContent).not.toContain("taskCase.clearEvidence");
 });
+
+it("opens existing private cases even when task participation cannot be loaded", async () => {
+  h.get.mockRejectedValue(Error("Access denied"));
+  await mount();
+  await click("taskCase.open");
+  await click("feedbackHistory.cases");
+  expect(h.push).toHaveBeenCalledWith("/private-cases");
+});

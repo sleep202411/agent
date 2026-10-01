@@ -21,6 +21,15 @@ export function notificationDestination(
   }
   if (target.surface === "web" && /^\/crews\/?$/.test(url.pathname) && !url.search && !url.hash)
     return { kind: "native" as const, path: "/crews" };
+  if (target.surface === "web" && !url.search && !url.hash) {
+    if (/^\/crews\/cases\/?$/.test(url.pathname))
+      return { kind: "native" as const, path: "/private-cases" };
+    if (/^\/crews\/feedback\/?$/.test(url.pathname))
+      return { kind: "native" as const, path: "/task-feedback" };
+    const caseMatch = /^\/crews\/cases\/([^/]+)\/?$/.exec(url.pathname);
+    if (caseMatch && uuid.safeParse(caseMatch[1]).success)
+      return { kind: "native" as const, path: `/private-cases?caseId=${caseMatch[1]}` };
+  }
   const invitation = /^\/crew-invitations\/([^/]+)\/?$/.exec(url.pathname);
   if (
     target.surface === "web" &&
@@ -42,6 +51,16 @@ export function notificationDestination(
     [...url.searchParams.keys()].every((key) => key === "tab" || key === "task") &&
     !url.hash
   ) {
+    if (
+      notification.type === "crew.task.updated" &&
+      notification.meta.crewId === match[1] &&
+      notification.meta.taskId === url.searchParams.get("task") &&
+      uuid.safeParse(notification.meta.disputeId).success
+    )
+      return {
+        kind: "native" as const,
+        path: `/private-cases?caseId=${notification.meta.disputeId}`,
+      };
     return {
       kind: "native" as const,
       path: `/crew-tasks/${match[1]}?task=${url.searchParams.get("task")}`,

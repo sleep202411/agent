@@ -51,10 +51,16 @@ function Session(props: Props) {
     <View style={{ gap: 8 }}>
       <Button label={t("taskCase.open")} onPress={() => setOpen((v) => !v)} />
       {open && (
-        <Form
-          {...props}
-          onCreated={(caseId) => router.push({ pathname: "/private-cases", params: { caseId } })}
-        />
+        <>
+          <Button
+            label={t("feedbackHistory.cases")}
+            onPress={() => router.push("/private-cases")}
+          />
+          <Form
+            {...props}
+            onCreated={(caseId) => router.push({ pathname: "/private-cases", params: { caseId } })}
+          />
+        </>
       )}
     </View>
   );
