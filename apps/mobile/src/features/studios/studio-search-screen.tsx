@@ -25,6 +25,7 @@ import {
   type StudioQuery,
   type StudioPage,
 } from "./studio-search-api";
+import { DiscoveryAssistantPanel } from "./discovery-assistant-panel";
 import { useStudioSearch } from "./use-studio-search";
 
 function Action({
@@ -177,6 +178,7 @@ function StudioCard({ studio }: { studio: StudioPage["items"][number] }) {
   );
 }
 export function StudioSearchScreen() {
+  const router = useRouter();
   const auth = useAuth(),
     gate = useAuthGate(),
     active = useScreenActive(),
@@ -225,6 +227,35 @@ export function StudioSearchScreen() {
         ListHeaderComponent={
           <View style={{ gap: 12, paddingBottom: 12 }}>
             <ThemedText>{t("studioDiscovery.description")}</ThemedText>
+            <DiscoveryAssistantPanel
+              key={`${auth.generation}:${locale}`}
+              scope={{
+                userId:
+                  auth.status === "authenticated"
+                    ? String(auth.user?.userId ?? auth.user?.id ?? "")
+                    : "",
+                generation: auth.generation,
+                locale,
+                kind: "creators",
+              }}
+              current={{ kind: "creators", query: parsed.success ? parsed.data : query }}
+              valid={parsed.success}
+              onReview={(result) => {
+                setDraft(result.query);
+                setFilters(true);
+              }}
+              onApply={(result) => {
+                setDraft(result.query);
+                setQuery(result.query);
+                state.refresh();
+                setFilters(false);
+              }}
+              onSelect={(result, id) => {
+                setDraft(result.query);
+                setQuery(result.query);
+                router.push(toHref(`/creator/${encodeURIComponent(id)}`));
+              }}
+            />
             <TextInput
               accessibilityLabel={t("studioDiscovery.text")}
               placeholder={t("studioDiscovery.text")}
