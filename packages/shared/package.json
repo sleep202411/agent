@@ -121,6 +121,10 @@
     "./strip-retired-story-world-nodes": {
       "types": "./dist/strip-retired-story-world-nodes.d.ts",
       "default": "./dist/strip-retired-story-world-nodes.js"
+    },
+    "./content-gps": {
+      "types": "./dist/content-gps.d.ts",
+      "default": "./dist/content-gps.js"
     }
   },
   "scripts": {
