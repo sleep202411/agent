@@ -14,6 +14,16 @@ import { ApiRequestError } from "@/lib/api-client";
 import { canUseGeneration, loadGenerationCatalog, planRank } from "./catalog-api";
 import { prepareFormValues } from "./form-values";
 import {
+  buildReferenceContract,
+  imageReferences,
+  identifiedImages,
+  imageLabel,
+  nextImageLabel,
+  objectImageField,
+  replaceImageUrl,
+  referenceInputValues,
+} from "./reference-contract";
+import {
   acceptsReferenceImage,
   confirmReferenceImage,
   pickReferenceImage,
@@ -251,7 +261,23 @@ function Session({ userId, generation }: { userId: string; generation: number })
             .map((s) => s.trim())
             .filter(Boolean)
         : [];
-    const next = value.multiple ? [...new Set([...urls, receipt.url])].join("\n") : receipt.url;
+    let next: unknown = value.multiple
+      ? [...new Set([...urls, receipt.url])].join("\n")
+      : receipt.url;
+    if (value.objectItems) {
+      const rows = identifiedImages(imageReferences(current));
+      next = rows.some((r) => r.assetId === receipt.mediaAssetId)
+        ? rows
+        : [
+            ...rows,
+            {
+              url: receipt.url,
+              assetId: receipt.mediaAssetId,
+              refId: receipt.mediaAssetId,
+              label: nextImageLabel(rows, latest.values.prompt),
+            },
+          ];
+    }
     save({
       ...latest,
       upload: undefined,
@@ -270,7 +296,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
       ],
     });
   }
-  function uploadImage(field: string, multiple: boolean) {
+  function uploadImage(field: string, multiple: boolean, objectItems = false) {
     if (!draft || draft.upload) return;
     run(async () => {
       const checkpoint = await pickReferenceImage(
@@ -287,7 +313,8 @@ function Session({ userId, generation }: { userId: string; generation: number })
           )
             throw new Error(t("aiLab.uploadChanged"));
           save({ ...latest, upload: value });
-        }
+        },
+        objectItems
       );
       if (checkpoint) await finishUpload(checkpoint);
     });
@@ -295,23 +322,27 @@ function Session({ userId, generation }: { userId: string; generation: number })
   function prepare() {
     if (!model || !draft || draft.upload || !data || !preset || !usable)
       throw new Error(t("aiLab.unavailable"));
-    const values = prepareFormValues(model.input_schema, draft.values, {
-      required: (label) => t("aiLab.required").replace("{label}", label),
-      minLength: (label, min) =>
-        t("aiLab.minLength").replace("{label}", label).replace("{min}", String(min)),
-      maxLength: (label, max) =>
-        t("aiLab.maxLength").replace("{label}", label).replace("{max}", String(max)),
-      minItems: (label, min) =>
-        t("aiLab.minItems").replace("{label}", label).replace("{min}", String(min)),
-      maxItems: (label, max) =>
-        t("aiLab.maxItems").replace("{label}", label).replace("{max}", String(max)),
-      minimum: (label, min) =>
-        t("aiLab.minimum").replace("{label}", label).replace("{min}", String(min)),
-      maximum: (label, max) =>
-        t("aiLab.maximum").replace("{label}", label).replace("{max}", String(max)),
-      unsupportedOption: (label) => t("aiLab.unsupported").replace("{label}", label),
-      invalidUrl: (label) => t("aiLab.fieldUrl").replace("{label}", label),
-    });
+    const values = prepareFormValues(
+      model.input_schema,
+      referenceInputValues(fieldDescriptors(model.input_schema, draft.values), draft.values),
+      {
+        required: (label) => t("aiLab.required").replace("{label}", label),
+        minLength: (label, min) =>
+          t("aiLab.minLength").replace("{label}", label).replace("{min}", String(min)),
+        maxLength: (label, max) =>
+          t("aiLab.maxLength").replace("{label}", label).replace("{max}", String(max)),
+        minItems: (label, min) =>
+          t("aiLab.minItems").replace("{label}", label).replace("{min}", String(min)),
+        maxItems: (label, max) =>
+          t("aiLab.maxItems").replace("{label}", label).replace("{max}", String(max)),
+        minimum: (label, min) =>
+          t("aiLab.minimum").replace("{label}", label).replace("{min}", String(min)),
+        maximum: (label, max) =>
+          t("aiLab.maximum").replace("{label}", label).replace("{max}", String(max)),
+        unsupportedOption: (label) => t("aiLab.unsupported").replace("{label}", label),
+        invalidUrl: (label) => t("aiLab.fieldUrl").replace("{label}", label),
+      }
+    );
     for (const descriptor of fieldDescriptors(model.input_schema, draft.values)) {
       const chosen = readOptions(descriptor.field).find((o) => o.value === values[descriptor.name]);
       if (chosen && optionLocked(chosen, data.rank, planRank))
@@ -324,6 +355,19 @@ function Session({ userId, generation }: { userId: string; generation: number })
       campaignId: preset.campaignId,
       schemaVersion: model.schemaVersion,
       input: values,
+      ...(model.input_schema.properties.referenceImages?.type === "array" &&
+      model.input_schema.properties.referenceImages.items.type === "object"
+        ? buildReferenceContract(
+            {
+              ...values,
+              referenceImages: values.referenceImages ? draft.values.referenceImages : [],
+            },
+            {
+              missing: (label) => t("aiLab.missingReference").replace("{label}", label),
+              duplicate: t("aiLab.duplicateReference"),
+            }
+          )
+        : {}),
     });
   }
   function submit() {
@@ -471,6 +515,15 @@ function Session({ userId, generation }: { userId: string; generation: number })
                     !!draft?.upload ||
                     !enabled ||
                     schemaChanged;
+                const objectImages = objectImageField(descriptor);
+                let rows: ReturnType<typeof imageReferences> | undefined;
+                if (objectImages) {
+                  try {
+                    rows = identifiedImages(imageReferences(value));
+                  } catch {
+                    /* Keep malformed saved JSON visible for correction. */
+                  }
+                }
                 const update = (next: unknown) => {
                   try {
                     save({ ...draft, values: { ...draft.values, [name]: next } });
@@ -492,19 +545,115 @@ function Session({ userId, generation }: { userId: string; generation: number })
                         label={t("aiLab.uploadImage")}
                         disabled={
                           disabled ||
+                          (objectImages && !rows) ||
                           (field.type === "array" &&
                             typeof field.maxItems === "number" &&
-                            (Array.isArray(value)
-                              ? value
-                              : typeof value === "string"
-                                ? value.split(/\r?\n/).filter((v) => v.trim())
-                                : []
+                            (
+                              rows ??
+                              (Array.isArray(value)
+                                ? value
+                                : typeof value === "string"
+                                  ? value.split(/\r?\n/).filter((v) => v.trim())
+                                  : [])
                             ).length >= field.maxItems)
                         }
-                        onPress={() => uploadImage(name, field.type === "array")}
+                        onPress={() => uploadImage(name, field.type === "array", objectImages)}
                       />
                     ) : null}
-                    {options.length ? (
+                    {rows ? (
+                      <View style={{ gap: 8 }}>
+                        {rows.map((row, index) => (
+                          <View
+                            key={row.refId}
+                            style={{
+                              gap: 6,
+                              padding: 8,
+                              borderWidth: 1,
+                              borderColor: theme.backgroundElement,
+                            }}
+                          >
+                            <ThemedText type="smallBold">{imageLabel(row, index)}</ThemedText>
+                            {/^https?:\/\//.test(row.url) ? (
+                              <Image
+                                source={{ uri: row.url }}
+                                style={{ width: 64, height: 64 }}
+                                contentFit="cover"
+                              />
+                            ) : null}
+                            <TextInput
+                              accessibilityLabel={`${fieldLabel(field, name)} ${index + 1}`}
+                              value={row.url}
+                              editable={!disabled}
+                              style={inputStyle}
+                              onChangeText={(url) =>
+                                update(
+                                  rows.map((r, i) => (i === index ? replaceImageUrl(r, url) : r))
+                                )
+                              }
+                            />
+                            <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                              {name === "referenceImages" &&
+                              model.input_schema.properties.prompt?.type === "string" ? (
+                                <Button
+                                  label={t("aiLab.mention").replace(
+                                    "{label}",
+                                    imageLabel(row, index)
+                                  )}
+                                  disabled={disabled}
+                                  onPress={() => {
+                                    try {
+                                      save({
+                                        ...draft,
+                                        values: {
+                                          ...draft.values,
+                                          [name]: rows,
+                                          prompt: `${typeof draft.values.prompt === "string" ? draft.values.prompt : ""}${draft.values.prompt ? " " : ""}@${imageLabel(row, index)}`,
+                                        },
+                                      });
+                                    } catch (e) {
+                                      fail(e);
+                                    }
+                                  }}
+                                />
+                              ) : null}
+                              <Button
+                                label={t("aiLab.removeReference")}
+                                disabled={disabled}
+                                onPress={() => update(rows.filter((_, i) => i !== index))}
+                              />
+                              <Button
+                                label={t("aiLab.moveUp")}
+                                disabled={disabled || index === 0}
+                                onPress={() => {
+                                  const next = [...rows];
+                                  [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
+                                  update(next);
+                                }}
+                              />
+                            </View>
+                          </View>
+                        ))}
+                        <Button
+                          label={t("aiLab.addReferenceUrl")}
+                          disabled={
+                            disabled ||
+                            (field.type === "array" &&
+                              typeof field.maxItems === "number" &&
+                              rows.length >= field.maxItems)
+                          }
+                          onPress={() =>
+                            update([
+                              ...rows,
+                              {
+                                url: "",
+                                refId: uuid.v4(),
+                                label: nextImageLabel(rows, draft.values.prompt),
+                              },
+                            ])
+                          }
+                        />
+                      </View>
+                    ) : options.length ? (
                       <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                         {options.map((option) => (
                           <Button

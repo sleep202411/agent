@@ -2,10 +2,12 @@ import { z } from "zod";
 import * as DocumentPicker from "expo-document-picker";
 import { api } from "@/lib/api-client";
 import { selectedMedia } from "@/features/ip-author/selected-media";
+import { objectImageField } from "./reference-contract";
 import { generationSession } from "./jobs-api";
 export const referenceCheckpoint = z.object({
   field: z.string().min(1),
   multiple: z.boolean(),
+  objectItems: z.boolean().optional(),
   fileName: z.string().min(1),
   storageKey: z.string().min(1),
   kind: z.literal("ai_reference_image"),
@@ -24,7 +26,8 @@ export async function pickReferenceImage(
   multiple: boolean,
   generation: number,
   signal: AbortSignal,
-  checkpoint: (value: ReferenceCheckpoint) => void
+  checkpoint: (value: ReferenceCheckpoint) => void,
+  objectItems = false
 ) {
   z.string().min(1).parse(field);
   generationSession(generation, signal);
@@ -94,6 +97,7 @@ export async function pickReferenceImage(
   const value = referenceCheckpoint.parse({
     field,
     multiple,
+    ...(objectItems ? { objectItems: true } : {}),
     fileName: file.name,
     storageKey: signed.storageKey,
     kind: "ai_reference_image",
@@ -130,8 +134,9 @@ export function acceptsReferenceImage(field: import("./schema").AiFieldDescripto
     field.field.type === "string" ||
     (field.field.type === "array" && field.field.items.type === "string");
   return (
-    scalar &&
-    (field.ui.control === "image_upload" ||
-      field.ui.accept?.split(",").some((type) => type.trim().startsWith("image/")) === true)
+    objectImageField(field) ||
+    (scalar &&
+      (field.ui.control === "image_upload" ||
+        field.ui.accept?.split(",").some((type) => type.trim().startsWith("image/")) === true))
   );
 }

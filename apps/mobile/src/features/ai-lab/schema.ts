@@ -174,7 +174,11 @@ export function normalizeFieldValue(field: AiLabField, raw: string | boolean): u
 
 export function serializeFieldValue(field: AiLabField, value: unknown): string {
   if (field.type === "array") {
-    return Array.isArray(value) ? value.map(String).join("\n") : "";
+    return Array.isArray(value)
+      ? field.items.type === "string"
+        ? value.map(String).join("\n")
+        : JSON.stringify(value)
+      : "";
   }
   if (value === null || value === undefined) return "";
   return String(value);

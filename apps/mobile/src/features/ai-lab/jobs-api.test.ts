@@ -181,3 +181,31 @@ it("clears only a validated retry receipt and sends no invented idempotency payl
   expect(h.post.mock.calls[0][1]).not.toHaveProperty("data");
   expect(generationRetryOutbox("alice", 1).read()).toBeNull();
 });
+it("preserves structured prompt and reference bindings across an uncertain paid submission", async () => {
+  const structured = {
+    ...command(),
+    referenceBindings: [
+      {
+        refId: "image-a",
+        kind: "image" as const,
+        label: "Image1",
+        order: 1,
+        url: "https://cdn.test/a",
+        assetId: jobId,
+      },
+    ],
+    promptDocument: {
+      version: 1 as const,
+      nodes: [
+        { type: "text" as const, text: "Use " },
+        { type: "asset_ref" as const, refId: "image-a", label: "Image1" },
+      ],
+    },
+  };
+  h.post.mockRejectedValueOnce(Error("lost response"));
+  await expect(submitPendingGeneration(structured, "alice", 1, signal())).rejects.toThrow();
+  expect(generationOutbox("alice", 1).read()).toEqual(structured);
+  await submitPendingGeneration(structured, "alice", 1, signal());
+  expect(h.post.mock.calls[1][1].data).toEqual(h.post.mock.calls[0][1].data);
+  expect(generationCommand.safeParse({ ...structured, referenceBindings: [] }).success).toBe(false);
+});

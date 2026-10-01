@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { referenceBinding, promptDocument, uniqueReferences } from "./reference-contract";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { api } from "@/lib/api-client";
 import { durableRecord } from "@/lib/durable-record";
@@ -32,8 +33,20 @@ export const generationCommand = z
     campaignId: z.string().min(1).optional(),
     schemaVersion: z.string().min(1),
     input: z.record(z.string(), json),
+    referenceBindings: z.array(referenceBinding).optional(),
+    promptDocument: promptDocument.optional(),
   })
-  .refine((v) => Boolean(v.modelId || v.presetId), "Choose a model or preset.");
+  .refine((v) => Boolean(v.modelId || v.presetId), "Choose a model or preset.")
+  .refine((v) => {
+    const refs = v.referenceBindings ?? [];
+    return (
+      uniqueReferences(refs) &&
+      (v.promptDocument?.nodes.every(
+        (n) => n.type === "text" || refs.some((r) => r.refId === n.refId)
+      ) ??
+        true)
+    );
+  }, "Prompt references must match the attached images.");
 export type GenerationCommand = z.infer<typeof generationCommand>;
 const output = z
   .object({

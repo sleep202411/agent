@@ -419,3 +419,100 @@ it("discards an unfinished attachment only after confirmation and preserves the 
   expect(button("aiLab.generate").disabled).toBe(false);
   expect(h.post).toHaveBeenCalledTimes(2);
 });
+const useObjectImageCatalog = () => {
+  const objectModel = {
+    ...model,
+    input_schema: {
+      type: "object",
+      required: ["prompt"],
+      properties: {
+        prompt: model.input_schema.properties.prompt,
+        referenceImages: {
+          type: "array",
+          title: "Reference images",
+          maxItems: 2,
+          "x-ui": { control: "image_upload" },
+          items: {
+            type: "object",
+            properties: { url: { type: "string", format: "uri" } },
+            required: ["url"],
+            additionalProperties: true,
+          },
+        },
+      },
+    },
+  };
+  h.get.mockImplementation(async (path) =>
+    path === "/ai/models"
+      ? { ...catalog, models: [objectModel] }
+      : path.includes("entitlement")
+        ? { entitlement: { rank: 0 } }
+        : { jobs: [], nextCursor: null }
+  );
+};
+it("uploads official object references, inserts a mention and submits verified asset bindings", async () => {
+  useObjectImageCatalog();
+  h.pick.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file:///a.png", name: "a.png", mimeType: "image/png" }],
+  });
+  h.selected.mockResolvedValue({ size: 100, put: vi.fn().mockResolvedValue({ ok: true }) });
+  h.post
+    .mockResolvedValueOnce({
+      uploadUrl: "https://storage.test/upload",
+      method: "PUT",
+      headers: {},
+      storageKey: "staging/a",
+    })
+    .mockRejectedValueOnce(Error("Confirm offline"));
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Paint");
+  await click("aiLab.uploadImage");
+  await act(async () => root.render(null));
+  await mount();
+  h.post.mockResolvedValueOnce({
+    mediaAssetId: job.id,
+    storageKey: "final/a",
+    url: "https://storage.test/a.png",
+  });
+  await click("aiLab.confirmUpload");
+  expect(input("Reference images 1").value).toBe("https://storage.test/a.png");
+  await click("aiLab.mention");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls.at(-1)![1].data).toMatchObject({
+    input: { referenceImages: [{ url: "https://storage.test/a.png", assetId: job.id }] },
+    referenceBindings: [{ assetId: job.id, refId: job.id, kind: "image", label: "Image1" }],
+    promptDocument: {
+      version: 1,
+      nodes: [
+        { type: "text", text: "Paint " },
+        { type: "asset_ref", refId: job.id, label: "Image1" },
+      ],
+    },
+  });
+});
+it("edits structured reference rows without JSON and keeps removed mentions from rebinding", async () => {
+  useObjectImageCatalog();
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Paint");
+  await click("aiLab.addReferenceUrl");
+  await change("Reference images 1", "https://cdn.test/a");
+  await click("aiLab.mention");
+  await click("aiLab.removeReference");
+  await click("aiLab.addReferenceUrl");
+  await change("Reference images 1", "https://cdn.test/b");
+  expect(host.textContent).toContain("Image2");
+  await click("aiLab.generate");
+  expect(host.textContent).toContain("aiLab.missingReference");
+  expect(h.post).not.toHaveBeenCalled();
+  await change("Prompt", "Paint @Image2");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls[0][1].data.referenceBindings[0]).toMatchObject({
+    label: "Image2",
+    url: "https://cdn.test/b",
+  });
+});
