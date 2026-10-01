@@ -2743,5 +2743,9 @@
   "contentReviewHistory.frameRisk": "画面风险",
   "contentReviewHistory.audioRisk": "音频风险",
   "contentReviewHistory.confidence": "置信度",
-  "contentReviewHistory.comments": "评论"
+  "contentReviewHistory.comments": "评论",
+  "contentReviewHistory.addComment": "添加评论",
+  "contentReviewHistory.timestamp": "时间戳（秒）",
+  "contentReviewHistory.commentBody": "评论",
+  "contentReviewHistory.checkBeforeRetry": "再次发布前，请刷新报告并检查评论是否已保存。"
 }

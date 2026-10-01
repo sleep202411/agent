@@ -1,10 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "@/lib/api-client";
 import { fetchWorkspaceSettings } from "./studio-workspace-settings-api";
-import { listContentReviews, getContentReview } from "./content-review-api";
+import {
+  listContentReviews,
+  getContentReview,
+  addContentReviewComment,
+} from "./content-review-api";
 const h = vi.hoisted(() => ({ generation: 1 }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
-vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn() } }));
+vi.mock("@/lib/api-client", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
 vi.mock("./studio-workspace-settings-api", () => ({ fetchWorkspaceSettings: vi.fn() }));
 const id = "00000000-0000-4000-8000-000000000001",
   other = "00000000-0000-4000-8000-000000000002",
@@ -92,4 +96,44 @@ it("preserves findings and timestamped comments without treating missing values 
   };
   vi.mocked(api.get).mockResolvedValue(data);
   expect(await getContentReview("workspace", 1, id, signal)).toEqual(data);
+});
+
+it("posts a timestamped comment once with explicit workspace scope", async () => {
+  const result = {
+    ...row,
+    exportFileName: "report.xlsx",
+    overview: {},
+    details: [],
+    comments: [
+      { id: "c", seconds: 20, body: "Reviewed", createdByUserId: "user", createdAt: row.createdAt },
+    ],
+  };
+  vi.mocked(api.post).mockResolvedValue(result);
+  expect(
+    await addContentReviewComment("workspace", 1, id, { seconds: 20, body: " Reviewed " }, signal)
+  ).toEqual(result);
+  expect(api.post).toHaveBeenCalledWith(
+    `/content-review/records/${id}/comments`,
+    expect.objectContaining({
+      data: { seconds: 20, body: "Reviewed" },
+      headers: { "x-fizz-workspace-id": "workspace" },
+      retry: false,
+    })
+  );
+});
+it("rejects invalid comment input before contacting the server", async () => {
+  await expect(
+    addContentReviewComment("workspace", 1, id, { seconds: Infinity, body: "text" }, signal)
+  ).rejects.toThrow();
+  await expect(
+    addContentReviewComment("workspace", 1, id, { seconds: 0, body: " " }, signal)
+  ).rejects.toThrow();
+  expect(api.post).not.toHaveBeenCalled();
+});
+it("does not retry an uncertain comment write", async () => {
+  vi.mocked(api.post).mockRejectedValue(new Error("Response lost"));
+  await expect(
+    addContentReviewComment("workspace", 1, id, { seconds: 0, body: "text" }, signal)
+  ).rejects.toThrow("Response lost");
+  expect(api.post).toHaveBeenCalledTimes(1);
 });

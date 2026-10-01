@@ -1,3 +1,4 @@
+import { ContentReviewComment } from "./content-review-comment";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
@@ -147,6 +148,14 @@ function History({ workspaceId, generation, onClose }: Props) {
             </View>
           ))}
           <ThemedText type="smallBold">{label("comments")}</ThemedText>
+          <ContentReviewComment
+            key={key}
+            workspaceId={workspaceId}
+            generation={generation}
+            record={record}
+            onAccessLost={(error) => setSnapshot({ key, error })}
+            onSaved={(updated) => setSnapshot({ key, record: updated })}
+          />
           {!record.comments.length && <ThemedText>{label("empty")}</ThemedText>}
           {record.comments.map((comment) => (
             <View key={comment.id} style={box}>

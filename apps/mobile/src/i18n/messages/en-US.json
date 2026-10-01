@@ -2743,5 +2743,9 @@
   "contentReviewHistory.frameRisk": "Frame risk",
   "contentReviewHistory.audioRisk": "Audio risk",
   "contentReviewHistory.confidence": "Confidence",
-  "contentReviewHistory.comments": "Comments"
+  "contentReviewHistory.comments": "Comments",
+  "contentReviewHistory.addComment": "Add comment",
+  "contentReviewHistory.timestamp": "Timestamp (seconds)",
+  "contentReviewHistory.commentBody": "Comment",
+  "contentReviewHistory.checkBeforeRetry": "Refresh the report and check whether your comment was saved before posting again."
 }

@@ -1,3 +1,4 @@
+import { CONTENT_REVIEW_MAX_DURATION_SECONDS } from "@repo/shared";
 import { z } from "zod";
 import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -90,5 +91,35 @@ export async function getContentReview(
   const result = detail.parse(await api.get(`/content-review/records/${id}`, config));
   current(generation, signal);
   if (result.id !== id) throw new Error("Content review record mismatch");
+  return result;
+}
+
+export async function addContentReviewComment(
+  workspaceId: string,
+  generation: number,
+  id: string,
+  input: { seconds: number; body: string },
+  signal: AbortSignal
+) {
+  z.string().uuid().parse(id);
+  const data = z
+    .object({
+      seconds: z.number().finite().min(0).max(CONTENT_REVIEW_MAX_DURATION_SECONDS),
+      body: z.string().trim().min(1).max(2000),
+    })
+    .strict()
+    .parse(input);
+  const config = await authorize(workspaceId, generation, signal);
+  const result = detail.parse(
+    await api.post(`/content-review/records/${id}/comments`, { ...config, data })
+  );
+  current(generation, signal);
+  if (
+    result.id !== id ||
+    !result.comments.some(
+      (comment) => comment.seconds === data.seconds && comment.body === data.body
+    )
+  )
+    throw new Error("Comment receipt mismatch. Refresh the report before retrying.");
   return result;
 }
