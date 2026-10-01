@@ -70,12 +70,19 @@ export function planRank(plan: string | null | undefined): number {
     ] ?? Infinity
   );
 }
-export async function loadGenerationCatalog(generation: number, signal: AbortSignal) {
+export async function loadGenerationCatalog(
+  generation: number,
+  signal: AbortSignal,
+  workspaceId?: string
+) {
   generationSession(generation, signal);
+  const headers = workspaceId
+    ? { "x-fizz-workspace-id": z.string().uuid().parse(workspaceId) }
+    : undefined;
   // No process cache: access and available providers vary by account and site.
   const [raw, entitlement] = await Promise.all([
-    api.get("/ai/models", { service: "aurora", signal, retry: false }),
-    api.get("/billing/entitlement/me", { service: "aurora", signal, retry: false }),
+    api.get("/ai/models", { service: "aurora", signal, retry: false, headers }),
+    api.get("/billing/entitlement/me", { service: "aurora", signal, retry: false, headers }),
   ]);
   generationSession(generation, signal);
   const value = catalog.parse(raw);

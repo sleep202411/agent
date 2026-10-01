@@ -180,11 +180,11 @@ const job = {
   updatedAt: "today",
   sourceSurface: "ai-lab",
 };
-const mount = () =>
+const mount = (workspace?: import("@/features/agent/api/studio-projects-api").StudioWorkspace) =>
   act(async () =>
     root.render(
       <StrictMode>
-        <GenerationPanel userId="alice" generation={1} />
+        <GenerationPanel userId="alice" generation={1} workspace={workspace} />
       </StrictMode>
     )
   );
@@ -515,4 +515,76 @@ it("edits structured reference rows without JSON and keeps removed mentions from
     label: "Image2",
     url: "https://cdn.test/b",
   });
+});
+
+const team = {
+  id: "33333333-3333-4333-8333-333333333333",
+  name: "Team",
+  isDefault: false,
+  role: "editor" as const,
+  accessScope: "workspace" as const,
+};
+it("keeps drafts and uncertain paid submissions separate when switching workspaces", async () => {
+  await mount(team);
+  await click("Image preset");
+  await change("Prompt", "Team draft");
+  h.post.mockRejectedValueOnce(Error("lost response"));
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls[0][1].data.workspaceId).toBe(team.id);
+  expect(host.textContent).toContain("aiLab.pending");
+  const other = { ...team, id: "44444444-4444-4444-8444-444444444444" };
+  await mount(other);
+  expect(host.textContent).not.toContain("aiLab.pending");
+  await click("Image preset");
+  await change("Prompt", "Other draft");
+  await mount(team);
+  expect(input("Prompt").value).toBe("Team draft");
+  expect(host.textContent).toContain("aiLab.pending");
+  await mount(other);
+  expect(input("Prompt").value).toBe("Other draft");
+  expect(h.post).toHaveBeenCalledTimes(1);
+});
+it("retains previous personal drafts when the explicit default workspace is selected", async () => {
+  await mount();
+  await click("Image preset");
+  await change("Prompt", "Existing personal draft");
+  await mount({ ...team, isDefault: true });
+  expect(input("Prompt").value).toBe("Existing personal draft");
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  expect(h.post.mock.calls[0][1].data.workspaceId).toBe(team.id);
+});
+it("keeps workspace viewers read-only for paid submissions and job mutations", async () => {
+  jobs = [{ ...job, workspaceId: team.id }];
+  h.get.mockImplementation(async (path) =>
+    path === "/ai/models"
+      ? catalog
+      : path.includes("entitlement")
+        ? { entitlement: { rank: 0 } }
+        : path === "/ai/jobs"
+          ? { jobs, nextCursor: null }
+          : { ...job, workspaceId: team.id }
+  );
+  await mount({ ...team, role: "viewer" });
+  await click("Image preset");
+  await change("Prompt", "View only");
+  expect(button("aiLab.generate").disabled).toBe(true);
+  await click("aiLab.history");
+  await click("Image model · aiLab.status.in_queue");
+  expect(button("aiLab.cancel").disabled).toBe(true);
+  expect(h.post).not.toHaveBeenCalled();
+});
+
+it("does not replay an old personal request against a different selected default workspace", async () => {
+  await mount({ ...team, isDefault: true });
+  await click("Image preset");
+  await change("Prompt", "Old workspace");
+  h.post.mockRejectedValueOnce(Error("lost response"));
+  await click("aiLab.generate");
+  await click("aiLab.confirm");
+  await mount({ ...team, id: "44444444-4444-4444-8444-444444444444", isDefault: true });
+  await click("aiLab.recover");
+  expect(host.textContent).toContain("aiLab.workspaceRequestMismatch");
+  expect(h.post).toHaveBeenCalledTimes(1);
 });

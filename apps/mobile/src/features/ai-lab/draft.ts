@@ -21,8 +21,12 @@ const draftSchema = z.object({
     .optional(),
 });
 export type GenerationDraft = z.infer<typeof draftSchema>;
-export function generationDraft(userId: string, generation: number) {
-  const store = durableRecord("ai-lab-draft", userId, "composer");
+export function generationDraft(userId: string, generation: number, storageScope?: string) {
+  const store = durableRecord(
+    "ai-lab-draft",
+    userId,
+    storageScope ? `workspace:${z.string().uuid().parse(storageScope)}` : "composer"
+  );
   return {
     read() {
       generationSession(generation);

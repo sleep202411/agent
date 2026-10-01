@@ -4,7 +4,7 @@ import { useAuth, useAuthGate } from "@/auth";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
-import { GenerationPanel } from "@/features/ai-lab/panel";
+import { WorkspaceGenerationPanel } from "@/features/ai-lab/workspace-panel";
 export default function GenerationScreen() {
   const auth = useAuth(),
     gate = useAuthGate(),
@@ -28,7 +28,7 @@ export default function GenerationScreen() {
           <ThemedText>{t("login.signIn")}</ThemedText>
         </Pressable>
       ) : userId ? (
-        <GenerationPanel
+        <WorkspaceGenerationPanel
           key={`${userId}:${auth.generation}`}
           userId={userId}
           generation={auth.generation}

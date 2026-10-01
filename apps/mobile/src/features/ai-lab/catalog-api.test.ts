@@ -74,3 +74,11 @@ it("rejects catalog responses after the account changes", async () => {
   });
   await expect(loadGenerationCatalog(1, new AbortController().signal)).rejects.toThrow("expired");
 });
+it("uses the same explicit workspace for model access and entitlement", async () => {
+  const workspaceId = "33333333-3333-4333-8333-333333333333";
+  await loadGenerationCatalog(1, new AbortController().signal, workspaceId);
+  expect(h.get.mock.calls.map((c) => c[1].headers)).toEqual([
+    { "x-fizz-workspace-id": workspaceId },
+    { "x-fizz-workspace-id": workspaceId },
+  ]);
+});

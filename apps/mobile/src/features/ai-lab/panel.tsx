@@ -12,6 +12,10 @@ import { useTranslations } from "@/i18n";
 import { ConversationVideo } from "@/features/services/conversation-video";
 import { ApiRequestError } from "@/lib/api-client";
 import { canUseGeneration, loadGenerationCatalog, planRank } from "./catalog-api";
+import {
+  canCreateStudioProject,
+  type StudioWorkspace,
+} from "@/features/agent/api/studio-projects-api";
 import { prepareFormValues } from "./form-values";
 import {
   buildReferenceContract,
@@ -73,18 +77,34 @@ function Button({
   );
 }
 const terminal = (job: GenerationJob) => !["in_queue", "in_progress"].includes(job.status);
-export function GenerationPanel(props: { userId: string; generation: number }) {
+type PanelProps = {
+  userId: string;
+  generation: number;
+  workspace?: StudioWorkspace;
+  onBusyChange?: (busy: boolean) => void;
+};
+export function GenerationPanel(props: PanelProps) {
   return useScreenActive() && props.generation === getAuthGeneration() ? (
-    <Session key={`${props.userId}:${props.generation}`} {...props} />
+    <Session
+      key={`${props.userId}:${props.generation}:${props.workspace?.id ?? "personal"}:${props.workspace?.role}:${props.workspace?.crewRole}`}
+      {...props}
+    />
   ) : null;
 }
-function Session({ userId, generation }: { userId: string; generation: number }) {
+function Session({ userId, generation, workspace, onBusyChange }: PanelProps) {
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation("ai-lab", true);
-  const [store] = useState(() => generationDraft(userId, generation)),
-    [box] = useState(() => generationOutbox(userId, generation)),
-    [retryBox] = useState(() => generationRetryOutbox(userId, generation));
+  const workspaceId = workspace?.id,
+    storageScope = workspace?.isDefault ? undefined : workspaceId;
+  const canGenerate = !workspace || canCreateStudioProject(workspace);
+  useEffect(() => {
+    onBusyChange?.(op.busy);
+    return () => onBusyChange?.(false);
+  }, [op.busy, onBusyChange]);
+  const [store] = useState(() => generationDraft(userId, generation, storageScope)),
+    [box] = useState(() => generationOutbox(userId, generation, storageScope)),
+    [retryBox] = useState(() => generationRetryOutbox(userId, generation, storageScope));
   const [initial] = useState(() => {
     try {
       return { draft: store.read(), pending: box.read(), retry: retryBox.read(), error: "" };
@@ -135,7 +155,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
     // This effect begins a fresh catalog read after explicit refresh.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
-    void loadGenerationCatalog(generation, c.signal)
+    void loadGenerationCatalog(generation, c.signal, workspaceId)
       .then((v) => {
         if (c.signal.aborted || denied.current) return;
         setData(v);
@@ -148,7 +168,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
         if (!c.signal.aborted) setLoading(false);
       });
     return () => c.abort();
-  }, [generation, epoch, fail]);
+  }, [generation, epoch, fail, workspaceId]);
   useEffect(() => {
     const c = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -160,14 +180,14 @@ function Session({ userId, generation }: { userId: string; generation: number })
     selection.current = null;
     async function read() {
       try {
-        const value = await listGenerationJobs(mode, generation, c.signal);
+        const value = await listGenerationJobs(mode, generation, c.signal, workspaceId);
         if (c.signal.aborted || denied.current) return;
         setJobs(value.jobs);
         setHistoryError("");
         const requested = selection.current;
         if (requested) {
           try {
-            const detail = await getGenerationJob(requested, generation, c.signal);
+            const detail = await getGenerationJob(requested, generation, c.signal, workspaceId);
             if (!c.signal.aborted && selection.current === requested) setSelected(detail);
           } catch (e) {
             if (!c.signal.aborted && selection.current === requested) {
@@ -191,12 +211,17 @@ function Session({ userId, generation }: { userId: string; generation: number })
       c.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [mode, generation, epoch, fail]);
+  }, [mode, generation, epoch, fail, workspaceId]);
   const preset = data?.catalog.presets.find((p) => p.id === draft?.presetId),
     model = data?.catalog.models.find((m) => m.id === draft?.modelId),
     schemaChanged = !!model && draft?.schemaVersion !== model.schemaVersion,
     usable =
-      !!data && !!model && !!preset && canUseGeneration(model, preset, data.rank) && !schemaChanged;
+      canGenerate &&
+      !!data &&
+      !!model &&
+      !!preset &&
+      canUseGeneration(model, preset, data.rank) &&
+      !schemaChanged;
   function requestChoose(presetId: string, modelId?: string) {
     if (draft && (draft.presetId !== presetId || (modelId && draft.modelId !== modelId))) {
       setNextChoice({ presetId, modelId });
@@ -297,7 +322,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
     });
   }
   function uploadImage(field: string, multiple: boolean, objectItems = false) {
-    if (!draft || draft.upload) return;
+    if (!draft || draft.upload || !canGenerate) return;
     run(async () => {
       const checkpoint = await pickReferenceImage(
         field,
@@ -350,6 +375,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
     }
     return generationCommand.parse({
       clientKey: uuid.v4(),
+      workspaceId,
       modelId: model.id,
       presetId: preset.id,
       campaignId: preset.campaignId,
@@ -372,11 +398,20 @@ function Session({ userId, generation }: { userId: string; generation: number })
   }
   function submit() {
     try {
+      if (!canGenerate) throw new Error(t("aiLab.workspaceReadOnly"));
+      if (workspaceId && pending?.workspaceId && pending.workspaceId !== workspaceId)
+        throw new Error(t("aiLab.workspaceRequestMismatch"));
       const command = pending ?? prepare();
       setConfirm(null);
       run(
         async () => {
-          await submitPendingGeneration(command, userId, generation, controller.current!.signal);
+          await submitPendingGeneration(
+            command,
+            userId,
+            generation,
+            controller.current!.signal,
+            storageScope
+          );
         },
         () => {
           setPending(null);
@@ -417,7 +452,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
       {pending ? (
         <View style={{ gap: 8 }}>
           <ThemedText>{t("aiLab.pending")}</ThemedText>
-          <Button label={t("aiLab.recover")} disabled={op.busy} onPress={submit} />
+          <Button label={t("aiLab.recover")} disabled={op.busy || !canGenerate} onPress={submit} />
           <Button label={t("aiLab.clear")} disabled={op.busy} onPress={() => setConfirm("clear")} />
         </View>
       ) : null}
@@ -500,7 +535,9 @@ function Session({ userId, generation }: { userId: string; generation: number })
               <ThemedText>
                 {model.disabledReason ?? preset?.disabledReason ?? t("aiLab.unavailable")}
               </ThemedText>
-              <Button label={t("aiLab.membership")} onPress={() => router.push("/pay")} />
+              {canGenerate ? (
+                <Button label={t("aiLab.membership")} onPress={() => router.push("/pay")} />
+              ) : null}
             </>
           ) : null}
           {model && draft
@@ -545,6 +582,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
                         label={t("aiLab.uploadImage")}
                         disabled={
                           disabled ||
+                          !canGenerate ||
                           (objectImages && !rows) ||
                           (field.type === "array" &&
                             typeof field.maxItems === "number" &&
@@ -751,7 +789,8 @@ function Session({ userId, generation }: { userId: string; generation: number })
                     const full = await getGenerationJob(
                       job.id,
                       generation,
-                      controller.current!.signal
+                      controller.current!.signal,
+                      workspaceId
                     );
                     selection.current = full.id;
                     setSelected(full);
@@ -802,14 +841,16 @@ function Session({ userId, generation }: { userId: string; generation: number })
               selected.error?.retryable ? (
                 <Button
                   label={t("aiLab.retryJob")}
-                  disabled={op.busy || !!pending || !!retryPending || !!draft?.upload}
+                  disabled={
+                    op.busy || !canGenerate || !!pending || !!retryPending || !!draft?.upload
+                  }
                   onPress={() => setConfirm("retry")}
                 />
               ) : null}
               {!terminal(selected) ? (
                 <Button
                   label={t("aiLab.cancel")}
-                  disabled={op.busy}
+                  disabled={op.busy || !canGenerate}
                   onPress={() => setConfirm("cancel")}
                 />
               ) : null}
@@ -838,7 +879,7 @@ function Session({ userId, generation }: { userId: string; generation: number })
             onPress={() => {
               if (confirm === "generate") submit();
               else if (confirm === "retry" && selected) {
-                const command = { clientKey: uuid.v4(), jobId: selected.id };
+                const command = { clientKey: uuid.v4(), jobId: selected.id, workspaceId };
                 setConfirm(null);
                 run(
                   async () => {
@@ -846,7 +887,8 @@ function Session({ userId, generation }: { userId: string; generation: number })
                       command,
                       userId,
                       generation,
-                      controller.current!.signal
+                      controller.current!.signal,
+                      storageScope
                     );
                   },
                   () => {
@@ -867,7 +909,12 @@ function Session({ userId, generation }: { userId: string; generation: number })
                 setConfirm(null);
                 run(
                   async () => {
-                    const v = await cancelGeneration(id, generation, controller.current!.signal);
+                    const v = await cancelGeneration(
+                      id,
+                      generation,
+                      controller.current!.signal,
+                      workspaceId
+                    );
                     setSelected(v);
                   },
                   () => setEpoch((x) => x + 1)

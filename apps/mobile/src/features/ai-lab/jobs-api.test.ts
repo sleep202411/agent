@@ -209,3 +209,44 @@ it("preserves structured prompt and reference bindings across an uncertain paid 
   expect(h.post.mock.calls[1][1].data).toEqual(h.post.mock.calls[0][1].data);
   expect(generationCommand.safeParse({ ...structured, referenceBindings: [] }).success).toBe(false);
 });
+const workspaceA = "33333333-3333-4333-8333-333333333333",
+  workspaceB = "44444444-4444-4444-8444-444444444444";
+it("isolates workspace outboxes and freezes the billing workspace through recovery", async () => {
+  const intent = { ...command(), workspaceId: workspaceA };
+  h.post.mockRejectedValueOnce(Error("lost response"));
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), workspaceA)).rejects.toThrow();
+  expect(generationOutbox("alice", 1, workspaceA).read()).toEqual(intent);
+  expect(generationOutbox("alice", 1, workspaceB).read()).toBeNull();
+  expect(generationOutbox("alice", 1).read()).toBeNull();
+  expect(h.post.mock.calls[0][1].data.workspaceId).toBe(workspaceA);
+  h.get.mockResolvedValue({ jobs: [{ ...job(), workspaceId: workspaceB }], nextCursor: null });
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), workspaceA)).rejects.toThrow(
+    "match"
+  );
+  expect(h.post).toHaveBeenCalledTimes(1);
+  h.get.mockResolvedValue({ jobs: [{ ...job(), workspaceId: workspaceA }], nextCursor: null });
+  await submitPendingGeneration(intent, "alice", 1, signal(), workspaceA);
+  expect(h.get.mock.calls.at(-1)![1].params.workspaceId).toBe(workspaceA);
+  expect(h.post).toHaveBeenCalledTimes(1);
+  await expect(submitPendingGeneration(intent, "alice", 1, signal(), workspaceB)).rejects.toThrow(
+    "workspace"
+  );
+});
+it("rejects history and detail from another workspace and checks scope before retry or cancel", async () => {
+  h.get.mockResolvedValueOnce({ jobs: [{ ...job(), workspaceId: workspaceB }], nextCursor: null });
+  await expect(listGenerationJobs("image", 1, signal(), workspaceA)).rejects.toThrow("workspace");
+  h.get.mockResolvedValue({ ...job(), workspaceId: workspaceB });
+  await expect(getGenerationJob(jobId, 1, signal(), workspaceA)).rejects.toThrow("workspace");
+  await expect(cancelGeneration(jobId, 1, signal(), workspaceA)).rejects.toThrow("workspace");
+  await expect(
+    retryGenerationOnce(
+      { clientKey: key, jobId, workspaceId: workspaceA },
+      "alice",
+      1,
+      signal(),
+      workspaceA
+    )
+  ).rejects.toThrow("workspace");
+  expect(h.post).not.toHaveBeenCalled();
+  expect(generationRetryOutbox("alice", 1, workspaceA).read()).toBeNull();
+});
