@@ -1,4 +1,5 @@
 import { uploadConfirmation, type UploadConfirmation } from "./upload-confirmation";
+import { isExpiredCrewUpload } from "./upload-expiry";
 import { uploadReceipt } from "./upload-receipt";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView } from "react-native";
@@ -55,6 +56,7 @@ function Form(props: Props) {
   );
   const [pending, setPending] = useState<UploadConfirmation | null>(initial.pending);
   const restored = initial.error === undefined;
+  const [expiredKey, setExpiredKey] = useState<string>();
   const [attempted, setAttempted] = useState(initial.saved?.attempted ?? false),
     [error, setError] = useState<string | undefined>(initial.error);
   const controller = useRef<AbortController | undefined>(undefined);
@@ -68,6 +70,30 @@ function Form(props: Props) {
     };
   }, [props.generation]);
   const report = (e: unknown) => setError(e instanceof Error ? e.message : String(e));
+  const reportExpiry = (e: unknown, storageKey: string) => {
+    report(e);
+    if (isExpiredCrewUpload(e)) {
+      try {
+        if (confirmation.read()?.request.storageKey === storageKey && !receipt.read())
+          setExpiredKey(storageKey);
+      } catch {
+        // Invalid local state must not grant permission to discard a checkpoint.
+      }
+    }
+  };
+  const restart = () => {
+    if (op.busy || !expiredKey || props.generation !== getAuthGeneration()) return;
+    try {
+      if (receipt.read())
+        throw new Error("A confirmed upload is pending. Reopen this folder before continuing.");
+      confirmation.clear(expiredKey);
+      setPending(null);
+      setExpiredKey(undefined);
+      setError(undefined);
+    } catch (cause) {
+      report(cause);
+    }
+  };
   const pick = () => {
     if (!restored || op.busy || file || pending || props.generation !== getAuthGeneration()) return;
     void op.run(
@@ -132,7 +158,7 @@ function Form(props: Props) {
         return result;
       },
       setFile,
-      report
+      (cause) => reportExpiry(cause, pending.request.storageKey)
     );
   };
   const attach = () => {
@@ -187,6 +213,9 @@ function Form(props: Props) {
       {pending && <ThemedText>{t("assetUpload.confirmRecovery")}</ThemedText>}
       {pending && (
         <Button label={t("inbox.retry")} disabled={!restored || op.busy} onPress={recover} />
+      )}
+      {pending && expiredKey && (
+        <Button label={t("assetUpload.restart")} disabled={op.busy} onPress={restart} />
       )}
       {file && <ThemedText>{file.name}</ThemedText>}
       {file && (

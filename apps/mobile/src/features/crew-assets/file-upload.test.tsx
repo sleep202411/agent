@@ -307,3 +307,54 @@ it("does not confirm a recovered upload when folder access was revoked", async (
   expect(h.confirmationClear).not.toHaveBeenCalled();
   expect(host.textContent).toContain("Permission revoked");
 });
+
+const expired = () =>
+  Object.assign(new Error("Reservation expired"), {
+    status: 409,
+    responseBody: JSON.stringify({ code: "CREW_UPLOAD_RESERVATION_EXPIRED" }),
+  });
+it("requires explicit restart after authoritative expiry and clears only the expired checkpoint", async () => {
+  h.confirmationRead.mockReturnValue({ name: "Art.png", request: { storageKey: "original-key" } });
+  h.recover.mockRejectedValue(expired());
+  await render();
+  await click("inbox.retry");
+  expect(h.confirmationClear).not.toHaveBeenCalled();
+  expect(h.pick).not.toHaveBeenCalled();
+  await click("assetUpload.restart");
+  expect(h.confirmationClear).toHaveBeenCalledExactlyOnceWith("original-key");
+  expect(button("thread.uploadFile")).toBeDefined();
+  expect(h.receiptClear).not.toHaveBeenCalled();
+});
+it("never discards an existing confirmed-file receipt on expiry", async () => {
+  h.confirmationRead.mockReturnValue({ name: "Art.png", request: { storageKey: "original-key" } });
+  h.receiptRead.mockReturnValue({ file, attempted: true });
+  h.recover.mockRejectedValue(expired());
+  await render();
+  await click("inbox.retry");
+  expect(button("assetUpload.restart")).toBeUndefined();
+  expect(h.confirmationClear).not.toHaveBeenCalled();
+  expect(h.receiptClear).not.toHaveBeenCalled();
+});
+it("does not assign an old expiry response to another view's checkpoint", async () => {
+  h.confirmationRead.mockReturnValue({ name: "Art.png", request: { storageKey: "original-key" } });
+  h.recover.mockImplementation(async () => {
+    h.confirmationRead.mockReturnValue({ name: "Other.png", request: { storageKey: "other-key" } });
+    throw expired();
+  });
+  await render();
+  await click("inbox.retry");
+  expect(button("assetUpload.restart")).toBeUndefined();
+  expect(h.confirmationClear).not.toHaveBeenCalled();
+});
+it("retains an expired checkpoint when clearing local storage fails", async () => {
+  h.confirmationRead.mockReturnValue({ name: "Art.png", request: { storageKey: "original-key" } });
+  h.recover.mockRejectedValue(expired());
+  h.confirmationClear.mockImplementation(() => {
+    throw new Error("Disk locked");
+  });
+  await render();
+  await click("inbox.retry");
+  await click("assetUpload.restart");
+  expect(host.textContent).toContain("Disk locked");
+  expect(button("thread.uploadFile")).toBeUndefined();
+});

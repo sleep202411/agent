@@ -2360,7 +2360,7 @@
   "assetUpload.attach": "加入资产库",
   "assetUpload.discard": "丢弃已上传文件",
   "assetUpload.retryHelp": "重试将使用同一份上传文件。如果目标文件夹已变更，请返回刷新后的资产列表检查结果。",
-  "assetUpload.leaveHelp": "加入文件前离开会放弃此草稿。未关联的上传文件由服务器清理。",
+  "assetUpload.leaveHelp": "你可以返回这里继续添加此文件。尚未添加的上传文件可能会过期。",
   "crewMembers.title": "剧组成员",
   "crewMembers.loaded": "已加载 {count} / {total} 位成员",
   "crewMembers.owner": "剧组负责人",
@@ -2532,6 +2532,7 @@
   "taskCompensation.help": "可选任务条款。留空表示未设置，0 表示明确为零。最多两位小数；填写不会触发付款或结算。",
   "thread.pendingAttachments": "待发送附件",
   "taskCreate.deadlinePast": "请选择尚未过去的截止时间。",
+  "assetUpload.restart": "重新开始上传",
   "assetUpload.confirmRecovery": "文件已上传。请重试确认，然后将其添加到此文件夹。",
   "publishWork.creationUnknown": "创建结果尚未确认。请先检查个人作品，避免重复创建。此请求不会自动重新发送。"
 }

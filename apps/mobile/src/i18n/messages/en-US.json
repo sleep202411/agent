@@ -2360,7 +2360,7 @@
   "assetUpload.attach": "Add to Asset Library",
   "assetUpload.discard": "Discard Uploaded File",
   "assetUpload.retryHelp": "Retry uses the same uploaded file. If the destination changed, return to the refreshed asset list to check the result.",
-  "assetUpload.leaveHelp": "Leaving before adding the file abandons this draft. Unattached uploads are cleaned up by the server.",
+  "assetUpload.leaveHelp": "You can return here to continue adding this file. Unattached uploads may expire.",
   "crewMembers.title": "Crew Members",
   "crewMembers.loaded": "{count} of {total} members loaded",
   "crewMembers.owner": "Crew Owner",
@@ -2532,6 +2532,7 @@
   "taskCompensation.help": "Optional task terms. Blank means unset; 0 is explicit. Up to two decimal places. These terms do not initiate payment or settlement.",
   "thread.pendingAttachments": "Pending attachments",
   "taskCreate.deadlinePast": "Choose a deadline that has not already passed.",
+  "assetUpload.restart": "Start upload again",
   "assetUpload.confirmRecovery": "The file was uploaded. Retry to confirm it, then add it to this folder.",
   "publishWork.creationUnknown": "The creation result is not confirmed. Check your personal works before creating another copy. This request will not be sent again automatically."
 }

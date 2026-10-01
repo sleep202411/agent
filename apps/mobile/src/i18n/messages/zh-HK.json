@@ -2360,7 +2360,7 @@
   "assetUpload.attach": "加入資產庫",
   "assetUpload.discard": "捨棄已上傳檔案",
   "assetUpload.retryHelp": "重試將使用同一份上傳檔案。如果目標資料夾已變更，請返回重新整理後的資產清單檢查結果。",
-  "assetUpload.leaveHelp": "加入檔案前離開會放棄此草稿。未關聯的上傳檔案由伺服器清理。",
+  "assetUpload.leaveHelp": "你可以返回這裡繼續新增此檔案。尚未新增的上傳檔案可能會過期。",
   "crewMembers.title": "劇組成員",
   "crewMembers.loaded": "已載入 {count} / {total} 位成員",
   "crewMembers.owner": "劇組負責人",
@@ -2532,6 +2532,7 @@
   "taskCompensation.help": "可選任務條款。留空表示未設定，0 表示明確為零。最多兩位小數；填寫不會觸發付款或結算。",
   "thread.pendingAttachments": "待發送附件",
   "taskCreate.deadlinePast": "請選擇尚未過去的截止時間。",
+  "assetUpload.restart": "重新開始上傳",
   "assetUpload.confirmRecovery": "檔案已上傳。請重試確認，然後將其加入此資料夾。",
   "publishWork.creationUnknown": "建立結果尚未確認。請先檢查個人作品，避免重複建立。此請求不會自動重新傳送。"
 }
