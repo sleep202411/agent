@@ -88,6 +88,9 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
   const webViewRef = useRef<WebView>(null);
   const canGoBackRef = useRef(false);
   const [loaded, setLoaded] = useState(false);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
+  const documentUrl = useRef("");
+  const currentAttempt = useRef(0);
   const [failure, setFailure] = useState<"error" | "auth" | null>(null);
   /** Bumping remounts the WebView — the reliable "reload with cookie" reset. */
   const [attempt, setAttempt] = useState(0);
@@ -134,6 +137,10 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
   }, []);
 
   const retry = useCallback(() => {
+    currentAttempt.current += 1;
+    canGoBackRef.current = false;
+    documentUrl.current = "";
+    setErrorDetail(null);
     setFailure(null);
     setLoaded(false);
     setAttempt((current) => current + 1);
@@ -193,8 +200,32 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={false}
         pullToRefreshEnabled
-        onLoadEnd={() => setLoaded(true)}
-        onError={() => setFailure("error")}
+        onLoadStart={({ nativeEvent }) => {
+          if (attempt !== currentAttempt.current) return;
+          documentUrl.current = nativeEvent.url;
+        }}
+        onLoadEnd={() => {
+          if (attempt === currentAttempt.current) setLoaded(true);
+        }}
+        onError={({ nativeEvent }) => {
+          if (attempt !== currentAttempt.current) return;
+          setErrorDetail(nativeEvent.description?.trim() || null);
+          setFailure("error");
+        }}
+        onHttpError={({ nativeEvent }) => {
+          if (attempt !== currentAttempt.current) return;
+          // Android also reports failed images/scripts. Only a failed document
+          // should replace the page with the native retry state.
+          const currentDocument = documentUrl.current || uri;
+          if (nativeEvent.url.split("#")[0] !== currentDocument.split("#")[0]) return;
+          if (nativeEvent.statusCode < 400) return;
+          setErrorDetail(
+            [`HTTP ${nativeEvent.statusCode}`, nativeEvent.description?.trim()]
+              .filter(Boolean)
+              .join(": ")
+          );
+          setFailure("error");
+        }}
         onNavigationStateChange={onNavigationStateChange}
         style={{ backgroundColor: theme.background }}
         // The page is dark-only; keep the native side dark too so there is
@@ -216,6 +247,11 @@ function AuthedWebViewSession({ path, title, nativeShell = true }: AuthedWebView
           <ThemedText type="small" themeColor="textSecondary" style={styles.centerBody}>
             {t("authedWeb.loadFailed")}
           </ThemedText>
+          {errorDetail ? (
+            <ThemedText type="small" themeColor="textSecondary" style={styles.centerBody}>
+              {errorDetail}
+            </ThemedText>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             onPress={retry}

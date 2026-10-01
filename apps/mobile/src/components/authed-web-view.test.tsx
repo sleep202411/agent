@@ -21,7 +21,7 @@ vi.mock("expo-router", () => ({ Stack: { Screen: () => null } }));
 vi.mock("react-native", () => ({
   View: ({ children }: any) => <div>{children}</div>,
   ActivityIndicator: () => null,
-  Pressable: ({ children }: any) => <button>{children}</button>,
+  Pressable: ({ children, onPress }: any) => <button onClick={onPress}>{children}</button>,
   Platform: { OS: "ios" },
   BackHandler: {},
   StyleSheet: { create: (s: any) => s, absoluteFill: {} },
@@ -168,4 +168,64 @@ it("clears the previous session's sign-in failure after a fresh token arrives", 
   await mount();
   expect(host.textContent).not.toContain("authedWeb.sessionNeeded");
   expect(state.props.source.headers.Cookie).toBe("satoken=new-session-token");
+});
+
+it("shows document HTTP failures and lets the user retry with authentication", async () => {
+  await mount();
+  const failedAttempt = state.props;
+  await act(async () =>
+    failedAttempt.onHttpError({
+      nativeEvent: {
+        url: "https://app.example/en-US/referral",
+        statusCode: 503,
+        description: "Service unavailable",
+      },
+    })
+  );
+  expect(host.textContent).toContain("HTTP 503: Service unavailable");
+  await act(async () => failedAttempt.onLoadEnd());
+  expect(host.textContent).toContain("authedWeb.retry");
+  await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+  expect(host.textContent).not.toContain("authedWeb.loadFailed");
+  expect(state.props.source.headers.Cookie).toBe("satoken=fixture-token");
+  await act(async () => failedAttempt.onError({ nativeEvent: { description: "Stale failure" } }));
+  expect(host.textContent).not.toContain("Stale failure");
+});
+
+it("ignores failed subresources but handles a newly navigated document", async () => {
+  await mount();
+  await act(async () =>
+    state.props.onHttpError({
+      nativeEvent: {
+        url: "https://app.example/icon.png",
+        statusCode: 404,
+        description: "Not found",
+      },
+    })
+  );
+  expect(host.textContent).not.toContain("authedWeb.loadFailed");
+  await act(async () =>
+    state.props.onLoadStart({
+      nativeEvent: {
+        url: "https://app.example/en-US/profile/earnings",
+      },
+    })
+  );
+  await act(async () =>
+    state.props.onHttpError({
+      nativeEvent: {
+        url: "https://app.example/en-US/profile/earnings",
+        statusCode: 500,
+        description: "Income temporarily unavailable",
+      },
+    })
+  );
+  expect(host.textContent).toContain("HTTP 500: Income temporarily unavailable");
+});
+
+it("preserves the native transport error detail", async () => {
+  await mount();
+  await act(async () => state.props.onError({ nativeEvent: { description: "Connection lost" } }));
+  expect(host.textContent).toContain("Connection lost");
+  expect(host.textContent).toContain("authedWeb.retry");
 });
