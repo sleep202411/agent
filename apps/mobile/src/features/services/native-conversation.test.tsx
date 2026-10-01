@@ -5,6 +5,9 @@ import { NativeConversation } from "./native-conversation";
 import type { NativeConversation as Detail, NativeMessage } from "./conversation-api";
 const h = vi.hoisted(() => ({
   generation: 1,
+  outboxRead: vi.fn(),
+  outboxClear: vi.fn(),
+  outboxSave: vi.fn(),
   active: true,
   send: vi.fn(),
   attach: vi.fn(),
@@ -18,6 +21,9 @@ const h = vi.hoisted(() => ({
   detail: undefined as Detail | undefined,
   messages: [] as NativeMessage[],
   view: undefined as undefined | ((args: unknown) => void),
+}));
+vi.mock("./conversation-outbox", () => ({
+  conversationOutbox: () => ({ read: h.outboxRead, save: h.outboxSave, clear: h.outboxClear }),
 }));
 vi.mock("@/features/crew-assets/asset-picker", () => ({
   CrewAssetPicker: ({ onSelect }: { onSelect: (assets: unknown[]) => void }) => (
@@ -187,6 +193,7 @@ const type = (text: string) => {
 };
 beforeEach(() => {
   vi.resetAllMocks();
+  h.outboxRead.mockReturnValue(null);
   h.generation = 1;
   h.active = true;
   h.detail = detail;
@@ -486,4 +493,66 @@ it("removes the native community composer and history after access is revoked", 
   expect(host.querySelector("input")).toBeNull();
   expect(host.textContent).not.toContain("Hello buyer");
   expect(h.send).not.toHaveBeenCalled();
+});
+
+it("restores a pending text request after remount and only sends on explicit retry", async () => {
+  h.outboxRead.mockReturnValue({
+    body: "Saved note",
+    clientKey: "original-key",
+    attachments: [],
+    mentions: [],
+    tasks: [],
+  });
+  h.send.mockResolvedValue(message);
+  await render();
+  expect(host.querySelector("input")!.value).toBe("Saved note");
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  expect(h.send).not.toHaveBeenCalled();
+  await act(async () => click("inbox.retry"));
+  expect(h.outboxSave.mock.invocationCallOrder[0]).toBeLessThan(h.send.mock.invocationCallOrder[0]);
+  expect(h.send).toHaveBeenCalledWith("chat", {
+    body: "Saved note",
+    clientKey: "original-key",
+    mentions: [],
+    tasks: [],
+  });
+  expect(h.outboxClear).toHaveBeenLastCalledWith("original-key");
+});
+it("does not send when the pending request cannot be saved", async () => {
+  h.outboxSave.mockImplementation(() => {
+    throw new Error("Storage full");
+  });
+  await render();
+  await act(async () => type("Keep me"));
+  await act(async () => click("thread.send"));
+  expect(h.send).not.toHaveBeenCalled();
+  expect(host.textContent).toContain("Storage full");
+  expect(host.querySelector("input")!.value).toBe("Keep me");
+});
+it("does not overwrite unreadable pending messages", async () => {
+  h.outboxRead.mockImplementation(() => {
+    throw new Error("Unreadable outbox");
+  });
+  await render();
+  expect(host.textContent).toContain("Unreadable outbox");
+  expect(host.querySelector("input")!.disabled).toBe(true);
+  expect(h.outboxSave).not.toHaveBeenCalled();
+});
+it("restores attachment-only sends without uploading the same file again", async () => {
+  h.detail = { ...detail, contextType: "crew", crewChannel: "team", contextId: "crew" };
+  const saved = {
+    body: "",
+    clientKey: "attachment-key",
+    attachments: [{ source: "upload", mediaAssetId: "media", name: "Shot.mp4" }],
+    mentions: [],
+    tasks: [],
+  };
+  h.outboxRead.mockReturnValue(saved);
+  h.attach.mockResolvedValue(message);
+  await render();
+  expect(host.textContent).toContain("thread.pendingAttachments");
+  await act(async () => click("inbox.retry"));
+  expect(h.attach).toHaveBeenCalledWith(h.detail, "buyer", saved);
+  expect(h.upload).not.toHaveBeenCalled();
+  expect(h.outboxClear).toHaveBeenCalledWith("attachment-key");
 });

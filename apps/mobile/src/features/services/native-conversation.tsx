@@ -1,3 +1,4 @@
+import { conversationOutbox } from "./conversation-outbox";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -39,7 +40,12 @@ import { taskLabel } from "./task-options";
 import { ConversationFile } from "./conversation-file";
 import { AuthedWebView } from "@/components/authed-web-view";
 
-export function NativeConversation({
+type ConversationProps = { id: string; userId: string; generation: number };
+export function NativeConversation(props: ConversationProps) {
+  if (props.generation !== getAuthGeneration()) return null;
+  return <ConversationSession key={`${props.id}:${props.userId}:${props.generation}`} {...props} />;
+}
+function ConversationSession({
   id,
   userId,
   generation,
@@ -107,6 +113,27 @@ export function NativeConversation({
       }
     | undefined
   >(undefined);
+  const [outbox] = useState(() => conversationOutbox(id, userId, generation));
+  const [storageError, setStorageError] = useState<string>();
+  const [restored, setRestored] = useState(false);
+  const [pendingAttachmentCount, setPendingAttachmentCount] = useState(0);
+  useEffect(() => {
+    try {
+      const saved = outbox.read();
+      if (saved) {
+        intent.current = { ...saved, attachments: saved.attachments ?? [] };
+        setBody(saved.body);
+        setPendingAttachmentCount(saved.attachments?.length ?? 0);
+        setMentions(saved.mentions);
+        setTaskReferences(saved.tasks);
+        setAttempted(true);
+        pendingUploads.current.attempted = true;
+      }
+      setRestored(true);
+    } catch (cause) {
+      setStorageError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [outbox]);
   const [visibleId, setVisibleId] = useState<string>(),
     [readError, setReadError] = useState<string>(),
     [readRetry, setReadRetry] = useState(0);
@@ -464,7 +491,7 @@ export function NativeConversation({
                   accessibilityLabel={t("thread.findMember")}
                   value={mentionQuery}
                   onChangeText={setMentionQuery}
-                  editable={!op.busy && !attempted}
+                  editable={restored && !storageError && !op.busy && !attempted}
                   style={{ color: theme.text, padding: 10 }}
                 />
                 <ScrollView style={{ maxHeight: 140 }} keyboardShouldPersistTaps="handled">
@@ -514,7 +541,7 @@ export function NativeConversation({
           multiline
           maxLength={4000}
           value={body}
-          editable={!op.busy && !attempted}
+          editable={restored && !storageError && !op.busy && !attempted}
           onChangeText={(value) => {
             setBody(value);
             setTaskReferences((previous) =>
@@ -532,11 +559,30 @@ export function NativeConversation({
         />
         {attempted && <ThemedText>{t("thread.retryHint")}</ThemedText>}
         {sendError && <ThemedText accessibilityRole="alert">{sendError}</ThemedText>}
+        {storageError && <ThemedText accessibilityRole="alert">{storageError}</ThemedText>}
+        {attempted && pendingAttachmentCount ? (
+          <ThemedText>
+            {t("thread.pendingAttachments")}: {pendingAttachmentCount}
+          </ThemedText>
+        ) : null}
         <Pressable
           accessibilityRole="button"
-          disabled={op.busy || uploading || (!body.trim() && !assets.length && !uploads.length)}
+          disabled={
+            !restored ||
+            !!storageError ||
+            op.busy ||
+            uploading ||
+            (!attempted && !body.trim() && !assets.length && !uploads.length)
+          }
           onPress={() => {
-            if (uploadRequest.current || (!body.trim() && !assets.length && !uploads.length))
+            if (
+              !restored ||
+              storageError ||
+              !active ||
+              generation !== getAuthGeneration() ||
+              uploadRequest.current ||
+              (!intent.current && !body.trim() && !assets.length && !uploads.length)
+            )
               return;
             if (!intent.current)
               intent.current = {
@@ -554,21 +600,26 @@ export function NativeConversation({
                 ],
               };
             const submitted = intent.current;
+            setPendingAttachmentCount(submitted.attachments.length);
             pendingUploads.current.attempted = true;
             setAttempted(true);
             void op.run(
-              () =>
-                submitted.attachments.length
+              () => {
+                outbox.save(submitted);
+                return submitted.attachments.length
                   ? sendConversationAttachments(conversation, userId, submitted)
                   : sendConversationText(id, {
                       body: submitted.body,
                       clientKey: submitted.clientKey,
                       ...(submitted.tasks ? { tasks: submitted.tasks } : {}),
                       ...(submitted.mentions ? { mentions: submitted.mentions } : {}),
-                    }),
+                    });
+              },
               () => {
+                outbox.clear(submitted.clientKey);
                 intent.current = undefined;
                 setAttempted(false);
+                setPendingAttachmentCount(0);
                 setBody("");
                 setMentions([]);
                 setTaskReferences([]);
