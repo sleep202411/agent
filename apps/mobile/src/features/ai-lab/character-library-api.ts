@@ -92,8 +92,19 @@ export async function loadLibraryCharacter(
     throw Error("Duplicate character media. Refresh before continuing.");
   return row;
 }
+export const ENROLLMENT_CONSENT_VERSION = "realperson-consent-v1-2026-07-02";
 const command = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), clientKey: id, workspaceId: id, fields: libraryFields }),
+  z.object({
+    action: z.literal("create-likeness"),
+    clientKey: id,
+    workspaceId: id,
+    fields: libraryFields,
+    consent: z.object({
+      version: z.literal(ENROLLMENT_CONSENT_VERSION),
+      adultAttested: z.literal(true),
+    }),
+  }),
   z.object({
     action: z.literal("edit"),
     clientKey: id,
@@ -118,6 +129,25 @@ export const characterLibraryBox = (userId: string, generation: number, workspac
 export function prepareLibraryCommand(value: LibraryCommand) {
   return command.parse(value);
 }
+export function prepareLikenessCreation(
+  workspaceId: string,
+  fields: z.infer<typeof libraryFields>,
+  clientKey: string,
+  read: boolean,
+  adultAttested: boolean
+) {
+  if (!read || !adultAttested)
+    throw Error(
+      "Read the enrollment consent and attest to your own adult likeness before continuing."
+    );
+  return command.parse({
+    action: "create-likeness",
+    workspaceId,
+    fields,
+    clientKey,
+    consent: { version: ENROLLMENT_CONSENT_VERSION, adultAttested: true },
+  });
+}
 /** No server request key or revision lock: retain uncertain writes, never infer success from absence. */
 export async function submitLibraryCommand(
   value: LibraryCommand,
@@ -134,7 +164,9 @@ export async function submitLibraryCommand(
   generationSession(generation, signal);
   if (!workspace || !canCreateStudioProject(workspace))
     throw Error("Workspace editor permission is required.");
-  if (intent.action !== "create") {
+  if (intent.action === "create-likeness" && !workspace.isDefault)
+    throw Error("Enroll your likeness in your personal default workspace.");
+  if (intent.action === "edit" || intent.action === "remove") {
     const fresh = await loadLibraryCharacter(
       intent.workspaceId,
       intent.before.id,
@@ -166,12 +198,17 @@ export async function submitLibraryCommand(
     return null;
   }
   const raw =
-    intent.action === "create"
+    intent.action !== "edit"
       ? await api.post("/characters", {
           service: "aurora",
           signal,
           retry: false,
-          data: { workspaceId: intent.workspaceId, kind: "virtual", ...intent.fields },
+          data: {
+            workspaceId: intent.workspaceId,
+            kind: intent.action === "create-likeness" ? "real_person" : "virtual",
+            ...intent.fields,
+            ...(intent.action === "create-likeness" ? { consent: intent.consent } : {}),
+          },
         })
       : await api.patch(`/characters/${intent.before.id}`, {
           service: "aurora",
@@ -185,7 +222,9 @@ export async function submitLibraryCommand(
     receipt.workspaceId !== intent.workspaceId ||
     receipt.name !== intent.fields.name ||
     (receipt.description ?? "") !== intent.fields.description ||
-    (intent.action === "create" ? receipt.kind !== "virtual" : receipt.id !== intent.before.id)
+    (intent.action === "edit"
+      ? receipt.id !== intent.before.id
+      : receipt.kind !== (intent.action === "create-likeness" ? "real_person" : "virtual"))
   )
     throw Error("The character receipt does not match your request. Review the library.");
   box.clear(intent.clientKey);

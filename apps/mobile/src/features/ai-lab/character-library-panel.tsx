@@ -1,6 +1,8 @@
+import { EnrollmentConsent } from "./project-likeness-consent";
+import { appEnv } from "@/config/app-env";
 import { CharacterMediaPanel } from "./character-media-panel";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, TextInput, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, ScrollView, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { uuid } from "expo-modules-core";
 import { getAuthGeneration } from "@/auth/auth-store";
@@ -8,7 +10,7 @@ import { useAuthFormOperation } from "@/auth/use-auth-form-operation";
 import { ThemedText } from "@/components/themed-text";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations } from "@/i18n";
+import { useTranslations, useLocale } from "@/i18n";
 import {
   loadAgentWorkspaces,
   canCreateStudioProject,
@@ -19,6 +21,8 @@ import {
   loadLibraryCharacter,
   characterLibraryBox,
   prepareLibraryCommand,
+  prepareLikenessCreation,
+  libraryFields,
   submitLibraryCommand,
   type LibraryCharacter,
   type LibraryDetail,
@@ -128,6 +132,9 @@ function Session({
   const t = useTranslations(),
     theme = useTheme(),
     op = useAuthFormOperation(`library:${workspace.id}`, true);
+  const locale = useLocale();
+  const [creatingLikeness, setCreatingLikeness] = useState(false),
+    [enrollmentConsent, setEnrollmentConsent] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [box] = useState(() => characterLibraryBox(userId, generation, workspace.id));
   const [initial] = useState(() => {
@@ -167,6 +174,7 @@ function Session({
     if (controller.current?.signal.aborted || generation !== getAuthGeneration()) return;
     setError(e instanceof Error ? e.message : String(e));
     setConfirmation(undefined);
+    setEnrollmentConsent(false);
     try {
       setPending(box.read());
     } catch {
@@ -177,6 +185,7 @@ function Session({
     setError("");
     setEditing(false);
     setCreating(false);
+    setEnrollmentConsent(false);
     setConfirmation(undefined);
     setDetail(undefined);
     void op.run(
@@ -202,16 +211,23 @@ function Session({
       fail(e);
     }
   };
-  const submit = () => {
-    if (!confirmation || op.busy) return;
+  const submit = (intent = confirmation) => {
+    if (!intent || op.busy) return;
     void op.run(
-      () => submitLibraryCommand(confirmation, userId, generation, controller.current!.signal),
+      () => submitLibraryCommand(intent, userId, generation, controller.current!.signal),
       (receipt) => {
         setDetail(receipt ?? undefined);
         setConfirmation(undefined);
         setEditing(false);
         setCreating(false);
-        setMessage(t("characterLibrary.saved"));
+        setEnrollmentConsent(false);
+        setMessage(
+          t(
+            intent.action === "create-likeness"
+              ? "enrollmentCreate.created"
+              : "characterLibrary.saved"
+          )
+        );
         setRows(undefined);
         void loadCharacterLibrary(workspace.id, generation, controller.current!.signal).then(
           (r) => {
@@ -239,7 +255,7 @@ function Session({
       placeholderTextColor={theme.textSecondary}
       value={value}
       onChangeText={onChangeText}
-      editable={readOnlySearch || (!disabled && !confirmation)}
+      editable={readOnlySearch || (!disabled && !confirmation && !enrollmentConsent)}
       maxLength={maxLength}
       multiline={multiline}
       style={{
@@ -260,7 +276,9 @@ function Session({
           <ThemedText>{t("characterLibrary.pending")}</ThemedText>
           <ThemedText>
             {t(`characterLibrary.action.${pending.action}`)} ·{" "}
-            {pending.action === "create" ? pending.fields.name : pending.before.name}
+            {pending.action === "edit" || pending.action === "remove"
+              ? pending.before.name
+              : pending.fields.name}
           </ThemedText>
           <Button label={t("casting.clear")} disabled={op.busy} onPress={() => setClear(true)} />
           {clear ? (
@@ -305,6 +323,26 @@ function Session({
           disabled={disabled}
           onPress={() => {
             setCreating(true);
+            setCreatingLikeness(false);
+            setEnrollmentConsent(false);
+            setEditing(false);
+            setDetail(undefined);
+            setConfirmation(undefined);
+            setName("");
+            setDescription("");
+            setError("");
+            setMessage("");
+          }}
+        />
+      ) : null}
+      {editable && workspace.isDefault ? (
+        <Button
+          label={t("enrollmentCreate.title")}
+          disabled={disabled}
+          onPress={() => {
+            setCreating(true);
+            setCreatingLikeness(true);
+            setEnrollmentConsent(false);
             setEditing(false);
             setDetail(undefined);
             setConfirmation(undefined);
@@ -326,6 +364,26 @@ function Session({
               .replace("{video}", String(detail.mediaCounts.video))
               .replace("{audio}", String(detail.mediaCounts.audio))}
           </ThemedText>
+          {detail.kind === "real_person" &&
+          ["draft", "pending_verification"].includes(detail.status) ? (
+            <>
+              <ThemedText type="small">{t("enrollmentCreate.verificationHint")}</ThemedText>
+              <Button
+                label={t("enrollmentCreate.verify")}
+                disabled={disabled}
+                onPress={() => {
+                  void op.run(
+                    () =>
+                      Linking.openURL(
+                        `https://${appEnv.appRegion === "cn" ? "studio.fizzspace.cn" : "studio.fizzdragon.com"}/${locale}/characters/${detail.id}`
+                      ),
+                    () => {},
+                    fail
+                  );
+                }}
+              />
+            </>
+          ) : null}
           <CharacterMediaPanel
             key={detail.id}
             workspaceId={workspace.id}
@@ -371,19 +429,46 @@ function Session({
           {field(t("characterLibrary.description"), description, setDescription, 200, true)}
           <Button
             label={t("characterLibrary.review")}
-            disabled={disabled || !name.trim() || !!confirmation}
-            onPress={() => prepare(creating ? "create" : "edit")}
+            disabled={disabled || !name.trim() || !!confirmation || enrollmentConsent}
+            onPress={() => {
+              if (creating && creatingLikeness) {
+                try {
+                  libraryFields.parse({ name, description });
+                  setEnrollmentConsent(true);
+                } catch (e) {
+                  fail(e);
+                }
+              } else prepare(creating ? "create" : "edit");
+            }}
           />
           <Button
             label={t("report.cancel")}
             disabled={op.busy}
             onPress={() => {
               setCreating(false);
+              setEnrollmentConsent(false);
               setEditing(false);
               setConfirmation(undefined);
             }}
           />
         </View>
+      ) : null}
+      {enrollmentConsent && creating && creatingLikeness ? (
+        <EnrollmentConsent
+          key={`${workspace.id}:${name}:${description}`}
+          confirmLabel={t("enrollmentCreate.confirm")}
+          busy={disabled}
+          onConfirm={(read, adult) => {
+            try {
+              submit(
+                prepareLikenessCreation(workspace.id, { name, description }, uuid.v4(), read, adult)
+              );
+            } catch (e) {
+              fail(e);
+            }
+          }}
+          onBack={() => setEnrollmentConsent(false)}
+        />
       ) : null}
       {confirmation ? (
         <View style={{ gap: 8 }}>
@@ -400,7 +485,7 @@ function Session({
           <ThemedText>
             {confirmation.action === "remove" ? confirmation.before.name : confirmation.fields.name}
           </ThemedText>
-          <Button label={t("casting.confirm")} disabled={disabled} onPress={submit} />
+          <Button label={t("casting.confirm")} disabled={disabled} onPress={() => submit()} />
           <Button
             label={t("report.cancel")}
             disabled={op.busy}

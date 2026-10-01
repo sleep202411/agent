@@ -3,15 +3,31 @@ import { Pressable, ScrollView, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
+import { ENROLLMENT_CONSENT_VERSION } from "./character-library-api";
 import { PROJECT_LIKENESS_CONSENT_VERSION } from "./casting-accept-api";
+type ConsentProps = {
+  projectName: string;
+  confirmLabel: string;
+  busy: boolean;
+  onConfirm: (read: boolean, adultAttested: boolean) => void;
+  onBack: () => void;
+};
+export function ProjectLikenessConsent(props: ConsentProps) {
+  return <LikenessConsent {...props} mode="project" />;
+}
+export function EnrollmentConsent(props: Omit<ConsentProps, "projectName">) {
+  return <LikenessConsent {...props} projectName="" mode="enrollment" />;
+}
 /** Mount with a project/likeness key so changing the consent subject resets both gates. */
-export function ProjectLikenessConsent({
+function LikenessConsent({
+  mode,
   projectName,
   confirmLabel,
   busy,
   onConfirm,
   onBack,
 }: {
+  mode: "project" | "enrollment";
   projectName: string;
   confirmLabel: string;
   busy: boolean;
@@ -24,11 +40,26 @@ export function ProjectLikenessConsent({
     [attested, setAttested] = useState(false),
     [height, setHeight] = useState(0),
     [viewport, setViewport] = useState(0);
+  const enrollment = mode === "enrollment";
+  const prefix = enrollment ? "enrollmentConsent.consent" : "castingConsent.grant";
+  const sections = enrollment
+    ? (["Purpose", "Data", "Transfer", "Retention", "Scope", "Withdraw", "Outputs"] as const).map(
+        (key) => ({
+          key,
+          title: t(`enrollmentConsent.consent${key}Title`),
+          body: t(`enrollmentConsent.consent${key}Body`),
+        })
+      )
+    : (["Project", "Purpose", "Prohibited", "Transfer", "Controls"] as const).map((key) => ({
+        key,
+        title: t(`castingConsent.grant${key}Title`),
+        body: t(`castingConsent.grant${key}Body`),
+      }));
   const readAll = read || (height > 0 && viewport > 0 && height <= viewport + 12);
   return (
     <View style={{ gap: 10 }}>
       <ScrollView
-        testID="casting-consent-copy"
+        testID={enrollment ? "enrollment-consent-copy" : "casting-consent-copy"}
         nestedScrollEnabled
         style={{ height: 300, borderRadius: 8, backgroundColor: theme.backgroundElement }}
         contentContainerStyle={{ padding: 12, gap: 10 }}
@@ -41,18 +72,27 @@ export function ProjectLikenessConsent({
             setRead(true);
         }}
       >
-        <ThemedText type="small">{PROJECT_LIKENESS_CONSENT_VERSION}</ThemedText>
-        {(["Project", "Purpose", "Prohibited", "Transfer", "Controls"] as const).map((s) => (
-          <View key={s} style={{ gap: 4 }}>
-            <ThemedText type="smallBold">{t(`castingConsent.grant${s}Title`)}</ThemedText>
-            <ThemedText type="small">
-              {t(`castingConsent.grant${s}Body`).replace("{project}", projectName)}
-            </ThemedText>
+        <ThemedText type="small">
+          {enrollment
+            ? t("enrollmentConsent.consentVersionLabel").replace(
+                "{version}",
+                ENROLLMENT_CONSENT_VERSION
+              )
+            : PROJECT_LIKENESS_CONSENT_VERSION}
+        </ThemedText>
+        {sections.map((s) => (
+          <View key={s.key} style={{ gap: 4 }}>
+            <ThemedText type="smallBold">{s.title}</ThemedText>
+            <ThemedText type="small">{s.body.replace("{project}", projectName)}</ThemedText>
           </View>
         ))}
       </ScrollView>
       {!readAll ? (
-        <ThemedText type="small">{t("castingConsent.consentScrollHint")}</ThemedText>
+        <ThemedText type="small">
+          {t(
+            enrollment ? "enrollmentConsent.consentScrollHint" : "castingConsent.consentScrollHint"
+          )}
+        </ThemedText>
       ) : null}
       <Pressable
         accessibilityRole="checkbox"
@@ -63,7 +103,7 @@ export function ProjectLikenessConsent({
       >
         <ThemedText>
           {attested ? "✓ " : "□ "}
-          {t("castingConsent.grantAttestation")}
+          {t(`${prefix}Attestation`)}
         </ThemedText>
       </Pressable>
       <Pressable
