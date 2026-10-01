@@ -76,7 +76,10 @@ export function openInboxRealtime(
     if (change.current === "failed" || change.current === "suspended") onError();
   });
   realtime.connection.on((change) => {
-    if (current() && ["failed", "suspended", "disconnected"].includes(change.current)) onError();
+    if (!current()) return;
+    // A brief disconnect can resume without emitting another channel attach.
+    if (change.current === "connected" && channel.state === "attached") invalidate();
+    if (["failed", "suspended", "disconnected"].includes(change.current)) onError();
   });
   realtime.connect();
   return close;
