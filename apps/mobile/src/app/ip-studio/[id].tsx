@@ -50,13 +50,23 @@ export default function IpStudioScreen() {
       {auth.status === "authenticated" &&
         typeof id === "string" &&
         z.string().uuid().safeParse(id).success && (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => router.push(`/ip-studio/${id}/contributors` as never)}
-            style={{ paddingHorizontal: 16, paddingVertical: 12 }}
-          >
-            <ThemedText type="small">{t("ipContributors.heading")}</ThemedText>
-          </Pressable>
+          <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+            {(
+              [
+                { path: "contributors", label: "ipContributors.heading" },
+                { path: "rights", label: "ipGovernance.heading" },
+              ] as const
+            ).map((item) => (
+              <Pressable
+                key={item.path}
+                accessibilityRole="button"
+                onPress={() => router.push(`/ip-studio/${id}/${item.path}` as never)}
+                style={{ paddingHorizontal: 16, paddingVertical: 12 }}
+              >
+                <ThemedText type="small">{t(item.label)}</ThemedText>
+              </Pressable>
+            ))}
+          </View>
         )}
       {auth.status === "hydrating" ? (
         <ActivityIndicator />
