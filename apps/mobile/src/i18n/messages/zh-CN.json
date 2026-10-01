@@ -3088,5 +3088,8 @@
   "feedbackHistory.retryHelp": "结果待确认。可重试原请求；内容和编号会保留。",
   "feedbackHistory.immutable": "提交前请核对内容。已记录的回应不可修改。",
   "feedbackHistory.retry": "重试原请求",
-  "feedbackHistory.submit": "提交"
+  "feedbackHistory.submit": "提交",
+  "feedbackHistory.create": "评价此任务",
+  "feedbackHistory.creationHelp": "任务批准后，创作者与实际审核人可相互评价。提交后不可修改。",
+  "feedbackHistory.comment": "评价内容"
 }

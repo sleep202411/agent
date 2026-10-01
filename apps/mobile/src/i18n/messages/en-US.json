@@ -3088,5 +3088,8 @@
   "feedbackHistory.retryHelp": "The outcome is unconfirmed. Retry the original request; its content and ID are preserved.",
   "feedbackHistory.immutable": "Check your text before submitting. Recorded responses cannot be changed.",
   "feedbackHistory.retry": "Retry original request",
-  "feedbackHistory.submit": "Submit"
+  "feedbackHistory.submit": "Submit",
+  "feedbackHistory.create": "Rate this task",
+  "feedbackHistory.creationHelp": "After approval, the creator and actual reviewer can evaluate each other. Submitted feedback cannot be edited.",
+  "feedbackHistory.comment": "Feedback comment"
 }

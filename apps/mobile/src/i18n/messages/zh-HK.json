@@ -3088,5 +3088,8 @@
   "feedbackHistory.retryHelp": "結果待確認。可重試原請求；內容和編號會保留。",
   "feedbackHistory.immutable": "提交前請核對內容。已記錄的回應不可修改。",
   "feedbackHistory.retry": "重試原請求",
-  "feedbackHistory.submit": "提交"
+  "feedbackHistory.submit": "提交",
+  "feedbackHistory.create": "評價此任務",
+  "feedbackHistory.creationHelp": "任務批准後，創作者與實際審核人可相互評價。提交後不可修改。",
+  "feedbackHistory.comment": "評價內容"
 }
