@@ -2695,5 +2695,8 @@
   "workspaceAnalytics.dailyWindow": "最近30天 · UTC · 算力积分",
   "workspaceAnalytics.empty": "暂无记录",
   "workspaceAnalytics.days": "天",
-  "workspaceAnalytics.unassigned": "未分配项目"
+  "workspaceAnalytics.unassigned": "未分配项目",
+  "workspaceAnalytics.models": "按模型统计用量",
+  "workspaceAnalytics.settled": "已结算算力积分",
+  "workspaceAnalytics.unknownMember": "未知成员"
 }

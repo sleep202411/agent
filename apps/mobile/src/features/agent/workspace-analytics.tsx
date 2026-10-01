@@ -1,3 +1,4 @@
+import { generationUsage } from "./workspace-analytics-summary";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
@@ -49,6 +50,7 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
     data = current?.data;
   const points = (value: string) => new Intl.NumberFormat(locale).format(BigInt(value));
   const totals = data ? analyticsTotals(data.ledger) : undefined;
+  const usage = data ? generationUsage(data) : undefined;
   const box = { padding: 12, borderRadius: 8, backgroundColor: theme.backgroundElement, gap: 8 };
   const daily = data
     ? Array.from({ length: 30 }, (_, index) => {
@@ -155,6 +157,17 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
               ))}
             </>
           )}
+          {section === "jobs" && usage && (
+            <View style={box}>
+              <ThemedText type="smallBold">{label("models")}</ThemedText>
+              {usage.models.map((model) => (
+                <ThemedText key={model.modelId} type="small">
+                  {model.modelId} · {model.count} {label("jobs")} ·{" "}
+                  {points(model.credits.toString())} {label("settled")}
+                </ThemedText>
+              ))}
+            </View>
+          )}
           {section === "jobs" &&
             (data.jobs.length ? (
               data.jobs.map((job) => (
@@ -165,6 +178,12 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
                   </ThemedText>
                   <ThemedText type="small">
                     {new Date(job.createdAt).toLocaleString(locale)}
+                  </ThemedText>
+                  <ThemedText type="small">
+                    {label("settled")}:{" "}
+                    {usage?.settled.has(job.id)
+                      ? points(usage.settled.get(job.id)!.toString())
+                      : "—"}
                   </ThemedText>
                   <ThemedText type="small">{job.id}</ThemedText>
                 </View>
@@ -211,7 +230,10 @@ function Analytics({ workspaceId, generation, onClose }: Props) {
               {!data.memberUsage.length && <ThemedText>{label("empty")}</ThemedText>}
               {data.memberUsage.map((member) => (
                 <View key={member.userId} style={box}>
-                  <ThemedText type="smallBold">{member.userId}</ThemedText>
+                  <ThemedText type="smallBold">
+                    {member.nickname?.trim() ||
+                      (member.userId === "unknown" ? label("unknownMember") : member.userId)}
+                  </ThemedText>
                   <ThemedText type="small">
                     {points(member.totalCredits)} · {member.totalJobs} {label("jobs")}
                   </ThemedText>

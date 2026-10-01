@@ -2695,5 +2695,8 @@
   "workspaceAnalytics.dailyWindow": "Last 30 days · UTC · compute credits",
   "workspaceAnalytics.empty": "No records",
   "workspaceAnalytics.days": "days",
-  "workspaceAnalytics.unassigned": "Unassigned project"
+  "workspaceAnalytics.unassigned": "Unassigned project",
+  "workspaceAnalytics.models": "Usage by model",
+  "workspaceAnalytics.settled": "Settled compute credits",
+  "workspaceAnalytics.unknownMember": "Unknown member"
 }

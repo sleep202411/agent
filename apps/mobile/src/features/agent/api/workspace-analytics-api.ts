@@ -3,6 +3,7 @@ import { api } from "@/lib/api-client";
 import { getAuthGeneration } from "@/auth/auth-store";
 import { fetchWorkspaceSettings } from "./studio-workspace-settings-api";
 import { loadPlatformProjects } from "./platform-projects-api";
+import { fetchStudioMembers } from "./studio-members-api";
 const integer = z.string().regex(/^-?\d+$/);
 const ledger = z.object({
   entries: z.array(
@@ -96,6 +97,13 @@ export async function loadWorkspaceAnalytics(
           })
           .then((value) => members.parse(value))
       : Promise.resolve(undefined),
+    canViewMembers
+      ? fetchStudioMembers(
+          { kind: "workspace", id: workspaceId, name: workspace.name },
+          generation,
+          signal
+        )
+      : Promise.resolve(undefined),
   ]);
   current();
   if (result[2].jobs.some((job) => job.workspaceId && job.workspaceId !== workspaceId))
@@ -108,7 +116,11 @@ export async function loadWorkspaceAnalytics(
     ledger: result[0].entries,
     daily: result[1].days,
     jobs: result[2].jobs,
-    memberUsage: result[3]?.members,
+    memberUsage: result[3]?.members.map((member) => ({
+      ...member,
+      nickname:
+        result[4]?.members.find((identity) => identity.userId === member.userId)?.nickname ?? null,
+    })),
   };
 }
 export type WorkspaceAnalytics = Awaited<ReturnType<typeof loadWorkspaceAnalytics>>;
