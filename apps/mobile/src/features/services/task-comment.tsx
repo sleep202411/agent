@@ -17,7 +17,7 @@ import { useTranslations } from "@/i18n";
 import { ThemedText } from "@/components/themed-text";
 import { TaskMentionPicker } from "./task-mention-picker";
 import type { TaskMention } from "./task-mentions";
-import { inquiryKey } from "./inquiry-api";
+import { clientRequestKey } from "@/lib/client-request-key";
 import { fetchTaskCommentAccess, postTaskComment, type TaskCommentInput } from "./task-comment-api";
 type Props = {
   crewId: string;
@@ -207,7 +207,7 @@ function Composer({
             async () => {
               const pending = intent.current ?? {
                 body: body.trim(),
-                clientKey: inquiryKey(),
+                clientKey: clientRequestKey(),
                 ...(reply ? { replyToId: reply.id } : {}),
                 ...(mentions.length
                   ? { mentions: mentions.filter((item) => body.includes(`@${item.label}`)) }

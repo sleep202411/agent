@@ -304,11 +304,11 @@ it("discards workflow options arriving after an account change", async () => {
   expect(host.textContent).not.toContain("Private Column");
 });
 
-it("creates a task with selected cycle, episode and labels", async () => {
+it("creates a task with selected episode and labels without a cycle picker", async () => {
   h.update.mockResolvedValue({ id: "new" });
   await render();
   await act(async () => type(0, "Task"));
-  for (const kind of ["cycle", "episode", "labels"]) {
+  for (const kind of ["episode", "labels"]) {
     await act(async () =>
       button(`taskPlanning.${kind}${kind === "labels" ? " · 0/20" : ""}`)!.click()
     );
@@ -318,7 +318,7 @@ it("creates a task with selected cycle, episode and labels", async () => {
   expect(h.update).toHaveBeenCalledWith(
     "crew",
     expect.objectContaining({
-      cycleId: "44444444-4444-4444-8444-444444444444",
+      cycleId: null,
       episodeId: "44444444-4444-4444-8444-444444444444",
       labelIds: ["44444444-4444-4444-8444-444444444444"],
     })
@@ -328,7 +328,7 @@ it("clears planning choices and prevents duplicate label selection", async () =>
   h.update.mockResolvedValue({ id: "new" });
   await render();
   await act(async () => type(0, "Task"));
-  for (const kind of ["cycle", "episode", "labels"]) {
+  for (const kind of ["episode", "labels"]) {
     await act(async () =>
       button(`taskPlanning.${kind}${kind === "labels" ? " · 0/20" : ""}`)!.click()
     );
@@ -338,7 +338,6 @@ it("clears planning choices and prevents duplicate label selection", async () =>
   expect(button("Pick labels")!.disabled).toBe(true);
   await act(async () => button("common.cancel")!.click());
   await act(async () => button("Pick labels ×")!.click());
-  await act(async () => button("taskPlanning.clearCycle")!.click());
   await act(async () => button("taskPlanning.clearEpisode")!.click());
   await act(async () => button("taskCreate.submit")!.click());
   expect(h.update).toHaveBeenCalledWith(
@@ -367,12 +366,12 @@ it("ignores late planning options after an account change", async () => {
       })
   );
   await render();
-  await act(async () => button("taskPlanning.cycle")!.click());
+  await act(async () => button("taskPlanning.episode")!.click());
   h.generation = 2;
   await act(async () =>
-    finish([{ id: "44444444-4444-4444-8444-444444444444", name: "Private Cycle" }])
+    finish([{ id: "44444444-4444-4444-8444-444444444444", name: "Private Episode" }])
   );
-  expect(host.textContent).not.toContain("Private Cycle");
+  expect(host.textContent).not.toContain("Private Episode");
 });
 
 it("selects a kind and fills only an empty title from its first template", async () => {
@@ -565,7 +564,8 @@ it("loads view defaults before editing and includes them in the submitted draft"
   };
   h.defaults.mockResolvedValue({ cycle, workflow });
   await render();
-  expect(host.textContent).toContain("Next cycle");
+  expect(button("taskPlanning.cycle · Next cycle")).toBeUndefined();
+  expect(button("taskPlanning.clearCycle")).toBeUndefined();
   expect(host.textContent).toContain("Active shots");
   await act(async () => type(0, "Shot"));
   h.update.mockResolvedValue({ id: "created" });
@@ -604,7 +604,7 @@ it("ignores defaults returned after account changes", async () => {
   expect(host.querySelector("input")).toBeNull();
 });
 
-it("lets the creator clear default cycle and choose server default workflow", async () => {
+it("preserves the implicit cycle when choosing server default workflow", async () => {
   h.defaults.mockResolvedValue({
     cycle: { id: "44444444-4444-4444-8444-444444444444", name: "Next cycle" },
     workflow: {
@@ -616,13 +616,14 @@ it("lets the creator clear default cycle and choose server default workflow", as
     },
   });
   await render();
-  await act(async () => button("taskPlanning.clearCycle")!.click());
   await act(async () => button("Active shots")!.click());
   await act(async () => button("taskCreate.defaultWorkflow")!.click());
   await act(async () => type(0, "Shot"));
   h.update.mockResolvedValue({ id: "created" });
   await act(async () => button("taskCreate.submit")!.click());
-  expect(h.update.mock.calls[0]?.[1]).toMatchObject({ cycleId: null });
+  expect(h.update.mock.calls[0]?.[1]).toMatchObject({
+    cycleId: "44444444-4444-4444-8444-444444444444",
+  });
   expect(h.update.mock.calls[0]?.[1].workflowStateId).toBeUndefined();
 });
 

@@ -47,7 +47,7 @@ vi.mock("./task-comment-api", () => ({
   fetchTaskCommentAccess: h.permission,
   postTaskComment: h.post,
 }));
-vi.mock("./inquiry-api", () => ({ inquiryKey: () => "stable" }));
+vi.mock("@/lib/client-request-key", () => ({ clientRequestKey: () => "stable" }));
 vi.mock("@/auth/auth-store", () => ({ getAuthGeneration: () => h.generation }));
 vi.mock("@/hooks/use-app-active", () => ({ useScreenActive: () => h.active }));
 vi.mock("@/hooks/use-theme", () => ({ useTheme: () => ({}) }));

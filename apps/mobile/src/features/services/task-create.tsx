@@ -306,6 +306,7 @@ function Editor({
         onSelect={setWorkflow}
       />
       <TaskPlanningFields
+        showCycle={false}
         crewId={crewId}
         generation={generation}
         value={planning}

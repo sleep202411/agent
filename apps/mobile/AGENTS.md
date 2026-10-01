@@ -28,3 +28,16 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v56.0.0/ before 
 - Branch permission is not permission to expand the assigned scope. Work only
   on tasks assigned to Ric; new Mobile work or Web-to-Mobile adaptation must
   first be coordinated with Isaac. Respect the assigned developers' task order.
+
+## Official rollback alignment (2026-10-01)
+
+- Current official `main` / `develop` define the supported feature scope. Remove
+  Mobile adaptations of features rolled back there; historical parity work is
+  not authorization to restore them on 2.4.0.
+- The personal-work publishing/editor, native service inquiry/checkout, service
+  management, orders and inbox/conversation workflows removed by `b14a28f2c`
+  are also withdrawn from 2.4.0. Do not add replacement entries or continue
+  recovery work for these withdrawn workflows without a new scope decision.
+- Preserve official public creator/service browsing, personal-work playback,
+  the official payment release and shared media components used by Crew tasks
+  and assets. Courses/Discovery remain removed under official 2.3.1 navigation.
