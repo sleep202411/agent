@@ -39,7 +39,6 @@ import {
 } from '../infra/storage/media-storage-access.service';
 import { requireModerationApproval } from '../media/media-moderation-policy';
 import { canonicalJsonHash } from './canonical-json';
-import { storyRevisionSnapshotAction } from './story-revision-snapshot';
 import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   STORY_FRAME_PROFILE_CONTRACTS,
@@ -1169,27 +1168,10 @@ async function materializeStoryRevision(
       },
     },
   });
-  if (existing) {
-    const action = storyRevisionSnapshotAction({
-      existingSchemaVersion: existing.schemaVersion,
-      existingContentHash: existing.contentHash,
-      existingContentHashMatchesContent:
-        canonicalJsonHash(existing.content) === existing.contentHash,
-      nextSchemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-      nextContentHash: snapshot.draft.contentHash,
-    });
-    if (action === 'reuse') return existing;
-    // Playback reads the build's own runtime, not this row. Rewriting the
-    // lock lets a later compile rule apply to an unchanged draft.
-    return tx.storyRevision.update({
-      where: { id: existing.id },
-      data: {
-        schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-        content: snapshot.draft.content as Prisma.InputJsonObject,
-        contentHash: snapshot.draft.contentHash,
-      },
-    });
-  }
+  // Revisions are append-only, one per draft revision. A later compile rule
+  // may project the same saved draft differently; the Build compiles the
+  // draft itself, so the stored row remains its valid provenance.
+  if (existing) return existing;
   const latest = await tx.storyRevision.aggregate({
     where: { storyProjectId: snapshot.project.id },
     _max: { number: true },
