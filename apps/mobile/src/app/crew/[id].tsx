@@ -313,7 +313,15 @@ export default function CrewDetailScreen() {
                 {crew.roles.map((role, index) => {
                   const meta = roleMeta(role);
                   return (
-                    <View
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() =>
+                        router.push(
+                          toHref(
+                            `/crew-opening?crewId=${encodeURIComponent(crew.id)}&positionId=${encodeURIComponent(role.id)}`
+                          )
+                        )
+                      }
                       key={role.id}
                       style={[
                         styles.roleRow,
@@ -332,7 +340,7 @@ export default function CrewDetailScreen() {
                         ) : null}
                       </View>
                       <Tag label={`${role.count} ${t("crewDetail.openSuffix")}`} tone="brand" />
-                    </View>
+                    </Pressable>
                   );
                 })}
               </ThemedView>

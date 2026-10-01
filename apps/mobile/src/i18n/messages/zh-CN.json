@@ -3686,5 +3686,10 @@
   "castingConsent.grantTransferTitle": "Cross-border processing",
   "castingConsent.grantTransferBody": "Generating videos transfers your likeness to BytePlus (ModelArk) in the ap-southeast-1 (Singapore) region, which may be outside your home jurisdiction.",
   "castingConsent.grantControlsTitle": "Your controls",
-  "castingConsent.grantControlsBody": "You can withdraw this authorization at any time, per project — future generation stops immediately. You can view every video made with your likeness and take any of them down."
+  "castingConsent.grantControlsBody": "You can withdraw this authorization at any time, per project — future generation stops immediately. You can view every video made with your likeness and take any of them down.",
+  "crewOpening.title": "招募岗位",
+  "crewOpening.unavailable": "此岗位已不再公开。",
+  "crewOpening.failed": "无法加载此岗位。",
+  "crewOpening.full": "岗位已满",
+  "crewOpening.member": "已是剧组成员"
 }
